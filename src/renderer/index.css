@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import '@xterm/xterm/css/xterm.css';
+
+:root {
+  /* Catppuccin Mocha palette */
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-text: #cdd6f4;
+  --ctp-subtext1: #bac2de;
+  --ctp-subtext0: #a6adc8;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: var(--ctp-base);
+    color: var(--ctp-text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--ctp-surface1);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ctp-surface2);
+  }
+}
+
+/* Drag region for frameless window */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* xterm overrides for seamless look */
+.xterm {
+  height: 100%;
+}
+
+.xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* highlight.js - Catppuccin Mocha theme */
+.hljs {
+  color: #cdd6f4;
+  background: transparent;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in { color: #cba6f7; }
+.hljs-string,
+.hljs-attr { color: #a6e3a1; }
+.hljs-number,
+.hljs-literal { color: #fab387; }
+.hljs-comment,
+.hljs-doctag { color: #6c7086; font-style: italic; }
+.hljs-function,
+.hljs-title { color: #89b4fa; }
+.hljs-type,
+.hljs-class { color: #f9e2af; }
+.hljs-variable,
+.hljs-template-variable { color: #f38ba8; }
+.hljs-regexp { color: #f5c2e7; }
+.hljs-tag { color: #89b4fa; }
+.hljs-name { color: #89b4fa; }
+.hljs-attribute { color: #f9e2af; }
+.hljs-symbol,
+.hljs-bullet { color: #f38ba8; }
+.hljs-meta { color: #fab387; }
+.hljs-section { color: #89b4fa; font-weight: bold; }
+.hljs-addition { color: #a6e3a1; background: rgba(166, 227, 161, 0.1); }
+.hljs-deletion { color: #f38ba8; background: rgba(243, 139, 168, 0.1); }
+.hljs-params { color: #cdd6f4; }
+.hljs-property { color: #94e2d5; }
+.hljs-punctuation { color: #9399b2; }
