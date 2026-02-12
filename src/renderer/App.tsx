@@ -121,6 +121,7 @@ export function App() {
     files: 'Files',
     terminal: 'Terminal',
     git: 'Git',
+    notes: 'Notes',
     hub: 'Hub',
     settings: 'Settings',
   };

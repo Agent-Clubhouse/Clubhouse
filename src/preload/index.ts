@@ -111,6 +111,10 @@ const api = {
       ipcRenderer.invoke(IPC.FILE.WRITE, filePath, content),
     showInFolder: (filePath: string) =>
       ipcRenderer.invoke(IPC.FILE.SHOW_IN_FOLDER, filePath),
+    mkdir: (dirPath: string) =>
+      ipcRenderer.invoke(IPC.FILE.MKDIR, dirPath),
+    delete: (filePath: string) =>
+      ipcRenderer.invoke(IPC.FILE.DELETE, filePath),
   },
   app: {
     getNotificationSettings: () =>

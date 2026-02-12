@@ -47,6 +47,8 @@ export const IPC = {
     READ_BINARY: 'file:read-binary',
     WRITE: 'file:write',
     SHOW_IN_FOLDER: 'file:show-in-folder',
+    MKDIR: 'file:mkdir',
+    DELETE: 'file:delete',
   },
   GIT: {
     INFO: 'git:info',

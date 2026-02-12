@@ -42,6 +42,14 @@ export function writeFile(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content, 'utf-8');
 }
 
+export function mkdir(dirPath: string): void {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+export function deleteFile(filePath: string): void {
+  fs.unlinkSync(filePath);
+}
+
 const MIME_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',

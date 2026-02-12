@@ -60,7 +60,7 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'terminal' | 'hub';
+export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'notes' | 'terminal' | 'hub';
 
 export interface NotificationSettings {
   enabled: boolean;
