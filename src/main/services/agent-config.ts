@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, QuickAgentDefaults, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -51,6 +51,25 @@ function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
 
 export function listDurable(projectPath: string): DurableAgentConfig[] {
   return readAgents(projectPath);
+}
+
+export function getDurableConfig(projectPath: string, agentId: string): DurableAgentConfig | null {
+  const agents = readAgents(projectPath);
+  return agents.find((a) => a.id === agentId) || null;
+}
+
+export function updateDurableConfig(
+  projectPath: string,
+  agentId: string,
+  updates: { quickAgentDefaults?: QuickAgentDefaults },
+): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return;
+  if (updates.quickAgentDefaults !== undefined) {
+    agent.quickAgentDefaults = updates.quickAgentDefaults;
+  }
+  writeAgents(projectPath, agents);
 }
 
 export function createDurable(

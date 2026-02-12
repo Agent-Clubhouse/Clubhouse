@@ -41,6 +41,8 @@ export const IPC = {
     DELETE_UNREGISTER: 'agent:delete-unregister',
     RENAME_DURABLE: 'agent:rename-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
+    GET_DURABLE_CONFIG: 'agent:get-durable-config',
+    UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

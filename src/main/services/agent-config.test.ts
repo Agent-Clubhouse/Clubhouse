@@ -31,6 +31,8 @@ import {
   deleteCommitAndPush,
   deleteUnregister,
   deleteForce,
+  getDurableConfig,
+  updateDurableConfig,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
@@ -430,6 +432,73 @@ describe('deleteForce', () => {
 
     const result = deleteForce(PROJECT_PATH, 'durable_force');
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('getDurableConfig', () => {
+  it('returns correct agent by id', () => {
+    const agents = [
+      { id: 'durable_1', name: 'agent-one', color: 'indigo', localOnly: false, branch: 'one/standby', worktreePath: '/test/wt1', createdAt: '2024-01-01' },
+      { id: 'durable_2', name: 'agent-two', color: 'emerald', localOnly: false, branch: 'two/standby', worktreePath: '/test/wt2', createdAt: '2024-01-01' },
+    ];
+    mockAgentsFile(agents);
+    const result = getDurableConfig(PROJECT_PATH, 'durable_2');
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('agent-two');
+  });
+
+  it('returns null for unknown agent', () => {
+    const agents = [
+      { id: 'durable_1', name: 'agent-one', color: 'indigo', localOnly: false, branch: 'one/standby', worktreePath: '/test/wt1', createdAt: '2024-01-01' },
+    ];
+    mockAgentsFile(agents);
+    const result = getDurableConfig(PROJECT_PATH, 'nonexistent');
+    expect(result).toBeNull();
+  });
+
+  it('returns null when no agents file', () => {
+    mockNoAgentsFile();
+    const result = getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(result).toBeNull();
+  });
+});
+
+describe('updateDurableConfig', () => {
+  it('persists quickAgentDefaults and round-trips', () => {
+    const agents = [
+      { id: 'durable_upd', name: 'upd', color: 'indigo', localOnly: false, branch: 'upd/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    const defaults = { systemPrompt: 'Be concise', allowedTools: ['Bash(npm test:*)'], defaultModel: 'sonnet' };
+    updateDurableConfig(PROJECT_PATH, 'durable_upd', { quickAgentDefaults: defaults });
+
+    // Read back
+    const result = getDurableConfig(PROJECT_PATH, 'durable_upd');
+    expect(result).not.toBeNull();
+    expect(result!.quickAgentDefaults).toEqual(defaults);
+  });
+
+  it('no-op for unknown agent', () => {
+    const agents = [
+      { id: 'durable_1', name: 'one', color: 'indigo', localOnly: false, branch: 'one/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' },
+    ];
+    mockAgentsFile(agents);
+    // Should not throw
+    expect(() => updateDurableConfig(PROJECT_PATH, 'nonexistent', { quickAgentDefaults: { systemPrompt: 'x' } })).not.toThrow();
   });
 });
 

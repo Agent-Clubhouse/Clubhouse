@@ -33,8 +33,16 @@ export function registerAgentHandlers(): void {
     agentConfig.saveSettings(projectPath, settings);
   });
 
-  ipcMain.handle(IPC.AGENT.SETUP_HOOKS, async (_event, worktreePath: string, agentId: string) => {
-    await writeHooksConfig(worktreePath, agentId);
+  ipcMain.handle(IPC.AGENT.SETUP_HOOKS, async (_event, worktreePath: string, agentId: string, options?: { allowedTools?: string[] }) => {
+    await writeHooksConfig(worktreePath, agentId, options);
+  });
+
+  ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, (_event, projectPath: string, agentId: string) => {
+    return agentConfig.getDurableConfig(projectPath, agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, (_event, projectPath: string, agentId: string, updates: any) => {
+    agentConfig.updateDurableConfig(projectPath, agentId, updates);
   });
 
   ipcMain.handle(IPC.AGENT.GET_WORKTREE_STATUS, (_event, projectPath: string, agentId: string) => {

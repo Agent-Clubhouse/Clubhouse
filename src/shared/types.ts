@@ -37,6 +37,12 @@ export interface CompletedQuickAgent {
   parentAgentId?: string;
 }
 
+export interface QuickAgentDefaults {
+  systemPrompt?: string;
+  allowedTools?: string[];
+  defaultModel?: string;
+}
+
 export interface DurableAgentConfig {
   id: string;
   name: string;
@@ -46,6 +52,7 @@ export interface DurableAgentConfig {
   worktreePath: string;
   createdAt: string;
   model?: string;
+  quickAgentDefaults?: QuickAgentDefaults;
 }
 
 export interface ProjectSettings {
