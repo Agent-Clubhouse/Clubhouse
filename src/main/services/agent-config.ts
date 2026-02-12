@@ -121,6 +121,14 @@ export function createDurable(
   return config;
 }
 
+export function renameDurable(projectPath: string, agentId: string, newName: string): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return;
+  agent.name = newName;
+  writeAgents(projectPath, agents);
+}
+
 export function deleteDurable(projectPath: string, agentId: string): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);

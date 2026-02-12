@@ -120,7 +120,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
+      className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
     />
   );

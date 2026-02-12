@@ -44,6 +44,7 @@ interface AgentState {
   killAgent: (id: string) => Promise<void>;
   removeAgent: (id: string) => void;
   deleteDurableAgent: (id: string, projectPath: string) => Promise<void>;
+  renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
   updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
   recordActivity: (id: string) => void;
@@ -235,6 +236,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     set({ agents });
+  },
+
+  renameAgent: async (id, newName, projectPath) => {
+    await window.clubhouse.agent.renameDurable(projectPath, id, newName);
+    set((s) => ({
+      agents: { ...s.agents, [id]: { ...s.agents[id], name: newName } },
+    }));
   },
 
   killAgent: async (id) => {

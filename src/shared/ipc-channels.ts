@@ -39,6 +39,7 @@ export const IPC = {
     DELETE_SAVE_PATCH: 'agent:delete-save-patch',
     DELETE_FORCE: 'agent:delete-force',
     DELETE_UNREGISTER: 'agent:delete-unregister',
+    RENAME_DURABLE: 'agent:rename-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
   },
   FILE: {
@@ -47,6 +48,8 @@ export const IPC = {
     READ_BINARY: 'file:read-binary',
     WRITE: 'file:write',
     SHOW_IN_FOLDER: 'file:show-in-folder',
+    MKDIR: 'file:mkdir',
+    DELETE: 'file:delete',
   },
   GIT: {
     INFO: 'git:info',

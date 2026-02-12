@@ -22,4 +22,12 @@ export function registerFileHandlers(): void {
   ipcMain.handle(IPC.FILE.SHOW_IN_FOLDER, (_event, filePath: string) => {
     shell.showItemInFolder(filePath);
   });
+
+  ipcMain.handle(IPC.FILE.MKDIR, (_event, dirPath: string) => {
+    fileService.mkdir(dirPath);
+  });
+
+  ipcMain.handle(IPC.FILE.DELETE, (_event, filePath: string) => {
+    fileService.deleteFile(filePath);
+  });
 }

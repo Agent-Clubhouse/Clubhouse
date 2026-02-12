@@ -57,6 +57,7 @@ export function StandaloneTerminal() {
     requestAnimationFrame(() => {
       fitAddon.fit();
       window.clubhouse.pty.resize(PTY_ID, term.cols, term.rows);
+      term.focus();
     });
 
     terminalRef.current = term;
@@ -110,8 +111,9 @@ export function StandaloneTerminal() {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
+      className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
+      onClick={() => terminalRef.current?.focus()}
     />
   );
 }

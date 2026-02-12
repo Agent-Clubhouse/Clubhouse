@@ -51,6 +51,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, localOnly, model),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
+    renameDurable: (projectPath: string, agentId: string, newName: string) =>
+      ipcRenderer.invoke(IPC.AGENT.RENAME_DURABLE, projectPath, agentId, newName),
     getWorktreeStatus: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_WORKTREE_STATUS, projectPath, agentId),
     deleteCommitPush: (projectPath: string, agentId: string) =>
@@ -111,6 +113,10 @@ const api = {
       ipcRenderer.invoke(IPC.FILE.WRITE, filePath, content),
     showInFolder: (filePath: string) =>
       ipcRenderer.invoke(IPC.FILE.SHOW_IN_FOLDER, filePath),
+    mkdir: (dirPath: string) =>
+      ipcRenderer.invoke(IPC.FILE.MKDIR, dirPath),
+    delete: (filePath: string) =>
+      ipcRenderer.invoke(IPC.FILE.DELETE, filePath),
   },
   app: {
     getNotificationSettings: () =>

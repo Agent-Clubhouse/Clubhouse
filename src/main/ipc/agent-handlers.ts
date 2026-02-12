@@ -21,6 +21,10 @@ export function registerAgentHandlers(): void {
     agentConfig.deleteDurable(projectPath, agentId);
   });
 
+  ipcMain.handle(IPC.AGENT.RENAME_DURABLE, (_event, projectPath: string, agentId: string, newName: string) => {
+    agentConfig.renameDurable(projectPath, agentId, newName);
+  });
+
   ipcMain.handle(IPC.AGENT.GET_SETTINGS, (_event, projectPath: string) => {
     return agentConfig.getSettings(projectPath);
   });

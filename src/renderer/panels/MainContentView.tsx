@@ -12,6 +12,7 @@ import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
 import { CommandCenter } from '../features/hub/CommandCenter';
+import { NoteEditor } from '../features/notes/NoteEditor';
 
 export function MainContentView() {
   const { explorerTab, selectedGitFile, settingsSubPage } = useUIStore();
@@ -73,6 +74,10 @@ export function MainContentView() {
 
   if (explorerTab === 'files') {
     return <FileViewer />;
+  }
+
+  if (explorerTab === 'notes') {
+    return <NoteEditor />;
   }
 
   if (explorerTab === 'git') {
