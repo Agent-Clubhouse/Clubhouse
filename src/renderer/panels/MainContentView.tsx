@@ -13,6 +13,7 @@ import { NotificationSettingsView } from '../features/settings/NotificationSetti
 import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
 import { CommandCenter } from '../features/hub/CommandCenter';
 import { NoteEditor } from '../features/notes/NoteEditor';
+import { SchedulerEditor } from '../features/scheduler/SchedulerEditor';
 
 export function MainContentView() {
   const { explorerTab, selectedGitFile, settingsSubPage } = useUIStore();
@@ -78,6 +79,10 @@ export function MainContentView() {
 
   if (explorerTab === 'notes') {
     return <NoteEditor />;
+  }
+
+  if (explorerTab === 'scheduler') {
+    return <SchedulerEditor />;
   }
 
   if (explorerTab === 'git') {

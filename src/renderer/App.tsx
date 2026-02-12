@@ -10,6 +10,7 @@ import { useAgentStore } from './stores/agentStore';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
+import { useSchedulerStore } from './stores/schedulerStore';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -28,6 +29,9 @@ export function App() {
   const addCompleted = useQuickAgentStore((s) => s.addCompleted);
   const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
   const removeAgent = useAgentStore((s) => s.removeAgent);
+  const loadSchedulerJobs = useSchedulerStore((s) => s.loadJobs);
+  const startScheduler = useSchedulerStore((s) => s.startScheduler);
+  const stopScheduler = useSchedulerStore((s) => s.stopScheduler);
 
   useEffect(() => {
     loadProjects();
@@ -55,6 +59,15 @@ export function App() {
       loadCompleted(p.id);
     }
   }, [projects, loadCompleted]);
+
+  // Start/stop scheduler when a project is active
+  useEffect(() => {
+    if (activeProjectId) {
+      loadSchedulerJobs();
+      startScheduler();
+      return () => stopScheduler();
+    }
+  }, [activeProjectId, loadSchedulerJobs, startScheduler, stopScheduler]);
 
   useEffect(() => {
     const removeExitListener = window.clubhouse.pty.onExit(
@@ -126,6 +139,7 @@ export function App() {
     terminal: 'Terminal',
     git: 'Git',
     notes: 'Notes',
+    scheduler: 'Scheduler',
     hub: 'Hub',
     settings: 'Settings',
   };

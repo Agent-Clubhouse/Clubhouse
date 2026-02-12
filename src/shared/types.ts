@@ -100,7 +100,7 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'notes' | 'terminal' | 'hub';
+export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'notes' | 'terminal' | 'hub' | 'scheduler';
 
 export interface NotificationSettings {
   enabled: boolean;
@@ -200,4 +200,17 @@ export interface PtyDataPayload {
 export interface PtyExitPayload {
   agentId: string;
   exitCode: number;
+}
+
+export interface SchedulerJob {
+  id: string;
+  name: string;
+  cronExpression: string;  // standard 5-field cron: min hour dom month dow
+  agentType: 'durable' | 'quick';
+  agentId?: string;        // durable agent config ID
+  model?: string;          // for quick agents
+  prompt: string;
+  enabled: boolean;
+  createdAt: string;
+  lastRunAt?: string;
 }

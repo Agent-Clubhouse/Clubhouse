@@ -3,6 +3,7 @@ import { AgentList } from '../features/agents/AgentList';
 import { GitSidebar } from '../features/git/GitSidebar';
 import { FileTree } from '../features/files/FileTree';
 import { NotesTree } from '../features/notes/NotesTree';
+import { SchedulerList } from '../features/scheduler/SchedulerList';
 
 export function AccessoryPanel() {
   const { explorerTab, settingsSubPage, setSettingsSubPage } = useUIStore();
@@ -13,6 +14,7 @@ export function AccessoryPanel() {
       {explorerTab === 'files' && <FileTree />}
       {explorerTab === 'git' && <GitSidebar />}
       {explorerTab === 'notes' && <NotesTree />}
+      {explorerTab === 'scheduler' && <SchedulerList />}
       {explorerTab === 'settings' && (
         <div className="flex flex-col h-full">
           <div className="px-3 py-2 border-b border-surface-0">
