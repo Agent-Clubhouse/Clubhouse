@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNotesStore } from '../../stores/notesStore';
 import { MonacoCodeEditor } from '../files/MonacoEditor';
 import { MarkdownPreview } from '../files/MarkdownPreview';
+import { SendToAgentDialog } from './SendToAgentDialog';
 
 type ViewMode = 'preview' | 'source';
 
@@ -11,6 +12,7 @@ export function NoteEditor() {
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [isDirty, setIsDirty] = useState(false);
+  const [showSendDialog, setShowSendDialog] = useState(false);
   const activeNoteRef = useRef<string | null>(null);
 
   const fileName = selectedNote?.split('/').pop()?.replace(/\.md$/, '') || '';
@@ -105,7 +107,15 @@ export function NoteEditor() {
             Source
           </button>
         </div>
-        <span className="text-xs text-ctp-subtext0 truncate ml-auto">{selectedNote}</span>
+        <button
+          onClick={() => setShowSendDialog(true)}
+          className="ml-auto px-2.5 py-0.5 text-xs rounded border border-surface-0
+            text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0
+            transition-colors cursor-pointer flex-shrink-0"
+        >
+          Send to Agent
+        </button>
+        <span className="text-xs text-ctp-subtext0 truncate">{selectedNote}</span>
       </div>
       {viewMode === 'preview' ? (
         <div className="flex-1 overflow-auto p-6">
@@ -121,6 +131,13 @@ export function NoteEditor() {
             onSave={handleSave}
           />
         </div>
+      )}
+      {showSendDialog && selectedNote && content !== null && (
+        <SendToAgentDialog
+          notePath={selectedNote}
+          noteContent={content}
+          onClose={() => setShowSendDialog(false)}
+        />
       )}
     </div>
   );

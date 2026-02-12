@@ -1,3 +1,4 @@
+import { useAgentStore } from '../../stores/agentStore';
 import { Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 
@@ -52,4 +53,26 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
   }
 
   return renderContent();
+}
+
+export const STATUS_RING_COLOR: Record<string, string> = {
+  running: '#22c55e',
+  sleeping: '#6c7086',
+  error: '#f87171',
+};
+
+export function AgentAvatarWithRing({ agent }: { agent: Agent }) {
+  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailed = detailedStatus[agent.id];
+  const isWorking = agent.status === 'running' && detailed?.state === 'working';
+  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+    : baseRingColor;
+
+  return (
+    <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+      <AgentAvatar agent={agent} size="sm" showRing ringColor={ringColor} />
+    </div>
+  );
 }
