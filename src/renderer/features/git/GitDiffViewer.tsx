@@ -1,10 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { DiffEditor, type BeforeMount, type DiffOnMount, loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import {
-  catppuccinMochaTheme,
-  CATPPUCCIN_MOCHA_THEME_NAME,
-} from '../files/catppuccin-mocha-theme';
+import { THEMES } from '../../themes';
+import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 
 loader.config({ monaco });
@@ -55,6 +53,7 @@ function getLanguageFromPath(filePath: string): string {
 
 export function GitDiffViewer() {
   const { selectedGitFile, setSelectedGitFile } = useUIStore();
+  const themeId = useThemeStore((s) => s.themeId);
 
   const [original, setOriginal] = useState('');
   const [modified, setModified] = useState('');
@@ -89,7 +88,9 @@ export function GitDiffViewer() {
   }, []);
 
   const handleBeforeMount: BeforeMount = useCallback((mon) => {
-    mon.editor.defineTheme(CATPPUCCIN_MOCHA_THEME_NAME, catppuccinMochaTheme);
+    for (const [id, theme] of Object.entries(THEMES)) {
+      mon.editor.defineTheme(id, theme.monaco as unknown as monaco.editor.IStandaloneThemeData);
+    }
   }, []);
 
   const handleMount: DiffOnMount = useCallback((editor) => {
@@ -149,7 +150,7 @@ export function GitDiffViewer() {
             original={original}
             modified={modified}
             language={language}
-            theme={CATPPUCCIN_MOCHA_THEME_NAME}
+            theme={themeId}
             beforeMount={handleBeforeMount}
             onMount={handleMount}
             keepCurrentOriginalModel

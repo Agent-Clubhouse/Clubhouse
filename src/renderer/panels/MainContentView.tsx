@@ -10,6 +10,7 @@ import { GitDiffViewer } from '../features/git/GitDiffViewer';
 import { FileViewer } from '../features/files/FileViewer';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
+import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
 import { CommandCenter } from '../features/hub/CommandCenter';
 import { NoteEditor } from '../features/notes/NoteEditor';
@@ -90,7 +91,9 @@ export function MainContentView() {
   }
 
   if (explorerTab === 'settings') {
-    return settingsSubPage === 'notifications' ? <NotificationSettingsView /> : <ProjectSettings />;
+    if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
+    if (settingsSubPage === 'display') return <DisplaySettingsView />;
+    return <ProjectSettings />;
   }
 
   return (

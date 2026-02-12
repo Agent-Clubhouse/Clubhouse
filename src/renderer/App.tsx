@@ -11,6 +11,7 @@ import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useSchedulerStore } from './stores/schedulerStore';
+import { useThemeStore } from './stores/themeStore';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -25,6 +26,7 @@ export function App() {
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const isFullWidth = explorerTab === 'terminal' || explorerTab === 'hub';
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
+  const loadTheme = useThemeStore((s) => s.loadTheme);
   const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
   const addCompleted = useQuickAgentStore((s) => s.addCompleted);
   const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
@@ -36,7 +38,8 @@ export function App() {
   useEffect(() => {
     loadProjects();
     loadNotificationSettings();
-  }, [loadProjects, loadNotificationSettings]);
+    loadTheme();
+  }, [loadProjects, loadNotificationSettings, loadTheme]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {

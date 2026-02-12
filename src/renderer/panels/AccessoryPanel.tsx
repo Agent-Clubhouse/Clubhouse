@@ -37,6 +37,14 @@ export function AccessoryPanel() {
             >
               Notifications
             </button>
+            <button
+              onClick={() => setSettingsSubPage('display')}
+              className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
+                settingsSubPage === 'display' ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
+              }`}
+            >
+              Display & UI
+            </button>
           </nav>
         </div>
       )}
