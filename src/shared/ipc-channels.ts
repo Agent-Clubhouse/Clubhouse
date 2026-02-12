@@ -16,6 +16,10 @@ export const IPC = {
     PICK_DIR: 'project:pick-dir',
     CHECK_GIT: 'project:check-git',
     GIT_INIT: 'project:git-init',
+    UPDATE: 'project:update',
+    PICK_ICON: 'project:pick-icon',
+    REORDER: 'project:reorder',
+    READ_ICON: 'project:read-icon',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',
@@ -35,6 +39,7 @@ export const IPC = {
     DELETE_SAVE_PATCH: 'agent:delete-save-patch',
     DELETE_FORCE: 'agent:delete-force',
     DELETE_UNREGISTER: 'agent:delete-unregister',
+    READ_QUICK_SUMMARY: 'agent:read-quick-summary',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
@@ -51,10 +56,17 @@ export const IPC = {
     COMMIT: 'git:commit',
     PUSH: 'git:push',
     PULL: 'git:pull',
+    DIFF: 'git:diff',
   },
   WATCH: {
     START: 'watch:start',
     STOP: 'watch:stop',
     EVENT: 'watch:event',
+  },
+  APP: {
+    OPEN_SETTINGS: 'app:open-settings',
+    GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
+    SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
+    SEND_NOTIFICATION: 'app:send-notification',
   },
 } as const;

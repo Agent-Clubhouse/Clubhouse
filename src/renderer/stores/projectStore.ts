@@ -5,6 +5,7 @@ interface ProjectState {
   projects: Project[];
   activeProjectId: string | null;
   gitStatus: Record<string, boolean>; // projectId -> hasGit
+  projectIcons: Record<string, string>; // projectId -> data URL
   setActiveProject: (id: string | null) => void;
   loadProjects: () => Promise<void>;
   addProject: (path: string) => Promise<Project>;
@@ -12,12 +13,17 @@ interface ProjectState {
   pickAndAddProject: () => Promise<Project | null>;
   checkGit: (projectId: string, dirPath: string) => Promise<boolean>;
   gitInit: (projectId: string, dirPath: string) => Promise<boolean>;
+  updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name'>>) => Promise<void>;
+  pickProjectIcon: (projectId: string) => Promise<void>;
+  reorderProjects: (orderedIds: string[]) => Promise<void>;
+  loadProjectIcon: (project: Project) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProjectId: null,
   gitStatus: {},
+  projectIcons: {},
 
   setActiveProject: (id) => {
     set({ activeProjectId: id });
@@ -37,6 +43,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     for (const p of projects) {
       get().checkGit(p.id, p.path);
     }
+    // Load icons for projects that have them
+    for (const p of projects) {
+      if (p.icon) {
+        get().loadProjectIcon(p);
+      }
+    }
   },
 
   addProject: async (path) => {
@@ -52,11 +64,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((s) => {
       const projects = s.projects.filter((p) => p.id !== id);
       const { [id]: _, ...gitStatus } = s.gitStatus;
+      const { [id]: __, ...projectIcons } = s.projectIcons;
       const activeProjectId =
         s.activeProjectId === id
           ? projects[0]?.id ?? null
           : s.activeProjectId;
-      return { projects, activeProjectId, gitStatus };
+      return { projects, activeProjectId, gitStatus, projectIcons };
     });
   },
 
@@ -78,5 +91,45 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set((s) => ({ gitStatus: { ...s.gitStatus, [projectId]: true } }));
     }
     return ok;
+  },
+
+  updateProject: async (id, updates) => {
+    const projects = await window.clubhouse.project.update(id, updates);
+    set({ projects });
+    // If icon was removed, clear from cache
+    if (updates.icon === '') {
+      set((s) => {
+        const { [id]: _, ...projectIcons } = s.projectIcons;
+        return { projectIcons };
+      });
+    }
+  },
+
+  pickProjectIcon: async (projectId) => {
+    const filename = await window.clubhouse.project.pickIcon(projectId);
+    if (!filename) return;
+    // Reload projects to get updated icon field
+    const projects = await window.clubhouse.project.list();
+    set({ projects });
+    // Load the new icon into cache
+    const project = projects.find((p: Project) => p.id === projectId);
+    if (project?.icon) {
+      get().loadProjectIcon(project);
+    }
+  },
+
+  reorderProjects: async (orderedIds) => {
+    const projects = await window.clubhouse.project.reorder(orderedIds);
+    set({ projects });
+  },
+
+  loadProjectIcon: async (project) => {
+    if (!project.icon) return;
+    const dataUrl = await window.clubhouse.project.readIcon(project.icon);
+    if (dataUrl) {
+      set((s) => ({
+        projectIcons: { ...s.projectIcons, [project.id]: dataUrl },
+      }));
+    }
   },
 }));

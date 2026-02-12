@@ -113,6 +113,47 @@ export function push(dirPath: string): GitOpResult {
   return runResult(`git push ${info.remote} ${info.branch}`, dirPath);
 }
 
+export function getFileDiff(
+  dirPath: string,
+  filePath: string,
+  staged: boolean
+): { original: string; modified: string } {
+  // Get the HEAD version (empty for new/untracked files)
+  let original = '';
+  try {
+    original = execSync(`git show HEAD:"${filePath}"`, {
+      cwd: dirPath,
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+  } catch {
+    // File doesn't exist in HEAD (new/untracked) — leave empty
+  }
+
+  let modified = '';
+  if (staged) {
+    // Staged version from the index
+    try {
+      modified = execSync(`git show :"${filePath}"`, {
+        cwd: dirPath,
+        encoding: 'utf-8',
+        timeout: 10000,
+      });
+    } catch {
+      modified = '';
+    }
+  } else {
+    // Working tree version from disk
+    try {
+      modified = fs.readFileSync(path.join(dirPath, filePath), 'utf-8');
+    } catch {
+      modified = '';
+    }
+  }
+
+  return { original, modified };
+}
+
 export function pull(dirPath: string): GitOpResult {
   const info = getGitInfo(dirPath);
   if (!info.remote) {

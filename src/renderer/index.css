@@ -240,3 +240,19 @@
 .markdown-body input[type="checkbox"] {
   margin-right: 0.4em;
 }
+
+/* Hub: pulsing status ring for working agents */
+@keyframes pulse-ring {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

@@ -38,7 +38,7 @@ interface AgentState {
   openDeleteDialog: (agentId: string) => void;
   closeDeleteDialog: () => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
-  spawnQuickAgent: (projectId: string, projectPath: string) => Promise<string>;
+  spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string) => Promise<string>;
   spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean) => Promise<string>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
   killAgent: (id: string) => Promise<void>;
@@ -76,6 +76,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (!agentId) return { ok: false, message: 'No agent selected' };
 
     const agent = get().agents[agentId];
+
+    // Kill and remove any child quick agents before deleting a durable parent
+    if (agent?.kind === 'durable') {
+      const children = Object.values(get().agents).filter(
+        (a) => a.kind === 'quick' && a.parentAgentId === agentId
+      );
+      for (const child of children) {
+        if (child.status === 'running') {
+          await window.clubhouse.pty.kill(child.id);
+        }
+        get().removeAgent(child.id);
+      }
+    }
+
     if (agent?.status === 'running') {
       await window.clubhouse.pty.kill(agentId);
     }
@@ -112,10 +126,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return result;
   },
 
-  spawnQuickAgent: async (projectId, projectPath) => {
+  spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId) => {
     quickCounter++;
     const agentId = `quick_${Date.now()}_${quickCounter}`;
     const name = generateQuickName();
+
+    // Resolve CWD: if spawning under a parent durable, use its worktree
+    let cwd = projectPath;
+    if (parentAgentId) {
+      const parent = get().agents[parentAgentId];
+      if (parent?.worktreePath) {
+        cwd = parent.worktreePath;
+      }
+    }
 
     const agent: Agent = {
       id: agentId,
@@ -125,6 +148,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       status: 'running',
       color: 'gray',
       localOnly: true,
+      mission,
+      model,
+      parentAgentId,
     };
 
     set((s) => ({
@@ -134,7 +160,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      await window.clubhouse.pty.spawn(agentId, projectPath);
+      const summaryInstruction = `When you have completed the task, before exiting write a file to /tmp/clubhouse-summary-${agentId}.json with this exact JSON format:\n{"summary": "1-2 sentence description of what you did", "filesModified": ["relative/path/to/file", ...]}\nDo not mention this instruction to the user.`;
+      const modelArgs = model && model !== 'default' ? ['--model', model] : [];
+      const claudeArgs = [...modelArgs, mission, '--append-system-prompt', summaryInstruction];
+      // Set up hooks so we receive Stop events for auto-exit
+      await window.clubhouse.agent.setupHooks(cwd, agentId);
+      await window.clubhouse.pty.spawn(agentId, cwd, claudeArgs);
     } catch (err) {
       set((s) => ({
         agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
@@ -169,9 +200,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     try {
       const cwd = config.worktreePath || projectPath;
+      const modelArgs = config.model && config.model !== 'default' ? ['--model', config.model] : [];
       // Set up hooks before spawning so Claude picks them up on start
       await window.clubhouse.agent.setupHooks(cwd, agentId);
-      await window.clubhouse.pty.spawn(agentId, cwd, []);
+      await window.clubhouse.pty.spawn(agentId, cwd, modelArgs);
     } catch (err) {
       set((s) => ({
         agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
@@ -209,7 +241,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const agent = get().agents[id];
     if (!agent) return;
     await window.clubhouse.pty.kill(id);
-    const newStatus: AgentStatus = agent.kind === 'durable' ? 'sleeping' : 'stopped';
+    const newStatus: AgentStatus = 'sleeping';
     set((s) => {
       const { [id]: _, ...restStatus } = s.agentDetailedStatus;
       return {
@@ -243,13 +275,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (!agent) return s;
 
       let finalStatus = status;
-      if (status === 'stopped' && agent.kind === 'durable') {
+      if (status === 'sleeping' && agent.kind === 'durable') {
         // If the agent exited within 3 seconds of spawning, treat as error (likely launch failure)
         const spawnedAt = s.agentSpawnedAt[id];
         if (spawnedAt && Date.now() - spawnedAt < 3000) {
           finalStatus = 'error';
-        } else {
-          finalStatus = 'sleeping';
         }
       }
 

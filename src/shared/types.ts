@@ -2,9 +2,11 @@ export interface Project {
   id: string;
   name: string;
   path: string;
+  color?: string;  // AGENT_COLORS id (e.g. 'emerald')
+  icon?: string;   // filename in ~/.clubhouse/project-icons/
 }
 
-export type AgentStatus = 'running' | 'sleeping' | 'stopped' | 'error';
+export type AgentStatus = 'running' | 'sleeping' | 'error';
 export type AgentKind = 'durable' | 'quick';
 
 export interface Agent {
@@ -18,6 +20,21 @@ export interface Agent {
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
+  mission?: string;
+  model?: string;
+  parentAgentId?: string;
+}
+
+export interface CompletedQuickAgent {
+  id: string;
+  projectId: string;
+  name: string;
+  mission: string;
+  summary: string | null;
+  filesModified: string[];
+  exitCode: number;
+  completedAt: number;
+  parentAgentId?: string;
 }
 
 export interface DurableAgentConfig {
@@ -28,6 +45,7 @@ export interface DurableAgentConfig {
   branch: string;
   worktreePath: string;
   createdAt: string;
+  model?: string;
 }
 
 export interface ProjectSettings {
@@ -42,7 +60,18 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'terminal';
+export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'terminal' | 'hub';
+
+export interface NotificationSettings {
+  enabled: boolean;
+  permissionNeeded: boolean;
+  agentIdle: boolean;
+  agentStopped: boolean;
+  agentError: boolean;
+  playSound: boolean;
+}
+
+export type SettingsSubPage = 'project' | 'notifications';
 
 export interface GitStatusFile {
   path: string;

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 import { GitInfo, GitStatusFile } from '../../../shared/types';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -20,8 +21,9 @@ function StatusIcon({ status }: { status: string }) {
   );
 }
 
-export function GitSidebar({ onSelectFile }: { onSelectFile: (path: string) => void }) {
+export function GitSidebar() {
   const { projects, activeProjectId } = useProjectStore();
+  const { selectedGitFile, setSelectedGitFile } = useUIStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -237,7 +239,7 @@ export function GitSidebar({ onSelectFile }: { onSelectFile: (path: string) => v
               <div
                 key={f.path}
                 className="flex items-center gap-2 px-3 py-1 hover:bg-surface-0 cursor-pointer group"
-                onClick={() => onSelectFile(f.path)}
+                onClick={() => setSelectedGitFile({ path: f.path, staged: f.staged })}
               >
                 <StatusIcon status={f.status} />
                 <span className="flex-1 text-xs text-ctp-text truncate">{f.path}</span>
@@ -263,7 +265,7 @@ export function GitSidebar({ onSelectFile }: { onSelectFile: (path: string) => v
               <div
                 key={f.path}
                 className="flex items-center gap-2 px-3 py-1 hover:bg-surface-0 cursor-pointer group"
-                onClick={() => onSelectFile(f.path)}
+                onClick={() => setSelectedGitFile({ path: f.path, staged: f.staged })}
               >
                 <StatusIcon status={f.status} />
                 <span className="flex-1 text-xs text-ctp-text truncate">{f.path}</span>

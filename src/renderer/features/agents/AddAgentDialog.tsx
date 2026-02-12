@@ -1,20 +1,22 @@
 import { useState } from 'react';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
+import { MODEL_OPTIONS } from '../../../shared/models';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, localOnly: boolean) => void;
+  onCreate: (name: string, color: string, localOnly: boolean, model: string) => void;
 }
 
 export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [name, setName] = useState(generateDurableName());
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [localOnly, setLocalOnly] = useState(false);
+  const [model, setModel] = useState('default');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, localOnly);
+    onCreate(name.trim(), color, localOnly, model);
   };
 
   return (
@@ -66,6 +68,21 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
                 />
               ))}
             </div>
+          </label>
+
+          {/* Model */}
+          <label className="block mb-3">
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-text focus:outline-none focus:border-indigo-500"
+            >
+              {MODEL_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
           </label>
 
           {/* Local only */}

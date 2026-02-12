@@ -35,12 +35,20 @@ const api = {
     pickDirectory: () => ipcRenderer.invoke(IPC.PROJECT.PICK_DIR),
     checkGit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.CHECK_GIT, dirPath),
     gitInit: (dirPath: string) => ipcRenderer.invoke(IPC.PROJECT.GIT_INIT, dirPath),
+    update: (id: string, updates: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.PROJECT.UPDATE, id, updates),
+    pickIcon: (projectId: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.PICK_ICON, projectId),
+    reorder: (orderedIds: string[]) =>
+      ipcRenderer.invoke(IPC.PROJECT.REORDER, orderedIds),
+    readIcon: (filename: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_ICON, filename),
   },
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, localOnly: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, localOnly),
+    createDurable: (projectPath: string, name: string, color: string, localOnly: boolean, model?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, localOnly, model),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     getWorktreeStatus: (projectPath: string, agentId: string) =>
@@ -55,6 +63,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_FORCE, projectPath, agentId),
     deleteUnregister: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
+    readQuickSummary: (agentId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId),
     getSettings: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_SETTINGS, projectPath),
     saveSettings: (projectPath: string, settings: any) =>
@@ -80,6 +90,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT.COMMIT, dirPath, message),
     push: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PUSH, dirPath),
     pull: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PULL, dirPath),
+    diff: (dirPath: string, filePath: string, staged: boolean) =>
+      ipcRenderer.invoke(IPC.GIT.DIFF, dirPath, filePath, staged),
   },
   agentSettings: {
     readClaudeMd: (worktreePath: string) =>
@@ -99,6 +111,19 @@ const api = {
       ipcRenderer.invoke(IPC.FILE.WRITE, filePath, content),
     showInFolder: (filePath: string) =>
       ipcRenderer.invoke(IPC.FILE.SHOW_IN_FOLDER, filePath),
+  },
+  app: {
+    getNotificationSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_NOTIFICATION_SETTINGS),
+    saveNotificationSettings: (settings: any) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_NOTIFICATION_SETTINGS, settings),
+    sendNotification: (title: string, body: string, silent: boolean) =>
+      ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent),
+    onOpenSettings: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.OPEN_SETTINGS, listener); };
+    },
   },
 };
 

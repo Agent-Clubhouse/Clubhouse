@@ -1,16 +1,23 @@
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
+import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingClaude } from '../features/agents/SleepingClaude';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
+import { QuickAgentGhost } from '../features/hub/QuickAgentGhost';
 import { GitLog } from '../features/git/GitLog';
+import { GitDiffViewer } from '../features/git/GitDiffViewer';
 import { FileViewer } from '../features/files/FileViewer';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
+import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
+import { CommandCenter } from '../features/hub/CommandCenter';
 
 export function MainContentView() {
-  const { explorerTab } = useUIStore();
+  const { explorerTab, selectedGitFile, settingsSubPage } = useUIStore();
   const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
+  const selectedCompleted = useQuickAgentStore((s) => s.getSelectedCompleted());
+  const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
 
   if (explorerTab === 'agents') {
     const activeAgent = activeAgentId ? agents[activeAgentId] : null;
@@ -27,6 +34,14 @@ export function MainContentView() {
     }
 
     if (!activeAgent) {
+      if (selectedCompleted) {
+        return (
+          <QuickAgentGhost
+            completed={selectedCompleted}
+            onDismiss={() => selectCompleted(null)}
+          />
+        );
+      }
       return (
         <div className="flex items-center justify-center h-full bg-ctp-base">
           <div className="text-center text-ctp-subtext0">
@@ -37,7 +52,7 @@ export function MainContentView() {
       );
     }
 
-    if (activeAgent.status === 'sleeping' || activeAgent.status === 'stopped' || activeAgent.status === 'error') {
+    if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
       return <SleepingClaude agent={activeAgent} />;
     }
 
@@ -46,6 +61,10 @@ export function MainContentView() {
         <AgentTerminal agentId={activeAgentId!} />
       </div>
     );
+  }
+
+  if (explorerTab === 'hub') {
+    return <CommandCenter />;
   }
 
   if (explorerTab === 'terminal') {
@@ -57,11 +76,11 @@ export function MainContentView() {
   }
 
   if (explorerTab === 'git') {
-    return <GitLog />;
+    return selectedGitFile ? <GitDiffViewer /> : <GitLog />;
   }
 
   if (explorerTab === 'settings') {
-    return <ProjectSettings />;
+    return settingsSubPage === 'notifications' ? <NotificationSettingsView /> : <ProjectSettings />;
   }
 
   return (

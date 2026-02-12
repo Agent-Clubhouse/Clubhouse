@@ -4,6 +4,7 @@ import { registerFileHandlers } from './file-handlers';
 import { registerGitHandlers } from './git-handlers';
 import { registerAgentHandlers } from './agent-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
+import { registerAppHandlers } from './app-handlers';
 import * as hookServer from '../services/hook-server';
 
 export function registerAllHandlers(): void {
@@ -13,6 +14,7 @@ export function registerAllHandlers(): void {
   registerGitHandlers();
   registerAgentHandlers();
   registerAgentSettingsHandlers();
+  registerAppHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {

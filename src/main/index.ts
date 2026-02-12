@@ -1,6 +1,11 @@
 import { app, BrowserWindow } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll } from './services/pty-manager';
+import { buildMenu } from './menu';
+
+// Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
+// instead of "Electron" during development.
+app.name = 'Clubhouse';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -35,6 +40,7 @@ const createWindow = (): void => {
 
 app.on('ready', () => {
   registerAllHandlers();
+  buildMenu();
   createWindow();
 });
 

@@ -8,35 +8,38 @@ interface Props {
   isActive: boolean;
   isThinking: boolean;
   onSelect: () => void;
+  onSpawnQuickChild?: () => void;
+  isNested?: boolean;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; dotClass: string }> = {
-  running: { label: 'Running', dotClass: 'bg-green-400' },
-  sleeping: { label: 'Sleeping', dotClass: 'bg-yellow-400' },
-  stopped: { label: 'Stopped', dotClass: 'bg-ctp-subtext0' },
-  error: { label: 'Error', dotClass: 'bg-red-400' },
+const STATUS_CONFIG: Record<string, { label: string }> = {
+  running: { label: 'Running' },
+  sleeping: { label: 'Sleeping' },
+  error: { label: 'Error' },
 };
 
-const DETAILED_DOT: Record<string, string> = {
-  idle: 'bg-green-400',
-  working: 'bg-blue-400',
-  needs_permission: 'bg-orange-400',
-  tool_error: 'bg-red-400',
+const STATUS_RING_COLOR: Record<string, string> = {
+  running: '#22c55e',
+  sleeping: '#6c7086',
+  error: '#f87171',
 };
 
-export function AgentListItem({ agent, isActive, isThinking, onSelect }: Props) {
+export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
   const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.stopped;
+  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const detailed = agentDetailedStatus[agent.id];
+  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+    : baseRingColor;
 
   // Determine what to display for status
   const hasDetailed = agent.status === 'running' && detailed;
-  const dotClass = hasDetailed ? DETAILED_DOT[detailed.state] || 'bg-green-400' : statusInfo.dotClass;
-  const shouldPulse = hasDetailed ? detailed.state === 'working' : isThinking;
+  const isWorking = hasDetailed ? detailed.state === 'working' : isThinking;
   const statusLabel = hasDetailed ? detailed.message : (isThinking ? 'Thinking...' : statusInfo.label);
 
   const handleAction = async (e: React.MouseEvent) => {
@@ -69,27 +72,33 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect }: Props) 
     <div
       onClick={onSelect}
       className={`
-        flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors
+        flex items-center gap-3 py-2.5 cursor-pointer transition-colors
+        ${isNested ? 'pl-7 pr-3' : 'px-3'}
         ${isActive ? 'bg-surface-1' : 'hover:bg-surface-0'}
       `}
     >
-      {/* Avatar */}
-      {isDurable ? (
+      {/* Avatar with status ring */}
+      <div className={`flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
         <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-          style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ border: `2px solid ${ringColor}` }}
         >
-          {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+          {isDurable ? (
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+              style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+            >
+              {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+            </div>
+          ) : (
+            <div className="w-7 h-7 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs flex-shrink-0 bg-surface-2 text-ctp-subtext0">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" />
-            <path d="M6 20v-1c0-2.21 2.69-4 6-4s6 1.79 6 4v1" />
-            <line x1="1" y1="1" x2="23" y2="23" opacity="0.4" />
-          </svg>
-        </div>
-      )}
+      </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
@@ -97,9 +106,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect }: Props) 
           <span className="text-sm text-ctp-text truncate font-medium">{agent.name}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass} ${
-            shouldPulse ? 'animate-pulse' : ''
-          }`} />
           <span className={`text-xs truncate ${
             hasDetailed && detailed.state === 'needs_permission' ? 'text-orange-400' :
             hasDetailed && detailed.state === 'tool_error' ? 'text-red-400' :
@@ -107,14 +113,22 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect }: Props) 
           }`}>
             {statusLabel}
           </span>
-          {agent.status === 'stopped' && agent.exitCode !== undefined && (
-            <span className="text-xs text-ctp-subtext0">· exit {agent.exitCode}</span>
-          )}
         </div>
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-1 flex-shrink-0">
+        {isDurable && onSpawnQuickChild && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onSpawnQuickChild(); }}
+            title="Spawn quick agent in worktree"
+            className="text-xs text-ctp-subtext0 hover:text-yellow-400 transition-colors px-1 cursor-pointer"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+          </button>
+        )}
         {isDurable && (
           <button
             onClick={(e) => { e.stopPropagation(); openAgentSettings(agent.id); }}

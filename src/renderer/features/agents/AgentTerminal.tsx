@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 
 interface Props {
   agentId: string;
+  focused?: boolean;
 }
 
 const CATPPUCCIN_THEME = {
@@ -31,7 +32,7 @@ const CATPPUCCIN_THEME = {
   brightWhite: '#a6adc8',
 };
 
-export function AgentTerminal({ agentId }: Props) {
+export function AgentTerminal({ agentId, focused }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -109,6 +110,12 @@ export function AgentTerminal({ agentId }: Props) {
       fitAddonRef.current = null;
     };
   }, [agentId]);
+
+  useEffect(() => {
+    if (focused && terminalRef.current) {
+      terminalRef.current.focus();
+    }
+  }, [focused]);
 
   return (
     <div

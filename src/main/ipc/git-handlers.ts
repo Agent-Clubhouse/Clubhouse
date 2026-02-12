@@ -30,4 +30,8 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC.GIT.PULL, (_event, dirPath: string) => {
     return gitService.pull(dirPath);
   });
+
+  ipcMain.handle(IPC.GIT.DIFF, (_event, dirPath: string, filePath: string, staged: boolean) => {
+    return gitService.getFileDiff(dirPath, filePath, staged);
+  });
 }

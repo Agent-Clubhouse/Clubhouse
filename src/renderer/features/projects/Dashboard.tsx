@@ -5,18 +5,10 @@ import { useUIStore } from '../../stores/uiStore';
 import { Project, Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 
-const STATUS_CONFIG: Record<string, { label: string; dotClass: string }> = {
-  running: { label: 'Running', dotClass: 'bg-green-400' },
-  sleeping: { label: 'Sleeping', dotClass: 'bg-yellow-400' },
-  stopped: { label: 'Stopped', dotClass: 'bg-ctp-subtext0' },
-  error: { label: 'Error', dotClass: 'bg-red-400' },
-};
-
-const DETAILED_DOT: Record<string, string> = {
-  idle: 'bg-green-400',
-  working: 'bg-blue-400',
-  needs_permission: 'bg-orange-400',
-  tool_error: 'bg-red-400',
+const STATUS_CONFIG: Record<string, { label: string }> = {
+  running: { label: 'Running' },
+  sleeping: { label: 'Sleeping' },
+  error: { label: 'Error' },
 };
 
 function useNavigateToAgent() {
@@ -34,26 +26,53 @@ function useNavigateToAgent() {
   );
 }
 
+const STATUS_RING_COLOR: Record<string, string> = {
+  running: '#22c55e',
+  sleeping: '#6c7086',
+  error: '#f87171',
+};
+
 function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' }) {
-  const dim = size === 'sm' ? 'w-6 h-6 text-[10px]' : 'w-8 h-8 text-xs';
-  if (agent.kind === 'durable') {
-    const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-    return (
-      <div
-        className={`${dim} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0`}
-        style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-      >
-        {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-      </div>
-    );
-  }
-  return (
-    <div
-      className={`${dim} rounded-full flex items-center justify-center flex-shrink-0 bg-surface-2 text-ctp-subtext0`}
-    >
-      <svg width={size === 'sm' ? 10 : 14} height={size === 'sm' ? 10 : 14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const detailed = detailedStatus[agent.id];
+  const isWorking = agent.status === 'running' && detailed?.state === 'working';
+  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
+  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
+    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
+    : baseRingColor;
+
+  const outerDim = size === 'sm' ? 'w-7 h-7' : 'w-9 h-9';
+  const innerDim = size === 'sm' ? 'w-5 h-5 text-[8px]' : 'w-7 h-7 text-[10px]';
+  const iconSize = size === 'sm' ? 8 : 12;
+
+  const inner = agent.kind === 'durable' ? (
+    (() => {
+      const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
+      return (
+        <div
+          className={`${innerDim} rounded-full flex items-center justify-center font-bold text-white`}
+          style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+        >
+          {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+        </div>
+      );
+    })()
+  ) : (
+    <div className={`${innerDim} rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0`}>
+      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
         <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
       </svg>
+    </div>
+  );
+
+  return (
+    <div className={`flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+      <div
+        className={`${outerDim} rounded-full flex items-center justify-center`}
+        style={{ border: `2px solid ${ringColor}` }}
+      >
+        {inner}
+      </div>
     </div>
   );
 }
@@ -66,7 +85,7 @@ function SummaryBar() {
 
   const counts = useMemo(() => {
     const all = Object.values(agents);
-    let working = 0, idle = 0, sleeping = 0, stopped = 0, errored = 0;
+    let working = 0, idle = 0, sleeping = 0, errored = 0;
     for (const a of all) {
       if (a.status === 'running') {
         const d = detailedStatus[a.id];
@@ -76,11 +95,9 @@ function SummaryBar() {
         sleeping++;
       } else if (a.status === 'error') {
         errored++;
-      } else {
-        stopped++;
       }
     }
-    return { working, idle, sleeping, stopped, errored, total: all.length };
+    return { working, idle, sleeping, errored, total: all.length };
   }, [agents, detailedStatus]);
 
   if (counts.total === 0) return null;
@@ -88,8 +105,7 @@ function SummaryBar() {
   const pills: { label: string; count: number; dot: string; pulse?: boolean }[] = [
     { label: 'Working', count: counts.working, dot: 'bg-blue-400', pulse: true },
     { label: 'Idle', count: counts.idle, dot: 'bg-green-400' },
-    { label: 'Sleeping', count: counts.sleeping, dot: 'bg-yellow-400' },
-    { label: 'Stopped', count: counts.stopped, dot: 'bg-ctp-subtext0' },
+    { label: 'Sleeping', count: counts.sleeping, dot: 'bg-ctp-subtext0' },
     { label: 'Error', count: counts.errored, dot: 'bg-red-400' },
   ];
 
@@ -164,10 +180,8 @@ function AgentRow({ agent, navigateToAgent }: { agent: Agent; navigateToAgent: (
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const detailed = detailedStatus[agent.id];
 
-  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.stopped;
+  const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const hasDetailed = agent.status === 'running' && detailed;
-  const dotClass = hasDetailed ? DETAILED_DOT[detailed.state] || 'bg-green-400' : statusInfo.dotClass;
-  const shouldPulse = hasDetailed ? detailed.state === 'working' : false;
   const statusLabel = hasDetailed ? detailed.message : statusInfo.label;
 
   return (
@@ -179,21 +193,18 @@ function AgentRow({ agent, navigateToAgent }: { agent: Agent; navigateToAgent: (
 
       <span className="text-sm text-ctp-text font-medium truncate min-w-0">{agent.name}</span>
 
-      {/* Status */}
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <span className={`w-1.5 h-1.5 rounded-full ${dotClass} ${shouldPulse ? 'animate-pulse' : ''}`} />
-        <span
-          className={`text-xs truncate ${
-            hasDetailed && detailed.state === 'needs_permission'
-              ? 'text-orange-400'
-              : hasDetailed && detailed.state === 'tool_error'
-                ? 'text-red-400'
-                : 'text-ctp-subtext0'
-          }`}
-        >
-          {statusLabel}
-        </span>
-      </div>
+      {/* Status label */}
+      <span
+        className={`text-xs truncate flex-shrink-0 ${
+          hasDetailed && detailed.state === 'needs_permission'
+            ? 'text-orange-400'
+            : hasDetailed && detailed.state === 'tool_error'
+              ? 'text-red-400'
+              : 'text-ctp-subtext0'
+        }`}
+      >
+        {statusLabel}
+      </span>
 
       {/* Branch */}
       {agent.branch && (
@@ -213,10 +224,36 @@ function AgentRow({ agent, navigateToAgent }: { agent: Agent; navigateToAgent: (
 
 /* ─── Project Card ─── */
 
+function ProjectCardIcon({ project }: { project: Project }) {
+  const projectIcons = useProjectStore((s) => s.projectIcons);
+  const iconDataUrl = projectIcons[project.id];
+  const hasImage = !!project.icon && !!iconDataUrl;
+  const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
+  const hex = colorInfo?.hex || '#6366f1';
+
+  if (hasImage) {
+    return (
+      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+        <img src={iconDataUrl} alt={project.name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold flex-shrink-0"
+      style={{ backgroundColor: `${hex}20`, color: hex }}
+    >
+      {project.name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
 function ProjectCard({ project }: { project: Project }) {
   const allAgents = useAgentStore((s) => s.agents);
   const navigateToAgent = useNavigateToAgent();
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const setExplorerTab = useUIStore((s) => s.setExplorerTab);
 
   const agents = useMemo(
     () => Object.values(allAgents).filter((a) => a.projectId === project.id),
@@ -226,24 +263,54 @@ function ProjectCard({ project }: { project: Project }) {
   const durableAgents = agents.filter((a) => a.kind === 'durable');
   const quickAgents = agents.filter((a) => a.kind === 'quick');
 
+  const navigateToTab = useCallback(
+    (tab: 'hub' | 'settings') => {
+      setActiveProject(project.id);
+      setExplorerTab(tab);
+    },
+    [project.id, setActiveProject, setExplorerTab]
+  );
+
   return (
     <div className="bg-ctp-mantle border border-surface-0 rounded-xl overflow-hidden">
       {/* Card Header */}
-      <button
-        onClick={() => setActiveProject(project.id)}
-        className="flex items-center gap-3 px-5 py-4 w-full text-left hover:bg-surface-0/30 transition-colors cursor-pointer"
-      >
-        <div className="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-lg font-bold flex-shrink-0">
-          {project.name.charAt(0).toUpperCase()}
+      <div className="flex items-center gap-3 px-5 py-4">
+        <button
+          onClick={() => setActiveProject(project.id)}
+          className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity cursor-pointer"
+        >
+          <ProjectCardIcon project={project} />
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-ctp-text truncate">{project.name}</h3>
+            <p className="text-xs text-ctp-subtext0 truncate mt-0.5">{project.path}</p>
+          </div>
+        </button>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="text-xs text-ctp-subtext0 mr-1">
+            {agents.length} agent{agents.length !== 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={() => navigateToTab('hub')}
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
+            title="Hub"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L8 8H4l2 6H4l8 8 8-8h-2l2-6h-4L12 2z" />
+              <line x1="12" y1="22" x2="12" y2="16" />
+            </svg>
+          </button>
+          <button
+            onClick={() => navigateToTab('settings')}
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
+            title="Settings"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-ctp-text truncate">{project.name}</h3>
-          <p className="text-xs text-ctp-subtext0 truncate mt-0.5">{project.path}</p>
-        </div>
-        <span className="text-xs text-ctp-subtext0 flex-shrink-0">
-          {agents.length} agent{agents.length !== 1 ? 's' : ''}
-        </span>
-      </button>
+      </div>
 
       {/* Agent Rows */}
       {agents.length > 0 && (

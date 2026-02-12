@@ -1,4 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import * as agentConfig from '../services/agent-config';
 import { writeHooksConfig } from '../services/agent-hooks';
@@ -10,8 +12,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
-    (_event, projectPath: string, name: string, color: string, localOnly: boolean) => {
-      return agentConfig.createDurable(projectPath, name, color, localOnly);
+    (_event, projectPath: string, name: string, color: string, localOnly: boolean, model?: string) => {
+      return agentConfig.createDurable(projectPath, name, color, localOnly, model);
     }
   );
 
@@ -64,5 +66,20 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, (_event, projectPath: string, agentId: string) => {
     return agentConfig.deleteUnregister(projectPath, agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.READ_QUICK_SUMMARY, (_event, agentId: string) => {
+    const filePath = path.join('/tmp', `clubhouse-summary-${agentId}.json`);
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const data = JSON.parse(raw);
+      fs.unlinkSync(filePath);
+      return {
+        summary: typeof data.summary === 'string' ? data.summary : null,
+        filesModified: Array.isArray(data.filesModified) ? data.filesModified : [],
+      };
+    } catch {
+      return null;
+    }
   });
 }

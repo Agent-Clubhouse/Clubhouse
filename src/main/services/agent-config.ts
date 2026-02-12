@@ -58,6 +58,7 @@ export function createDurable(
   name: string,
   color: string,
   localOnly: boolean,
+  model?: string,
 ): DurableAgentConfig {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
@@ -110,6 +111,7 @@ export function createDurable(
     branch,
     worktreePath,
     createdAt: new Date().toISOString(),
+    ...(model && model !== 'default' ? { model } : {}),
   };
 
   const agents = readAgents(projectPath);
