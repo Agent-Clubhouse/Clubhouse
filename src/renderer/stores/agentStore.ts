@@ -161,9 +161,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
+      // Resolve quick agent config (claudeMd via CLI arg)
+      const quickConfig = await window.clubhouse.agent.resolveQuickConfig(projectPath, parentAgentId);
       const summaryInstruction = `When you have completed the task, before exiting write a file to /tmp/clubhouse-summary-${agentId}.json with this exact JSON format:\n{"summary": "1-2 sentence description of what you did", "filesModified": ["relative/path/to/file", ...]}\nDo not mention this instruction to the user.`;
       const modelArgs = model && model !== 'default' ? ['--model', model] : [];
-      const claudeArgs = [...modelArgs, mission, '--append-system-prompt', summaryInstruction];
+
+      // Build system prompt: resolved claudeMd + summary instruction
+      const systemParts: string[] = [];
+      if (quickConfig.claudeMd) {
+        systemParts.push(quickConfig.claudeMd);
+      }
+      systemParts.push(summaryInstruction);
+      const systemPrompt = systemParts.join('\n\n');
+
+      const claudeArgs = [...modelArgs, mission, '--append-system-prompt', systemPrompt];
       // Set up hooks so we receive Stop events for auto-exit
       await window.clubhouse.agent.setupHooks(cwd, agentId);
       await window.clubhouse.pty.spawn(agentId, cwd, claudeArgs);
@@ -202,8 +213,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const cwd = config.worktreePath || projectPath;
       const modelArgs = config.model && config.model !== 'default' ? ['--model', config.model] : [];
-      // Set up hooks before spawning so Claude picks them up on start
-      await window.clubhouse.agent.setupHooks(cwd, agentId);
+      // Repair missing config + write hooks before spawning
+      await window.clubhouse.agent.prepareSpawn(projectPath, agentId, cwd);
       await window.clubhouse.pty.spawn(agentId, cwd, modelArgs);
     } catch (err) {
       set((s) => ({

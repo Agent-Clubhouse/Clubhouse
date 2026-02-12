@@ -81,7 +81,8 @@ export async function writeHooksConfig(worktreePath: string, agentId: string): P
   // Write to settings.local.json (gitignored) to avoid polluting the repo
   const settingsPath = path.join(claudeDir, 'settings.local.json');
 
-  // Merge with existing settings if present
+  // Merge with existing settings if present, preserving permissions key
+  // (coexistence contract: materializer owns 'permissions', hooks owns 'hooks')
   let existing: Record<string, unknown> = {};
   try {
     existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));

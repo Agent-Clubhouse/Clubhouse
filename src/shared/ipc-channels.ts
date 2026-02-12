@@ -41,6 +41,11 @@ export const IPC = {
     DELETE_UNREGISTER: 'agent:delete-unregister',
     RENAME_DURABLE: 'agent:rename-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
+    GET_LOCAL_SETTINGS: 'agent:get-local-settings',
+    SAVE_LOCAL_SETTINGS: 'agent:save-local-settings',
+    TOGGLE_OVERRIDE: 'agent:toggle-override',
+    PREPARE_SPAWN: 'agent:prepare-spawn',
+    RESOLVE_QUICK_CONFIG: 'agent:resolve-quick-config',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

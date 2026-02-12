@@ -73,6 +73,16 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.SAVE_SETTINGS, projectPath, settings),
     setupHooks: (worktreePath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.SETUP_HOOKS, worktreePath, agentId),
+    getLocalSettings: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_LOCAL_SETTINGS, projectPath),
+    saveLocalSettings: (projectPath: string, localConfig: any) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_LOCAL_SETTINGS, projectPath, localConfig),
+    toggleOverride: (projectPath: string, agentId: string, key: string, enable: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.TOGGLE_OVERRIDE, projectPath, agentId, key, enable),
+    prepareSpawn: (projectPath: string, agentId: string, worktreePath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.PREPARE_SPAWN, projectPath, agentId, worktreePath),
+    resolveQuickConfig: (projectPath: string, parentAgentId?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.RESOLVE_QUICK_CONFIG, projectPath, parentAgentId),
     onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) =>
         callback(agentId, hookEvent);
@@ -98,8 +108,8 @@ const api = {
   agentSettings: {
     readClaudeMd: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.AGENT.READ_CLAUDE_MD, worktreePath),
-    saveClaudeMd: (worktreePath: string, content: string) =>
-      ipcRenderer.invoke(IPC.AGENT.SAVE_CLAUDE_MD, worktreePath, content),
+    saveClaudeMd: (worktreePath: string, content: string, projectPath?: string, agentId?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_CLAUDE_MD, worktreePath, content, projectPath, agentId),
     readMcpConfig: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath),
     listSkills: (worktreePath: string) =>

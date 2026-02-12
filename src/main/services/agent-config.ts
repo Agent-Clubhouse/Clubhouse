@@ -1,7 +1,9 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, ConfigLayer, ConfigItemKey } from '../../shared/types';
+import { resolveProjectDefaults, resolveDurableConfig, diffConfigLayers, defaultOverrideFlags } from './config-resolver';
+import { materializeAll, repairMissing } from './config-materializer';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -21,6 +23,10 @@ function settingsPath(projectPath: string): string {
   return path.join(clubhouseDir(projectPath), 'settings.json');
 }
 
+function localSettingsPath(projectPath: string): string {
+  return path.join(clubhouseDir(projectPath), 'settings.local.json');
+}
+
 function ensureGitignore(projectPath: string): void {
   const gitignorePath = path.join(projectPath, '.gitignore');
   const entry = '.clubhouse/';
@@ -38,7 +44,40 @@ function readAgents(projectPath: string): DurableAgentConfig[] {
   const configPath = agentsConfigPath(projectPath);
   if (!fs.existsSync(configPath)) return [];
   try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    let needsWrite = false;
+
+    // Migrate agents that lack override fields
+    for (const agent of agents) {
+      if (!agent.overrides) {
+        agent.overrides = defaultOverrideFlags();
+        agent.quickOverrides = defaultOverrideFlags();
+        agent.quickConfigLayer = {};
+
+        // Auto-detect if agent's CLAUDE.md differs from project default
+        // to avoid overwriting customized content on first sync
+        try {
+          const defaults = resolveProjectDefaults(projectPath);
+          const claudeMdPath = path.join(agent.worktreePath, 'CLAUDE.md');
+          if (fs.existsSync(claudeMdPath)) {
+            const currentContent = fs.readFileSync(claudeMdPath, 'utf-8');
+            if (defaults.claudeMd && currentContent !== defaults.claudeMd) {
+              agent.overrides.claudeMd = true;
+            }
+          }
+        } catch {
+          // Ignore — safe default is all false
+        }
+
+        needsWrite = true;
+      }
+    }
+
+    if (needsWrite) {
+      writeAgents(projectPath, agents);
+    }
+
+    return agents;
   } catch {
     return [];
   }
@@ -94,14 +133,11 @@ export function createDurable(
     ensureDir(worktreePath);
   }
 
-  // Copy default CLAUDE.md if configured
-  const settings = getSettings(projectPath);
-  if (settings.defaultClaudeMd) {
-    const claudeMdPath = path.join(worktreePath, 'CLAUDE.md');
-    if (!fs.existsSync(claudeMdPath)) {
-      fs.writeFileSync(claudeMdPath, settings.defaultClaudeMd, 'utf-8');
-    }
-  }
+  const overrides = defaultOverrideFlags();
+
+  // Materialize all config from project defaults
+  const resolved = resolveProjectDefaults(projectPath);
+  materializeAll(worktreePath, resolved, overrides, projectPath);
 
   const config: DurableAgentConfig = {
     id,
@@ -112,6 +148,9 @@ export function createDurable(
     worktreePath,
     createdAt: new Date().toISOString(),
     ...(model && model !== 'default' ? { model } : {}),
+    overrides,
+    quickOverrides: defaultOverrideFlags(),
+    quickConfigLayer: {},
   };
 
   const agents = readAgents(projectPath);
@@ -169,18 +208,142 @@ export function deleteDurable(projectPath: string, agentId: string): void {
 export function getSettings(projectPath: string): ProjectSettings {
   const p = settingsPath(projectPath);
   if (!fs.existsSync(p)) {
-    return { defaultClaudeMd: '', quickAgentClaudeMd: '' };
+    return { defaults: {}, quickOverrides: {} };
   }
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
+
+    // Migrate old format { defaultClaudeMd, quickAgentClaudeMd } → new format
+    if (raw.defaultClaudeMd !== undefined && !raw.defaults) {
+      const migrated: ProjectSettings = {
+        defaults: { claudeMd: raw.defaultClaudeMd || undefined },
+        quickOverrides: { claudeMd: raw.quickAgentClaudeMd || undefined },
+      };
+      // Write back immediately so migration happens once
+      fs.writeFileSync(p, JSON.stringify(migrated, null, 2), 'utf-8');
+      return migrated;
+    }
+
+    // Ensure defaults and quickOverrides exist
+    if (!raw.defaults) raw.defaults = {};
+    if (!raw.quickOverrides) raw.quickOverrides = {};
+
+    return raw;
   } catch {
-    return { defaultClaudeMd: '', quickAgentClaudeMd: '' };
+    return { defaults: {}, quickOverrides: {} };
   }
 }
 
 export function saveSettings(projectPath: string, settings: ProjectSettings): void {
   ensureDir(clubhouseDir(projectPath));
+
+  // Compute diff to know what changed
+  const oldSettings = getSettings(projectPath);
+  const oldDefaults = resolveProjectDefaults(projectPath);
+
   fs.writeFileSync(settingsPath(projectPath), JSON.stringify(settings, null, 2), 'utf-8');
+
+  // Sync agents with changed defaults
+  const newDefaults = resolveProjectDefaults(projectPath);
+  const changedKeys = diffConfigLayers(oldDefaults, newDefaults);
+  if (changedKeys.length > 0) {
+    syncAllAgents(projectPath, changedKeys);
+  }
+}
+
+export function getLocalSettings(projectPath: string): ConfigLayer {
+  const p = localSettingsPath(projectPath);
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+export function saveLocalSettings(projectPath: string, localConfig: ConfigLayer): void {
+  ensureDir(clubhouseDir(projectPath));
+
+  const oldDefaults = resolveProjectDefaults(projectPath);
+  fs.writeFileSync(localSettingsPath(projectPath), JSON.stringify(localConfig, null, 2), 'utf-8');
+
+  const newDefaults = resolveProjectDefaults(projectPath);
+  const changedKeys = diffConfigLayers(oldDefaults, newDefaults);
+  if (changedKeys.length > 0) {
+    syncAllAgents(projectPath, changedKeys);
+  }
+}
+
+/**
+ * Iterate all agents, re-materialize non-overridden items for changed keys.
+ */
+export function syncAllAgents(projectPath: string, changedKeys?: ConfigItemKey[]): void {
+  const agents = readAgents(projectPath);
+  const defaults = resolveProjectDefaults(projectPath);
+
+  for (const agent of agents) {
+    if (!fs.existsSync(agent.worktreePath)) continue;
+    const overrides = agent.overrides || defaultOverrideFlags();
+
+    // Build a resolved layer with only the changed (and non-overridden) items
+    const toApply: ConfigLayer = {};
+    const keysToCheck = changedKeys || (['claudeMd', 'permissions', 'mcpConfig'] as ConfigItemKey[]);
+
+    for (const key of keysToCheck) {
+      if (!overrides[key] && key in defaults) {
+        (toApply as Record<string, unknown>)[key] = (defaults as Record<string, unknown>)[key];
+      }
+    }
+
+    materializeAll(agent.worktreePath, toApply, overrides, projectPath);
+  }
+}
+
+/**
+ * Toggle an override flag for an agent.
+ * If disabling: re-materialize from defaults.
+ * If enabling for dirs: current content stays (snapshot).
+ */
+export function toggleOverride(
+  projectPath: string,
+  agentId: string,
+  key: ConfigItemKey,
+  enable: boolean,
+): DurableAgentConfig | null {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return null;
+
+  if (!agent.overrides) agent.overrides = defaultOverrideFlags();
+  agent.overrides[key] = enable;
+
+  writeAgents(projectPath, agents);
+
+  // If disabling override (reverting to synced), re-materialize from defaults
+  if (!enable && fs.existsSync(agent.worktreePath)) {
+    const defaults = resolveProjectDefaults(projectPath);
+    const resolved: ConfigLayer = {};
+
+    if (key === 'claudeMd' || key === 'permissions' || key === 'mcpConfig') {
+      (resolved as Record<string, unknown>)[key] = (defaults as Record<string, unknown>)[key];
+    }
+
+    materializeAll(agent.worktreePath, resolved, agent.overrides, projectPath);
+  }
+
+  return agent;
+}
+
+/**
+ * Prepare an agent for spawn: repair missing config + write hooks.
+ */
+export function prepareSpawn(projectPath: string, agentId: string): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return;
+
+  const resolved = resolveDurableConfig(projectPath, agentId);
+  const overrides = agent.overrides || defaultOverrideFlags();
+  repairMissing(agent.worktreePath, resolved, overrides, projectPath);
 }
 
 function detectBaseBranch(projectPath: string): string {

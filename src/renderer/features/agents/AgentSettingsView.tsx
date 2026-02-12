@@ -1,15 +1,28 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Agent, McpServerEntry, SkillEntry } from '../../../shared/types';
+import { Agent, McpServerEntry, SkillEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { UtilityTerminal } from './UtilityTerminal';
+import { ConfigOverrideToggle } from '../settings/ConfigOverrideToggle';
+import { PermissionsEditor } from '../settings/PermissionsEditor';
 
 interface Props {
   agent: Agent;
 }
 
+const DEFAULT_OVERRIDES: OverrideFlags = {
+  claudeMd: false,
+  permissions: false,
+  mcpConfig: false,
+  skills: false,
+  agents: false,
+};
+
 export function AgentSettingsView({ agent }: Props) {
   const { closeAgentSettings } = useAgentStore();
+  const { projects, activeProjectId } = useProjectStore();
+  const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath as string;
 
@@ -18,6 +31,18 @@ export function AgentSettingsView({ agent }: Props) {
   const [saving, setSaving] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
+  const [overrides, setOverrides] = useState<OverrideFlags>(DEFAULT_OVERRIDES);
+  const [permissions, setPermissions] = useState<PermissionsConfig>({});
+
+  // Load override flags from agent config
+  const loadOverrides = useCallback(async () => {
+    if (!activeProject) return;
+    const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(activeProject.path);
+    const config = configs.find((c) => c.id === agent.id);
+    if (config?.overrides) {
+      setOverrides(config.overrides);
+    }
+  }, [activeProject, agent.id]);
 
   // Refresh only MCP + skills (won't clobber unsaved CLAUDE.md edits)
   const refreshLists = useCallback(async () => {
@@ -44,7 +69,8 @@ export function AgentSettingsView({ agent }: Props) {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadOverrides();
+  }, [loadData, loadOverrides]);
 
   // Auto-refresh: listen for utility terminal PTY activity, debounce refresh
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -66,15 +92,33 @@ export function AgentSettingsView({ agent }: Props) {
   }, [utilityPtyId, refreshLists]);
 
   const handleSaveClaudeMd = async () => {
+    if (!activeProject) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.saveClaudeMd(worktreePath, claudeMd);
+    await window.clubhouse.agentSettings.saveClaudeMd(worktreePath, claudeMd, activeProject.path, agent.id);
     setClaudeMdDirty(false);
     setSaving(false);
+    // Reload overrides since saving may auto-set claudeMd override to true
+    loadOverrides();
   };
 
   const handleRefresh = () => {
     refreshLists();
   };
+
+  const handleToggleOverride = async (key: ConfigItemKey, synced: boolean) => {
+    if (!activeProject) return;
+    const result = await window.clubhouse.agent.toggleOverride(activeProject.path, agent.id, key, !synced);
+    if (result?.overrides) {
+      setOverrides(result.overrides);
+      // Reload data since toggling may have changed file contents
+      loadData();
+    }
+  };
+
+  const claudeMdSynced = !overrides.claudeMd;
+  const permissionsSynced = !overrides.permissions;
+  const mcpSynced = !overrides.mcpConfig;
+  const skillsSynced = !overrides.skills;
 
   return (
     <div className="h-full flex flex-col bg-ctp-base">
@@ -115,32 +159,69 @@ export function AgentSettingsView({ agent }: Props) {
       <div className="flex-[2] overflow-y-auto min-h-0 px-4 py-4 space-y-6">
         {/* CLAUDE.md Section */}
         <section>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">CLAUDE.md</h3>
-            <button
-              onClick={handleSaveClaudeMd}
-              disabled={!claudeMdDirty || saving}
-              className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer ${
-                claudeMdDirty
-                  ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80'
-                  : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-              }`}
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
+            {!claudeMdSynced && (
+              <button
+                onClick={handleSaveClaudeMd}
+                disabled={!claudeMdDirty || saving}
+                className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer ${
+                  claudeMdDirty
+                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80'
+                    : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                }`}
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            )}
           </div>
-          <textarea
-            value={claudeMd}
-            onChange={(e) => { setClaudeMd(e.target.value); setClaudeMdDirty(true); }}
-            placeholder="# Agent instructions&#10;&#10;Add custom instructions for this agent..."
-            className="w-full h-48 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
-            spellCheck={false}
+          <ConfigOverrideToggle
+            label="CLAUDE.md"
+            synced={claudeMdSynced}
+            onToggle={(synced) => handleToggleOverride('claudeMd', synced)}
           />
+          {claudeMdSynced ? (
+            <div className="bg-surface-0 rounded-lg p-3 border border-surface-1">
+              <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-1">Managed by project</div>
+              <pre className="text-xs text-ctp-subtext0 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {claudeMd || '(empty)'}
+              </pre>
+            </div>
+          ) : (
+            <textarea
+              value={claudeMd}
+              onChange={(e) => { setClaudeMd(e.target.value); setClaudeMdDirty(true); }}
+              placeholder="# Agent instructions&#10;&#10;Add custom instructions for this agent..."
+              className="w-full h-48 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+              spellCheck={false}
+            />
+          )}
+        </section>
+
+        {/* Permissions Section */}
+        <section>
+          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Permissions</h3>
+          <ConfigOverrideToggle
+            label="Permissions"
+            synced={permissionsSynced}
+            onToggle={(synced) => handleToggleOverride('permissions', synced)}
+          />
+          {permissionsSynced ? (
+            <div className="bg-surface-0 rounded-lg p-3 border border-surface-1">
+              <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-1">Managed by project</div>
+              <div className="text-xs text-ctp-subtext0">Permission rules are synced from project defaults.</div>
+            </div>
+          ) : (
+            <PermissionsEditor
+              value={permissions}
+              onChange={setPermissions}
+            />
+          )}
         </section>
 
         {/* MCP Servers Section */}
         <section>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">MCP Servers</h3>
             <button
               onClick={handleRefresh}
@@ -155,9 +236,17 @@ export function AgentSettingsView({ agent }: Props) {
               </svg>
             </button>
           </div>
+          <ConfigOverrideToggle
+            label="MCP"
+            synced={mcpSynced}
+            onToggle={(synced) => handleToggleOverride('mcpConfig', synced)}
+          />
+          {mcpSynced && (
+            <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-2">Managed by project</div>
+          )}
           {mcpServers.length === 0 ? (
             <div className="text-xs text-ctp-subtext0 bg-surface-0 rounded-lg p-3">
-              No MCP servers configured. Use the terminal below to edit <code className="text-ctp-blue">.mcp.json</code>.
+              No MCP servers configured. {!mcpSynced && <>Use the terminal below to edit <code className="text-ctp-blue">.mcp.json</code>.</>}
             </div>
           ) : (
             <div className="space-y-2">
@@ -184,12 +273,20 @@ export function AgentSettingsView({ agent }: Props) {
 
         {/* Skills Section */}
         <section>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
           </div>
+          <ConfigOverrideToggle
+            label="Skills"
+            synced={skillsSynced}
+            onToggle={(synced) => handleToggleOverride('skills', synced)}
+          />
+          {skillsSynced && (
+            <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-2">Managed by project</div>
+          )}
           {skills.length === 0 ? (
             <div className="text-xs text-ctp-subtext0 bg-surface-0 rounded-lg p-3">
-              No skills installed. Use the terminal below to add skills to <code className="text-ctp-blue">.claude/skills/</code>.
+              No skills installed. {!skillsSynced && <>Use the terminal below to add skills to <code className="text-ctp-blue">.claude/skills/</code>.</>}
             </div>
           ) : (
             <div className="space-y-2">

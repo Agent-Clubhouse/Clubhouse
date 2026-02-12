@@ -37,6 +37,46 @@ export interface CompletedQuickAgent {
   parentAgentId?: string;
 }
 
+// --- Config inheritance types ---
+
+export type ConfigItemKey = 'claudeMd' | 'permissions' | 'mcpConfig' | 'skills' | 'agents';
+export type OverrideFlags = Record<ConfigItemKey, boolean>;
+
+export interface PermissionsConfig {
+  allow?: string[];
+  deny?: string[];
+}
+
+export interface McpConfig {
+  mcpServers: Record<string, McpServerDef>;
+}
+
+export interface McpServerDef {
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  type?: string;
+  url?: string;
+}
+
+/** A layer of config values. undefined = inherit, null = explicitly cleared. */
+export interface ConfigLayer {
+  claudeMd?: string | null;
+  permissions?: PermissionsConfig | null;
+  mcpConfig?: McpConfig | null;
+}
+
+export interface ProjectSettings {
+  // Legacy fields (kept for migration)
+  defaultClaudeMd?: string;
+  quickAgentClaudeMd?: string;
+  // New fields
+  defaults: ConfigLayer;
+  quickOverrides: ConfigLayer;
+  defaultSkillsPath?: string;
+  defaultAgentsPath?: string;
+}
+
 export interface DurableAgentConfig {
   id: string;
   name: string;
@@ -46,11 +86,9 @@ export interface DurableAgentConfig {
   worktreePath: string;
   createdAt: string;
   model?: string;
-}
-
-export interface ProjectSettings {
-  defaultClaudeMd: string;
-  quickAgentClaudeMd: string;
+  overrides: OverrideFlags;
+  quickOverrides: OverrideFlags;
+  quickConfigLayer: ConfigLayer;
 }
 
 export interface FileNode {
