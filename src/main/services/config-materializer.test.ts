@@ -256,7 +256,7 @@ describe('repairMissing', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
 
     const overrides = defaultOverrideFlags();
-    const resolved = { claudeMd: null };
+    const resolved: Record<string, string | null> = { claudeMd: null };
     repairMissing(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;

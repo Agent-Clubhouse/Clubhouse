@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
-import { useNotesStore } from '../../stores/notesStore';
+import { useNotesStore, notesDir } from '../../stores/notesStore';
+import { FileNode } from '../../../shared/types';
 
 export function NotesList() {
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const { notes, selectedNote, loadNotes, setSelectedNote, createNote, deleteNote, renameNote } = useNotesStore();
+  const { tree, selectedNote, loadNotes, setSelectedNote, createNote, deleteEntry, renameNote } = useNotesStore();
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -27,15 +28,15 @@ export function NotesList() {
     if (!activeProject) return;
     const title = window.prompt('Note title:');
     if (!title?.trim()) return;
-    await createNote(activeProject.path, title.trim());
+    await createNote(activeProject.path, notesDir(activeProject.path), title.trim());
   }, [activeProject, createNote]);
 
   const handleDelete = useCallback(async (notePath: string) => {
     if (!activeProject) return;
     const ok = window.confirm('Delete this note?');
     if (!ok) return;
-    await deleteNote(notePath, activeProject.path);
-  }, [activeProject, deleteNote]);
+    await deleteEntry(notePath, activeProject.path);
+  }, [activeProject, deleteEntry]);
 
   const handleRenameStart = useCallback((notePath: string, currentName: string) => {
     setRenamingPath(notePath);
@@ -50,6 +51,21 @@ export function NotesList() {
     await renameNote(renamingPath, renameValue.trim(), activeProject.path);
     setRenamingPath(null);
   }, [renamingPath, renameValue, activeProject, renameNote]);
+
+  // Flatten tree to get leaf notes (non-directory files)
+  const flattenNotes = (nodes: FileNode[]): FileNode[] => {
+    const result: FileNode[] = [];
+    for (const node of nodes) {
+      if (node.isDirectory && node.children) {
+        result.push(...flattenNotes(node.children));
+      } else if (!node.isDirectory) {
+        result.push(node);
+      }
+    }
+    return result;
+  };
+
+  const notes = flattenNotes(tree);
 
   return (
     <div className="flex flex-col h-full">
@@ -69,7 +85,7 @@ export function NotesList() {
         {notes.length === 0 && (
           <div className="px-3 py-2 text-xs text-ctp-subtext0">No notes yet</div>
         )}
-        {notes.map((note) => (
+        {notes.map((note: FileNode) => (
           <div
             key={note.path}
             className={`group flex items-center gap-1.5 py-1 px-3 cursor-pointer hover:bg-surface-0 ${

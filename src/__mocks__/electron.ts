@@ -7,7 +7,7 @@ export const app = {
 };
 
 export const BrowserWindow = {
-  getAllWindows: () => [],
+  getAllWindows: (): unknown[] => [],
 };
 
 export const Notification = class {
@@ -30,8 +30,8 @@ export const ipcMain = {
 };
 
 export const dialog = {
-  showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
-  showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
+  showOpenDialog: async () => ({ canceled: true, filePaths: [] as string[] }),
+  showSaveDialog: async () => ({ canceled: true, filePath: undefined as string | undefined }),
 };
 
 export default { app, BrowserWindow, Notification, ipcMain, dialog };

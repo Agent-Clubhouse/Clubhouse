@@ -42,7 +42,7 @@ describe('mergeConfigLayers', () => {
 
   it('null in overlay clears the value', () => {
     const base = { claudeMd: 'base md' };
-    const overlay = { claudeMd: null };
+    const overlay: Record<string, string | null> = { claudeMd: null };
     const result = mergeConfigLayers(base, overlay);
     expect(result.claudeMd).toBeNull();
   });

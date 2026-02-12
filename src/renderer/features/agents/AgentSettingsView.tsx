@@ -85,7 +85,7 @@ export function AgentSettingsView({ agent }: Props) {
     setEmojiValue(value);
     if (!activeProject) return;
     // Take only the first emoji/character cluster
-    const segment = [...new Intl.Segmenter().segment(value)].map(s => s.segment);
+    const segment = [...new (Intl as any).Segmenter().segment(value)].map((s: any) => s.segment);
     const emoji = segment[0] || '';
     if (emoji !== (agent.emoji || '')) {
       await updateAgent(agent.id, { emoji: emoji || null }, activeProject.path);
