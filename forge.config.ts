@@ -8,16 +8,49 @@ import { WebpackPlugin } from '@electron-forge/plugin-webpack';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import path from 'path';
+import fs from 'fs';
 
 import { mainConfig } from './webpack.main.config';
 import { rendererConfig } from './webpack.renderer.config';
+
+function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string): void {
+  const src = path.join(srcRoot, 'node_modules', moduleName);
+  const dest = path.join(destRoot, 'node_modules', moduleName);
+  if (!fs.existsSync(src)) return;
+  fs.cpSync(src, dest, { recursive: true });
+
+  // Also copy transitive native dependencies listed in the module's package.json
+  const pkgPath = path.join(src, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    const deps = { ...pkg.dependencies, ...pkg.optionalDependencies };
+    for (const dep of Object.keys(deps)) {
+      const depSrc = path.join(srcRoot, 'node_modules', dep);
+      const depDest = path.join(destRoot, 'node_modules', dep);
+      if (fs.existsSync(depSrc) && !fs.existsSync(depDest)) {
+        fs.cpSync(depSrc, depDest, { recursive: true });
+      }
+    }
+  }
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
     icon: path.resolve(__dirname, 'assets', 'icon'),
     asar: {
-      unpack: '**/node_modules/node-pty/**',
+      unpack: '**/{node_modules/node-pty,node_modules/node-addon-api,**/*.node}',
     },
+    afterCopy: [
+      (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (err?: Error) => void) => {
+        try {
+          const projectRoot = path.resolve(__dirname);
+          copyNativeModule(projectRoot, buildPath, 'node-pty');
+          callback();
+        } catch (err) {
+          callback(err as Error);
+        }
+      },
+    ],
   },
   rebuildConfig: {},
   makers: [
