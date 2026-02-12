@@ -24,6 +24,7 @@ import {
   listDurable,
   createDurable,
   renameDurable,
+  updateDurable,
   deleteDurable,
   getSettings,
   saveSettings,
@@ -338,6 +339,57 @@ describe('renameDurable', () => {
     renameDurable(PROJECT_PATH, 'durable_ren', 'new-name');
     const result = JSON.parse(writtenAgents);
     expect(result[0].name).toBe('new-name');
+  });
+});
+
+describe('updateDurable', () => {
+  let writtenAgents: string;
+  const agents = [{ id: 'durable_upd', name: 'old-name', color: 'indigo', emoji: '🔥', localOnly: false, branch: 'old-name/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    writtenAgents = '';
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
+  });
+
+  it('updates name only', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { name: 'new-name' });
+    const result = JSON.parse(writtenAgents);
+    expect(result[0].name).toBe('new-name');
+    expect(result[0].color).toBe('indigo');
+    expect(result[0].emoji).toBe('🔥');
+  });
+
+  it('updates color only', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { color: 'emerald' });
+    const result = JSON.parse(writtenAgents);
+    expect(result[0].color).toBe('emerald');
+    expect(result[0].name).toBe('old-name');
+  });
+
+  it('sets emoji', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '🚀' });
+    const result = JSON.parse(writtenAgents);
+    expect(result[0].emoji).toBe('🚀');
+  });
+
+  it('clears emoji when null', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: null });
+    const result = JSON.parse(writtenAgents);
+    expect(result[0]).not.toHaveProperty('emoji');
+  });
+
+  it('clears emoji when empty string', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '' });
+    const result = JSON.parse(writtenAgents);
+    expect(result[0]).not.toHaveProperty('emoji');
+  });
+
+  it('no-op for unknown agentId', () => {
+    updateDurable(PROJECT_PATH, 'nonexistent', { name: 'foo' });
+    expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
   });
 });
 

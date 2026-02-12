@@ -53,6 +53,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
       ipcRenderer.invoke(IPC.AGENT.RENAME_DURABLE, projectPath, agentId, newName),
+    updateDurable: (projectPath: string, agentId: string, updates: { name?: string; color?: string; emoji?: string | null }) =>
+      ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE, projectPath, agentId, updates),
     getWorktreeStatus: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_WORKTREE_STATUS, projectPath, agentId),
     deleteCommitPush: (projectPath: string, agentId: string) =>

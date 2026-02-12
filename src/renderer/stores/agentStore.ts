@@ -45,6 +45,7 @@ interface AgentState {
   removeAgent: (id: string) => void;
   deleteDurableAgent: (id: string, projectPath: string) => Promise<void>;
   renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
+  updateAgent: (id: string, updates: { name?: string; color?: string; emoji?: string | null }, projectPath: string) => Promise<void>;
   updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
   recordActivity: (id: string) => void;
@@ -228,6 +229,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           kind: 'durable',
           status: 'sleeping',
           color: config.color,
+          emoji: config.emoji,
           localOnly: config.localOnly,
           worktreePath: config.worktreePath,
           branch: config.branch,
@@ -243,6 +245,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({
       agents: { ...s.agents, [id]: { ...s.agents[id], name: newName } },
     }));
+  },
+
+  updateAgent: async (id, updates, projectPath) => {
+    await window.clubhouse.agent.updateDurable(projectPath, id, updates);
+    set((s) => {
+      const agent = s.agents[id];
+      if (!agent) return s;
+      const patched = { ...agent };
+      if (updates.name !== undefined) patched.name = updates.name;
+      if (updates.color !== undefined) patched.color = updates.color;
+      if (updates.emoji !== undefined) {
+        patched.emoji = updates.emoji === null ? undefined : updates.emoji;
+      }
+      return { agents: { ...s.agents, [id]: patched } };
+    });
   },
 
   killAgent: async (id) => {

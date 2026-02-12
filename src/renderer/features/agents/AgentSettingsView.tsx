@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Agent, McpServerEntry, SkillEntry } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { UtilityTerminal } from './UtilityTerminal';
 
 interface Props {
@@ -9,7 +10,9 @@ interface Props {
 }
 
 export function AgentSettingsView({ agent }: Props) {
-  const { closeAgentSettings } = useAgentStore();
+  const { closeAgentSettings, updateAgent } = useAgentStore();
+  const { projects, activeProjectId } = useProjectStore();
+  const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath as string;
 
@@ -18,6 +21,60 @@ export function AgentSettingsView({ agent }: Props) {
   const [saving, setSaving] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
+
+  // Appearance editing state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(agent.name);
+  const [emojiValue, setEmojiValue] = useState(agent.emoji || '');
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [isRenaming]);
+
+  const handleRenameConfirm = async () => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== agent.name && activeProject) {
+      await updateAgent(agent.id, { name: trimmed }, activeProject.path);
+    }
+    setIsRenaming(false);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameConfirm();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setRenameValue(agent.name);
+      setIsRenaming(false);
+    }
+  };
+
+  const handleColorChange = async (colorId: string) => {
+    if (!activeProject || colorId === agent.color) return;
+    await updateAgent(agent.id, { color: colorId }, activeProject.path);
+  };
+
+  const handleEmojiChange = async (value: string) => {
+    setEmojiValue(value);
+    if (!activeProject) return;
+    // Take only the first emoji/character cluster
+    const segment = [...new Intl.Segmenter().segment(value)].map(s => s.segment);
+    const emoji = segment[0] || '';
+    if (emoji !== (agent.emoji || '')) {
+      await updateAgent(agent.id, { emoji: emoji || null }, activeProject.path);
+    }
+  };
+
+  const handleClearEmoji = async () => {
+    setEmojiValue('');
+    if (!activeProject) return;
+    await updateAgent(agent.id, { emoji: null }, activeProject.path);
+  };
 
   // Refresh only MCP + skills (won't clobber unsaved CLAUDE.md edits)
   const refreshLists = useCallback(async () => {
@@ -91,9 +148,11 @@ export function AgentSettingsView({ agent }: Props) {
           </svg>
         </button>
         <div
-          className="w-6 h-6 rounded-full flex-shrink-0"
+          className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
           style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-        />
+        >
+          {agent.emoji || ''}
+        </div>
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
         <span className="text-xs text-ctp-subtext0">Settings</span>
         <div className="flex-1" />
@@ -113,6 +172,101 @@ export function AgentSettingsView({ agent }: Props) {
 
       {/* Top 2/3: scrollable settings */}
       <div className="flex-[2] overflow-y-auto min-h-0 px-4 py-4 space-y-6">
+        {/* Appearance Section */}
+        <section>
+          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-3">Appearance</h3>
+          <div className="flex items-start gap-4">
+            {/* Large avatar preview */}
+            <div
+              className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+            >
+              {agent.emoji ? (
+                <span className="text-2xl">{agent.emoji}</span>
+              ) : (
+                <span className="text-base font-bold text-white">
+                  {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+                </span>
+              )}
+            </div>
+
+            <div className="flex-1 space-y-3">
+              {/* Rename */}
+              <div>
+                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Name</span>
+                <div className="flex gap-2 mt-1">
+                  {isRenaming ? (
+                    <input
+                      ref={renameInputRef}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={handleRenameConfirm}
+                      onKeyDown={handleRenameKeyDown}
+                      className="flex-1 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue"
+                    />
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm text-ctp-text truncate py-1">{agent.name}</span>
+                      <button
+                        onClick={() => { setRenameValue(agent.name); setIsRenaming(true); }}
+                        disabled={agent.status === 'running'}
+                        className={`text-xs px-2 py-1 rounded transition-colors ${
+                          agent.status === 'running'
+                            ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed'
+                            : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer'
+                        }`}
+                        title={agent.status === 'running' ? 'Stop agent to rename' : 'Rename'}
+                      >
+                        Rename
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Color picker */}
+              <div>
+                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Color</span>
+                <div className="flex gap-2 mt-1.5">
+                  {AGENT_COLORS.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleColorChange(c.id)}
+                      className={`w-6 h-6 rounded-full cursor-pointer transition-all ${
+                        agent.color === c.id ? 'ring-2 ring-offset-2 ring-offset-ctp-base scale-110' : 'opacity-60 hover:opacity-100'
+                      }`}
+                      style={{ backgroundColor: c.hex, ...(agent.color === c.id ? { boxShadow: `0 0 0 2px ${c.hex}40` } : {}) }}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Emoji input */}
+              <div>
+                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Emoji</span>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    value={emojiValue}
+                    onChange={(e) => handleEmojiChange(e.target.value)}
+                    placeholder="Paste an emoji..."
+                    className="w-24 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text text-center focus:outline-none focus:border-ctp-blue"
+                  />
+                  {(agent.emoji || emojiValue) && (
+                    <button
+                      onClick={handleClearEmoji}
+                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* CLAUDE.md Section */}
         <section>
           <div className="flex items-center justify-between mb-2">

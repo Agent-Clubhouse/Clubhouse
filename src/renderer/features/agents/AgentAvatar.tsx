@@ -29,6 +29,19 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
       );
     }
 
+    // Emoji avatar
+    if (agent.emoji) {
+      const emojiSize = size === 'sm' ? 'text-sm' : 'text-base';
+      return (
+        <div
+          className={`${innerSize} rounded-full flex items-center justify-center ${emojiSize}`}
+          style={{ backgroundColor: bgColor }}
+        >
+          {agent.emoji}
+        </div>
+      );
+    }
+
     // Default initials
     const initials = agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return (

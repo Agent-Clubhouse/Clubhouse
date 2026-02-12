@@ -129,6 +129,26 @@ export function renameDurable(projectPath: string, agentId: string, newName: str
   writeAgents(projectPath, agents);
 }
 
+export function updateDurable(
+  projectPath: string,
+  agentId: string,
+  updates: { name?: string; color?: string; emoji?: string | null },
+): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return;
+  if (updates.name !== undefined) agent.name = updates.name;
+  if (updates.color !== undefined) agent.color = updates.color;
+  if (updates.emoji !== undefined) {
+    if (updates.emoji === null || updates.emoji === '') {
+      delete agent.emoji;
+    } else {
+      agent.emoji = updates.emoji;
+    }
+  }
+  writeAgents(projectPath, agents);
+}
+
 export function deleteDurable(projectPath: string, agentId: string): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);

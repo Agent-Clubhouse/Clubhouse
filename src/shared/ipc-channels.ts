@@ -40,6 +40,7 @@ export const IPC = {
     DELETE_FORCE: 'agent:delete-force',
     DELETE_UNREGISTER: 'agent:delete-unregister',
     RENAME_DURABLE: 'agent:rename-durable',
+    UPDATE_DURABLE: 'agent:update-durable',
     READ_QUICK_SUMMARY: 'agent:read-quick-summary',
   },
   FILE: {

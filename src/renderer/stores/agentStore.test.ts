@@ -11,6 +11,7 @@ vi.stubGlobal('window', {
       listDurable: vi.fn().mockResolvedValue([]),
       setupHooks: vi.fn().mockResolvedValue(undefined),
       renameDurable: vi.fn().mockResolvedValue(undefined),
+      updateDurable: vi.fn().mockResolvedValue(undefined),
       deleteDurable: vi.fn().mockResolvedValue(undefined),
       deleteCommitPush: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteCleanupBranch: vi.fn().mockResolvedValue({ ok: true, message: '' }),
@@ -219,6 +220,39 @@ describe('agentStore', () => {
       seedAgent({ id: 'a_noname', status: 'running' });
       getState().handleHookEvent('a_noname', { eventName: 'PreToolUse', timestamp: 100 });
       expect(getState().agentDetailedStatus['a_noname'].message).toBe('Working');
+    });
+  });
+
+  describe('updateAgent', () => {
+    it('patches name in local state', async () => {
+      seedAgent({ id: 'a_upd', name: 'old' });
+      await getState().updateAgent('a_upd', { name: 'new' }, '/proj');
+      expect(getState().agents['a_upd'].name).toBe('new');
+      expect(getState().agents['a_upd'].color).toBe('indigo'); // unchanged
+    });
+
+    it('patches color in local state', async () => {
+      seedAgent({ id: 'a_color', color: 'indigo' });
+      await getState().updateAgent('a_color', { color: 'emerald' }, '/proj');
+      expect(getState().agents['a_color'].color).toBe('emerald');
+    });
+
+    it('sets emoji in local state', async () => {
+      seedAgent({ id: 'a_emoji' });
+      await getState().updateAgent('a_emoji', { emoji: '🔥' }, '/proj');
+      expect(getState().agents['a_emoji'].emoji).toBe('🔥');
+    });
+
+    it('clears emoji (null → undefined) in local state', async () => {
+      seedAgent({ id: 'a_clear', emoji: '🔥' });
+      await getState().updateAgent('a_clear', { emoji: null }, '/proj');
+      expect(getState().agents['a_clear'].emoji).toBeUndefined();
+    });
+
+    it('calls updateDurable IPC', async () => {
+      seedAgent({ id: 'a_ipc' });
+      await getState().updateAgent('a_ipc', { name: 'x', color: 'amber' }, '/proj');
+      expect(window.clubhouse.agent.updateDurable).toHaveBeenCalledWith('/proj', 'a_ipc', { name: 'x', color: 'amber' });
     });
   });
 

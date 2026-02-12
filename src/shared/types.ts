@@ -16,6 +16,7 @@ export interface Agent {
   kind: AgentKind;
   status: AgentStatus;
   color: string;
+  emoji?: string;
   localOnly: boolean;
   worktreePath?: string;
   branch?: string;
@@ -41,6 +42,7 @@ export interface DurableAgentConfig {
   id: string;
   name: string;
   color: string;
+  emoji?: string;
   localOnly: boolean;
   branch: string;
   worktreePath: string;

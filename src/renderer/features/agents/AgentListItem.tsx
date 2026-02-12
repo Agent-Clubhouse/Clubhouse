@@ -1,4 +1,3 @@
-import { useState, useRef, useEffect } from 'react';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -26,45 +25,9 @@ const STATUS_RING_COLOR: Record<string, string> = {
 };
 
 export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
-  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, renameAgent, agentDetailedStatus } = useAgentStore();
+  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(agent.name);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
-  const handleRenameStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditValue(agent.name);
-    setIsEditing(true);
-  };
-
-  const handleRenameConfirm = async () => {
-    const trimmed = editValue.trim();
-    if (trimmed && trimmed !== agent.name && activeProject) {
-      await renameAgent(agent.id, trimmed, activeProject.path);
-    }
-    setIsEditing(false);
-  };
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleRenameConfirm();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setEditValue(agent.name);
-      setIsEditing(false);
-    }
-  };
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
@@ -122,10 +85,10 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         >
           {isDurable ? (
             <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+              className={`w-7 h-7 rounded-full flex items-center justify-center ${agent.emoji ? 'text-sm' : 'text-[10px] font-bold text-white'}`}
               style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
             >
-              {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+              {agent.emoji || agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
             </div>
           ) : (
             <div className="w-7 h-7 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0">
@@ -140,19 +103,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          {isEditing ? (
-            <input
-              ref={inputRef}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={handleRenameConfirm}
-              onKeyDown={handleRenameKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm text-ctp-text font-medium bg-surface-0 border border-surface-2 rounded px-1 py-0 outline-none focus:border-ctp-blue w-full"
-            />
-          ) : (
-            <span className="text-sm text-ctp-text truncate font-medium">{agent.name}</span>
-          )}
+          <span className="text-sm text-ctp-text truncate font-medium">{agent.name}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className={`text-xs truncate ${
@@ -175,18 +126,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-            </svg>
-          </button>
-        )}
-        {isDurable && (
-          <button
-            onClick={handleRenameStart}
-            title="Rename agent"
-            className="text-xs text-ctp-subtext0 hover:text-ctp-blue transition-colors px-1 cursor-pointer"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-              <path d="m15 5 4 4" />
             </svg>
           </button>
         )}
