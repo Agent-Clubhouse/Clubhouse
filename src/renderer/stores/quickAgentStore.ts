@@ -49,7 +49,7 @@ export const useQuickAgentStore = create<QuickAgentState>((set, get) => ({
 
   addCompleted: (record) => {
     const existing = get().completedAgents[record.projectId] || [];
-    const updated = [...existing, record];
+    const updated = [record, ...existing];
     saveToStorage(record.projectId, updated);
     set((s) => ({
       completedAgents: { ...s.completedAgents, [record.projectId]: updated },

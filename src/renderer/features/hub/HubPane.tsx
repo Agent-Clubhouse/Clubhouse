@@ -7,6 +7,7 @@ import { useHubStore } from '../../stores/hubStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 import { AgentAvatar } from '../agents/AgentAvatar';
 import { Agent } from '../../../shared/types';
 
@@ -146,6 +147,7 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
 
 function StatusChip({ agent, expanded, onClose }: { agent: Agent; expanded: boolean; onClose: () => void }) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const killAgent = useAgentStore((s) => s.killAgent);
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
@@ -163,15 +165,44 @@ function StatusChip({ agent, expanded, onClose }: { agent: Agent; expanded: bool
       </div>
       <span className={`truncate leading-none flex-1 ${expanded ? 'text-xs text-ctp-text' : 'text-[10px] text-ctp-subtext1'}`}>{agent.name}</span>
       {expanded && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              useUIStore.getState().setExplorerTab('agents');
+              useAgentStore.getState().setActiveAgent(agent.id);
+            }}
+            title="View in Agents"
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+          {agent.status === 'running' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                killAgent(agent.id);
+              }}
+              title="Sleep agent"
+              className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </>
       )}
     </div>
   );
