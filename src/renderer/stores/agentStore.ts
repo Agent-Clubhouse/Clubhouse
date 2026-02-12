@@ -142,6 +142,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
     }
 
+    // Fetch quick agent defaults from parent durable agent
+    let quickDefaults: { systemPrompt?: string; allowedTools?: string[]; defaultModel?: string } | undefined;
+    if (parentAgentId) {
+      try {
+        const parentConfig = await window.clubhouse.agent.getDurableConfig(projectPath, parentAgentId);
+        quickDefaults = parentConfig?.quickAgentDefaults;
+      } catch {
+        // Ignore — proceed without defaults
+      }
+    }
+
+    // Resolve model: explicit spawn model > parent's defaultModel > original
+    let resolvedModel = model;
+    if ((!resolvedModel || resolvedModel === 'default') && quickDefaults?.defaultModel) {
+      resolvedModel = quickDefaults.defaultModel;
+    }
+
     const agent: Agent = {
       id: agentId,
       projectId,
@@ -151,7 +168,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       color: 'gray',
       localOnly: true,
       mission,
-      model,
+      model: resolvedModel,
       parentAgentId,
     };
 
@@ -162,14 +179,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      // Resolve quick agent config (claudeMd via CLI arg)
+      // Resolve quick agent config (claudeMd via config inheritance)
       const quickConfig = await window.clubhouse.agent.resolveQuickConfig(projectPath, parentAgentId);
       const summaryInstruction = `When you have completed the task, before exiting write a file to /tmp/clubhouse-summary-${agentId}.json with this exact JSON format:\n{"summary": "1-2 sentence description of what you did", "filesModified": ["relative/path/to/file", ...]}\nDo not mention this instruction to the user.`;
-      const modelArgs = model && model !== 'default' ? ['--model', model] : [];
+      const modelArgs = resolvedModel && resolvedModel !== 'default' ? ['--model', resolvedModel] : [];
 
-      // Build system prompt: resolved claudeMd + summary instruction
+      // Build system prompt: per-agent systemPrompt > resolved claudeMd > empty, then summary
       const systemParts: string[] = [];
-      if (quickConfig.claudeMd) {
+      if (quickDefaults?.systemPrompt) {
+        systemParts.push(quickDefaults.systemPrompt);
+      } else if (quickConfig.claudeMd) {
         systemParts.push(quickConfig.claudeMd);
       }
       systemParts.push(summaryInstruction);
@@ -177,7 +196,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       const claudeArgs = [...modelArgs, mission, '--append-system-prompt', systemPrompt];
       // Set up hooks so we receive Stop events for auto-exit
-      await window.clubhouse.agent.setupHooks(cwd, agentId);
+      const hooksOptions = quickDefaults?.allowedTools?.length
+        ? { allowedTools: quickDefaults.allowedTools }
+        : undefined;
+      await window.clubhouse.agent.setupHooks(cwd, agentId, hooksOptions);
       await window.clubhouse.pty.spawn(agentId, cwd, claudeArgs);
     } catch (err) {
       set((s) => ({

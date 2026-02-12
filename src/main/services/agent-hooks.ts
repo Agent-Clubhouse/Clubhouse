@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { waitReady } from './hook-server';
 
-export async function writeHooksConfig(worktreePath: string, agentId: string): Promise<void> {
+export async function writeHooksConfig(worktreePath: string, agentId: string, options?: { allowedTools?: string[] }): Promise<void> {
   const port = await waitReady();
 
   const curlBase = `cat | curl -s -X POST http://127.0.0.1:${port}/hook/${agentId} -H 'Content-Type: application/json' --data-binary @- || true`;
@@ -90,7 +90,10 @@ export async function writeHooksConfig(worktreePath: string, agentId: string): P
     // No existing file
   }
 
-  const merged = { ...existing, hooks: settings.hooks };
+  const merged: Record<string, unknown> = { ...existing, hooks: settings.hooks };
+  if (options?.allowedTools && options.allowedTools.length > 0) {
+    merged.allowedTools = options.allowedTools;
+  }
   fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
   console.log(`Wrote hooks config for agent ${agentId} at ${settingsPath} (port ${port})`);
 }

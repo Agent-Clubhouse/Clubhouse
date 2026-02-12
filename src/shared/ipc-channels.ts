@@ -47,6 +47,8 @@ export const IPC = {
     TOGGLE_OVERRIDE: 'agent:toggle-override',
     PREPARE_SPAWN: 'agent:prepare-spawn',
     RESOLVE_QUICK_CONFIG: 'agent:resolve-quick-config',
+    GET_DURABLE_CONFIG: 'agent:get-durable-config',
+    UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

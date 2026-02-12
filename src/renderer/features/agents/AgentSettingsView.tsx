@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Agent, McpServerEntry, SkillEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig } from '../../../shared/types';
+import { Agent, McpServerEntry, SkillEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig, QuickAgentDefaults } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
+import { MODEL_OPTIONS } from '../../../shared/models';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { UtilityTerminal } from './UtilityTerminal';
@@ -98,6 +99,16 @@ export function AgentSettingsView({ agent }: Props) {
     await updateAgent(agent.id, { emoji: null }, activeProject.path);
   };
 
+  // Quick Agent Defaults state
+  const projects = useProjectStore((s) => s.projects);
+  const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
+  const [qadSystemPrompt, setQadSystemPrompt] = useState('');
+  const [qadAllowedTools, setQadAllowedTools] = useState('');
+  const [qadDefaultModel, setQadDefaultModel] = useState('');
+  const [qadDirty, setQadDirty] = useState(false);
+  const [qadSaving, setQadSaving] = useState(false);
+  const [qadLoaded, setQadLoaded] = useState(false);
+
   // Refresh only MCP + skills (won't clobber unsaved CLAUDE.md edits)
   const refreshLists = useCallback(async () => {
     const [servers, skillList] = await Promise.all([
@@ -125,6 +136,38 @@ export function AgentSettingsView({ agent }: Props) {
     loadData();
     loadOverrides();
   }, [loadData, loadOverrides]);
+
+  // Load quick agent defaults
+  useEffect(() => {
+    if (!projectPath) return;
+    (async () => {
+      try {
+        const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
+        const defaults = config?.quickAgentDefaults;
+        if (defaults) {
+          setQadSystemPrompt(defaults.systemPrompt || '');
+          setQadAllowedTools((defaults.allowedTools || []).join('\n'));
+          setQadDefaultModel(defaults.defaultModel || '');
+        }
+        setQadLoaded(true);
+      } catch {
+        setQadLoaded(true);
+      }
+    })();
+  }, [projectPath, agent.id]);
+
+  const handleSaveQad = async () => {
+    if (!projectPath) return;
+    setQadSaving(true);
+    const defaults: QuickAgentDefaults = {};
+    if (qadSystemPrompt.trim()) defaults.systemPrompt = qadSystemPrompt.trim();
+    const tools = qadAllowedTools.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (tools.length > 0) defaults.allowedTools = tools;
+    if (qadDefaultModel && qadDefaultModel !== 'default') defaults.defaultModel = qadDefaultModel;
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { quickAgentDefaults: defaults });
+    setQadDirty(false);
+    setQadSaving(false);
+  };
 
   // Auto-refresh: listen for utility terminal PTY activity, debounce refresh
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -454,6 +497,60 @@ export function AgentSettingsView({ agent }: Props) {
             </div>
           )}
         </section>
+
+        {/* Quick Agent Defaults Section */}
+        {qadLoaded && (
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Quick Agent Defaults</h3>
+              <button
+                onClick={handleSaveQad}
+                disabled={!qadDirty || qadSaving}
+                className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer ${
+                  qadDirty
+                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80'
+                    : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                }`}
+              >
+                {qadSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-ctp-subtext0 mb-1">Custom instructions</label>
+                <textarea
+                  value={qadSystemPrompt}
+                  onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
+                  placeholder="System prompt appended to quick agents spawned by this agent..."
+                  className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                  spellCheck={false}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
+                <textarea
+                  value={qadAllowedTools}
+                  onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
+                  placeholder="Bash(npm test:*)&#10;Edit&#10;Write"
+                  className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                  spellCheck={false}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-ctp-subtext0 mb-1">Default model</label>
+                <select
+                  value={qadDefaultModel}
+                  onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
+                  className="w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                >
+                  {MODEL_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Bottom 1/3: utility terminal */}

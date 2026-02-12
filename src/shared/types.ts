@@ -67,6 +67,12 @@ export interface ConfigLayer {
   mcpConfig?: McpConfig | null;
 }
 
+export interface QuickAgentDefaults {
+  systemPrompt?: string;
+  allowedTools?: string[];
+  defaultModel?: string;
+}
+
 export interface ProjectSettings {
   // Legacy fields (kept for migration)
   defaultClaudeMd?: string;
@@ -91,6 +97,7 @@ export interface DurableAgentConfig {
   overrides: OverrideFlags;
   quickOverrides: OverrideFlags;
   quickConfigLayer: ConfigLayer;
+  quickAgentDefaults?: QuickAgentDefaults;
 }
 
 export interface FileNode {

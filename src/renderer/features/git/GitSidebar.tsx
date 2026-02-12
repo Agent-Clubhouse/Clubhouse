@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { AGENT_COLORS } from '../../../shared/name-generator';
 import { WorktreeSection } from './WorktreeSection';
-
-const colorHexMap = Object.fromEntries(AGENT_COLORS.map((c) => [c.id, c.hex]));
+import { colorHexMap, getDurableWorktreeAgents } from './git-sidebar-utils';
 
 const gitBranchIcon = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
@@ -20,11 +18,10 @@ export function GitSidebar() {
   const agents = useAgentStore((s) => s.agents);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  const durableAgents = useMemo(() => {
-    return Object.values(agents)
-      .filter((a) => a.kind === 'durable' && a.worktreePath && a.projectId === activeProjectId)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [agents, activeProjectId]);
+  const durableAgents = useMemo(
+    () => getDurableWorktreeAgents(agents, activeProjectId),
+    [agents, activeProjectId],
+  );
 
   if (!activeProject) {
     return (
