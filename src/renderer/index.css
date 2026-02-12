@@ -67,6 +67,11 @@
   overflow-y: auto !important;
 }
 
+/* Hide the native blinking caret on xterm's internal keyboard-capture textarea */
+.xterm .xterm-helper-textarea {
+  caret-color: transparent !important;
+}
+
 /* highlight.js - Catppuccin Mocha theme */
 .hljs {
   color: #cdd6f4;
