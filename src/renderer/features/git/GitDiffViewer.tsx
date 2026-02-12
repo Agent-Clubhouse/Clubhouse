@@ -6,7 +6,6 @@ import {
   CATPPUCCIN_MOCHA_THEME_NAME,
 } from '../files/catppuccin-mocha-theme';
 import { useUIStore } from '../../stores/uiStore';
-import { useProjectStore } from '../../stores/projectStore';
 
 loader.config({ monaco });
 
@@ -56,8 +55,6 @@ function getLanguageFromPath(filePath: string): string {
 
 export function GitDiffViewer() {
   const { selectedGitFile, setSelectedGitFile } = useUIStore();
-  const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const [original, setOriginal] = useState('');
   const [modified, setModified] = useState('');
@@ -65,13 +62,13 @@ export function GitDiffViewer() {
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
 
   useEffect(() => {
-    if (!selectedGitFile || !activeProject) return;
+    if (!selectedGitFile) return;
 
     let cancelled = false;
     setLoading(true);
 
     window.clubhouse.git
-      .diff(activeProject.path, selectedGitFile.path, selectedGitFile.staged)
+      .diff(selectedGitFile.worktreePath, selectedGitFile.path, selectedGitFile.staged)
       .then((result: { original: string; modified: string }) => {
         if (cancelled) return;
         setOriginal(result.original);
@@ -82,7 +79,7 @@ export function GitDiffViewer() {
     return () => {
       cancelled = true;
     };
-  }, [selectedGitFile, activeProject]);
+  }, [selectedGitFile]);
 
   // Clean up the editor ref on unmount to avoid the TextModel disposal race
   useEffect(() => {
