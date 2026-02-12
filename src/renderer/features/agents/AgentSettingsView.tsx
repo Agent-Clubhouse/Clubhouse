@@ -100,7 +100,6 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   // Quick Agent Defaults state
-  const projects = useProjectStore((s) => s.projects);
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
   const [qadAllowedTools, setQadAllowedTools] = useState('');
