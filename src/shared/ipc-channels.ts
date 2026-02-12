@@ -77,5 +77,7 @@ export const IPC = {
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
     SEND_NOTIFICATION: 'app:send-notification',
+    GET_THEME: 'app:get-theme',
+    SAVE_THEME: 'app:save-theme',
   },
 } as const;

@@ -7,6 +7,25 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-eval' 'unsafe-inline' data: blob:; worker-src 'self' blob:"
     />
+    <script>
+      // Flash-prevention: apply cached theme CSS vars before stylesheets load
+      (function() {
+        try {
+          var cached = localStorage.getItem('clubhouse-theme-vars');
+          if (cached) {
+            var vars = JSON.parse(cached);
+            var s = document.documentElement.style;
+            for (var k in vars) {
+              if (vars.hasOwnProperty(k)) s.setProperty(k, vars[k]);
+            }
+          }
+          var font = localStorage.getItem('clubhouse-theme-font');
+          if (font) {
+            document.documentElement.classList.add('theme-mono');
+          }
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body class="h-full m-0 p-0 overflow-hidden">
     <div id="root" class="h-full"></div>

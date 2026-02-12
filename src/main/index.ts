@@ -2,6 +2,7 @@ import { app, BrowserWindow, Notification } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll } from './services/pty-manager';
 import { buildMenu } from './menu';
+import { getSettings as getThemeSettings } from './services/theme-service';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -14,6 +15,26 @@ if (require('electron-squirrel-startup')) {
   app.quit();
 }
 
+const THEME_BG_COLORS: Record<string, string> = {
+  'catppuccin-mocha': '#1e1e2e',
+  'catppuccin-latte': '#eff1f5',
+  'solarized-dark': '#002b36',
+  'terminal': '#0a0a0a',
+  'nord': '#2e3440',
+  'dracula': '#282a36',
+  'tokyo-night': '#1a1b26',
+  'gruvbox-dark': '#282828',
+};
+
+function getThemeBgColor(): string {
+  try {
+    const { themeId } = getThemeSettings();
+    return THEME_BG_COLORS[themeId] || '#1e1e2e';
+  } catch {
+    return '#1e1e2e';
+  }
+}
+
 let mainWindow: BrowserWindow | null = null;
 
 const createWindow = (): void => {
@@ -23,7 +44,7 @@ const createWindow = (): void => {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#1e1e2e',
+    backgroundColor: getThemeBgColor(),
     webPreferences: {
       preload: MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY,
       contextIsolation: true,

@@ -1,10 +1,8 @@
 import { useRef, useCallback } from 'react';
 import Editor, { type OnMount, type BeforeMount, loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
-import {
-  catppuccinMochaTheme,
-  CATPPUCCIN_MOCHA_THEME_NAME,
-} from './catppuccin-mocha-theme';
+import { THEMES } from '../../themes';
+import { useThemeStore } from '../../stores/themeStore';
 
 // Use locally bundled monaco-editor instead of CDN (which fails in Electron)
 loader.config({ monaco });
@@ -68,11 +66,15 @@ export function MonacoCodeEditor({
 }: MonacoCodeEditorProps) {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const savedContentRef = useRef(initialContent);
+  const themeId = useThemeStore((s) => s.themeId);
 
   const language = getLanguageFromPath(filePath);
 
   const handleBeforeMount: BeforeMount = useCallback((mon) => {
-    mon.editor.defineTheme(CATPPUCCIN_MOCHA_THEME_NAME, catppuccinMochaTheme);
+    // Register all themes upfront
+    for (const [id, theme] of Object.entries(THEMES)) {
+      mon.editor.defineTheme(id, theme.monaco as unknown as monaco.editor.IStandaloneThemeData);
+    }
   }, []);
 
   const handleMount: OnMount = useCallback(
@@ -103,7 +105,7 @@ export function MonacoCodeEditor({
     <Editor
       language={language}
       defaultValue={initialContent}
-      theme={CATPPUCCIN_MOCHA_THEME_NAME}
+      theme={themeId}
       beforeMount={handleBeforeMount}
       onMount={handleMount}
       options={{

@@ -111,7 +111,86 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications';
+export type SettingsSubPage = 'project' | 'notifications' | 'display';
+
+export type ThemeId =
+  | 'catppuccin-mocha'
+  | 'catppuccin-latte'
+  | 'solarized-dark'
+  | 'terminal'
+  | 'nord'
+  | 'dracula'
+  | 'tokyo-night'
+  | 'gruvbox-dark';
+
+export interface ThemeColors {
+  base: string;
+  mantle: string;
+  crust: string;
+  text: string;
+  subtext0: string;
+  subtext1: string;
+  surface0: string;
+  surface1: string;
+  surface2: string;
+  accent: string;
+  link: string;
+}
+
+export interface HljsColors {
+  keyword: string;
+  string: string;
+  number: string;
+  comment: string;
+  function: string;
+  type: string;
+  variable: string;
+  regexp: string;
+  tag: string;
+  attribute: string;
+  symbol: string;
+  meta: string;
+  addition: string;
+  deletion: string;
+  property: string;
+  punctuation: string;
+}
+
+export interface TerminalColors {
+  background: string;
+  foreground: string;
+  cursor: string;
+  cursorAccent: string;
+  selectionBackground: string;
+  selectionForeground: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export interface ThemeDefinition {
+  id: ThemeId;
+  name: string;
+  type: 'dark' | 'light';
+  colors: ThemeColors;
+  hljs: HljsColors;
+  monaco: Record<string, unknown>;
+  terminal: TerminalColors;
+  fontOverride?: string;
+}
 
 export interface GitStatusFile {
   path: string;
