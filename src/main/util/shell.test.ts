@@ -8,9 +8,14 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
 }));
 
+// electron is aliased to our mock via vitest.config.ts
+// app.getPath('home') returns '/tmp/clubhouse-test-home'
+
 import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { findClaudeBinary } from './shell';
+
+const TEST_HOME = '/tmp/clubhouse-test-home';
 
 describe('findClaudeBinary', () => {
   beforeEach(() => {
@@ -18,19 +23,25 @@ describe('findClaudeBinary', () => {
   });
 
   it('returns first existing common path', () => {
+    const expectedPath = `${TEST_HOME}/.local/bin/claude`;
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      return String(p) === '/usr/local/bin/claude';
+      return String(p) === expectedPath;
     });
-    expect(findClaudeBinary()).toBe('/usr/local/bin/claude');
+    expect(findClaudeBinary()).toBe(expectedPath);
   });
 
-  it('falls back to which when no common path', () => {
+  it('falls back to shell PATH when no common path exists', () => {
+    // First call: getShellEnv via execSync for `env`
+    // Subsequent calls: existsSync checks
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      if (String(cmd).includes('env')) return 'PATH=/custom/bin\n';
+      throw new Error('not found');
+    });
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      // Common paths don't exist, but which result does
+      // Common paths don't exist, but PATH-resolved candidate does
       if (String(p) === '/custom/bin/claude') return true;
       return false;
     });
-    vi.mocked(execSync).mockReturnValue('/custom/bin/claude\n');
     expect(findClaudeBinary()).toBe('/custom/bin/claude');
   });
 

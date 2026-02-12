@@ -17,6 +17,7 @@ vi.mock('node-pty', () => ({
 // Mock shell utility
 vi.mock('../util/shell', () => ({
   findClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
+  getShellEnvironment: vi.fn(() => ({ ...process.env })),
 }));
 
 // Mock the IPC channels
