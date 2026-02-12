@@ -118,32 +118,12 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
         <SleepingClaude agent={agent} />
       )}
 
-      {/* Persistent status chip — always visible */}
-      {agent && !hovered && <StatusChip agent={agent} />}
+      {/* Status chip — expands to full width on hover */}
+      {agent && <StatusChip agent={agent} expanded={hovered} onClose={handleClose} />}
 
-      {/* Hover overlay */}
+      {/* Split buttons at edges (visible on hover) */}
       {hovered && (
         <>
-          {/* Top bar: agent name + close */}
-          <div className="absolute top-0 left-0 right-0 h-8 bg-ctp-mantle/90 border-b border-surface-0 flex items-center px-2 gap-2 z-10">
-            {agent && (
-              <>
-                <AgentAvatar agent={agent} size="sm" showRing ringColor={STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping} />
-                <span className="text-xs text-ctp-text truncate flex-1">{agent.name}</span>
-              </>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleClose(); }}
-              className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Split buttons at edges */}
           <SplitButton direction="up" paneId={paneId} className="absolute top-10 left-1/2 -translate-x-1/2 z-10" />
           <SplitButton direction="down" paneId={paneId} className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10" />
           <SplitButton direction="left" paneId={paneId} className="absolute left-1 top-1/2 -translate-y-1/2 z-10" />
@@ -164,7 +144,7 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
   );
 }
 
-function StatusChip({ agent }: { agent: Agent }) {
+function StatusChip({ agent, expanded, onClose }: { agent: Agent; expanded: boolean; onClose: () => void }) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
@@ -173,11 +153,26 @@ function StatusChip({ agent }: { agent: Agent }) {
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
 
   return (
-    <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-ctp-mantle/80 backdrop-blur-sm border border-surface-0/50 pointer-events-none select-none max-w-[45%]">
+    <div
+      className={`absolute top-1.5 left-1.5 z-10 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-ctp-mantle/80 backdrop-blur-sm border border-surface-0/50 select-none transition-all duration-150 ${
+        expanded ? 'right-1.5 pointer-events-auto' : 'max-w-[45%] pointer-events-none'
+      }`}
+    >
       <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
         <AgentAvatar agent={agent} size="sm" showRing ringColor={ringColor} />
       </div>
-      <span className="text-[10px] text-ctp-subtext1 truncate leading-none">{agent.name}</span>
+      <span className={`truncate leading-none flex-1 ${expanded ? 'text-xs text-ctp-text' : 'text-[10px] text-ctp-subtext1'}`}>{agent.name}</span>
+      {expanded && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-subtext0 hover:text-ctp-text cursor-pointer flex-shrink-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
