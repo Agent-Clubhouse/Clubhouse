@@ -2,6 +2,16 @@ import { useAgentStore } from '../../stores/agentStore';
 import { Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 
+export function CrownBadge({ size = 14 }: { size?: number }) {
+  return (
+    <div className="absolute -top-1 -left-1" style={{ transform: 'rotate(-15deg)' }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="#f59e0b" stroke="#92400e" strokeWidth="1.5">
+        <path d="M2 20h20L19 8l-5 4-2-6-2 6-5-4-3 12z" />
+      </svg>
+    </div>
+  );
+}
+
 interface Props {
   agent: Agent;
   size?: 'sm' | 'md';
@@ -54,18 +64,28 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
     );
   };
 
+  const isHost = agent.role === 'host';
+
   if (showRing && ringColor) {
     return (
-      <div
-        className={`${outerSize} rounded-full flex items-center justify-center`}
-        style={{ border: `2px solid ${ringColor}` }}
-      >
-        {renderContent()}
+      <div className="relative">
+        {isHost && <CrownBadge size={size === 'sm' ? 12 : 14} />}
+        <div
+          className={`${outerSize} rounded-full flex items-center justify-center`}
+          style={{ border: `2px solid ${ringColor}` }}
+        >
+          {renderContent()}
+        </div>
       </div>
     );
   }
 
-  return renderContent();
+  return (
+    <div className="relative">
+      {isHost && <CrownBadge size={size === 'sm' ? 12 : 14} />}
+      {renderContent()}
+    </div>
+  );
 }
 
 export const STATUS_RING_COLOR: Record<string, string> = {

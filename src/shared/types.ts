@@ -24,6 +24,7 @@ export interface Agent {
   mission?: string;
   model?: string;
   parentAgentId?: string;
+  role?: 'host';
 }
 
 export interface CompletedQuickAgent {
@@ -98,6 +99,7 @@ export interface DurableAgentConfig {
   quickOverrides: OverrideFlags;
   quickConfigLayer: ConfigLayer;
   quickAgentDefaults?: QuickAgentDefaults;
+  role?: 'host';
 }
 
 export interface FileNode {
@@ -107,7 +109,9 @@ export interface FileNode {
   children?: FileNode[];
 }
 
-export type ExplorerTab = 'files' | 'settings' | 'agents' | 'git' | 'notes' | 'terminal' | 'hub' | 'scheduler';
+export type ExplorerTab = string;
+
+export const CORE_TAB_IDS = ['agents', 'hub', 'settings'] as const;
 
 export interface NotificationSettings {
   enabled: boolean;
@@ -118,7 +122,7 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'display';
+export type SettingsSubPage = 'project' | 'notifications' | 'display' | 'plugins';
 
 export type ThemeId =
   | 'catppuccin-mocha'
@@ -256,6 +260,8 @@ export interface AgentHookEvent {
   eventName: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
+  notificationType?: string;
+  message?: string;
   timestamp: number;
 }
 

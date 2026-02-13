@@ -125,14 +125,14 @@ describe('pty-manager', () => {
     it('writes /exit to process', () => {
       spawn('agent_gk', '/test');
       gracefulKill('agent_gk');
-      expect(mockProcess.write).toHaveBeenCalledWith('/exit\n');
+      expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
     });
 
     it('sets killing flag (no re-kill race)', () => {
       spawn('agent_gk2', '/test');
       // Just verify it doesn't throw
       gracefulKill('agent_gk2');
-      expect(mockProcess.write).toHaveBeenCalledWith('/exit\n');
+      expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
     });
   });
 

@@ -17,9 +17,9 @@ export function AgentPicker({ paneId }: Props) {
   const assignAgent = useHubStore((s) => s.assignAgent);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  const durableAgents = Object.values(agents).filter(
-    (a) => a.kind === 'durable' && a.projectId === activeProjectId
-  );
+  const durableAgents = Object.values(agents)
+    .filter((a) => a.kind === 'durable' && a.projectId === activeProjectId)
+    .sort((a, b) => (a.role === 'host' ? -1 : b.role === 'host' ? 1 : 0));
 
   const handlePickDurable = async (agentId: string) => {
     const agent = agents[agentId];

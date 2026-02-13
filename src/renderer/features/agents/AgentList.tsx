@@ -7,7 +7,6 @@ import { AddAgentDialog } from './AddAgentDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from '../hub/QuickAgentGhost';
 import { MODEL_OPTIONS } from '../../../shared/models';
-
 export function AgentList() {
   const {
     agents, activeAgentId, setActiveAgent,
@@ -211,7 +210,7 @@ export function AgentList() {
             {'\u25BE'}
           </button>
           {showDropdown && (
-            <div className="absolute right-0 top-full mt-1 bg-ctp-mantle border border-surface-0 rounded-lg shadow-xl py-1 z-50 min-w-[140px]">
+            <div className="absolute right-0 top-full mt-1 bg-ctp-mantle border border-surface-0 rounded-lg shadow-xl py-1 z-50 min-w-[160px]">
               <button
                 onClick={handleQuickAgent}
                 className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2"

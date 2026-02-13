@@ -739,6 +739,28 @@ describe('delete host guards (all variants)', () => {
   });
 });
 
+describe('getWorktreeStatus — host agent short-circuit', () => {
+  it('returns valid empty status for host agents', () => {
+    const agents = [
+      { id: 'host_1', name: 'project-host', color: 'amber', branch: 'project-host/standby', worktreePath: PROJECT_PATH, createdAt: '2024-01-01', role: 'host' },
+    ];
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    const status = getWorktreeStatus(PROJECT_PATH, 'host_1');
+    expect(status.isValid).toBe(true);
+    expect(status.branch).toBe('');
+    expect(status.uncommittedFiles).toEqual([]);
+    expect(status.unpushedCommits).toEqual([]);
+    expect(status.hasRemote).toBe(false);
+    // Should NOT have called any git commands
+    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+  });
+});
+
 describe('ensureGitignore edge cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();

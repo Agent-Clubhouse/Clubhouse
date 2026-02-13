@@ -8,6 +8,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ConfigOverrideToggle } from '../settings/ConfigOverrideToggle';
 import { PermissionsEditor } from '../settings/PermissionsEditor';
+import { CrownBadge } from './AgentAvatar';
 import { SkillAgentList } from '../settings/SkillAgentList';
 import { AddSkillAgentDialog } from '../settings/AddSkillAgentDialog';
 
@@ -265,13 +266,19 @@ export function AgentSettingsView({ agent }: Props) {
             <path d="M12 19l-7-7 7-7" />
           </svg>
         </button>
-        <div
-          className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
-          style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-        >
-          {agent.emoji || ''}
+        <div className="relative">
+          {agent.role === 'host' && <CrownBadge size={10} />}
+          <div
+            className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
+            style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+          >
+            {agent.emoji || ''}
+          </div>
         </div>
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
+        {agent.role === 'host' && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">Host</span>
+        )}
         <span className="text-xs text-ctp-subtext0">Settings</span>
         <div className="flex-1" />
         <button

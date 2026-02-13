@@ -10,8 +10,13 @@ import { useAgentStore } from './stores/agentStore';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
-import { useSchedulerStore } from './stores/schedulerStore';
 import { useThemeStore } from './stores/themeStore';
+import { usePluginStore } from './stores/pluginStore';
+import { registerAllPlugins, getPlugin, getAllPlugins } from './plugins';
+import { CORE_TAB_IDS } from '../shared/types';
+
+// Register all plugins once at module load
+registerAllPlugins();
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -24,16 +29,16 @@ export function App() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
-  const isFullWidth = explorerTab === 'terminal' || explorerTab === 'hub';
+  const isFullWidth = explorerTab === 'hub' || (getPlugin(explorerTab)?.fullWidth === true);
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
   const addCompleted = useQuickAgentStore((s) => s.addCompleted);
   const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
   const removeAgent = useAgentStore((s) => s.removeAgent);
-  const loadSchedulerJobs = useSchedulerStore((s) => s.loadJobs);
-  const startScheduler = useSchedulerStore((s) => s.startScheduler);
-  const stopScheduler = useSchedulerStore((s) => s.stopScheduler);
+  const clearStaleStatuses = useAgentStore((s) => s.clearStaleStatuses);
+  const loadPluginConfig = usePluginStore((s) => s.loadPluginConfig);
+  const isPluginEnabled = usePluginStore((s) => s.isPluginEnabled);
 
   useEffect(() => {
     loadProjects();
@@ -63,14 +68,49 @@ export function App() {
     }
   }, [projects, loadCompleted]);
 
-  // Start/stop scheduler when a project is active
+  // Load plugin config when project changes
   useEffect(() => {
     if (activeProjectId) {
-      loadSchedulerJobs();
-      startScheduler();
-      return () => stopScheduler();
+      const project = projects.find((p) => p.id === activeProjectId);
+      if (project) {
+        loadPluginConfig(activeProjectId, project.path);
+      }
     }
-  }, [activeProjectId, loadSchedulerJobs, startScheduler, stopScheduler]);
+  }, [activeProjectId, projects, loadPluginConfig]);
+
+  // Guard: switch to 'agents' if current tab is a disabled plugin
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const isCoreTab = (CORE_TAB_IDS as readonly string[]).includes(explorerTab);
+    if (!isCoreTab && !isPluginEnabled(activeProjectId, explorerTab)) {
+      setExplorerTab('agents');
+    }
+  }, [activeProjectId, explorerTab, isPluginEnabled, setExplorerTab]);
+
+  // Plugin lifecycle: call onProjectLoad for enabled plugins, onProjectUnload on cleanup
+  useEffect(() => {
+    if (!activeProjectId) return;
+    const project = projects.find((p) => p.id === activeProjectId);
+    if (!project) return;
+    const ctx = { projectId: activeProjectId, projectPath: project.path };
+    const enabledPlugins = getAllPlugins().filter(
+      (p) => isPluginEnabled(activeProjectId, p.id),
+    );
+    for (const plugin of enabledPlugins) {
+      plugin.onProjectLoad?.(ctx);
+    }
+    return () => {
+      for (const plugin of enabledPlugins) {
+        plugin.onProjectUnload?.(ctx);
+      }
+    };
+  }, [activeProjectId, projects, isPluginEnabled]);
+
+  // Periodically clear stale detailed statuses (e.g. stuck "Thinking" or "Searching files")
+  useEffect(() => {
+    const id = setInterval(clearStaleStatuses, 10_000);
+    return () => clearInterval(id);
+  }, [clearStaleStatuses]);
 
   useEffect(() => {
     const removeExitListener = window.clubhouse.pty.onExit(
@@ -133,25 +173,23 @@ export function App() {
     return () => removeHookListener();
   }, [handleHookEvent, checkAndNotify]);
 
+
   const isHome = activeProjectId === null;
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  const TAB_LABELS: Record<string, string> = {
+  const pluginLabel = getPlugin(explorerTab)?.label;
+  const CORE_LABELS: Record<string, string> = {
     agents: 'Agents',
-    files: 'Files',
-    terminal: 'Terminal',
-    git: 'Git',
-    notes: 'Notes',
-    scheduler: 'Scheduler',
     hub: 'Hub',
     settings: 'Settings',
   };
+  const tabLabel = CORE_LABELS[explorerTab] || pluginLabel || explorerTab;
 
   const titleText = isHome
     ? 'Home'
     : activeProject
-      ? `${TAB_LABELS[explorerTab] || explorerTab} (${activeProject.name})`
-      : TAB_LABELS[explorerTab] || explorerTab;
+      ? `${tabLabel} (${activeProject.name})`
+      : tabLabel;
 
   if (isHome) {
     return (

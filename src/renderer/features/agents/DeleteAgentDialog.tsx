@@ -91,6 +91,49 @@ export function DeleteAgentDialog() {
 
   if (!agent || !activeProject) return null;
 
+  // Host agents get a simplified dialog
+  if (agent.role === 'host') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
+        <div
+          className="bg-ctp-mantle border border-surface-0 rounded-xl p-5 w-[400px] shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="text-base font-semibold text-ctp-text mb-2">
+            Remove {agent.name}?
+          </h2>
+          <p className="text-sm text-ctp-subtext0 mb-4">
+            This will remove the host agent from the sidebar. All project files remain on disk.
+          </p>
+          {error && (
+            <div className="mb-3 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+              {error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={closeDeleteDialog}
+              disabled={executing}
+              className="px-3 py-1.5 text-xs rounded bg-surface-1 text-ctp-subtext1
+                hover:bg-surface-2 cursor-pointer disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => handleExecute('unregister')}
+              disabled={executing}
+              className="px-4 py-1.5 text-xs rounded bg-red-500/80 text-white
+                hover:bg-red-500 cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {executing && <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />}
+              Remove
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isDirty = status?.isValid &&
     (status.uncommittedFiles.length > 0 || status.unpushedCommits.length > 0);
 

@@ -54,6 +54,8 @@ export function start(): Promise<number> {
               eventName: event.hook_event_name || 'unknown',
               toolName: event.tool_name,
               toolInput: event.tool_input,
+              notificationType: event.notification_type,
+              message: event.message,
               timestamp: Date.now(),
             });
           }

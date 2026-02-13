@@ -2,6 +2,7 @@ import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
+import { CrownBadge } from './AgentAvatar';
 
 interface Props {
   agent: Agent;
@@ -78,7 +79,8 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       `}
     >
       {/* Avatar with status ring */}
-      <div className={`flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+      <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+        {agent.role === 'host' && <CrownBadge size={12} />}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{ border: `2px solid ${ringColor}` }}

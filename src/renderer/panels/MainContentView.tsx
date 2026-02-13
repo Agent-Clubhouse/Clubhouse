@@ -6,19 +6,15 @@ import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingClaude } from '../features/agents/SleepingClaude';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/hub/QuickAgentGhost';
-import { GitLog } from '../features/git/GitLog';
-import { GitDiffViewer } from '../features/git/GitDiffViewer';
-import { FileViewer } from '../features/files/FileViewer';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
-import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
+import { PluginSettingsView } from '../features/settings/PluginSettingsView';
 import { CommandCenter } from '../features/hub/CommandCenter';
-import { NoteEditor } from '../features/notes/NoteEditor';
-import { SchedulerEditor } from '../features/scheduler/SchedulerEditor';
+import { getPlugin } from '../plugins';
 
 export function MainContentView() {
-  const { explorerTab, selectedGitFile, settingsSubPage } = useUIStore();
+  const { explorerTab, settingsSubPage } = useUIStore();
   const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
   const selectedCompleted = useQuickAgentStore((s) => s.getSelectedCompleted());
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
@@ -28,7 +24,6 @@ export function MainContentView() {
   if (explorerTab === 'agents') {
     const activeAgent = activeAgentId ? agents[activeAgentId] : null;
 
-    // Show settings view if open for the active durable agent
     if (
       agentSettingsOpenFor &&
       agentSettingsOpenFor === activeAgentId &&
@@ -77,30 +72,19 @@ export function MainContentView() {
     return <CommandCenter />;
   }
 
-  if (explorerTab === 'terminal') {
-    return <StandaloneTerminal />;
-  }
-
-  if (explorerTab === 'files') {
-    return <FileViewer />;
-  }
-
-  if (explorerTab === 'notes') {
-    return <NoteEditor />;
-  }
-
-  if (explorerTab === 'scheduler') {
-    return <SchedulerEditor />;
-  }
-
-  if (explorerTab === 'git') {
-    return selectedGitFile ? <GitDiffViewer /> : <GitLog />;
-  }
-
   if (explorerTab === 'settings') {
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
+    if (settingsSubPage === 'plugins') return <PluginSettingsView />;
     return <ProjectSettings />;
+  }
+
+  // --- Generic plugin lookup fallback ---
+
+  const plugin = getPlugin(explorerTab);
+  if (plugin) {
+    const MainPanel = plugin.MainPanel;
+    return <MainPanel />;
   }
 
   return (

@@ -23,6 +23,9 @@ function toolVerb(toolName?: string): string {
   return TOOL_VERBS[toolName] || `Using ${toolName}`;
 }
 
+/** Detailed statuses older than this are considered stale and cleared */
+const STALE_THRESHOLD_MS = 30_000;
+
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
 interface AgentState {
@@ -49,6 +52,7 @@ interface AgentState {
   updateAgent: (id: string, updates: { name?: string; color?: string; emoji?: string | null }, projectPath: string) => Promise<void>;
   updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
+  clearStaleStatuses: () => void;
   recordActivity: (id: string) => void;
   isAgentActive: (id: string) => boolean;
 }
@@ -409,6 +413,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           timestamp: event.timestamp,
         };
         break;
+      case 'PermissionRequest':
+        detailed = {
+          state: 'needs_permission',
+          message: 'Needs permission',
+          toolName: event.toolName,
+          timestamp: event.timestamp,
+        };
+        break;
       default:
         return;
     }
@@ -416,6 +428,32 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({
       agentDetailedStatus: { ...s.agentDetailedStatus, [agentId]: detailed },
     }));
+  },
+
+  /** Clear detailed statuses that haven't been updated in STALE_THRESHOLD_MS */
+  clearStaleStatuses: () => {
+    const now = Date.now();
+    const statuses = get().agentDetailedStatus;
+    const agents = get().agents;
+    let changed = false;
+    const updated = { ...statuses };
+
+    for (const [agentId, status] of Object.entries(statuses)) {
+      const agent = agents[agentId];
+      if (!agent || agent.status !== 'running') continue;
+
+      const age = now - status.timestamp;
+      // Permission states shouldn't auto-clear — agent is waiting for user
+      if (status.state === 'needs_permission') continue;
+      if (age > STALE_THRESHOLD_MS) {
+        delete updated[agentId];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      set({ agentDetailedStatus: updated });
+    }
   },
 
   recordActivity: (id) => {
