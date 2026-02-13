@@ -55,7 +55,6 @@ async function executeJob(job: SchedulerJob) {
         id: agent.id,
         name: agent.name,
         color: agent.color,
-        localOnly: agent.localOnly,
         branch: agent.branch || '',
         worktreePath: agent.worktreePath || '',
         createdAt: '',

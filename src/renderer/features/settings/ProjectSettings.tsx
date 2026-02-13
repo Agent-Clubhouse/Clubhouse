@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
-import { ProjectSettings as ProjectSettingsType, ConfigLayer, PermissionsConfig } from '../../../shared/types';
+import { useUIStore } from '../../stores/uiStore';
+import { useAgentStore } from '../../stores/agentStore';
+import { ProjectSettings as ProjectSettingsType, ConfigLayer, PermissionsConfig, SkillEntry, AgentTemplateEntry } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { PermissionsEditor } from './PermissionsEditor';
+import { SkillAgentList } from './SkillAgentList';
+import { AddSkillAgentDialog } from './AddSkillAgentDialog';
 
 function AppearanceSection() {
   const { projects, activeProjectId, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
@@ -90,6 +94,8 @@ function AppearanceSection() {
 export function ProjectSettings() {
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const { setExplorerTab, setSelectedFilePath } = useUIStore();
+  const { spawnQuickAgent } = useAgentStore();
   const [settings, setSettings] = useState<ProjectSettingsType>({
     defaults: {},
     quickOverrides: {},
@@ -97,11 +103,25 @@ export function ProjectSettings() {
   const [localSettings, setLocalSettings] = useState<ConfigLayer>({});
   const [saved, setSaved] = useState(false);
   const [activeSection, setActiveSection] = useState<'defaults' | 'quick' | 'local'>('defaults');
+  const [sourceSkills, setSourceSkills] = useState<SkillEntry[]>([]);
+  const [sourceAgentTemplates, setSourceAgentTemplates] = useState<AgentTemplateEntry[]>([]);
+  const [addDialog, setAddDialog] = useState<{ kind: 'skill' | 'agent-template' } | null>(null);
+
+  const loadSourceLists = async () => {
+    if (!activeProject) return;
+    const [skills, templates] = await Promise.all([
+      window.clubhouse.agentSettings.listSourceSkills(activeProject.path),
+      window.clubhouse.agentSettings.listSourceAgentTemplates(activeProject.path),
+    ]);
+    setSourceSkills(skills);
+    setSourceAgentTemplates(templates);
+  };
 
   useEffect(() => {
     if (!activeProject) return;
     window.clubhouse.agent.getSettings(activeProject.path).then(setSettings);
     window.clubhouse.agent.getLocalSettings(activeProject.path).then(setLocalSettings);
+    loadSourceLists();
   }, [activeProject]);
 
   const handleSave = async () => {
@@ -130,6 +150,36 @@ export function ProjectSettings() {
       ...s,
       quickOverrides: { ...s.quickOverrides, ...updates },
     }));
+  };
+
+  const handleViewFile = (item: SkillEntry | AgentTemplateEntry) => {
+    const readmePath = item.path + '/README.md';
+    setExplorerTab('files');
+    setSelectedFilePath(readmePath);
+  };
+
+  const handleCreate = async (kind: 'skill' | 'agent-template', name: string, method: 'manual' | 'generate', prompt?: string) => {
+    if (!activeProject) return;
+    const settings = await window.clubhouse.agent.getSettings(activeProject.path);
+    const basePath = kind === 'skill'
+      ? activeProject.path + '/.clubhouse/' + (settings.defaultSkillsPath || 'skills')
+      : activeProject.path + '/.clubhouse/' + (settings.defaultAgentsPath || 'agent-templates');
+
+    const createFn = kind === 'skill'
+      ? window.clubhouse.agentSettings.createSkill
+      : window.clubhouse.agentSettings.createAgentTemplate;
+
+    const readmePath = await createFn(basePath, name, true);
+    await loadSourceLists();
+    setAddDialog(null);
+
+    if (method === 'generate' && prompt) {
+      const mission = `Populate the README.md at ${readmePath} with a complete ${kind} definition. ${prompt}`;
+      spawnQuickAgent(activeProject.id, activeProject.path, mission);
+    } else {
+      setExplorerTab('files');
+      setSelectedFilePath(readmePath);
+    }
   };
 
   if (!activeProject) {
@@ -196,6 +246,36 @@ export function ProjectSettings() {
               <PermissionsEditor
                 value={settings.defaults?.permissions || {}}
                 onChange={(p) => updateDefaults({ permissions: p })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
+                Skills
+              </label>
+              <p className="text-[11px] text-ctp-subtext0 mb-2">
+                Skill templates stored in <code className="text-ctp-blue">.clubhouse/{settings.defaultSkillsPath || 'skills'}/</code>.
+              </p>
+              <SkillAgentList
+                kind="skill"
+                items={sourceSkills}
+                onView={handleViewFile}
+                onAdd={() => setAddDialog({ kind: 'skill' })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
+                Agent Templates
+              </label>
+              <p className="text-[11px] text-ctp-subtext0 mb-2">
+                Agent templates stored in <code className="text-ctp-blue">.clubhouse/{settings.defaultAgentsPath || 'agent-templates'}/</code>.
+              </p>
+              <SkillAgentList
+                kind="agent-template"
+                items={sourceAgentTemplates}
+                onView={handleViewFile}
+                onAdd={() => setAddDialog({ kind: 'agent-template' })}
               />
             </div>
 
@@ -300,6 +380,14 @@ export function ProjectSettings() {
           </div>
         )}
       </div>
+
+      {addDialog && (
+        <AddSkillAgentDialog
+          kind={addDialog.kind}
+          onCancel={() => setAddDialog(null)}
+          onCreate={(name, method, prompt) => handleCreate(addDialog.kind, name, method, prompt)}
+        />
+      )}
     </div>
   );
 }

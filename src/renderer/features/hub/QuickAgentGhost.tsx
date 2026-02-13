@@ -4,6 +4,7 @@ import { CompletedQuickAgent } from '../../../shared/types';
 interface Props {
   completed: CompletedQuickAgent;
   onDismiss: () => void;
+  onDelete?: () => void;
 }
 
 function relativeTime(timestamp: number): string {
@@ -51,7 +52,7 @@ function ExitBadge({ exitCode }: { exitCode: number }) {
   );
 }
 
-export function QuickAgentGhost({ completed, onDismiss }: Props) {
+export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
   const [filesExpanded, setFilesExpanded] = useState(false);
   const showToggle = completed.filesModified.length > 3;
   const visibleFiles = filesExpanded ? completed.filesModified : completed.filesModified.slice(0, 3);
@@ -103,22 +104,34 @@ export function QuickAgentGhost({ completed, onDismiss }: Props) {
           </div>
         )}
 
-        {/* Dismiss */}
-        <button
-          onClick={onDismiss}
-          className="w-full mt-2 px-3 py-1.5 text-xs rounded-lg border border-surface-0
-            hover:border-surface-2 hover:bg-surface-0 transition-colors cursor-pointer
-            text-ctp-subtext1 hover:text-ctp-text"
-        >
-          Dismiss
-        </button>
+        {/* Actions */}
+        <div className="flex gap-2 mt-2">
+          <button
+            onClick={onDismiss}
+            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-0
+              hover:border-surface-2 hover:bg-surface-0 transition-colors cursor-pointer
+              text-ctp-subtext1 hover:text-ctp-text"
+          >
+            Dismiss
+          </button>
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-red-500/30
+                hover:bg-red-500/20 transition-colors cursor-pointer
+                text-red-400"
+            >
+              Delete
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /** Compact ghost card for use in the sidebar AgentList */
-export function QuickAgentGhostCompact({ completed, onDismiss, onSelect, isNested }: Props & { onSelect?: () => void; isNested?: boolean }) {
+export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelect, isNested }: Props & { onSelect?: () => void; isNested?: boolean }) {
   return (
     <div
       className={`flex items-center gap-2 py-2 group hover:bg-surface-0 transition-colors cursor-pointer ${isNested ? 'pl-7 pr-3' : 'px-3'}`}
@@ -154,10 +167,25 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onSelect, isNeste
       {/* Timestamp */}
       <span className="text-[10px] text-ctp-overlay0 flex-shrink-0">{relativeTime(completed.completedAt)}</span>
 
+      {/* Delete */}
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/20 text-ctp-overlay0 hover:text-red-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+          title="Delete"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+        </button>
+      )}
+
       {/* Dismiss */}
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
         className="w-4 h-4 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-overlay0 hover:text-ctp-text cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+        title="Dismiss"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <line x1="18" y1="6" x2="6" y2="18" />

@@ -40,7 +40,6 @@ function seedAgent(overrides: Partial<Agent> = {}): Agent {
     kind: 'durable',
     status: 'running',
     color: 'indigo',
-    localOnly: false,
     ...overrides,
   };
   useAgentStore.setState((s) => ({

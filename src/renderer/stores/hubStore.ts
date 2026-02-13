@@ -61,12 +61,17 @@ interface HubState {
   paneTree: PaneNode | null;
   focusedPaneId: string | null;
   activeProjectId: string | null;
+  dragSourcePaneId: string | null;
+  dragOverPaneId: string | null;
   loadHub: (projectId: string, knownAgentIds: Set<string>) => void;
   splitPane: (paneId: string, direction: 'up' | 'down' | 'left' | 'right') => void;
   closePane: (paneId: string) => void;
   assignAgent: (paneId: string, agentId: string) => void;
   setFocusedPane: (paneId: string | null) => void;
   removePanesByAgent: (agentId: string) => void;
+  swapPanes: (paneId1: string, paneId2: string) => void;
+  setDragSource: (paneId: string | null) => void;
+  setDragOver: (paneId: string | null) => void;
 }
 
 function findAndReplace(node: PaneNode, targetId: string, replacement: PaneNode): PaneNode | null {
@@ -111,6 +116,8 @@ export const useHubStore = create<HubState>((set, get) => ({
   paneTree: null,
   focusedPaneId: null,
   activeProjectId: null,
+  dragSourcePaneId: null,
+  dragOverPaneId: null,
 
   loadHub: (projectId, knownAgentIds) => {
     const current = get();
@@ -224,6 +231,27 @@ export const useHubStore = create<HubState>((set, get) => ({
     set({ paneTree: newTree });
     saveToStorage(get().activeProjectId, newTree);
   },
+
+  swapPanes: (paneId1, paneId2) => {
+    const tree = get().paneTree;
+    if (!tree || paneId1 === paneId2) return;
+    const leaf1 = findLeaf(tree, paneId1);
+    const leaf2 = findLeaf(tree, paneId2);
+    if (!leaf1 || !leaf2) return;
+    const agent1 = leaf1.agentId;
+    const agent2 = leaf2.agentId;
+    const newTree = mapLeaves(tree, (leaf) => {
+      if (leaf.id === paneId1) return { ...leaf, agentId: agent2 };
+      if (leaf.id === paneId2) return { ...leaf, agentId: agent1 };
+      return leaf;
+    });
+    set({ paneTree: newTree, dragSourcePaneId: null, dragOverPaneId: null });
+    saveToStorage(get().activeProjectId, newTree);
+  },
+
+  setDragSource: (paneId) => set({ dragSourcePaneId: paneId }),
+
+  setDragOver: (paneId) => set({ dragOverPaneId: paneId }),
 }));
 
 function findLeaf(node: PaneNode, id: string): (PaneNode & { type: 'leaf' }) | null {

@@ -21,6 +21,7 @@ import {
   diffConfigLayers,
   defaultOverrideFlags,
 } from './config-resolver';
+import { DURABLE_CLAUDE_MD_TEMPLATE, DEFAULT_DURABLE_PERMISSIONS, QUICK_CLAUDE_MD_TEMPLATE, DEFAULT_QUICK_PERMISSIONS } from '../../shared/agent-templates';
 
 const PROJECT_PATH = '/test/project';
 
@@ -67,21 +68,35 @@ describe('resolveProjectDefaults', () => {
     vi.clearAllMocks();
   });
 
-  it('returns empty layer when no settings files exist', () => {
+  it('returns built-in defaults when no settings files exist', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
     const result = resolveProjectDefaults(PROJECT_PATH);
-    expect(result).toEqual({});
+    expect(result.claudeMd).toBe(DURABLE_CLAUDE_MD_TEMPLATE);
+    expect(result.permissions).toEqual({ allow: DEFAULT_DURABLE_PERMISSIONS });
   });
 
-  it('reads defaults from settings.json', () => {
+  it('settings.json overrides built-in defaults', () => {
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
       if (String(p).endsWith('settings.json')) {
-        return JSON.stringify({ defaults: { claudeMd: '# Default' }, quickOverrides: {} });
+        return JSON.stringify({ defaults: { claudeMd: '# Custom' }, quickOverrides: {} });
       }
       throw new Error('not found');
     });
     const result = resolveProjectDefaults(PROJECT_PATH);
-    expect(result.claudeMd).toBe('# Default');
+    expect(result.claudeMd).toBe('# Custom');
+    // Built-in permissions still inherited since settings.json didn't set them
+    expect(result.permissions).toEqual({ allow: DEFAULT_DURABLE_PERMISSIONS });
+  });
+
+  it('null in settings.json clears built-in default', () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('settings.json')) {
+        return JSON.stringify({ defaults: { claudeMd: null }, quickOverrides: {} });
+      }
+      throw new Error('not found');
+    });
+    const result = resolveProjectDefaults(PROJECT_PATH);
+    expect(result.claudeMd).toBeNull();
   });
 
   it('merges settings.local.json on top of settings.json', () => {
@@ -134,7 +149,7 @@ describe('resolveDurableConfig', () => {
     expect(result.permissions).toEqual({ allow: ['*'] });
   });
 
-  it('excludes overridden items', () => {
+  it('excludes overridden items but keeps non-overridden', () => {
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
       if (String(p).endsWith('agents.json')) {
         return JSON.stringify([{
@@ -173,7 +188,7 @@ describe('resolveQuickConfig', () => {
     expect(result.claudeMd).toBe('# Quick Override');
   });
 
-  it('inherits from defaults when quickOverrides omit a key', () => {
+  it('inherits permissions from defaults when quickOverrides omit them', () => {
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
       if (String(p).endsWith('settings.json')) {
         return JSON.stringify({
@@ -186,6 +201,13 @@ describe('resolveQuickConfig', () => {
     const result = resolveQuickConfig(PROJECT_PATH);
     expect(result.claudeMd).toBe('# Quick');
     expect(result.permissions).toEqual({ allow: ['*'] });
+  });
+
+  it('returns built-in quick defaults when no settings exist', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
+    const result = resolveQuickConfig(PROJECT_PATH);
+    expect(result.claudeMd).toBe(QUICK_CLAUDE_MD_TEMPLATE);
+    expect(result.permissions).toEqual({ allow: DEFAULT_QUICK_PERMISSIONS });
   });
 
   it('applies parent durable quickConfigLayer when quickOverrides enabled', () => {

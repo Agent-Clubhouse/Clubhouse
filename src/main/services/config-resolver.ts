@@ -1,6 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLayer, ConfigItemKey, ProjectSettings, DurableAgentConfig } from '../../shared/types';
+import {
+  DURABLE_CLAUDE_MD_TEMPLATE,
+  QUICK_CLAUDE_MD_TEMPLATE,
+  DEFAULT_DURABLE_PERMISSIONS,
+  DEFAULT_QUICK_PERMISSIONS,
+} from '../../shared/agent-templates';
 
 /**
  * Per-key merge: overlay wins if present, null = cleared, undefined = inherit.
@@ -17,8 +23,22 @@ export function mergeConfigLayers(base: ConfigLayer, overlay: ConfigLayer): Conf
   return result;
 }
 
+/** Built-in defaults for durable agents — used when no settings.json exists. */
+const BUILT_IN_DURABLE_DEFAULTS: ConfigLayer = {
+  claudeMd: DURABLE_CLAUDE_MD_TEMPLATE,
+  permissions: { allow: DEFAULT_DURABLE_PERMISSIONS },
+};
+
+/** Built-in defaults for quick agents. */
+const BUILT_IN_QUICK_DEFAULTS: ConfigLayer = {
+  claudeMd: QUICK_CLAUDE_MD_TEMPLATE,
+  permissions: { allow: DEFAULT_QUICK_PERMISSIONS },
+};
+
 /**
  * Reads settings.json + settings.local.json, merges into effective project defaults.
+ * Chain: built-in → settings.json → settings.local.json
+ * If settings.json sets a key to null, the built-in is explicitly cleared.
  */
 export function resolveProjectDefaults(projectPath: string): ConfigLayer {
   const settingsPath = path.join(projectPath, '.clubhouse', 'settings.json');
@@ -31,7 +51,10 @@ export function resolveProjectDefaults(projectPath: string): ConfigLayer {
     // No settings file
   }
 
-  const base: ConfigLayer = settings.defaults || {};
+  const userDefaults: ConfigLayer = settings.defaults || {};
+
+  // Layer: built-in → user settings.json defaults
+  let result = mergeConfigLayers(BUILT_IN_DURABLE_DEFAULTS, userDefaults);
 
   let localLayer: ConfigLayer = {};
   try {
@@ -40,7 +63,8 @@ export function resolveProjectDefaults(projectPath: string): ConfigLayer {
     // No local file
   }
 
-  return mergeConfigLayers(base, localLayer);
+  // Layer: → settings.local.json
+  return mergeConfigLayers(result, localLayer);
 }
 
 /**
@@ -75,7 +99,7 @@ export function resolveDurableConfig(projectPath: string, agentId: string): Conf
 /**
  * Full resolution chain for quick agents. Returns ConfigLayer with claudeMd resolved.
  *
- * Chain: project defaults → project quickOverrides → parent durable quickConfigLayer
+ * Chain: built-in quick defaults → project defaults → local settings → project quickOverrides → parent durable quickConfigLayer
  */
 export function resolveQuickConfig(projectPath: string, parentAgentId?: string): ConfigLayer {
   const settingsPath = path.join(projectPath, '.clubhouse', 'settings.json');
@@ -88,8 +112,10 @@ export function resolveQuickConfig(projectPath: string, parentAgentId?: string):
     // No settings file
   }
 
-  // Start with effective project defaults
-  const base: ConfigLayer = settings.defaults || {};
+  // Start with built-in quick defaults → user defaults
+  const userDefaults: ConfigLayer = settings.defaults || {};
+  let result = mergeConfigLayers(BUILT_IN_QUICK_DEFAULTS, userDefaults);
+
   let localLayer: ConfigLayer = {};
   try {
     localLayer = JSON.parse(fs.readFileSync(localPath, 'utf-8'));
@@ -97,7 +123,7 @@ export function resolveQuickConfig(projectPath: string, parentAgentId?: string):
     // No local file
   }
 
-  let result = mergeConfigLayers(base, localLayer);
+  result = mergeConfigLayers(result, localLayer);
 
   // Apply project-level quick overrides
   if (settings.quickOverrides) {

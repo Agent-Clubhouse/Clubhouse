@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
+import { expandTemplate, AgentContext } from '../../shared/template-engine';
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -78,6 +79,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     if (!agentId) return { ok: false, message: 'No agent selected' };
 
     const agent = get().agents[agentId];
+    if (agent?.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
     // Kill and remove any child quick agents before deleting a durable parent
     if (agent?.kind === 'durable') {
@@ -166,7 +168,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       kind: 'quick',
       status: 'running',
       color: 'gray',
-      localOnly: true,
       mission,
       model: resolvedModel,
       parentAgentId,
@@ -186,10 +187,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       // Build system prompt: per-agent systemPrompt > resolved claudeMd > empty, then summary
       const systemParts: string[] = [];
+      const quickContext: AgentContext = {
+        agentName: name,
+        agentType: 'quick',
+        worktreePath: cwd,
+        branch: '',
+        projectPath,
+      };
       if (quickDefaults?.systemPrompt) {
-        systemParts.push(quickDefaults.systemPrompt);
+        systemParts.push(expandTemplate(quickDefaults.systemPrompt, quickContext));
       } else if (quickConfig.claudeMd) {
-        systemParts.push(quickConfig.claudeMd);
+        systemParts.push(expandTemplate(quickConfig.claudeMd, quickContext));
       }
       systemParts.push(summaryInstruction);
       const systemPrompt = systemParts.join('\n\n');
@@ -221,7 +229,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       kind: 'durable',
       status: 'running',
       color: config.color,
-      localOnly: config.localOnly,
+      role: config.role,
       worktreePath: config.worktreePath,
       branch: config.branch,
       exitCode: undefined,
@@ -250,6 +258,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   loadDurableAgents: async (projectId, projectPath) => {
+    // Ensure host agent exists for this project
+    try {
+      await window.clubhouse.agent.ensureHost(projectPath);
+    } catch {
+      // Non-fatal
+    }
     const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(projectPath);
     const agents = { ...get().agents };
 
@@ -263,7 +277,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           status: 'sleeping',
           color: config.color,
           emoji: config.emoji,
-          localOnly: config.localOnly,
+          role: config.role,
           worktreePath: config.worktreePath,
           branch: config.branch,
         };

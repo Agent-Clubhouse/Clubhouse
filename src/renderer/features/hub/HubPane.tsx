@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, DragEvent } from 'react';
 import { AgentTerminal } from '../agents/AgentTerminal';
 import { SleepingClaude } from '../agents/SleepingClaude';
 import { AgentPicker } from './AgentPicker';
@@ -20,10 +20,9 @@ const STATUS_RING_COLOR: Record<string, string> = {
 interface Props {
   paneId: string;
   agentId: string | null;
-  onCloseConfirm: (paneId: string, agentId: string) => void;
 }
 
-export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
+export function HubPane({ paneId, agentId }: Props) {
   const [hovered, setHovered] = useState(false);
   const focusedPaneId = useHubStore((s) => s.focusedPaneId);
   const setFocusedPane = useHubStore((s) => s.setFocusedPane);
@@ -35,9 +34,36 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
   );
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
 
+  const dragSourcePaneId = useHubStore((s) => s.dragSourcePaneId);
+  const dragOverPaneId = useHubStore((s) => s.dragOverPaneId);
+  const setDragOver = useHubStore((s) => s.setDragOver);
+  const swapPanes = useHubStore((s) => s.swapPanes);
+
   const isFocused = focusedPaneId === paneId;
+  const isDragSource = dragSourcePaneId === paneId;
+  const isDragOver = dragOverPaneId === paneId;
   const agent = agentId ? agents[agentId] : null;
   const attentionClass = useAttentionBorder(agent);
+
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (!dragSourcePaneId || dragSourcePaneId === paneId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver(paneId);
+  }, [dragSourcePaneId, paneId, setDragOver]);
+
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOver(null);
+  }, [setDragOver]);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const sourcePaneId = e.dataTransfer.getData('text/x-pane-id');
+    if (sourcePaneId && sourcePaneId !== paneId) {
+      swapPanes(sourcePaneId, paneId);
+    }
+  }, [paneId, swapPanes]);
 
   // Check if this pane's agent was a completed quick agent (agent removed from store)
   const completedRecord = agentId && !agent
@@ -45,27 +71,14 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
     : null;
 
   const handleClose = useCallback(() => {
-    if (!agentId || !agent) {
-      closePane(paneId);
-      return;
-    }
-
-    // Sleeping/errored durable agents: just detach
-    if (agent.kind === 'durable' && (agent.status === 'sleeping' || agent.status === 'error')) {
-      closePane(paneId);
-      return;
-    }
-
-    // Sleeping/errored quick agents: remove and close
-    if (agent.kind === 'quick' && (agent.status === 'sleeping' || agent.status === 'error')) {
+    // Sleeping/errored quick agents: remove from store too
+    if (agentId && agent?.kind === 'quick' && (agent.status === 'sleeping' || agent.status === 'error')) {
       useAgentStore.getState().removeAgent(agentId);
-      closePane(paneId);
-      return;
     }
 
-    // Running agents need confirmation
-    onCloseConfirm(paneId, agentId);
-  }, [paneId, agentId, agent, closePane, onCloseConfirm]);
+    // Close always just removes the pane — use the stop button to kill the agent
+    closePane(paneId);
+  }, [paneId, agentId, agent, closePane]);
 
   // Show ghost card for completed quick agents
   if (completedRecord) {
@@ -73,16 +86,26 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
       <div
         className="h-full w-full relative overflow-hidden"
         onClick={() => setFocusedPane(paneId)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <QuickAgentGhost
           completed={completedRecord}
           onDismiss={() => {
+            useHubStore.getState().removePanesByAgent(completedRecord.id);
+          }}
+          onDelete={() => {
             if (activeProjectId) {
               dismissCompleted(activeProjectId, completedRecord.id);
             }
             useHubStore.getState().removePanesByAgent(completedRecord.id);
           }}
         />
+        {/* Drop target highlight overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 border-2 border-dashed border-indigo-400 bg-indigo-500/10 pointer-events-none z-[21]" />
+        )}
         {/* Focus ring overlay */}
         {isFocused && (
           <div className="absolute inset-0 border border-indigo-500 pointer-events-none z-20" />
@@ -96,8 +119,15 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
       <div
         className="h-full w-full relative overflow-hidden"
         onClick={() => setFocusedPane(paneId)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <AgentPicker paneId={paneId} />
+        {/* Drop target highlight overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 border-2 border-dashed border-indigo-400 bg-indigo-500/10 pointer-events-none z-[21]" />
+        )}
         {/* Focus ring overlay */}
         {isFocused && (
           <div className="absolute inset-0 border border-indigo-500 pointer-events-none z-20" />
@@ -112,6 +142,9 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
       onClick={() => setFocusedPane(paneId)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {agent.status === 'running' ? (
         <AgentTerminal agentId={agentId} focused={isFocused} />
@@ -119,8 +152,8 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
         <SleepingClaude agent={agent} />
       )}
 
-      {/* Status chip — expands to full width on hover */}
-      {agent && <StatusChip agent={agent} expanded={hovered} onClose={handleClose} />}
+      {/* Status chip — expands to full width on hover; drag handle */}
+      {agent && <StatusChip agent={agent} expanded={hovered} onClose={handleClose} paneId={paneId} />}
 
       {/* Split buttons at edges (visible on hover) */}
       {hovered && (
@@ -137,6 +170,16 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
         <div className={`absolute inset-0 pointer-events-none z-[19] ${attentionClass}`} />
       )}
 
+      {/* Drag source dimming overlay */}
+      {isDragSource && (
+        <div className="absolute inset-0 bg-black/40 pointer-events-none z-[21]" />
+      )}
+
+      {/* Drop target highlight overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 border-2 border-dashed border-indigo-400 bg-indigo-500/10 pointer-events-none z-[21]" />
+      )}
+
       {/* Focus ring overlay — renders above hover bar */}
       {isFocused && (
         <div className="absolute inset-0 border border-indigo-500 pointer-events-none z-20" />
@@ -145,19 +188,35 @@ export function HubPane({ paneId, agentId, onCloseConfirm }: Props) {
   );
 }
 
-function StatusChip({ agent, expanded, onClose }: { agent: Agent; expanded: boolean; onClose: () => void }) {
+function StatusChip({ agent, expanded, onClose, paneId }: { agent: Agent; expanded: boolean; onClose: () => void; paneId: string }) {
   const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
   const killAgent = useAgentStore((s) => s.killAgent);
+  const setDragSource = useHubStore((s) => s.setDragSource);
+  const setDragOver = useHubStore((s) => s.setDragOver);
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
     : baseRingColor;
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
 
+  const handleDragStart = useCallback((e: DragEvent) => {
+    e.dataTransfer.setData('text/x-pane-id', paneId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDragSource(paneId);
+  }, [paneId, setDragSource]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragSource(null);
+    setDragOver(null);
+  }, [setDragSource, setDragOver]);
+
   return (
     <div
+      draggable={expanded}
+      onDragStart={expanded ? handleDragStart : undefined}
+      onDragEnd={expanded ? handleDragEnd : undefined}
       className={`absolute top-1.5 left-1.5 z-10 flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-ctp-mantle/80 backdrop-blur-sm border border-surface-0/50 select-none transition-all duration-150 ${
-        expanded ? 'right-1.5 pointer-events-auto' : 'max-w-[45%] pointer-events-none'
+        expanded ? 'right-1.5 pointer-events-auto cursor-grab active:cursor-grabbing' : 'max-w-[45%] pointer-events-none'
       }`}
     >
       <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>

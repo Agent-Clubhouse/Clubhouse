@@ -86,6 +86,23 @@ export function NotificationSettingsView() {
               disabled={!settings.enabled}
             />
           </div>
+
+          <div className="border-t border-surface-0" />
+
+          {/* Test notification */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <div className="text-sm text-ctp-text font-medium">Test Notification</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">Send a test notification (also triggers the macOS permission prompt)</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.clubhouse.app.sendNotification('Clubhouse', 'Notifications are working!', !settings.playSound)}
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
+            >
+              Send Test
+            </button>
+          </div>
         </div>
       </div>
     </div>

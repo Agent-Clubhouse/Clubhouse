@@ -38,4 +38,24 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_SKILLS, (_event, worktreePath: string) => {
     return agentSettings.listSkills(worktreePath);
   });
+
+  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATES, (_event, worktreePath: string) => {
+    return agentSettings.listAgentTemplates(worktreePath);
+  });
+
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_SKILLS, (_event, projectPath: string) => {
+    return agentSettings.listSourceSkills(projectPath);
+  });
+
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, (_event, projectPath: string) => {
+    return agentSettings.listSourceAgentTemplates(projectPath);
+  });
+
+  ipcMain.handle(IPC.AGENT.CREATE_SKILL, (_event, basePath: string, name: string, isSource: boolean) => {
+    return agentSettings.createSkillDir(basePath, name, isSource);
+  });
+
+  ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, (_event, basePath: string, name: string, isSource: boolean) => {
+    return agentSettings.createAgentTemplateDir(basePath, name, isSource);
+  });
 }

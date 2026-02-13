@@ -17,7 +17,7 @@ export interface Agent {
   status: AgentStatus;
   color: string;
   emoji?: string;
-  localOnly: boolean;
+  role?: 'host';
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
@@ -89,7 +89,7 @@ export interface DurableAgentConfig {
   name: string;
   color: string;
   emoji?: string;
-  localOnly: boolean;
+  role?: 'host';
   branch: string;
   worktreePath: string;
   createdAt: string;
@@ -241,6 +241,12 @@ export interface McpServerEntry {
 }
 
 export interface SkillEntry {
+  name: string;
+  path: string;
+  hasReadme: boolean;
+}
+
+export interface AgentTemplateEntry {
   name: string;
   path: string;
   hasReadme: boolean;

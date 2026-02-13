@@ -47,8 +47,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, localOnly: boolean, model?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, localOnly, model),
+    createDurable: (projectPath: string, name: string, color: string, model?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -89,6 +89,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
     updateDurableConfig: (projectPath: string, agentId: string, updates: any) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
+    ensureHost: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.ENSURE_HOST, projectPath),
     onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) =>
         callback(agentId, hookEvent);
@@ -130,6 +132,16 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath),
     listSkills: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath),
+    listAgentTemplates: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath),
+    listSourceSkills: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_SKILLS, projectPath),
+    listSourceAgentTemplates: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, projectPath),
+    createSkill: (basePath: string, name: string, isSource: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource),
+    createAgentTemplate: (basePath: string, name: string, isSource: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource),
   },
   file: {
     readTree: (dirPath: string) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath),

@@ -66,7 +66,6 @@ export function SendToAgentDialog({ notePath, noteContent, onClose }: Props) {
             id: agent.id,
             name: agent.name,
             color: agent.color,
-            localOnly: agent.localOnly,
             branch: agent.branch || '',
             worktreePath: agent.worktreePath || '',
             createdAt: '',

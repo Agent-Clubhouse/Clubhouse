@@ -10,7 +10,6 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     kind: 'durable',
     status: 'sleeping',
     color: 'indigo',
-    localOnly: false,
     worktreePath: '/repo/.clubhouse/agents/alpha-agent',
     ...overrides,
   };

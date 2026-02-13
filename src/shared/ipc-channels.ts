@@ -49,6 +49,12 @@ export const IPC = {
     RESOLVE_QUICK_CONFIG: 'agent:resolve-quick-config',
     GET_DURABLE_CONFIG: 'agent:get-durable-config',
     UPDATE_DURABLE_CONFIG: 'agent:update-durable-config',
+    LIST_AGENT_TEMPLATES: 'agent:list-agent-templates',
+    LIST_SOURCE_SKILLS: 'agent:list-source-skills',
+    LIST_SOURCE_AGENT_TEMPLATES: 'agent:list-source-agent-templates',
+    CREATE_SKILL: 'agent:create-skill',
+    CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
+    ENSURE_HOST: 'agent:ensure-host',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
