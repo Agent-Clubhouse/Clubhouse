@@ -4,6 +4,7 @@ import { usePluginStore } from '../../stores/pluginStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -201,6 +202,35 @@ function ViewsSection({ projectId, projectPath }: { projectId: string; projectPa
   );
 }
 
+function OrchestratorSection({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+  const { projects, updateProject } = useProjectStore();
+  const project = projects.find((p) => p.id === projectId);
+  const enabledOrchestrators = useOrchestratorStore((s) => s.getEnabledOrchestrators());
+
+  if (!project || enabledOrchestrators.length <= 1) return null;
+
+  const current = project.orchestrator || 'claude-code';
+
+  return (
+    <div className="space-y-2 mb-6">
+      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Agent Backend</h3>
+      <select
+        value={current}
+        onChange={(e) => updateProject(project.id, { orchestrator: e.target.value })}
+        className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+          text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+      >
+        {enabledOrchestrators.map((o) => (
+          <option key={o.id} value={o.id}>{o.displayName}</option>
+        ))}
+      </select>
+      <p className="text-xs text-ctp-subtext0">
+        Default orchestrator for agents in this project. Individual agents can override.
+      </p>
+    </div>
+  );
+}
+
 function DangerZone({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
   const removeProject = useProjectStore((s) => s.removeProject);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
@@ -270,6 +300,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
         <NameAndPathSection projectId={project.id} />
         <AppearanceSection projectId={project.id} />
         <ViewsSection projectId={project.id} projectPath={project.path} />
+        <OrchestratorSection projectId={project.id} projectPath={project.path} />
         <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>
     </div>

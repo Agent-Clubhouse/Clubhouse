@@ -29,6 +29,7 @@ function SettingsCategoryNav() {
       <nav className="py-1">
         {isApp ? (
           <>
+            {navButton('Orchestrators', 'orchestrators')}
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
           </>

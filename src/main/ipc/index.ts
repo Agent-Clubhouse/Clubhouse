@@ -6,8 +6,12 @@ import { registerAgentHandlers } from './agent-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerAppHandlers } from './app-handlers';
 import * as hookServer from '../services/hook-server';
+import { registerBuiltinProviders } from '../orchestrators';
 
 export function registerAllHandlers(): void {
+  // Register orchestrator providers before anything else
+  registerBuiltinProviders();
+
   registerPtyHandlers();
   registerProjectHandlers();
   registerFileHandlers();

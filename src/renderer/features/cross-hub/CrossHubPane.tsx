@@ -1,6 +1,6 @@
 import { useState, useCallback, DragEvent } from 'react';
 import { AgentTerminal } from '../agents/AgentTerminal';
-import { SleepingClaude } from '../agents/SleepingClaude';
+import { SleepingAgent } from '../agents/SleepingAgent';
 import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
 import { QuickAgentGhost } from '../hub/QuickAgentGhost';
 import { useCrossHubStore } from '../../stores/crossHubStore';
@@ -143,7 +143,7 @@ export function CrossHubPane({ paneId, agentId, projectId }: Props) {
       {agent.status === 'running' ? (
         <AgentTerminal agentId={agentId} focused={isFocused} />
       ) : (
-        <SleepingClaude agent={agent} />
+        <SleepingAgent agent={agent} />
       )}
 
       {agent && <StatusChip agent={agent} expanded={hovered} onClose={handleClose} paneId={paneId} />}

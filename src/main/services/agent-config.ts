@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -77,13 +77,16 @@ export function getDurableConfig(projectPath: string, agentId: string): DurableA
 export function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
+  }
+  if (updates.orchestrator !== undefined) {
+    agent.orchestrator = updates.orchestrator;
   }
   writeAgents(projectPath, agents);
 }
@@ -94,6 +97,7 @@ export function createDurable(
   color: string,
   model?: string,
   useWorktree: boolean = true,
+  orchestrator?: OrchestratorId,
 ): DurableAgentConfig {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
@@ -139,6 +143,7 @@ export function createDurable(
     ...(worktreePath ? { worktreePath } : {}),
     createdAt: new Date().toISOString(),
     ...(model && model !== 'default' ? { model } : {}),
+    ...(orchestrator ? { orchestrator } : {}),
   };
 
   const agents = readAgents(projectPath);

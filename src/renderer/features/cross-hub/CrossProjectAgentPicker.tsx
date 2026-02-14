@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useCrossHubStore } from '../../stores/crossHubStore';
-import { MODEL_OPTIONS } from '../../../shared/models';
+import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatarWithRing } from '../agents/AgentAvatar';
 
 interface Props {
@@ -79,6 +79,7 @@ function AgentListForProject({
   assignAgent: (paneId: string, agentId: string, projectId: string) => void;
   onBack: () => void;
 }) {
+  const MODEL_OPTIONS = useModelOptions();
   const durableAgents = Object.values(agents)
     .filter((a) => a.kind === 'durable' && a.projectId === project.id);
 

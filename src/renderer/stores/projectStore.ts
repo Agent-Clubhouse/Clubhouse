@@ -13,7 +13,7 @@ interface ProjectState {
   pickAndAddProject: () => Promise<Project | null>;
   checkGit: (projectId: string, dirPath: string) => Promise<boolean>;
   gitInit: (projectId: string, dirPath: string) => Promise<boolean>;
-  updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName'>>) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>) => Promise<void>;
   pickProjectIcon: (projectId: string) => Promise<void>;
   reorderProjects: (orderedIds: string[]) => Promise<void>;
   loadProjectIcon: (project: Project) => Promise<void>;

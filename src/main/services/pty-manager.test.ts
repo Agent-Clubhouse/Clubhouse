@@ -16,7 +16,6 @@ vi.mock('node-pty', () => ({
 
 // Mock shell utility
 vi.mock('../util/shell', () => ({
-  findClaudeBinary: vi.fn(() => '/usr/local/bin/claude'),
   getShellEnvironment: vi.fn(() => ({ ...process.env })),
 }));
 
@@ -58,27 +57,27 @@ describe('pty-manager', () => {
   describe('spawn + buffer', () => {
     it('clears previous buffer on spawn', () => {
       // Spawn first to set up buffer
-      spawn('agent_buf', '/test');
+      spawn('agent_buf', '/test', '/usr/local/bin/claude', []);
       // Simulate data via the onData callback
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
       expect(getBuffer('agent_buf')).toBe('hello');
 
       // Spawn again — should clear
-      spawn('agent_buf', '/test');
+      spawn('agent_buf', '/test', '/usr/local/bin/claude', []);
       expect(getBuffer('agent_buf')).toBe('');
     });
 
     it('kills existing PTY for same agentId', () => {
-      spawn('agent_dup', '/test');
-      spawn('agent_dup', '/test');
+      spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
+      spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
       expect(mockProcess.kill).toHaveBeenCalled();
     });
   });
 
   describe('appendToBuffer (via spawn + onData)', () => {
     it('stores and concatenates data', () => {
-      spawn('agent_concat', '/test');
+      spawn('agent_concat', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello ');
       onDataCb('world');
@@ -86,7 +85,7 @@ describe('pty-manager', () => {
     });
 
     it('evicts oldest chunks when >512KB', () => {
-      spawn('agent_evict', '/test');
+      spawn('agent_evict', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       // Write chunks that total > 512KB
       const chunkSize = 100 * 1024; // 100KB
@@ -100,7 +99,7 @@ describe('pty-manager', () => {
     });
 
     it('keeps last chunk even if it alone exceeds limit', () => {
-      spawn('agent_big', '/test');
+      spawn('agent_big', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       const bigChunk = 'x'.repeat(600 * 1024); // 600KB single chunk
       onDataCb(bigChunk);
@@ -108,11 +107,11 @@ describe('pty-manager', () => {
     });
 
     it('independent buffers per agent', () => {
-      spawn('agent_a', '/test');
+      spawn('agent_a', '/test', '/usr/local/bin/claude', []);
       const cbA = mockProcess.onData.mock.calls[0][0];
       cbA('data_a');
 
-      spawn('agent_b', '/test');
+      spawn('agent_b', '/test', '/usr/local/bin/claude', []);
       const cbB = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
       cbB('data_b');
 
@@ -123,13 +122,13 @@ describe('pty-manager', () => {
 
   describe('gracefulKill', () => {
     it('writes /exit to process', () => {
-      spawn('agent_gk', '/test');
+      spawn('agent_gk', '/test', '/usr/local/bin/claude', []);
       gracefulKill('agent_gk');
       expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
     });
 
     it('sets killing flag (no re-kill race)', () => {
-      spawn('agent_gk2', '/test');
+      spawn('agent_gk2', '/test', '/usr/local/bin/claude', []);
       // Just verify it doesn't throw
       gracefulKill('agent_gk2');
       expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
@@ -138,7 +137,7 @@ describe('pty-manager', () => {
 
   describe('kill', () => {
     it('immediately kills and clears buffer', () => {
-      spawn('agent_kill', '/test');
+      spawn('agent_kill', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('some data');
       expect(getBuffer('agent_kill')).toBe('some data');

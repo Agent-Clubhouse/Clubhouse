@@ -6,7 +6,7 @@ import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from '../hub/QuickAgentGhost';
-import { MODEL_OPTIONS } from '../../../shared/models';
+import { useModelOptions } from '../../hooks/useModelOptions';
 export function AgentList() {
   const {
     agents, activeAgentId, setActiveAgent,
@@ -15,6 +15,7 @@ export function AgentList() {
     deleteDialogAgent,
   } = useAgentStore();
   const { activeProjectId, projects } = useProjectStore();
+  const MODEL_OPTIONS = useModelOptions();
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const completedAgents = useQuickAgentStore((s) =>
@@ -103,12 +104,12 @@ export function AgentList() {
     setQuickTargetParentId(null);
   };
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string) => {
     if (!activeProject) return;
     setShowDialog(false);
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator
       );
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
     } catch (err) {

@@ -2,6 +2,7 @@
 import * as http from 'http';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import { getAgentProjectPath, getAgentOrchestrator, resolveOrchestrator, getToolVerb } from './agent-system';
 
 let server: any = null;
 let serverPort = 0;
@@ -46,17 +47,50 @@ export function start(): Promise<number> {
         res.end();
 
         try {
-          const event = JSON.parse(body);
-          const win = getMainWindow();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
-              eventName: event.hook_event_name || 'unknown',
-              toolName: event.tool_name,
-              toolInput: event.tool_input,
-              notificationType: event.notification_type,
-              message: event.message,
-              timestamp: Date.now(),
-            });
+          const raw = JSON.parse(body);
+          const projectPath = getAgentProjectPath(agentId);
+          const orchestrator = getAgentOrchestrator(agentId);
+
+          if (projectPath) {
+            const provider = resolveOrchestrator(projectPath, orchestrator);
+            const normalized = provider.parseHookEvent(raw);
+
+            if (normalized) {
+              // Resolve tool verb on the main process side
+              const toolVerb = normalized.toolName
+                ? (provider.toolVerb(normalized.toolName) || `Using ${normalized.toolName}`)
+                : undefined;
+
+              const win = getMainWindow();
+              if (win && !win.isDestroyed()) {
+                win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
+                  kind: normalized.kind,
+                  toolName: normalized.toolName,
+                  toolInput: normalized.toolInput,
+                  message: normalized.message,
+                  toolVerb,
+                  timestamp: Date.now(),
+                });
+              }
+            }
+          } else {
+            // Fallback: unknown agent, send raw event with basic normalization
+            const win = getMainWindow();
+            if (win && !win.isDestroyed()) {
+              win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
+                kind: raw.hook_event_name === 'Stop' ? 'stop'
+                  : raw.hook_event_name === 'PreToolUse' ? 'pre_tool'
+                  : raw.hook_event_name === 'PostToolUse' ? 'post_tool'
+                  : raw.hook_event_name === 'PostToolUseFailure' ? 'tool_error'
+                  : raw.hook_event_name === 'Notification' ? 'notification'
+                  : raw.hook_event_name === 'PermissionRequest' ? 'permission_request'
+                  : 'stop',
+                toolName: raw.tool_name,
+                toolInput: raw.tool_input,
+                message: raw.message,
+                timestamp: Date.now(),
+              });
+            }
           }
         } catch {
           // Ignore malformed JSON

@@ -1,7 +1,7 @@
 import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { findClaudeBinary, getShellEnvironment } from '../util/shell';
+import { getShellEnvironment } from '../util/shell';
 
 interface ManagedPty {
   process: pty.IPty;
@@ -44,7 +44,7 @@ function getMainWindow(): BrowserWindow | null {
   return windows[0] || null;
 }
 
-export function spawn(agentId: string, projectPath: string, claudeArgs: string[] = []): void {
+export function spawn(agentId: string, cwd: string, binary: string, args: string[] = []): void {
   if (ptys.has(agentId)) {
     const existing = ptys.get(agentId)!;
     try { existing.process.kill(); } catch {}
@@ -56,15 +56,14 @@ export function spawn(agentId: string, projectPath: string, claudeArgs: string[]
   outputBuffers.delete(agentId);
   bufferSizes.delete(agentId);
 
-  const claudePath = findClaudeBinary();
-  const shellCmd = [claudePath, ...claudeArgs].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+  const shellCmd = [binary, ...args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
   const shell = process.env.SHELL || '/bin/zsh';
 
-  // Spawn a bare interactive shell first. The claude command is written to stdin
+  // Spawn a bare interactive shell first. The agent command is written to stdin
   // after the terminal mounts and sends the real resize (see pendingCommands).
   const proc = pty.spawn(shell, ['-il'], {
     name: 'xterm-256color',
-    cwd: projectPath,
+    cwd,
     env: getShellEnvironment(),
     cols: 120,
     rows: 30,
@@ -172,15 +171,15 @@ export function resize(agentId: string, cols: number, rows: number): void {
   }
 }
 
-export function gracefulKill(agentId: string): void {
+export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): void {
   const managed = ptys.get(agentId);
   if (!managed) return;
 
   managed.killing = true;
 
-  // Send /exit to Claude CLI
+  // Send exit command to the agent CLI
   try {
-    managed.process.write('/exit\r');
+    managed.process.write(exitCommand);
   } catch {
     // already dead
   }
@@ -210,10 +209,10 @@ export function kill(agentId: string): void {
   bufferSizes.delete(agentId);
 }
 
-export function killAll(): void {
+export function killAll(exitCommand: string = '/exit\r'): void {
   for (const [id, managed] of ptys) {
     try {
-      managed.process.write('/exit\r');
+      managed.process.write(exitCommand);
     } catch {
       // ignore
     }

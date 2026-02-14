@@ -12,6 +12,7 @@ import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useThemeStore } from './stores/themeStore';
 import { usePluginStore } from './stores/pluginStore';
+import { useOrchestratorStore } from './stores/orchestratorStore';
 import { registerAllPlugins, getPlugin, getAllPlugins } from './plugins';
 import { CrossHubCommandCenter } from './features/cross-hub/CrossHubCommandCenter';
 import { CORE_TAB_IDS } from '../shared/types';
@@ -41,12 +42,14 @@ export function App() {
   // Subscribe to raw data so guards re-run when configs change
   const enabledPlugins = usePluginStore((s) => s.enabledPlugins);
   const hiddenCoreTabs = usePluginStore((s) => s.hiddenCoreTabs);
+  const loadOrchestratorSettings = useOrchestratorStore((s) => s.loadSettings);
 
   useEffect(() => {
     loadProjects();
     loadNotificationSettings();
     loadTheme();
-  }, [loadProjects, loadNotificationSettings, loadTheme]);
+    loadOrchestratorSettings();
+  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
@@ -186,17 +189,22 @@ export function App() {
   useEffect(() => {
     const removeHookListener = window.clubhouse.agent.onHookEvent(
       (agentId, event) => {
-        handleHookEvent(agentId, event);
+        handleHookEvent(agentId, event as import('../shared/types').AgentHookEvent);
         const agent = useAgentStore.getState().agents[agentId];
         const name = agent?.name ?? agentId;
-        checkAndNotify(name, event.eventName, event.toolName);
+        checkAndNotify(name, event.kind, event.toolName);
 
-        // Auto-exit quick agents when Claude finishes (Stop event).
-        // Short delay lets Claude finish rendering before we send /exit.
-        // pty.kill triggers gracefulKill: sends /exit then force-kills after 5s.
-        if (event.eventName === 'Stop' && agent?.kind === 'quick') {
+        // Auto-exit quick agents when the agent finishes (stop event).
+        // Short delay lets the agent finish rendering before we send exit.
+        // killAgent triggers gracefulKill: sends exit command then force-kills after 5s.
+        if (event.kind === 'stop' && agent?.kind === 'quick') {
+          const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
           setTimeout(() => {
-            window.clubhouse.pty.kill(agentId);
+            if (project) {
+              window.clubhouse.agent.killAgent(agentId, project.path);
+            } else {
+              window.clubhouse.pty.kill(agentId);
+            }
           }, 500);
         }
       }

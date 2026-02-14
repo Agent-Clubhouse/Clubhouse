@@ -1,3 +1,5 @@
+export type OrchestratorId = 'claude-code' | (string & {});
+
 export interface Project {
   id: string;
   name: string;
@@ -5,6 +7,7 @@ export interface Project {
   color?: string;       // AGENT_COLORS id (e.g. 'emerald')
   icon?: string;        // filename in ~/.clubhouse/project-icons/
   displayName?: string; // user-set display name (overrides `name` in UI)
+  orchestrator?: OrchestratorId;
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'error';
@@ -24,6 +27,7 @@ export interface Agent {
   mission?: string;
   model?: string;
   parentAgentId?: string;
+  orchestrator?: OrchestratorId;
 }
 
 export interface CompletedQuickAgent {
@@ -73,6 +77,7 @@ export interface DurableAgentConfig {
   createdAt: string;
   model?: string;
   quickAgentDefaults?: QuickAgentDefaults;
+  orchestrator?: OrchestratorId;
 }
 
 export interface FileNode {
@@ -95,7 +100,7 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'display' | 'plugins';
+export type SettingsSubPage = 'project' | 'notifications' | 'display' | 'plugins' | 'orchestrators';
 
 export type ThemeId =
   | 'catppuccin-mocha'
@@ -229,13 +234,28 @@ export interface AgentTemplateEntry {
   hasReadme: boolean;
 }
 
+export type HookEventKind = 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request';
+
 export interface AgentHookEvent {
-  eventName: string;
+  kind: HookEventKind;
   toolName?: string;
   toolInput?: Record<string, unknown>;
-  notificationType?: string;
   message?: string;
+  /** Human-readable verb for the tool, resolved by the provider (e.g. "Editing file") */
+  toolVerb?: string;
   timestamp: number;
+}
+
+export interface SpawnAgentParams {
+  agentId: string;
+  projectPath: string;
+  cwd: string;
+  kind: AgentKind;
+  model?: string;
+  mission?: string;
+  systemPrompt?: string;
+  allowedTools?: string[];
+  orchestrator?: OrchestratorId;
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';
@@ -258,12 +278,6 @@ export interface WorktreeStatus {
 export interface DeleteResult {
   ok: boolean;
   message: string;
-}
-
-export interface PtySpawnOptions {
-  agentId: string;
-  projectPath: string;
-  claudeArgs?: string[];
 }
 
 export interface PtyDataPayload {

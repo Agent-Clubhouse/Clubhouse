@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHubStore } from '../../stores/hubStore';
-import { MODEL_OPTIONS } from '../../../shared/models';
+import { useModelOptions } from '../../hooks/useModelOptions';
 import { AgentAvatarWithRing } from '../agents/AgentAvatar';
 
 interface Props {
@@ -16,6 +16,7 @@ export function AgentPicker({ paneId }: Props) {
   const { projects, activeProjectId } = useProjectStore();
   const assignAgent = useHubStore((s) => s.assignAgent);
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const MODEL_OPTIONS = useModelOptions();
 
   const durableAgents = Object.values(agents)
     .filter((a) => a.kind === 'durable' && a.projectId === activeProjectId);
