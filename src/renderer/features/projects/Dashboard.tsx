@@ -254,6 +254,7 @@ function ProjectCard({ project }: { project: Project }) {
   const navigateToAgent = useNavigateToAgent();
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
+  const toggleSettings = useUIStore((s) => s.toggleSettings);
 
   const agents = useMemo(
     () => Object.values(allAgents).filter((a) => a.projectId === project.id),
@@ -266,9 +267,13 @@ function ProjectCard({ project }: { project: Project }) {
   const navigateToTab = useCallback(
     (tab: 'hub' | 'settings') => {
       setActiveProject(project.id);
-      setExplorerTab(tab);
+      if (tab === 'settings') {
+        toggleSettings();
+      } else {
+        setExplorerTab(tab);
+      }
     },
-    [project.id, setActiveProject, setExplorerTab]
+    [project.id, setActiveProject, setExplorerTab, toggleSettings]
   );
 
   return (

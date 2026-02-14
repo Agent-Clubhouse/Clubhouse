@@ -28,7 +28,6 @@ export function App() {
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
-  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const isFullWidth = explorerTab === 'hub' || (getPlugin(explorerTab)?.fullWidth === true);
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
   const loadTheme = useThemeStore((s) => s.loadTheme);
@@ -48,11 +47,14 @@ export function App() {
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
-      setExplorerTab('settings');
-      setSettingsSubPage('notifications');
+      const state = useUIStore.getState();
+      if (state.explorerTab !== 'settings') {
+        state.toggleSettings();
+      }
+      state.setSettingsSubPage('notifications');
     });
     return () => remove();
-  }, [setExplorerTab, setSettingsSubPage]);
+  }, []);
 
   // Load durable agents for all projects so the dashboard shows them
   useEffect(() => {
@@ -174,7 +176,7 @@ export function App() {
   }, [handleHookEvent, checkAndNotify]);
 
 
-  const isHome = activeProjectId === null;
+  const isHome = activeProjectId === null && explorerTab !== 'settings';
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const pluginLabel = getPlugin(explorerTab)?.label;

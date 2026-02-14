@@ -1,9 +1,9 @@
 import { useProjectStore } from '../../stores/projectStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 
-function AppearanceSection() {
-  const { projects, activeProjectId, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
-  const project = projects.find((p) => p.id === activeProjectId);
+function AppearanceSection({ projectId }: { projectId: string }) {
+  const { projects, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
+  const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
 
   const iconDataUrl = projectIcons[project.id];
@@ -82,11 +82,12 @@ function AppearanceSection() {
   );
 }
 
-export function ProjectSettings() {
+export function ProjectSettings({ projectId }: { projectId?: string }) {
   const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const id = projectId ?? activeProjectId;
+  const project = projects.find((p) => p.id === id);
 
-  if (!activeProject) {
+  if (!project) {
     return <div className="p-4 text-ctp-subtext0 text-sm">Select a project</div>;
   }
 
@@ -94,7 +95,7 @@ export function ProjectSettings() {
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl">
         <h2 className="text-lg font-semibold text-ctp-text mb-4">Project Settings</h2>
-        <AppearanceSection />
+        <AppearanceSection projectId={project.id} />
       </div>
     </div>
   );

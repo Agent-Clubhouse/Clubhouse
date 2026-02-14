@@ -11,8 +11,8 @@ import { terminalPlugin } from './terminal-plugin';
  */
 export function registerAllPlugins(): void {
   registerPlugin(filesPlugin);
-  registerPlugin(notesPlugin);
   registerPlugin(gitPlugin);
-  registerPlugin(schedulerPlugin);
   registerPlugin(terminalPlugin);
+  registerPlugin(notesPlugin);
+  registerPlugin(schedulerPlugin);
 }
