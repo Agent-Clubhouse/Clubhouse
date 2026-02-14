@@ -24,7 +24,6 @@ export interface Agent {
   mission?: string;
   model?: string;
   parentAgentId?: string;
-  role?: 'host';
 }
 
 export interface CompletedQuickAgent {
@@ -99,7 +98,6 @@ export interface DurableAgentConfig {
   quickOverrides: OverrideFlags;
   quickConfigLayer: ConfigLayer;
   quickAgentDefaults?: QuickAgentDefaults;
-  role?: 'host';
 }
 
 export interface FileNode {

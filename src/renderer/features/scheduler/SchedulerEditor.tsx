@@ -45,7 +45,7 @@ export function SchedulerEditor() {
     setPrompt(job.prompt);
     setEnabled(job.enabled);
     setDirty(false);
-  }, [job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [job?.id]);
 
   if (!job) {
     return (

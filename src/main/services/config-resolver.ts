@@ -54,7 +54,7 @@ export function resolveProjectDefaults(projectPath: string): ConfigLayer {
   const userDefaults: ConfigLayer = settings.defaults || {};
 
   // Layer: built-in → user settings.json defaults
-  let result = mergeConfigLayers(BUILT_IN_DURABLE_DEFAULTS, userDefaults);
+  const result = mergeConfigLayers(BUILT_IN_DURABLE_DEFAULTS, userDefaults);
 
   let localLayer: ConfigLayer = {};
   try {

@@ -30,7 +30,7 @@ export function FileViewer() {
   const isMarkdown = MARKDOWN_EXTS.has(ext);
   const isImage = IMAGE_EXTS.has(ext);
   const isSvg = ext === 'svg';
-  const hasToggle = isMarkdown || isSvg;
+  const _hasToggle = isMarkdown || isSvg;
 
   // Unsaved-changes guard when switching files
   useEffect(() => {

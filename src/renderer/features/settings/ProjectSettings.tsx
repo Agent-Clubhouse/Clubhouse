@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useAgentStore } from '../../stores/agentStore';
-import { ProjectSettings as ProjectSettingsType, ConfigLayer, PermissionsConfig, SkillEntry, AgentTemplateEntry } from '../../../shared/types';
+import { ProjectSettings as ProjectSettingsType, ConfigLayer, SkillEntry, AgentTemplateEntry } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { PermissionsEditor } from './PermissionsEditor';
 import { SkillAgentList } from './SkillAgentList';

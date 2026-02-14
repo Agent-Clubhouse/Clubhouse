@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import * as path from 'path';
+import * as _path from 'path';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),

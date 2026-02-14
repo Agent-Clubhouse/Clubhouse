@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLayer, OverrideFlags, PermissionsConfig, McpConfig } from '../../shared/types';
 import { AgentContext, expandTemplate } from '../../shared/template-engine';
-import { resolveProjectDefaults, resolveDurableConfig } from './config-resolver';
+
 
 /**
  * Write or delete .claude/CLAUDE.local.md in a worktree.

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DurableAgentConfig, QuickAgentDefaults, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, ConfigLayer, ConfigItemKey } from '../../shared/types';
 import { AgentContext } from '../../shared/template-engine';
 import { resolveProjectDefaults, resolveDurableConfig, diffConfigLayers, defaultOverrideFlags } from './config-resolver';
-import { materializeAll, repairMissing, materializeClaudeMd, materializePermissions } from './config-materializer';
+import { materializeAll, repairMissing } from './config-materializer';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -312,7 +312,7 @@ export function saveSettings(projectPath: string, settings: ProjectSettings): vo
   ensureDir(clubhouseDir(projectPath));
 
   // Compute diff to know what changed
-  const oldSettings = getSettings(projectPath);
+  const _oldSettings = getSettings(projectPath);
   const oldDefaults = resolveProjectDefaults(projectPath);
 
   fs.writeFileSync(settingsPath(projectPath), JSON.stringify(settings, null, 2), 'utf-8');

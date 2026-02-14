@@ -1,6 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@source "../**/*.{ts,tsx,html}";
+
+@theme inline {
+  --color-ctp-base: rgb(var(--ctp-base));
+  --color-ctp-mantle: rgb(var(--ctp-mantle));
+  --color-ctp-crust: rgb(var(--ctp-crust));
+  --color-ctp-text: rgb(var(--ctp-text));
+  --color-ctp-subtext1: rgb(var(--ctp-subtext1));
+  --color-ctp-subtext0: rgb(var(--ctp-subtext0));
+  --color-surface-0: rgb(var(--ctp-surface0));
+  --color-surface-1: rgb(var(--ctp-surface1));
+  --color-surface-2: rgb(var(--ctp-surface2));
+}
 
 @import '@xterm/xterm/css/xterm.css';
 
