@@ -284,6 +284,35 @@
   margin-right: 0.4em;
 }
 
+/* Toggle switch */
+.toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 9999px;
+  cursor: pointer;
+  background-color: rgb(var(--ctp-surface2));
+  transition: background-color 200ms ease;
+}
+.toggle-track[data-on="true"] {
+  background-color: #6366f1;
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 9999px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transform: translateX(0);
+  transition: transform 200ms ease;
+}
+.toggle-track[data-on="true"] .toggle-knob {
+  transform: translateX(16px);
+}
+
 /* Hub: pulsing status ring for working agents */
 @keyframes pulse-ring {
   0%, 100% {

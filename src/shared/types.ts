@@ -2,8 +2,9 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  color?: string;  // AGENT_COLORS id (e.g. 'emerald')
-  icon?: string;   // filename in ~/.clubhouse/project-icons/
+  color?: string;       // AGENT_COLORS id (e.g. 'emerald')
+  icon?: string;        // filename in ~/.clubhouse/project-icons/
+  displayName?: string; // user-set display name (overrides `name` in UI)
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'error';
@@ -275,15 +276,3 @@ export interface PtyExitPayload {
   exitCode: number;
 }
 
-export interface SchedulerJob {
-  id: string;
-  name: string;
-  cronExpression: string;  // standard 5-field cron: min hour dom month dow
-  agentType: 'durable' | 'quick';
-  agentId?: string;        // durable agent config ID
-  model?: string;          // for quick agents
-  prompt: string;
-  enabled: boolean;
-  createdAt: string;
-  lastRunAt?: string;
-}

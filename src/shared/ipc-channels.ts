@@ -20,6 +20,8 @@ export const IPC = {
     PICK_ICON: 'project:pick-icon',
     REORDER: 'project:reorder',
     READ_ICON: 'project:read-icon',
+    LIST_CLUBHOUSE_FILES: 'project:list-clubhouse-files',
+    RESET_PROJECT: 'project:reset-project',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',

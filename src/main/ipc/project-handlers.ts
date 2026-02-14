@@ -72,4 +72,39 @@ export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.READ_ICON, (_event, filename: string) => {
     return projectStore.readIconData(filename);
   });
+
+  ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, (_event, projectPath: string): string[] => {
+    const clubhouseDir = path.join(projectPath, '.clubhouse');
+    if (!fs.existsSync(clubhouseDir)) return [];
+    try {
+      const results: string[] = [];
+      const walk = (dir: string, prefix: string) => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            results.push(rel + '/');
+            walk(path.join(dir, entry.name), rel);
+          } else {
+            results.push(rel);
+          }
+        }
+      };
+      walk(clubhouseDir, '');
+      return results;
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC.PROJECT.RESET_PROJECT, (_event, projectPath: string): boolean => {
+    const clubhouseDir = path.join(projectPath, '.clubhouse');
+    if (!fs.existsSync(clubhouseDir)) return true;
+    try {
+      fs.rmSync(clubhouseDir, { recursive: true, force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }

@@ -77,9 +77,9 @@ function SettingsContextPicker() {
             `}
           >
             <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold bg-surface-2 flex-shrink-0">
-              {p.name.charAt(0).toUpperCase()}
+              {(p.displayName || p.name).charAt(0).toUpperCase()}
             </span>
-            <span className="truncate">{p.name}</span>
+            <span className="truncate">{p.displayName || p.name}</span>
           </button>
         ))}
       </nav>
@@ -90,25 +90,35 @@ function SettingsContextPicker() {
 export function ExplorerRail() {
   const { explorerTab, setExplorerTab } = useUIStore();
   const { projects, activeProjectId } = useProjectStore();
-  const isPluginEnabled = usePluginStore((s) => s.isPluginEnabled);
+  // Subscribe to raw data so component re-renders when configs change
+  const enabledPlugins = usePluginStore((s) => s.enabledPlugins);
+  const hiddenCoreTabs = usePluginStore((s) => s.hiddenCoreTabs);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   if (explorerTab === 'settings') {
     return <SettingsContextPicker />;
   }
 
+  const hiddenSet = activeProjectId ? (hiddenCoreTabs[activeProjectId] ?? []) : [];
+  const enabledSet = activeProjectId ? (enabledPlugins[activeProjectId] ?? []) : null;
+
+  // Filter core tabs by hidden state
+  const visibleCoreTabs = activeProjectId
+    ? CORE_TABS.filter((t) => !hiddenSet.includes(t.id))
+    : CORE_TABS;
+
   // Build plugin tabs from registry, filtered by enabled state
   const pluginTabs: TabEntry[] = getAllPlugins()
-    .filter((p) => activeProjectId ? isPluginEnabled(activeProjectId, p.id) : true)
+    .filter((p) => enabledSet ? enabledSet.includes(p.id) : true)
     .map((p) => ({ id: p.id, label: p.label, icon: p.icon }));
 
-  const topTabs = [...CORE_TABS, ...pluginTabs];
+  const topTabs = [...visibleCoreTabs, ...pluginTabs];
 
   return (
     <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
       <div className="px-3 py-3 border-b border-surface-0">
         <h2 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider truncate">
-          {activeProject?.name ?? 'No Project'}
+          {activeProject?.displayName || activeProject?.name || 'No Project'}
         </h2>
       </div>
       <nav className="flex-1 py-1 flex flex-col">

@@ -43,6 +43,10 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.REORDER, orderedIds),
     readIcon: (filename: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_ICON, filename),
+    listClubhouseFiles: (projectPath: string): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.PROJECT.LIST_CLUBHOUSE_FILES, projectPath),
+    resetProject: (projectPath: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.PROJECT.RESET_PROJECT, projectPath),
   },
   agent: {
     listDurable: (projectPath: string) =>

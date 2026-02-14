@@ -18,13 +18,14 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const projectIcons = useProjectStore((s) => s.projectIcons);
   const iconDataUrl = projectIcons[project.id];
   const hex = getColorHex(project.color);
-  const letter = project.name.charAt(0).toUpperCase();
+  const label = project.displayName || project.name;
+  const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
 
   return (
     <button
       onClick={onClick}
-      title={project.name}
+      title={label}
       className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 pr-[10px] ${
         expanded ? 'hover:bg-surface-0' : ''
       }`}
@@ -48,7 +49,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
         {hasImage ? (
           <img
             src={iconDataUrl}
-            alt={project.name}
+            alt={label}
             className={`w-full h-full object-cover ${isActive ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
           />
         ) : (
@@ -56,7 +57,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
         )}
       </div>
       <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">
-        {project.name}
+        {label}
       </span>
     </button>
   );
