@@ -28,11 +28,12 @@ describe('log-service', () => {
     flush();
     vi.clearAllMocks();
 
-    // Default: logging enabled, no namespace filters, medium retention
+    // Default: logging enabled, no namespace filters, medium retention, info level
     vi.mocked(logSettings.getSettings).mockReturnValue({
       enabled: true,
       namespaces: {},
       retention: 'medium',
+      minLogLevel: 'info',
     });
 
     // statSync throws by default (file doesn't exist yet)
@@ -117,6 +118,7 @@ describe('log-service', () => {
         enabled: false,
         namespaces: {},
         retention: 'medium',
+        minLogLevel: 'info',
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
@@ -130,6 +132,7 @@ describe('log-service', () => {
         enabled: true,
         namespaces: { 'app:noisy': false },
         retention: 'medium',
+        minLogLevel: 'info',
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:noisy', level: 'info', msg: 'filtered' });
@@ -150,6 +153,7 @@ describe('log-service', () => {
         enabled: true,
         namespaces: { 'app:test': true },
         retention: 'medium',
+        minLogLevel: 'info',
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
@@ -163,6 +167,7 @@ describe('log-service', () => {
         enabled: true,
         namespaces: { 'app:hidden': false },
         retention: 'medium',
+        minLogLevel: 'info',
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:hidden', level: 'info', msg: 'filtered' });
@@ -170,11 +175,40 @@ describe('log-service', () => {
       expect(getNamespaces()).toContain('app:hidden');
     });
 
+    it('skips debug entries when minLogLevel is info', () => {
+      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
+      flush();
+
+      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+    });
+
+    it('passes warn entries when minLogLevel is info', () => {
+      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'warn', msg: 'warning' });
+      flush();
+
+      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes debug entries when minLogLevel is debug', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue({
+        enabled: true,
+        namespaces: {},
+        retention: 'medium',
+        minLogLevel: 'debug',
+      });
+
+      log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
+      flush();
+
+      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+    });
+
     it('does not record namespace when logging globally disabled', () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: false,
         namespaces: {},
         retention: 'medium',
+        minLogLevel: 'info',
       });
 
       // We need a fresh namespace that wasn't logged before
@@ -331,6 +365,7 @@ describe('log-service', () => {
         enabled: true,
         namespaces: {},
         retention: 'low',
+        minLogLevel: 'info',
       });
 
       vi.mocked(fs.readdirSync).mockReturnValue([
@@ -367,6 +402,7 @@ describe('log-service', () => {
         enabled: true,
         namespaces: {},
         retention: 'unlimited',
+        minLogLevel: 'info',
       });
 
       vi.mocked(fs.readdirSync).mockReturnValue([
@@ -461,6 +497,13 @@ describe('log-service', () => {
     });
 
     it('works without optional fields', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue({
+        enabled: true,
+        namespaces: {},
+        retention: 'medium',
+        minLogLevel: 'debug',
+      });
+
       appLog('app:test', 'debug', 'simple message');
       flush();
 
@@ -475,6 +518,13 @@ describe('log-service', () => {
     });
 
     it('supports all log levels', () => {
+      vi.mocked(logSettings.getSettings).mockReturnValue({
+        enabled: true,
+        namespaces: {},
+        retention: 'medium',
+        minLogLevel: 'debug',
+      });
+
       const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
       for (const level of levels) {
         vi.clearAllMocks();

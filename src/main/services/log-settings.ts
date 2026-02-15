@@ -5,6 +5,7 @@ const store = createSettingsStore<LoggingSettings>('logging-settings.json', {
   enabled: true,
   namespaces: {},
   retention: 'medium',
+  minLogLevel: 'info',
 });
 
 export const getSettings = store.get;

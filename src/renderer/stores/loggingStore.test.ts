@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
   enabled: true,
   namespaces: {},
   retention: 'medium',
+  minLogLevel: 'info',
 };
 
 describe('loggingStore', () => {
@@ -99,6 +100,20 @@ describe('loggingStore', () => {
       expect(settings?.enabled).toBe(true);
       expect(mockSaveSettings).toHaveBeenCalledWith(
         expect.objectContaining({ retention: 'high' }),
+      );
+    });
+
+    it('merges minLogLevel updates', async () => {
+      useLoggingStore.setState({ settings: DEFAULT_SETTINGS as any });
+      mockSaveSettings.mockResolvedValue(undefined);
+
+      await useLoggingStore.getState().saveSettings({ minLogLevel: 'warn' } as any);
+
+      const { settings } = useLoggingStore.getState();
+      expect(settings?.minLogLevel).toBe('warn');
+      expect(settings?.enabled).toBe(true);
+      expect(mockSaveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ minLogLevel: 'warn' }),
       );
     });
 

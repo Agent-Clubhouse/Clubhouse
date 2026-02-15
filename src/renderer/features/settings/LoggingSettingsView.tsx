@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLoggingStore } from '../../stores/loggingStore';
-import type { LogRetention } from '../../../shared/types';
+import type { LogLevel, LogRetention } from '../../../shared/types';
+import { LOG_LEVEL_PRIORITY } from '../../../shared/types';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -109,6 +110,33 @@ export function LoggingSettingsView() {
                   >
                     <div className="text-sm text-ctp-text font-medium">{tier.label}</div>
                     <div className="text-xs text-ctp-subtext0 mt-0.5">{tier.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Minimum log level */}
+          <div className="border-t border-surface-0" />
+          <div>
+            <div className="text-sm text-ctp-text font-medium mb-3">Minimum Level</div>
+            <div className="flex gap-2">
+              {(Object.keys(LOG_LEVEL_PRIORITY) as LogLevel[]).map((level) => {
+                const selected = settings.minLogLevel === level;
+                const disabled = !settings.enabled;
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => saveSettings({ minLogLevel: level })}
+                    className={`
+                      rounded-md border px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer
+                      ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                      ${selected ? 'border-ctp-accent bg-surface-0 text-ctp-text' : 'border-surface-1 bg-surface-0/50 text-ctp-subtext0 hover:border-surface-2'}
+                    `}
+                  >
+                    {level}
                   </button>
                 );
               })}

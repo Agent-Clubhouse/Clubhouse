@@ -103,6 +103,14 @@ export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
+export const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+  fatal: 4,
+};
+
 export interface LogEntry {
   ts: string;
   ns: string;
@@ -130,6 +138,7 @@ export interface LoggingSettings {
   enabled: boolean;
   namespaces: Record<string, boolean>;
   retention: LogRetention;
+  minLogLevel: LogLevel;
 }
 
 export type ThemeId =

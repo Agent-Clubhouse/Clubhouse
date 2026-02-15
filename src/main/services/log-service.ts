@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { LogEntry, LOG_RETENTION_TIERS } from '../../shared/types';
+import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
@@ -117,6 +117,9 @@ export function log(entry: LogEntry): void {
 
   // Check namespace filter: if explicitly set to false, skip
   if (settings.namespaces[entry.ns] === false) return;
+
+  // Check minimum log level
+  if (LOG_LEVEL_PRIORITY[entry.level] < LOG_LEVEL_PRIORITY[settings.minLogLevel]) return;
 
   const line = JSON.stringify(entry);
   buffer.push(line);
