@@ -1,0 +1,86 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main, dev/*]
+  push:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  unit-and-component:
+    name: Unit + Component Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --reporter=junit --outputFile=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results.xml
+
+  # E2E disabled for now — macOS runners are expensive.
+  # Run locally via: npm run validate
+  # Uncomment when ready to add macOS CI budget, or try ubuntu + xvfb.
+  #
+  # e2e:
+  #   name: E2E Tests
+  #   runs-on: macos-latest
+  #   needs: [typecheck, unit-and-component]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #     - run: npm ci
+  #     - run: npm run make
+  #     - run: npx playwright test
+  #     - uses: actions/upload-artifact@v4
+  #       if: always()
+  #       with:
+  #         name: playwright-traces
+  #         path: test-results/
+
+  api-surface:
+    name: API Surface Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Frozen v0.4 snapshot compile check
+      - run: npx tsc --noEmit
+      # API version contract tests only
+      - run: npx vitest run --project shared -- plugin-api-versions
+      # Annotate PR if plugin-types.ts was modified
+      - name: Check plugin-types changes
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --name-only ${{ github.event.pull_request.base.sha }}..HEAD | grep -q 'plugin-types.ts'; then
+            echo "::warning file=src/shared/plugin-types.ts::plugin-types.ts was modified — verify API backward compatibility"
+          fi

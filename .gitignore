@@ -100,5 +100,8 @@ out/
 # Materialized MCP config
 .mcp.json
 
-# Local scratch / research folders // TODO REMOVE 
+# Local scratch / research folders // TODO REMOVE
 .clubhouse/plugin-data-local/
+
+# Playwright
+test-results/

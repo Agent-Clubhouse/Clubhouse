@@ -15,19 +15,54 @@ function rawMarkdown(): Plugin {
   };
 }
 
+const sharedTestConfig = {
+  globals: true as const,
+  mockReset: true,
+  restoreMocks: true,
+};
+
+const aliases = {
+  electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
+  'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
+};
+
 export default defineConfig({
   plugins: [rawMarkdown()],
   test: {
-    globals: true,
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-    mockReset: true,
-    restoreMocks: true,
+    ...sharedTestConfig,
+    projects: [
+      {
+        plugins: [rawMarkdown()],
+        test: {
+          name: 'main',
+          ...sharedTestConfig,
+          include: ['src/main/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: aliases },
+      },
+      {
+        plugins: [rawMarkdown()],
+        test: {
+          name: 'renderer',
+          ...sharedTestConfig,
+          include: ['src/renderer/**/*.test.{ts,tsx}'],
+          environment: 'jsdom',
+          setupFiles: ['./test/setup-renderer.ts'],
+        },
+        resolve: { alias: aliases },
+      },
+      {
+        plugins: [rawMarkdown()],
+        test: {
+          name: 'shared',
+          ...sharedTestConfig,
+          include: ['src/shared/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: aliases },
+      },
+    ],
   },
-  resolve: {
-    alias: {
-      electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
-      'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
-    },
-  },
+  resolve: { alias: aliases },
 });

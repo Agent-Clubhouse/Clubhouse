@@ -12,7 +12,12 @@
     "publish": "electron-forge publish",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project main --project shared",
+    "test:components": "vitest run --project renderer",
+    "test:e2e": "npx playwright test",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm test && npm run make && npm run test:e2e"
   },
   "keywords": [],
   "author": {
@@ -31,7 +36,11 @@
     "@electron-forge/plugin-webpack": "^7.11.1",
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vercel/webpack-asset-relocator-loader": "^1.7.3",
@@ -41,6 +50,7 @@
     "eslint": "^9.39.2",
     "eslint-plugin-import-x": "^4.16.1",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
+    "jsdom": "^28.1.0",
     "monaco-editor-webpack-plugin": "^7.1.1",
     "node-loader": "^2.1.0",
     "postcss": "^8.5.6",
