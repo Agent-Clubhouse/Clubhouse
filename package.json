@@ -41,6 +41,7 @@
     "eslint": "^9.39.2",
     "eslint-plugin-import-x": "^4.16.1",
     "fork-ts-checker-webpack-plugin": "^9.1.0",
+    "monaco-editor-webpack-plugin": "^7.1.1",
     "node-loader": "^2.1.0",
     "postcss": "^8.5.6",
     "postcss-loader": "^8.2.0",
@@ -52,10 +53,13 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "electron-squirrel-startup": "^1.0.1",
+    "highlight.js": "^11.11.1",
     "marked": "^17.0.2",
+    "monaco-editor": "^0.55.1",
     "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

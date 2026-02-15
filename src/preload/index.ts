@@ -167,7 +167,7 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource),
   },
   file: {
-    readTree: (dirPath: string) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath),
+    readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),
     read: (filePath: string) => ipcRenderer.invoke(IPC.FILE.READ, filePath),
     readBinary: (filePath: string) => ipcRenderer.invoke(IPC.FILE.READ_BINARY, filePath),
     write: (filePath: string, content: string) =>
@@ -178,6 +178,12 @@ const api = {
       ipcRenderer.invoke(IPC.FILE.MKDIR, dirPath),
     delete: (filePath: string) =>
       ipcRenderer.invoke(IPC.FILE.DELETE, filePath),
+    rename: (oldPath: string, newPath: string) =>
+      ipcRenderer.invoke(IPC.FILE.RENAME, oldPath, newPath),
+    copy: (src: string, dest: string) =>
+      ipcRenderer.invoke(IPC.FILE.COPY, src, dest),
+    stat: (filePath: string) =>
+      ipcRenderer.invoke(IPC.FILE.STAT, filePath),
   },
   plugin: {
     discoverCommunity: () =>

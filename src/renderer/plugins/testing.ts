@@ -119,6 +119,18 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       error: noop,
       fatal: noop,
     },
+    files: {
+      readTree: async () => [],
+      readFile: async () => '',
+      readBinary: async () => '',
+      writeFile: asyncNoop,
+      stat: async () => ({ size: 0, isDirectory: false, isFile: true, modifiedAt: 0 }),
+      rename: asyncNoop,
+      copy: asyncNoop,
+      mkdir: asyncNoop,
+      delete: asyncNoop,
+      showInFolder: asyncNoop,
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

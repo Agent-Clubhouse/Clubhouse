@@ -63,6 +63,9 @@ export const IPC = {
     SHOW_IN_FOLDER: 'file:show-in-folder',
     MKDIR: 'file:mkdir',
     DELETE: 'file:delete',
+    RENAME: 'file:rename',
+    COPY: 'file:copy',
+    STAT: 'file:stat',
   },
   GIT: {
     INFO: 'git:info',

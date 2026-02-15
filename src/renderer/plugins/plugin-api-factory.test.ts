@@ -24,6 +24,12 @@ const mockFile = {
   write: vi.fn(),
   delete: vi.fn(),
   readTree: vi.fn(),
+  readBinary: vi.fn(),
+  showInFolder: vi.fn(),
+  mkdir: vi.fn(),
+  rename: vi.fn(),
+  copy: vi.fn(),
+  stat: vi.fn(),
 };
 const mockGit = {
   info: vi.fn(),
@@ -107,6 +113,7 @@ describe('plugin-api-factory', () => {
       expect(api.widgets).toBeDefined();
       expect(api.terminal).toBeDefined();
       expect(api.logging).toBeDefined();
+      expect(api.files).toBeDefined();
       expect(api.context).toBeDefined();
     });
   });
@@ -1972,6 +1979,83 @@ describe('plugin-api-factory', () => {
         await api.agents.runQuick('task', { model: 'opus' });
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus');
       });
+    });
+  });
+
+  // ── FilesAPI ────────────────────────────────────────────────────────
+
+  describe('files API', () => {
+    let api: PluginAPI;
+
+    beforeEach(() => {
+      api = createPluginAPI(makeCtx());
+    });
+
+    it('provides all files API methods for project-scoped plugins', () => {
+      expect(typeof api.files.readTree).toBe('function');
+      expect(typeof api.files.readFile).toBe('function');
+      expect(typeof api.files.readBinary).toBe('function');
+      expect(typeof api.files.writeFile).toBe('function');
+      expect(typeof api.files.stat).toBe('function');
+      expect(typeof api.files.rename).toBe('function');
+      expect(typeof api.files.copy).toBe('function');
+      expect(typeof api.files.mkdir).toBe('function');
+      expect(typeof api.files.delete).toBe('function');
+      expect(typeof api.files.showInFolder).toBe('function');
+    });
+
+    it('readTree resolves path against projectPath', async () => {
+      mockFile.readTree.mockResolvedValue([]);
+      await api.files.readTree('src');
+      expect(mockFile.readTree).toHaveBeenCalledWith('/projects/my-project/src', undefined);
+    });
+
+    it('readTree passes options through', async () => {
+      mockFile.readTree.mockResolvedValue([]);
+      await api.files.readTree('.', { includeHidden: true, depth: 1 });
+      expect(mockFile.readTree).toHaveBeenCalledWith('/projects/my-project/.', { includeHidden: true, depth: 1 });
+    });
+
+    it('readFile resolves path against projectPath', async () => {
+      mockFile.read.mockResolvedValue('content');
+      const result = await api.files.readFile('src/main.ts');
+      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/src/main.ts');
+      expect(result).toBe('content');
+    });
+
+    it('writeFile resolves path against projectPath', async () => {
+      await api.files.writeFile('out.txt', 'hello');
+      expect(mockFile.write).toHaveBeenCalledWith('/projects/my-project/out.txt', 'hello');
+    });
+
+    it('stat resolves path against projectPath', async () => {
+      mockFile.stat.mockResolvedValue({ size: 100, isDirectory: false, isFile: true, modifiedAt: 1000 });
+      const result = await api.files.stat('file.txt');
+      expect(mockFile.stat).toHaveBeenCalledWith('/projects/my-project/file.txt');
+      expect(result.size).toBe(100);
+    });
+
+    it('rename resolves both paths against projectPath', async () => {
+      await api.files.rename('old.txt', 'new.txt');
+      expect(mockFile.rename).toHaveBeenCalledWith('/projects/my-project/old.txt', '/projects/my-project/new.txt');
+    });
+
+    it('copy resolves both paths against projectPath', async () => {
+      await api.files.copy('src.txt', 'dest.txt');
+      expect(mockFile.copy).toHaveBeenCalledWith('/projects/my-project/src.txt', '/projects/my-project/dest.txt');
+    });
+
+    it('throws when accessing files API on app-scoped plugin', () => {
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      expect(() => appApi.files.readTree()).toThrow('not available for app-scoped');
+    });
+
+    it('prevents path traversal via ..', async () => {
+      await expect(api.files.readFile('../../etc/passwd')).rejects.toThrow('traversal');
+    });
+
+    it('prevents path traversal in rename', async () => {
+      await expect(api.files.rename('file.txt', '../../etc/shadow')).rejects.toThrow('traversal');
     });
   });
 });

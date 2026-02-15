@@ -3,8 +3,8 @@ import { IPC } from '../../shared/ipc-channels';
 import * as fileService from '../services/file-service';
 
 export function registerFileHandlers(): void {
-  ipcMain.handle(IPC.FILE.READ_TREE, (_event, dirPath: string) => {
-    return fileService.readTree(dirPath);
+  ipcMain.handle(IPC.FILE.READ_TREE, (_event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
+    return fileService.readTree(dirPath, options);
   });
 
   ipcMain.handle(IPC.FILE.READ, (_event, filePath: string) => {
@@ -29,5 +29,17 @@ export function registerFileHandlers(): void {
 
   ipcMain.handle(IPC.FILE.DELETE, (_event, filePath: string) => {
     fileService.deleteFile(filePath);
+  });
+
+  ipcMain.handle(IPC.FILE.RENAME, (_event, oldPath: string, newPath: string) => {
+    fileService.rename(oldPath, newPath);
+  });
+
+  ipcMain.handle(IPC.FILE.COPY, (_event, src: string, dest: string) => {
+    fileService.copy(src, dest);
+  });
+
+  ipcMain.handle(IPC.FILE.STAT, (_event, filePath: string) => {
+    return fileService.stat(filePath);
   });
 }

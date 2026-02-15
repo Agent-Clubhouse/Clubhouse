@@ -17,6 +17,7 @@ import type {
   WidgetsAPI,
   TerminalAPI,
   LoggingAPI,
+  FilesAPI,
   PluginContextInfo,
   PluginRenderMode,
   DirectoryEntry,
@@ -540,6 +541,81 @@ function createLoggingAPI(ctx: PluginContext): LoggingAPI {
   };
 }
 
+function resolvePath(projectPath: string, relativePath: string): string {
+  // Normalize: join project path with relative path, then check for traversal
+  const resolved = relativePath.startsWith('/')
+    ? relativePath
+    : `${projectPath}/${relativePath}`;
+
+  // Simple traversal check: resolved must start with projectPath
+  // Normalize double slashes and resolve .. manually
+  const normalizedProject = projectPath.replace(/\/+$/, '');
+  const normalizedResolved = resolved.replace(/\/+/g, '/');
+
+  // Check for path traversal via ..
+  if (normalizedResolved.includes('/../') || normalizedResolved.endsWith('/..') || normalizedResolved === '..') {
+    throw new Error('Path traversal is not allowed');
+  }
+
+  if (!normalizedResolved.startsWith(normalizedProject + '/') && normalizedResolved !== normalizedProject) {
+    throw new Error('Path traversal is not allowed');
+  }
+
+  return normalizedResolved;
+}
+
+function createFilesAPI(ctx: PluginContext): FilesAPI {
+  const { projectPath } = ctx;
+  if (!projectPath) {
+    throw new Error('FilesAPI requires projectPath');
+  }
+
+  return {
+    async readTree(relativePath = '.', options?: { includeHidden?: boolean; depth?: number }) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      return window.clubhouse.file.readTree(fullPath, options);
+    },
+    async readFile(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      return window.clubhouse.file.read(fullPath);
+    },
+    async readBinary(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      return window.clubhouse.file.readBinary(fullPath);
+    },
+    async writeFile(relativePath: string, content: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      await window.clubhouse.file.write(fullPath, content);
+    },
+    async stat(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      return window.clubhouse.file.stat(fullPath);
+    },
+    async rename(oldRelativePath: string, newRelativePath: string) {
+      const oldFull = resolvePath(projectPath, oldRelativePath);
+      const newFull = resolvePath(projectPath, newRelativePath);
+      await window.clubhouse.file.rename(oldFull, newFull);
+    },
+    async copy(srcRelativePath: string, destRelativePath: string) {
+      const srcFull = resolvePath(projectPath, srcRelativePath);
+      const destFull = resolvePath(projectPath, destRelativePath);
+      await window.clubhouse.file.copy(srcFull, destFull);
+    },
+    async mkdir(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      await window.clubhouse.file.mkdir(fullPath);
+    },
+    async delete(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      await window.clubhouse.file.delete(fullPath);
+    },
+    async showInFolder(relativePath: string) {
+      const fullPath = resolvePath(projectPath, relativePath);
+      await window.clubhouse.file.showInFolder(fullPath);
+    },
+  };
+}
+
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): PluginAPI {
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const hasProjectContext = effectiveMode === 'project' && !!ctx.projectId;
@@ -583,6 +659,11 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): Pl
     widgets: createWidgetsAPI(),
     terminal: createTerminalAPI(ctx),
     logging: createLoggingAPI(ctx),
+    files: projectAvailable && ctx.projectPath
+      ? createFilesAPI(ctx)
+      : new Proxy({} as FilesAPI, {
+          get(_t, _prop) { unavailableProxy('files', effectiveMode === 'app' ? 'app' : ctx.scope); },
+        }),
     context: contextInfo,
   };
 

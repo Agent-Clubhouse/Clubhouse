@@ -1,3 +1,5 @@
+import type { FileNode } from './types';
+
 // ── Disposable ──────────────────────────────────────────────────────────
 export interface Disposable {
   dispose(): void;
@@ -313,6 +315,26 @@ export interface LoggingAPI {
   fatal(msg: string, meta?: Record<string, unknown>): void;
 }
 
+export interface FileStatInfo {
+  size: number;
+  isDirectory: boolean;
+  isFile: boolean;
+  modifiedAt: number;
+}
+
+export interface FilesAPI {
+  readTree(relativePath?: string, options?: { includeHidden?: boolean; depth?: number }): Promise<FileNode[]>;
+  readFile(relativePath: string): Promise<string>;
+  readBinary(relativePath: string): Promise<string>;
+  writeFile(relativePath: string, content: string): Promise<void>;
+  stat(relativePath: string): Promise<FileStatInfo>;
+  rename(oldRelativePath: string, newRelativePath: string): Promise<void>;
+  copy(srcRelativePath: string, destRelativePath: string): Promise<void>;
+  mkdir(relativePath: string): Promise<void>;
+  delete(relativePath: string): Promise<void>;
+  showInFolder(relativePath: string): Promise<void>;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -329,6 +351,7 @@ export interface PluginAPI {
   widgets: WidgetsAPI;
   terminal: TerminalAPI;
   logging: LoggingAPI;
+  files: FilesAPI;
   context: PluginContextInfo;
 }
 
