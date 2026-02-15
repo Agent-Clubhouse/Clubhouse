@@ -5,7 +5,7 @@ import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { AgentListItem } from './AgentListItem';
 import { AddAgentDialog } from './AddAgentDialog';
 import { DeleteAgentDialog } from './DeleteAgentDialog';
-import { QuickAgentGhostCompact } from '../hub/QuickAgentGhost';
+import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 

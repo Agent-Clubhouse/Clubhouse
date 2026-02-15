@@ -33,7 +33,7 @@ export function App() {
     const entry = pluginsMap[pluginId];
     return entry?.manifest.contributes?.tab?.layout === 'full';
   })();
-  const isFullWidth = explorerTab === 'hub' || explorerTab === 'terminal' || isPluginFullWidth;
+  const isFullWidth = isPluginFullWidth;
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
@@ -198,8 +198,6 @@ export function App() {
 
   const CORE_LABELS: Record<string, string> = {
     agents: 'Agents',
-    hub: 'Project Hub',
-    terminal: 'Terminal',
     settings: 'Settings',
   };
   const tabLabel = (() => {

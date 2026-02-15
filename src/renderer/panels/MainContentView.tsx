@@ -5,13 +5,11 @@ import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
-import { QuickAgentGhost } from '../features/hub/QuickAgentGhost';
+import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
-import { CommandCenter } from '../features/hub/CommandCenter';
-import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
 import { PluginContentView } from './PluginContentView';
 import { PluginDetailSettings } from '../features/settings/PluginDetailSettings';
 import { PluginListSettings } from '../features/settings/PluginListSettings';
@@ -69,14 +67,6 @@ export function MainContentView() {
         <AgentTerminal agentId={activeAgentId!} />
       </div>
     );
-  }
-
-  if (explorerTab === 'hub') {
-    return <CommandCenter />;
-  }
-
-  if (explorerTab === 'terminal') {
-    return <StandaloneTerminal />;
   }
 
   if (explorerTab === 'settings') {
