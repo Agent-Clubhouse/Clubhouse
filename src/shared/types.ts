@@ -112,9 +112,24 @@ export interface LogEntry {
   meta?: Record<string, unknown>;
 }
 
+export type LogRetention = 'low' | 'medium' | 'high' | 'unlimited';
+
+export interface LogRetentionConfig {
+  retentionDays: number;
+  maxTotalBytes: number;
+}
+
+export const LOG_RETENTION_TIERS: Record<LogRetention, LogRetentionConfig> = {
+  low:       { retentionDays: 3,  maxTotalBytes: 50  * 1024 * 1024 },
+  medium:    { retentionDays: 7,  maxTotalBytes: 200 * 1024 * 1024 },
+  high:      { retentionDays: 30, maxTotalBytes: 500 * 1024 * 1024 },
+  unlimited: { retentionDays: 0,  maxTotalBytes: 0 },
+};
+
 export interface LoggingSettings {
   enabled: boolean;
   namespaces: Record<string, boolean>;
+  retention: LogRetention;
 }
 
 export type ThemeId =

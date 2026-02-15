@@ -1,11 +1,10 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { LogEntry } from '../../shared/types';
+import { LogEntry, LOG_RETENTION_TIERS } from '../../shared/types';
 import * as logSettings from './log-settings';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
-const RETENTION_DAYS = 7;
 const FLUSH_INTERVAL_MS = 1_000;
 const FLUSH_ENTRY_THRESHOLD = 50;
 
@@ -46,7 +45,9 @@ function rotate(): void {
 }
 
 function cleanup(): void {
-  const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const settings = logSettings.getSettings();
+  const tier = LOG_RETENTION_TIERS[settings.retention] ?? LOG_RETENTION_TIERS.medium;
+
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(logDir, { withFileTypes: true });
@@ -54,6 +55,8 @@ function cleanup(): void {
     return;
   }
 
+  // Collect session log files with their stats
+  const files: { filePath: string; mtimeMs: number; size: number }[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.startsWith('session-') || !entry.name.endsWith('.jsonl')) {
       continue;
@@ -61,11 +64,32 @@ function cleanup(): void {
     const filePath = path.join(logDir, entry.name);
     try {
       const stat = fs.statSync(filePath);
-      if (stat.mtimeMs < cutoff) {
-        fs.unlinkSync(filePath);
-      }
+      files.push({ filePath, mtimeMs: stat.mtimeMs, size: stat.size });
     } catch {
-      // ignore cleanup errors
+      // ignore stat errors
+    }
+  }
+
+  // Phase 1: age-prune (skip if unlimited — retentionDays === 0)
+  if (tier.retentionDays > 0) {
+    const cutoff = Date.now() - tier.retentionDays * 24 * 60 * 60 * 1000;
+    for (let i = files.length - 1; i >= 0; i--) {
+      if (files[i].mtimeMs < cutoff) {
+        try { fs.unlinkSync(files[i].filePath); } catch { /* ignore */ }
+        files.splice(i, 1);
+      }
+    }
+  }
+
+  // Phase 2: size-prune — delete oldest files until under cap (skip if unlimited — maxTotalBytes === 0)
+  if (tier.maxTotalBytes > 0) {
+    // Sort oldest first
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    let totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    while (totalSize > tier.maxTotalBytes && files.length > 0) {
+      const oldest = files.shift()!;
+      try { fs.unlinkSync(oldest.filePath); } catch { /* ignore */ }
+      totalSize -= oldest.size;
     }
   }
 }

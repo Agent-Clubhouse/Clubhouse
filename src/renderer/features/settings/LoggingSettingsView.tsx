@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLoggingStore } from '../../stores/loggingStore';
+import type { LogRetention } from '../../../shared/types';
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -79,6 +80,39 @@ export function LoggingSettingsView() {
               <div className="text-xs text-ctp-subtext0 mt-0.5">Write structured log entries to disk</div>
             </div>
             <Toggle checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
+          </div>
+
+          {/* Retention tier */}
+          <div className="border-t border-surface-0" />
+          <div>
+            <div className="text-sm text-ctp-text font-medium mb-3">Retention</div>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { id: 'low' as LogRetention, label: 'Low', desc: '3 days, up to 50 MB' },
+                { id: 'medium' as LogRetention, label: 'Medium', desc: '7 days, up to 200 MB' },
+                { id: 'high' as LogRetention, label: 'High', desc: '30 days, up to 500 MB' },
+                { id: 'unlimited' as LogRetention, label: 'Unlimited', desc: 'No limits on age or size' },
+              ]).map((tier) => {
+                const selected = settings.retention === tier.id;
+                const disabled = !settings.enabled;
+                return (
+                  <button
+                    key={tier.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => saveSettings({ retention: tier.id })}
+                    className={`
+                      rounded-md border px-3 py-2 text-left transition-colors cursor-pointer
+                      ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                      ${selected ? 'border-ctp-accent bg-surface-0' : 'border-surface-1 bg-surface-0/50 hover:border-surface-2'}
+                    `}
+                  >
+                    <div className="text-sm text-ctp-text font-medium">{tier.label}</div>
+                    <div className="text-xs text-ctp-subtext0 mt-0.5">{tier.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {namespaces.length > 0 && (

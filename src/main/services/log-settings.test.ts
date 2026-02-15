@@ -23,7 +23,7 @@ describe('log-settings', () => {
         throw new Error('ENOENT');
       });
       const result = getSettings();
-      expect(result).toEqual({ enabled: true, namespaces: {} });
+      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium' });
     });
 
     it('returns saved settings from file', () => {
@@ -38,7 +38,7 @@ describe('log-settings', () => {
     it('returns defaults on corrupt JSON', () => {
       vi.mocked(fs.readFileSync).mockReturnValue('{{invalid');
       const result = getSettings();
-      expect(result).toEqual({ enabled: true, namespaces: {} });
+      expect(result).toEqual({ enabled: true, namespaces: {}, retention: 'medium' });
     });
 
     it('merges partial settings with defaults', () => {
@@ -46,6 +46,7 @@ describe('log-settings', () => {
       const result = getSettings();
       expect(result.enabled).toBe(false);
       expect(result.namespaces).toEqual({});
+      expect(result.retention).toBe('medium');
     });
   });
 
