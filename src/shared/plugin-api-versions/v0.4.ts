@@ -12,7 +12,6 @@
 
 import type { PluginAPI } from '../plugin-types';
 import type { FileNode } from '../types';
-import type { PluginAPI_V0_2 } from './v0.2';
 
 // ── v0.4 scoped types ─────────────────────────────────────────────────
 
@@ -46,7 +45,7 @@ export interface FilesAPI_V0_4 {
 
 // ── Composite v0.4 API ────────────────────────────────────────────────
 
-export interface PluginAPI_V0_4 extends PluginAPI_V0_2 {
+export interface PluginAPI_V0_4 {
   logging: LoggingAPI_V0_4;
   files: FilesAPI_V0_4;
 }

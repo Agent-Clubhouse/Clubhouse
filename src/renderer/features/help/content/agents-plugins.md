@@ -14,7 +14,6 @@ Clubhouse's plugin system extends the app with custom views, commands, and integ
 
 Clubhouse ships with several built-in plugins:
 
-- **Hello World** — A sample app-scoped plugin for reference
 - **Hub** — A dual-scoped agent monitoring dashboard
 - **Terminal** — A project-scoped terminal emulator
 

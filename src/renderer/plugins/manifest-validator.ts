@@ -1,6 +1,6 @@
 import type { PluginManifest } from '../../shared/plugin-types';
 
-export const SUPPORTED_API_VERSIONS = [0.1, 0.2, 0.4];
+export const SUPPORTED_API_VERSIONS = [0.4];
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 

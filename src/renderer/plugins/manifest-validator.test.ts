@@ -6,19 +6,12 @@ describe('manifest-validator', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.1 },
+    engine: { api: 0.4 },
     scope: 'project',
+    contributes: { help: {} },
   };
 
   describe('SUPPORTED_API_VERSIONS', () => {
-    it('includes version 0.1', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.1);
-    });
-
-    it('includes version 0.2', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.2);
-    });
-
     it('includes version 0.4', () => {
       expect(SUPPORTED_API_VERSIONS).toContain(0.4);
     });
@@ -48,6 +41,7 @@ describe('manifest-validator', () => {
           tab: { label: 'Test', icon: 'puzzle', layout: 'sidebar-content' },
           commands: [{ id: 'test.run', title: 'Run Test' }],
           settings: [{ key: 'test.opt', type: 'boolean', label: 'Option', default: true }],
+          help: {},
         },
       });
       expect(result.valid).toBe(true);
@@ -128,20 +122,6 @@ describe('manifest-validator', () => {
       expect(result.errors[0]).toContain('engine.api must be a number');
     });
 
-    it('accepts API version 0.2', () => {
-      const result = validateManifest({ ...validManifest, engine: { api: 0.2 } });
-      expect(result.valid).toBe(true);
-    });
-
-    it('accepts API version 0.4', () => {
-      const result = validateManifest({
-        ...validManifest,
-        engine: { api: 0.4 },
-        contributes: { ...validManifest.contributes, help: {} },
-      });
-      expect(result.valid).toBe(true);
-    });
-
     it('rejects unsupported API version', () => {
       const result = validateManifest({ ...validManifest, engine: { api: 99 } });
       expect(result.valid).toBe(false);
@@ -162,7 +142,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'project',
-        contributes: { railItem: { label: 'Test' } },
+        contributes: { railItem: { label: 'Test' }, help: {} },
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('cannot contribute railItem');
@@ -172,7 +152,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'app',
-        contributes: { tab: { label: 'Test' } },
+        contributes: { tab: { label: 'Test' }, help: {} },
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('cannot contribute tab');
@@ -210,6 +190,7 @@ describe('manifest-validator', () => {
         contributes: {
           tab: { label: 'Tab' },
           railItem: { label: 'Rail' },
+          help: {},
         },
       });
       expect(result.valid).toBe(true);
@@ -219,7 +200,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'dual',
-        contributes: { tab: { label: 'Tab' } },
+        contributes: { tab: { label: 'Tab' }, help: {} },
       });
       expect(result.valid).toBe(true);
     });
@@ -228,12 +209,12 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'dual',
-        contributes: { railItem: { label: 'Rail' } },
+        contributes: { railItem: { label: 'Rail' }, help: {} },
       });
       expect(result.valid).toBe(true);
     });
 
-    it('accepts dual-scoped plugin with no contributes', () => {
+    it('accepts dual-scoped plugin with no contributes besides help', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'dual',
@@ -249,6 +230,7 @@ describe('manifest-validator', () => {
           tab: { label: 'Tab' },
           railItem: { label: 'Rail' },
           commands: [{ id: 'do-thing', title: 'Do Thing' }],
+          help: {},
         },
       });
       expect(result.valid).toBe(true);
@@ -258,7 +240,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'project',
-        contributes: { railItem: { label: 'Rail' } },
+        contributes: { railItem: { label: 'Rail' }, help: {} },
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('cannot contribute railItem');
@@ -268,7 +250,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...validManifest,
         scope: 'app',
-        contributes: { tab: { label: 'Tab' } },
+        contributes: { tab: { label: 'Tab' }, help: {} },
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('cannot contribute tab');
@@ -294,10 +276,10 @@ describe('manifest-validator', () => {
       expect(result.errors[0]).toContain('Invalid scope');
     });
 
-    it('accepts empty contributes object without error', () => {
+    it('accepts empty contributes object with help', () => {
       const result = validateManifest({
         ...validManifest,
-        contributes: {},
+        contributes: { help: {} },
       });
       expect(result.valid).toBe(true);
     });
@@ -354,18 +336,11 @@ describe('manifest-validator', () => {
       expect(result.errors.some((e: string) => e.includes('topics[0].id'))).toBe(true);
     });
 
-    it('v0.2 manifests without help still pass', () => {
-      const result = validateManifest({
-        ...validManifest,
-        engine: { api: 0.2 },
-      });
-      expect(result.valid).toBe(true);
-    });
-
     it('rejects v0.4 manifest with no contributes at all', () => {
       const result = validateManifest({
         ...validManifest,
         engine: { api: 0.4 },
+        contributes: undefined,
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('contributes.help');

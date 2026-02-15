@@ -7,8 +7,9 @@ const validManifest: PluginManifest = {
   id: 'test-builtin',
   name: 'Test Built-in',
   version: '1.0.0',
-  engine: { api: 0.2 },
+  engine: { api: 0.4 },
   scope: 'app',
+  contributes: { help: {} },
 };
 
 function makePlugin(
