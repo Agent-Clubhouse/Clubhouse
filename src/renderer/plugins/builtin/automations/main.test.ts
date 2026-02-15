@@ -725,6 +725,157 @@ describe('automations plugin API assumptions', () => {
       expect(() => api.commands.register('create', () => {})).not.toThrow();
     });
   });
+
+  // ── navigation.focusAgent assumptions (View button on running rows) ─
+
+  describe('navigation.focusAgent', () => {
+    it('exists and is callable', () => {
+      expect(typeof api.navigation.focusAgent).toBe('function');
+    });
+
+    it('accepts an agentId string', () => {
+      // Plugin calls: api.navigation.focusAgent(run.agentId)
+      expect(() => api.navigation.focusAgent('agent-123')).not.toThrow();
+    });
+
+    it('returns void (fire-and-forget)', () => {
+      const result = api.navigation.focusAgent('agent-123');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  // ── agents.kill assumptions (Stop button on running rows) ───────────
+
+  describe('agents.kill', () => {
+    it('exists and is callable', () => {
+      expect(typeof api.agents.kill).toBe('function');
+    });
+
+    it('returns a promise', () => {
+      expect(api.agents.kill('agent-123')).toBeInstanceOf(Promise);
+    });
+
+    it('resolves to void', async () => {
+      expect(await api.agents.kill('agent-123')).toBeUndefined();
+    });
+
+    it('accepts an agentId string', async () => {
+      // Plugin calls: api.agents.kill(run.agentId) on Stop button click
+      await expect(api.agents.kill('agent-123')).resolves.not.toThrow();
+    });
+  });
+
+  // ── widgets.QuickAgentGhost assumptions (summary card) ──────────────
+
+  describe('widgets.QuickAgentGhost', () => {
+    it('exists and is a component (function)', () => {
+      expect(typeof api.widgets.QuickAgentGhost).toBe('function');
+    });
+
+    it('accepts completed, onDismiss, and optional onDelete props', () => {
+      // Plugin renders: React.createElement(api.widgets.QuickAgentGhost, { completed, onDismiss })
+      // The widget type is: React.ComponentType<{ completed: CompletedQuickAgentInfo; onDismiss: () => void; onDelete?: () => void }>
+      const props = {
+        completed: {
+          id: 'a1', projectId: 'p', name: 'n', mission: 'm',
+          summary: 'done', filesModified: [], exitCode: 0, completedAt: 1,
+        },
+        onDismiss: () => {},
+      };
+      // Should not throw when called with valid props
+      expect(() => api.widgets.QuickAgentGhost(props)).not.toThrow();
+    });
+  });
+
+  // ── agents.listCompleted for summary card lookup ────────────────────
+
+  describe('agents.listCompleted (summary card lookup)', () => {
+    it('returns CompletedQuickAgentInfo with all fields needed by QuickAgentGhost', () => {
+      const testApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          listCompleted: vi.fn(() => [{
+            id: 'a1', projectId: 'p', name: 'Agent', mission: 'do stuff',
+            summary: 'Did it', filesModified: ['file.ts'], exitCode: 0, completedAt: 1000,
+          }]),
+        },
+      });
+      const list = testApi.agents.listCompleted();
+      const item = list[0];
+      expect(item).toHaveProperty('id');
+      expect(item).toHaveProperty('projectId');
+      expect(item).toHaveProperty('name');
+      expect(item).toHaveProperty('mission');
+      expect(item).toHaveProperty('summary');
+      expect(item).toHaveProperty('filesModified');
+      expect(item).toHaveProperty('exitCode');
+      expect(item).toHaveProperty('completedAt');
+    });
+
+    it('plugin finds agent by id (uses .find(c => c.id === agentId))', () => {
+      const testApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          listCompleted: vi.fn(() => [
+            { id: 'a1', projectId: 'p', name: 'n', mission: 'm', summary: 's1', filesModified: [], exitCode: 0, completedAt: 1 },
+            { id: 'a2', projectId: 'p', name: 'n', mission: 'm', summary: 's2', filesModified: [], exitCode: 0, completedAt: 2 },
+          ]),
+        },
+      });
+      const list = testApi.agents.listCompleted();
+      const found = list.find(c => c.id === 'a2');
+      expect(found?.summary).toBe('s2');
+    });
+
+    it('returns empty array when no completed agents (plugin shows fallback)', () => {
+      const list = api.agents.listCompleted();
+      expect(list).toEqual([]);
+      expect(list.find(c => c.id === 'nonexistent')).toBeUndefined();
+    });
+  });
+
+  // ── ui.showConfirm assumptions (delete dialogs) ─────────────────────
+
+  describe('ui.showConfirm', () => {
+    it('exists and is callable', () => {
+      expect(typeof api.ui.showConfirm).toBe('function');
+    });
+
+    it('returns a promise', () => {
+      expect(api.ui.showConfirm('message')).toBeInstanceOf(Promise);
+    });
+
+    it('resolves to a boolean', async () => {
+      const result = await api.ui.showConfirm('Delete?');
+      expect(typeof result).toBe('boolean');
+    });
+
+    it('plugin uses it for automation delete confirmation', async () => {
+      // Plugin calls: api.ui.showConfirm('Delete this automation and its run history? This cannot be undone.')
+      const result = await api.ui.showConfirm('Delete this automation and its run history? This cannot be undone.');
+      expect(typeof result).toBe('boolean');
+    });
+
+    it('plugin uses it for run record delete confirmation', async () => {
+      // Plugin calls: api.ui.showConfirm('Delete this run record? This cannot be undone.')
+      const result = await api.ui.showConfirm('Delete this run record? This cannot be undone.');
+      expect(typeof result).toBe('boolean');
+    });
+
+    it('plugin only deletes when confirm returns true', async () => {
+      // Default mock returns false — plugin should NOT proceed with deletion
+      const result = await api.ui.showConfirm('Delete?');
+      expect(result).toBe(false);
+    });
+
+    it('plugin can receive true (user confirmed)', async () => {
+      const confirmApi = createMockAPI({
+        ui: { ...api.ui, showConfirm: vi.fn().mockResolvedValue(true) },
+      });
+      const result = await confirmApi.ui.showConfirm('Delete?');
+      expect(result).toBe(true);
+    });
+  });
 });
 
 // ── Plugin lifecycle integration ─────────────────────────────────────

@@ -85,16 +85,29 @@ export function describeSchedule(expression: string): string {
     return `Weekdays at ${h12}:${min.padStart(2, '0')} ${ampm}`;
   }
 
+  // Specific day of week at specific time
+  if (/^\d+$/.test(min) && /^\d+$/.test(hour) && dom === '*' && mon === '*' && /^\d$/.test(dow)) {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const h = parseInt(hour, 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    const dayName = dayNames[parseInt(dow, 10)] ?? dow;
+    return `${dayName} at ${h12}:${min.padStart(2, '0')} ${ampm}`;
+  }
+
+  // Every N hours
+  if (min === '0' && hour.startsWith('*/') && dom === '*' && mon === '*' && dow === '*') {
+    return `Every ${hour.slice(2)} hours`;
+  }
+
   return expression;
 }
 
 export const PRESETS = [
-  { label: 'Every 5 minutes', value: '*/5 * * * *' },
-  { label: 'Every 15 minutes', value: '*/15 * * * *' },
-  { label: 'Every 30 minutes', value: '*/30 * * * *' },
+  { label: 'Every 5 min', value: '*/5 * * * *' },
   { label: 'Every hour', value: '0 * * * *' },
-  { label: 'Every 6 hours', value: '0 */6 * * *' },
-  { label: 'Daily at 9 AM', value: '0 9 * * *' },
-  { label: 'Daily at midnight', value: '0 0 * * *' },
-  { label: 'Weekdays at 9 AM', value: '0 9 * * 1-5' },
+  { label: 'Every 2 hours', value: '0 */2 * * *' },
+  { label: 'Daily at 6 AM', value: '0 6 * * *' },
+  { label: 'Every Monday', value: '0 9 * * 1' },
+  { label: 'Saturday at noon', value: '0 12 * * 6' },
 ] as const;

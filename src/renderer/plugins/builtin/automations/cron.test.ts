@@ -123,9 +123,9 @@ describe('matchesCron', () => {
 
 describe('describeSchedule', () => {
   it('describes known presets by label', () => {
-    expect(describeSchedule('*/5 * * * *')).toBe('Every 5 minutes');
+    expect(describeSchedule('*/5 * * * *')).toBe('Every 5 min');
     expect(describeSchedule('0 * * * *')).toBe('Every hour');
-    expect(describeSchedule('0 0 * * *')).toBe('Daily at midnight');
+    expect(describeSchedule('0 6 * * *')).toBe('Daily at 6 AM');
   });
 
   it('describes every N minutes pattern', () => {
@@ -145,12 +145,22 @@ describe('describeSchedule', () => {
   });
 
   it('describes daily at midnight', () => {
-    // This matches the preset, so it returns the preset label
-    expect(describeSchedule('0 0 * * *')).toBe('Daily at midnight');
+    expect(describeSchedule('0 0 * * *')).toBe('Daily at 12:00 AM');
   });
 
   it('describes weekday schedule', () => {
-    expect(describeSchedule('0 9 * * 1-5')).toBe('Weekdays at 9 AM');
+    expect(describeSchedule('0 9 * * 1-5')).toBe('Weekdays at 9:00 AM');
+  });
+
+  it('describes specific day of week at time', () => {
+    expect(describeSchedule('0 9 * * 1')).toBe('Every Monday');
+    expect(describeSchedule('0 12 * * 6')).toBe('Saturday at noon');
+    expect(describeSchedule('0 15 * * 0')).toBe('Sunday at 3:00 PM');
+  });
+
+  it('describes every N hours pattern', () => {
+    expect(describeSchedule('0 */2 * * *')).toBe('Every 2 hours');
+    expect(describeSchedule('0 */6 * * *')).toBe('Every 6 hours');
   });
 
   it('falls back to raw expression for complex patterns', () => {

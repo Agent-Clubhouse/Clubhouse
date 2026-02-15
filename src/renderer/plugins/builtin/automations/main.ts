@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import type { PluginContext, PluginAPI, PluginModule, ModelOption } from '../../../../shared/plugin-types';
+import type { PluginContext, PluginAPI, PluginModule, ModelOption, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
 import type { Automation, RunRecord } from './types';
 import { matchesCron, describeSchedule, PRESETS } from './cron';
 
@@ -159,6 +159,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [completedAgents, setCompletedAgents] = useState<CompletedQuickAgentInfo[]>([]);
 
   // Editor state
   const [editName, setEditName] = useState('');
@@ -166,13 +169,20 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [editModel, setEditModel] = useState('');
   const [editPrompt, setEditPrompt] = useState('');
   const [editEnabled, setEditEnabled] = useState(true);
-  const [editPreset, setEditPreset] = useState('custom');
 
   // ── Load automations on mount + poll ────────────────────────────────
   const loadAutomations = useCallback(async () => {
     const raw = await storage.read(AUTOMATIONS_KEY);
     const list: Automation[] = Array.isArray(raw) ? raw : [];
     setAutomations(list);
+    // Detect which automations have running agents
+    const running = new Set<string>();
+    for (const auto of list) {
+      const runsRaw = await storage.read(runsKey(auto.id));
+      const autoRuns: RunRecord[] = Array.isArray(runsRaw) ? runsRaw : [];
+      if (autoRuns.some((r) => r.status === 'running')) running.add(auto.id);
+    }
+    setRunningIds(running);
     if (!loaded) setLoaded(true);
   }, [storage, loaded]);
 
@@ -197,8 +207,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       setEditModel(selected.model);
       setEditPrompt(selected.prompt);
       setEditEnabled(selected.enabled);
-      const preset = PRESETS.find((p) => p.value === selected.cronExpression);
-      setEditPreset(preset ? preset.value : 'custom');
     }
   }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -207,7 +215,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (!selectedId) { setRuns([]); return; }
     const raw = await storage.read(runsKey(selectedId));
     setRuns(Array.isArray(raw) ? raw : []);
-  }, [storage, selectedId]);
+    setCompletedAgents(api.agents.listCompleted());
+  }, [storage, selectedId, api]);
 
   useEffect(() => {
     loadRuns();
@@ -262,9 +271,18 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (id === selectedId) setEditEnabled(!editEnabled);
   }, [automations, storage, selectedId, editEnabled]);
 
+  const deleteRun = useCallback(async (agentId: string) => {
+    if (!selectedId) return;
+    const raw = await storage.read(runsKey(selectedId));
+    const current: RunRecord[] = Array.isArray(raw) ? raw : [];
+    const next = current.filter((r) => r.agentId !== agentId);
+    await storage.write(runsKey(selectedId), next);
+    setRuns(next);
+  }, [selectedId, storage]);
+
   // Stable refs for callbacks
-  const actionsRef = useRef({ createAutomation, saveAutomation, deleteAutomation, toggleEnabled });
-  actionsRef.current = { createAutomation, saveAutomation, deleteAutomation, toggleEnabled };
+  const actionsRef = useRef({ createAutomation, saveAutomation, deleteAutomation, toggleEnabled, deleteRun });
+  actionsRef.current = { createAutomation, saveAutomation, deleteAutomation, toggleEnabled, deleteRun };
 
   if (!loaded) {
     return React.createElement('div', { className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs' }, 'Loading automations...');
@@ -287,23 +305,30 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       React.createElement('div', { className: 'flex-1 overflow-y-auto' },
         automations.length === 0
           ? React.createElement('div', { className: 'px-3 py-4 text-xs text-ctp-subtext0 text-center' }, 'No automations yet')
-          : automations.map((auto) =>
-              React.createElement('div', {
-                key: auto.id,
-                className: `flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-ctp-surface0 transition-colors ${
-                  auto.id === selectedId ? 'bg-ctp-surface0' : 'hover:bg-ctp-surface0/50'
-                }`,
-                onClick: () => setSelectedId(auto.id),
-              },
-                // Enabled dot
-                React.createElement('button', {
-                  className: `w-2 h-2 rounded-full flex-shrink-0 ${auto.enabled ? 'bg-ctp-green' : 'bg-ctp-surface2'}`,
-                  onClick: (e: React.MouseEvent) => { e.stopPropagation(); actionsRef.current.toggleEnabled(auto.id); },
-                  title: auto.enabled ? 'Disable' : 'Enable',
-                }),
-                React.createElement('div', { className: 'flex-1 min-w-0' },
-                  React.createElement('div', { className: 'text-xs text-ctp-text truncate' }, auto.name || 'Untitled'),
-                  React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 truncate' }, describeSchedule(auto.cronExpression)),
+          : React.createElement('div', { className: 'py-0.5' },
+              automations.map((auto) =>
+                React.createElement('div', {
+                  key: auto.id,
+                  className: `flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors ${
+                    auto.id === selectedId ? 'bg-ctp-surface0' : 'hover:bg-ctp-surface0/50'
+                  }`,
+                  onClick: () => setSelectedId(auto.id),
+                },
+                  React.createElement('div', { className: 'flex-1 min-w-0' },
+                    React.createElement('div', { className: 'flex items-center gap-1.5' },
+                      React.createElement('span', { className: 'text-xs text-ctp-text truncate' }, auto.name || 'Untitled'),
+                      React.createElement('span', {
+                        className: `text-[9px] px-1 py-px rounded flex-shrink-0 ${
+                          !auto.enabled
+                            ? 'bg-ctp-surface2/50 text-ctp-subtext0'
+                            : runningIds.has(auto.id)
+                              ? 'bg-ctp-green/15 text-ctp-green'
+                              : 'bg-ctp-blue/15 text-ctp-blue'
+                        }`,
+                      }, !auto.enabled ? 'off' : runningIds.has(auto.id) ? 'running' : 'on'),
+                    ),
+                    React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 truncate' }, describeSchedule(auto.cronExpression)),
+                  ),
                 ),
               ),
             ),
@@ -313,43 +338,72 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     // ── Right: editor + runs ──────────────────────────────────────────
     selected
       ? React.createElement('div', { className: 'flex-1 flex flex-col min-w-0 overflow-y-auto' },
-          // Editor section
+          // ── Top toolbar: enable, save, delete ─────────────────────────
+          React.createElement('div', {
+            className: 'flex items-center gap-2 px-4 py-2 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+          },
+            // Enable/Disable toggle
+            React.createElement('div', { className: 'flex items-center gap-2' },
+              React.createElement('button', {
+                className: 'toggle-track',
+                'data-on': String(editEnabled),
+                onClick: () => setEditEnabled(!editEnabled),
+              },
+                React.createElement('span', { className: 'toggle-knob' }),
+              ),
+              React.createElement('span', { className: 'text-xs text-ctp-subtext1 w-14' }, editEnabled ? 'Enabled' : 'Disabled'),
+            ),
+            // Save
+            React.createElement('button', {
+              className: 'px-3 py-1 text-xs bg-ctp-accent text-white rounded hover:opacity-90 transition-opacity',
+              onClick: () => actionsRef.current.saveAutomation(),
+            }, 'Save'),
+            // Spacer
+            React.createElement('div', { className: 'flex-1' }),
+            // Delete
+            React.createElement('button', {
+              className: 'px-3 py-1 text-xs text-ctp-red border border-ctp-red/30 rounded hover:bg-ctp-red/10 transition-colors',
+              onClick: async () => {
+                const ok = await api.ui.showConfirm('Delete this automation and its run history? This cannot be undone.');
+                if (ok) await deleteAutomation();
+              },
+            }, 'Delete'),
+          ),
+
+          // ── Editor section ────────────────────────────────────────────
           React.createElement('div', { className: 'p-4 border-b border-ctp-surface0 space-y-3' },
             // Name
             React.createElement('div', null,
               React.createElement('label', { className: 'block text-xs text-ctp-subtext1 mb-1' }, 'Name'),
               React.createElement('input', {
                 type: 'text',
-                className: 'w-full px-2 py-1 text-xs bg-ctp-surface0 text-ctp-text rounded border border-ctp-surface1 focus:border-ctp-blue focus:outline-none',
+                className: 'w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-ctp-surface2 text-ctp-text placeholder:text-ctp-subtext0/40 focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30',
                 value: editName,
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value),
               }),
             ),
-            // Schedule
+            // Schedule — preset buttons + raw cron input
             React.createElement('div', null,
-              React.createElement('label', { className: 'block text-xs text-ctp-subtext1 mb-1' }, 'Schedule'),
-              React.createElement('div', { className: 'flex gap-2' },
-                React.createElement('select', {
-                  className: 'flex-1 px-2 py-1 text-xs bg-ctp-surface0 text-ctp-text rounded border border-ctp-surface1 focus:border-ctp-blue focus:outline-none',
-                  value: editPreset,
-                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
-                    const val = e.target.value;
-                    setEditPreset(val);
-                    if (val !== 'custom') setEditCron(val);
-                  },
-                },
-                  PRESETS.map((p) =>
-                    React.createElement('option', { key: p.value, value: p.value }, p.label),
-                  ),
-                  React.createElement('option', { value: 'custom' }, 'Custom'),
+              React.createElement('label', { className: 'block text-xs text-ctp-subtext1 mb-1.5' }, 'Schedule'),
+              React.createElement('div', { className: 'flex flex-wrap gap-1.5 mb-2' },
+                PRESETS.map((p) =>
+                  React.createElement('button', {
+                    key: p.value,
+                    className: `px-2.5 py-1 text-xs rounded-md transition-colors ${
+                      editCron === p.value
+                        ? 'bg-ctp-blue/20 text-ctp-blue border border-ctp-blue/30'
+                        : 'bg-ctp-surface0 text-ctp-subtext1 border border-ctp-surface1 hover:bg-ctp-surface1 hover:text-ctp-text'
+                    }`,
+                    onClick: () => setEditCron(p.value),
+                  }, p.label),
                 ),
               ),
-              editPreset === 'custom' && React.createElement('input', {
+              React.createElement('input', {
                 type: 'text',
-                className: 'w-full mt-1 px-2 py-1 text-xs bg-ctp-surface0 text-ctp-text rounded border border-ctp-surface1 focus:border-ctp-blue focus:outline-none font-mono',
+                className: 'w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-ctp-surface2 text-ctp-text font-mono placeholder:text-ctp-subtext0/40 focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30',
                 value: editCron,
                 onChange: (e: React.ChangeEvent<HTMLInputElement>) => setEditCron(e.target.value),
-                placeholder: '* * * * *',
+                placeholder: '* * * * *  (min hour dom month dow)',
               }),
               React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 mt-1' }, describeSchedule(editCron)),
             ),
@@ -357,11 +411,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             React.createElement('div', null,
               React.createElement('label', { className: 'block text-xs text-ctp-subtext1 mb-1' }, 'Model'),
               React.createElement('select', {
-                className: 'w-full px-2 py-1 text-xs bg-ctp-surface0 text-ctp-text rounded border border-ctp-surface1 focus:border-ctp-blue focus:outline-none',
+                className: 'w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30',
                 value: editModel,
                 onChange: (e: React.ChangeEvent<HTMLSelectElement>) => setEditModel(e.target.value),
               },
-                React.createElement('option', { value: '' }, 'Default'),
                 modelOptions.map((m) =>
                   React.createElement('option', { key: m.id, value: m.id }, m.label),
                 ),
@@ -371,64 +424,93 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             React.createElement('div', null,
               React.createElement('label', { className: 'block text-xs text-ctp-subtext1 mb-1' }, 'Prompt'),
               React.createElement('textarea', {
-                className: 'w-full px-2 py-1 text-xs bg-ctp-surface0 text-ctp-text rounded border border-ctp-surface1 focus:border-ctp-blue focus:outline-none resize-y min-h-[80px] font-mono',
+                className: 'w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-ctp-surface2 text-ctp-text font-mono placeholder:text-ctp-subtext0/40 focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30 resize-y min-h-[80px]',
                 rows: 4,
                 value: editPrompt,
                 onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => setEditPrompt(e.target.value),
                 placeholder: 'Enter the mission for the agent...',
               }),
             ),
-            // Enabled toggle
-            React.createElement('div', { className: 'flex items-center gap-2' },
-              React.createElement('button', {
-                className: `relative w-8 h-4 rounded-full transition-colors ${editEnabled ? 'bg-ctp-green' : 'bg-ctp-surface2'}`,
-                onClick: () => setEditEnabled(!editEnabled),
-              },
-                React.createElement('span', {
-                  className: `absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editEnabled ? 'left-4' : 'left-0.5'}`,
-                }),
-              ),
-              React.createElement('span', { className: 'text-xs text-ctp-subtext1' }, editEnabled ? 'Enabled' : 'Disabled'),
-            ),
-            // Action buttons
-            React.createElement('div', { className: 'flex gap-2 pt-1' },
-              React.createElement('button', {
-                className: 'px-3 py-1 text-xs bg-ctp-blue text-ctp-base rounded hover:opacity-90 transition-opacity',
-                onClick: () => actionsRef.current.saveAutomation(),
-              }, 'Save'),
-              React.createElement('button', {
-                className: 'px-3 py-1 text-xs bg-ctp-surface1 text-ctp-text rounded hover:bg-ctp-surface2 transition-colors',
-                onClick: () => actionsRef.current.deleteAutomation(),
-              }, 'Delete'),
-            ),
           ),
 
-          // Runs section
+          // ── Runs section ──────────────────────────────────────────────
           React.createElement('div', { className: 'p-4' },
             React.createElement('div', { className: 'text-xs font-medium text-ctp-text mb-2' }, 'Run History'),
             runs.length === 0
               ? React.createElement('div', { className: 'text-xs text-ctp-subtext0' }, 'No runs yet')
-              : React.createElement('div', { className: 'space-y-1' },
+              : React.createElement('div', { className: 'space-y-1.5' },
                   runs.slice(0, 20).map((run) =>
                     React.createElement('div', {
                       key: run.agentId,
-                      className: 'flex items-center gap-2 px-2 py-1.5 bg-ctp-mantle rounded text-xs',
+                      className: 'px-2.5 py-2 bg-ctp-mantle rounded text-xs',
                     },
-                      React.createElement('span', {
-                        className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                          run.status === 'running' ? 'bg-ctp-yellow' :
-                          run.status === 'completed' ? 'bg-ctp-green' :
-                          'bg-ctp-red'
-                        }`,
-                      }),
-                      React.createElement('span', { className: 'text-ctp-subtext0 flex-shrink-0' }, formatTime(run.startedAt)),
-                      React.createElement('span', { className: 'text-ctp-text truncate flex-1' },
-                        run.status === 'running' ? 'Running...' :
-                        run.summary || (run.status === 'completed' ? 'Completed' : 'Failed'),
+                      // Top row: status dot, timestamp, actions
+                      React.createElement('div', { className: 'flex items-center gap-2' },
+                        React.createElement('span', {
+                          className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                            run.status === 'running' ? 'bg-ctp-yellow' :
+                            run.status === 'completed' ? 'bg-ctp-green' :
+                            'bg-ctp-red'
+                          }`,
+                        }),
+                        React.createElement('span', { className: 'text-ctp-subtext0 flex-shrink-0' }, formatTime(run.startedAt)),
+                        React.createElement('span', {
+                          className: `text-[10px] flex-shrink-0 ${
+                            run.status === 'running' ? 'text-ctp-yellow' :
+                            run.status === 'completed' ? 'text-ctp-green' :
+                            'text-ctp-red'
+                          }`,
+                        }, run.status === 'running' ? 'running' : run.status),
+                        // Spacer
+                        React.createElement('div', { className: 'flex-1' }),
+                        // Actions
+                        run.status === 'running'
+                          ? React.createElement('div', { className: 'flex items-center gap-1.5' },
+                              React.createElement('button', {
+                                className: 'px-2 py-0.5 text-[11px] bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors',
+                                onClick: () => api.navigation.focusAgent(run.agentId),
+                              }, 'View'),
+                              React.createElement('button', {
+                                className: 'px-2 py-0.5 text-[11px] text-ctp-red border border-ctp-red/30 rounded hover:bg-ctp-red/10 transition-colors',
+                                onClick: () => api.agents.kill(run.agentId),
+                              }, 'Stop'),
+                            )
+                          : React.createElement('div', { className: 'flex items-center gap-1.5' },
+                              React.createElement('button', {
+                                className: `px-2 py-0.5 text-[11px] rounded transition-colors ${
+                                  expandedRunId === run.agentId
+                                    ? 'bg-ctp-accent text-white'
+                                    : 'bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 hover:bg-ctp-accent/20'
+                                }`,
+                                onClick: () => setExpandedRunId(expandedRunId === run.agentId ? null : run.agentId),
+                              }, 'Summary'),
+                              React.createElement('button', {
+                                className: 'px-2 py-0.5 text-[11px] text-ctp-red border border-ctp-red/30 rounded hover:bg-ctp-red/10 transition-colors',
+                                onClick: async () => {
+                                  const ok = await api.ui.showConfirm('Delete this run record? This cannot be undone.');
+                                  if (ok) actionsRef.current.deleteRun(run.agentId);
+                                },
+                              }, 'Delete'),
+                            ),
                       ),
-                      run.exitCode !== null && React.createElement('span', {
-                        className: `text-[10px] ${run.exitCode === 0 ? 'text-ctp-green' : 'text-ctp-red'}`,
-                      }, `exit ${run.exitCode}`),
+                      // Expanded summary card
+                      expandedRunId === run.agentId && (() => {
+                        const completed = completedAgents.find((c) => c.id === run.agentId);
+                        if (completed) {
+                          return React.createElement('div', { className: 'mt-2' },
+                            React.createElement(api.widgets.QuickAgentGhost, {
+                              completed,
+                              onDismiss: () => setExpandedRunId(null),
+                            }),
+                          );
+                        }
+                        // Fallback if agent no longer in completed list
+                        return run.summary
+                          ? React.createElement('div', {
+                              className: 'mt-2 p-2.5 bg-ctp-surface0 rounded text-[11px] text-ctp-subtext1 leading-relaxed',
+                            }, run.summary)
+                          : null;
+                      })(),
                     ),
                   ),
                 ),
