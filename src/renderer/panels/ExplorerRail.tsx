@@ -108,10 +108,6 @@ export function ExplorerRail() {
   const plugins = usePluginStore((s) => s.plugins);
   const projectEnabled = usePluginStore((s) => s.projectEnabled);
 
-  if (explorerTab === 'settings') {
-    return <SettingsContextPicker />;
-  }
-
   // Get enabled project-scoped (and dual-scoped) plugins for the active project
   const enabledPluginIds = activeProjectId ? (projectEnabled[activeProjectId] || []) : [];
   const pluginTabs = enabledPluginIds
@@ -206,6 +202,11 @@ export function ExplorerRail() {
     setDragOverIndex(null);
     setOrderVersion((v) => v + 1);
   }, [dragIndex, orderedTabs, activeProjectId]);
+
+  // Early return AFTER all hooks to satisfy rules-of-hooks
+  if (explorerTab === 'settings') {
+    return <SettingsContextPicker />;
+  }
 
   return (
     <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
