@@ -1,9 +1,28 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 
 interface TabEntry { id: string; label: string; icon: ReactNode }
+
+const TAB_ORDER_KEY_PREFIX = 'clubhouse_explorer_tab_order_';
+
+function loadTabOrder(projectId: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(TAB_ORDER_KEY_PREFIX + projectId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTabOrder(projectId: string, order: string[]): void {
+  try {
+    localStorage.setItem(TAB_ORDER_KEY_PREFIX + projectId, JSON.stringify(order));
+  } catch { /* quota exceeded – silently ignore */ }
+}
 
 const CORE_TABS: TabEntry[] = [
   {
@@ -99,6 +118,95 @@ export function ExplorerRail() {
     .map((id) => plugins[id])
     .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab);
 
+  // Build unified tab list: core tabs + plugin tabs
+  const pluginEntries: TabEntry[] = pluginTabs.map((entry) => ({
+    id: `plugin:${entry.manifest.id}`,
+    label: entry.manifest.contributes!.tab!.label,
+    icon: entry.manifest.contributes!.tab!.icon
+      ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
+      : PLUGIN_FALLBACK_ICON,
+  }));
+
+  const rawTabs: TabEntry[] = [...CORE_TABS, ...pluginEntries];
+
+  // Order version counter forces re-render after drag-drop reorder
+  const [orderVersion, setOrderVersion] = useState(0);
+
+  const orderedTabs = useMemo(() => {
+    if (!activeProjectId) return rawTabs;
+    const saved = loadTabOrder(activeProjectId);
+    if (!saved) return rawTabs;
+
+    const tabMap = new Map(rawTabs.map((t) => [t.id, t]));
+    const ordered: TabEntry[] = [];
+
+    // Pull tabs in saved order (skip IDs no longer present)
+    for (const id of saved) {
+      const tab = tabMap.get(id);
+      if (tab) {
+        ordered.push(tab);
+        tabMap.delete(id);
+      }
+    }
+
+    // Append any new tabs not in saved order
+    for (const tab of tabMap.values()) {
+      ordered.push(tab);
+    }
+
+    return ordered;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, rawTabs.length, pluginTabs.length, orderVersion]);
+
+  // Drag-to-reorder state (mirrors ProjectRail pattern)
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragNodeRef = useRef<HTMLDivElement | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newOrder = [...orderedTabs];
+    const [moved] = newOrder.splice(dragIndex, 1);
+    newOrder.splice(dropIndex, 0, moved);
+
+    if (activeProjectId) {
+      saveTabOrder(activeProjectId, newOrder.map((t) => t.id));
+    }
+
+    setDragIndex(null);
+    setDragOverIndex(null);
+    setOrderVersion((v) => v + 1);
+  }, [dragIndex, orderedTabs, activeProjectId]);
+
   return (
     <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
       <div className="px-3 py-3 border-b border-surface-0">
@@ -107,51 +215,36 @@ export function ExplorerRail() {
         </h2>
       </div>
       <nav className="flex-1 py-1 flex flex-col">
-        {CORE_TABS.map((tab) => (
-          <button
+        {orderedTabs.map((tab, i) => (
+          <div
             key={tab.id}
-            onClick={() => setExplorerTab(tab.id)}
-            className={`
-              w-full px-3 py-3 text-left text-sm flex items-center gap-3
-              transition-colors duration-100 cursor-pointer
-              ${explorerTab === tab.id
-                ? 'bg-surface-1 text-ctp-text'
-                : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-              }
-            `}
+            ref={dragIndex === i ? dragNodeRef : undefined}
+            draggable
+            onDragStart={(e) => handleDragStart(e, i)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, i)}
+            onDrop={(e) => handleDrop(e, i)}
+            className="relative"
           >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-
-        {pluginTabs.length > 0 && (
-          <div className="mx-3 border-t border-surface-0 my-1" />
-        )}
-
-        {pluginTabs.map((entry) => {
-          const tabId = `plugin:${entry.manifest.id}`;
-          return (
+            {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
+              <div className="absolute -top-0.5 left-3 right-3 h-0.5 bg-indigo-500 rounded-full" />
+            )}
             <button
-              key={tabId}
-              onClick={() => setExplorerTab(tabId)}
+              onClick={() => setExplorerTab(tab.id)}
               className={`
                 w-full px-3 py-3 text-left text-sm flex items-center gap-3
                 transition-colors duration-100 cursor-pointer
-                ${explorerTab === tabId
+                ${explorerTab === tab.id
                   ? 'bg-surface-1 text-ctp-text'
                   : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
                 }
               `}
             >
-              {entry.manifest.contributes!.tab!.icon
-                ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
-                : PLUGIN_FALLBACK_ICON
-              }
-              {entry.manifest.contributes!.tab!.label}
+              {tab.icon}
+              {tab.label}
             </button>
-          );
-        })}
+          </div>
+        ))}
       </nav>
     </div>
   );
