@@ -131,6 +131,7 @@ export function spawnShell(id: string, projectPath: string): void {
     if (!current || current.process !== proc) return;
 
     session.lastActivity = Date.now();
+    appendToBuffer(session, data);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.PTY.DATA, id, data);

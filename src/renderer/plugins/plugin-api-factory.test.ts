@@ -32,6 +32,16 @@ const mockAgent = {
   getModelOptions: vi.fn(),
 };
 
+const mockPty = {
+  spawnShell: vi.fn(),
+  write: vi.fn(),
+  resize: vi.fn(),
+  kill: vi.fn(),
+  getBuffer: vi.fn(),
+  onData: vi.fn(),
+  onExit: vi.fn(),
+};
+
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
@@ -39,6 +49,7 @@ Object.defineProperty(globalThis, 'window', {
       file: mockFile,
       git: mockGit,
       agent: mockAgent,
+      pty: mockPty,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -89,6 +100,7 @@ describe('plugin-api-factory', () => {
       expect(api.hub).toBeDefined();
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
+      expect(api.terminal).toBeDefined();
       expect(api.context).toBeDefined();
     });
   });
@@ -1372,6 +1384,467 @@ describe('plugin-api-factory', () => {
 
         expect(cb1).toHaveBeenCalledTimes(1);
         expect(cb2).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    // ── Terminal API ─────────────────────────────────────────────────────
+
+    describe('terminal API', () => {
+      let api: PluginAPI;
+
+      beforeEach(() => {
+        mockPty.spawnShell.mockResolvedValue(undefined);
+        mockPty.kill.mockResolvedValue(undefined);
+        mockPty.getBuffer.mockResolvedValue('');
+        mockPty.onData.mockReturnValue(() => {});
+        mockPty.onExit.mockReturnValue(() => {});
+        api = createPluginAPI(makeCtx());
+      });
+
+      // ── surface check ────────────────────────────────────────────────
+
+      it('provides all terminal API methods', () => {
+        expect(typeof api.terminal.spawn).toBe('function');
+        expect(typeof api.terminal.write).toBe('function');
+        expect(typeof api.terminal.resize).toBe('function');
+        expect(typeof api.terminal.kill).toBe('function');
+        expect(typeof api.terminal.getBuffer).toBe('function');
+        expect(typeof api.terminal.onData).toBe('function');
+        expect(typeof api.terminal.onExit).toBe('function');
+        expect(typeof api.terminal.ShellTerminal).toBe('function');
+      });
+
+      it('terminal API is available for project-scoped plugins', () => {
+        const projectApi = createPluginAPI(makeCtx({ scope: 'project' }));
+        expect(typeof projectApi.terminal.spawn).toBe('function');
+      });
+
+      it('terminal API is available for app-scoped plugins', () => {
+        const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        expect(typeof appApi.terminal.spawn).toBe('function');
+      });
+
+      it('terminal API is available for dual-scoped plugins in project mode', () => {
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+        expect(typeof dualApi.terminal.spawn).toBe('function');
+      });
+
+      it('terminal API is available for dual-scoped plugins in app mode', () => {
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+        expect(typeof dualApi.terminal.spawn).toBe('function');
+      });
+
+      // ── spawn() ──────────────────────────────────────────────────────
+
+      describe('spawn()', () => {
+        it('namespaces session ID with plugin prefix', async () => {
+          await api.terminal.spawn('my-session');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            'plugin:test-plugin:my-session',
+            '/projects/my-project',
+          );
+        });
+
+        it('uses explicit cwd when provided', async () => {
+          await api.terminal.spawn('s1', '/custom/dir');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            'plugin:test-plugin:s1',
+            '/custom/dir',
+          );
+        });
+
+        it('falls back to ctx.projectPath when cwd is omitted', async () => {
+          await api.terminal.spawn('s1');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            'plugin:test-plugin:s1',
+            '/projects/my-project',
+          );
+        });
+
+        it('explicit cwd overrides project context', async () => {
+          await api.terminal.spawn('s1', '/override');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            expect.any(String),
+            '/override',
+          );
+        });
+
+        it('throws without cwd and without project context', async () => {
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          await expect(appApi.terminal.spawn('s1')).rejects.toThrow('working directory');
+        });
+
+        it('app-scoped plugin can spawn with explicit cwd', async () => {
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          await appApi.terminal.spawn('s1', '/explicit/dir');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            'plugin:test-plugin:s1',
+            '/explicit/dir',
+          );
+        });
+
+        it('returns a Promise<void>', async () => {
+          const result = await api.terminal.spawn('s1');
+          expect(result).toBeUndefined();
+        });
+
+        it('propagates PTY spawn errors', async () => {
+          mockPty.spawnShell.mockRejectedValue(new Error('spawn failed'));
+          await expect(api.terminal.spawn('s1')).rejects.toThrow('spawn failed');
+        });
+
+        it('can spawn multiple distinct sessions', async () => {
+          await api.terminal.spawn('session-a');
+          await api.terminal.spawn('session-b');
+          expect(mockPty.spawnShell).toHaveBeenCalledTimes(2);
+          expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:session-a', expect.any(String));
+          expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:session-b', expect.any(String));
+        });
+
+        it('spawning same session ID twice calls PTY twice (API does not deduplicate)', async () => {
+          await api.terminal.spawn('dup');
+          await api.terminal.spawn('dup');
+          expect(mockPty.spawnShell).toHaveBeenCalledTimes(2);
+        });
+
+        it('preserves special characters in session IDs', async () => {
+          await api.terminal.spawn('session/with:special.chars');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(
+            'plugin:test-plugin:session/with:special.chars',
+            expect.any(String),
+          );
+        });
+
+        it('empty session ID is valid', async () => {
+          await api.terminal.spawn('');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:', expect.any(String));
+        });
+      });
+
+      // ── write() ──────────────────────────────────────────────────────
+
+      describe('write()', () => {
+        it('namespaces session ID', () => {
+          api.terminal.write('s1', 'hello');
+          expect(mockPty.write).toHaveBeenCalledWith('plugin:test-plugin:s1', 'hello');
+        });
+
+        it('passes data through unmodified', () => {
+          api.terminal.write('s1', '\x1b[31mred\x1b[0m');
+          expect(mockPty.write).toHaveBeenCalledWith(expect.any(String), '\x1b[31mred\x1b[0m');
+        });
+
+        it('handles empty string data', () => {
+          api.terminal.write('s1', '');
+          expect(mockPty.write).toHaveBeenCalledWith('plugin:test-plugin:s1', '');
+        });
+
+        it('is synchronous (returns void)', () => {
+          const result = api.terminal.write('s1', 'data');
+          expect(result).toBeUndefined();
+        });
+      });
+
+      // ── resize() ─────────────────────────────────────────────────────
+
+      describe('resize()', () => {
+        it('namespaces session ID', () => {
+          api.terminal.resize('s1', 80, 24);
+          expect(mockPty.resize).toHaveBeenCalledWith('plugin:test-plugin:s1', 80, 24);
+        });
+
+        it('passes cols and rows through', () => {
+          api.terminal.resize('s1', 200, 50);
+          expect(mockPty.resize).toHaveBeenCalledWith(expect.any(String), 200, 50);
+        });
+
+        it('is synchronous (returns void)', () => {
+          const result = api.terminal.resize('s1', 80, 24);
+          expect(result).toBeUndefined();
+        });
+      });
+
+      // ── kill() ───────────────────────────────────────────────────────
+
+      describe('kill()', () => {
+        it('namespaces session ID', async () => {
+          await api.terminal.kill('s1');
+          expect(mockPty.kill).toHaveBeenCalledWith('plugin:test-plugin:s1');
+        });
+
+        it('returns a Promise<void>', async () => {
+          const result = await api.terminal.kill('s1');
+          expect(result).toBeUndefined();
+        });
+
+        it('propagates PTY kill errors', async () => {
+          mockPty.kill.mockRejectedValue(new Error('kill failed'));
+          await expect(api.terminal.kill('s1')).rejects.toThrow('kill failed');
+        });
+
+        it('killing unknown session does not throw (PTY manager handles gracefully)', async () => {
+          // PTY manager's kill() is a no-op for unknown sessions
+          await expect(api.terminal.kill('nonexistent')).resolves.toBeUndefined();
+        });
+      });
+
+      // ── getBuffer() ──────────────────────────────────────────────────
+
+      describe('getBuffer()', () => {
+        it('namespaces session ID', async () => {
+          await api.terminal.getBuffer('s1');
+          expect(mockPty.getBuffer).toHaveBeenCalledWith('plugin:test-plugin:s1');
+        });
+
+        it('returns buffer content from PTY', async () => {
+          mockPty.getBuffer.mockResolvedValue('$ ls\nREADME.md\n');
+          const buf = await api.terminal.getBuffer('s1');
+          expect(buf).toBe('$ ls\nREADME.md\n');
+        });
+
+        it('returns empty string for sessions with no output', async () => {
+          mockPty.getBuffer.mockResolvedValue('');
+          const buf = await api.terminal.getBuffer('s1');
+          expect(buf).toBe('');
+        });
+
+        it('returns empty string for non-existent sessions', async () => {
+          mockPty.getBuffer.mockResolvedValue('');
+          const buf = await api.terminal.getBuffer('nonexistent');
+          expect(buf).toBe('');
+        });
+
+        it('returns a Promise<string>', async () => {
+          const result = api.terminal.getBuffer('s1');
+          expect(result).toBeInstanceOf(Promise);
+          expect(typeof (await result)).toBe('string');
+        });
+      });
+
+      // ── onData() ─────────────────────────────────────────────────────
+
+      describe('onData()', () => {
+        it('returns a Disposable with dispose()', () => {
+          const disposable = api.terminal.onData('s1', () => {});
+          expect(typeof disposable.dispose).toBe('function');
+        });
+
+        it('registers a listener on the PTY bridge', () => {
+          api.terminal.onData('s1', () => {});
+          expect(mockPty.onData).toHaveBeenCalledTimes(1);
+          expect(mockPty.onData).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('filters PTY data events by namespaced session ID', () => {
+          let ptyCallback: (id: string, data: string) => void = () => {};
+          mockPty.onData.mockImplementation((cb: (id: string, data: string) => void) => {
+            ptyCallback = cb;
+            return () => {};
+          });
+
+          const handler = vi.fn();
+          api.terminal.onData('my-session', handler);
+
+          // Data for our session — should fire
+          ptyCallback('plugin:test-plugin:my-session', 'hello');
+          expect(handler).toHaveBeenCalledWith('hello');
+
+          // Data for a different session — should NOT fire
+          ptyCallback('plugin:test-plugin:other-session', 'nope');
+          expect(handler).toHaveBeenCalledTimes(1);
+
+          // Data for a different plugin's session — should NOT fire
+          ptyCallback('plugin:other-plugin:my-session', 'nope');
+          expect(handler).toHaveBeenCalledTimes(1);
+
+          // Data for a raw agent PTY — should NOT fire
+          ptyCallback('agent-123', 'nope');
+          expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('multiple onData calls register separate listeners', () => {
+          api.terminal.onData('s1', () => {});
+          api.terminal.onData('s2', () => {});
+          expect(mockPty.onData).toHaveBeenCalledTimes(2);
+        });
+
+        it('dispose calls the PTY cleanup function', () => {
+          const cleanup = vi.fn();
+          mockPty.onData.mockReturnValue(cleanup);
+          const disposable = api.terminal.onData('s1', () => {});
+          disposable.dispose();
+          expect(cleanup).toHaveBeenCalledTimes(1);
+        });
+
+        it('onData for same session with different callbacks both fire', () => {
+          const callbacks: Array<(id: string, data: string) => void> = [];
+          mockPty.onData.mockImplementation((cb: (id: string, data: string) => void) => {
+            callbacks.push(cb);
+            return () => {};
+          });
+
+          const handler1 = vi.fn();
+          const handler2 = vi.fn();
+          api.terminal.onData('s1', handler1);
+          api.terminal.onData('s1', handler2);
+
+          for (const cb of callbacks) {
+            cb('plugin:test-plugin:s1', 'data');
+          }
+          expect(handler1).toHaveBeenCalledWith('data');
+          expect(handler2).toHaveBeenCalledWith('data');
+        });
+      });
+
+      // ── onExit() ─────────────────────────────────────────────────────
+
+      describe('onExit()', () => {
+        it('returns a Disposable with dispose()', () => {
+          const disposable = api.terminal.onExit('s1', () => {});
+          expect(typeof disposable.dispose).toBe('function');
+        });
+
+        it('registers a listener on the PTY bridge', () => {
+          api.terminal.onExit('s1', () => {});
+          expect(mockPty.onExit).toHaveBeenCalledTimes(1);
+          expect(mockPty.onExit).toHaveBeenCalledWith(expect.any(Function));
+        });
+
+        it('filters PTY exit events by namespaced session ID', () => {
+          let ptyCallback: (id: string, exitCode: number) => void = () => {};
+          mockPty.onExit.mockImplementation((cb: (id: string, exitCode: number) => void) => {
+            ptyCallback = cb;
+            return () => {};
+          });
+
+          const handler = vi.fn();
+          api.terminal.onExit('my-session', handler);
+
+          // Exit for our session — should fire
+          ptyCallback('plugin:test-plugin:my-session', 0);
+          expect(handler).toHaveBeenCalledWith(0);
+
+          // Exit for a different session — should NOT fire
+          ptyCallback('plugin:test-plugin:other-session', 1);
+          expect(handler).toHaveBeenCalledTimes(1);
+
+          // Exit for a different plugin — should NOT fire
+          ptyCallback('plugin:other-plugin:my-session', 1);
+          expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('passes exit code through to callback', () => {
+          let ptyCallback: (id: string, exitCode: number) => void = () => {};
+          mockPty.onExit.mockImplementation((cb: (id: string, exitCode: number) => void) => {
+            ptyCallback = cb;
+            return () => {};
+          });
+
+          const handler = vi.fn();
+          api.terminal.onExit('s1', handler);
+
+          ptyCallback('plugin:test-plugin:s1', 137);
+          expect(handler).toHaveBeenCalledWith(137);
+        });
+
+        it('dispose calls the PTY cleanup function', () => {
+          const cleanup = vi.fn();
+          mockPty.onExit.mockReturnValue(cleanup);
+          const disposable = api.terminal.onExit('s1', () => {});
+          disposable.dispose();
+          expect(cleanup).toHaveBeenCalledTimes(1);
+        });
+      });
+
+      // ── ShellTerminal widget ─────────────────────────────────────────
+
+      describe('ShellTerminal widget', () => {
+        it('is a function (React component)', () => {
+          expect(typeof api.terminal.ShellTerminal).toBe('function');
+        });
+
+        it('each plugin gets its own ShellTerminal instance (not shared)', () => {
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          // They should be different closures (different namespace)
+          expect(api.terminal.ShellTerminal).not.toBe(api2.terminal.ShellTerminal);
+        });
+
+        it('terminal API is a fresh instance per createPluginAPI call', () => {
+          const api2 = createPluginAPI(makeCtx());
+          expect(api.terminal).not.toBe(api2.terminal);
+        });
+      });
+
+      // ── namespace isolation ──────────────────────────────────────────
+
+      describe('namespace isolation', () => {
+        it('different plugins get different namespaces', async () => {
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          await api.terminal.spawn('shared-name');
+          await api2.terminal.spawn('shared-name');
+          expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:shared-name', expect.any(String));
+          expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:other-plugin:shared-name', expect.any(String));
+        });
+
+        it('plugin cannot write to another plugin session via write()', () => {
+          api.terminal.write('s1', 'data');
+          // Should be namespaced to this plugin — not a raw ID
+          expect(mockPty.write).toHaveBeenCalledWith('plugin:test-plugin:s1', 'data');
+          expect(mockPty.write).not.toHaveBeenCalledWith('s1', 'data');
+        });
+
+        it('plugin cannot kill another plugin session via kill()', async () => {
+          await api.terminal.kill('s1');
+          expect(mockPty.kill).toHaveBeenCalledWith('plugin:test-plugin:s1');
+          expect(mockPty.kill).not.toHaveBeenCalledWith('s1');
+        });
+
+        it('plugin cannot read another plugin buffer via getBuffer()', async () => {
+          await api.terminal.getBuffer('s1');
+          expect(mockPty.getBuffer).toHaveBeenCalledWith('plugin:test-plugin:s1');
+          expect(mockPty.getBuffer).not.toHaveBeenCalledWith('s1');
+        });
+
+        it('plugin cannot intercept agent PTY sessions', () => {
+          let ptyCallback: (id: string, data: string) => void = () => {};
+          mockPty.onData.mockImplementation((cb: (id: string, data: string) => void) => {
+            ptyCallback = cb;
+            return () => {};
+          });
+
+          const handler = vi.fn();
+          api.terminal.onData('agent-123', handler);
+
+          // Raw agent PTY data — should NOT match because namespace differs
+          ptyCallback('agent-123', 'secret agent data');
+          expect(handler).not.toHaveBeenCalled();
+
+          // Only the namespaced version would match
+          ptyCallback('plugin:test-plugin:agent-123', 'data');
+          expect(handler).toHaveBeenCalledWith('data');
+        });
+
+        it('namespace format is plugin:{pluginId}:{sessionId}', async () => {
+          await api.terminal.spawn('test-session');
+          const calledWith = mockPty.spawnShell.mock.calls[0][0];
+          expect(calledWith).toMatch(/^plugin:[^:]+:.+$/);
+          expect(calledWith).toBe('plugin:test-plugin:test-session');
+        });
+
+        it('all methods use the same namespace for the same session', async () => {
+          const expectedId = 'plugin:test-plugin:consistent';
+          await api.terminal.spawn('consistent');
+          api.terminal.write('consistent', 'x');
+          api.terminal.resize('consistent', 80, 24);
+          await api.terminal.kill('consistent');
+          await api.terminal.getBuffer('consistent');
+
+          expect(mockPty.spawnShell).toHaveBeenCalledWith(expectedId, expect.any(String));
+          expect(mockPty.write).toHaveBeenCalledWith(expectedId, 'x');
+          expect(mockPty.resize).toHaveBeenCalledWith(expectedId, 80, 24);
+          expect(mockPty.kill).toHaveBeenCalledWith(expectedId);
+          expect(mockPty.getBuffer).toHaveBeenCalledWith(expectedId);
+        });
       });
     });
 

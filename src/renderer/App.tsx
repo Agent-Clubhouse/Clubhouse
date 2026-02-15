@@ -13,7 +13,7 @@ import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useThemeStore } from './stores/themeStore';
 import { useOrchestratorStore } from './stores/orchestratorStore';
 import { usePluginStore } from './plugins/plugin-store';
-import { initializePluginSystem, handleProjectSwitch } from './plugins/plugin-loader';
+import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { pluginEventBus } from './plugins/plugin-events';
 import { PluginContentView } from './panels/PluginContentView';
 
@@ -94,9 +94,11 @@ export function App() {
               scope: 'global',
               key: `project-enabled-${activeProjectId}`,
             }) as string[] | undefined;
-            if (Array.isArray(saved)) {
-              usePluginStore.getState().loadProjectPluginConfig(activeProjectId, saved);
-            }
+            // Merge built-in project-scoped plugins so they're always enabled
+            const builtinIds = getBuiltinProjectPluginIds();
+            const base = Array.isArray(saved) ? saved : [];
+            const merged = [...new Set([...base, ...builtinIds])];
+            usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
           } catch { /* no saved config */ }
           await handleProjectSwitch(prevId, activeProjectId, project.path);
         })().catch((err) => console.error('[Plugins] Project switch error:', err));

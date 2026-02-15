@@ -212,13 +212,13 @@ describe('plugin-loader', () => {
       expect(usePluginStore.getState().appEnabled).toContain('builtin-dual');
     });
 
-    it('does NOT auto-enable project-scoped built-in plugins', async () => {
+    it('auto-enables project-scoped built-in plugins at app level (availability gate)', async () => {
       const manifest = makeManifest({ id: 'builtin-proj', scope: 'project' });
       (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
 
       await initializePluginSystem();
 
-      expect(usePluginStore.getState().appEnabled).not.toContain('builtin-proj');
+      expect(usePluginStore.getState().appEnabled).toContain('builtin-proj');
     });
 
     it('registers multiple built-in plugins', async () => {

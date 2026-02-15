@@ -21,6 +21,7 @@ import type {
   ModelOption,
   PluginAPI,
 } from '../plugin-types';
+import type React from 'react';
 
 // ── v0.2 scoped types ─────────────────────────────────────────────────
 
@@ -140,6 +141,17 @@ export interface WidgetsAPI_V0_2 {
   }>;
 }
 
+export interface TerminalAPI_V0_2 {
+  spawn(sessionId: string, cwd?: string): Promise<void>;
+  write(sessionId: string, data: string): void;
+  resize(sessionId: string, cols: number, rows: number): void;
+  kill(sessionId: string): Promise<void>;
+  getBuffer(sessionId: string): Promise<string>;
+  onData(sessionId: string, callback: (data: string) => void): Disposable;
+  onExit(sessionId: string, callback: (exitCode: number) => void): Disposable;
+  ShellTerminal: React.ComponentType<{ sessionId: string; focused?: boolean }>;
+}
+
 export interface PluginContextInfo_V0_2 {
   mode: PluginRenderMode;
   projectId?: string;
@@ -161,6 +173,7 @@ export interface PluginAPI_V0_2 {
   hub: HubAPI_V0_2;
   navigation: NavigationAPI_V0_2;
   widgets: WidgetsAPI_V0_2;
+  terminal: TerminalAPI_V0_2;
   context: PluginContextInfo_V0_2;
 }
 

@@ -23,10 +23,10 @@ export function PluginListSettings() {
   const allPlugins = Object.values(plugins);
   const filteredPlugins = allPlugins.filter((entry) => {
     if (isAppContext) {
-      // App settings: show all app and dual-scoped plugins
-      return entry.manifest.scope === 'app' || entry.manifest.scope === 'dual';
+      // App settings: show all plugins (app-level is the availability gate for every scope)
+      return true;
     }
-    // Project settings: only show plugins that are enabled at app level first
+    // Project settings: only show project/dual plugins that are enabled at app level
     const scopeMatch = entry.manifest.scope === 'project' || entry.manifest.scope === 'dual';
     return scopeMatch && appEnabled.includes(entry.manifest.id);
   });
@@ -94,17 +94,17 @@ export function PluginListSettings() {
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
       <div className="max-w-2xl">
         <h2 className="text-lg font-semibold text-ctp-text mb-1">
-          {isAppContext ? 'App Plugins' : 'Project Plugins'}
+          {isAppContext ? 'Plugins' : 'Project Plugins'}
         </h2>
         <p className="text-xs text-ctp-subtext0 mb-6">
           {isAppContext
-            ? 'Enable plugins here to make them available across the app.'
+            ? 'Enable plugins to make them available. Project-scoped plugins also need to be enabled per project.'
             : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
         </p>
 
         {filteredPlugins.length === 0 ? (
           <p className="text-sm text-ctp-subtext0">
-            No {isAppContext ? 'app-scoped' : 'project-scoped'} plugins installed.
+            No {isAppContext ? '' : 'project-scoped '}plugins installed.
             Place plugins in <code className="text-xs font-mono bg-surface-0 px-1 py-0.5 rounded">~/.clubhouse/plugins/</code> and restart.
           </p>
         ) : (

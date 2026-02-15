@@ -102,6 +102,16 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       AgentAvatar: noop as unknown as PluginAPI['widgets']['AgentAvatar'],
       QuickAgentGhost: noop as unknown as PluginAPI['widgets']['QuickAgentGhost'],
     },
+    terminal: {
+      spawn: asyncNoop,
+      write: noop,
+      resize: noop,
+      kill: asyncNoop,
+      getBuffer: async () => '',
+      onData: () => ({ dispose: noop }),
+      onExit: () => ({ dispose: noop }),
+      ShellTerminal: noop as unknown as PluginAPI['terminal']['ShellTerminal'],
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

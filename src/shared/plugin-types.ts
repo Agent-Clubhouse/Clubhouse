@@ -269,6 +269,25 @@ export interface WidgetsAPI {
   }>;
 }
 
+export interface TerminalAPI {
+  /** Spawn an interactive shell in the given directory (defaults to project root). */
+  spawn(sessionId: string, cwd?: string): Promise<void>;
+  /** Write data to a terminal session. */
+  write(sessionId: string, data: string): void;
+  /** Resize a terminal session. */
+  resize(sessionId: string, cols: number, rows: number): void;
+  /** Kill a terminal session. */
+  kill(sessionId: string): Promise<void>;
+  /** Get buffered output for replay on reconnect. */
+  getBuffer(sessionId: string): Promise<string>;
+  /** Subscribe to terminal data output. */
+  onData(sessionId: string, callback: (data: string) => void): Disposable;
+  /** Subscribe to terminal exit events. */
+  onExit(sessionId: string, callback: (exitCode: number) => void): Disposable;
+  /** React component that renders an xterm.js terminal connected to a session. */
+  ShellTerminal: React.ComponentType<{ sessionId: string; focused?: boolean }>;
+}
+
 export interface PluginContextInfo {
   mode: PluginRenderMode;
   projectId?: string;
@@ -289,6 +308,7 @@ export interface PluginAPI {
   hub: HubAPI;
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
+  terminal: TerminalAPI;
   context: PluginContextInfo;
 }
 
