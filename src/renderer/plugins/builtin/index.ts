@@ -1,4 +1,6 @@
 import type { PluginManifest, PluginModule } from '../../../shared/plugin-types';
+import { manifest as helloWorldManifest } from './hello-world/manifest';
+import * as helloWorldModule from './hello-world/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -7,6 +9,6 @@ export interface BuiltinPlugin {
 
 export function getBuiltinPlugins(): BuiltinPlugin[] {
   return [
-    // Built-in plugins registered here
+    { manifest: helloWorldManifest, module: helloWorldModule },
   ];
 }
