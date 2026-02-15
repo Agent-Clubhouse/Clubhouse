@@ -16,6 +16,7 @@ import { usePluginStore } from './plugins/plugin-store';
 import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { pluginEventBus } from './plugins/plugin-events';
 import { PluginContentView } from './panels/PluginContentView';
+import { HelpView } from './features/help/HelpView';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -226,12 +227,14 @@ export function App() {
 
 
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
-  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin;
+  const isHelp = explorerTab === 'help';
+  const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const CORE_LABELS: Record<string, string> = {
     agents: 'Agents',
     settings: 'Settings',
+    help: 'Help',
   };
   const tabLabel = (() => {
     if (explorerTab.startsWith('plugin:app:')) {
@@ -277,6 +280,20 @@ export function App() {
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isHelp) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
+          <span className="text-xs text-ctp-subtext0 select-none">{titleText}</span>
+        </div>
+        <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
+          <ProjectRail />
+          <HelpView />
         </div>
       </div>
     );

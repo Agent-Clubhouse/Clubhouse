@@ -22,6 +22,16 @@ export interface PluginStorageDeclaration {
   scope: 'project' | 'project-local' | 'global';
 }
 
+export interface PluginHelpTopic {
+  id: string;
+  title: string;
+  content: string; // markdown
+}
+
+export interface PluginHelpContribution {
+  topics?: PluginHelpTopic[];
+}
+
 export interface PluginContributes {
   tab?: {
     label: string;
@@ -36,6 +46,7 @@ export interface PluginContributes {
   commands?: PluginCommandDeclaration[];
   settings?: PluginSettingDeclaration[];
   storage?: PluginStorageDeclaration;
+  help?: PluginHelpContribution;
 }
 
 export interface PluginManifest {

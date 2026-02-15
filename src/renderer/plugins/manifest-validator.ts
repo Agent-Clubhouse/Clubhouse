@@ -1,6 +1,6 @@
 import type { PluginManifest } from '../../shared/plugin-types';
 
-export const SUPPORTED_API_VERSIONS = [0.1, 0.2];
+export const SUPPORTED_API_VERSIONS = [0.1, 0.2, 0.4];
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -61,6 +61,40 @@ export function validateManifest(raw: unknown): ValidationResult {
       errors.push('App-scoped plugins cannot contribute tab (use railItem instead)');
     }
     // Dual-scoped plugins can have both tab and railItem — no restriction
+  }
+
+  // v0.4+ requires contributes.help
+  const engineObj = m.engine as Record<string, unknown> | undefined;
+  const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
+  if (apiVersion >= 0.4) {
+    const contrib = m.contributes as Record<string, unknown> | undefined;
+    if (!contrib || typeof contrib.help !== 'object' || contrib.help === null) {
+      errors.push('Plugins targeting API >= 0.4 must include contributes.help');
+    } else {
+      const help = contrib.help as Record<string, unknown>;
+      if (help.topics !== undefined) {
+        if (!Array.isArray(help.topics)) {
+          errors.push('contributes.help.topics must be an array');
+        } else {
+          for (let i = 0; i < help.topics.length; i++) {
+            const topic = help.topics[i] as Record<string, unknown>;
+            if (!topic || typeof topic !== 'object') {
+              errors.push(`contributes.help.topics[${i}] must be an object`);
+            } else {
+              if (typeof topic.id !== 'string' || !topic.id) {
+                errors.push(`contributes.help.topics[${i}].id must be a non-empty string`);
+              }
+              if (typeof topic.title !== 'string' || !topic.title) {
+                errors.push(`contributes.help.topics[${i}].title must be a non-empty string`);
+              }
+              if (typeof topic.content !== 'string' || !topic.content) {
+                errors.push(`contributes.help.topics[${i}].content must be a non-empty string`);
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {

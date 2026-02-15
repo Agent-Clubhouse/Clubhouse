@@ -55,6 +55,36 @@ describe('uiStore', () => {
     });
   });
 
+  describe('toggleHelp', () => {
+    it('enters help mode and saves previous tab', () => {
+      useUIStore.setState({ explorerTab: 'agents' });
+      getState().toggleHelp();
+      expect(getState().explorerTab).toBe('help');
+      expect(getState().previousExplorerTab).toBe('agents');
+      expect(getState().helpSectionId).toBe('general');
+      expect(getState().helpTopicId).toBeNull();
+    });
+
+    it('exits help mode and restores previous tab', () => {
+      useUIStore.setState({ explorerTab: 'help', previousExplorerTab: 'agents' });
+      getState().toggleHelp();
+      expect(getState().explorerTab).toBe('agents');
+      expect(getState().previousExplorerTab).toBeNull();
+    });
+
+    it('setHelpSection resets topic', () => {
+      useUIStore.setState({ helpSectionId: 'general', helpTopicId: 'navigation' });
+      getState().setHelpSection('projects');
+      expect(getState().helpSectionId).toBe('projects');
+      expect(getState().helpTopicId).toBeNull();
+    });
+
+    it('setHelpTopic updates topic', () => {
+      getState().setHelpTopic('getting-started');
+      expect(getState().helpTopicId).toBe('getting-started');
+    });
+  });
+
   describe('settingsContext', () => {
     it('defaults to app', () => {
       expect(getState().settingsContext).toBe('app');

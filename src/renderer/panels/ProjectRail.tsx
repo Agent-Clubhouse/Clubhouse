@@ -111,6 +111,7 @@ export function ProjectRail() {
   const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects } =
     useProjectStore();
   const toggleSettings = useUIStore((s) => s.toggleSettings);
+  const toggleHelp = useUIStore((s) => s.toggleHelp);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const previousExplorerTab = useUIStore((s) => s.previousExplorerTab);
@@ -121,8 +122,9 @@ export function ProjectRail() {
   const pluginSettings = usePluginStore((s) => s.pluginSettings);
 
   const inSettings = explorerTab === 'settings';
+  const inHelp = explorerTab === 'help';
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
-  const isHome = activeProjectId === null && !inSettings && !isAppPlugin;
+  const isHome = activeProjectId === null && !inSettings && !inHelp && !isAppPlugin;
 
   // App-enabled is the source of truth for rail visibility.
   // Status is an internal runtime detail — incompatible plugins are the only exclusion.
@@ -171,14 +173,14 @@ export function ProjectRail() {
   }, []);
 
   const exitSettingsAndNavigate = useCallback((action: () => void) => {
-    if (inSettings) {
+    if (inSettings || inHelp) {
       setExplorerTab(previousExplorerTab || 'agents');
       useUIStore.setState({ previousExplorerTab: null });
     } else if (isAppPlugin) {
       setExplorerTab('agents');
     }
     action();
-  }, [inSettings, isAppPlugin, previousExplorerTab, setExplorerTab]);
+  }, [inSettings, inHelp, isAppPlugin, previousExplorerTab, setExplorerTab]);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -302,7 +304,7 @@ export function ProjectRail() {
             )}
             <ProjectIcon
               project={p}
-              isActive={!inSettings && !isAppPlugin && p.id === activeProjectId}
+              isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
               onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
               expanded={expanded}
             />
@@ -334,6 +336,33 @@ export function ProjectRail() {
           );
         })}
         <div className="mr-[10px] border-t border-surface-2 my-1 flex-shrink-0" />
+        <button
+          onClick={toggleHelp}
+          title="Help"
+          className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 pr-[10px] ${
+            expanded ? 'hover:bg-surface-0' : ''
+          }`}
+        >
+          <div
+            className={`
+              w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+              transition-colors duration-100
+              ${inHelp
+                ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+                : expanded
+                  ? 'text-ctp-subtext0'
+                  : 'text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text'
+              }
+            `}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </div>
+          <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">Help</span>
+        </button>
         <button
           onClick={toggleSettings}
           title="Settings"
