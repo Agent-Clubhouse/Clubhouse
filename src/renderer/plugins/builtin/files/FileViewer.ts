@@ -184,6 +184,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     }
 
     setSelectedPath(newPath);
+    selectedPathRef.current = newPath;
     setIsDirty(false);
     fileState.setDirty(false);
     loadFile(newPath);

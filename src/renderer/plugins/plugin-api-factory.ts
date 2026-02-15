@@ -39,8 +39,29 @@ import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useUIStore } from '../stores/uiStore';
 
-function unavailableProxy(apiName: string, scope: string): never {
-  throw new Error(`api.${apiName} is not available for ${scope}-scoped plugins`);
+/**
+ * Creates a Proxy that defers scope-violation errors to invocation time.
+ *
+ * Why not throw on property access?  React 19 dev-mode's `addObjectDiffToProperties`
+ * enumerates prop values when diffing component renders.  If the `api` object is passed
+ * as a prop, React will read `api.projects` (the Proxy), then inspect its properties —
+ * triggering the `get` trap.  Throwing there crashes the app.
+ *
+ * Instead, `get` returns a function that throws when *called* (or when cast to a
+ * primitive).  This keeps React's enumeration safe while still giving plugin authors a
+ * clear error at the call-site.
+ */
+function unavailableAPIProxy<T>(apiName: string, scope: string): T {
+  return new Proxy({} as object, {
+    get(_t, prop) {
+      // Symbols (Symbol.toPrimitive, Symbol.iterator, $$typeof, etc.) — safe to ignore
+      if (typeof prop === 'symbol') return undefined;
+      // Return a callable that throws on invocation
+      return function unavailable() {
+        throw new Error(`api.${apiName} is not available for ${scope}-scoped plugins`);
+      };
+    },
+  }) as T;
 }
 
 function createScopedStorage(pluginId: string, storageScope: 'project' | 'project-local' | 'global', projectPath?: string): ScopedStorage {
@@ -635,19 +656,13 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): Pl
   const api: PluginAPI = {
     project: projectAvailable && ctx.projectPath && ctx.projectId
       ? createProjectAPI(ctx)
-      : new Proxy({} as ProjectAPI, {
-          get(_t, _prop) { unavailableProxy('project', effectiveMode === 'app' ? 'app' : ctx.scope); },
-        }),
+      : unavailableAPIProxy<ProjectAPI>('project', effectiveMode === 'app' ? 'app' : ctx.scope),
     projects: projectsAvailable
       ? createProjectsAPI()
-      : new Proxy({} as ProjectsAPI, {
-          get(_t, _prop) { unavailableProxy('projects', 'project'); },
-        }),
+      : unavailableAPIProxy<ProjectsAPI>('projects', 'project'),
     git: projectAvailable && ctx.projectPath
       ? createGitAPI(ctx)
-      : new Proxy({} as GitAPI, {
-          get(_t, _prop) { unavailableProxy('git', effectiveMode === 'app' ? 'app' : ctx.scope); },
-        }),
+      : unavailableAPIProxy<GitAPI>('git', effectiveMode === 'app' ? 'app' : ctx.scope),
     storage: createStorageAPI(ctx),
     ui: createUIAPI(),
     commands: createCommandsAPI(ctx),
@@ -661,9 +676,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): Pl
     logging: createLoggingAPI(ctx),
     files: projectAvailable && ctx.projectPath
       ? createFilesAPI(ctx)
-      : new Proxy({} as FilesAPI, {
-          get(_t, _prop) { unavailableProxy('files', effectiveMode === 'app' ? 'app' : ctx.scope); },
-        }),
+      : unavailableAPIProxy<FilesAPI>('files', effectiveMode === 'app' ? 'app' : ctx.scope),
     context: contextInfo,
   };
 

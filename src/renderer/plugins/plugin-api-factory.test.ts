@@ -137,8 +137,13 @@ describe('plugin-api-factory', () => {
       expect(typeof api.git.status).toBe('function');
     });
 
-    it('throws when accessing api.projects on project-scoped plugin', () => {
+    it('throws when calling api.projects methods on project-scoped plugin', () => {
       expect(() => api.projects.list()).toThrow('not available for project-scoped');
+    });
+
+    it('does not throw on property access of unavailable API (React dev-mode safe)', () => {
+      // React 19 dev-mode enumerates props for diffing — property access must not throw
+      expect(() => api.projects.list).not.toThrow();
     });
   });
 
@@ -154,11 +159,16 @@ describe('plugin-api-factory', () => {
       expect(typeof api.projects.getActive).toBe('function');
     });
 
-    it('throws when accessing api.project on app-scoped plugin', () => {
-      expect(() => api.project.projectPath).toThrow('not available for app-scoped');
+    it('throws when calling api.project methods on app-scoped plugin', () => {
+      // Property access returns a callable; invoking it throws
+      expect(() => (api.project.projectPath as unknown as () => void)()).toThrow('not available for app-scoped');
     });
 
-    it('throws when accessing api.git on app-scoped plugin', () => {
+    it('does not throw on property access of unavailable project API (React dev-mode safe)', () => {
+      expect(() => api.project.projectPath).not.toThrow();
+    });
+
+    it('throws when calling api.git methods on app-scoped plugin', () => {
       expect(() => api.git.status()).toThrow('not available for app-scoped');
     });
   });
@@ -528,14 +538,14 @@ describe('plugin-api-factory', () => {
       expect(api.project.projectId).toBe('proj-1');
     });
 
-    it('throws when accessing project API in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
-      expect(() => api.project.projectPath).toThrow('not available');
-    });
-
-    it('throws when accessing project.readFile in app mode', () => {
+    it('throws when calling project API methods in app mode', () => {
       const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
       expect(() => api.project.readFile('x')).toThrow('not available');
+    });
+
+    it('does not throw on property access of unavailable project API in app mode', () => {
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      expect(() => api.project.projectPath).not.toThrow();
     });
 
     it('provides projects API in project mode', () => {
@@ -557,13 +567,9 @@ describe('plugin-api-factory', () => {
       expect(typeof api.git.diff).toBe('function');
     });
 
-    it('throws when accessing git API in app mode', () => {
+    it('throws when calling git API methods in app mode', () => {
       const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
       expect(() => api.git.status()).toThrow('not available');
-    });
-
-    it('throws when accessing git.log in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
       expect(() => api.git.log()).toThrow('not available');
     });
 
@@ -2045,9 +2051,14 @@ describe('plugin-api-factory', () => {
       expect(mockFile.copy).toHaveBeenCalledWith('/projects/my-project/src.txt', '/projects/my-project/dest.txt');
     });
 
-    it('throws when accessing files API on app-scoped plugin', () => {
+    it('throws when calling files API methods on app-scoped plugin', () => {
       const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
       expect(() => appApi.files.readTree()).toThrow('not available for app-scoped');
+    });
+
+    it('does not throw on property access of unavailable files API (React dev-mode safe)', () => {
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      expect(() => appApi.files.readTree).not.toThrow();
     });
 
     it('prevents path traversal via ..', async () => {

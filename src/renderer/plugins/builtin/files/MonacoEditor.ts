@@ -1,15 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
+import * as monaco from 'monaco-editor';
 import { generateMonacoTheme } from './monaco-theme';
 
-// Lazy-load monaco-editor to avoid 'window is not defined' in test environments
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let monacoModule: typeof import('monaco-editor') | null = null;
-
-function getMonaco(): typeof import('monaco-editor') {
-  if (!monacoModule) {
-    monacoModule = require('monaco-editor');
-  }
-  return monacoModule!;
+function getMonaco(): typeof monaco {
+  return monaco;
 }
 
 let themesRegistered = false;

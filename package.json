@@ -1,7 +1,7 @@
 {
   "name": "clubhouse",
   "productName": "Clubhouse",
-  "version": "0.23.2",
+  "version": "0.24.0",
   "description": "A place to hangout with your agent BFFs",
   "main": ".webpack/main",
   "private": true,
@@ -44,7 +44,7 @@
     "monaco-editor-webpack-plugin": "^7.1.1",
     "node-loader": "^2.1.0",
     "postcss": "^8.5.6",
-    "postcss-loader": "^8.2.0",
+    "postcss-loader": "^8.2.1",
     "style-loader": "^4.0.0",
     "tailwindcss": "^4.1.18",
     "ts-loader": "^9.5.4",

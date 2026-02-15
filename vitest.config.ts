@@ -27,6 +27,7 @@ export default defineConfig({
   resolve: {
     alias: {
       electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
+      'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
     },
   },
 });

@@ -267,12 +267,18 @@ export function FileTree({ api }: { api: PluginAPI }) {
   }, [loadTree, loadGitStatus]);
 
   // Subscribe to fileState refresh signals
+  const lastRefreshRef = useRef(fileState.refreshCount);
   useEffect(() => {
     return fileState.subscribe(() => {
-      // When refresh is triggered via command, reload tree
-      loadTree();
-      loadGitStatus();
+      // Sync selected path on every notification
       setSelectedPath(fileState.selectedPath);
+
+      // Only reload tree when an explicit refresh was triggered
+      if (fileState.refreshCount !== lastRefreshRef.current) {
+        lastRefreshRef.current = fileState.refreshCount;
+        loadTree();
+        loadGitStatus();
+      }
     });
   }, [loadTree, loadGitStatus]);
 

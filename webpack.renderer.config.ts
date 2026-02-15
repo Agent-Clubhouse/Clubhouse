@@ -31,5 +31,8 @@ export const rendererConfig: Configuration = {
   plugins,
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css'],
+    alias: {
+      'monaco-editor': 'monaco-editor/esm/vs/editor/editor.api',
+    },
   },
 };
