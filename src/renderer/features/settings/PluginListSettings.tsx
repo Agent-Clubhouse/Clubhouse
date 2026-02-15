@@ -21,11 +21,15 @@ export function PluginListSettings() {
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
 
   const allPlugins = Object.values(plugins);
-  const filteredPlugins = allPlugins.filter((entry) =>
-    isAppContext
-      ? entry.manifest.scope === 'app' || entry.manifest.scope === 'dual'
-      : entry.manifest.scope === 'project' || entry.manifest.scope === 'dual'
-  );
+  const filteredPlugins = allPlugins.filter((entry) => {
+    if (isAppContext) {
+      // App settings: show all app and dual-scoped plugins
+      return entry.manifest.scope === 'app' || entry.manifest.scope === 'dual';
+    }
+    // Project settings: only show plugins that are enabled at app level first
+    const scopeMatch = entry.manifest.scope === 'project' || entry.manifest.scope === 'dual';
+    return scopeMatch && appEnabled.includes(entry.manifest.id);
+  });
 
   const isEnabled = (pluginId: string): boolean => {
     if (isAppContext) {
@@ -94,8 +98,8 @@ export function PluginListSettings() {
         </h2>
         <p className="text-xs text-ctp-subtext0 mb-6">
           {isAppContext
-            ? 'Plugins that operate across all projects.'
-            : `Plugins enabled for ${project?.displayName || project?.name || 'this project'}.`}
+            ? 'Enable plugins here to make them available across the app.'
+            : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
         </p>
 
         {filteredPlugins.length === 0 ? (

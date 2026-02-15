@@ -23,7 +23,7 @@ export async function initializePluginSystem(): Promise<void> {
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
     store.setPluginModule(manifest.id, mod);
-    // Auto-enable built-in plugins
+    // Auto-enable built-in plugins at app level
     if (manifest.scope === 'app' || manifest.scope === 'dual') {
       store.enableApp(manifest.id);
     }
@@ -49,7 +49,7 @@ export async function initializePluginSystem(): Promise<void> {
   }
 
   // Load persisted enabled lists
-  // App-level config
+  // App-level config — merge with auto-enabled builtins so new builtins are always included
   try {
     const appConfig = await window.clubhouse.plugin.storageRead({
       pluginId: '_system',
@@ -57,10 +57,22 @@ export async function initializePluginSystem(): Promise<void> {
       key: 'app-enabled',
     }) as string[] | undefined;
     if (Array.isArray(appConfig)) {
-      store.loadAppPluginConfig(appConfig);
+      // Merge: persisted list + any auto-enabled builtins not already present
+      const currentAppEnabled = usePluginStore.getState().appEnabled;
+      const merged = [...new Set([...appConfig, ...currentAppEnabled])];
+      store.loadAppPluginConfig(merged);
     }
   } catch {
-    // No saved config
+    // No saved config — auto-enabled builtins remain
+  }
+
+  // Activate app-scoped and dual-scoped plugins that are in appEnabled
+  const appEnabled = usePluginStore.getState().appEnabled;
+  for (const pluginId of appEnabled) {
+    const entry = store.plugins[pluginId];
+    if (entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {
+      await activatePlugin(pluginId);
+    }
   }
 
   // Clear startup marker after successful init
@@ -134,8 +146,9 @@ export async function activatePlugin(
       store.setPluginModule(pluginId, mod);
     }
 
-    // Create the API
-    const api = createPluginAPI(ctx);
+    // Create the API — for dual plugins activated at app level, set mode explicitly
+    const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
+    const api = createPluginAPI(ctx, activationMode);
 
     // Call activate if it exists
     if (mod.activate) {
@@ -168,21 +181,33 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
     }
   }
 
-  // Call deactivate on the module
-  const mod = store.modules[pluginId];
-  if (mod?.deactivate) {
-    try {
-      await mod.deactivate();
-    } catch (err) {
-      console.error(`[Plugins] Error in deactivate for ${pluginId}:`, err);
-    }
-  }
-
-  // Clean up
-  removeStyles(pluginId);
-  store.removePluginModule(pluginId);
-  store.setPluginStatus(pluginId, 'deactivated');
+  // Remove this context
   activeContexts.delete(contextKey);
+
+  // Check if any other contexts remain for this plugin
+  const hasRemainingContexts = [...activeContexts.keys()].some(
+    (key) => key === pluginId || key.startsWith(`${pluginId}:`)
+  );
+
+  if (!hasRemainingContexts) {
+    // Call deactivate on the module only when all contexts are gone
+    const mod = store.modules[pluginId];
+    if (mod?.deactivate) {
+      try {
+        await mod.deactivate();
+      } catch (err) {
+        console.error(`[Plugins] Error in deactivate for ${pluginId}:`, err);
+      }
+    }
+
+    // Clean up styles and global status
+    removeStyles(pluginId);
+    const entry = store.plugins[pluginId];
+    if (entry?.source !== 'builtin') {
+      store.removePluginModule(pluginId);
+    }
+    store.setPluginStatus(pluginId, 'deactivated');
+  }
 }
 
 export async function handleProjectSwitch(
@@ -204,10 +229,12 @@ export async function handleProjectSwitch(
   }
 
   // Activate project-scoped and dual-scoped plugins for the new project
+  // Only activate if the plugin is also enabled at app level (app-first gate)
   const newEnabled = store.projectEnabled[newProjectId] || [];
   for (const pluginId of newEnabled) {
     const entry = store.plugins[pluginId];
     if (entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual')) {
+      if (!store.appEnabled.includes(pluginId)) continue;
       await activatePlugin(pluginId, newProjectId, newProjectPath);
     }
   }

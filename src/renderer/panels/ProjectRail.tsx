@@ -3,6 +3,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { Project } from '../../shared/types';
+import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { AGENT_COLORS } from '../../shared/name-generator';
 
 function getColorHex(colorId?: string): string {
@@ -64,6 +65,48 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   );
 }
 
+function PluginRailButton({ entry, isActive, onClick, expanded }: {
+  entry: PluginRegistryEntry;
+  isActive: boolean;
+  onClick: () => void;
+  expanded: boolean;
+}) {
+  const label = entry.manifest.contributes!.railItem!.label;
+  const customIcon = entry.manifest.contributes!.railItem!.icon;
+
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 pr-[10px] ${
+        expanded ? 'hover:bg-surface-0' : ''
+      }`}
+    >
+      <div
+        className={`
+          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+          transition-colors duration-100
+          ${isActive
+            ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+            : expanded
+              ? 'bg-surface-1 text-ctp-subtext0'
+              : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+          }
+        `}
+      >
+        {customIcon ? (
+          <span dangerouslySetInnerHTML={{ __html: customIcon }} />
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+          </svg>
+        )}
+      </div>
+      <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">{label}</span>
+    </button>
+  );
+}
+
 export function ProjectRail() {
   const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects } =
     useProjectStore();
@@ -75,15 +118,36 @@ export function ProjectRail() {
 
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
+  const pluginSettings = usePluginStore((s) => s.pluginSettings);
 
   const inSettings = explorerTab === 'settings';
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHome = activeProjectId === null && !inSettings && !isAppPlugin;
 
-  // Get enabled app-scoped (and dual-scoped) plugins with railItem contributions
+  // App-enabled is the source of truth for rail visibility.
+  // Status is an internal runtime detail — incompatible plugins are the only exclusion.
   const appPluginItems = appEnabled
     .map((id) => plugins[id])
-    .filter((entry) => entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.railItem);
+    .filter((entry) => {
+      if (!entry) return false;
+      if (entry.manifest.scope !== 'app' && entry.manifest.scope !== 'dual') return false;
+      if (entry.status === 'incompatible') return false;
+      if (!entry.manifest.contributes?.railItem) return false;
+      // For dual plugins, check cross-project-hub setting
+      if (entry.manifest.scope === 'dual') {
+        const settings = pluginSettings[`app:${entry.manifest.id}`];
+        const crossProjectSetting = settings?.['cross-project-hub'];
+        if (crossProjectSetting === false) return false;
+      }
+      return true;
+    });
+
+  const topPluginItems = appPluginItems.filter(
+    (e) => (e.manifest.contributes!.railItem!.position ?? 'top') === 'top'
+  );
+  const bottomPluginItems = appPluginItems.filter(
+    (e) => e.manifest.contributes!.railItem!.position === 'bottom'
+  );
 
   const [expanded, setExpanded] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,9 +174,11 @@ export function ProjectRail() {
     if (inSettings) {
       setExplorerTab(previousExplorerTab || 'agents');
       useUIStore.setState({ previousExplorerTab: null });
+    } else if (isAppPlugin) {
+      setExplorerTab('agents');
     }
     action();
-  }, [inSettings, previousExplorerTab, setExplorerTab]);
+  }, [inSettings, isAppPlugin, previousExplorerTab, setExplorerTab]);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -202,42 +268,21 @@ export function ProjectRail() {
           </button>
         )}
 
-        {/* App-scoped plugin items */}
-        {appPluginItems.map((entry) => {
+        {/* Top app-scoped plugin items */}
+        {topPluginItems.map((entry) => {
           const tabId = `plugin:app:${entry.manifest.id}`;
-          const isActive = explorerTab === tabId;
-          const label = entry.manifest.contributes!.railItem!.label;
           return (
-            <button
+            <PluginRailButton
               key={tabId}
+              entry={entry}
+              isActive={explorerTab === tabId}
               onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
-              title={label}
-              className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 pr-[10px] ${
-                expanded ? 'hover:bg-surface-0' : ''
-              }`}
-            >
-              <div
-                className={`
-                  w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                  transition-colors duration-100
-                  ${isActive
-                    ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-                    : expanded
-                      ? 'bg-surface-1 text-ctp-subtext0'
-                      : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-                  }
-                `}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                </svg>
-              </div>
-              <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">{label}</span>
-            </button>
+              expanded={expanded}
+            />
           );
         })}
 
-        {(showHome || appPluginItems.length > 0) && (
+        {(showHome || topPluginItems.length > 0) && (
           <div className="mr-[10px] border-t border-surface-2 my-1 flex-shrink-0" />
         )}
 
@@ -275,6 +320,19 @@ export function ProjectRail() {
           +
         </button>
         <div className="flex-1" />
+        {/* Bottom app-scoped plugin items */}
+        {bottomPluginItems.map((entry) => {
+          const tabId = `plugin:app:${entry.manifest.id}`;
+          return (
+            <PluginRailButton
+              key={tabId}
+              entry={entry}
+              isActive={explorerTab === tabId}
+              onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
+              expanded={expanded}
+            />
+          );
+        })}
         <div className="mr-[10px] border-t border-surface-2 my-1 flex-shrink-0" />
         <button
           onClick={toggleSettings}

@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePluginStore } from '../plugins/plugin-store';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
-import { getActiveContext } from '../plugins/plugin-loader';
+import { getActiveContext, activatePlugin } from '../plugins/plugin-loader';
 import { useProjectStore } from '../stores/projectStore';
 import type { PluginRenderMode } from '../../shared/plugin-types';
 
@@ -47,9 +47,24 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   const modules = usePluginStore((s) => s.modules);
   const plugins = usePluginStore((s) => s.plugins);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const [activating, setActivating] = useState(false);
 
   const mod = modules[pluginId];
   const entry = plugins[pluginId];
+
+  // For app-mode plugins, look up the app-level context (no projectId).
+  // For project-mode, use the active project.
+  const contextProjectId = mode === 'app' ? undefined : (activeProjectId || undefined);
+  const ctx = getActiveContext(pluginId, contextProjectId);
+
+  // Auto-activate app-mode plugins on demand if context doesn't exist yet.
+  // This handles race conditions between plugin init and first render.
+  useEffect(() => {
+    if (mode === 'app' && !ctx && mod && entry && entry.status !== 'incompatible' && !activating) {
+      setActivating(true);
+      activatePlugin(pluginId).finally(() => setActivating(false));
+    }
+  }, [mode, ctx, mod, entry, pluginId, activating]);
 
   if (!mod || !mod.MainPanel) {
     return (
@@ -64,8 +79,14 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
     );
   }
 
-  const ctx = getActiveContext(pluginId, activeProjectId || undefined);
   if (!ctx) {
+    if (activating) {
+      return (
+        <div className="flex items-center justify-center h-full bg-ctp-base">
+          <p className="text-ctp-subtext0 text-xs">Loading plugin...</p>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-full bg-ctp-base">
         <p className="text-ctp-subtext0">Plugin is not activated</p>

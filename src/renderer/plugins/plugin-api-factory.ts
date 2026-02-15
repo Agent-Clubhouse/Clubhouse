@@ -24,6 +24,7 @@ import type {
   AgentInfo,
   PluginAgentDetailedStatus,
   CompletedQuickAgentInfo,
+  ModelOption,
   Disposable,
 } from '../../shared/plugin-types';
 import { pluginEventBus } from './plugin-events';
@@ -38,7 +39,7 @@ function unavailableProxy(apiName: string, scope: string): never {
   throw new Error(`api.${apiName} is not available for ${scope}-scoped plugins`);
 }
 
-function createScopedStorage(pluginId: string, storageScope: 'project' | 'global', projectPath?: string): ScopedStorage {
+function createScopedStorage(pluginId: string, storageScope: 'project' | 'project-local' | 'global', projectPath?: string): ScopedStorage {
   return {
     async read(key: string): Promise<unknown> {
       return window.clubhouse.plugin.storageRead({ pluginId, scope: storageScope, key, projectPath });
@@ -153,6 +154,7 @@ function createGitAPI(ctx: PluginContext): GitAPI {
 function createStorageAPI(ctx: PluginContext): StorageAPI {
   return {
     project: createScopedStorage(ctx.pluginId, 'project', ctx.projectPath),
+    projectLocal: createScopedStorage(ctx.pluginId, 'project-local', ctx.projectPath),
     global: createScopedStorage(ctx.pluginId, 'global'),
   };
 }
@@ -246,13 +248,23 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
         }));
     },
 
-    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string }): Promise<string> {
-      if (!ctx.projectId || !ctx.projectPath) {
+    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string }): Promise<string> {
+      let projectId = ctx.projectId;
+      let projectPath = ctx.projectPath;
+
+      if (options?.projectId) {
+        const project = useProjectStore.getState().projects.find((p) => p.id === options.projectId);
+        if (!project) throw new Error(`Project not found: ${options.projectId}`);
+        projectId = project.id;
+        projectPath = project.path;
+      }
+
+      if (!projectId || !projectPath) {
         throw new Error('runQuick requires a project context');
       }
       return useAgentStore.getState().spawnQuickAgent(
-        ctx.projectId,
-        ctx.projectPath,
+        projectId,
+        projectPath,
         mission,
         options?.model,
       );
@@ -309,6 +321,26 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
       };
     },
 
+    async getModelOptions(projectId?: string): Promise<ModelOption[]> {
+      const DEFAULT_OPTIONS: ModelOption[] = [
+        { id: 'default', label: 'Default' },
+        { id: 'opus', label: 'Opus' },
+        { id: 'sonnet', label: 'Sonnet' },
+        { id: 'haiku', label: 'Haiku' },
+      ];
+      const pid = projectId || ctx.projectId;
+      if (!pid) return DEFAULT_OPTIONS;
+      const project = useProjectStore.getState().projects.find((p) => p.id === pid);
+      if (!project) return DEFAULT_OPTIONS;
+      try {
+        const result = await window.clubhouse.agent.getModelOptions(project.path);
+        if (Array.isArray(result) && result.length > 0) return result;
+        return DEFAULT_OPTIONS;
+      } catch {
+        return DEFAULT_OPTIONS;
+      }
+    },
+
     onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable {
       let prevStatuses: Record<string, string> = {};
       // Snapshot current state
@@ -333,6 +365,11 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
         prevStatuses = next;
       });
 
+      return { dispose: unsub };
+    },
+
+    onAnyChange(callback: () => void): Disposable {
+      const unsub = useAgentStore.subscribe(callback);
       return { dispose: unsub };
     },
   };
@@ -374,10 +411,14 @@ function createWidgetsAPI(): WidgetsAPI {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let QuickAgentGhostComponent: React.ComponentType<any>;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let AgentAvatarWithRingComponent: React.ComponentType<any>;
+
   try {
     AgentTerminalComponent = require('../features/agents/AgentTerminal').AgentTerminal;
     SleepingAgentComponent = require('../features/agents/SleepingAgent').SleepingAgent;
     AgentAvatarComponent = require('../features/agents/AgentAvatar').AgentAvatar;
+    AgentAvatarWithRingComponent = require('../features/agents/AgentAvatar').AgentAvatarWithRing;
     QuickAgentGhostComponent = require('../features/agents/QuickAgentGhost').QuickAgentGhost;
   } catch {
     // In test environments, return stub components
@@ -392,18 +433,21 @@ function createWidgetsAPI(): WidgetsAPI {
     return _widgetsCache;
   }
 
-  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent
+  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent reactively
   const SleepingAgentAdapter = ({ agentId }: { agentId: string }) => {
-    const agent = useAgentStore.getState().agents[agentId];
+    const agent = useAgentStore((s) => s.agents[agentId]);
     if (!agent) return null;
     return React.createElement(SleepingAgentComponent, { agent });
   };
 
-  // AgentAvatar adapter: plugin passes agentId, we resolve to Agent
+  // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors
   const AgentAvatarAdapter = ({ agentId, size, showStatusRing }: { agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }) => {
-    const agent = useAgentStore.getState().agents[agentId];
+    const agent = useAgentStore((s) => s.agents[agentId]);
     if (!agent) return null;
-    return React.createElement(AgentAvatarComponent, { agent, size, showRing: showStatusRing });
+    if (showStatusRing && AgentAvatarWithRingComponent) {
+      return React.createElement(AgentAvatarWithRingComponent, { agent });
+    }
+    return React.createElement(AgentAvatarComponent, { agent, size });
   };
 
   _widgetsCache = {

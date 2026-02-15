@@ -144,7 +144,10 @@ export function ExplorerRail() {
                 }
               `}
             >
-              {PLUGIN_FALLBACK_ICON}
+              {entry.manifest.contributes!.tab!.icon
+                ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
+                : PLUGIN_FALLBACK_ICON
+              }
               {entry.manifest.contributes!.tab!.label}
             </button>
           );
