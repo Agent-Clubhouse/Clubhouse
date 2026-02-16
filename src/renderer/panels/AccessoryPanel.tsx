@@ -104,5 +104,5 @@ export function AccessoryPanel() {
     }
   }
 
-  return <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full overflow-hidden" />;
+  return null;
 }

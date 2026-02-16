@@ -47,7 +47,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       .map((a) => ({
         sessionId: makeSessionId(projectId, 'agent', a.name),
         label: a.name,
-        cwd: projectPath + '/' + a.worktreePath,
+        cwd: a.worktreePath!,
         kind: 'agent' as const,
       }));
 
@@ -81,16 +81,16 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       targets.map((target) =>
         React.createElement('button', {
           key: target.sessionId,
-          className: `w-full text-left px-3 py-1.5 text-xs transition-colors ${
+          className: `w-full text-left px-3 py-3 text-sm cursor-pointer transition-colors ${
             activeTarget?.sessionId === target.sessionId
-              ? 'bg-ctp-surface0 text-ctp-text font-medium'
-              : 'text-ctp-subtext1 hover:bg-ctp-surface0/50 hover:text-ctp-text'
+              ? 'bg-surface-1 text-ctp-text font-medium'
+              : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
           }`,
           onClick: () => handleClick(target),
         },
-          React.createElement('div', { className: 'flex items-center gap-2' },
+          React.createElement('div', { className: 'flex items-center gap-3' },
             React.createElement('span', {
-              className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+              className: `w-2 h-2 rounded-full flex-shrink-0 ${
                 target.kind === 'project' ? 'bg-ctp-blue' : 'bg-ctp-green'
               }`,
             }),

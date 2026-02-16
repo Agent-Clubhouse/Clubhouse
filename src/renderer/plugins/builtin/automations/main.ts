@@ -291,7 +291,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // ── Render ──────────────────────────────────────────────────────────
   return React.createElement('div', { className: 'flex h-full bg-ctp-base' },
     // ── Left sidebar: automation list ──────────────────────────────────
-    React.createElement('div', { className: 'w-64 flex-shrink-0 border-r border-ctp-surface0 bg-ctp-mantle flex flex-col' },
+    React.createElement('div', { className: 'w-64 flex-shrink-0 border-r border-surface-0 bg-ctp-mantle flex flex-col' },
       // Header
       React.createElement('div', { className: 'flex items-center justify-between px-3 py-2 border-b border-ctp-surface0' },
         React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, 'Automations'),
@@ -309,8 +309,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
               automations.map((auto) =>
                 React.createElement('div', {
                   key: auto.id,
-                  className: `flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors ${
-                    auto.id === selectedId ? 'bg-ctp-surface0' : 'hover:bg-ctp-surface0/50'
+                  className: `flex items-center gap-3 px-3 py-3 cursor-pointer transition-colors ${
+                    auto.id === selectedId ? 'bg-surface-1 text-ctp-text' : 'hover:bg-surface-0'
                   }`,
                   onClick: () => setSelectedId(auto.id),
                 },

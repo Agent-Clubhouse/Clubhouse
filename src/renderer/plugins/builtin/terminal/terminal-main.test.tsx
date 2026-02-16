@@ -312,7 +312,7 @@ describe('Terminal SidebarPanel', () => {
     expect(terminalState.activeTarget).not.toBeNull();
     expect(terminalState.activeTarget!.kind).toBe('agent');
     expect(terminalState.activeTarget!.label).toBe('snazzy-fox');
-    expect(terminalState.activeTarget!.cwd).toBe('/project/.clubhouse/agents/snazzy-fox');
+    expect(terminalState.activeTarget!.cwd).toBe('.clubhouse/agents/snazzy-fox');
   });
 
   it('clicking Project row sets project as active target', () => {
