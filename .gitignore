@@ -90,3 +90,12 @@ typings/
 
 # Electron-Forge
 out/
+
+# Clubhouse agent manager
+.clubhouse/agents/
+.clubhouse/.local/
+.clubhouse/agents.json
+.clubhouse/settings.local.json
+
+# Materialized MCP config
+.mcp.json

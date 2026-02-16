@@ -184,10 +184,72 @@ describe('agentStore', () => {
       expect(status.message).toBe('Needs permission');
     });
 
+    it('PermissionRequest sets state:needs_permission with toolName', () => {
+      seedAgent({ id: 'a_perm', status: 'running' });
+      getState().handleHookEvent('a_perm', { eventName: 'PermissionRequest', toolName: 'Bash', timestamp: 100 });
+      const status = getState().agentDetailedStatus['a_perm'];
+      expect(status.state).toBe('needs_permission');
+      expect(status.message).toBe('Needs permission');
+      expect(status.toolName).toBe('Bash');
+    });
+
     it('unknown event causes no state change', () => {
       seedAgent({ id: 'a_unk', status: 'running' });
       getState().handleHookEvent('a_unk', { eventName: 'SomeUnknownEvent', timestamp: 100 });
       expect(getState().agentDetailedStatus['a_unk']).toBeUndefined();
+    });
+  });
+
+  describe('clearStaleStatuses', () => {
+    it('clears statuses older than 30s for running agents', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_stale', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentDetailedStatus: {
+          ...s.agentDetailedStatus,
+          a_stale: { state: 'working', message: 'Reading file', timestamp: now - 35000 },
+        },
+      }));
+
+      getState().clearStaleStatuses();
+      expect(getState().agentDetailedStatus['a_stale']).toBeUndefined();
+    });
+
+    it('preserves recent statuses', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_fresh', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentDetailedStatus: {
+          ...s.agentDetailedStatus,
+          a_fresh: { state: 'working', message: 'Reading file', timestamp: now - 5000 },
+        },
+      }));
+
+      getState().clearStaleStatuses();
+      expect(getState().agentDetailedStatus['a_fresh']).toBeDefined();
+    });
+
+    it('does not clear needs_permission even if stale', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_perm_stale', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentDetailedStatus: {
+          ...s.agentDetailedStatus,
+          a_perm_stale: { state: 'needs_permission', message: 'Needs permission', timestamp: now - 60000 },
+        },
+      }));
+
+      getState().clearStaleStatuses();
+      expect(getState().agentDetailedStatus['a_perm_stale']).toBeDefined();
     });
   });
 

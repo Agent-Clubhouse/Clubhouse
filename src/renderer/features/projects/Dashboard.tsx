@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { Project, Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
+import { CrownBadge } from '../agents/AgentAvatar';
 
 const STATUS_CONFIG: Record<string, { label: string }> = {
   running: { label: 'Running' },
@@ -66,7 +67,8 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
   );
 
   return (
-    <div className={`flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+    <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
+      {agent.role === 'host' && <CrownBadge size={size === 'sm' ? 10 : 12} />}
       <div
         className={`${outerDim} rounded-full flex items-center justify-center`}
         style={{ border: `2px solid ${ringColor}` }}
@@ -260,7 +262,9 @@ function ProjectCard({ project }: { project: Project }) {
     [allAgents, project.id]
   );
 
-  const durableAgents = agents.filter((a) => a.kind === 'durable');
+  const durableAgents = agents
+    .filter((a) => a.kind === 'durable')
+    .sort((a, b) => (a.role === 'host' ? -1 : b.role === 'host' ? 1 : 0));
   const quickAgents = agents.filter((a) => a.kind === 'quick');
 
   const navigateToTab = useCallback(

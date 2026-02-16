@@ -91,8 +91,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
     ensureHost: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.ENSURE_HOST, projectPath),
-    onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) =>
+    onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) =>
         callback(agentId, hookEvent);
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };

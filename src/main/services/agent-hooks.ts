@@ -59,7 +59,19 @@ export async function writeHooksConfig(worktreePath: string, agentId: string, op
       ],
       Notification: [
         {
-          matcher: 'permission_prompt',
+          matcher: '',
+          hooks: [
+            {
+              type: 'command',
+              command: curlBase,
+              async: true,
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+      PermissionRequest: [
+        {
           hooks: [
             {
               type: 'command',

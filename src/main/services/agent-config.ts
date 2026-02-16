@@ -4,7 +4,7 @@ import * as path from 'path';
 import { DurableAgentConfig, QuickAgentDefaults, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, ConfigLayer, ConfigItemKey } from '../../shared/types';
 import { AgentContext } from '../../shared/template-engine';
 import { resolveProjectDefaults, resolveDurableConfig, diffConfigLayers, defaultOverrideFlags } from './config-resolver';
-import { materializeAll, repairMissing } from './config-materializer';
+import { materializeAll, repairMissing, materializeClaudeMd, materializePermissions } from './config-materializer';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -355,6 +355,7 @@ export function syncAllAgents(projectPath: string, changedKeys?: ConfigItemKey[]
   const defaults = resolveProjectDefaults(projectPath);
 
   for (const agent of agents) {
+    if (agent.role === 'host') continue; // Host manages its own config
     if (!fs.existsSync(agent.worktreePath)) continue;
     const overrides = agent.overrides || defaultOverrideFlags();
 
@@ -461,6 +462,11 @@ export function getWorktreeStatus(projectPath: string, agentId: string): Worktre
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) {
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
+  }
+
+  // Host agents run at project root — not a meaningful worktree to diff
+  if (agent.role === 'host') {
+    return { isValid: true, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
   const wt = agent.worktreePath;
