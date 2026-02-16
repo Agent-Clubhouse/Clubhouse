@@ -3,15 +3,19 @@ import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI } from './plugin-api-factory';
 import { injectStyles, removeStyles } from './plugin-styles';
-import { getBuiltinPlugins } from './builtin';
+import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { rendererLog } from './renderer-logger';
 
 const activeContexts = new Map<string, PluginContext>();
 
 /** Returns IDs of built-in plugins that should be auto-enabled per project. */
 export function getBuiltinProjectPluginIds(): string[] {
+  const defaults = getDefaultEnabledIds();
   return getBuiltinPlugins()
-    .filter(({ manifest }) => manifest.scope === 'project' || manifest.scope === 'dual')
+    .filter(({ manifest }) =>
+      defaults.has(manifest.id) &&
+      (manifest.scope === 'project' || manifest.scope === 'dual'),
+    )
     .map(({ manifest }) => manifest.id);
 }
 
@@ -32,11 +36,14 @@ export async function initializePluginSystem(): Promise<void> {
 
   // Register built-in plugins
   const builtins = getBuiltinPlugins();
+  const defaults = getDefaultEnabledIds();
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
     store.setPluginModule(manifest.id, mod);
-    // Auto-enable built-in plugins at app level (app-level acts as availability gate for all scopes)
-    store.enableApp(manifest.id);
+    // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
+    if (defaults.has(manifest.id)) {
+      store.enableApp(manifest.id);
+    }
   }
 
   // Discover community plugins

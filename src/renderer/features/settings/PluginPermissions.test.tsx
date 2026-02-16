@@ -32,23 +32,13 @@ const v05Manifest: PluginManifest = {
   ],
 };
 
-const v04Manifest: PluginManifest = {
-  id: 'legacy-plugin',
-  name: 'Legacy Plugin',
-  version: '2.0.0',
-  engine: { api: 0.4 },
-  scope: 'project',
-  contributes: { help: {} },
-};
-
 function resetStores() {
   usePluginStore.setState({
     plugins: {
       'wiki-plugin': makeEntry(v05Manifest),
-      'legacy-plugin': makeEntry(v04Manifest),
     },
     projectEnabled: {},
-    appEnabled: ['wiki-plugin', 'legacy-plugin'],
+    appEnabled: ['wiki-plugin'],
     modules: {},
     safeModeActive: false,
     pluginSettings: {},
@@ -72,18 +62,6 @@ describe('PluginListSettings — PermissionInfoPopup', () => {
     // The v0.5 plugin should have the info button
     const buttons = screen.getAllByTitle('View permissions');
     expect(buttons.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('does not render (i) icon for v0.4 plugin without permissions', () => {
-    // Remove v0.5 plugin, keep only v0.4
-    usePluginStore.setState({
-      plugins: {
-        'legacy-plugin': makeEntry(v04Manifest),
-      },
-      appEnabled: ['legacy-plugin'],
-    });
-    render(<PluginListSettings />);
-    expect(screen.queryByTitle('View permissions')).toBeNull();
   });
 
   it('clicking (i) icon opens popup with permission list', () => {
@@ -138,10 +116,9 @@ describe('PluginListSettings — PermissionInfoPopup', () => {
     expect(screen.queryByText(PERMISSION_DESCRIPTIONS['files'])).toBeNull();
   });
 
-  it('shows API version badge for both v0.4 and v0.5 plugins', () => {
+  it('shows API version badge for v0.5 plugin', () => {
     render(<PluginListSettings />);
     expect(screen.getByText('API 0.5')).toBeInTheDocument();
-    expect(screen.getByText('API 0.4')).toBeInTheDocument();
   });
 });
 
@@ -184,18 +161,6 @@ describe('PluginDetailSettings — permissions section', () => {
     render(<PluginDetailSettings />);
     expect(screen.getByText('wiki-root')).toBeInTheDocument();
     expect(screen.getByText('docs-root')).toBeInTheDocument();
-  });
-
-  it('does not show permissions section for v0.4 plugin', () => {
-    useUIStore.setState({ pluginSettingsId: 'legacy-plugin' });
-    render(<PluginDetailSettings />);
-    expect(screen.queryByText('Permissions')).toBeNull();
-  });
-
-  it('does not show external roots section for v0.4 plugin', () => {
-    useUIStore.setState({ pluginSettingsId: 'legacy-plugin' });
-    render(<PluginDetailSettings />);
-    expect(screen.queryByText('External Roots')).toBeNull();
   });
 
   it('does not show external roots when plugin has permissions but no externalRoots', () => {

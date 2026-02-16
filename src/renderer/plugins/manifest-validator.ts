@@ -1,7 +1,7 @@
 import type { PluginManifest } from '../../shared/plugin-types';
 import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
-export const SUPPORTED_API_VERSIONS = [0.4, 0.5];
+export const SUPPORTED_API_VERSIONS = [0.5];
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -64,13 +64,13 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Dual-scoped plugins can have both tab and railItem — no restriction
   }
 
-  // v0.4+ requires contributes.help
+  // v0.5+ requires contributes.help
   const engineObj = m.engine as Record<string, unknown> | undefined;
   const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
-  if (apiVersion >= 0.4) {
+  if (apiVersion >= 0.5) {
     const contrib = m.contributes as Record<string, unknown> | undefined;
     if (!contrib || typeof contrib.help !== 'object' || contrib.help === null) {
-      errors.push('Plugins targeting API >= 0.4 must include contributes.help');
+      errors.push('Plugins targeting API >= 0.5 must include contributes.help');
     } else {
       const help = contrib.help as Record<string, unknown>;
       if (help.topics !== undefined) {

@@ -34,7 +34,7 @@ function renderCanary(
   );
 }
 
-describe('Plugin API v0.4.0 canary tests', () => {
+describe('Plugin API core canary tests', () => {
   it('api.project.readTree() renders result', async () => {
     renderCanary(
       async (api) => {
@@ -183,7 +183,7 @@ describe('Plugin API v0.5.0 canary tests', () => {
 
   it('permission-denied APIs surface exists in PluginAPI type', () => {
     // Canary: these are the APIs that v0.5 gates behind permissions.
-    // They should all be defined on the mock (v0.4 compat).
+    // They should all be defined on the mock.
     const api = createMockAPI();
     const gatedSurfaces: (keyof PluginAPI)[] = [
       'project', 'projects', 'git', 'storage', 'ui', 'commands',

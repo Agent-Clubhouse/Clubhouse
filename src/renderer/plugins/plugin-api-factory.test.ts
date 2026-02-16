@@ -7,6 +7,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useUIStore } from '../stores/uiStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import type { PluginContext, PluginAPI, PluginManifest } from '../../shared/plugin-types';
+import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
 // Mock window.clubhouse for IPC calls
 const mockLog = {
@@ -86,6 +87,21 @@ function makeCtx(overrides?: Partial<PluginContext>): PluginContext {
   };
 }
 
+/** Manifest granting all permissions — used when testing API behavior (not permission gating). */
+const allPermsManifest: PluginManifest = {
+  id: 'test-plugin',
+  name: 'Test Plugin',
+  version: '1.0.0',
+  engine: { api: 0.5 },
+  scope: 'project',
+  permissions: [...ALL_PLUGIN_PERMISSIONS],
+  contributes: { help: {} },
+};
+
+function makeAllPermsManifest(overrides?: Partial<PluginManifest>): PluginManifest {
+  return { ...allPermsManifest, ...overrides };
+}
+
 describe('plugin-api-factory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -103,7 +119,7 @@ describe('plugin-api-factory', () => {
 
   describe('createPluginAPI', () => {
     it('returns an object with all required API namespaces', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.project).toBeDefined();
       expect(api.projects).toBeDefined();
       expect(api.git).toBeDefined();
@@ -130,7 +146,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx({ scope: 'project' }));
+      api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
     });
 
     it('provides a working project API', () => {
@@ -157,7 +173,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
     });
 
     it('provides a working projects API', () => {
@@ -185,7 +201,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('readFile calls window.clubhouse.file.read with full path', async () => {
@@ -234,7 +250,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('project storage passes correct scope and projectPath', async () => {
@@ -276,7 +292,7 @@ describe('plugin-api-factory', () => {
 
   describe('storage API — projectLocal', () => {
     it('read passes scope project-local with projectPath', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.read('my-key');
       expect(mockPlugin.storageRead).toHaveBeenCalledWith({
         pluginId: 'test-plugin',
@@ -287,7 +303,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('write passes scope project-local with projectPath', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.write('key', { data: true });
       expect(mockPlugin.storageWrite).toHaveBeenCalledWith({
         pluginId: 'test-plugin',
@@ -299,7 +315,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('delete passes scope project-local', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.delete('old-key');
       expect(mockPlugin.storageDelete).toHaveBeenCalledWith(
         expect.objectContaining({ pluginId: 'test-plugin', key: 'old-key', scope: 'project-local' }),
@@ -308,7 +324,7 @@ describe('plugin-api-factory', () => {
 
     it('list passes scope project-local', async () => {
       mockPlugin.storageList.mockResolvedValue(['a', 'b']);
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const keys = await api.storage.projectLocal.list();
       expect(keys).toEqual(['a', 'b']);
       expect(mockPlugin.storageList).toHaveBeenCalledWith(
@@ -317,7 +333,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('projectLocal is distinct from project scope (separate IPC calls)', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.project.read('k');
       await api.storage.projectLocal.read('k');
       expect(mockPlugin.storageRead).toHaveBeenCalledTimes(2);
@@ -330,7 +346,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('app-scoped plugin passes undefined projectPath for projectLocal', async () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       await api.storage.projectLocal.read('k');
       expect(mockPlugin.storageRead).toHaveBeenCalledWith(
         expect.objectContaining({ scope: 'project-local', projectPath: undefined }),
@@ -344,7 +360,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('register prefixes command id with pluginId', () => {
@@ -379,7 +395,7 @@ describe('plugin-api-factory', () => {
 
   describe('events API', () => {
     it('on subscribes to pluginEventBus', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const handler = vi.fn();
       api.events.on('agent:completed', handler);
       pluginEventBus.emit('agent:completed', { id: 'a1' });
@@ -387,7 +403,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('on returns a disposable that unsubscribes', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const handler = vi.fn();
       const d = api.events.on('test', handler);
       d.dispose();
@@ -403,13 +419,13 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { theme: 'dark', size: 14 } },
       });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.get('theme')).toBe('dark');
       expect(api.settings.get('size')).toBe(14);
     });
 
     it('get returns undefined for missing key', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.get('nonexistent')).toBeUndefined();
     });
 
@@ -417,12 +433,12 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
       });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.getAll()).toEqual({ a: 1, b: 2 });
     });
 
     it('getAll returns empty object when no settings exist', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.getAll()).toEqual({});
     });
 
@@ -430,12 +446,12 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'app:test-plugin': { mode: 'zen' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined }), undefined, allPermsManifest);
       expect(api.settings.get('mode')).toBe('zen');
     });
 
     it('onChange returns a disposable', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const cb = vi.fn();
       const d = api.settings.onChange(cb);
       expect(typeof d.dispose).toBe('function');
@@ -449,7 +465,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('showNotice logs to console', () => {
@@ -485,7 +501,7 @@ describe('plugin-api-factory', () => {
 
   describe('hub API', () => {
     it('refresh is callable without error', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(() => api.hub.refresh()).not.toThrow();
     });
   });
@@ -494,43 +510,43 @@ describe('plugin-api-factory', () => {
 
   describe('context', () => {
     it('reflects project mode for project-scoped plugin', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'project' }));
+      const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
       expect(api.context.projectId).toBe('proj-1');
       expect(api.context.projectPath).toBe('/projects/my-project');
     });
 
     it('reflects app mode for app-scoped plugin', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('app');
       expect(api.context.projectId).toBeUndefined();
       expect(api.context.projectPath).toBeUndefined();
     });
 
     it('reflects explicit mode parameter', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(api.context.mode).toBe('app');
     });
 
     it('defaults to project mode for dual-scoped without explicit mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }));
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
     });
 
     it('preserves projectId/projectPath in context even for dual app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: 'proj-1', projectPath: '/p' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: 'proj-1', projectPath: '/p' }), 'app', allPermsManifest);
       expect(api.context.mode).toBe('app');
       expect(api.context.projectId).toBe('proj-1');
     });
 
     it('project-scoped plugin always gets project mode regardless of mode arg', () => {
       // mode param is ignored for single-scope plugins — they use scope-derived mode
-      const api = createPluginAPI(makeCtx({ scope: 'project' }));
+      const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
     });
 
     it('app-scoped plugin always gets app mode regardless of mode arg', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('app');
     });
   });
@@ -539,34 +555,34 @@ describe('plugin-api-factory', () => {
 
   describe('dual-scoped plugin', () => {
     it('provides project API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.project.projectPath).toBe('/projects/my-project');
       expect(api.project.projectId).toBe('proj-1');
     });
 
     it('throws when calling project API methods in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.project.readFile('x')).toThrow('not available');
     });
 
     it('does not throw on property access of unavailable project API in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.project.projectPath).not.toThrow();
     });
 
     it('provides projects API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(typeof api.projects.list).toBe('function');
     });
 
     it('provides projects API in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof api.projects.list).toBe('function');
       expect(typeof api.projects.getActive).toBe('function');
     });
 
     it('provides git API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(typeof api.git.status).toBe('function');
       expect(typeof api.git.log).toBe('function');
       expect(typeof api.git.currentBranch).toBe('function');
@@ -574,28 +590,28 @@ describe('plugin-api-factory', () => {
     });
 
     it('throws when calling git API methods in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.git.status()).toThrow('not available');
       expect(() => api.git.log()).toThrow('not available');
     });
 
     it('agents API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.agents.list).toBe('function');
       expect(typeof appApi.agents.list).toBe('function');
     });
 
     it('navigation API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.navigation.focusAgent).toBe('function');
       expect(typeof appApi.navigation.focusAgent).toBe('function');
     });
 
     it('storage API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.storage.project.read).toBe('function');
       expect(typeof appApi.storage.global.read).toBe('function');
     });
@@ -608,7 +624,7 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { key1: 'val1' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.get('key1')).toBe('val1');
     });
 
@@ -616,7 +632,7 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'app:test-plugin': { key2: 'val2' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: undefined }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: undefined }), 'app', allPermsManifest);
       expect(api.settings.get('key2')).toBe('val2');
     });
 
@@ -624,17 +640,17 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.getAll()).toEqual({ a: 1, b: 2 });
     });
 
     it('settings getAll returns empty for dual scope with no saved settings', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.getAll()).toEqual({});
     });
 
     it('multiple onChange handlers can coexist and dispose independently', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const cb1 = vi.fn();
       const cb2 = vi.fn();
       const d1 = api.settings.onChange(cb1);
@@ -649,14 +665,14 @@ describe('plugin-api-factory', () => {
 
   describe('navigation API', () => {
     it('focusAgent sets explorer tab to agents and active agent', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('agent-123');
       expect(useUIStore.getState().explorerTab).toBe('agents');
       expect(useAgentStore.getState().activeAgentId).toBe('agent-123');
     });
 
     it('focusAgent with non-existent agent still sets state', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('nonexistent-id');
       expect(useUIStore.getState().explorerTab).toBe('agents');
       expect(useAgentStore.getState().activeAgentId).toBe('nonexistent-id');
@@ -664,25 +680,25 @@ describe('plugin-api-factory', () => {
 
     it('focusAgent overrides any previously set tab', () => {
       useUIStore.setState({ explorerTab: 'settings' });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('a1');
       expect(useUIStore.getState().explorerTab).toBe('agents');
     });
 
     it('setExplorerTab sets the explorer tab', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.setExplorerTab('settings');
       expect(useUIStore.getState().explorerTab).toBe('settings');
     });
 
     it('setExplorerTab to plugin tab works', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.setExplorerTab('plugin:my-plugin');
       expect(useUIStore.getState().explorerTab).toBe('plugin:my-plugin');
     });
 
     it('calling focusAgent twice updates agent each time', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('a1');
       expect(useAgentStore.getState().activeAgentId).toBe('a1');
       api.navigation.focusAgent('a2');
@@ -694,7 +710,7 @@ describe('plugin-api-factory', () => {
 
   describe('widgets API', () => {
     it('provides all four widget component types', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.widgets.AgentTerminal).toBeDefined();
       expect(api.widgets.SleepingAgent).toBeDefined();
       expect(api.widgets.AgentAvatar).toBeDefined();
@@ -702,7 +718,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('widget components are callable functions (stubs in test)', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(typeof api.widgets.AgentTerminal).toBe('function');
       expect(typeof api.widgets.SleepingAgent).toBe('function');
       expect(typeof api.widgets.AgentAvatar).toBe('function');
@@ -710,15 +726,15 @@ describe('plugin-api-factory', () => {
     });
 
     it('widgets are cached across multiple createPluginAPI calls', () => {
-      const api1 = createPluginAPI(makeCtx());
-      const api2 = createPluginAPI(makeCtx());
+      const api1 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api1.widgets.AgentTerminal).toBe(api2.widgets.AgentTerminal);
       expect(api1.widgets.SleepingAgent).toBe(api2.widgets.SleepingAgent);
     });
 
     it('widgets object is same reference across calls (cached)', () => {
-      const api1 = createPluginAPI(makeCtx());
-      const api2 = createPluginAPI(makeCtx());
+      const api1 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       // Same cache object
       expect(api1.widgets).toBe(api2.widgets);
     });
@@ -781,7 +797,7 @@ describe('plugin-api-factory', () => {
 
     describe('list()', () => {
       it('returns enriched agent info with all fields', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const agents = api.agents.list();
         const alpha = agents.find((a) => a.id === 'agent-1')!;
         expect(alpha).toEqual({
@@ -802,38 +818,38 @@ describe('plugin-api-factory', () => {
       });
 
       it('includes parentAgentId for child agents', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
         expect(beta.parentAgentId).toBe('agent-1');
       });
 
       it('filters agents by project context', () => {
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         const agents = api.agents.list();
         expect(agents.every((a) => a.projectId === 'proj-1')).toBe(true);
         expect(agents.find((a) => a.id === 'agent-3')).toBeUndefined();
       });
 
       it('lists all agents when no projectId in context', () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         const agents = api.agents.list();
         expect(agents).toHaveLength(3);
       });
 
       it('returns empty array when no agents exist', () => {
         useAgentStore.setState({ agents: {} });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.list()).toEqual([]);
       });
 
       it('includes worktreePath when present on store agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
         expect(alpha.worktreePath).toBe('.clubhouse/agents/alpha');
       });
 
       it('returns worktreePath as undefined when not set on store agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
         expect(beta.worktreePath).toBeUndefined();
       });
@@ -848,14 +864,14 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent').mockResolvedValue();
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('agent-1');
         expect(killSpy).toHaveBeenCalledWith('agent-1', '/projects/p1');
       });
 
       it('does nothing when agent does not exist', async () => {
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('nonexistent');
         expect(killSpy).not.toHaveBeenCalled();
       });
@@ -864,7 +880,7 @@ describe('plugin-api-factory', () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent').mockResolvedValue();
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('agent-1');
         expect(killSpy).toHaveBeenCalledWith('agent-1', undefined);
       });
@@ -874,19 +890,19 @@ describe('plugin-api-factory', () => {
 
     describe('resume()', () => {
       it('throws when agent does not exist', async () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('nonexistent')).rejects.toThrow('Can only resume durable agents');
       });
 
       it('throws when agent is a quick agent', async () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-2')).rejects.toThrow('Can only resume durable agents');
       });
 
       it('throws when project not found for agent', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-1')).rejects.toThrow('Project not found');
       });
 
@@ -896,7 +912,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.listDurable.mockResolvedValue([]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-1')).rejects.toThrow('Durable config not found');
       });
 
@@ -908,7 +924,7 @@ describe('plugin-api-factory', () => {
         const durableConfig = { id: 'agent-1', name: 'Alpha', color: 'emerald' };
         mockAgent.listDurable.mockResolvedValue([durableConfig]);
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('agent-1');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.resume('agent-1');
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/p1', durableConfig, true);
       });
@@ -929,7 +945,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(1);
         expect(completed[0].name).toBe('Gamma');
@@ -939,7 +955,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns empty when no project context', () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         expect(api.agents.listCompleted()).toEqual([]);
       });
 
@@ -955,7 +971,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         const completed = api.agents.listCompleted('proj-2');
         expect(completed).toHaveLength(1);
         expect(completed[0].id).toBe('q-2');
@@ -963,7 +979,7 @@ describe('plugin-api-factory', () => {
 
       it('returns empty for project with no completed agents', () => {
         useQuickAgentStore.setState({ completedAgents: {} });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.listCompleted()).toEqual([]);
       });
 
@@ -979,7 +995,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.listCompleted()[0].parentAgentId).toBe('parent-1');
       });
 
@@ -993,7 +1009,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(3);
         expect(completed.map((c) => c.name)).toEqual(['A', 'B', 'C']);
@@ -1005,13 +1021,13 @@ describe('plugin-api-factory', () => {
     describe('dismissCompleted()', () => {
       it('delegates to quick agent store', () => {
         const spy = vi.spyOn(useQuickAgentStore.getState(), 'dismissCompleted');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         api.agents.dismissCompleted('proj-1', 'q-1');
         expect(spy).toHaveBeenCalledWith('proj-1', 'q-1');
       });
 
       it('does not throw for non-existent agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(() => api.agents.dismissCompleted('proj-1', 'nonexistent')).not.toThrow();
       });
     });
@@ -1020,7 +1036,7 @@ describe('plugin-api-factory', () => {
 
     describe('getDetailedStatus()', () => {
       it('returns full status for agent with detailed status', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status).toEqual({
           state: 'working',
@@ -1030,17 +1046,17 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns null for agent without detailed status', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('agent-2')).toBeNull();
       });
 
       it('returns null for completely unknown agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('nonexistent')).toBeNull();
       });
 
       it('omits timestamp from returned status (not in plugin type)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status).not.toHaveProperty('timestamp');
       });
@@ -1051,7 +1067,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'idle', message: 'Thinking', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status!.toolName).toBeUndefined();
         expect(status!.state).toBe('idle');
@@ -1063,7 +1079,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'needs_permission', message: 'Needs permission', toolName: 'Bash', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status!.state).toBe('needs_permission');
         expect(status!.toolName).toBe('Bash');
@@ -1075,7 +1091,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'tool_error', message: 'Edit failed', toolName: 'Edit', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('agent-1')!.state).toBe('tool_error');
       });
     });
@@ -1084,7 +1100,7 @@ describe('plugin-api-factory', () => {
 
     describe('onStatusChange()', () => {
       it('fires callback on agent status transition', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1099,7 +1115,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires for each agent that changes in a single update', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1117,7 +1133,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('does not fire for unchanged statuses', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1126,7 +1142,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('does not fire for new agents (no previous status)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1144,7 +1160,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires for sequential status changes', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1169,7 +1185,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('dispose prevents further callbacks', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         const disposable = api.agents.onStatusChange(callback);
 
@@ -1186,21 +1202,21 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns a valid Disposable with dispose function', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onStatusChange(() => {});
         expect(disposable).toHaveProperty('dispose');
         expect(typeof disposable.dispose).toBe('function');
       });
 
       it('double dispose does not throw', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onStatusChange(() => {});
         disposable.dispose();
         expect(() => disposable.dispose()).not.toThrow();
       });
 
       it('multiple subscriptions fire independently', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const cb1 = vi.fn();
         const cb2 = vi.fn();
         const d1 = api.agents.onStatusChange(cb1);
@@ -1234,7 +1250,7 @@ describe('plugin-api-factory', () => {
 
     describe('getModelOptions()', () => {
       it('returns 4 default options when no project context', async () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
         expect(options.map((o) => o.id)).toEqual(['default', 'opus', 'sonnet', 'haiku']);
@@ -1248,7 +1264,7 @@ describe('plugin-api-factory', () => {
         mockAgent.getModelOptions.mockResolvedValue([
           { id: 'custom', label: 'Custom' },
         ]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p1');
         expect(options).toEqual([{ id: 'custom', label: 'Custom' }]);
@@ -1263,7 +1279,7 @@ describe('plugin-api-factory', () => {
           ] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue([{ id: 'x', label: 'X' }]);
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         await api.agents.getModelOptions('proj-2');
         expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p2');
       });
@@ -1274,7 +1290,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockRejectedValue(new Error('fail'));
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
         expect(options[0].id).toBe('default');
@@ -1286,7 +1302,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue([]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1297,7 +1313,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue('not an array');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1305,7 +1321,7 @@ describe('plugin-api-factory', () => {
       it('returns defaults when project not found', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1315,7 +1331,7 @@ describe('plugin-api-factory', () => {
 
     describe('onAnyChange()', () => {
       it('fires on any store change (not just status)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1330,7 +1346,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on agent added', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1348,7 +1364,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on agent removed', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1359,7 +1375,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on detailedStatus change', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1373,7 +1389,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('dispose stops callbacks', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         const disposable = api.agents.onAnyChange(callback);
         disposable.dispose();
@@ -1389,14 +1405,14 @@ describe('plugin-api-factory', () => {
       });
 
       it('double dispose is safe', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onAnyChange(() => {});
         disposable.dispose();
         expect(() => disposable.dispose()).not.toThrow();
       });
 
       it('multiple independent subscriptions', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const cb1 = vi.fn();
         const cb2 = vi.fn();
         const d1 = api.agents.onAnyChange(cb1);
@@ -1437,7 +1453,7 @@ describe('plugin-api-factory', () => {
         mockPty.getBuffer.mockResolvedValue('');
         mockPty.onData.mockReturnValue(() => {});
         mockPty.onExit.mockReturnValue(() => {});
-        api = createPluginAPI(makeCtx());
+        api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       });
 
       // ── surface check ────────────────────────────────────────────────
@@ -1454,22 +1470,22 @@ describe('plugin-api-factory', () => {
       });
 
       it('terminal API is available for project-scoped plugins', () => {
-        const projectApi = createPluginAPI(makeCtx({ scope: 'project' }));
+        const projectApi = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
         expect(typeof projectApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for app-scoped plugins', () => {
-        const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         expect(typeof appApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for dual-scoped plugins in project mode', () => {
-        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
         expect(typeof dualApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for dual-scoped plugins in app mode', () => {
-        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
         expect(typeof dualApi.terminal.spawn).toBe('function');
       });
 
@@ -1509,12 +1525,12 @@ describe('plugin-api-factory', () => {
         });
 
         it('throws without cwd and without project context', async () => {
-          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }), undefined, allPermsManifest);
           await expect(appApi.terminal.spawn('s1')).rejects.toThrow('working directory');
         });
 
         it('app-scoped plugin can spawn with explicit cwd', async () => {
-          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }), undefined, allPermsManifest);
           await appApi.terminal.spawn('s1', '/explicit/dir');
           expect(mockPty.spawnShell).toHaveBeenCalledWith(
             'plugin:test-plugin:s1',
@@ -1803,13 +1819,13 @@ describe('plugin-api-factory', () => {
         });
 
         it('each plugin gets its own ShellTerminal instance (not shared)', () => {
-          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }), undefined, allPermsManifest);
           // They should be different closures (different namespace)
           expect(api.terminal.ShellTerminal).not.toBe(api2.terminal.ShellTerminal);
         });
 
         it('terminal API is a fresh instance per createPluginAPI call', () => {
-          const api2 = createPluginAPI(makeCtx());
+          const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
           expect(api.terminal).not.toBe(api2.terminal);
         });
       });
@@ -1818,7 +1834,7 @@ describe('plugin-api-factory', () => {
 
       describe('namespace isolation', () => {
         it('different plugins get different namespaces', async () => {
-          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }), undefined, allPermsManifest);
           await api.terminal.spawn('shared-name');
           await api2.terminal.spawn('shared-name');
           expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:shared-name', expect.any(String));
@@ -1891,7 +1907,7 @@ describe('plugin-api-factory', () => {
 
     describe('logging API', () => {
       it('provides all five log level methods', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(typeof api.logging.debug).toBe('function');
         expect(typeof api.logging.info).toBe('function');
         expect(typeof api.logging.warn).toBe('function');
@@ -1900,7 +1916,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('sends log entries with plugin namespace', () => {
-        const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }));
+        const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }), undefined, allPermsManifest);
         api.logging.info('test message');
 
         expect(mockLog.write).toHaveBeenCalledTimes(1);
@@ -1911,7 +1927,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('includes projectId from context', () => {
-        const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }), undefined, allPermsManifest);
         api.logging.warn('warning');
 
         const entry = mockLog.write.mock.calls[0][0];
@@ -1919,7 +1935,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('passes meta through', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         api.logging.error('failed', { code: 500, source: 'api' });
 
         const entry = mockLog.write.mock.calls[0][0];
@@ -1927,7 +1943,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('each level method sends the correct level', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
         for (const level of levels) {
           mockLog.write.mockClear();
@@ -1937,8 +1953,8 @@ describe('plugin-api-factory', () => {
       });
 
       it('different plugins get different namespaces', () => {
-        const api1 = createPluginAPI(makeCtx({ pluginId: 'plugin-a' }));
-        const api2 = createPluginAPI(makeCtx({ pluginId: 'plugin-b' }));
+        const api1 = createPluginAPI(makeCtx({ pluginId: 'plugin-a' }), undefined, allPermsManifest);
+        const api2 = createPluginAPI(makeCtx({ pluginId: 'plugin-b' }), undefined, allPermsManifest);
 
         api1.logging.info('from a');
         api2.logging.info('from b');
@@ -1948,9 +1964,9 @@ describe('plugin-api-factory', () => {
       });
 
       it('is available for all scopes', () => {
-        const project = createPluginAPI(makeCtx({ scope: 'project' }));
-        const app = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
-        const dual = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+        const project = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
+        const app = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
+        const dual = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
 
         expect(typeof project.logging.info).toBe('function');
         expect(typeof app.logging.info).toBe('function');
@@ -1958,7 +1974,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('is fire-and-forget (returns void)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.logging.info('test')).toBeUndefined();
       });
     });
@@ -1968,7 +1984,7 @@ describe('plugin-api-factory', () => {
     describe('runQuick()', () => {
       it('uses context project when no override', async () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-1');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('do stuff');
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined);
       });
@@ -1982,7 +1998,7 @@ describe('plugin-api-factory', () => {
           ] as any,
         });
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-2');
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.runQuick('task', { projectId: 'proj-2' });
         expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined);
       });
@@ -1990,18 +2006,18 @@ describe('plugin-api-factory', () => {
       it('throws on unknown projectId', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.runQuick('task', { projectId: 'nope' })).rejects.toThrow('Project not found');
       });
 
       it('throws without project context', async () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         await expect(api.agents.runQuick('task')).rejects.toThrow('runQuick requires a project context');
       });
 
       it('passes model option through', async () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-3');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('task', { model: 'opus' });
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus');
       });
@@ -2246,7 +2262,7 @@ describe('plugin-api-factory', () => {
 
     describe('backward compatibility', () => {
       it('no manifest → all APIs work', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(typeof api.git.status).toBe('function');
         expect(typeof api.terminal.spawn).toBe('function');
         expect(typeof api.agents.list).toBe('function');
@@ -2259,29 +2275,6 @@ describe('plugin-api-factory', () => {
         expect(typeof api.navigation.focusAgent).toBe('function');
       });
 
-      it('v0.4 manifest → all APIs work (no permissions needed)', () => {
-        const v04: PluginManifest = {
-          id: 'test-plugin', name: 'Test', version: '1.0.0',
-          engine: { api: 0.4 }, scope: 'project', contributes: { help: {} },
-        };
-        const api = createPluginAPI(makeCtx(), undefined, v04);
-        expect(typeof api.git.status).toBe('function');
-        expect(typeof api.terminal.spawn).toBe('function');
-        expect(typeof api.agents.list).toBe('function');
-        expect(typeof api.files.readFile).toBe('function');
-      });
-
-      it('v0.4 manifest with permissions field is ignored (all APIs work)', () => {
-        const v04WithPerms: PluginManifest = {
-          id: 'test-plugin', name: 'Test', version: '1.0.0',
-          engine: { api: 0.4 }, scope: 'project', contributes: { help: {} },
-          permissions: ['git'],
-        };
-        const api = createPluginAPI(makeCtx(), undefined, v04WithPerms);
-        // All APIs work regardless of permissions field
-        expect(typeof api.terminal.spawn).toBe('function');
-        expect(typeof api.agents.list).toBe('function');
-      });
     });
 
     // ── Scope vs permission priority ──────────────────────────────────
@@ -2393,8 +2386,8 @@ describe('plugin-api-factory', () => {
       expect(() => api.files.forRoot('wiki')).toThrow("requires 'files.external' permission");
     });
 
-    it('v0.4 plugin (no manifest) FilesAPI forRoot throws no externalRoots error', () => {
-      const api = createPluginAPI(makeCtx());
+    it('plugin without externalRoots throws on forRoot()', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(() => api.files.forRoot('wiki')).toThrow('no externalRoots declared');
     });
 
@@ -2652,7 +2645,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('provides all files API methods for project-scoped plugins', () => {
@@ -2710,12 +2703,12 @@ describe('plugin-api-factory', () => {
     });
 
     it('throws when calling files API methods on app-scoped plugin', () => {
-      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(() => appApi.files.readTree()).toThrow('not available for app-scoped');
     });
 
     it('does not throw on property access of unavailable files API (React dev-mode safe)', () => {
-      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(() => appApi.files.readTree).not.toThrow();
     });
 

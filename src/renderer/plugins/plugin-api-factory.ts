@@ -83,9 +83,9 @@ function permissionDeniedProxy<T>(pluginId: string, permission: PluginPermission
   }) as T;
 }
 
-/** Returns true if the manifest grants the given permission (v0.4 / no manifest = all granted). */
+/** Returns true if the manifest grants the given permission. */
 function hasPermission(manifest: PluginManifest | undefined, perm: PluginPermission): boolean {
-  if (!manifest || manifest.engine.api < 0.5) return true; // v0.4 backward compat
+  if (!manifest) return false;
   return Array.isArray(manifest.permissions) && manifest.permissions.includes(perm);
 }
 

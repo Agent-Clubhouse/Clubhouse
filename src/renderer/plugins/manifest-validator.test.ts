@@ -6,14 +6,19 @@ describe('manifest-validator', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.4 },
+    engine: { api: 0.5 },
     scope: 'project',
+    permissions: ['files'],
     contributes: { help: {} },
   };
 
   describe('SUPPORTED_API_VERSIONS', () => {
-    it('includes version 0.4', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.4);
+    it('includes version 0.5', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.5);
+    });
+
+    it('does not include version 0.4', () => {
+      expect(SUPPORTED_API_VERSIONS).not.toContain(0.4);
     });
   });
 
@@ -284,31 +289,28 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    // --- v0.4 help validation ---
+    // --- v0.5 help validation ---
 
-    it('rejects v0.4 manifest without contributes.help', () => {
+    it('rejects v0.5 manifest without contributes.help', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {},
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('contributes.help');
     });
 
-    it('accepts v0.4 manifest with contributes.help: {}', () => {
+    it('accepts v0.5 manifest with contributes.help: {}', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: { help: {} },
       });
       expect(result.valid).toBe(true);
     });
 
-    it('accepts v0.4 manifest with valid help topics', () => {
+    it('accepts v0.5 manifest with valid help topics', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {
           help: {
             topics: [
@@ -320,10 +322,9 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects v0.4 manifest with malformed help topics', () => {
+    it('rejects v0.5 manifest with malformed help topics', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {
           help: {
             topics: [
@@ -336,10 +337,9 @@ describe('manifest-validator', () => {
       expect(result.errors.some((e: string) => e.includes('topics[0].id'))).toBe(true);
     });
 
-    it('rejects v0.4 manifest with no contributes at all', () => {
+    it('rejects v0.5 manifest with no contributes at all', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: undefined,
       });
       expect(result.valid).toBe(false);
@@ -451,16 +451,6 @@ describe('manifest-validator', () => {
       });
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('v0.4 manifests are unaffected by permission validation', () => {
-      const result = validateManifest(validManifest);
-      expect(result.valid).toBe(true);
-    });
-
-    it('v0.4 manifest with permissions field is accepted (ignored)', () => {
-      const result = validateManifest({ ...validManifest, permissions: ['files'] });
-      expect(result.valid).toBe(true);
     });
 
     // --- allowedCommands / process permission validation ---
