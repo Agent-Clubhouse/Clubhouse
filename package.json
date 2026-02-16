@@ -1,7 +1,7 @@
 {
   "name": "clubhouse",
   "productName": "Clubhouse",
-  "version": "0.24.3",
+  "version": "0.24.4",
   "description": "A place to hangout with your agent BFFs",
   "main": ".webpack/main",
   "private": true,

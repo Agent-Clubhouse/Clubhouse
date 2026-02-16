@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import * as monaco from 'monaco-editor';
 import { generateMonacoTheme } from './monaco-theme';
+import { useThemeStore } from '../../../stores/themeStore';
 
 function getMonaco(): typeof monaco {
   return monaco;
@@ -10,30 +11,14 @@ let themesRegistered = false;
 
 function ensureThemes(): void {
   if (themesRegistered) return;
-  const monaco = getMonaco();
+  const m = getMonaco();
   // Lazy import themes to avoid circular issues in tests
   const { THEMES } = require('../../../themes/index');
   for (const [id, theme] of Object.entries(THEMES)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    monaco.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
+    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
   }
   themesRegistered = true;
-}
-
-function getActiveThemeId(): string {
-  try {
-    const cached = localStorage.getItem('clubhouse-theme-vars');
-    if (!cached) return 'clubhouse-catppuccin-mocha';
-
-    const themeSettings = localStorage.getItem('clubhouse-theme');
-    if (themeSettings) {
-      const parsed = JSON.parse(themeSettings);
-      if (parsed.themeId) return `clubhouse-${parsed.themeId}`;
-    }
-  } catch {
-    // ignore
-  }
-  return 'clubhouse-catppuccin-mocha';
 }
 
 interface MonacoEditorProps {
@@ -51,6 +36,7 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
   const savedContentRef = useRef(value);
   const onSaveRef = useRef(onSave);
   const onDirtyChangeRef = useRef(onDirtyChange);
+  const themeId = useThemeStore((s) => s.themeId);
 
   onSaveRef.current = onSave;
   onDirtyChangeRef.current = onDirtyChange;
@@ -69,13 +55,13 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const monaco = getMonaco();
+    const m = getMonaco();
     ensureThemes();
 
-    const editor = monaco.editor.create(containerRef.current, {
+    const editor = m.editor.create(containerRef.current, {
       value,
       language,
-      theme: getActiveThemeId(),
+      theme: `clubhouse-${themeId}`,
       fontSize: 13,
       fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
       bracketPairColorization: { enabled: true },
@@ -89,7 +75,7 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
     editorRef.current = editor;
 
     // Cmd+S / Ctrl+S keybinding
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
       const content = editor.getValue();
       savedContentRef.current = content;
       onSaveRef.current(content);
@@ -101,22 +87,18 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
       checkDirty();
     });
 
-    // Listen for theme changes via storage events
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === 'clubhouse-theme') {
-        const themeId = getActiveThemeId();
-        monaco.editor.setTheme(themeId);
-      }
-    };
-    window.addEventListener('storage', handleStorage);
-
     return () => {
-      window.removeEventListener('storage', handleStorage);
       editor.dispose();
       editorRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath]);
+
+  // React to theme changes
+  useEffect(() => {
+    if (!editorRef.current) return;
+    monaco.editor.setTheme(`clubhouse-${themeId}`);
+  }, [themeId]);
 
   // When value prop changes (for the same filePath), update editor content
   useEffect(() => {
