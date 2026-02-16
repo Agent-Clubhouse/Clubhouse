@@ -19,7 +19,7 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
   const selectedAvail = availability[orchestrator];
-  const MODEL_OPTIONS = useModelOptions(orchestrator);
+  const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,16 +81,24 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
           {/* Model */}
           <label className="block mb-3">
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus:outline-none focus:border-indigo-500"
-            >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>{opt.label}</option>
-              ))}
-            </select>
+            {modelsLoading ? (
+              <div className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-subtext0 flex items-center gap-2">
+                <span className="inline-block w-3 h-3 border-2 border-ctp-subtext0 border-t-transparent rounded-full animate-spin" />
+                Loading models…
+              </div>
+            ) : (
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                  text-ctp-text focus:outline-none focus:border-indigo-500"
+              >
+                {MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
+                ))}
+              </select>
+            )}
           </label>
 
           {/* Orchestrator */}

@@ -17,7 +17,7 @@ export function AgentList() {
     deleteDialogAgent,
   } = useAgentStore();
   const { activeProjectId, projects } = useProjectStore();
-  const MODEL_OPTIONS = useModelOptions();
+  const { options: MODEL_OPTIONS } = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
