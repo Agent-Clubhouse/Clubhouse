@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | curl -s -X POST http://127.0.0.1:62670/hook/quick_1771113318049_1 -H 'Content-Type: application/json' --data-binary @- || true",
+            "command": "cat | curl -s -X POST http://127.0.0.1:61670/hook/${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H \"X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}\" --data-binary @- || true",
             "async": true,
             "timeout": 5
           }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | curl -s -X POST http://127.0.0.1:62670/hook/quick_1771113318049_1 -H 'Content-Type: application/json' --data-binary @- || true",
+            "command": "cat | curl -s -X POST http://127.0.0.1:61670/hook/${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H \"X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}\" --data-binary @- || true",
             "async": true,
             "timeout": 5
           }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | curl -s -X POST http://127.0.0.1:62670/hook/quick_1771113318049_1 -H 'Content-Type: application/json' --data-binary @- || true",
+            "command": "cat | curl -s -X POST http://127.0.0.1:61670/hook/${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H \"X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}\" --data-binary @- || true",
             "async": true,
             "timeout": 5
           }
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat | curl -s -X POST http://127.0.0.1:62670/hook/quick_1771113318049_1 -H 'Content-Type: application/json' --data-binary @- || true",
+            "command": "cat | curl -s -X POST http://127.0.0.1:61670/hook/${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H \"X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}\" --data-binary @- || true",
             "async": true,
             "timeout": 5
           }

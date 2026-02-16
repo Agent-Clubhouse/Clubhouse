@@ -4,6 +4,7 @@ import { LogEntry, LoggingSettings, NotificationSettings } from '../../shared/ty
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
+import * as headlessSettings from '../services/headless-settings';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
 
@@ -42,6 +43,14 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, (_event, settings: orchestratorSettings.OrchestratorSettings) => {
     orchestratorSettings.saveSettings(settings);
+  });
+
+  ipcMain.handle(IPC.APP.GET_HEADLESS_SETTINGS, () => {
+    return headlessSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_HEADLESS_SETTINGS, (_event, settings: headlessSettings.HeadlessSettings) => {
+    headlessSettings.saveSettings(settings);
   });
 
   // --- Logging ---

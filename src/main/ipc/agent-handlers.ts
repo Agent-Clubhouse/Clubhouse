@@ -3,6 +3,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
+import * as headlessManager from '../services/headless-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
 
@@ -123,5 +124,13 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.GET_SUMMARY_INSTRUCTION, (_event, agentId: string) => {
     return buildSummaryInstruction(agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT, (_event, agentId: string) => {
+    return headlessManager.readTranscript(agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, (_event, agentId: string) => {
+    return agentSystem.isHeadlessAgent(agentId);
   });
 }

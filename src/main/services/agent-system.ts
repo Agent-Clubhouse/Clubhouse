@@ -5,6 +5,8 @@ import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider } fr
 import { waitReady as waitHookServerReady } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
+import * as headlessManager from './headless-manager';
+import * as headlessSettings from './headless-settings';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -14,6 +16,8 @@ const agentProjectMap = new Map<string, string>();
 const agentOrchestratorMap = new Map<string, OrchestratorId>();
 /** Track agentId → hook nonce for authenticating hook events */
 const agentNonceMap = new Map<string, string>();
+/** Track which agents are running in headless mode */
+const headlessAgentSet = new Set<string>();
 
 export function getAgentProjectPath(agentId: string): string | undefined {
   return agentProjectMap.get(agentId);
@@ -31,6 +35,7 @@ export function untrackAgent(agentId: string): void {
   agentProjectMap.delete(agentId);
   agentOrchestratorMap.delete(agentId);
   agentNonceMap.delete(agentId);
+  headlessAgentSet.delete(agentId);
 }
 
 /** Read the project-level orchestrator setting from .clubhouse/settings.json */
@@ -80,6 +85,10 @@ export interface SpawnAgentParams {
   orchestrator?: OrchestratorId;
 }
 
+export function isHeadlessAgent(agentId: string): boolean {
+  return headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId);
+}
+
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const provider = resolveOrchestrator(params.projectPath, params.orchestrator);
 
@@ -88,15 +97,53 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     agentOrchestratorMap.set(params.agentId, params.orchestrator);
   }
 
+  const allowedTools = params.allowedTools
+    || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
+
+  // Try headless path for quick agents when enabled
+  const settings = headlessSettings.getSettings();
+  if (settings.enabled && params.kind === 'quick' && provider.buildHeadlessCommand) {
+    const headlessResult = await provider.buildHeadlessCommand({
+      cwd: params.cwd,
+      model: params.model,
+      mission: params.mission,
+      systemPrompt: params.systemPrompt,
+      allowedTools,
+      agentId: params.agentId,
+      outputFormat: 'stream-json',
+      permissionMode: 'auto',
+      noSessionPersistence: true,
+    });
+
+    if (headlessResult) {
+      headlessAgentSet.add(params.agentId);
+      const spawnEnv = { ...headlessResult.env, CLUBHOUSE_AGENT_ID: params.agentId };
+      headlessManager.spawnHeadless(
+        params.agentId,
+        params.cwd,
+        headlessResult.binary,
+        headlessResult.args,
+        spawnEnv,
+      );
+      return;
+    }
+  }
+
+  // Fall back to PTY mode
+  await spawnPtyAgent(params, provider, allowedTools);
+}
+
+async function spawnPtyAgent(
+  params: SpawnAgentParams,
+  provider: OrchestratorProvider,
+  allowedTools: string[] | undefined,
+): Promise<void> {
   const nonce = randomUUID();
   agentNonceMap.set(params.agentId, nonce);
 
   const port = await waitHookServerReady();
   const hookUrl = `http://127.0.0.1:${port}/hook`;
   await provider.writeHooksConfig(params.cwd, hookUrl);
-
-  const allowedTools = params.allowedTools
-    || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
   const { binary, args, env } = await provider.buildSpawnCommand({
     cwd: params.cwd,
@@ -123,6 +170,11 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
+  if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
+    headlessManager.kill(agentId);
+    headlessAgentSet.delete(agentId);
+    return;
+  }
   const provider = resolveOrchestrator(projectPath, orchestrator);
   const exitCmd = provider.getExitCommand();
   ptyManager.gracefulKill(agentId, exitCmd);

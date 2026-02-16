@@ -10,6 +10,15 @@ export interface SpawnOpts {
   agentId?: string;
 }
 
+export interface HeadlessOpts extends SpawnOpts {
+  outputFormat?: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  permissionMode?: string;
+  noSessionPersistence?: boolean;
+  disallowedTools?: string[];
+}
+
 export interface NormalizedHookEvent {
   kind: 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request';
   toolName?: string;
@@ -61,4 +70,7 @@ export interface OrchestratorProvider {
   toolVerb(toolName: string): string | undefined;
   buildSummaryInstruction(agentId: string): string;
   readQuickSummary(agentId: string): Promise<{ summary: string | null; filesModified: string[] } | null>;
+
+  // Headless mode (optional — absence means headless not supported)
+  buildHeadlessCommand?(opts: HeadlessOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> } | null>;
 }

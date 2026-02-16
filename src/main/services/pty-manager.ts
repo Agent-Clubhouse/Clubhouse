@@ -54,7 +54,10 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
   const spawnEnv = extraEnv
     ? { ...getShellEnvironment(), ...extraEnv }
-    : getShellEnvironment();
+    : { ...getShellEnvironment() };
+  // Remove markers that prevent nested Claude Code sessions
+  delete spawnEnv.CLAUDECODE;
+  delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
 
   let proc: pty.IPty;
   try {

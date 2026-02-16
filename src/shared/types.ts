@@ -28,6 +28,7 @@ export interface Agent {
   model?: string;
   parentAgentId?: string;
   orchestrator?: OrchestratorId;
+  headless?: boolean;
 }
 
 export interface CompletedQuickAgent {
@@ -40,6 +41,11 @@ export interface CompletedQuickAgent {
   exitCode: number;
   completedAt: number;
   parentAgentId?: string;
+  headless?: boolean;
+  transcriptPath?: string;
+  costUsd?: number;
+  durationMs?: number;
+  toolsUsed?: string[];
 }
 
 // --- Config inheritance types ---

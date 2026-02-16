@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CompletedQuickAgent } from '../../../shared/types';
+import { TranscriptViewer } from './TranscriptViewer';
 
 interface Props {
   completed: CompletedQuickAgent;
@@ -54,6 +55,7 @@ function ExitBadge({ exitCode }: { exitCode: number }) {
 
 export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
   const [filesExpanded, setFilesExpanded] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const showToggle = completed.filesModified.length > 3;
   const visibleFiles = filesExpanded ? completed.filesModified : completed.filesModified.slice(0, 3);
 
@@ -62,9 +64,37 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
       <div className="w-[360px] bg-ctp-mantle border border-surface-0 rounded-xl p-5 space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <ExitBadge exitCode={completed.exitCode} />
+          <div className="flex items-center gap-2">
+            <ExitBadge exitCode={completed.exitCode} />
+            {completed.headless && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-400">
+                Headless
+              </span>
+            )}
+          </div>
           <span className="text-xs text-ctp-subtext0">{relativeTime(completed.completedAt)}</span>
         </div>
+
+        {/* Cost / Duration / Tools row */}
+        {(completed.costUsd != null || completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {completed.costUsd != null && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
+                ${completed.costUsd.toFixed(4)}
+              </span>
+            )}
+            {completed.durationMs != null && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
+                {(completed.durationMs / 1000).toFixed(1)}s
+              </span>
+            )}
+            {completed.toolsUsed && completed.toolsUsed.map((tool) => (
+              <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext0 font-mono">
+                {tool}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Mission */}
         <div>
@@ -100,6 +130,30 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               >
                 {filesExpanded ? 'Show less' : `+${completed.filesModified.length - 3} more`}
               </button>
+            )}
+          </div>
+        )}
+
+        {/* Transcript viewer for headless agents */}
+        {completed.headless && (
+          <div>
+            <button
+              onClick={() => setTranscriptOpen(!transcriptOpen)}
+              className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center gap-1"
+            >
+              <svg
+                width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={`transition-transform ${transcriptOpen ? 'rotate-90' : ''}`}
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              {transcriptOpen ? 'Hide transcript' : 'View transcript'}
+            </button>
+            {transcriptOpen && (
+              <div className="mt-2 border border-surface-0 rounded-lg overflow-hidden bg-ctp-base">
+                <TranscriptViewer agentId={completed.id} />
+              </div>
             )}
           </div>
         )}
@@ -161,6 +215,8 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
         <div className="text-[10px] text-ctp-subtext0 truncate">
           {completed.summary || 'Interrupted'}
           {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
+          {completed.costUsd != null && ` · $${completed.costUsd.toFixed(4)}`}
+          {completed.durationMs != null && ` · ${(completed.durationMs / 1000).toFixed(1)}s`}
         </div>
       </div>
 

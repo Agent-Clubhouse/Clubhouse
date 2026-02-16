@@ -107,6 +107,12 @@ const api = {
     getSummaryInstruction: (agentId: string, projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_SUMMARY_INSTRUCTION, agentId, projectPath, orchestrator),
 
+    readTranscript: (agentId: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT, agentId),
+
+    isHeadlessAgent: (agentId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.AGENT.IS_HEADLESS_AGENT, agentId),
+
     onHookEvent: (callback: (agentId: string, event: {
       kind: string;
       toolName?: string;
@@ -308,6 +314,10 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    getHeadlessSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
+    saveHeadlessSettings: (settings: { enabled: boolean }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_HEADLESS_SETTINGS, settings),
   },
 };
 

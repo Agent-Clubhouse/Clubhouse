@@ -4,6 +4,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
+import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
@@ -64,6 +65,11 @@ export function MainContentView() {
 
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
       return <SleepingAgent agent={activeAgent} />;
+    }
+
+    // Headless running agents get the animated clubhouse view instead of a terminal
+    if (activeAgent.headless) {
+      return <HeadlessAgentView agent={activeAgent} />;
     }
 
     return (

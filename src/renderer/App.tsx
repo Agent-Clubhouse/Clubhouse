@@ -13,6 +13,7 @@ import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useThemeStore } from './stores/themeStore';
 import { useOrchestratorStore } from './stores/orchestratorStore';
 import { useLoggingStore } from './stores/loggingStore';
+import { useHeadlessStore } from './stores/headlessStore';
 import { usePluginStore } from './plugins/plugin-store';
 import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -46,6 +47,7 @@ export function App() {
   const clearStaleStatuses = useAgentStore((s) => s.clearStaleStatuses);
   const loadOrchestratorSettings = useOrchestratorStore((s) => s.loadSettings);
   const loadLoggingSettings = useLoggingStore((s) => s.loadSettings);
+  const loadHeadlessSettings = useHeadlessStore((s) => s.loadSettings);
 
   useEffect(() => {
     loadProjects();
@@ -53,10 +55,11 @@ export function App() {
     loadTheme();
     loadOrchestratorSettings();
     loadLoggingSettings();
+    loadHeadlessSettings();
     initializePluginSystem().catch((err) => {
       console.error('[Plugins] Failed to initialize plugin system:', err);
     });
-  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings]);
+  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings, loadHeadlessSettings]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
@@ -175,22 +178,59 @@ export function App() {
         const agent = useAgentStore.getState().agents[agentId];
         updateAgentStatus(agentId, 'sleeping', exitCode);
 
-        // Emit plugin event for agent completion
-        pluginEventBus.emit('agent:completed', { agentId, exitCode, name: agent?.name });
-
-        // Handle quick agent completion
+        // Handle quick agent completion FIRST (before plugin events which could throw)
         if (agent?.kind === 'quick' && agent.mission) {
           let summary: string | null = null;
           let filesModified: string[] = [];
+          let costUsd: number | undefined;
+          let durationMs: number | undefined;
+          let toolsUsed: string[] | undefined;
 
-          try {
-            const result = await window.clubhouse.agent.readQuickSummary(agentId);
-            if (result) {
-              summary = result.summary;
-              filesModified = result.filesModified;
+          if (agent.headless) {
+            // Headless agents: read enriched data from transcript
+            try {
+              const transcript = await window.clubhouse.agent.readTranscript(agentId);
+              if (transcript) {
+                // Parse transcript events to extract summary data
+                const events = transcript.split('\n')
+                  .filter((line: string) => line.trim())
+                  .map((line: string) => {
+                    try { return JSON.parse(line); } catch { return null; }
+                  })
+                  .filter(Boolean);
+
+                // Extract summary from result event
+                for (const evt of events) {
+                  if (evt.type === 'result' && typeof evt.result === 'string') {
+                    summary = evt.result;
+                  }
+                  if (evt.cost_usd != null) costUsd = evt.cost_usd;
+                  if (evt.duration_ms != null) durationMs = evt.duration_ms;
+                }
+
+                // Collect tools used
+                const tools = new Set<string>();
+                for (const evt of events) {
+                  if (evt.type === 'content_block_start' && evt.content_block?.type === 'tool_use' && evt.content_block?.name) {
+                    tools.add(evt.content_block.name);
+                  }
+                }
+                if (tools.size > 0) toolsUsed = Array.from(tools);
+              }
+            } catch {
+              // Transcript not available
             }
-          } catch {
-            // Summary not available
+          } else {
+            // PTY agents: read /tmp summary file
+            try {
+              const result = await window.clubhouse.agent.readQuickSummary(agentId);
+              if (result) {
+                summary = result.summary;
+                filesModified = result.filesModified;
+              }
+            } catch {
+              // Summary not available
+            }
           }
 
           // If the summary was found, treat as success regardless of exit code
@@ -207,9 +247,20 @@ export function App() {
             exitCode: effectiveExitCode,
             completedAt: Date.now(),
             parentAgentId: agent.parentAgentId,
+            headless: agent.headless,
+            costUsd,
+            durationMs,
+            toolsUsed,
           });
 
           removeAgent(agentId);
+        }
+
+        // Emit plugin event after completion logic (wrapped to prevent silent failures)
+        try {
+          pluginEventBus.emit('agent:completed', { agentId, exitCode, name: agent?.name });
+        } catch {
+          // Plugin listener error — don't break the app
         }
       }
     );
@@ -241,8 +292,9 @@ export function App() {
         });
 
         // Auto-exit quick agents when the agent finishes (stop event).
-        // Delay gives the agent time to write the summary file before we send /exit.
-        if (event.kind === 'stop' && agent.kind === 'quick') {
+        // Headless agents exit on their own — skip the kill timer.
+        if (event.kind === 'stop' && agent.kind === 'quick' && !agent.headless) {
+          // Delay gives the agent time to write the summary file before we send /exit.
           const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
           setTimeout(() => {
             const currentAgent = useAgentStore.getState().agents[agentId];

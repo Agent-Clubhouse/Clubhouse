@@ -54,6 +54,9 @@ export const IPC = {
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
     GET_TOOL_VERB: 'agent:get-tool-verb',
     GET_SUMMARY_INSTRUCTION: 'agent:get-summary-instruction',
+    HEADLESS_EVENT: 'agent:headless-event',
+    READ_TRANSCRIPT: 'agent:read-transcript',
+    IS_HEADLESS_AGENT: 'agent:is-headless-agent',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
@@ -95,6 +98,8 @@ export const IPC = {
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
     GET_VERSION: 'app:get-version',
+    GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
+    SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

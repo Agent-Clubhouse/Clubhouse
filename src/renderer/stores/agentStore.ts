@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult, HookEventKind } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
+import { useHeadlessStore } from './headlessStore';
 
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
@@ -173,6 +174,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // Explicit orchestrator > inherit from parent
     const resolvedOrchestrator = orchestrator || (parentAgentId ? get().agents[parentAgentId]?.orchestrator : undefined);
 
+    const isHeadless = useHeadlessStore.getState().enabled;
+
     const agent: Agent = {
       id: agentId,
       projectId,
@@ -184,6 +187,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       model: resolvedModel,
       parentAgentId,
       orchestrator: resolvedOrchestrator,
+      headless: isHeadless || undefined,
     };
 
     set((s) => ({
@@ -329,10 +333,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const agent = get().agents[id];
     if (!agent) return;
 
-    if (projectPath) {
-      await window.clubhouse.agent.killAgent(id, projectPath);
+    // Resolve projectPath from agent if not provided
+    const resolvedPath = projectPath || (() => {
+      const { useProjectStore } = require('./projectStore');
+      const project = useProjectStore.getState().projects.find(
+        (p: { id: string; path: string }) => p.id === agent.projectId,
+      );
+      return project?.path;
+    })();
+
+    if (resolvedPath) {
+      await window.clubhouse.agent.killAgent(id, resolvedPath, agent.orchestrator);
     } else {
-      // Fallback to legacy pty kill when no project path available
+      // Last resort fallback
       await window.clubhouse.pty.kill(id);
     }
 
