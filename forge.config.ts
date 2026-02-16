@@ -48,14 +48,13 @@ const config: ForgeConfig = {
       }),
     },
     asar: {
-      unpack: '{**/node_modules/node-pty/**,**/node_modules/@kutalia/whisper-node-addon/**}',
+      unpack: '{**/node_modules/node-pty/**}',
     },
     afterCopy: [
       (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (err?: Error) => void) => {
         try {
           const projectRoot = path.resolve(__dirname);
           copyNativeModule(projectRoot, buildPath, 'node-pty');
-          copyNativeModule(projectRoot, buildPath, '@kutalia/whisper-node-addon');
           callback();
         } catch (err) {
           callback(err as Error);

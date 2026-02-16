@@ -9,9 +9,6 @@ import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
 import { manifest as issuesManifest } from './issues/manifest';
 import * as issuesModule from './issues/main';
-// Voice chat plugin is WIP — parked on plugin/voice branch
-// import { manifest as voiceChatManifest } from './voice-chat/manifest';
-// import * as voiceChatModule from './voice-chat/main';
 import { manifest as wikiManifest } from './wiki/manifest';
 import * as wikiModule from './wiki/main';
 

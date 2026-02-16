@@ -87,13 +87,8 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
         </div>
 
         {/* Cost / Duration / Tools row */}
-        {(completed.costUsd != null || completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
+        {(completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
           <div className="flex items-center gap-2 flex-wrap">
-            {completed.costUsd != null && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
-                ${completed.costUsd.toFixed(4)}
-              </span>
-            )}
             {completed.durationMs != null && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
                 {formatDuration(completed.durationMs)}
@@ -226,7 +221,6 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
         <div className="text-[10px] text-ctp-subtext0 truncate">
           {completed.summary || 'Interrupted'}
           {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
-          {completed.costUsd != null && ` · $${completed.costUsd.toFixed(4)}`}
           {completed.durationMs != null && ` · ${formatDuration(completed.durationMs)}`}
         </div>
       </div>

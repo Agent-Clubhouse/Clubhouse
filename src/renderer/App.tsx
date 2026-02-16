@@ -199,22 +199,45 @@ export function App() {
                   })
                   .filter(Boolean);
 
-                // Extract summary from result event
-                for (const evt of events) {
-                  if (evt.type === 'result' && typeof evt.result === 'string') {
-                    summary = evt.result;
-                  }
-                  if (evt.cost_usd != null) costUsd = evt.cost_usd;
-                  if (evt.duration_ms != null) durationMs = evt.duration_ms;
-                }
-
-                // Collect tools used
+                // Extract data from transcript events (--verbose format)
+                let lastAssistantText = '';
                 const tools = new Set<string>();
+
                 for (const evt of events) {
+                  // Result event: summary, cost, duration
+                  if (evt.type === 'result') {
+                    if (typeof evt.result === 'string' && evt.result) {
+                      summary = evt.result;
+                    }
+                    if (evt.total_cost_usd != null) costUsd = evt.total_cost_usd;
+                    else if (evt.cost_usd != null) costUsd = evt.cost_usd;
+                    if (evt.duration_ms != null) durationMs = evt.duration_ms;
+                  }
+
+                  // --verbose: assistant messages contain text and tool_use blocks
+                  if (evt.type === 'assistant' && evt.message?.content) {
+                    for (const block of evt.message.content) {
+                      if (block.type === 'text' && block.text) {
+                        lastAssistantText = block.text;
+                      }
+                      if (block.type === 'tool_use' && block.name) {
+                        tools.add(block.name);
+                      }
+                    }
+                  }
+
+                  // Legacy streaming format fallback
                   if (evt.type === 'content_block_start' && evt.content_block?.type === 'tool_use' && evt.content_block?.name) {
                     tools.add(evt.content_block.name);
                   }
                 }
+
+                // Fall back to last assistant text if result was empty
+                if (!summary && lastAssistantText.trim()) {
+                  const text = lastAssistantText.trim();
+                  summary = text.length > 500 ? text.slice(0, 497) + '...' : text;
+                }
+
                 if (tools.size > 0) toolsUsed = Array.from(tools);
               }
             } catch {

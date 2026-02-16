@@ -16,7 +16,6 @@ import type {
   NavigationAPI,
   WidgetsAPI,
   TerminalAPI,
-  VoiceAPI,
   LoggingAPI,
   FilesAPI,
   ProcessAPI,
@@ -865,44 +864,6 @@ function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI
   };
 }
 
-function createVoiceAPI(): VoiceAPI {
-  return {
-    async checkModels() {
-      return window.clubhouse.voice.checkModels();
-    },
-    async downloadModels() {
-      await window.clubhouse.voice.downloadModels();
-    },
-    async deleteModels() {
-      await window.clubhouse.voice.deleteModels();
-    },
-    onDownloadProgress(callback) {
-      const remove = window.clubhouse.voice.onDownloadProgress(callback);
-      return { dispose: remove };
-    },
-    async transcribe(pcmBuffer: ArrayBuffer) {
-      return window.clubhouse.voice.transcribe(pcmBuffer);
-    },
-    async startSession(agentId: string, cwd: string, model?: string) {
-      return window.clubhouse.voice.startSession(agentId, cwd, model);
-    },
-    async sendTurn(text: string) {
-      await window.clubhouse.voice.sendTurn(text);
-    },
-    onTurnChunk(callback) {
-      const remove = window.clubhouse.voice.onTurnChunk(callback);
-      return { dispose: remove };
-    },
-    onTurnComplete(callback) {
-      const remove = window.clubhouse.voice.onTurnComplete(callback);
-      return { dispose: remove };
-    },
-    async endSession() {
-      await window.clubhouse.voice.endSession();
-    },
-  };
-}
-
 function createProcessAPI(ctx: PluginContext, manifest?: PluginManifest): ProcessAPI {
   const { projectPath, pluginId } = ctx;
   if (!projectPath) {
@@ -985,10 +946,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     terminal: gated(
       true, scopeLabel, 'terminal', 'terminal',
       ctx.pluginId, manifest, () => createTerminalAPI(ctx),
-    ),
-    voice: gated(
-      true, scopeLabel, 'voice', 'voice',
-      ctx.pluginId, manifest, () => createVoiceAPI(),
     ),
     logging: gated(
       true, scopeLabel, 'logging', 'logging',

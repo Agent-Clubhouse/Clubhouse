@@ -6,7 +6,6 @@ import { registerAgentHandlers } from './agent-handlers';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
-import { registerVoiceHandlers } from './voice-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders } from '../orchestrators';
@@ -29,7 +28,6 @@ export function registerAllHandlers(): void {
   registerAgentSettingsHandlers();
   registerAppHandlers();
   registerPluginHandlers();
-  registerVoiceHandlers();
   registerProcessHandlers();
 
   // Start the hook server for agent status events

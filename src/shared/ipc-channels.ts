@@ -131,16 +131,4 @@ export const IPC = {
   PROCESS: {
     EXEC: 'process:exec',
   },
-  VOICE: {
-    CHECK_MODELS: 'voice:check-models',
-    DOWNLOAD_MODELS: 'voice:download-models',
-    DELETE_MODELS: 'voice:delete-models',
-    DOWNLOAD_PROGRESS: 'voice:download-progress',
-    TRANSCRIBE: 'voice:transcribe',
-    START_SESSION: 'voice:start-session',
-    SEND_TURN: 'voice:send-turn',
-    TURN_CHUNK: 'voice:turn-chunk',
-    TURN_COMPLETE: 'voice:turn-complete',
-    END_SESSION: 'voice:end-session',
-  },
 } as const;

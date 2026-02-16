@@ -251,39 +251,6 @@ const api = {
       options?: { timeout?: number };
     }) => ipcRenderer.invoke(IPC.PROCESS.EXEC, req),
   },
-  voice: {
-    checkModels: () =>
-      ipcRenderer.invoke(IPC.VOICE.CHECK_MODELS),
-    downloadModels: () =>
-      ipcRenderer.invoke(IPC.VOICE.DOWNLOAD_MODELS),
-    deleteModels: () =>
-      ipcRenderer.invoke(IPC.VOICE.DELETE_MODELS),
-    onDownloadProgress: (callback: (progress: { model: string; percent: number; bytesDownloaded: number; bytesTotal: number }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, progress: any) =>
-        callback(progress);
-      ipcRenderer.on(IPC.VOICE.DOWNLOAD_PROGRESS, listener);
-      return () => { ipcRenderer.removeListener(IPC.VOICE.DOWNLOAD_PROGRESS, listener); };
-    },
-    transcribe: (pcmBuffer: ArrayBuffer) =>
-      ipcRenderer.invoke(IPC.VOICE.TRANSCRIBE, pcmBuffer),
-    startSession: (agentId: string, cwd: string, model?: string) =>
-      ipcRenderer.invoke(IPC.VOICE.START_SESSION, agentId, cwd, model),
-    sendTurn: (text: string) =>
-      ipcRenderer.invoke(IPC.VOICE.SEND_TURN, text),
-    onTurnChunk: (callback: (chunk: { text: string; audio?: ArrayBuffer; done: boolean }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, chunk: any) =>
-        callback(chunk);
-      ipcRenderer.on(IPC.VOICE.TURN_CHUNK, listener);
-      return () => { ipcRenderer.removeListener(IPC.VOICE.TURN_CHUNK, listener); };
-    },
-    onTurnComplete: (callback: () => void) => {
-      const listener = () => callback();
-      ipcRenderer.on(IPC.VOICE.TURN_COMPLETE, listener);
-      return () => { ipcRenderer.removeListener(IPC.VOICE.TURN_COMPLETE, listener); };
-    },
-    endSession: () =>
-      ipcRenderer.invoke(IPC.VOICE.END_SESSION),
-  },
   app: {
     openExternalUrl: (url: string) =>
       ipcRenderer.invoke(IPC.APP.OPEN_EXTERNAL_URL, url),
