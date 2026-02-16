@@ -107,15 +107,31 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
   };
 
   async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+    let binary: string;
     try {
-      findClaudeBinary();
-      return { available: true };
+      binary = findClaudeBinary();
     } catch (err: unknown) {
       return {
         available: false,
         error: err instanceof Error ? err.message : 'Could not find Claude CLI',
       };
     }
+
+    // Binary found — verify authentication with a quick no-op call
+    try {
+      const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], { timeout: 10000 });
+      const result = JSON.parse(stdout);
+      if (result.is_error && typeof result.result === 'string') {
+        const msg = result.result as string;
+        if (msg.includes('API key') || msg.includes('/login') || msg.includes('authentication')) {
+          return { available: false, error: 'Not signed in — run "claude" and follow login prompts' };
+        }
+        return { available: false, error: msg };
+      }
+    } catch {
+      // Timeout or parse failure — binary exists so treat as available
+    }
+    return { available: true };
   }
 
   async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
