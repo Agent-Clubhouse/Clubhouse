@@ -27,9 +27,9 @@ describe('terminal plugin manifest', () => {
     expect(manifest.contributes!.help!.topics!.length).toBeGreaterThan(0);
   });
 
-  it('contributes a full-layout tab', () => {
+  it('contributes a sidebar-content layout tab', () => {
     expect(manifest.contributes?.tab).toBeDefined();
-    expect(manifest.contributes!.tab!.layout).toBe('full');
+    expect(manifest.contributes!.tab!.layout).toBe('sidebar-content');
     expect(manifest.contributes!.tab!.label).toBe('Terminal');
   });
 

@@ -268,6 +268,7 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
           mission: a.mission,
           projectId: a.projectId,
           branch: a.branch,
+          worktreePath: a.worktreePath,
           model: a.model,
           parentAgentId: a.parentAgentId,
         }));

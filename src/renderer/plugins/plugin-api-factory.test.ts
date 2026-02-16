@@ -733,6 +733,7 @@ describe('plugin-api-factory', () => {
             emoji: '🦊',
             projectId: 'proj-1',
             branch: 'main',
+            worktreePath: '.clubhouse/agents/alpha',
             model: 'claude-3',
             parentAgentId: undefined,
           },
@@ -788,6 +789,7 @@ describe('plugin-api-factory', () => {
           mission: undefined,
           projectId: 'proj-1',
           branch: 'main',
+          worktreePath: '.clubhouse/agents/alpha',
           model: 'claude-3',
           parentAgentId: undefined,
         });
@@ -816,6 +818,18 @@ describe('plugin-api-factory', () => {
         useAgentStore.setState({ agents: {} });
         const api = createPluginAPI(makeCtx());
         expect(api.agents.list()).toEqual([]);
+      });
+
+      it('includes worktreePath when present on store agent', () => {
+        const api = createPluginAPI(makeCtx());
+        const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
+        expect(alpha.worktreePath).toBe('.clubhouse/agents/alpha');
+      });
+
+      it('returns worktreePath as undefined when not set on store agent', () => {
+        const api = createPluginAPI(makeCtx());
+        const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
+        expect(beta.worktreePath).toBeUndefined();
       });
     });
 

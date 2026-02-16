@@ -11,7 +11,7 @@ export const manifest: PluginManifest = {
   engine: { api: 0.4 },
   scope: 'project',
   contributes: {
-    tab: { label: 'Terminal', icon: TERMINAL_ICON, layout: 'full' },
+    tab: { label: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'restart', title: 'Restart Terminal' }],
     help: {
       topics: [

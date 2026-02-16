@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { activate, deactivate, MainPanel } from './main';
+import { activate, deactivate, MainPanel, SidebarPanel } from './main';
+import { terminalState, makeSessionId } from './state';
 import { manifest } from './manifest';
 import * as terminalModule from './main';
 import { validateBuiltinPlugin } from '../builtin-plugin-testing';
@@ -78,7 +79,11 @@ describe('terminal plugin activate()', () => {
 // ── deactivate() ─────────────────────────────────────────────────────
 
 describe('terminal plugin deactivate()', () => {
-  it('is a no-op function', () => {
+  beforeEach(() => {
+    terminalState.reset();
+  });
+
+  it('does not throw', () => {
     expect(() => deactivate()).not.toThrow();
   });
 
@@ -92,6 +97,127 @@ describe('terminal plugin deactivate()', () => {
     deactivate();
     // no throw
   });
+
+  it('resets terminalState activeTarget to null', () => {
+    terminalState.setActiveTarget({ sessionId: 's', label: 'X', cwd: '/', kind: 'project' });
+    expect(terminalState.activeTarget).not.toBeNull();
+    deactivate();
+    expect(terminalState.activeTarget).toBeNull();
+  });
+
+  it('resets terminalState targets to empty array', () => {
+    terminalState.setTargets([{ sessionId: 's', label: 'X', cwd: '/', kind: 'project' }]);
+    expect(terminalState.targets).toHaveLength(1);
+    deactivate();
+    expect(terminalState.targets).toEqual([]);
+  });
+});
+
+// ── terminalState (pub/sub) ──────────────────────────────────────────
+
+describe('terminalState', () => {
+  beforeEach(() => {
+    terminalState.reset();
+  });
+
+  it('activeTarget starts null', () => {
+    expect(terminalState.activeTarget).toBeNull();
+  });
+
+  it('targets starts empty', () => {
+    expect(terminalState.targets).toEqual([]);
+  });
+
+  it('setActiveTarget updates value and notifies listeners', () => {
+    const listener = vi.fn();
+    terminalState.subscribe(listener);
+    const target = { sessionId: 's1', label: 'Test', cwd: '/tmp', kind: 'project' as const };
+    terminalState.setActiveTarget(target);
+    expect(terminalState.activeTarget).toBe(target);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('setTargets updates value and notifies listeners', () => {
+    const listener = vi.fn();
+    terminalState.subscribe(listener);
+    const targets = [{ sessionId: 's1', label: 'Test', cwd: '/tmp', kind: 'project' as const }];
+    terminalState.setTargets(targets);
+    expect(terminalState.targets).toBe(targets);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('subscribe returns unsubscribe function that prevents further callbacks', () => {
+    const listener = vi.fn();
+    const unsub = terminalState.subscribe(listener);
+    terminalState.setActiveTarget({ sessionId: 's1', label: 'A', cwd: '/', kind: 'project' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsub();
+    terminalState.setActiveTarget({ sessionId: 's2', label: 'B', cwd: '/', kind: 'project' });
+    expect(listener).toHaveBeenCalledTimes(1); // not called again
+  });
+
+  it('reset clears activeTarget, targets, and all listeners', () => {
+    const listener = vi.fn();
+    terminalState.subscribe(listener);
+    terminalState.setActiveTarget({ sessionId: 's1', label: 'A', cwd: '/', kind: 'project' });
+    terminalState.setTargets([{ sessionId: 's1', label: 'A', cwd: '/', kind: 'project' }]);
+    listener.mockClear();
+
+    terminalState.reset();
+    expect(terminalState.activeTarget).toBeNull();
+    expect(terminalState.targets).toEqual([]);
+
+    // Listener was cleared, so further changes don't notify
+    terminalState.setActiveTarget({ sessionId: 's2', label: 'B', cwd: '/', kind: 'project' });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('multiple listeners all receive notifications', () => {
+    const l1 = vi.fn();
+    const l2 = vi.fn();
+    terminalState.subscribe(l1);
+    terminalState.subscribe(l2);
+    terminalState.setActiveTarget({ sessionId: 's1', label: 'A', cwd: '/', kind: 'project' });
+    expect(l1).toHaveBeenCalledTimes(1);
+    expect(l2).toHaveBeenCalledTimes(1);
+  });
+
+  it('double-unsubscribe is safe (no-op)', () => {
+    const listener = vi.fn();
+    const unsub = terminalState.subscribe(listener);
+    unsub();
+    expect(() => unsub()).not.toThrow();
+  });
+});
+
+// ── makeSessionId ────────────────────────────────────────────────────
+
+describe('makeSessionId', () => {
+  it('project root produces terminal:<projectId>:project', () => {
+    expect(makeSessionId('proj-abc', 'project')).toBe('terminal:proj-abc:project');
+  });
+
+  it('agent produces terminal:<projectId>:agent:<name>', () => {
+    expect(makeSessionId('proj-abc', 'agent', 'snazzy-fox')).toBe('terminal:proj-abc:agent:snazzy-fox');
+  });
+
+  it('project and agent IDs never collide even if agent name is "project"', () => {
+    const projectId = makeSessionId('proj-abc', 'project');
+    const agentId = makeSessionId('proj-abc', 'agent', 'project');
+    expect(projectId).not.toBe(agentId);
+  });
+
+  it('different agents produce different IDs', () => {
+    const id1 = makeSessionId('proj-abc', 'agent', 'alpha');
+    const id2 = makeSessionId('proj-abc', 'agent', 'beta');
+    expect(id1).not.toBe(id2);
+  });
+
+  it('different projects produce different IDs for same agent name', () => {
+    const id1 = makeSessionId('proj-1', 'agent', 'alpha');
+    const id2 = makeSessionId('proj-2', 'agent', 'alpha');
+    expect(id1).not.toBe(id2);
+  });
 });
 
 // ── MainPanel (component contract) ───────────────────────────────────
@@ -104,6 +230,18 @@ describe('terminal plugin MainPanel', () => {
   it('conforms to PluginModule.MainPanel shape (accepts { api })', () => {
     // Structural check: MainPanel expects a single prop object with `api`
     expect(MainPanel.length).toBeLessThanOrEqual(1); // one props arg
+  });
+});
+
+// ── SidebarPanel (component contract) ────────────────────────────────
+
+describe('terminal plugin SidebarPanel', () => {
+  it('is exported as a function', () => {
+    expect(typeof SidebarPanel).toBe('function');
+  });
+
+  it('conforms to PluginModule.SidebarPanel shape (accepts { api })', () => {
+    expect(SidebarPanel.length).toBeLessThanOrEqual(1); // one props arg
   });
 });
 
@@ -122,11 +260,11 @@ describe('terminal plugin API assumptions', () => {
   // ── context assumptions ────────────────────────────────────────────
 
   describe('context', () => {
-    it('assumes api.context.projectId is a string (uses as session ID)', () => {
+    it('assumes api.context.projectId is a string (used to build session IDs)', () => {
       expect(typeof api.context.projectId).toBe('string');
     });
 
-    it('assumes api.context.projectPath is a string (passes to spawn cwd)', () => {
+    it('assumes api.context.projectPath is a string (used to build absolute cwds)', () => {
       expect(typeof api.context.projectPath).toBe('string');
     });
 
@@ -134,18 +272,82 @@ describe('terminal plugin API assumptions', () => {
       const noProjectApi = createMockAPI({
         context: { mode: 'project', projectId: undefined, projectPath: undefined },
       });
-      // The plugin does: const sessionId = api.context.projectId || 'default'
-      const sessionId = noProjectApi.context.projectId || 'default';
-      expect(sessionId).toBe('default');
+      const projectId = noProjectApi.context.projectId || 'default';
+      expect(projectId).toBe('default');
     });
 
     it('falls back to empty string when projectPath is undefined', () => {
       const noProjectApi = createMockAPI({
         context: { mode: 'project', projectId: undefined, projectPath: undefined },
       });
-      // The plugin does: const projectPath = api.context.projectPath || ''
       const projectPath = noProjectApi.context.projectPath || '';
       expect(projectPath).toBe('');
+    });
+  });
+
+  // ── agents API assumptions ────────────────────────────────────────
+
+  describe('agents.list()', () => {
+    it('exists and returns an array', () => {
+      expect(typeof api.agents.list).toBe('function');
+      expect(Array.isArray(api.agents.list())).toBe(true);
+    });
+
+    it('items have name, kind, worktreePath fields', () => {
+      const mockApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          list: vi.fn().mockReturnValue([
+            { id: 'a1', name: 'alpha', kind: 'durable', worktreePath: '.clubhouse/agents/alpha' },
+            { id: 'a2', name: 'beta', kind: 'quick', worktreePath: undefined },
+          ]),
+        },
+      });
+      const agents = mockApi.agents.list();
+      expect(agents[0]).toHaveProperty('name');
+      expect(agents[0]).toHaveProperty('kind');
+      expect(agents[0]).toHaveProperty('worktreePath');
+    });
+
+    it('items with kind "durable" may have worktreePath as a string', () => {
+      const mockApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          list: vi.fn().mockReturnValue([
+            { id: 'a1', name: 'alpha', kind: 'durable', worktreePath: '.clubhouse/agents/alpha' },
+          ]),
+        },
+      });
+      const agent = mockApi.agents.list()[0];
+      expect(agent.kind).toBe('durable');
+      expect(typeof agent.worktreePath).toBe('string');
+    });
+
+    it('items with kind "quick" have worktreePath undefined', () => {
+      const mockApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          list: vi.fn().mockReturnValue([
+            { id: 'a2', name: 'beta', kind: 'quick', worktreePath: undefined },
+          ]),
+        },
+      });
+      const agent = mockApi.agents.list()[0];
+      expect(agent.kind).toBe('quick');
+      expect(agent.worktreePath).toBeUndefined();
+    });
+  });
+
+  describe('agents.onAnyChange()', () => {
+    it('exists and returns a Disposable', () => {
+      expect(typeof api.agents.onAnyChange).toBe('function');
+      const d = api.agents.onAnyChange(() => {});
+      expect(typeof d.dispose).toBe('function');
+    });
+
+    it('dispose does not throw', () => {
+      const d = api.agents.onAnyChange(() => {});
+      expect(() => d.dispose()).not.toThrow();
     });
   });
 
@@ -330,26 +532,24 @@ describe('terminal plugin API assumptions', () => {
 });
 
 // ── Session ID derivation ────────────────────────────────────────────
-// The plugin derives session IDs from context. This documents the scheme.
+// The plugin derives session IDs from context via makeSessionId.
 
 describe('terminal plugin session ID scheme', () => {
-  it('uses projectId as session ID when available', () => {
-    const api = createMockAPI({ context: { mode: 'project', projectId: 'proj-abc', projectPath: '/p' } });
-    const sessionId = api.context.projectId || 'default';
-    expect(sessionId).toBe('proj-abc');
+  it('uses projectId to build session ID for project target', () => {
+    const sid = makeSessionId('proj-abc', 'project');
+    expect(sid).toBe('terminal:proj-abc:project');
   });
 
-  it('uses "default" when projectId is missing', () => {
+  it('uses "default" projectId when projectId is missing', () => {
     const api = createMockAPI({ context: { mode: 'project', projectId: undefined, projectPath: undefined } });
-    const sessionId = api.context.projectId || 'default';
-    expect(sessionId).toBe('default');
+    const projectId = api.context.projectId || 'default';
+    const sid = makeSessionId(projectId, 'project');
+    expect(sid).toBe('terminal:default:project');
   });
 
   it('different projects produce different session IDs', () => {
-    const api1 = createMockAPI({ context: { mode: 'project', projectId: 'proj-1', projectPath: '/p1' } });
-    const api2 = createMockAPI({ context: { mode: 'project', projectId: 'proj-2', projectPath: '/p2' } });
-    const s1 = api1.context.projectId || 'default';
-    const s2 = api2.context.projectId || 'default';
+    const s1 = makeSessionId('proj-1', 'project');
+    const s2 = makeSessionId('proj-2', 'project');
     expect(s1).not.toBe(s2);
   });
 
@@ -364,6 +564,10 @@ describe('terminal plugin session ID scheme', () => {
 // Tests that the plugin interacts correctly with the plugin lifecycle.
 
 describe('terminal plugin lifecycle', () => {
+  beforeEach(() => {
+    terminalState.reset();
+  });
+
   it('activate then deactivate does not throw', () => {
     const ctx = createMockContext({ pluginId: 'terminal' });
     const api = createMockAPI();
@@ -411,8 +615,8 @@ describe('terminal plugin module exports', () => {
     expect(typeof terminalModule.MainPanel).toBe('function');
   });
 
-  it('does not export SidebarPanel (full layout, no sidebar)', () => {
-    expect((terminalModule as any).SidebarPanel).toBeUndefined();
+  it('exports SidebarPanel component', () => {
+    expect(typeof (terminalModule as any).SidebarPanel).toBe('function');
   });
 
   it('does not export HubPanel', () => {

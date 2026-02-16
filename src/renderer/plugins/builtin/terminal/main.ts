@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
+import { terminalState, makeSessionId } from './state';
+import type { TerminalTarget } from './state';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -11,42 +13,147 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 }
 
 export function deactivate(): void {
-  // subscriptions auto-disposed
+  terminalState.reset();
 }
 
+// ── Sidebar Panel ───────────────────────────────────────────────────────
+
+function useTerminalState() {
+  const subscribe = useCallback((cb: () => void) => terminalState.subscribe(cb), []);
+  const getActiveTarget = useCallback(() => terminalState.activeTarget, []);
+  const getTargets = useCallback(() => terminalState.targets, []);
+  const activeTarget = useSyncExternalStore(subscribe, getActiveTarget);
+  const targets = useSyncExternalStore(subscribe, getTargets);
+  return { activeTarget, targets };
+}
+
+export function SidebarPanel({ api }: { api: PluginAPI }) {
+  const { activeTarget, targets } = useTerminalState();
+
+  // Build and refresh target list
+  const refreshTargets = useCallback(() => {
+    const projectId = api.context.projectId || 'default';
+    const projectPath = api.context.projectPath || '';
+
+    const projectTarget: TerminalTarget = {
+      sessionId: makeSessionId(projectId, 'project'),
+      label: 'Project',
+      cwd: projectPath,
+      kind: 'project',
+    };
+
+    const agentTargets: TerminalTarget[] = api.agents.list()
+      .filter((a) => a.kind === 'durable' && a.worktreePath)
+      .map((a) => ({
+        sessionId: makeSessionId(projectId, 'agent', a.name),
+        label: a.name,
+        cwd: projectPath + '/' + a.worktreePath,
+        kind: 'agent' as const,
+      }));
+
+    const allTargets = [projectTarget, ...agentTargets];
+    terminalState.setTargets(allTargets);
+
+    // Auto-select project target if nothing is active
+    if (!terminalState.activeTarget) {
+      terminalState.setActiveTarget(projectTarget);
+    }
+  }, [api]);
+
+  // Initial build + subscribe to agent changes
+  useEffect(() => {
+    refreshTargets();
+    const sub = api.agents.onAnyChange(refreshTargets);
+    return () => sub.dispose();
+  }, [api, refreshTargets]);
+
+  const handleClick = useCallback((target: TerminalTarget) => {
+    terminalState.setActiveTarget(target);
+  }, []);
+
+  return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle' },
+    // Header
+    React.createElement('div', {
+      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0',
+    }, 'Targets'),
+    // Scrollable list
+    React.createElement('div', { className: 'flex-1 overflow-y-auto py-1' },
+      targets.map((target) =>
+        React.createElement('button', {
+          key: target.sessionId,
+          className: `w-full text-left px-3 py-1.5 text-xs transition-colors ${
+            activeTarget?.sessionId === target.sessionId
+              ? 'bg-ctp-surface0 text-ctp-text font-medium'
+              : 'text-ctp-subtext1 hover:bg-ctp-surface0/50 hover:text-ctp-text'
+          }`,
+          onClick: () => handleClick(target),
+        },
+          React.createElement('div', { className: 'flex items-center gap-2' },
+            React.createElement('span', {
+              className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                target.kind === 'project' ? 'bg-ctp-blue' : 'bg-ctp-green'
+              }`,
+            }),
+            React.createElement('span', { className: 'truncate' }, target.label),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+// ── Main Panel ──────────────────────────────────────────────────────────
+
 export function MainPanel({ api }: { api: PluginAPI }) {
-  const sessionId = api.context.projectId || 'default';
+  const { activeTarget } = useTerminalState();
+
+  // Fall back to project root when no target is selected
+  const projectId = api.context.projectId || 'default';
   const projectPath = api.context.projectPath || '';
+  const defaultTarget: TerminalTarget = {
+    sessionId: makeSessionId(projectId, 'project'),
+    label: 'Project',
+    cwd: projectPath,
+    kind: 'project',
+  };
+
+  const target = activeTarget || defaultTarget;
+  const sessionId = target.sessionId;
+  const cwd = target.cwd;
+
   const [status, setStatus] = useState<TerminalStatus>('starting');
   const [exitCode, setExitCode] = useState<number | null>(null);
-  const spawnedRef = useRef(false);
+  const spawnedSessionsRef = useRef(new Set<string>());
 
-  const spawnTerminal = useCallback(async () => {
+  const spawnTerminal = useCallback(async (sid: string, dir: string) => {
     setStatus('starting');
     setExitCode(null);
     try {
-      await api.terminal.spawn(sessionId, projectPath);
+      await api.terminal.spawn(sid, dir);
       setStatus('running');
     } catch {
       setStatus('exited');
     }
-  }, [api, sessionId, projectPath]);
+  }, [api]);
 
-  // Spawn on mount (only if not already running)
+  // Spawn or reconnect when target changes
   useEffect(() => {
-    if (spawnedRef.current) return;
-    spawnedRef.current = true;
+    if (spawnedSessionsRef.current.has(sessionId)) {
+      // Already spawned in this lifecycle — just reconnect
+      setStatus('running');
+      return;
+    }
 
-    // Check if there's already a buffer (session is alive from a previous visit)
+    // Check for existing buffer (session alive from previous visit)
     api.terminal.getBuffer(sessionId).then((buf) => {
       if (buf && buf.length > 0) {
-        // Session already exists — just connect
         setStatus('running');
       } else {
-        spawnTerminal();
+        spawnTerminal(sessionId, cwd);
       }
+      spawnedSessionsRef.current.add(sessionId);
     });
-  }, [api, sessionId, spawnTerminal]);
+  }, [api, sessionId, cwd, spawnTerminal]);
 
   // Listen for exit
   useEffect(() => {
@@ -58,11 +165,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [api, sessionId]);
 
   const handleRestart = useCallback(async () => {
+    spawnedSessionsRef.current.delete(sessionId);
     await api.terminal.kill(sessionId);
-    spawnTerminal();
-  }, [api, sessionId, spawnTerminal]);
+    spawnTerminal(sessionId, cwd);
+  }, [api, sessionId, cwd, spawnTerminal]);
 
   const ShellTerminal = api.terminal.ShellTerminal;
+
+  const contextLabel = target.kind === 'project'
+    ? 'Terminal \u2014 Project'
+    : `Terminal \u2014 ${target.label}`;
 
   const statusLabel =
     status === 'starting' ? 'Starting...' :
@@ -80,7 +192,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
     },
       React.createElement('div', { className: 'flex items-center gap-2' },
-        React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, 'Terminal'),
+        React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, contextLabel),
         React.createElement('span', { className: `text-xs ${statusColor}` }, statusLabel),
       ),
       React.createElement('button', {
@@ -115,5 +227,5 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 }
 
 // Compile-time type assertion
-const _: PluginModule = { activate, deactivate, MainPanel };
+const _: PluginModule = { activate, deactivate, MainPanel, SidebarPanel };
 void _;

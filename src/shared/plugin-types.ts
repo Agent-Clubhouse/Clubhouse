@@ -156,6 +156,7 @@ export interface AgentInfo {
   mission?: string;
   projectId: string;
   branch?: string;
+  worktreePath?: string;
   model?: string;
   parentAgentId?: string;
 }
