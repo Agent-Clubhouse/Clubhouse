@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { Project } from '../../shared/types';
+import { appLog } from './log-service';
 
 const CURRENT_VERSION = 1;
 
@@ -67,10 +68,16 @@ function readStore(): ProjectStoreV1 {
     const store = migrate(raw);
     // Re-write if we migrated from an older format
     if (!raw.version || raw.version !== CURRENT_VERSION) {
+      appLog('core:project-store', 'info', 'Migrated project store from older format', {
+        meta: { fromVersion: raw.version, toVersion: CURRENT_VERSION },
+      });
       writeStore(store);
     }
     return store;
-  } catch {
+  } catch (err) {
+    appLog('core:project-store', 'error', 'Failed to parse projects.json, returning empty list', {
+      meta: { storePath, error: err instanceof Error ? err.message : String(err) },
+    });
     return { version: CURRENT_VERSION, projects: [] };
   }
 }

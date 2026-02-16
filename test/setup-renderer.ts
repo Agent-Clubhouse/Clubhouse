@@ -60,6 +60,17 @@ vi.stubGlobal('clubhouse', {
     onData: () => ({ dispose: noop }),
     onExit: () => ({ dispose: noop }),
   },
+  voice: {
+    checkModels: async () => [],
+    downloadModels: asyncNoop,
+    onDownloadProgress: () => noop,
+    transcribe: async () => '',
+    startSession: async () => ({ sessionId: '' }),
+    sendTurn: asyncNoop,
+    onTurnChunk: () => noop,
+    onTurnComplete: () => noop,
+    endSession: asyncNoop,
+  },
   log: {
     write: noop,
   },

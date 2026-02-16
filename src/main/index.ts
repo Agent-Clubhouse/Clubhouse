@@ -4,10 +4,27 @@ import { killAll } from './services/pty-manager';
 import { buildMenu } from './menu';
 import { getSettings as getThemeSettings } from './services/theme-service';
 import * as safeMode from './services/safe-mode';
+import { appLog } from './services/log-service';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
 app.name = 'Clubhouse';
+
+// Catch-all handlers for truly unexpected errors. These fire *after* logService.init()
+// has been called (in registerAllHandlers), so early crashes before `ready` won't log —
+// but those are visible in stderr anyway.
+process.on('uncaughtException', (err) => {
+  appLog('core:process', 'fatal', 'Uncaught exception', {
+    meta: { error: err.message, stack: err.stack },
+  });
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  appLog('core:process', 'error', 'Unhandled promise rejection', {
+    meta: { error: msg, stack },
+  });
+});
 
 app.setAboutPanelOptions({
   applicationName: 'Clubhouse',
@@ -76,11 +93,25 @@ app.on('ready', () => {
   registerAllHandlers();
   buildMenu();
 
+  appLog('core:startup', 'info', `Clubhouse v${app.getVersion()} starting`, {
+    meta: {
+      version: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      electron: process.versions.electron,
+      node: process.versions.node,
+      packaged: app.isPackaged,
+    },
+  });
+
   // Safe mode: check --safe-mode flag or startup marker crash counter
   const forceSafeMode = process.argv.includes('--safe-mode');
   if (!forceSafeMode && safeMode.shouldShowSafeModeDialog()) {
     const marker = safeMode.readMarker();
     const pluginList = marker?.lastEnabledPlugins?.join(', ') || 'unknown';
+    appLog('core:safe-mode', 'warn', 'Startup crash loop detected, prompting safe mode', {
+      meta: { attempt: marker?.attempt, lastEnabledPlugins: marker?.lastEnabledPlugins },
+    });
     const response = dialog.showMessageBoxSync({
       type: 'warning',
       title: 'Clubhouse — Safe Mode',
@@ -91,6 +122,7 @@ app.on('ready', () => {
       cancelId: 1,
     });
     if (response === 0) {
+      appLog('core:safe-mode', 'warn', 'User chose safe mode — disabling all plugins');
       // Safe mode — clear marker so we don't loop, renderer will see safeModeActive
       safeMode.clearMarker();
       // Set env var so renderer knows to activate safe mode
@@ -99,6 +131,7 @@ app.on('ready', () => {
   }
 
   if (forceSafeMode) {
+    appLog('core:safe-mode', 'warn', 'Safe mode forced via --safe-mode flag');
     safeMode.clearMarker();
     process.env.CLUBHOUSE_SAFE_MODE = '1';
   }
@@ -123,5 +156,6 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  appLog('core:shutdown', 'info', 'App shutting down, killing all PTY sessions');
   killAll();
 });

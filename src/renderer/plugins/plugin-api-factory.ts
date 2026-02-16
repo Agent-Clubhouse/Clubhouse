@@ -16,8 +16,10 @@ import type {
   NavigationAPI,
   WidgetsAPI,
   TerminalAPI,
+  VoiceAPI,
   LoggingAPI,
   FilesAPI,
+  GitHubAPI,
   PluginContextInfo,
   PluginRenderMode,
   PluginManifest,
@@ -241,6 +243,9 @@ function createUIAPI(): UIAPI {
     },
     async showInput(prompt: string, defaultValue = ''): Promise<string | null> {
       return window.prompt(prompt, defaultValue);
+    },
+    async openExternalUrl(url: string): Promise<void> {
+      await window.clubhouse.app.openExternalUrl(url);
     },
   };
 }
@@ -754,6 +759,63 @@ function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI
   };
 }
 
+function createGitHubAPI(ctx: PluginContext): GitHubAPI {
+  const { projectPath } = ctx;
+  if (!projectPath) {
+    throw new Error('GitHubAPI requires projectPath');
+  }
+
+  return {
+    async listIssues(opts?) {
+      return window.clubhouse.github.listIssues(projectPath, opts);
+    },
+    async viewIssue(issueNumber) {
+      return window.clubhouse.github.viewIssue(projectPath, issueNumber);
+    },
+    async createIssue(title, body) {
+      return window.clubhouse.github.createIssue(projectPath, title, body);
+    },
+    async getRepoUrl() {
+      return window.clubhouse.github.getRepoUrl(projectPath);
+    },
+  };
+}
+
+function createVoiceAPI(): VoiceAPI {
+  return {
+    async checkModels() {
+      return window.clubhouse.voice.checkModels();
+    },
+    async downloadModels() {
+      await window.clubhouse.voice.downloadModels();
+    },
+    onDownloadProgress(callback) {
+      const remove = window.clubhouse.voice.onDownloadProgress(callback);
+      return { dispose: remove };
+    },
+    async transcribe(pcmBuffer: ArrayBuffer) {
+      return window.clubhouse.voice.transcribe(pcmBuffer);
+    },
+    async startSession(agentId: string, cwd: string, model?: string) {
+      return window.clubhouse.voice.startSession(agentId, cwd, model);
+    },
+    async sendTurn(text: string) {
+      await window.clubhouse.voice.sendTurn(text);
+    },
+    onTurnChunk(callback) {
+      const remove = window.clubhouse.voice.onTurnChunk(callback);
+      return { dispose: remove };
+    },
+    onTurnComplete(callback) {
+      const remove = window.clubhouse.voice.onTurnComplete(callback);
+      return { dispose: remove };
+    },
+    async endSession() {
+      await window.clubhouse.voice.endSession();
+    },
+  };
+}
+
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const isDual = ctx.scope === 'dual';
@@ -817,6 +879,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'terminal', 'terminal',
       ctx.pluginId, manifest, () => createTerminalAPI(ctx),
     ),
+    voice: gated(
+      true, scopeLabel, 'voice', 'voice',
+      ctx.pluginId, manifest, () => createVoiceAPI(),
+    ),
     logging: gated(
       true, scopeLabel, 'logging', 'logging',
       ctx.pluginId, manifest, () => createLoggingAPI(ctx),
@@ -824,6 +890,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     files: gated(
       projectAvailable && !!ctx.projectPath, scopeLabel, 'files', 'files',
       ctx.pluginId, manifest, () => createFilesAPI(ctx, manifest),
+    ),
+    github: gated(
+      projectAvailable && !!ctx.projectPath, scopeLabel, 'github', 'github',
+      ctx.pluginId, manifest, () => createGitHubAPI(ctx),
     ),
     context: contextInfo, // always available
   };

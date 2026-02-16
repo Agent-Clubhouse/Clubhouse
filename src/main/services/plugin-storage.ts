@@ -8,6 +8,7 @@ import type {
   PluginStorageListRequest,
   PluginFileRequest,
 } from '../../shared/plugin-types';
+import { appLog } from './log-service';
 
 // Track which projects have already had .gitignore updated this session
 const gitignoreEnsured = new Set<string>();
@@ -52,6 +53,9 @@ function ensureDir(dirPath: string): void {
 function assertSafePath(base: string, target: string): void {
   const resolved = path.resolve(base, target);
   if (!resolved.startsWith(base)) {
+    appLog('core:plugin-storage', 'error', 'Path traversal attempt blocked', {
+      meta: { base, target, resolved },
+    });
     throw new Error(`Path traversal detected: ${target}`);
   }
 }

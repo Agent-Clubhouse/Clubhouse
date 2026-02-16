@@ -2091,6 +2091,16 @@ describe('plugin-api-factory', () => {
           invokeSync: (a) => a.logging.info('msg'),
           verifyGranted: (a) => { expect(typeof a.logging.info).toBe('function'); expect(typeof a.logging.error).toBe('function'); },
         },
+        {
+          apiName: 'voice', permission: 'voice',
+          invokeSync: (a) => a.voice.checkModels(),
+          verifyGranted: (a) => { expect(typeof a.voice.checkModels).toBe('function'); expect(typeof a.voice.transcribe).toBe('function'); },
+        },
+        {
+          apiName: 'github', permission: 'github',
+          invokeSync: (a) => a.github.listIssues(),
+          verifyGranted: (a) => { expect(typeof a.github.listIssues).toBe('function'); expect(typeof a.github.viewIssue).toBe('function'); },
+        },
       ];
 
       for (const { apiName, permission, invokeSync, verifyGranted } of gatedAPIs) {
@@ -2126,10 +2136,14 @@ describe('plugin-api-factory', () => {
         expect(() => api.files.readFile('x')).toThrow("requires 'files' permission");
         // agents does not
         expect(() => api.agents.list()).toThrow("requires 'agents' permission");
+        // voice does not
+        expect(() => api.voice.checkModels()).toThrow("requires 'voice' permission");
+        // github does not
+        expect(() => api.github.listIssues()).toThrow("requires 'github' permission");
       });
 
       it('granting all permissions makes everything work', () => {
-        const allPerms = ['files', 'git', 'storage', 'notifications', 'commands', 'events', 'agents', 'navigation', 'widgets', 'terminal', 'logging'];
+        const allPerms = ['files', 'git', 'storage', 'notifications', 'commands', 'events', 'agents', 'navigation', 'widgets', 'terminal', 'logging', 'voice', 'github'];
         const manifest = v05Manifest(allPerms);
         const api = createPluginAPI(makeCtx(), undefined, manifest);
         for (const { verifyGranted } of gatedAPIs) {

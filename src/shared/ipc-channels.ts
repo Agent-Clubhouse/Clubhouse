@@ -83,7 +83,14 @@ export const IPC = {
     STASH: 'git:stash',
     STASH_POP: 'git:stash-pop',
   },
+  GITHUB: {
+    LIST_ISSUES: 'github:list-issues',
+    VIEW_ISSUE: 'github:view-issue',
+    CREATE_ISSUE: 'github:create-issue',
+    GET_REPO_URL: 'github:get-repo-url',
+  },
   APP: {
+    OPEN_EXTERNAL_URL: 'app:open-external-url',
     OPEN_SETTINGS: 'app:open-settings',
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
@@ -120,5 +127,16 @@ export const IPC = {
     SAVE_LOG_SETTINGS: 'log:save-settings',
     GET_LOG_NAMESPACES: 'log:get-namespaces',
     GET_LOG_PATH: 'log:get-path',
+  },
+  VOICE: {
+    CHECK_MODELS: 'voice:check-models',
+    DOWNLOAD_MODELS: 'voice:download-models',
+    DOWNLOAD_PROGRESS: 'voice:download-progress',
+    TRANSCRIBE: 'voice:transcribe',
+    START_SESSION: 'voice:start-session',
+    SEND_TURN: 'voice:send-turn',
+    TURN_CHUNK: 'voice:turn-chunk',
+    TURN_COMPLETE: 'voice:turn-complete',
+    END_SESSION: 'voice:end-session',
   },
 } as const;

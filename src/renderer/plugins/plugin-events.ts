@@ -1,4 +1,5 @@
 import type { Disposable } from '../../shared/plugin-types';
+import { rendererLog } from './renderer-logger';
 
 type Handler = (...args: unknown[]) => void;
 
@@ -25,7 +26,9 @@ class PluginEventBus {
       try {
         handler(...args);
       } catch (err) {
-        console.error(`[PluginEventBus] Error in handler for "${event}":`, err);
+        rendererLog('core:plugin-events', 'error', `Error in event handler for "${event}"`, {
+          meta: { event, error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+        });
       }
     }
   }

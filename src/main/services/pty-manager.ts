@@ -2,6 +2,7 @@ import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
+import { appLog } from './log-service';
 
 interface ManagedSession {
   process: pty.IPty;
@@ -55,13 +56,21 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     ? { ...getShellEnvironment(), ...extraEnv }
     : getShellEnvironment();
 
-  const proc = pty.spawn(shell, ['-il'], {
-    name: 'xterm-256color',
-    cwd,
-    env: spawnEnv,
-    cols: 120,
-    rows: 30,
-  });
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(shell, ['-il'], {
+      name: 'xterm-256color',
+      cwd,
+      env: spawnEnv,
+      cols: 120,
+      rows: 30,
+    });
+  } catch (err) {
+    appLog('core:pty', 'error', 'Failed to spawn PTY process', {
+      meta: { agentId, binary, cwd, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 
   const session: ManagedSession = {
     process: proc,
@@ -91,6 +100,12 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
+    if (exitCode !== 0 && !current.killing) {
+      appLog('core:pty', 'error', `PTY exited with non-zero code`, {
+        meta: { agentId, exitCode, binary },
+      });
+    }
+
     cleanupSession(agentId);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
@@ -108,13 +123,21 @@ export function spawnShell(id: string, projectPath: string): void {
 
   const shellPath = process.env.SHELL || '/bin/zsh';
 
-  const proc = pty.spawn(shellPath, ['-il'], {
-    name: 'xterm-256color',
-    cwd: projectPath,
-    env: getShellEnvironment(),
-    cols: 120,
-    rows: 30,
-  });
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(shellPath, ['-il'], {
+      name: 'xterm-256color',
+      cwd: projectPath,
+      env: getShellEnvironment(),
+      cols: 120,
+      rows: 30,
+    });
+  } catch (err) {
+    appLog('core:pty', 'error', 'Failed to spawn shell PTY', {
+      meta: { sessionId: id, cwd: projectPath, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 
   const session: ManagedSession = {
     process: proc,

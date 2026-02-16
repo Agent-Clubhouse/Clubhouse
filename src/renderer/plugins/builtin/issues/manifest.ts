@@ -1,0 +1,66 @@
+import type { PluginManifest } from '../../../../shared/plugin-types';
+
+const ISSUES_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+export const manifest: PluginManifest = {
+  id: 'issues',
+  name: 'Issues',
+  version: '0.1.0',
+  description: 'Browse, view, and file GitHub issues for the current project.',
+  author: 'Clubhouse',
+  engine: { api: 0.4 },
+  scope: 'project',
+  contributes: {
+    tab: { label: 'Issues', icon: ISSUES_ICON, layout: 'sidebar-content' },
+    commands: [
+      { id: 'refresh', title: 'Refresh Issues' },
+      { id: 'create', title: 'Create Issue' },
+    ],
+    help: {
+      topics: [
+        {
+          id: 'github-issues',
+          title: 'GitHub Issues',
+          content: [
+            '## GitHub Issues',
+            '',
+            'The Issues tab lets you browse, view, and file GitHub issues for the current project.',
+            '',
+            '### Requirements',
+            '- The **`gh` CLI** must be installed and authenticated (`gh auth login`)',
+            '- The project must have a **GitHub remote** configured',
+            '- If either is missing, the sidebar will show a helpful error with a retry button',
+            '',
+            '### Browsing issues',
+            'Open issues are listed by most recently updated (newest at top), 30 per page.',
+            'Click an issue to view its full details in the main panel.',
+            'Use **Load more** at the bottom to paginate through older issues.',
+            '',
+            '### Issue detail view',
+            'The detail panel shows:',
+            '- **Header** — Issue number, title, and action buttons',
+            '- **Metadata** — State badge (open/closed), author, creation date, labels with colors, assignees',
+            '- **Body** — Full issue description rendered as Markdown with syntax-highlighted code blocks',
+            '- **Comments** — All comments with author, timestamp, and Markdown body',
+            '',
+            '### Creating issues',
+            '- **+ New** — Prompts for a title and body, then creates the issue via `gh issue create`',
+            '- **+ Agent** — Spawns a quick AI agent that interactively helps draft a well-structured issue with appropriate title, body, and labels',
+            '',
+            '### Assigning to agents',
+            'From the detail view, click **Assign to Agent** to open a dropdown:',
+            '- **Quick Agent** — Spawns a new quick agent with the full issue context (title, body, labels, author) as its mission',
+            '- **Durable agents** — Lists your project\'s durable agents. If the selected agent is running, you\'ll be warned before it is restarted',
+            '',
+            '### View in Browser',
+            'Click **View in Browser** in the detail header to open the issue on GitHub in your default browser.',
+            '',
+            '### Commands',
+            '- **Refresh Issues** — Reloads the issue list from GitHub',
+            '- **Create Issue** — Opens the issue creation flow (same as **+ New** button)',
+          ].join('\n'),
+        },
+      ],
+    },
+  },
+};

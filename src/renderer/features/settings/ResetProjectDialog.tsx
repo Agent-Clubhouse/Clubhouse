@@ -13,7 +13,7 @@ export function ResetProjectDialog({ projectName, projectPath, onConfirm, onCanc
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    window.clubhouse.project.listClubhouseFiles(projectPath).then((result) => {
+    window.clubhouse.project.listClubhouseFiles(projectPath).then((result: string[]) => {
       setFiles(result);
       setLoading(false);
     });

@@ -188,7 +188,7 @@ describe('Plugin API v0.5.0 canary tests', () => {
     const gatedSurfaces: (keyof PluginAPI)[] = [
       'project', 'projects', 'git', 'storage', 'ui', 'commands',
       'events', 'agents', 'navigation', 'widgets', 'terminal',
-      'logging', 'files',
+      'logging', 'files', 'voice', 'github',
     ];
     for (const key of gatedSurfaces) {
       expect(api[key]).toBeDefined();

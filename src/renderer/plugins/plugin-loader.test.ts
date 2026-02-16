@@ -17,6 +17,8 @@ const mockGit = { info: vi.fn(), diff: vi.fn() };
 const mockAgent = { listDurable: vi.fn(), killAgent: vi.fn() };
 const mockPty = { kill: vi.fn() };
 
+const mockLog = { write: vi.fn() };
+
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
@@ -25,6 +27,7 @@ Object.defineProperty(globalThis, 'window', {
       git: mockGit,
       agent: mockAgent,
       pty: mockPty,
+      log: mockLog,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -244,35 +247,38 @@ describe('plugin-loader', () => {
 
   describe('activatePlugin()', () => {
     it('does not activate unknown plugin', async () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockLog.write.mockClear();
       await activatePlugin('nonexistent');
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Cannot activate unknown plugin'));
-      spy.mockRestore();
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot activate unknown plugin') }),
+      );
     });
 
     it('skips activation of incompatible plugin', async () => {
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLog.write.mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'bad' }), 'community', '/path', 'incompatible', 'bad engine'
       );
 
       await activatePlugin('bad');
 
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Skipping activation'));
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
       expect(usePluginStore.getState().plugins['bad'].status).toBe('incompatible');
-      spy.mockRestore();
     });
 
     it('skips activation of errored plugin', async () => {
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLog.write.mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'err' }), 'community', '/path', 'errored', 'load failed'
       );
 
       await activatePlugin('err');
 
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Skipping activation'));
-      spy.mockRestore();
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
     });
 
     it('does not activate same plugin twice (idempotent)', async () => {

@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider } from '../orchestrators';
 import { waitReady as waitHookServerReady } from './hook-server';
 import * as ptyManager from './pty-manager';
+import { appLog } from './log-service';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -59,6 +60,9 @@ export function resolveOrchestrator(
 
   const provider = getProvider(id);
   if (!provider) {
+    appLog('core:agent', 'error', `Unknown orchestrator requested: ${id}`, {
+      meta: { orchestratorId: id, projectPath },
+    });
     throw new Error(`Unknown orchestrator: ${id}`);
   }
   return provider;
@@ -103,11 +107,22 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     agentId: params.agentId,
   });
 
+  appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
+    meta: {
+      agentId: params.agentId,
+      orchestrator: provider.id,
+      binary,
+      cwd: params.cwd,
+      model: params.model,
+    },
+  });
+
   const spawnEnv = { ...env, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv);
 }
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
+  appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
   const provider = resolveOrchestrator(projectPath, orchestrator);
   const exitCmd = provider.getExitCommand();
   ptyManager.gracefulKill(agentId, exitCmd);

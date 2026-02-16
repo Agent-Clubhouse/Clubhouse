@@ -38,7 +38,9 @@ export type PluginPermission =
   | 'commands'
   | 'events'
   | 'widgets'
-  | 'logging';
+  | 'logging'
+  | 'voice'
+  | 'github';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -54,6 +56,8 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'events',
   'widgets',
   'logging',
+  'voice',
+  'github',
 ] as const;
 
 export interface PluginExternalRoot {
@@ -75,6 +79,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   events: 'Subscribe to the event bus',
   widgets: 'Use shared UI widget components',
   logging: 'Write to the application log',
+  voice: 'Use voice chat and speech-to-text',
+  github: 'Access GitHub issues and repository info',
 };
 
 export interface PluginHelpTopic {
@@ -277,6 +283,7 @@ export interface UIAPI {
   showError(message: string): void;
   showConfirm(message: string): Promise<boolean>;
   showInput(prompt: string, defaultValue?: string): Promise<string | null>;
+  openExternalUrl(url: string): Promise<void>;
 }
 
 export interface CommandsAPI {
@@ -393,6 +400,71 @@ export interface FilesAPI {
   forRoot(rootName: string): FilesAPI;
 }
 
+export interface GitHubIssueListItem {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  author: { login: string };
+  labels: Array<{ name: string; color: string }>;
+}
+
+export interface GitHubIssueDetail extends GitHubIssueListItem {
+  body: string;
+  comments: Array<{ author: { login: string }; body: string; createdAt: string }>;
+  assignees: Array<{ login: string }>;
+}
+
+export interface GitHubAPI {
+  listIssues(opts?: { page?: number; perPage?: number; state?: string }): Promise<{ issues: GitHubIssueListItem[]; hasMore: boolean }>;
+  viewIssue(issueNumber: number): Promise<GitHubIssueDetail | null>;
+  createIssue(title: string, body: string): Promise<{ ok: boolean; url?: string; message?: string }>;
+  getRepoUrl(): Promise<string>;
+}
+
+export interface VoiceModelStatus {
+  name: string;
+  path: string;
+  size: number;
+  ready: boolean;
+}
+
+export interface VoiceDownloadProgress {
+  model: string;
+  percent: number;
+  bytesDownloaded: number;
+  bytesTotal: number;
+}
+
+export interface VoiceTurnChunk {
+  text: string;
+  audio?: ArrayBuffer;
+  done: boolean;
+}
+
+export interface VoiceAPI {
+  /** Check whether STT/TTS models are downloaded and ready. */
+  checkModels(): Promise<VoiceModelStatus[]>;
+  /** Download missing STT/TTS models (~200MB). */
+  downloadModels(): Promise<void>;
+  /** Subscribe to model download progress events. */
+  onDownloadProgress(callback: (progress: VoiceDownloadProgress) => void): Disposable;
+  /** Transcribe 16kHz mono Float32 PCM audio to text via Whisper. */
+  transcribe(pcmBuffer: ArrayBuffer): Promise<string>;
+  /** Start a voice session for an agent. Returns a session handle. */
+  startSession(agentId: string, cwd: string, model?: string): Promise<{ sessionId: string }>;
+  /** Send a text turn to the active voice session (triggers streaming response). */
+  sendTurn(text: string): Promise<void>;
+  /** Subscribe to streamed response chunks (text + optional audio). */
+  onTurnChunk(callback: (chunk: VoiceTurnChunk) => void): Disposable;
+  /** Subscribe to turn completion events. */
+  onTurnComplete(callback: () => void): Disposable;
+  /** End the current voice session and clean up resources. */
+  endSession(): Promise<void>;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -408,8 +480,10 @@ export interface PluginAPI {
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
   terminal: TerminalAPI;
+  voice: VoiceAPI;
   logging: LoggingAPI;
   files: FilesAPI;
+  github: GitHubAPI;
   context: PluginContextInfo;
 }
 
