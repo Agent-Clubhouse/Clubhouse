@@ -1,9 +1,11 @@
 import { app, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { NotificationSettings } from '../../shared/types';
+import { LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
+import * as logService from '../services/log-service';
+import * as logSettings from '../services/log-settings';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.GET_VERSION, () => {
@@ -36,5 +38,26 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, (_event, settings: orchestratorSettings.OrchestratorSettings) => {
     orchestratorSettings.saveSettings(settings);
+  });
+
+  // --- Logging ---
+  ipcMain.on(IPC.LOG.LOG_WRITE, (_event, entry: LogEntry) => {
+    logService.log(entry);
+  });
+
+  ipcMain.handle(IPC.LOG.GET_LOG_SETTINGS, () => {
+    return logSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.LOG.SAVE_LOG_SETTINGS, (_event, settings: LoggingSettings) => {
+    logSettings.saveSettings(settings);
+  });
+
+  ipcMain.handle(IPC.LOG.GET_LOG_NAMESPACES, () => {
+    return logService.getNamespaces();
+  });
+
+  ipcMain.handle(IPC.LOG.GET_LOG_PATH, () => {
+    return logService.getLogPath();
   });
 }

@@ -14,6 +14,7 @@ import { PluginContentView } from './PluginContentView';
 import { PluginDetailSettings } from '../features/settings/PluginDetailSettings';
 import { PluginListSettings } from '../features/settings/PluginListSettings';
 import { AboutSettingsView } from '../features/settings/AboutSettingsView';
+import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -74,6 +75,7 @@ export function MainContentView() {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
+    if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
     if (settingsSubPage === 'plugins') return <PluginListSettings />;

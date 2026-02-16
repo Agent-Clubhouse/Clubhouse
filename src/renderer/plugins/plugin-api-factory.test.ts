@@ -9,6 +9,10 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
 
 // Mock window.clubhouse for IPC calls
+const mockLog = {
+  write: vi.fn(),
+};
+
 const mockPlugin = {
   storageRead: vi.fn(),
   storageWrite: vi.fn(),
@@ -50,6 +54,7 @@ Object.defineProperty(globalThis, 'window', {
       git: mockGit,
       agent: mockAgent,
       pty: mockPty,
+      log: mockLog,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -101,6 +106,7 @@ describe('plugin-api-factory', () => {
       expect(api.navigation).toBeDefined();
       expect(api.widgets).toBeDefined();
       expect(api.terminal).toBeDefined();
+      expect(api.logging).toBeDefined();
       expect(api.context).toBeDefined();
     });
   });
@@ -1845,6 +1851,82 @@ describe('plugin-api-factory', () => {
           expect(mockPty.kill).toHaveBeenCalledWith(expectedId);
           expect(mockPty.getBuffer).toHaveBeenCalledWith(expectedId);
         });
+      });
+    });
+
+    // ── Logging API ─────────────────────────────────────────────────────
+
+    describe('logging API', () => {
+      it('provides all five log level methods', () => {
+        const api = createPluginAPI(makeCtx());
+        expect(typeof api.logging.debug).toBe('function');
+        expect(typeof api.logging.info).toBe('function');
+        expect(typeof api.logging.warn).toBe('function');
+        expect(typeof api.logging.error).toBe('function');
+        expect(typeof api.logging.fatal).toBe('function');
+      });
+
+      it('sends log entries with plugin namespace', () => {
+        const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }));
+        api.logging.info('test message');
+
+        expect(mockLog.write).toHaveBeenCalledTimes(1);
+        const entry = mockLog.write.mock.calls[0][0];
+        expect(entry.ns).toBe('plugin:my-plugin');
+        expect(entry.level).toBe('info');
+        expect(entry.msg).toBe('test message');
+      });
+
+      it('includes projectId from context', () => {
+        const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }));
+        api.logging.warn('warning');
+
+        const entry = mockLog.write.mock.calls[0][0];
+        expect(entry.projectId).toBe('proj-1');
+      });
+
+      it('passes meta through', () => {
+        const api = createPluginAPI(makeCtx());
+        api.logging.error('failed', { code: 500, source: 'api' });
+
+        const entry = mockLog.write.mock.calls[0][0];
+        expect(entry.meta).toEqual({ code: 500, source: 'api' });
+      });
+
+      it('each level method sends the correct level', () => {
+        const api = createPluginAPI(makeCtx());
+        const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
+        for (const level of levels) {
+          mockLog.write.mockClear();
+          api.logging[level](`msg-${level}`);
+          expect(mockLog.write.mock.calls[0][0].level).toBe(level);
+        }
+      });
+
+      it('different plugins get different namespaces', () => {
+        const api1 = createPluginAPI(makeCtx({ pluginId: 'plugin-a' }));
+        const api2 = createPluginAPI(makeCtx({ pluginId: 'plugin-b' }));
+
+        api1.logging.info('from a');
+        api2.logging.info('from b');
+
+        expect(mockLog.write.mock.calls[0][0].ns).toBe('plugin:plugin-a');
+        expect(mockLog.write.mock.calls[1][0].ns).toBe('plugin:plugin-b');
+      });
+
+      it('is available for all scopes', () => {
+        const project = createPluginAPI(makeCtx({ scope: 'project' }));
+        const app = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const dual = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+
+        expect(typeof project.logging.info).toBe('function');
+        expect(typeof app.logging.info).toBe('function');
+        expect(typeof dual.logging.info).toBe('function');
+      });
+
+      it('is fire-and-forget (returns void)', () => {
+        const api = createPluginAPI(makeCtx());
+        expect(api.logging.info('test')).toBeUndefined();
       });
     });
 

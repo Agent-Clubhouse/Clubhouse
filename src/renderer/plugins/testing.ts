@@ -112,6 +112,13 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       onExit: () => ({ dispose: noop }),
       ShellTerminal: noop as unknown as PluginAPI['terminal']['ShellTerminal'],
     },
+    logging: {
+      debug: noop,
+      info: noop,
+      warn: noop,
+      error: noop,
+      fatal: noop,
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

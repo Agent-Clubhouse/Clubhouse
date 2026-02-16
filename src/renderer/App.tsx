@@ -12,6 +12,7 @@ import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { useThemeStore } from './stores/themeStore';
 import { useOrchestratorStore } from './stores/orchestratorStore';
+import { useLoggingStore } from './stores/loggingStore';
 import { usePluginStore } from './plugins/plugin-store';
 import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -43,16 +44,18 @@ export function App() {
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const clearStaleStatuses = useAgentStore((s) => s.clearStaleStatuses);
   const loadOrchestratorSettings = useOrchestratorStore((s) => s.loadSettings);
+  const loadLoggingSettings = useLoggingStore((s) => s.loadSettings);
 
   useEffect(() => {
     loadProjects();
     loadNotificationSettings();
     loadTheme();
     loadOrchestratorSettings();
+    loadLoggingSettings();
     initializePluginSystem().catch((err) => {
       console.error('[Plugins] Failed to initialize plugin system:', err);
     });
-  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings]);
+  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {

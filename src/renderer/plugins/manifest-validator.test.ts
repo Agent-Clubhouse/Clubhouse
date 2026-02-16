@@ -133,6 +133,15 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('accepts API version 0.4', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+        contributes: { ...validManifest.contributes, help: {} },
+      });
+      expect(result.valid).toBe(true);
+    });
+
     it('rejects unsupported API version', () => {
       const result = validateManifest({ ...validManifest, engine: { api: 99 } });
       expect(result.valid).toBe(false);

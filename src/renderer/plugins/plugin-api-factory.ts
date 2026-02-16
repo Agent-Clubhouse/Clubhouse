@@ -16,6 +16,7 @@ import type {
   NavigationAPI,
   WidgetsAPI,
   TerminalAPI,
+  LoggingAPI,
   PluginContextInfo,
   PluginRenderMode,
   DirectoryEntry,
@@ -28,6 +29,7 @@ import type {
   ModelOption,
   Disposable,
 } from '../../shared/plugin-types';
+import { rendererLog } from './renderer-logger';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
 import { usePluginStore } from './plugin-store';
@@ -517,6 +519,27 @@ function createTerminalAPI(ctx: PluginContext): TerminalAPI {
   };
 }
 
+function createLoggingAPI(ctx: PluginContext): LoggingAPI {
+  const ns = `plugin:${ctx.pluginId}`;
+  return {
+    debug(msg: string, meta?: Record<string, unknown>): void {
+      rendererLog(ns, 'debug', msg, { projectId: ctx.projectId, meta });
+    },
+    info(msg: string, meta?: Record<string, unknown>): void {
+      rendererLog(ns, 'info', msg, { projectId: ctx.projectId, meta });
+    },
+    warn(msg: string, meta?: Record<string, unknown>): void {
+      rendererLog(ns, 'warn', msg, { projectId: ctx.projectId, meta });
+    },
+    error(msg: string, meta?: Record<string, unknown>): void {
+      rendererLog(ns, 'error', msg, { projectId: ctx.projectId, meta });
+    },
+    fatal(msg: string, meta?: Record<string, unknown>): void {
+      rendererLog(ns, 'fatal', msg, { projectId: ctx.projectId, meta });
+    },
+  };
+}
+
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): PluginAPI {
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const hasProjectContext = effectiveMode === 'project' && !!ctx.projectId;
@@ -559,6 +582,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): Pl
     navigation: createNavigationAPI(),
     widgets: createWidgetsAPI(),
     terminal: createTerminalAPI(ctx),
+    logging: createLoggingAPI(ctx),
     context: contextInfo,
   };
 

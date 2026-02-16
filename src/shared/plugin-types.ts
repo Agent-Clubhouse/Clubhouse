@@ -305,6 +305,14 @@ export interface PluginContextInfo {
   projectPath?: string;
 }
 
+export interface LoggingAPI {
+  debug(msg: string, meta?: Record<string, unknown>): void;
+  info(msg: string, meta?: Record<string, unknown>): void;
+  warn(msg: string, meta?: Record<string, unknown>): void;
+  error(msg: string, meta?: Record<string, unknown>): void;
+  fatal(msg: string, meta?: Record<string, unknown>): void;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -320,6 +328,7 @@ export interface PluginAPI {
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
   terminal: TerminalAPI;
+  logging: LoggingAPI;
   context: PluginContextInfo;
 }
 

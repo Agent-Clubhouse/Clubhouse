@@ -38,6 +38,7 @@ function SettingsCategoryNav() {
             {navButton('Orchestrators', 'orchestrators')}
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
+            {navButton('Logging', 'logging')}
             {navButton('Plugins', 'plugins')}
             <div className="flex-1" />
             {navButton('About', 'about')}

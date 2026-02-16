@@ -111,4 +111,11 @@ export const IPC = {
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
   },
+  LOG: {
+    LOG_WRITE: 'log:write',
+    GET_LOG_SETTINGS: 'log:get-settings',
+    SAVE_LOG_SETTINGS: 'log:save-settings',
+    GET_LOG_NAMESPACES: 'log:get-namespaces',
+    GET_LOG_PATH: 'log:get-path',
+  },
 } as const;

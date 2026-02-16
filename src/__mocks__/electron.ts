@@ -4,6 +4,7 @@ export const app = {
   isPackaged: false,
   getName: () => 'clubhouse-test',
   getVersion: () => '0.0.0-test',
+  on: () => {},
 };
 
 export const BrowserWindow = {
