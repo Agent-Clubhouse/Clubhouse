@@ -28,10 +28,15 @@ interface UIState {
   settingsContext: 'app' | string;
   showHome: boolean;
   pluginSettingsId: string | null;
+  helpSectionId: string;
+  helpTopicId: string | null;
   setExplorerTab: (tab: ExplorerTab) => void;
   setSettingsSubPage: (page: SettingsSubPage) => void;
   setSettingsContext: (context: 'app' | string) => void;
   toggleSettings: () => void;
+  toggleHelp: () => void;
+  setHelpSection: (id: string) => void;
+  setHelpTopic: (id: string | null) => void;
   setShowHome: (show: boolean) => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;
@@ -46,6 +51,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   settingsContext: 'app',
   showHome: initialPrefs.showHome,
   pluginSettingsId: null,
+  helpSectionId: 'general',
+  helpTopicId: null,
 
   setExplorerTab: (tab) => set({ explorerTab: tab }),
   setSettingsSubPage: (page) => set({ settingsSubPage: page }),
@@ -61,6 +68,16 @@ export const useUIStore = create<UIState>((set, get) => ({
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }
   },
+  toggleHelp: () => {
+    const { explorerTab, previousExplorerTab } = get();
+    if (explorerTab !== 'help') {
+      set({ previousExplorerTab: explorerTab, explorerTab: 'help', helpSectionId: 'general', helpTopicId: null });
+    } else {
+      set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
+    }
+  },
+  setHelpSection: (id) => set({ helpSectionId: id, helpTopicId: null }),
+  setHelpTopic: (id) => set({ helpTopicId: id }),
   setShowHome: (show) => {
     set({ showHome: show });
     saveViewPrefs({ showHome: show });

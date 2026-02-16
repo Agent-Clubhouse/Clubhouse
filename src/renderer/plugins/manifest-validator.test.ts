@@ -18,6 +18,10 @@ describe('manifest-validator', () => {
     it('includes version 0.2', () => {
       expect(SUPPORTED_API_VERSIONS).toContain(0.2);
     });
+
+    it('includes version 0.4', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.4);
+    });
   });
 
   describe('validateManifest', () => {
@@ -287,6 +291,75 @@ describe('manifest-validator', () => {
         contributes: {},
       });
       expect(result.valid).toBe(true);
+    });
+
+    // --- v0.4 help validation ---
+
+    it('rejects v0.4 manifest without contributes.help', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+        contributes: {},
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('contributes.help');
+    });
+
+    it('accepts v0.4 manifest with contributes.help: {}', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts v0.4 manifest with valid help topics', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+        contributes: {
+          help: {
+            topics: [
+              { id: 'getting-started', title: 'Getting Started', content: '# Hello' },
+            ],
+          },
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects v0.4 manifest with malformed help topics', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+        contributes: {
+          help: {
+            topics: [
+              { id: '', title: '', content: '' },
+            ],
+          },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('topics[0].id'))).toBe(true);
+    });
+
+    it('v0.2 manifests without help still pass', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.2 },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects v0.4 manifest with no contributes at all', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.4 },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('contributes.help');
     });
   });
 });

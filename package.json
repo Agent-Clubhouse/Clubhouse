@@ -1,7 +1,7 @@
 {
   "name": "clubhouse",
   "productName": "Clubhouse",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "description": "A place to hangout with your agent BFFs",
   "main": ".webpack/main",
   "private": true,
@@ -55,6 +55,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "electron-squirrel-startup": "^1.0.1",
+    "marked": "^17.0.2",
     "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
