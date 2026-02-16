@@ -38,6 +38,7 @@ Object.defineProperty(globalThis, 'window', {
 // Mock the builtin module
 vi.mock('./builtin', () => ({
   getBuiltinPlugins: vi.fn(() => []),
+  getDefaultEnabledIds: vi.fn(() => new Set<string>()),
 }));
 
 // Mock plugin-styles to avoid DOM operations
@@ -54,7 +55,7 @@ import {
   getActiveContext,
   _resetActiveContexts,
 } from './plugin-loader';
-import { getBuiltinPlugins } from './builtin';
+import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 
 function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
   return {
@@ -201,31 +202,46 @@ describe('plugin-loader', () => {
       expect(usePluginStore.getState().modules['builtin-1']).toBe(module);
     });
 
-    it('auto-enables app-scoped built-in plugins', async () => {
-      const manifest = makeManifest({ id: 'builtin-app', scope: 'app' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
+    it('auto-enables default built-in plugins at app level', async () => {
+      const appManifest = makeManifest({ id: 'builtin-app', scope: 'app' });
+      const dualManifest = makeManifest({ id: 'builtin-dual', scope: 'dual' });
+      const projManifest = makeManifest({ id: 'builtin-proj', scope: 'project' });
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: appManifest, module: {} },
+        { manifest: dualManifest, module: {} },
+        { manifest: projManifest, module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['builtin-app', 'builtin-dual', 'builtin-proj']),
+      );
 
       await initializePluginSystem();
 
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-app');
+      const { appEnabled } = usePluginStore.getState();
+      expect(appEnabled).toContain('builtin-app');
+      expect(appEnabled).toContain('builtin-dual');
+      expect(appEnabled).toContain('builtin-proj');
     });
 
-    it('auto-enables dual-scoped built-in plugins', async () => {
-      const manifest = makeManifest({ id: 'builtin-dual', scope: 'dual' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
+    it('does not auto-enable non-default built-in plugins', async () => {
+      const defaultManifest = makeManifest({ id: 'default-plug', scope: 'project' });
+      const optionalManifest = makeManifest({ id: 'optional-plug', scope: 'project' });
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: defaultManifest, module: {} },
+        { manifest: optionalManifest, module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['default-plug']),
+      );
 
       await initializePluginSystem();
 
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-dual');
-    });
-
-    it('auto-enables project-scoped built-in plugins at app level (availability gate)', async () => {
-      const manifest = makeManifest({ id: 'builtin-proj', scope: 'project' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
-
-      await initializePluginSystem();
-
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-proj');
+      const { appEnabled, plugins } = usePluginStore.getState();
+      expect(appEnabled).toContain('default-plug');
+      expect(appEnabled).not.toContain('optional-plug');
+      // Non-default plugin is still registered
+      expect(plugins['optional-plug']).toBeDefined();
+      expect(plugins['optional-plug'].source).toBe('builtin');
     });
 
     it('registers multiple built-in plugins', async () => {

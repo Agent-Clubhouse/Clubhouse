@@ -17,6 +17,13 @@ export interface BuiltinPlugin {
   module: PluginModule;
 }
 
+/** Plugin IDs that are enabled by default in a fresh install. */
+const DEFAULT_ENABLED_IDS: ReadonlySet<string> = new Set([
+  'hub',
+  'terminal',
+  'files',
+]);
+
 export function getBuiltinPlugins(): BuiltinPlugin[] {
   return [
     { manifest: hubManifest, module: hubModule },
@@ -26,4 +33,9 @@ export function getBuiltinPlugins(): BuiltinPlugin[] {
     { manifest: issuesManifest, module: issuesModule },
     { manifest: voiceChatManifest, module: voiceChatModule },
   ];
+}
+
+/** Returns the set of builtin plugin IDs that should be auto-enabled on first install. */
+export function getDefaultEnabledIds(): ReadonlySet<string> {
+  return DEFAULT_ENABLED_IDS;
 }
