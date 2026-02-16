@@ -25,7 +25,9 @@ export function MainContentView() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   if (explorerTab === 'agents') {
-    const activeAgent = activeAgentId ? agents[activeAgentId] : null;
+    const rawAgent = activeAgentId ? agents[activeAgentId] : null;
+    // Guard: never show an agent from a different project
+    const activeAgent = rawAgent && rawAgent.projectId === activeProjectId ? rawAgent : null;
 
     if (
       agentSettingsOpenFor &&
@@ -51,7 +53,7 @@ export function MainContentView() {
         );
       }
       return (
-        <div className="flex items-center justify-center h-full bg-ctp-base">
+        <div className="flex items-center justify-center h-full bg-ctp-base" data-testid="no-active-agent">
           <div className="text-center text-ctp-subtext0">
             <p className="text-lg mb-2">No active agent</p>
             <p className="text-sm">Add an agent from the sidebar to get started</p>
@@ -65,7 +67,7 @@ export function MainContentView() {
     }
 
     return (
-      <div className="h-full bg-ctp-base">
+      <div className="h-full bg-ctp-base" data-testid="agent-terminal-view">
         <AgentTerminal agentId={activeAgentId!} />
       </div>
     );

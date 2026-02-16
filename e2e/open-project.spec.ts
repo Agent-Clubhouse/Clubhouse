@@ -1,9 +1,9 @@
-import { test, expect, _electron as electron } from '@playwright/test';
+import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import { launchApp } from './launch';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
-let window: Awaited<ReturnType<typeof electronApp.firstWindow>>;
+let window: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
@@ -33,14 +33,12 @@ test('stub dialog and add project appears in list', async () => {
     projectPath,
   );
 
-  // Click the add project button (the "+" button with title="Add project")
-  const addBtn = window.locator('[title*="Add project"]').first();
+  // Click the add project button
+  const addBtn = window.locator('[data-testid="nav-add-project"]');
   if (await addBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await addBtn.click();
 
-    // The project name ("project-a") comes from path.basename of the directory.
-    // In ProjectRail it may show as full text or just the first letter "P".
-    // Look for the text anywhere on the page.
+    // The project name should appear somewhere on the page
     await expect(
       window.locator('text=project-a').first(),
     ).toBeVisible({ timeout: 10_000 });
@@ -48,14 +46,14 @@ test('stub dialog and add project appears in list', async () => {
 });
 
 test('click project loads project view', async () => {
-  // Look for any project in the list and click it
-  const projectItem = window.locator('[data-project-id], [class*="project"]').first();
+  // Look for the project by its title attribute
+  const projectItem = window.locator('[title="project-a"]').first();
   if (await projectItem.isVisible({ timeout: 5_000 }).catch(() => false)) {
     await projectItem.click();
 
     // Verify the project view loads (agent list or explorer should appear)
     await expect(
-      window.locator('[data-testid="project-view"], [class*="explorer"], [class*="agent"]').first(),
+      window.locator('[data-testid="agent-list"], [data-testid="no-active-agent"]').first(),
     ).toBeVisible({ timeout: 10_000 });
   }
 });

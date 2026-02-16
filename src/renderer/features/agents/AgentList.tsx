@@ -211,7 +211,7 @@ export function AgentList() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="agent-list">
       {/* Header with split button */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-surface-0">
         <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
@@ -277,7 +277,7 @@ export function AgentList() {
                     agent={durable}
                     isActive={durable.id === activeAgentId}
                     isThinking={isThinking(durable.id)}
-                    onSelect={() => { selectCompleted(null); setActiveAgent(durable.id); }}
+                    onSelect={() => { selectCompleted(null); setActiveAgent(durable.id, activeProjectId ?? undefined); }}
                     onSpawnQuickChild={() => handleSpawnQuickChild(durable.id)}
                   />
                   {/* Inline mission input targeting this durable */}
@@ -289,7 +289,7 @@ export function AgentList() {
                       agent={child}
                       isActive={child.id === activeAgentId}
                       isThinking={isThinking(child.id)}
-                      onSelect={() => { selectCompleted(null); setActiveAgent(child.id); }}
+                      onSelect={() => { selectCompleted(null); setActiveAgent(child.id, activeProjectId ?? undefined); }}
                       isNested
                     />
                   ))}
@@ -300,7 +300,7 @@ export function AgentList() {
                       completed={completed}
                       onDismiss={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
                       onDelete={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
-                      onSelect={() => { setActiveAgent(null); selectCompleted(completed.id); }}
+                      onSelect={() => { setActiveAgent(null, activeProjectId ?? undefined); selectCompleted(completed.id); }}
                       isNested
                     />
                   ))}
@@ -325,7 +325,7 @@ export function AgentList() {
                 agent={agent}
                 isActive={agent.id === activeAgentId}
                 isThinking={isThinking(agent.id)}
-                onSelect={() => { selectCompleted(null); setActiveAgent(agent.id); }}
+                onSelect={() => { selectCompleted(null); setActiveAgent(agent.id, activeProjectId ?? undefined); }}
               />
             ))}
           </div>
@@ -349,7 +349,7 @@ export function AgentList() {
                 completed={completed}
                 onDismiss={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
                 onDelete={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
-                onSelect={() => { setActiveAgent(null); selectCompleted(completed.id); }}
+                onSelect={() => { setActiveAgent(null, activeProjectId ?? undefined); selectCompleted(completed.id); }}
               />
             ))}
           </div>

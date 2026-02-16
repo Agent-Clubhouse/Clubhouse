@@ -417,11 +417,14 @@ function createHubAPI(): HubAPI {
 function createNavigationAPI(): NavigationAPI {
   return {
     focusAgent(agentId: string): void {
-      useUIStore.getState().setExplorerTab('agents');
-      useAgentStore.getState().setActiveAgent(agentId);
+      const agent = useAgentStore.getState().agents[agentId];
+      const projectId = agent?.projectId || useProjectStore.getState().activeProjectId || undefined;
+      useUIStore.getState().setExplorerTab('agents', projectId);
+      useAgentStore.getState().setActiveAgent(agentId, projectId);
     },
     setExplorerTab(tabId: string): void {
-      useUIStore.getState().setExplorerTab(tabId);
+      const projectId = useProjectStore.getState().activeProjectId || undefined;
+      useUIStore.getState().setExplorerTab(tabId, projectId);
     },
   };
 }

@@ -104,6 +104,10 @@ export function App() {
     const prevId = prevProjectIdRef.current;
     prevProjectIdRef.current = activeProjectId;
     if (activeProjectId && activeProjectId !== prevId) {
+      // Restore per-project navigation state
+      useUIStore.getState().restoreProjectView(activeProjectId);
+      useAgentStore.getState().restoreProjectAgent(activeProjectId);
+
       const project = projects.find((p) => p.id === activeProjectId);
       if (project) {
         // Load project plugin config then activate
@@ -279,7 +283,7 @@ export function App() {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
-          <span className="text-xs text-ctp-subtext0 select-none">{titleText}</span>
+          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
@@ -294,7 +298,7 @@ export function App() {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
-          <span className="text-xs text-ctp-subtext0 select-none">{titleText}</span>
+          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
@@ -308,7 +312,7 @@ export function App() {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
-          <span className="text-xs text-ctp-subtext0 select-none">{titleText}</span>
+          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
@@ -322,7 +326,7 @@ export function App() {
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
       {/* Title bar */}
       <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
-        <span className="text-xs text-ctp-subtext0 select-none">{titleText}</span>
+        <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
       </div>
       {/* Git banner */}
       <GitBanner />

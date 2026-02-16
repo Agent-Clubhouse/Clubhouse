@@ -71,6 +71,9 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   return (
     <div
       onClick={onSelect}
+      data-testid={`agent-item-${agent.id}`}
+      data-agent-name={agent.name}
+      data-active={isActive}
       className={`
         flex items-center gap-3 py-3 cursor-pointer transition-colors
         ${isNested ? 'pl-7 pr-3' : 'px-3'}

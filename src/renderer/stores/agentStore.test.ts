@@ -65,6 +65,7 @@ describe('agentStore', () => {
       agentActivity: {},
       agentSpawnedAt: {},
       agentDetailedStatus: {},
+      projectActiveAgent: {},
     });
   });
 
@@ -339,6 +340,82 @@ describe('agentStore', () => {
       useAgentStore.setState({ activeAgentId: 'a_keep_active' });
       getState().removeAgent('a_other');
       expect(getState().activeAgentId).toBe('a_keep_active');
+    });
+  });
+
+  describe('per-project active agent persistence', () => {
+    it('setActiveAgent with projectId saves to projectActiveAgent', () => {
+      seedAgent({ id: 'a1', projectId: 'proj_1' });
+      getState().setActiveAgent('a1', 'proj_1');
+      expect(getState().projectActiveAgent['proj_1']).toBe('a1');
+    });
+
+    it('setActiveAgent without projectId does not save', () => {
+      seedAgent({ id: 'a1' });
+      getState().setActiveAgent('a1');
+      expect(getState().projectActiveAgent).toEqual({});
+    });
+
+    it('setActiveAgent(null) clears active agent for project', () => {
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'a1' } });
+      getState().setActiveAgent(null, 'proj_1');
+      expect(getState().projectActiveAgent['proj_1']).toBeNull();
+    });
+
+    it('restoreProjectAgent restores saved agent for project', () => {
+      seedAgent({ id: 'a1', projectId: 'proj_1' });
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'a1' } });
+      getState().restoreProjectAgent('proj_1');
+      expect(getState().activeAgentId).toBe('a1');
+    });
+
+    it('restoreProjectAgent sets null if saved agent belongs to different project', () => {
+      seedAgent({ id: 'a1', projectId: 'proj_2' });
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'a1' }, activeAgentId: 'a1' });
+      getState().restoreProjectAgent('proj_1');
+      expect(getState().activeAgentId).toBeNull();
+    });
+
+    it('restoreProjectAgent sets null if no saved agent', () => {
+      useAgentStore.setState({ activeAgentId: 'some_agent' });
+      getState().restoreProjectAgent('proj_new');
+      expect(getState().activeAgentId).toBeNull();
+    });
+
+    it('restoreProjectAgent sets null if saved agent no longer exists', () => {
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'deleted_agent' }, activeAgentId: 'something' });
+      getState().restoreProjectAgent('proj_1');
+      expect(getState().activeAgentId).toBeNull();
+    });
+
+    it('removeAgent clears projectActiveAgent for the removed agent', () => {
+      seedAgent({ id: 'a_rem', projectId: 'proj_1' });
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'a_rem' }, activeAgentId: 'a_rem' });
+      getState().removeAgent('a_rem');
+      expect(getState().projectActiveAgent['proj_1']).toBeUndefined();
+    });
+
+    it('removeAgent preserves projectActiveAgent for other projects', () => {
+      seedAgent({ id: 'a_rem', projectId: 'proj_1' });
+      seedAgent({ id: 'a_keep', projectId: 'proj_2' });
+      useAgentStore.setState({ projectActiveAgent: { proj_1: 'a_rem', proj_2: 'a_keep' } });
+      getState().removeAgent('a_rem');
+      expect(getState().projectActiveAgent['proj_2']).toBe('a_keep');
+    });
+
+    it('openAgentSettings saves to projectActiveAgent', () => {
+      seedAgent({ id: 'a_settings', projectId: 'proj_1' });
+      getState().openAgentSettings('a_settings');
+      expect(getState().projectActiveAgent['proj_1']).toBe('a_settings');
+    });
+
+    it('different projects maintain independent active agents', () => {
+      seedAgent({ id: 'a1', projectId: 'proj_1' });
+      seedAgent({ id: 'a2', projectId: 'proj_2' });
+      getState().setActiveAgent('a1', 'proj_1');
+      getState().setActiveAgent('a2', 'proj_2');
+      expect(getState().projectActiveAgent['proj_1']).toBe('a1');
+      expect(getState().projectActiveAgent['proj_2']).toBe('a2');
     });
   });
 
