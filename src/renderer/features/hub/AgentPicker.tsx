@@ -2,34 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHubStore } from '../../stores/hubStore';
-import { Agent } from '../../../shared/types';
 import { MODEL_OPTIONS } from '../../../shared/models';
-import { AgentAvatar } from '../agents/AgentAvatar';
+import { AgentAvatarWithRing } from '../agents/AgentAvatar';
 
 interface Props {
   paneId: string;
-}
-
-const STATUS_RING_COLOR: Record<string, string> = {
-  running: '#22c55e',
-  sleeping: '#6c7086',
-  error: '#f87171',
-};
-
-function AgentAvatarWithRing({ agent }: { agent: Agent }) {
-  const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
-  const detailed = detailedStatus[agent.id];
-  const isWorking = agent.status === 'running' && detailed?.state === 'working';
-  const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
-  const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
-    : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
-    : baseRingColor;
-
-  return (
-    <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
-      <AgentAvatar agent={agent} size="sm" showRing ringColor={ringColor} />
-    </div>
-  );
 }
 
 export function AgentPicker({ paneId }: Props) {

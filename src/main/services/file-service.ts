@@ -47,7 +47,7 @@ export function mkdir(dirPath: string): void {
 }
 
 export function deleteFile(filePath: string): void {
-  fs.unlinkSync(filePath);
+  fs.rmSync(filePath, { recursive: true, force: true });
 }
 
 const MIME_TYPES: Record<string, string> = {
