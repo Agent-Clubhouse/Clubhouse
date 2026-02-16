@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mockRendererLog = vi.fn();
+vi.mock('./renderer-logger', () => ({
+  rendererLog: (...args: unknown[]) => mockRendererLog(...args),
+}));
+
 import { pluginEventBus } from './plugin-events';
 
 describe('PluginEventBus', () => {
@@ -50,7 +56,7 @@ describe('PluginEventBus', () => {
   });
 
   it('catches and logs handler errors without affecting other handlers', () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockRendererLog.mockClear();
     const throwing = vi.fn(() => { throw new Error('boom'); });
     const surviving = vi.fn();
     pluginEventBus.on('test', throwing);
@@ -58,8 +64,12 @@ describe('PluginEventBus', () => {
     pluginEventBus.emit('test');
     expect(throwing).toHaveBeenCalled();
     expect(surviving).toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
+    expect(mockRendererLog).toHaveBeenCalledWith(
+      'core:plugin-events',
+      'error',
+      expect.stringContaining('test'),
+      expect.objectContaining({ meta: expect.objectContaining({ event: 'test' }) }),
+    );
   });
 
   it('does nothing when emitting an event with no listeners', () => {

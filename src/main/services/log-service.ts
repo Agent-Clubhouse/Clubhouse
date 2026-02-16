@@ -104,8 +104,10 @@ export function flush(): void {
     if (currentFileSize >= MAX_FILE_SIZE) {
       rotate();
     }
-  } catch {
-    // If we can't write, drop the entries rather than crashing
+  } catch (err) {
+    // If we can't write, drop the entries rather than crashing.
+    // Log to stderr as a last resort since our own logging path failed.
+    console.error('[log-service] Failed to write log entries:', err instanceof Error ? err.message : err);
   }
 }
 

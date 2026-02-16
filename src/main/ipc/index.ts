@@ -17,6 +17,8 @@ export function registerAllHandlers(): void {
   // Initialize logging service early so handlers can use it
   logService.init();
 
+  logService.appLog('core:startup', 'info', 'Registering IPC handlers');
+
   registerPtyHandlers();
   registerProjectHandlers();
   registerFileHandlers();
@@ -28,6 +30,8 @@ export function registerAllHandlers(): void {
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {
-    console.error('Failed to start hook server:', err);
+    logService.appLog('core:hook-server', 'error', 'Failed to start hook server', {
+      meta: { error: err?.message ?? String(err), stack: err?.stack },
+    });
   });
 }

@@ -17,7 +17,12 @@ export function createSettingsStore<T>(
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
         return { ...defaults, ...JSON.parse(raw) };
-      } catch {
+      } catch (err) {
+        // Use console.warn here — cannot use appLog because log-settings itself
+        // depends on this store, and calling appLog would create infinite recursion.
+        if (fs.existsSync(filePath)) {
+          console.warn(`[settings-store] Failed to parse ${filename}, using defaults:`, err instanceof Error ? err.message : err);
+        }
         return { ...defaults };
       }
     },

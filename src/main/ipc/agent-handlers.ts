@@ -4,6 +4,7 @@ import { SpawnAgentParams } from '../../shared/types';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
+import { appLog } from '../services/log-service';
 
 export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, (_event, projectPath: string) => {
@@ -78,7 +79,20 @@ export function registerAgentHandlers(): void {
   // --- Orchestrator-based handlers ---
 
   ipcMain.handle(IPC.AGENT.SPAWN_AGENT, async (_event, params: SpawnAgentParams) => {
-    await agentSystem.spawnAgent(params);
+    try {
+      await agentSystem.spawnAgent(params);
+    } catch (err) {
+      appLog('core:ipc', 'error', 'Agent spawn failed', {
+        meta: {
+          agentId: params.agentId,
+          kind: params.kind,
+          orchestrator: params.orchestrator,
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        },
+      });
+      throw err;
+    }
   });
 
   ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string, orchestrator?: string) => {
