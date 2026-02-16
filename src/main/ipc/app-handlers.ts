@@ -24,8 +24,8 @@ export function registerAppHandlers(): void {
     notificationService.saveSettings(settings);
   });
 
-  ipcMain.handle(IPC.APP.SEND_NOTIFICATION, (_event, title: string, body: string, silent: boolean) => {
-    notificationService.sendNotification(title, body, silent);
+  ipcMain.handle(IPC.APP.SEND_NOTIFICATION, (_event, title: string, body: string, silent: boolean, agentId?: string, projectId?: string) => {
+    notificationService.sendNotification(title, body, silent, agentId, projectId);
   });
 
   ipcMain.handle(IPC.APP.GET_THEME, () => {

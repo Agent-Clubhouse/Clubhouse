@@ -68,6 +68,16 @@ export function App() {
     return () => remove();
   }, []);
 
+  // Navigate to agent when notification is clicked
+  useEffect(() => {
+    const remove = window.clubhouse.app.onNotificationClicked((agentId: string, projectId: string) => {
+      useProjectStore.getState().setActiveProject(projectId);
+      useUIStore.getState().setExplorerTab('agents', projectId);
+      useAgentStore.getState().setActiveAgent(agentId, projectId);
+    });
+    return () => remove();
+  }, []);
+
   // Cmd+1-9: switch to Nth project
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -213,7 +223,7 @@ export function App() {
         const agent = useAgentStore.getState().agents[agentId];
         if (!agent) return;
         const name = agent.name;
-        checkAndNotify(name, event.kind, event.toolName);
+        checkAndNotify(name, event.kind, event.toolName, agentId, agent.projectId);
 
         // Emit plugin events for agent lifecycle
         if (event.kind === 'stop') {

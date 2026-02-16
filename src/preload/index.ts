@@ -285,8 +285,14 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_NOTIFICATION_SETTINGS),
     saveNotificationSettings: (settings: any) =>
       ipcRenderer.invoke(IPC.APP.SAVE_NOTIFICATION_SETTINGS, settings),
-    sendNotification: (title: string, body: string, silent: boolean) =>
-      ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent),
+    sendNotification: (title: string, body: string, silent: boolean, agentId?: string, projectId?: string) =>
+      ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent, agentId, projectId),
+    onNotificationClicked: (callback: (agentId: string, projectId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, projectId: string) =>
+        callback(agentId, projectId);
+      ipcRenderer.on(IPC.APP.NOTIFICATION_CLICKED, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.NOTIFICATION_CLICKED, listener); };
+    },
     onOpenSettings: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);

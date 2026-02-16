@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useNotificationStore } from './notificationStore';
+import { useAgentStore } from './agentStore';
+import { useUIStore } from './uiStore';
+import { useProjectStore } from './projectStore';
 
 // Mock window.clubhouse API
 const mockGetNotificationSettings = vi.fn();
@@ -32,6 +35,8 @@ describe('notificationStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useNotificationStore.setState({ settings: null });
+    // Ensure document.hasFocus returns false by default so suppression doesn't interfere
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false);
   });
 
   describe('loadSettings', () => {
@@ -85,7 +90,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Claude needs permission',
           'Wants to use Bash',
-          false // playSound is true → silent is false
+          false, // playSound is true → silent is false
+          undefined,
+          undefined,
         );
       });
 
@@ -96,7 +103,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Claude needs permission',
           'Agent is waiting for approval',
-          false
+          false,
+          undefined,
+          undefined,
         );
       });
 
@@ -124,7 +133,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Worker finished',
           'Agent has stopped',
-          false
+          false,
+          undefined,
+          undefined,
         );
       });
 
@@ -137,7 +148,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Worker is idle',
           'Agent is waiting for input',
-          false
+          false,
+          undefined,
+          undefined,
         );
       });
 
@@ -158,7 +171,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Dev hit an error',
           'Bash failed',
-          false
+          false,
+          undefined,
+          undefined,
         );
       });
 
@@ -169,7 +184,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           'Dev hit an error',
           'A tool call failed',
-          false
+          false,
+          undefined,
+          undefined,
         );
       });
 
@@ -192,7 +209,9 @@ describe('notificationStore', () => {
         expect(mockSendNotification).toHaveBeenCalledWith(
           expect.any(String),
           expect.any(String),
-          true // silent
+          true, // silent
+          undefined,
+          undefined,
         );
       });
     });
@@ -208,6 +227,81 @@ describe('notificationStore', () => {
         useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
         useNotificationStore.getState().checkAndNotify('Agent', 'post_tool');
         expect(mockSendNotification).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('suppression when agent is visible', () => {
+      it('suppresses notification when agent is active in agents panel and window is focused', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+        useAgentStore.setState({ activeAgentId: 'agent-1' });
+        useUIStore.setState({ explorerTab: 'agents' });
+        useProjectStore.setState({ activeProjectId: 'proj-1' });
+
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).not.toHaveBeenCalled();
+      });
+
+      it('does not suppress when window is not focused', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+        useAgentStore.setState({ activeAgentId: 'agent-1' });
+        useUIStore.setState({ explorerTab: 'agents' });
+        useProjectStore.setState({ activeProjectId: 'proj-1' });
+
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).toHaveBeenCalled();
+      });
+
+      it('does not suppress when a different agent is active', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+        useAgentStore.setState({ activeAgentId: 'agent-2' });
+        useUIStore.setState({ explorerTab: 'agents' });
+        useProjectStore.setState({ activeProjectId: 'proj-1' });
+
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).toHaveBeenCalled();
+      });
+
+      it('does not suppress when on a different tab', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+        useAgentStore.setState({ activeAgentId: 'agent-1' });
+        useUIStore.setState({ explorerTab: 'settings' });
+        useProjectStore.setState({ activeProjectId: 'proj-1' });
+
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).toHaveBeenCalled();
+      });
+
+      it('does not suppress when on a different project', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+        useAgentStore.setState({ activeAgentId: 'agent-1' });
+        useUIStore.setState({ explorerTab: 'agents' });
+        useProjectStore.setState({ activeProjectId: 'proj-2' });
+
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).toHaveBeenCalled();
+      });
+
+      it('passes agentId and projectId through to sendNotification', () => {
+        useNotificationStore.setState({ settings: ALL_ON_SETTINGS });
+        useNotificationStore.getState().checkAndNotify('Claude', 'permission_request', 'Bash', 'agent-1', 'proj-1');
+
+        expect(mockSendNotification).toHaveBeenCalledWith(
+          'Claude needs permission',
+          'Wants to use Bash',
+          false,
+          'agent-1',
+          'proj-1',
+        );
       });
     });
   });

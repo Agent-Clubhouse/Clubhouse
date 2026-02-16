@@ -89,6 +89,7 @@ export const IPC = {
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
     SEND_NOTIFICATION: 'app:send-notification',
+    NOTIFICATION_CLICKED: 'app:notification-clicked',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
