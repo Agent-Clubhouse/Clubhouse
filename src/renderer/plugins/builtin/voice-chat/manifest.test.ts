@@ -17,8 +17,12 @@ describe('voice-chat plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.4', () => {
-    expect(manifest.engine.api).toBe(0.4);
+  it('targets API v0.5', () => {
+    expect(manifest.engine.api).toBe(0.5);
+  });
+
+  it('declares voice, agents, notifications permissions', () => {
+    expect(manifest.permissions).toEqual(['voice', 'agents', 'notifications']);
   });
 
   it('contributes help topics', () => {

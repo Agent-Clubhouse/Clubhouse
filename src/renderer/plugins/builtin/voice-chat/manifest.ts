@@ -8,8 +8,9 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Push-to-talk voice conversations with durable agents using Whisper STT and Piper TTS.',
   author: 'Clubhouse',
-  engine: { api: 0.4 },
+  engine: { api: 0.5 },
   scope: 'project',
+  permissions: ['voice', 'agents', 'notifications'],
   contributes: {
     tab: { label: 'Voice', icon: MIC_ICON, layout: 'sidebar-content' },
     help: {
