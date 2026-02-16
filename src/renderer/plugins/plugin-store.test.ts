@@ -31,6 +31,7 @@ describe('pluginStore', () => {
       modules: {},
       safeModeActive: false,
       pluginSettings: {},
+      permissionViolations: [],
     });
   });
 
@@ -165,6 +166,56 @@ describe('pluginStore', () => {
       getState().setPluginSetting('app', 'test-plugin', 'old', true);
       getState().loadPluginSettings('app:test-plugin', { fresh: 'data' });
       expect(getState().pluginSettings['app:test-plugin']).toEqual({ fresh: 'data' });
+    });
+  });
+
+  describe('permission violations', () => {
+    const violation = {
+      pluginId: 'bad-plugin',
+      pluginName: 'Bad Plugin',
+      permission: 'git' as const,
+      apiName: 'git',
+      timestamp: 1000,
+    };
+
+    it('permissionViolations starts empty', () => {
+      expect(getState().permissionViolations).toEqual([]);
+    });
+
+    it('recordPermissionViolation adds entries', () => {
+      getState().recordPermissionViolation(violation);
+      expect(getState().permissionViolations).toHaveLength(1);
+      expect(getState().permissionViolations[0]).toEqual(violation);
+    });
+
+    it('multiple violations accumulate', () => {
+      getState().recordPermissionViolation(violation);
+      getState().recordPermissionViolation({
+        ...violation,
+        pluginId: 'other-plugin',
+        pluginName: 'Other Plugin',
+        permission: 'files',
+        apiName: 'files',
+      });
+      expect(getState().permissionViolations).toHaveLength(2);
+    });
+
+    it('clearPermissionViolation removes by pluginId', () => {
+      getState().recordPermissionViolation(violation);
+      getState().recordPermissionViolation({
+        ...violation,
+        pluginId: 'other-plugin',
+        pluginName: 'Other Plugin',
+      });
+      getState().clearPermissionViolation('bad-plugin');
+      expect(getState().permissionViolations).toHaveLength(1);
+      expect(getState().permissionViolations[0].pluginId).toBe('other-plugin');
+    });
+
+    it('clearPermissionViolation is a no-op for unknown pluginId', () => {
+      getState().recordPermissionViolation(violation);
+      getState().clearPermissionViolation('nonexistent');
+      expect(getState().permissionViolations).toHaveLength(1);
     });
   });
 

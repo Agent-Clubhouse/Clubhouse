@@ -110,6 +110,10 @@ export function PluginListSettings() {
       } catch { /* ignore */ }
     } else {
       if (isAppContext) {
+        const entry = usePluginStore.getState().plugins[pluginId];
+        if (entry?.status === 'disabled') {
+          usePluginStore.getState().setPluginStatus(pluginId, 'registered');
+        }
         enableApp(pluginId);
         await activatePlugin(pluginId);
       } else if (projectId) {

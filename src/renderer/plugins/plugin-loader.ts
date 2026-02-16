@@ -118,7 +118,7 @@ export async function activatePlugin(
     return;
   }
 
-  if (entry.status === 'incompatible' || entry.status === 'errored') {
+  if (entry.status === 'incompatible' || entry.status === 'errored' || entry.status === 'disabled') {
     rendererLog('core:plugins', 'warn', `Skipping activation of ${pluginId}: ${entry.status}`, {
       meta: { pluginId, status: entry.status, error: entry.error },
     });

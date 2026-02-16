@@ -18,6 +18,7 @@ import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds
 import { pluginEventBus } from './plugins/plugin-events';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
+import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -285,6 +286,7 @@ export function App() {
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
+        <PermissionViolationBanner />
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
           <Dashboard />
@@ -300,6 +302,7 @@ export function App() {
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
+        <PermissionViolationBanner />
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
@@ -314,6 +317,7 @@ export function App() {
         <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
+        <PermissionViolationBanner />
         <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr]">
           <ProjectRail />
           <HelpView />
@@ -328,6 +332,8 @@ export function App() {
       <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
         <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
       </div>
+      {/* Permission violation banner */}
+      <PermissionViolationBanner />
       {/* Git banner */}
       <GitBanner />
       {/* Main content grid */}

@@ -298,6 +298,20 @@ describe('plugin-loader', () => {
       );
     });
 
+    it('skips activation of disabled plugin', async () => {
+      mockLog.write.mockClear();
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'dis' }), 'community', '/path', 'disabled', 'permission violation'
+      );
+
+      await activatePlugin('dis');
+
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
+      expect(usePluginStore.getState().plugins['dis'].status).toBe('disabled');
+    });
+
     it('does not activate same plugin twice (idempotent)', async () => {
       const mod: PluginModule = { activate: vi.fn() };
       usePluginStore.getState().registerPlugin(makeManifest({ id: 'p1', scope: 'app' }), 'builtin', '', 'registered');
