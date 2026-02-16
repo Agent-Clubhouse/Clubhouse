@@ -160,54 +160,7 @@ describe('SidebarPanel new issue', () => {
     issueState.reset();
   });
 
-  it('+ New calls showInput and creates issue via gh CLI', async () => {
-    const showInputSpy = vi.fn()
-      .mockResolvedValueOnce('New bug report')
-      .mockResolvedValueOnce('Steps to reproduce...');
-    const showNoticeSpy = vi.fn();
-    const execSpy = vi.fn(async (_cmd: string, args: string[]) => {
-      // Return empty list for initial issue fetch, success for create
-      if (args[0] === 'issue' && args[1] === 'list') {
-        return { stdout: EMPTY_ISSUE_LIST, stderr: '', exitCode: 0 };
-      }
-      return { stdout: 'https://github.com/repo/issues/99\n', stderr: '', exitCode: 0 };
-    });
-
-    const api = createMockAPI({
-      ui: { ...createMockAPI().ui, showInput: showInputSpy, showNotice: showNoticeSpy },
-      process: { exec: execSpy },
-    });
-
-    render(React.createElement(SidebarPanel, { api }));
-
-    // Wait for initial load to finish and header to render
-    await waitFor(() => {
-      expect(screen.getByText('+ New')).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByText('+ New'));
-
-    await waitFor(() => {
-      expect(showInputSpy).toHaveBeenCalledWith('Issue title');
-    });
-
-    await waitFor(() => {
-      const createCalls = execSpy.mock.calls.filter(
-        (c: unknown[]) => (c[1] as string[])?.[0] === 'issue' && (c[1] as string[])?.[1] === 'create',
-      );
-      expect(createCalls).toHaveLength(1);
-      expect(createCalls[0]).toEqual([
-        'gh',
-        ['issue', 'create', '--title', 'New bug report', '--body', 'Steps to reproduce...'],
-        { timeout: 30000 },
-      ]);
-    });
-
-    expect(showNoticeSpy).toHaveBeenCalledWith('Issue created: https://github.com/repo/issues/99');
-  });
-
-  it('+ New does nothing when showInput returns null (cancel)', async () => {
-    const showInputSpy = vi.fn().mockResolvedValueOnce(null);
+  it('+ New sets creatingNew state for inline form', async () => {
     const execSpy = vi.fn(async (_cmd: string, args: string[]) => {
       if (args[0] === 'issue' && args[1] === 'list') {
         return { stdout: EMPTY_ISSUE_LIST, stderr: '', exitCode: 0 };
@@ -216,7 +169,6 @@ describe('SidebarPanel new issue', () => {
     });
 
     const api = createMockAPI({
-      ui: { ...createMockAPI().ui, showInput: showInputSpy },
       process: { exec: execSpy },
     });
 
@@ -228,14 +180,7 @@ describe('SidebarPanel new issue', () => {
 
     fireEvent.click(screen.getByText('+ New'));
 
-    await waitFor(() => {
-      expect(showInputSpy).toHaveBeenCalledWith('Issue title');
-    });
-
-    // gh should NOT have been called for issue creation
-    const createCalls = execSpy.mock.calls.filter(
-      (c: unknown[]) => (c[1] as string[])?.[0] === 'issue' && (c[1] as string[])?.[1] === 'create',
-    );
-    expect(createCalls).toHaveLength(0);
+    expect(issueState.creatingNew).toBe(true);
+    expect(issueState.selectedIssueNumber).toBeNull();
   });
 });

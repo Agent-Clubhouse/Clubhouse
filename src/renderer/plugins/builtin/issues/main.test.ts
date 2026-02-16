@@ -65,66 +65,16 @@ describe('issues plugin activate()', () => {
     expect(issueState.issues).toEqual([]);
   });
 
-  it('create command prompts for title and body', async () => {
-    const showInputSpy = vi.fn()
-      .mockResolvedValueOnce('Bug title')
-      .mockResolvedValueOnce('Bug body');
-    const showNoticeSpy = vi.fn();
-    const execSpy = vi.fn().mockResolvedValue({ stdout: 'https://github.com/repo/issues/1\n', stderr: '', exitCode: 0 });
-
-    api = createMockAPI({
-      commands: { register: registerSpy, execute: vi.fn() },
-      ui: { ...createMockAPI().ui, showInput: showInputSpy, showNotice: showNoticeSpy },
-      process: { exec: execSpy },
-    });
-
+  it('create command sets creatingNew state', () => {
     activate(ctx, api);
 
     const createCall = registerSpy.mock.calls.find((c: any[]) => c[0] === 'create');
-    await createCall![1]();
+    expect(createCall).toBeDefined();
+    createCall![1]();
 
-    expect(showInputSpy).toHaveBeenCalledTimes(2);
-    expect(showInputSpy).toHaveBeenCalledWith('Issue title');
-    expect(showInputSpy).toHaveBeenCalledWith('Issue body (optional)', '');
-    expect(execSpy).toHaveBeenCalledWith('gh', ['issue', 'create', '--title', 'Bug title', '--body', 'Bug body'], { timeout: 30000 });
-    expect(showNoticeSpy).toHaveBeenCalledWith('Issue created: https://github.com/repo/issues/1');
-  });
-
-  it('create command shows error on failure', async () => {
-    const showInputSpy = vi.fn()
-      .mockResolvedValueOnce('Title')
-      .mockResolvedValueOnce('');
-    const showErrorSpy = vi.fn();
-    const execSpy = vi.fn().mockResolvedValue({ stdout: '', stderr: 'Auth failed', exitCode: 1 });
-
-    api = createMockAPI({
-      commands: { register: registerSpy, execute: vi.fn() },
-      ui: { ...createMockAPI().ui, showInput: showInputSpy, showError: showErrorSpy },
-      process: { exec: execSpy },
-    });
-
-    activate(ctx, api);
-    const createCall = registerSpy.mock.calls.find((c: any[]) => c[0] === 'create');
-    await createCall![1]();
-
-    expect(showErrorSpy).toHaveBeenCalledWith('Auth failed');
-  });
-
-  it('create command does nothing when user cancels title prompt', async () => {
-    const showInputSpy = vi.fn().mockResolvedValueOnce(null);
-    const execSpy = vi.fn();
-
-    api = createMockAPI({
-      commands: { register: registerSpy, execute: vi.fn() },
-      ui: { ...createMockAPI().ui, showInput: showInputSpy },
-      process: { exec: execSpy },
-    });
-
-    activate(ctx, api);
-    const createCall = registerSpy.mock.calls.find((c: any[]) => c[0] === 'create');
-    await createCall![1]();
-
-    expect(execSpy).not.toHaveBeenCalled();
+    expect(issueState.creatingNew).toBe(true);
+    // Creating new should clear selected issue
+    expect(issueState.selectedIssueNumber).toBeNull();
   });
 });
 
