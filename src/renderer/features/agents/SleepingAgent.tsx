@@ -5,16 +5,17 @@ import { useProjectStore } from '../../stores/projectStore';
 
 export function SleepingAgent({ agent }: { agent: Agent }) {
   const { spawnDurableAgent } = useAgentStore();
-  const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const { projects } = useProjectStore();
+  // Use the agent's own project, not the globally-active project
+  const agentProject = projects.find((p) => p.id === agent.projectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
 
   const handleWake = async () => {
-    if (!activeProject) return;
-    const configs = await window.clubhouse.agent.listDurable(activeProject.path);
+    if (!agentProject) return;
+    const configs = await window.clubhouse.agent.listDurable(agentProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
-      await spawnDurableAgent(activeProject.id, activeProject.path, config, true);
+      await spawnDurableAgent(agentProject.id, agentProject.path, config, true);
     }
   };
 

@@ -19,7 +19,7 @@ export interface PluginSettingDeclaration {
 }
 
 export interface PluginStorageDeclaration {
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
 }
 
 export interface PluginContributes {
@@ -31,6 +31,7 @@ export interface PluginContributes {
   railItem?: {
     label: string;
     icon?: string;
+    position?: 'top' | 'bottom';  // default: 'top'
   };
   commands?: PluginCommandDeclaration[];
   settings?: PluginSettingDeclaration[];
@@ -172,7 +173,11 @@ export interface ScopedStorage {
 }
 
 export interface StorageAPI {
+  /** Project-scoped, committed — .clubhouse/plugin-data/{pluginId}/ */
   project: ScopedStorage;
+  /** Project-scoped, gitignored — .clubhouse/plugin-data-local/{pluginId}/ */
+  projectLocal: ScopedStorage;
+  /** Global (user home) — ~/.clubhouse/plugin-data/{pluginId}/ */
   global: ScopedStorage;
 }
 
@@ -220,15 +225,23 @@ export interface SettingsAPI {
   onChange(callback: (key: string, value: unknown) => void): Disposable;
 }
 
+export interface ModelOption {
+  id: string;
+  label: string;
+}
+
 export interface AgentsAPI {
   list(): AgentInfo[];
-  runQuick(mission: string, options?: { model?: string; systemPrompt?: string }): Promise<string>;
+  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string }): Promise<string>;
   kill(agentId: string): Promise<void>;
   resume(agentId: string): Promise<void>;
   listCompleted(projectId?: string): CompletedQuickAgentInfo[];
   dismissCompleted(projectId: string, agentId: string): void;
   getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null;
+  getModelOptions(projectId?: string): Promise<ModelOption[]>;
   onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable;
+  /** Subscribe to any change in the agents store (status, detailed status, new/removed agents). */
+  onAnyChange(callback: () => void): Disposable;
 }
 
 export interface HubAPI {
@@ -289,14 +302,14 @@ export interface StartupMarker {
 // ── IPC request types ──────────────────────────────────────────────────
 export interface PluginStorageReadRequest {
   pluginId: string;
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
   key: string;
   projectPath?: string;
 }
 
 export interface PluginStorageWriteRequest {
   pluginId: string;
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
   key: string;
   value: unknown;
   projectPath?: string;
@@ -304,20 +317,20 @@ export interface PluginStorageWriteRequest {
 
 export interface PluginStorageDeleteRequest {
   pluginId: string;
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
   key: string;
   projectPath?: string;
 }
 
 export interface PluginStorageListRequest {
   pluginId: string;
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
   projectPath?: string;
 }
 
 export interface PluginFileRequest {
   pluginId: string;
-  scope: 'project' | 'global';
+  scope: 'project' | 'project-local' | 'global';
   relativePath: string;
   projectPath?: string;
 }

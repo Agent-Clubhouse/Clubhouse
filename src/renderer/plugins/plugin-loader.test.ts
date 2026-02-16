@@ -443,6 +443,10 @@ describe('plugin-loader', () => {
       usePluginStore.getState().setPluginModule('dual-plug', {});
       usePluginStore.getState().registerPlugin(makeManifest({ id: 'app-plug', scope: 'app' }), 'builtin', '', 'registered');
       usePluginStore.getState().setPluginModule('app-plug', {});
+      // App-first gate: plugins must be app-enabled to activate at project level
+      usePluginStore.getState().enableApp('proj-plug');
+      usePluginStore.getState().enableApp('dual-plug');
+      usePluginStore.getState().enableApp('app-plug');
     });
 
     it('activates project-scoped plugins for new project', async () => {

@@ -9,13 +9,38 @@ import type {
   PluginFileRequest,
 } from '../../shared/plugin-types';
 
+// Track which projects have already had .gitignore updated this session
+const gitignoreEnsured = new Set<string>();
+
+function ensurePluginDataLocalGitignored(projectPath: string): void {
+  if (gitignoreEnsured.has(projectPath)) return;
+  gitignoreEnsured.add(projectPath);
+
+  const pattern = '.clubhouse/plugin-data-local/';
+  const gitignorePath = path.join(projectPath, '.gitignore');
+
+  try {
+    const content = fs.existsSync(gitignorePath)
+      ? fs.readFileSync(gitignorePath, 'utf-8')
+      : '';
+    if (content.includes(pattern)) return;
+    const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(gitignorePath, content + separator + pattern + '\n', 'utf-8');
+  } catch {
+    // Best-effort — don't break storage if .gitignore can't be written
+  }
+}
+
 function getGlobalPluginDataDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugin-data');
 }
 
-function getStorageDir(pluginId: string, scope: 'project' | 'global', projectPath?: string): string {
+function getStorageDir(pluginId: string, scope: 'project' | 'project-local' | 'global', projectPath?: string): string {
   if (scope === 'project' && projectPath) {
     return path.join(projectPath, '.clubhouse', 'plugin-data', pluginId);
+  }
+  if (scope === 'project-local' && projectPath) {
+    return path.join(projectPath, '.clubhouse', 'plugin-data-local', pluginId);
   }
   return path.join(getGlobalPluginDataDir(), pluginId);
 }
@@ -46,6 +71,9 @@ export function readKey(req: PluginStorageReadRequest): unknown {
 }
 
 export function writeKey(req: PluginStorageWriteRequest): void {
+  if (req.scope === 'project-local' && req.projectPath) {
+    ensurePluginDataLocalGitignored(req.projectPath);
+  }
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   assertSafePath(dir, `${req.key}.json`);
   ensureDir(dir);

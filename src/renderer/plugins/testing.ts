@@ -46,6 +46,12 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
         delete: asyncNoop,
         list: async () => [],
       },
+      projectLocal: {
+        read: async () => undefined,
+        write: asyncNoop,
+        delete: asyncNoop,
+        list: async () => [],
+      },
       global: {
         read: async () => undefined,
         write: asyncNoop,
@@ -79,7 +85,9 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       listCompleted: () => [],
       dismissCompleted: noop,
       getDetailedStatus: () => null,
+      getModelOptions: async () => [{ id: 'default', label: 'Default' }],
       onStatusChange: () => ({ dispose: noop }),
+      onAnyChange: () => ({ dispose: noop }),
     },
     hub: {
       refresh: noop,
