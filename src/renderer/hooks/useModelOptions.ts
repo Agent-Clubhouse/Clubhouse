@@ -24,7 +24,7 @@ export function useModelOptions(): Array<{ id: string; label: string }> {
       return;
     }
     window.clubhouse.agent.getModelOptions(activeProject.path)
-      .then((result) => {
+      .then((result: Array<{ id: string; label: string }>) => {
         if (Array.isArray(result) && result.length > 0) {
           setOptions(result);
         }
