@@ -203,7 +203,7 @@ export function App() {
 
   useEffect(() => {
     const removeHookListener = window.clubhouse.agent.onHookEvent(
-      (agentId, event) => {
+      (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
         handleHookEvent(agentId, event as import('../shared/types').AgentHookEvent);
         const agent = useAgentStore.getState().agents[agentId];
         if (!agent) return;

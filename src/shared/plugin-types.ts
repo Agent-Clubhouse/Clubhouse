@@ -336,6 +336,47 @@ export interface FilesAPI {
   showInFolder(relativePath: string): Promise<void>;
 }
 
+export interface VoiceModelStatus {
+  name: string;
+  path: string;
+  size: number;
+  ready: boolean;
+}
+
+export interface VoiceDownloadProgress {
+  model: string;
+  percent: number;
+  bytesDownloaded: number;
+  bytesTotal: number;
+}
+
+export interface VoiceTurnChunk {
+  text: string;
+  audio?: ArrayBuffer;
+  done: boolean;
+}
+
+export interface VoiceAPI {
+  /** Check whether STT/TTS models are downloaded and ready. */
+  checkModels(): Promise<VoiceModelStatus[]>;
+  /** Download missing STT/TTS models (~200MB). */
+  downloadModels(): Promise<void>;
+  /** Subscribe to model download progress events. */
+  onDownloadProgress(callback: (progress: VoiceDownloadProgress) => void): Disposable;
+  /** Transcribe 16kHz mono Float32 PCM audio to text via Whisper. */
+  transcribe(pcmBuffer: ArrayBuffer): Promise<string>;
+  /** Start a voice session for an agent. Returns a session handle. */
+  startSession(agentId: string, cwd: string, model?: string): Promise<{ sessionId: string }>;
+  /** Send a text turn to the active voice session (triggers streaming response). */
+  sendTurn(text: string): Promise<void>;
+  /** Subscribe to streamed response chunks (text + optional audio). */
+  onTurnChunk(callback: (chunk: VoiceTurnChunk) => void): Disposable;
+  /** Subscribe to turn completion events. */
+  onTurnComplete(callback: () => void): Disposable;
+  /** End the current voice session and clean up resources. */
+  endSession(): Promise<void>;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -351,6 +392,7 @@ export interface PluginAPI {
   navigation: NavigationAPI;
   widgets: WidgetsAPI;
   terminal: TerminalAPI;
+  voice: VoiceAPI;
   logging: LoggingAPI;
   files: FilesAPI;
   context: PluginContextInfo;
