@@ -86,7 +86,7 @@ function sendProgress(model: string, percent: number, bytesDownloaded: number, b
   }
 }
 
-function downloadFile(url: string, destPath: string, modelName: string): Promise<void> {
+export function downloadFile(url: string, destPath: string, modelName: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const dir = path.dirname(destPath);
     if (!fs.existsSync(dir)) {
@@ -96,20 +96,36 @@ function downloadFile(url: string, destPath: string, modelName: string): Promise
     const tmpPath = destPath + '.tmp';
     const file = fs.createWriteStream(tmpPath);
 
-    const get = url.startsWith('https') ? https.get : http.get;
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      reject(new Error(`Invalid download URL: ${url}`));
+      return;
+    }
 
-    const request = get(url, (response) => {
+    const get = parsedUrl.protocol === 'https:' ? https.get : http.get;
+
+    const request = get(parsedUrl, (response) => {
       // Follow redirects (301, 302, 307, 308)
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         file.close();
-        fs.unlinkSync(tmpPath);
-        downloadFile(response.headers.location!, destPath, modelName).then(resolve, reject);
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        // Resolve redirect URL against original to handle both absolute and relative locations
+        let redirectUrl: string;
+        try {
+          redirectUrl = new URL(response.headers.location, url).href;
+        } catch {
+          reject(new Error(`Invalid redirect URL: ${response.headers.location}`));
+          return;
+        }
+        downloadFile(redirectUrl, destPath, modelName).then(resolve, reject);
         return;
       }
 
       if (response.statusCode !== 200) {
         file.close();
-        fs.unlinkSync(tmpPath);
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
         reject(new Error(`Download failed: HTTP ${response.statusCode}`));
         return;
       }
@@ -183,6 +199,10 @@ export function deleteModels(): void {
   if (fs.existsSync(MODELS_DIR)) {
     fs.rmSync(MODELS_DIR, { recursive: true });
   }
+}
+
+export function getModelUrls(): string[] {
+  return [WHISPER_MODEL.url, PIPER_VOICE.url, PIPER_VOICE_JSON.url, PIPER_BINARY.url];
 }
 
 export function getModelPaths(): { whisper: string; piperBinary: string; piperVoice: string; piperVoiceConfig: string } {

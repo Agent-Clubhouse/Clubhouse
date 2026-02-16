@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'events';
 
 vi.mock('electron', () => ({
   app: {
@@ -23,8 +24,56 @@ vi.mock('fs', () => ({
   chmodSync: vi.fn(),
 }));
 
-import { checkModels, getModelPaths, deleteModels } from './model-manager';
+vi.mock('https', () => ({
+  get: vi.fn(),
+}));
+
+vi.mock('http', () => ({
+  get: vi.fn(),
+}));
+
+import {
+  checkModels,
+  getModelPaths,
+  deleteModels,
+  getModelUrls,
+  downloadModels,
+  downloadFile,
+} from './model-manager';
 import * as fs from 'fs';
+import * as https from 'https';
+
+// --- Helpers for download tests ---
+
+function createMockWriteStream() {
+  const emitter = new EventEmitter();
+  return Object.assign(emitter, {
+    close: vi.fn((cb?: () => void) => { if (cb) cb(); }),
+  });
+}
+
+function createMockResponse(statusCode: number, headers: Record<string, string> = {}) {
+  const emitter = new EventEmitter();
+  return Object.assign(emitter, {
+    statusCode,
+    headers,
+    pipe: vi.fn((dest: EventEmitter) => {
+      process.nextTick(() => dest.emit('finish'));
+      return dest;
+    }),
+  });
+}
+
+/**
+ * Configure mocks so only the whisper model needs downloading.
+ * All other models are treated as ready (existsSync true + size > 0).
+ */
+function setupSingleModelDownload() {
+  vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    return !String(p).endsWith('ggml-base.en.bin');
+  });
+  vi.mocked(fs.statSync).mockReturnValue({ size: 1000 } as any);
+}
 
 describe('model-manager', () => {
   beforeEach(() => {
@@ -133,6 +182,129 @@ describe('model-manager', () => {
       for (const p of Object.values(paths)) {
         expect(p).toContain('voice-models');
       }
+    });
+  });
+
+  describe('downloadModels', () => {
+    describe('URL validity', () => {
+      it('all model URLs parse as valid URLs', () => {
+        const urls = getModelUrls();
+        expect(urls.length).toBeGreaterThanOrEqual(4);
+        for (const url of urls) {
+          expect(() => new URL(url)).not.toThrow();
+        }
+      });
+
+      it('all model URLs use HTTPS', () => {
+        for (const url of getModelUrls()) {
+          expect(new URL(url).protocol).toBe('https:');
+        }
+      });
+    });
+
+    describe('successful download', () => {
+      it('writes to temp file and renames on success', async () => {
+        setupSingleModelDownload();
+        vi.mocked(fs.createWriteStream).mockImplementation(() => createMockWriteStream() as any);
+
+        vi.mocked(https.get).mockImplementation((_url: any, cb: any) => {
+          const response = createMockResponse(200, { 'content-length': '1000' });
+          process.nextTick(() => cb(response));
+          return new EventEmitter() as any;
+        });
+
+        await downloadModels();
+
+        expect(fs.createWriteStream).toHaveBeenCalledWith(expect.stringContaining('.tmp'));
+        expect(fs.renameSync).toHaveBeenCalled();
+      });
+    });
+
+    describe('redirect handling', () => {
+      it('follows absolute redirect', async () => {
+        setupSingleModelDownload();
+        vi.mocked(fs.createWriteStream).mockImplementation(() => createMockWriteStream() as any);
+
+        let callCount = 0;
+        vi.mocked(https.get).mockImplementation((_url: any, cb: any) => {
+          callCount++;
+          if (callCount === 1) {
+            const response = createMockResponse(302, { location: 'https://cdn.example.com/model.bin' });
+            process.nextTick(() => cb(response));
+          } else {
+            const response = createMockResponse(200, { 'content-length': '1000' });
+            process.nextTick(() => cb(response));
+          }
+          return new EventEmitter() as any;
+        });
+
+        await downloadModels();
+
+        expect(https.get).toHaveBeenCalledTimes(2);
+        const secondUrl = vi.mocked(https.get).mock.calls[1][0] as URL;
+        expect(secondUrl.href).toBe('https://cdn.example.com/model.bin');
+      });
+
+      it('resolves relative redirect against original URL', async () => {
+        setupSingleModelDownload();
+        vi.mocked(fs.createWriteStream).mockImplementation(() => createMockWriteStream() as any);
+
+        let callCount = 0;
+        vi.mocked(https.get).mockImplementation((_url: any, cb: any) => {
+          callCount++;
+          if (callCount === 1) {
+            const response = createMockResponse(302, { location: '/cdn/model.bin' });
+            process.nextTick(() => cb(response));
+          } else {
+            const response = createMockResponse(200, { 'content-length': '1000' });
+            process.nextTick(() => cb(response));
+          }
+          return new EventEmitter() as any;
+        });
+
+        await downloadModels();
+
+        expect(https.get).toHaveBeenCalledTimes(2);
+        const secondUrl = vi.mocked(https.get).mock.calls[1][0] as URL;
+        expect(secondUrl.pathname).toBe('/cdn/model.bin');
+        expect(secondUrl.hostname).toBe('huggingface.co');
+      });
+    });
+
+    describe('HTTP error', () => {
+      it('rejects with descriptive error on 404', async () => {
+        setupSingleModelDownload();
+        vi.mocked(fs.createWriteStream).mockImplementation(() => createMockWriteStream() as any);
+
+        vi.mocked(https.get).mockImplementation((_url: any, cb: any) => {
+          const response = createMockResponse(404);
+          process.nextTick(() => cb(response));
+          return new EventEmitter() as any;
+        });
+
+        await expect(downloadModels()).rejects.toThrow('HTTP 404');
+      });
+    });
+
+    describe('invalid URL rejection', () => {
+      it('rejects with "Invalid download URL" for garbage URL', async () => {
+        await expect(downloadFile('not-a-url', '/tmp/dest', 'test')).rejects.toThrow('Invalid download URL');
+      });
+    });
+
+    describe('network error', () => {
+      it('rejects and cleans up temp file on network error', async () => {
+        setupSingleModelDownload();
+        vi.mocked(fs.createWriteStream).mockImplementation(() => createMockWriteStream() as any);
+
+        vi.mocked(https.get).mockImplementation((_url: any, _cb: any) => {
+          const request = new EventEmitter();
+          process.nextTick(() => request.emit('error', new Error('ECONNREFUSED')));
+          return request as any;
+        });
+
+        await expect(downloadModels()).rejects.toThrow('ECONNREFUSED');
+      });
     });
   });
 });

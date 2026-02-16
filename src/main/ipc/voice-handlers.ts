@@ -3,6 +3,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as modelManager from '../services/voice/model-manager';
 import * as sttService from '../services/voice/stt-service';
 import * as voiceSession from '../services/voice/voice-session';
+import { appLog } from '../services/log-service';
 
 export function registerVoiceHandlers(): void {
   ipcMain.handle(IPC.VOICE.CHECK_MODELS, () => {
@@ -10,7 +11,15 @@ export function registerVoiceHandlers(): void {
   });
 
   ipcMain.handle(IPC.VOICE.DOWNLOAD_MODELS, async () => {
-    await modelManager.downloadModels();
+    appLog('voice:model-manager', 'info', 'Starting model download');
+    try {
+      await modelManager.downloadModels();
+    } catch (err) {
+      appLog('voice:model-manager', 'error', 'Model download failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
   });
 
   ipcMain.handle(IPC.VOICE.DELETE_MODELS, () => {

@@ -127,6 +127,6 @@ export function VoiceSettings({ api }: { api: PluginAPI }) {
 
     error && React.createElement('div', {
       style: { fontSize: '11px', color: 'var(--ctp-red, #f38ba8)' },
-    }, error),
+    }, `${error} — check logs for details`),
   );
 }
