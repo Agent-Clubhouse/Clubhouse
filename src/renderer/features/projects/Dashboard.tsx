@@ -4,7 +4,6 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { Project, Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { CrownBadge } from '../agents/AgentAvatar';
 
 const STATUS_CONFIG: Record<string, { label: string }> = {
   running: { label: 'Running' },
@@ -68,7 +67,6 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
 
   return (
     <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
-      {agent.role === 'host' && <CrownBadge size={size === 'sm' ? 10 : 12} />}
       <div
         className={`${outerDim} rounded-full flex items-center justify-center`}
         style={{ border: `2px solid ${ringColor}` }}
@@ -256,23 +254,26 @@ function ProjectCard({ project }: { project: Project }) {
   const navigateToAgent = useNavigateToAgent();
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
+  const toggleSettings = useUIStore((s) => s.toggleSettings);
 
   const agents = useMemo(
     () => Object.values(allAgents).filter((a) => a.projectId === project.id),
     [allAgents, project.id]
   );
 
-  const durableAgents = agents
-    .filter((a) => a.kind === 'durable')
-    .sort((a, b) => (a.role === 'host' ? -1 : b.role === 'host' ? 1 : 0));
+  const durableAgents = agents.filter((a) => a.kind === 'durable');
   const quickAgents = agents.filter((a) => a.kind === 'quick');
 
   const navigateToTab = useCallback(
     (tab: 'hub' | 'settings') => {
       setActiveProject(project.id);
-      setExplorerTab(tab);
+      if (tab === 'settings') {
+        toggleSettings();
+      } else {
+        setExplorerTab(tab);
+      }
     },
-    [project.id, setActiveProject, setExplorerTab]
+    [project.id, setActiveProject, setExplorerTab, toggleSettings]
   );
 
   return (

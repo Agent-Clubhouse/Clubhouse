@@ -1,27 +1,75 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { usePluginStore } from '../../stores/pluginStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useAgentStore } from '../../stores/agentStore';
-import { ProjectSettings as ProjectSettingsType, ConfigLayer, PermissionsConfig, SkillEntry, AgentTemplateEntry } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { PermissionsEditor } from './PermissionsEditor';
-import { SkillAgentList } from './SkillAgentList';
-import { AddSkillAgentDialog } from './AddSkillAgentDialog';
+import { ResetProjectDialog } from './ResetProjectDialog';
 
-function AppearanceSection() {
-  const { projects, activeProjectId, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
-  const project = projects.find((p) => p.id === activeProjectId);
+function NameAndPathSection({ projectId }: { projectId: string }) {
+  const { projects, updateProject } = useProjectStore();
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  const currentName = project.displayName || project.name;
+  const [value, setValue] = useState(currentName);
+  const dirty = value.trim() !== currentName;
+
+  // Sync if project changes externally
+  useEffect(() => {
+    setValue(project.displayName || project.name);
+  }, [project.displayName, project.name]);
+
+  const save = () => {
+    const trimmed = value.trim();
+    if (trimmed === '' || trimmed === project.name) {
+      updateProject(project.id, { displayName: '' });
+    } else {
+      updateProject(project.id, { displayName: trimmed });
+    }
+  };
+
+  return (
+    <div className="space-y-2 mb-6">
+      <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider">Name</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+          placeholder={project.name}
+          className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+            text-ctp-text placeholder:text-ctp-subtext0/40
+            focus:outline-none focus:border-ctp-accent/50 focus:ring-1 focus:ring-ctp-accent/30"
+        />
+        {dirty && (
+          <button
+            onClick={save}
+            className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500/20 border border-indigo-500/40
+              text-indigo-400 hover:bg-indigo-500/30 cursor-pointer transition-colors"
+          >
+            Save
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-ctp-subtext0 font-mono truncate" title={project.path}>{project.path}</p>
+    </div>
+  );
+}
+
+function AppearanceSection({ projectId }: { projectId: string }) {
+  const { projects, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
+  const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
 
   const iconDataUrl = projectIcons[project.id];
   const hasImage = !!project.icon && !!iconDataUrl;
   const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
   const hex = colorInfo?.hex || '#6366f1';
+  const label = project.displayName || project.name;
 
   return (
     <div className="space-y-4 mb-6">
-      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Appearance</h3>
-
       {/* Icon */}
       <div>
         <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">Icon</label>
@@ -30,9 +78,9 @@ function AppearanceSection() {
             style={hasImage ? undefined : { backgroundColor: `${hex}20`, color: hex }}
           >
             {hasImage ? (
-              <img src={iconDataUrl} alt={project.name} className="w-full h-full object-cover" />
+              <img src={iconDataUrl} alt={label} className="w-full h-full object-cover" />
             ) : (
-              <span className="text-xl font-bold">{project.name.charAt(0).toUpperCase()}</span>
+              <span className="text-xl font-bold">{label.charAt(0).toUpperCase()}</span>
             )}
           </div>
           <button
@@ -85,309 +133,145 @@ function AppearanceSection() {
           })}
         </div>
       </div>
-
-      <div className="border-t border-surface-2" />
     </div>
   );
 }
 
-export function ProjectSettings() {
+const TOGGLEABLE_TABS = [
+  {
+    id: 'agents',
+    label: 'Agents',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="10" rx="2" />
+        <circle cx="12" cy="5" r="4" />
+        <circle cx="9" cy="16" r="1.5" fill="currentColor" />
+        <circle cx="15" cy="16" r="1.5" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: 'hub',
+    label: 'Hub',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2L8 8H4l2 6H4l8 8 8-8h-2l2-6h-4L12 2z" />
+        <line x1="12" y1="22" x2="12" y2="16" />
+      </svg>
+    ),
+  },
+  {
+    id: 'terminal',
+    label: 'Terminal',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    ),
+  },
+];
+
+function ViewsSection({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+  const isCoreTabHidden = usePluginStore((s) => s.isCoreTabHidden);
+  const setCoreTabHidden = usePluginStore((s) => s.setCoreTabHidden);
+
+  return (
+    <div className="space-y-3 mb-6">
+      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Views</h3>
+      {TOGGLEABLE_TABS.map((tab) => {
+        const hidden = isCoreTabHidden(projectId, tab.id);
+        return (
+          <div key={tab.id} className="flex items-center justify-between py-1.5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-ctp-subtext1">{tab.icon}</span>
+              <span className="text-sm text-ctp-text">{tab.label}</span>
+            </div>
+            <button
+              onClick={() => setCoreTabHidden(projectId, projectPath, tab.id, !hidden)}
+              className="toggle-track"
+              data-on={String(!hidden)}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DangerZone({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
+  const removeProject = useProjectStore((s) => s.removeProject);
+  const toggleSettings = useUIStore((s) => s.toggleSettings);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+
+  const handleClose = () => {
+    toggleSettings();
+    removeProject(projectId);
+  };
+
+  const handleReset = async () => {
+    await window.clubhouse.project.resetProject(projectPath);
+    toggleSettings();
+    removeProject(projectId);
+  };
+
+  return (
+    <>
+      <div className="rounded-lg border border-red-500/30 p-4 space-y-3">
+        <h3 className="text-xs text-red-400 uppercase tracking-wider">Danger Zone</h3>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 text-sm rounded-lg bg-surface-0 border border-surface-2
+              text-ctp-subtext1 hover:bg-surface-1 hover:text-ctp-text cursor-pointer transition-colors"
+          >
+            Close Project
+          </button>
+          <button
+            onClick={() => setShowResetDialog(true)}
+            className="px-4 py-2 text-sm rounded-lg bg-red-500/10 border border-red-500/30
+              text-red-400 hover:bg-red-500/20 cursor-pointer transition-colors"
+          >
+            Reset Project
+          </button>
+        </div>
+        <p className="text-xs text-ctp-subtext0">
+          Close removes the project from Clubhouse. Reset also deletes all <span className="font-mono">.clubhouse/</span> data.
+        </p>
+      </div>
+
+      {showResetDialog && (
+        <ResetProjectDialog
+          projectName={projectName}
+          projectPath={projectPath}
+          onConfirm={handleReset}
+          onCancel={() => setShowResetDialog(false)}
+        />
+      )}
+    </>
+  );
+}
+
+export function ProjectSettings({ projectId }: { projectId?: string }) {
   const { projects, activeProjectId } = useProjectStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-  const { setExplorerTab, setSelectedFilePath } = useUIStore();
-  const { spawnQuickAgent } = useAgentStore();
-  const [settings, setSettings] = useState<ProjectSettingsType>({
-    defaults: {},
-    quickOverrides: {},
-  });
-  const [localSettings, setLocalSettings] = useState<ConfigLayer>({});
-  const [saved, setSaved] = useState(false);
-  const [activeSection, setActiveSection] = useState<'defaults' | 'quick' | 'local'>('defaults');
-  const [sourceSkills, setSourceSkills] = useState<SkillEntry[]>([]);
-  const [sourceAgentTemplates, setSourceAgentTemplates] = useState<AgentTemplateEntry[]>([]);
-  const [addDialog, setAddDialog] = useState<{ kind: 'skill' | 'agent-template' } | null>(null);
+  const id = projectId ?? activeProjectId;
+  const project = projects.find((p) => p.id === id);
 
-  const loadSourceLists = async () => {
-    if (!activeProject) return;
-    const [skills, templates] = await Promise.all([
-      window.clubhouse.agentSettings.listSourceSkills(activeProject.path),
-      window.clubhouse.agentSettings.listSourceAgentTemplates(activeProject.path),
-    ]);
-    setSourceSkills(skills);
-    setSourceAgentTemplates(templates);
-  };
-
-  useEffect(() => {
-    if (!activeProject) return;
-    window.clubhouse.agent.getSettings(activeProject.path).then(setSettings);
-    window.clubhouse.agent.getLocalSettings(activeProject.path).then(setLocalSettings);
-    loadSourceLists();
-  }, [activeProject]);
-
-  const handleSave = async () => {
-    if (!activeProject) return;
-    await window.clubhouse.agent.saveSettings(activeProject.path, settings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const handleSaveLocal = async () => {
-    if (!activeProject) return;
-    await window.clubhouse.agent.saveLocalSettings(activeProject.path, localSettings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const updateDefaults = (updates: Partial<ConfigLayer>) => {
-    setSettings((s) => ({
-      ...s,
-      defaults: { ...s.defaults, ...updates },
-    }));
-  };
-
-  const updateQuickOverrides = (updates: Partial<ConfigLayer>) => {
-    setSettings((s) => ({
-      ...s,
-      quickOverrides: { ...s.quickOverrides, ...updates },
-    }));
-  };
-
-  const handleViewFile = (item: SkillEntry | AgentTemplateEntry) => {
-    const readmePath = item.path + '/README.md';
-    setExplorerTab('files');
-    setSelectedFilePath(readmePath);
-  };
-
-  const handleCreate = async (kind: 'skill' | 'agent-template', name: string, method: 'manual' | 'generate', prompt?: string) => {
-    if (!activeProject) return;
-    const settings = await window.clubhouse.agent.getSettings(activeProject.path);
-    const basePath = kind === 'skill'
-      ? activeProject.path + '/.clubhouse/' + (settings.defaultSkillsPath || 'skills')
-      : activeProject.path + '/.clubhouse/' + (settings.defaultAgentsPath || 'agent-templates');
-
-    const createFn = kind === 'skill'
-      ? window.clubhouse.agentSettings.createSkill
-      : window.clubhouse.agentSettings.createAgentTemplate;
-
-    const readmePath = await createFn(basePath, name, true);
-    await loadSourceLists();
-    setAddDialog(null);
-
-    if (method === 'generate' && prompt) {
-      const mission = `Populate the README.md at ${readmePath} with a complete ${kind} definition. ${prompt}`;
-      spawnQuickAgent(activeProject.id, activeProject.path, mission);
-    } else {
-      setExplorerTab('files');
-      setSelectedFilePath(readmePath);
-    }
-  };
-
-  if (!activeProject) {
+  if (!project) {
     return <div className="p-4 text-ctp-subtext0 text-sm">Select a project</div>;
   }
-
-  const tabs = [
-    { key: 'defaults' as const, label: 'Default Configuration' },
-    { key: 'quick' as const, label: 'Quick Agent Overrides' },
-    { key: 'local' as const, label: 'Personal (.local)' },
-  ];
 
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl">
         <h2 className="text-lg font-semibold text-ctp-text mb-4">Project Settings</h2>
-
-        <AppearanceSection />
-
-        {/* Section tabs */}
-        <div className="flex gap-1 mb-4 border-b border-surface-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveSection(tab.key)}
-              className={`px-3 py-2 text-xs font-medium transition-colors cursor-pointer border-b-2 -mb-px ${
-                activeSection === tab.key
-                  ? 'text-ctp-blue border-ctp-blue'
-                  : 'text-ctp-subtext0 border-transparent hover:text-ctp-text'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Default Configuration */}
-        {activeSection === 'defaults' && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Default CLAUDE.md
-              </label>
-              <p className="text-[11px] text-ctp-subtext0 mb-2">
-                Synced to all agents unless they override it locally.
-              </p>
-              <textarea
-                value={settings.defaults?.claudeMd || ''}
-                onChange={(e) => updateDefaults({ claudeMd: e.target.value || undefined })}
-                placeholder="# Instructions for Claude agents in this project..."
-                rows={10}
-                className="w-full bg-surface-0 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
-                  font-mono placeholder-ctp-subtext0/50 resize-y focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Default Permissions
-              </label>
-              <p className="text-[11px] text-ctp-subtext0 mb-2">
-                Permission rules applied to all agents by default.
-              </p>
-              <PermissionsEditor
-                value={settings.defaults?.permissions || {}}
-                onChange={(p) => updateDefaults({ permissions: p })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Skills
-              </label>
-              <p className="text-[11px] text-ctp-subtext0 mb-2">
-                Skill templates stored in <code className="text-ctp-blue">.clubhouse/{settings.defaultSkillsPath || 'skills'}/</code>.
-              </p>
-              <SkillAgentList
-                kind="skill"
-                items={sourceSkills}
-                onView={handleViewFile}
-                onAdd={() => setAddDialog({ kind: 'skill' })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Agent Templates
-              </label>
-              <p className="text-[11px] text-ctp-subtext0 mb-2">
-                Agent templates stored in <code className="text-ctp-blue">.clubhouse/{settings.defaultAgentsPath || 'agent-templates'}/</code>.
-              </p>
-              <SkillAgentList
-                kind="agent-template"
-                items={sourceAgentTemplates}
-                onView={handleViewFile}
-                onAdd={() => setAddDialog({ kind: 'agent-template' })}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 text-sm rounded-lg bg-indigo-500 text-white
-                  hover:bg-indigo-600 cursor-pointer font-medium"
-              >
-                Save Settings
-              </button>
-              {saved && <span className="text-xs text-green-300">Saved!</span>}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Agent Overrides */}
-        {activeSection === 'quick' && (
-          <div className="space-y-5">
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Quick Agent CLAUDE.md Override
-              </label>
-              <p className="text-[11px] text-ctp-subtext0 mb-2">
-                Additional or replacement instructions for quick/ephemeral agents. Replaces the default CLAUDE.md when set.
-              </p>
-              <textarea
-                value={settings.quickOverrides?.claudeMd || ''}
-                onChange={(e) => updateQuickOverrides({ claudeMd: e.target.value || undefined })}
-                placeholder="# Instructions for quick/ephemeral sessions..."
-                rows={6}
-                className="w-full bg-surface-0 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
-                  font-mono placeholder-ctp-subtext0/50 resize-y focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Quick Agent Permissions Override
-              </label>
-              <PermissionsEditor
-                value={settings.quickOverrides?.permissions || {}}
-                onChange={(p) => updateQuickOverrides({ permissions: p })}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 text-sm rounded-lg bg-indigo-500 text-white
-                  hover:bg-indigo-600 cursor-pointer font-medium"
-              >
-                Save Settings
-              </button>
-              {saved && <span className="text-xs text-green-300">Saved!</span>}
-            </div>
-          </div>
-        )}
-
-        {/* Personal (.local) overrides */}
-        {activeSection === 'local' && (
-          <div className="space-y-5">
-            <p className="text-[11px] text-ctp-subtext0">
-              Personal overrides stored in <code className="text-ctp-blue">.clubhouse/settings.local.json</code>.
-              These merge on top of project defaults and are not shared with others.
-            </p>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Personal CLAUDE.md Override
-              </label>
-              <textarea
-                value={localSettings.claudeMd || ''}
-                onChange={(e) => setLocalSettings({ ...localSettings, claudeMd: e.target.value || undefined })}
-                placeholder="# Personal instructions override..."
-                rows={6}
-                className="w-full bg-surface-0 border border-surface-2 rounded-lg px-3 py-2 text-sm text-ctp-text
-                  font-mono placeholder-ctp-subtext0/50 resize-y focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
-                Personal Permissions Override
-              </label>
-              <PermissionsEditor
-                value={localSettings.permissions || {}}
-                onChange={(p) => setLocalSettings({ ...localSettings, permissions: p })}
-              />
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSaveLocal}
-                className="px-4 py-2 text-sm rounded-lg bg-indigo-500 text-white
-                  hover:bg-indigo-600 cursor-pointer font-medium"
-              >
-                Save Personal Settings
-              </button>
-              {saved && <span className="text-xs text-green-300">Saved!</span>}
-            </div>
-          </div>
-        )}
+        <NameAndPathSection projectId={project.id} />
+        <AppearanceSection projectId={project.id} />
+        <ViewsSection projectId={project.id} projectPath={project.path} />
+        <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>
-
-      {addDialog && (
-        <AddSkillAgentDialog
-          kind={addDialog.kind}
-          onCancel={() => setAddDialog(null)}
-          onCreate={(name, method, prompt) => handleCreate(addDialog.kind, name, method, prompt)}
-        />
-      )}
     </div>
   );
 }

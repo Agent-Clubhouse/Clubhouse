@@ -18,8 +18,7 @@ export function AgentPicker({ paneId }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const durableAgents = Object.values(agents)
-    .filter((a) => a.kind === 'durable' && a.projectId === activeProjectId)
-    .sort((a, b) => (a.role === 'host' ? -1 : b.role === 'host' ? 1 : 0));
+    .filter((a) => a.kind === 'durable' && a.projectId === activeProjectId);
 
   const handlePickDurable = async (agentId: string) => {
     const agent = agents[agentId];
@@ -30,12 +29,9 @@ export function AgentPicker({ paneId }: Props) {
         id: agent.id,
         name: agent.name,
         color: agent.color,
-        branch: agent.branch || '',
-        worktreePath: agent.worktreePath || '',
+        branch: agent.branch,
+        worktreePath: agent.worktreePath,
         createdAt: '',
-        overrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-        quickOverrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-        quickConfigLayer: {},
       }, true);
     }
 

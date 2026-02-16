@@ -1,56 +1,21 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Agent, McpServerEntry, SkillEntry, AgentTemplateEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig, QuickAgentDefaults } from '../../../shared/types';
+import { useEffect, useState, useRef } from 'react';
+import { Agent, QuickAgentDefaults } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { MODEL_OPTIONS } from '../../../shared/models';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { useUIStore } from '../../stores/uiStore';
 import { UtilityTerminal } from './UtilityTerminal';
-import { ConfigOverrideToggle } from '../settings/ConfigOverrideToggle';
-import { PermissionsEditor } from '../settings/PermissionsEditor';
-import { CrownBadge } from './AgentAvatar';
-import { SkillAgentList } from '../settings/SkillAgentList';
-import { AddSkillAgentDialog } from '../settings/AddSkillAgentDialog';
 
 interface Props {
   agent: Agent;
 }
 
-const DEFAULT_OVERRIDES: OverrideFlags = {
-  claudeMd: false,
-  permissions: false,
-  mcpConfig: false,
-  skills: false,
-  agents: false,
-};
-
 export function AgentSettingsView({ agent }: Props) {
-  const { closeAgentSettings, updateAgent, spawnQuickAgent } = useAgentStore();
+  const { closeAgentSettings, updateAgent } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
-  const { setExplorerTab, setSelectedFilePath } = useUIStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
-  const worktreePath = agent.worktreePath as string;
-
-  const [claudeMd, setClaudeMd] = useState('');
-  const [claudeMdDirty, setClaudeMdDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
-  const [skills, setSkills] = useState<SkillEntry[]>([]);
-  const [agentTemplates, setAgentTemplates] = useState<AgentTemplateEntry[]>([]);
-  const [overrides, setOverrides] = useState<OverrideFlags>(DEFAULT_OVERRIDES);
-  const [permissions, setPermissions] = useState<PermissionsConfig>({});
-  const [addDialog, setAddDialog] = useState<{ kind: 'skill' | 'agent-template' } | null>(null);
-
-  // Load override flags from agent config
-  const loadOverrides = useCallback(async () => {
-    if (!activeProject) return;
-    const configs: DurableAgentConfig[] = await window.clubhouse.agent.listDurable(activeProject.path);
-    const config = configs.find((c) => c.id === agent.id);
-    if (config?.overrides) {
-      setOverrides(config.overrides);
-    }
-  }, [activeProject, agent.id]);
+  const worktreePath = agent.worktreePath || activeProject?.path || '';
 
   // Appearance editing state
   const [isRenaming, setIsRenaming] = useState(false);
@@ -115,38 +80,6 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
 
-  // Refresh only MCP + skills + agent templates (won't clobber unsaved CLAUDE.md edits)
-  const refreshLists = useCallback(async () => {
-    const [servers, skillList, templateList] = await Promise.all([
-      window.clubhouse.agentSettings.readMcpConfig(worktreePath),
-      window.clubhouse.agentSettings.listSkills(worktreePath),
-      window.clubhouse.agentSettings.listAgentTemplates(worktreePath),
-    ]);
-    setMcpServers(servers);
-    setSkills(skillList);
-    setAgentTemplates(templateList);
-  }, [worktreePath]);
-
-  // Full load (including CLAUDE.md)
-  const loadData = useCallback(async () => {
-    const [md, servers, skillList, templateList] = await Promise.all([
-      window.clubhouse.agentSettings.readClaudeMd(worktreePath),
-      window.clubhouse.agentSettings.readMcpConfig(worktreePath),
-      window.clubhouse.agentSettings.listSkills(worktreePath),
-      window.clubhouse.agentSettings.listAgentTemplates(worktreePath),
-    ]);
-    setClaudeMd(md);
-    setClaudeMdDirty(false);
-    setMcpServers(servers);
-    setSkills(skillList);
-    setAgentTemplates(templateList);
-  }, [worktreePath]);
-
-  useEffect(() => {
-    loadData();
-    loadOverrides();
-  }, [loadData, loadOverrides]);
-
   // Load quick agent defaults
   useEffect(() => {
     if (!projectPath) return;
@@ -179,79 +112,6 @@ export function AgentSettingsView({ agent }: Props) {
     setQadSaving(false);
   };
 
-  // Auto-refresh: listen for utility terminal PTY activity, debounce refresh
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const utilityPtyId = `utility_${agent.id}`;
-
-  useEffect(() => {
-    const removeListener = window.clubhouse.pty.onData((id: string) => {
-      if (id !== utilityPtyId) return;
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        refreshLists();
-      }, 1500);
-    });
-
-    return () => {
-      removeListener();
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [utilityPtyId, refreshLists]);
-
-  const handleSaveClaudeMd = async () => {
-    if (!activeProject) return;
-    setSaving(true);
-    await window.clubhouse.agentSettings.saveClaudeMd(worktreePath, claudeMd, activeProject.path, agent.id);
-    setClaudeMdDirty(false);
-    setSaving(false);
-    // Reload overrides since saving may auto-set claudeMd override to true
-    loadOverrides();
-  };
-
-  const handleRefresh = () => {
-    refreshLists();
-  };
-
-  const handleToggleOverride = async (key: ConfigItemKey, synced: boolean) => {
-    if (!activeProject) return;
-    const result = await window.clubhouse.agent.toggleOverride(activeProject.path, agent.id, key, !synced);
-    if (result?.overrides) {
-      setOverrides(result.overrides);
-      // Reload data since toggling may have changed file contents
-      loadData();
-    }
-  };
-
-  const claudeMdSynced = !overrides.claudeMd;
-  const permissionsSynced = !overrides.permissions;
-  const mcpSynced = !overrides.mcpConfig;
-  const skillsSynced = !overrides.skills;
-  const agentsSynced = !overrides.agents;
-
-  const handleViewFile = (item: SkillEntry | AgentTemplateEntry) => {
-    const readmePath = item.path + '/README.md';
-    setExplorerTab('files');
-    setSelectedFilePath(readmePath);
-  };
-
-  const handleCreateItem = async (kind: 'skill' | 'agent-template', name: string, method: 'manual' | 'generate', prompt?: string) => {
-    const createFn = kind === 'skill'
-      ? window.clubhouse.agentSettings.createSkill
-      : window.clubhouse.agentSettings.createAgentTemplate;
-
-    const readmePath = await createFn(worktreePath, name, false);
-    await refreshLists();
-    setAddDialog(null);
-
-    if (method === 'generate' && prompt && activeProject) {
-      const mission = `Populate the README.md at ${readmePath} with a complete ${kind} definition. ${prompt}`;
-      spawnQuickAgent(activeProject.id, activeProject.path, mission, undefined, agent.id);
-    } else {
-      setExplorerTab('files');
-      setSelectedFilePath(readmePath);
-    }
-  };
-
   return (
     <div className="h-full flex flex-col bg-ctp-base">
       {/* Header */}
@@ -267,7 +127,6 @@ export function AgentSettingsView({ agent }: Props) {
           </svg>
         </button>
         <div className="relative">
-          {agent.role === 'host' && <CrownBadge size={10} />}
           <div
             className="w-6 h-6 rounded-full flex-shrink-0 flex items-center justify-center text-xs"
             style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
@@ -276,23 +135,7 @@ export function AgentSettingsView({ agent }: Props) {
           </div>
         </div>
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
-        {agent.role === 'host' && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-medium">Host</span>
-        )}
         <span className="text-xs text-ctp-subtext0">Settings</span>
-        <div className="flex-1" />
-        <button
-          onClick={handleRefresh}
-          title="Refresh MCP servers and skills"
-          className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M23 4v6h-6" />
-            <path d="M1 20v-6h6" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
-            <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
-          </svg>
-        </button>
       </div>
 
       {/* Top 2/3: scrollable settings */}
@@ -392,156 +235,6 @@ export function AgentSettingsView({ agent }: Props) {
           </div>
         </section>
 
-        {/* CLAUDE.md Section */}
-        <section>
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">CLAUDE.md</h3>
-            {!claudeMdSynced && (
-              <button
-                onClick={handleSaveClaudeMd}
-                disabled={!claudeMdDirty || saving}
-                className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer ${
-                  claudeMdDirty
-                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80'
-                    : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                }`}
-              >
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-            )}
-          </div>
-          <ConfigOverrideToggle
-            label="CLAUDE.md"
-            synced={claudeMdSynced}
-            onToggle={(synced) => handleToggleOverride('claudeMd', synced)}
-          />
-          {claudeMdSynced ? (
-            <div className="bg-surface-0 rounded-lg p-3 border border-surface-1">
-              <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-1">Managed by project</div>
-              <pre className="text-xs text-ctp-subtext0 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {claudeMd || '(empty)'}
-              </pre>
-            </div>
-          ) : (
-            <textarea
-              value={claudeMd}
-              onChange={(e) => { setClaudeMd(e.target.value); setClaudeMdDirty(true); }}
-              placeholder="# Agent instructions&#10;&#10;Add custom instructions for this agent..."
-              className="w-full h-48 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
-              spellCheck={false}
-            />
-          )}
-        </section>
-
-        {/* Permissions Section */}
-        <section>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Permissions</h3>
-          <ConfigOverrideToggle
-            label="Permissions"
-            synced={permissionsSynced}
-            onToggle={(synced) => handleToggleOverride('permissions', synced)}
-          />
-          {permissionsSynced ? (
-            <div className="bg-surface-0 rounded-lg p-3 border border-surface-1">
-              <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-1">Managed by project</div>
-              <div className="text-xs text-ctp-subtext0">Permission rules are synced from project defaults.</div>
-            </div>
-          ) : (
-            <PermissionsEditor
-              value={permissions}
-              onChange={setPermissions}
-            />
-          )}
-        </section>
-
-        {/* MCP Servers Section */}
-        <section>
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">MCP Servers</h3>
-            <button
-              onClick={handleRefresh}
-              title="Refresh"
-              className="text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 4v6h-6" />
-                <path d="M1 20v-6h6" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
-                <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
-              </svg>
-            </button>
-          </div>
-          <ConfigOverrideToggle
-            label="MCP"
-            synced={mcpSynced}
-            onToggle={(synced) => handleToggleOverride('mcpConfig', synced)}
-          />
-          {mcpSynced && (
-            <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-2">Managed by project</div>
-          )}
-          {mcpServers.length === 0 ? (
-            <div className="text-xs text-ctp-subtext0 bg-surface-0 rounded-lg p-3">
-              No MCP servers configured. {!mcpSynced && <>Use the terminal below to edit <code className="text-ctp-blue">.mcp.json</code>.</>}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {mcpServers.map((server) => (
-                <div key={server.name} className="bg-surface-0 rounded-lg px-3 py-2 border border-surface-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-ctp-text font-medium">{server.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                      server.scope === 'project'
-                        ? 'bg-ctp-green/15 text-ctp-green'
-                        : 'bg-surface-2 text-ctp-subtext0'
-                    }`}>
-                      {server.scope === 'project' ? 'project' : 'global'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-ctp-subtext0 font-mono mt-0.5">
-                    {server.command}{server.args ? ` ${server.args.join(' ')}` : ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Skills Section */}
-        <section>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Skills</h3>
-          <ConfigOverrideToggle
-            label="Skills"
-            synced={skillsSynced}
-            onToggle={(synced) => handleToggleOverride('skills', synced)}
-          />
-          {!skillsSynced && (
-            <SkillAgentList
-              kind="skill"
-              items={skills}
-              onView={handleViewFile}
-              onAdd={() => setAddDialog({ kind: 'skill' })}
-            />
-          )}
-        </section>
-
-        {/* Agent Templates Section */}
-        <section>
-          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Agent Templates</h3>
-          <ConfigOverrideToggle
-            label="Agents"
-            synced={agentsSynced}
-            onToggle={(synced) => handleToggleOverride('agents', synced)}
-          />
-          {!agentsSynced && (
-            <SkillAgentList
-              kind="agent-template"
-              items={agentTemplates}
-              onView={handleViewFile}
-              onAdd={() => setAddDialog({ kind: 'agent-template' })}
-            />
-          )}
-        </section>
-
         {/* Quick Agent Defaults Section */}
         {qadLoaded && (
           <section>
@@ -600,20 +293,12 @@ export function AgentSettingsView({ agent }: Props) {
       {/* Bottom 1/3: utility terminal */}
       <div className="flex-[1] min-h-0 flex flex-col border-t border-surface-0">
         <div className="px-4 py-1.5 text-[11px] text-ctp-subtext0 bg-surface-0 border-b border-surface-1">
-          Utility shell — use <code className="text-ctp-blue">claude mcp add -s project</code> to install MCPs to this agent
+          Utility shell
         </div>
         <div className="flex-1 min-h-0">
           <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />
         </div>
       </div>
-
-      {addDialog && (
-        <AddSkillAgentDialog
-          kind={addDialog.kind}
-          onCancel={() => setAddDialog(null)}
-          onCreate={(name, method, prompt) => handleCreateItem(addDialog.kind, name, method, prompt)}
-        />
-      )}
     </div>
   );
 }

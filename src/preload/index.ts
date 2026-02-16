@@ -43,12 +43,16 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.REORDER, orderedIds),
     readIcon: (filename: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_ICON, filename),
+    listClubhouseFiles: (projectPath: string): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.PROJECT.LIST_CLUBHOUSE_FILES, projectPath),
+    resetProject: (projectPath: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.PROJECT.RESET_PROJECT, projectPath),
   },
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -69,28 +73,12 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
     readQuickSummary: (agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId),
-    getSettings: (projectPath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.GET_SETTINGS, projectPath),
-    saveSettings: (projectPath: string, settings: any) =>
-      ipcRenderer.invoke(IPC.AGENT.SAVE_SETTINGS, projectPath, settings),
     setupHooks: (worktreePath: string, agentId: string, options?: { allowedTools?: string[] }) =>
       ipcRenderer.invoke(IPC.AGENT.SETUP_HOOKS, worktreePath, agentId, options),
-    getLocalSettings: (projectPath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.GET_LOCAL_SETTINGS, projectPath),
-    saveLocalSettings: (projectPath: string, localConfig: any) =>
-      ipcRenderer.invoke(IPC.AGENT.SAVE_LOCAL_SETTINGS, projectPath, localConfig),
-    toggleOverride: (projectPath: string, agentId: string, key: string, enable: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.TOGGLE_OVERRIDE, projectPath, agentId, key, enable),
-    prepareSpawn: (projectPath: string, agentId: string, worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.PREPARE_SPAWN, projectPath, agentId, worktreePath),
-    resolveQuickConfig: (projectPath: string, parentAgentId?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.RESOLVE_QUICK_CONFIG, projectPath, parentAgentId),
     getDurableConfig: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
     updateDurableConfig: (projectPath: string, agentId: string, updates: any) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
-    ensureHost: (projectPath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.ENSURE_HOST, projectPath),
     onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) =>
         callback(agentId, hookEvent);

@@ -24,12 +24,11 @@ export function App() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const updateAgentStatus = useAgentStore((s) => s.updateAgentStatus);
   const handleHookEvent = useAgentStore((s) => s.handleHookEvent);
-  const agents = useAgentStore((s) => s.agents);
+  const _agents = useAgentStore((s) => s.agents);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
-  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
-  const isFullWidth = explorerTab === 'hub' || (getPlugin(explorerTab)?.fullWidth === true);
+  const isFullWidth = explorerTab === 'hub' || explorerTab === 'terminal' || (getPlugin(explorerTab)?.fullWidth === true);
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
@@ -38,7 +37,9 @@ export function App() {
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const clearStaleStatuses = useAgentStore((s) => s.clearStaleStatuses);
   const loadPluginConfig = usePluginStore((s) => s.loadPluginConfig);
-  const isPluginEnabled = usePluginStore((s) => s.isPluginEnabled);
+  // Subscribe to raw data so guards re-run when configs change
+  const enabledPlugins = usePluginStore((s) => s.enabledPlugins);
+  const hiddenCoreTabs = usePluginStore((s) => s.hiddenCoreTabs);
 
   useEffect(() => {
     loadProjects();
@@ -48,11 +49,14 @@ export function App() {
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
-      setExplorerTab('settings');
-      setSettingsSubPage('notifications');
+      const state = useUIStore.getState();
+      if (state.explorerTab !== 'settings') {
+        state.toggleSettings();
+      }
+      state.setSettingsSubPage('notifications');
     });
     return () => remove();
-  }, [setExplorerTab, setSettingsSubPage]);
+  }, []);
 
   // Load durable agents for all projects so the dashboard shows them
   useEffect(() => {
@@ -78,14 +82,38 @@ export function App() {
     }
   }, [activeProjectId, projects, loadPluginConfig]);
 
-  // Guard: switch to 'agents' if current tab is a disabled plugin
+  // Guard: switch away if current tab is a disabled plugin or hidden core tab
   useEffect(() => {
     if (!activeProjectId) return;
+    if (explorerTab === 'settings') return;
     const isCoreTab = (CORE_TAB_IDS as readonly string[]).includes(explorerTab);
-    if (!isCoreTab && !isPluginEnabled(activeProjectId, explorerTab)) {
+
+    const hidden = hiddenCoreTabs[activeProjectId] ?? [];
+    const enabled = enabledPlugins[activeProjectId] ?? [];
+
+    const shouldSwitch = isCoreTab
+      ? hidden.includes(explorerTab)
+      : !enabled.includes(explorerTab);
+
+    if (shouldSwitch) {
+      // Find the first visible tab: prefer 'agents', then 'hub', then first enabled plugin
+      const coreFallbacks = ['agents', 'hub', 'terminal'] as const;
+      for (const tab of coreFallbacks) {
+        if (!hidden.includes(tab)) {
+          setExplorerTab(tab);
+          return;
+        }
+      }
+      const visiblePlugins = getAllPlugins().filter(
+        (p) => enabled.includes(p.id),
+      );
+      if (visiblePlugins.length > 0) {
+        setExplorerTab(visiblePlugins[0].id);
+        return;
+      }
       setExplorerTab('agents');
     }
-  }, [activeProjectId, explorerTab, isPluginEnabled, setExplorerTab]);
+  }, [activeProjectId, explorerTab, enabledPlugins, hiddenCoreTabs, setExplorerTab]);
 
   // Plugin lifecycle: call onProjectLoad for enabled plugins, onProjectUnload on cleanup
   useEffect(() => {
@@ -93,18 +121,19 @@ export function App() {
     const project = projects.find((p) => p.id === activeProjectId);
     if (!project) return;
     const ctx = { projectId: activeProjectId, projectPath: project.path };
-    const enabledPlugins = getAllPlugins().filter(
-      (p) => isPluginEnabled(activeProjectId, p.id),
+    const enabled = enabledPlugins[activeProjectId] ?? [];
+    const activePlugins = getAllPlugins().filter(
+      (p) => enabled.includes(p.id),
     );
-    for (const plugin of enabledPlugins) {
+    for (const plugin of activePlugins) {
       plugin.onProjectLoad?.(ctx);
     }
     return () => {
-      for (const plugin of enabledPlugins) {
+      for (const plugin of activePlugins) {
         plugin.onProjectUnload?.(ctx);
       }
     };
-  }, [activeProjectId, projects, isPluginEnabled]);
+  }, [activeProjectId, projects, enabledPlugins]);
 
   // Periodically clear stale detailed statuses (e.g. stuck "Thinking" or "Searching files")
   useEffect(() => {
@@ -174,13 +203,14 @@ export function App() {
   }, [handleHookEvent, checkAndNotify]);
 
 
-  const isHome = activeProjectId === null;
+  const isHome = activeProjectId === null && explorerTab !== 'settings';
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const pluginLabel = getPlugin(explorerTab)?.label;
   const CORE_LABELS: Record<string, string> = {
     agents: 'Agents',
     hub: 'Hub',
+    terminal: 'Terminal',
     settings: 'Settings',
   };
   const tabLabel = CORE_LABELS[explorerTab] || pluginLabel || explorerTab;
@@ -188,7 +218,7 @@ export function App() {
   const titleText = isHome
     ? 'Home'
     : activeProject
-      ? `${tabLabel} (${activeProject.name})`
+      ? `${tabLabel} (${activeProject.displayName || activeProject.name})`
       : tabLabel;
 
   if (isHome) {

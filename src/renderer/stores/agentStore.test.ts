@@ -19,8 +19,6 @@ vi.stubGlobal('window', {
       deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       getDurableConfig: vi.fn().mockResolvedValue(null),
-      getSettings: vi.fn().mockResolvedValue({ defaultClaudeMd: '', quickAgentClaudeMd: '' }),
-      resolveQuickConfig: vi.fn().mockResolvedValue({ claudeMd: '' }),
     },
   },
 });
@@ -351,8 +349,6 @@ describe('agentStore', () => {
       mockPty.spawn.mockResolvedValue(undefined);
       mockAgent.setupHooks.mockResolvedValue(undefined);
       mockAgent.getDurableConfig.mockResolvedValue(null);
-      mockAgent.getSettings.mockResolvedValue({ defaultClaudeMd: '', quickAgentClaudeMd: '' });
-      mockAgent.resolveQuickConfig.mockResolvedValue({ claudeMd: '' });
     });
 
     it('parent with systemPrompt — includes in --append-system-prompt', async () => {
@@ -429,22 +425,22 @@ describe('agentStore', () => {
       expect(mockAgent.getDurableConfig).not.toHaveBeenCalled();
     });
 
-    it('falls back to resolved claudeMd when parent has no systemPrompt', async () => {
+    it('no systemPrompt — only summary instruction in append-system-prompt', async () => {
       seedAgent({ id: 'parent_5', kind: 'durable', worktreePath: '/wt/parent' });
       mockAgent.getDurableConfig.mockResolvedValue({
         id: 'parent_5',
         name: 'parent',
         quickAgentDefaults: {},
       });
-      mockAgent.resolveQuickConfig.mockResolvedValue({ claudeMd: 'Project-level instructions' });
 
       await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', undefined, 'parent_5');
 
       const spawnCall = mockPty.spawn.mock.calls[0];
       const claudeArgs: string[] = spawnCall[2];
       const appendIdx = claudeArgs.indexOf('--append-system-prompt');
+      expect(appendIdx).toBeGreaterThan(-1);
       const systemPromptArg = claudeArgs[appendIdx + 1];
-      expect(systemPromptArg).toContain('Project-level instructions');
+      expect(systemPromptArg).toContain('clubhouse-summary');
     });
   });
 });

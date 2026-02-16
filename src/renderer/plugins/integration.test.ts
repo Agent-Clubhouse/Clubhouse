@@ -30,78 +30,75 @@ describe('plugin system integration', () => {
     usePluginStore.setState({ enabledPlugins: {} });
   });
 
-  it('registered plugins appear in ExplorerRail tab list via getAllPlugins', () => {
-    registerPlugin(makePlugin('files'));
-    registerPlugin(makePlugin('git'));
-    registerPlugin(makePlugin('terminal', { fullWidth: true }));
+  it('registered plugins appear in tab list via getAllPlugins', () => {
+    registerPlugin(makePlugin('custom', { fullWidth: true }));
 
     const plugins = getAllPlugins();
-    expect(plugins.map((p) => p.id)).toEqual(['files', 'git', 'terminal']);
+    expect(plugins.map((p) => p.id)).toEqual(['custom']);
   });
 
   it('getPlugin returns the correct plugin for AccessoryPanel/MainContentView lookup', () => {
-    const filesPlugin = makePlugin('files', {
-      SidebarPanel: (() => null) as any,
-    });
-    registerPlugin(filesPlugin);
+    const customPlugin = makePlugin('custom', { fullWidth: true });
+    registerPlugin(customPlugin);
 
-    const found = getPlugin('files');
-    expect(found).toBe(filesPlugin);
-    expect(found!.SidebarPanel).toBeDefined();
+    const found = getPlugin('custom');
+    expect(found).toBe(customPlugin);
+    expect(found!.fullWidth).toBe(true);
     expect(found!.MainPanel).toBeDefined();
   });
 
   it('fullWidth flag drives layout correctly', () => {
-    registerPlugin(makePlugin('terminal', { fullWidth: true }));
-    registerPlugin(makePlugin('files'));
+    registerPlugin(makePlugin('wide', { fullWidth: true }));
+    registerPlugin(makePlugin('narrow'));
 
-    expect(getPlugin('terminal')?.fullWidth).toBe(true);
-    expect(getPlugin('files')?.fullWidth).toBeFalsy();
+    expect(getPlugin('wide')?.fullWidth).toBe(true);
+    expect(getPlugin('narrow')?.fullWidth).toBeFalsy();
   });
 
-  it('pluginStore defaults all registered plugins to enabled', async () => {
-    registerPlugin(makePlugin('files'));
-    registerPlugin(makePlugin('git'));
-    registerPlugin(makePlugin('notes'));
+  it('pluginStore defaults to empty when no config exists', async () => {
+    registerPlugin(makePlugin('custom'));
 
     await usePluginStore.getState().loadPluginConfig('proj1', '/path');
     const enabled = usePluginStore.getState().getEnabledPluginIds('proj1');
-    expect(enabled).toEqual(['files', 'git', 'notes']);
+    expect(enabled).toEqual([]);
   });
 
   it('disabling a plugin removes it from enabled list', async () => {
-    registerPlugin(makePlugin('files'));
-    registerPlugin(makePlugin('git'));
+    registerPlugin(makePlugin('alpha'));
+    registerPlugin(makePlugin('beta'));
 
     await usePluginStore.getState().loadPluginConfig('proj1', '/path');
-    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'git', false);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'alpha', true);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'beta', true);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'beta', false);
 
-    expect(usePluginStore.getState().isPluginEnabled('proj1', 'files')).toBe(true);
-    expect(usePluginStore.getState().isPluginEnabled('proj1', 'git')).toBe(false);
+    expect(usePluginStore.getState().isPluginEnabled('proj1', 'alpha')).toBe(true);
+    expect(usePluginStore.getState().isPluginEnabled('proj1', 'beta')).toBe(false);
   });
 
   it('disabled plugin does not appear when filtering by isPluginEnabled', async () => {
-    registerPlugin(makePlugin('files'));
-    registerPlugin(makePlugin('git'));
-    registerPlugin(makePlugin('terminal'));
+    registerPlugin(makePlugin('alpha'));
+    registerPlugin(makePlugin('beta'));
 
     await usePluginStore.getState().loadPluginConfig('proj1', '/path');
-    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'git', false);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'alpha', true);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'beta', true);
+    await usePluginStore.getState().setPluginEnabled('proj1', '/path', 'beta', false);
 
     const { isPluginEnabled } = usePluginStore.getState();
     const visiblePlugins = getAllPlugins().filter((p) => isPluginEnabled('proj1', p.id));
-    expect(visiblePlugins.map((p) => p.id)).toEqual(['files', 'terminal']);
+    expect(visiblePlugins.map((p) => p.id)).toEqual(['alpha']);
   });
 
   it('plugin lifecycle hooks are callable', async () => {
     const onLoad = vi.fn();
     const onUnload = vi.fn();
-    registerPlugin(makePlugin('scheduler', {
+    registerPlugin(makePlugin('custom', {
       onProjectLoad: onLoad,
       onProjectUnload: onUnload,
     }));
 
-    const plugin = getPlugin('scheduler')!;
+    const plugin = getPlugin('custom')!;
     const ctx = { projectId: 'p1', projectPath: '/proj' };
 
     await plugin.onProjectLoad!(ctx);
@@ -112,9 +109,8 @@ describe('plugin system integration', () => {
   });
 
   it('getPluginIds matches getAllPlugins order', () => {
-    registerPlugin(makePlugin('files'));
-    registerPlugin(makePlugin('notes'));
-    registerPlugin(makePlugin('git'));
+    registerPlugin(makePlugin('alpha'));
+    registerPlugin(makePlugin('beta'));
 
     expect(getPluginIds()).toEqual(getAllPlugins().map((p) => p.id));
   });

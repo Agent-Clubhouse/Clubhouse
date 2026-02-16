@@ -2,8 +2,9 @@ export interface Project {
   id: string;
   name: string;
   path: string;
-  color?: string;  // AGENT_COLORS id (e.g. 'emerald')
-  icon?: string;   // filename in ~/.clubhouse/project-icons/
+  color?: string;       // AGENT_COLORS id (e.g. 'emerald')
+  icon?: string;        // filename in ~/.clubhouse/project-icons/
+  displayName?: string; // user-set display name (overrides `name` in UI)
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'error';
@@ -17,14 +18,12 @@ export interface Agent {
   status: AgentStatus;
   color: string;
   emoji?: string;
-  role?: 'host';
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
   mission?: string;
   model?: string;
   parentAgentId?: string;
-  role?: 'host';
 }
 
 export interface CompletedQuickAgent {
@@ -40,9 +39,6 @@ export interface CompletedQuickAgent {
 }
 
 // --- Config inheritance types ---
-
-export type ConfigItemKey = 'claudeMd' | 'permissions' | 'mcpConfig' | 'skills' | 'agents';
-export type OverrideFlags = Record<ConfigItemKey, boolean>;
 
 export interface PermissionsConfig {
   allow?: string[];
@@ -61,28 +57,10 @@ export interface McpServerDef {
   url?: string;
 }
 
-/** A layer of config values. undefined = inherit, null = explicitly cleared. */
-export interface ConfigLayer {
-  claudeMd?: string | null;
-  permissions?: PermissionsConfig | null;
-  mcpConfig?: McpConfig | null;
-}
-
 export interface QuickAgentDefaults {
   systemPrompt?: string;
   allowedTools?: string[];
   defaultModel?: string;
-}
-
-export interface ProjectSettings {
-  // Legacy fields (kept for migration)
-  defaultClaudeMd?: string;
-  quickAgentClaudeMd?: string;
-  // New fields
-  defaults: ConfigLayer;
-  quickOverrides: ConfigLayer;
-  defaultSkillsPath?: string;
-  defaultAgentsPath?: string;
 }
 
 export interface DurableAgentConfig {
@@ -90,16 +68,11 @@ export interface DurableAgentConfig {
   name: string;
   color: string;
   emoji?: string;
-  role?: 'host';
-  branch: string;
-  worktreePath: string;
+  branch?: string;
+  worktreePath?: string;
   createdAt: string;
   model?: string;
-  overrides: OverrideFlags;
-  quickOverrides: OverrideFlags;
-  quickConfigLayer: ConfigLayer;
   quickAgentDefaults?: QuickAgentDefaults;
-  role?: 'host';
 }
 
 export interface FileNode {
@@ -111,7 +84,7 @@ export interface FileNode {
 
 export type ExplorerTab = string;
 
-export const CORE_TAB_IDS = ['agents', 'hub', 'settings'] as const;
+export const CORE_TAB_IDS = ['agents', 'hub', 'terminal', 'settings'] as const;
 
 export interface NotificationSettings {
   enabled: boolean;
@@ -303,15 +276,3 @@ export interface PtyExitPayload {
   exitCode: number;
 }
 
-export interface SchedulerJob {
-  id: string;
-  name: string;
-  cronExpression: string;  // standard 5-field cron: min hour dom month dow
-  agentType: 'durable' | 'quick';
-  agentId?: string;        // durable agent config ID
-  model?: string;          // for quick agents
-  prompt: string;
-  enabled: boolean;
-  createdAt: string;
-  lastRunAt?: string;
-}

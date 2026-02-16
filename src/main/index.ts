@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll } from './services/pty-manager';
 import { buildMenu } from './menu';
@@ -70,14 +70,9 @@ app.on('ready', () => {
   buildMenu();
   createWindow();
 
-  // Trigger macOS notification permission prompt on first launch.
-  // Must wait until the window is visible — macOS suppresses the permission
-  // dialog if the app hasn't finished presenting its first window.
-  if (process.platform === 'darwin' && Notification.isSupported()) {
-    mainWindow?.once('show', () => {
-      new Notification({ title: 'Clubhouse', body: 'Notifications are enabled' }).show();
-    });
-  }
+  // macOS notification permission is triggered on-demand when the user
+  // sends their first test notification or an agent event fires.
+  // The app must be codesigned (even ad-hoc) for macOS to show the prompt.
 });
 
 app.on('window-all-closed', () => {

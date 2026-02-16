@@ -66,12 +66,9 @@ export function SendToAgentDialog({ notePath, noteContent, onClose }: Props) {
             id: agent.id,
             name: agent.name,
             color: agent.color,
-            branch: agent.branch || '',
-            worktreePath: agent.worktreePath || '',
+            branch: agent.branch,
+            worktreePath: agent.worktreePath,
             createdAt: '',
-            overrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-            quickOverrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-            quickConfigLayer: {},
           }, true);
           // Give the agent a moment to start before writing
           await new Promise((r) => setTimeout(r, 1500));

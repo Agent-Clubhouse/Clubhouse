@@ -9,7 +9,6 @@ export interface AgentContext {
   worktreePath: string;
   branch: string;
   projectPath: string;
-  role?: 'host';
 }
 
 const CONTEXT_TO_VAR: Record<keyof AgentContext, string> = {
@@ -18,7 +17,6 @@ const CONTEXT_TO_VAR: Record<keyof AgentContext, string> = {
   worktreePath: 'WORKTREE_PATH',
   branch: 'BRANCH',
   projectPath: 'PROJECT_PATH',
-  role: 'ROLE',
 };
 
 export function expandTemplate(template: string, context: AgentContext): string {

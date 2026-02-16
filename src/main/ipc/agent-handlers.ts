@@ -2,10 +2,8 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
-import { ConfigItemKey, ConfigLayer } from '../../shared/types';
 import * as agentConfig from '../services/agent-config';
 import { writeHooksConfig } from '../services/agent-hooks';
-import { resolveQuickConfig } from '../services/config-resolver';
 
 export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, (_event, projectPath: string) => {
@@ -14,8 +12,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
-    (_event, projectPath: string, name: string, color: string, model?: string) => {
-      return agentConfig.createDurable(projectPath, name, color, model);
+    (_event, projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean) => {
+      return agentConfig.createDurable(projectPath, name, color, model, useWorktree);
     }
   );
 
@@ -33,14 +31,6 @@ export function registerAgentHandlers(): void {
       agentConfig.updateDurable(projectPath, agentId, updates);
     }
   );
-
-  ipcMain.handle(IPC.AGENT.GET_SETTINGS, (_event, projectPath: string) => {
-    return agentConfig.getSettings(projectPath);
-  });
-
-  ipcMain.handle(IPC.AGENT.SAVE_SETTINGS, (_event, projectPath: string, settings: any) => {
-    agentConfig.saveSettings(projectPath, settings);
-  });
 
   ipcMain.handle(IPC.AGENT.SETUP_HOOKS, async (_event, worktreePath: string, agentId: string, options?: { allowedTools?: string[] }) => {
     await writeHooksConfig(worktreePath, agentId, options);
@@ -102,30 +92,5 @@ export function registerAgentHandlers(): void {
     } catch {
       return null;
     }
-  });
-
-  ipcMain.handle(IPC.AGENT.GET_LOCAL_SETTINGS, (_event, projectPath: string) => {
-    return agentConfig.getLocalSettings(projectPath);
-  });
-
-  ipcMain.handle(IPC.AGENT.SAVE_LOCAL_SETTINGS, (_event, projectPath: string, localConfig: ConfigLayer) => {
-    agentConfig.saveLocalSettings(projectPath, localConfig);
-  });
-
-  ipcMain.handle(IPC.AGENT.TOGGLE_OVERRIDE, (_event, projectPath: string, agentId: string, key: ConfigItemKey, enable: boolean) => {
-    return agentConfig.toggleOverride(projectPath, agentId, key, enable);
-  });
-
-  ipcMain.handle(IPC.AGENT.PREPARE_SPAWN, async (_event, projectPath: string, agentId: string, worktreePath: string) => {
-    agentConfig.prepareSpawn(projectPath, agentId);
-    await writeHooksConfig(worktreePath, agentId);
-  });
-
-  ipcMain.handle(IPC.AGENT.RESOLVE_QUICK_CONFIG, (_event, projectPath: string, parentAgentId?: string) => {
-    return resolveQuickConfig(projectPath, parentAgentId);
-  });
-
-  ipcMain.handle(IPC.AGENT.ENSURE_HOST, (_event, projectPath: string) => {
-    return agentConfig.ensureHostAgent(projectPath);
   });
 }

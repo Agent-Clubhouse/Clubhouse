@@ -7,7 +7,6 @@ const fullContext: AgentContext = {
   worktreePath: '/project/.clubhouse/agents/test-agent',
   branch: 'test-agent/standby',
   projectPath: '/project',
-  role: 'host',
 };
 
 describe('expandTemplate', () => {
@@ -42,16 +41,9 @@ describe('expandTemplate', () => {
     expect(result).toBe('No variables here.');
   });
 
-  it('expands role variable when present', () => {
+  it('preserves unknown role variable', () => {
     const template = 'Role: {{ROLE}}';
     const result = expandTemplate(template, fullContext);
-    expect(result).toBe('Role: host');
-  });
-
-  it('preserves role variable when not set', () => {
-    const ctx: AgentContext = { ...fullContext, role: undefined };
-    const template = 'Role: {{ROLE}}';
-    const result = expandTemplate(template, ctx);
     expect(result).toBe('Role: {{ROLE}}');
   });
 });

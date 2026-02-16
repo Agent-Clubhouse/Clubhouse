@@ -2,7 +2,6 @@ import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { CrownBadge } from './AgentAvatar';
 
 interface Props {
   agent: Agent;
@@ -80,7 +79,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     >
       {/* Avatar with status ring */}
       <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
-        {agent.role === 'host' && <CrownBadge size={12} />}
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{ border: `2px solid ${ringColor}` }}
@@ -105,9 +103,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          {agent.role === 'host' && (
-            <span className="text-amber-400 text-xs" title="Project Host">{'\u{1F451}'}</span>
-          )}
           <span className="text-sm text-ctp-text truncate font-medium">{agent.name}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
@@ -164,7 +159,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             {'\u25A0'}
           </button>
         )}
-        {isDurable && agent.status !== 'running' && agent.role !== 'host' && (
+        {isDurable && agent.status !== 'running' && (
           <button
             onClick={handleDelete}
             title="Delete agent"

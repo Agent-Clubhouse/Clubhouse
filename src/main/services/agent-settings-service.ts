@@ -1,7 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { McpServerEntry, SkillEntry, AgentTemplateEntry, ProjectSettings } from '../../shared/types';
+import { McpServerEntry, SkillEntry, AgentTemplateEntry } from '../../shared/types';
+
+/** Local settings shape for .clubhouse/settings.json */
+interface ProjectSettings {
+  defaults: Record<string, unknown>;
+  quickOverrides: Record<string, unknown>;
+  defaultSkillsPath?: string;
+  defaultAgentsPath?: string;
+}
 
 export function readClaudeMd(worktreePath: string): string {
   // Prefer .claude/CLAUDE.local.md, fall back to legacy CLAUDE.md

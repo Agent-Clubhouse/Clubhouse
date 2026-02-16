@@ -55,12 +55,9 @@ async function executeJob(job: SchedulerJob) {
         id: agent.id,
         name: agent.name,
         color: agent.color,
-        branch: agent.branch || '',
-        worktreePath: agent.worktreePath || '',
+        branch: agent.branch,
+        worktreePath: agent.worktreePath,
         createdAt: '',
-        overrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-        quickOverrides: { claudeMd: false, permissions: false, mcpConfig: false, skills: false, agents: false },
-        quickConfigLayer: {},
       }, true);
       await new Promise((r) => setTimeout(r, 1500));
     }

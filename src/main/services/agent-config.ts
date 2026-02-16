@@ -1,10 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, QuickAgentDefaults, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, ConfigLayer, ConfigItemKey } from '../../shared/types';
-import { AgentContext } from '../../shared/template-engine';
-import { resolveProjectDefaults, resolveDurableConfig, diffConfigLayers, defaultOverrideFlags } from './config-resolver';
-import { materializeAll, repairMissing, materializeClaudeMd, materializePermissions } from './config-materializer';
+import { DurableAgentConfig, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -20,32 +17,13 @@ function agentsConfigPath(projectPath: string): string {
   return path.join(clubhouseDir(projectPath), 'agents.json');
 }
 
-function settingsPath(projectPath: string): string {
-  return path.join(clubhouseDir(projectPath), 'settings.json');
-}
-
-function localSettingsPath(projectPath: string): string {
-  return path.join(clubhouseDir(projectPath), 'settings.local.json');
-}
-
-function buildAgentContext(config: DurableAgentConfig, projectPath: string): AgentContext {
-  return {
-    agentName: config.name,
-    agentType: 'durable',
-    worktreePath: config.worktreePath,
-    branch: config.branch,
-    projectPath,
-    role: config.role,
-  };
-}
-
 const GITIGNORE_BLOCK = `# Clubhouse agent manager
 .clubhouse/agents/
 .clubhouse/.local/
 .clubhouse/agents.json
 .clubhouse/settings.local.json`;
 
-function ensureGitignore(projectPath: string): void {
+export function ensureGitignore(projectPath: string): void {
   const gitignorePath = path.join(projectPath, '.gitignore');
 
   if (fs.existsSync(gitignorePath)) {
@@ -76,38 +54,6 @@ function readAgents(projectPath: string): DurableAgentConfig[] {
   if (!fs.existsSync(configPath)) return [];
   try {
     const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    let needsWrite = false;
-
-    // Migrate agents that lack override fields
-    for (const agent of agents) {
-      if (!agent.overrides) {
-        agent.overrides = defaultOverrideFlags();
-        agent.quickOverrides = defaultOverrideFlags();
-        agent.quickConfigLayer = {};
-
-        // Auto-detect if agent's CLAUDE.md differs from project default
-        // to avoid overwriting customized content on first sync
-        try {
-          const defaults = resolveProjectDefaults(projectPath);
-          const claudeMdPath = path.join(agent.worktreePath, 'CLAUDE.md');
-          if (fs.existsSync(claudeMdPath)) {
-            const currentContent = fs.readFileSync(claudeMdPath, 'utf-8');
-            if (defaults.claudeMd && currentContent !== defaults.claudeMd) {
-              agent.overrides.claudeMd = true;
-            }
-          }
-        } catch {
-          // Ignore — safe default is all false
-        }
-
-        needsWrite = true;
-      }
-    }
-
-    if (needsWrite) {
-      writeAgents(projectPath, agents);
-    }
-
     return agents;
   } catch {
     return [];
@@ -147,61 +93,53 @@ export function createDurable(
   name: string,
   color: string,
   model?: string,
-  role?: 'host',
+  useWorktree: boolean = true,
 ): DurableAgentConfig {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
 
   const id = `durable_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const branch = `${name}/standby`;
-  const worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
 
-  // Create the branch (from current HEAD)
-  const hasGit = fs.existsSync(path.join(projectPath, '.git'));
-  if (hasGit) {
-    try {
-      // Create the branch
-      execSync(`git branch "${branch}"`, { cwd: projectPath, encoding: 'utf-8' });
-    } catch {
-      // Branch may already exist
-    }
+  let branch: string | undefined;
+  let worktreePath: string | undefined;
 
-    try {
-      // Create worktree
-      ensureDir(path.dirname(worktreePath));
-      execSync(`git worktree add "${worktreePath}" "${branch}"`, {
-        cwd: projectPath,
-        encoding: 'utf-8',
-      });
-    } catch {
-      // Worktree may already exist, or git worktree not supported
-      // Fallback: just create the directory
+  if (useWorktree) {
+    branch = `${name}/standby`;
+    worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
+
+    // Create the branch (from current HEAD)
+    const hasGit = fs.existsSync(path.join(projectPath, '.git'));
+    if (hasGit) {
+      try {
+        execSync(`git branch "${branch}"`, { cwd: projectPath, encoding: 'utf-8' });
+      } catch {
+        // Branch may already exist
+      }
+
+      try {
+        ensureDir(path.dirname(worktreePath));
+        execSync(`git worktree add "${worktreePath}" "${branch}"`, {
+          cwd: projectPath,
+          encoding: 'utf-8',
+        });
+      } catch {
+        // Worktree may already exist, or git worktree not supported
+        ensureDir(worktreePath);
+      }
+    } else {
       ensureDir(worktreePath);
     }
-  } else {
-    ensureDir(worktreePath);
   }
-
-  const overrides = defaultOverrideFlags();
 
   const config: DurableAgentConfig = {
     id,
     name,
     color,
-    ...(role ? { role } : {}),
-    branch,
-    worktreePath,
+    ...(branch ? { branch } : {}),
+    ...(worktreePath ? { worktreePath } : {}),
     createdAt: new Date().toISOString(),
     ...(model && model !== 'default' ? { model } : {}),
-    overrides,
-    quickOverrides: defaultOverrideFlags(),
-    quickConfigLayer: {},
   };
-
-  // Materialize all config from project defaults (with template expansion)
-  const resolved = resolveProjectDefaults(projectPath);
-  const agentContext = buildAgentContext(config, projectPath);
-  materializeAll(worktreePath, resolved, overrides, projectPath, agentContext);
 
   const agents = readAgents(projectPath);
   agents.push(config);
@@ -243,8 +181,11 @@ export function deleteDurable(projectPath: string, agentId: string): void {
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
 
-  if (agent.role === 'host') {
-    throw new Error('Cannot delete the project host agent');
+  // If no worktree, just unregister
+  if (!agent.worktreePath) {
+    const filtered = agents.filter((a) => a.id !== agentId);
+    writeAgents(projectPath, filtered);
+    return;
   }
 
   // Remove worktree
@@ -260,13 +201,15 @@ export function deleteDurable(projectPath: string, agentId: string): void {
     }
 
     // Optionally delete branch
-    try {
-      execSync(`git branch -D "${agent.branch}"`, {
-        cwd: projectPath,
-        encoding: 'utf-8',
-      });
-    } catch {
-      // Branch may not exist
+    if (agent.branch) {
+      try {
+        execSync(`git branch -D "${agent.branch}"`, {
+          cwd: projectPath,
+          encoding: 'utf-8',
+        });
+      } catch {
+        // Branch may not exist
+      }
     }
   }
 
@@ -277,151 +220,6 @@ export function deleteDurable(projectPath: string, agentId: string): void {
 
   const filtered = agents.filter((a) => a.id !== agentId);
   writeAgents(projectPath, filtered);
-}
-
-export function getSettings(projectPath: string): ProjectSettings {
-  const p = settingsPath(projectPath);
-  if (!fs.existsSync(p)) {
-    return { defaults: {}, quickOverrides: {} };
-  }
-  try {
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8'));
-
-    // Migrate old format { defaultClaudeMd, quickAgentClaudeMd } → new format
-    if (raw.defaultClaudeMd !== undefined && !raw.defaults) {
-      const migrated: ProjectSettings = {
-        defaults: { claudeMd: raw.defaultClaudeMd || undefined },
-        quickOverrides: { claudeMd: raw.quickAgentClaudeMd || undefined },
-      };
-      // Write back immediately so migration happens once
-      fs.writeFileSync(p, JSON.stringify(migrated, null, 2), 'utf-8');
-      return migrated;
-    }
-
-    // Ensure defaults and quickOverrides exist
-    if (!raw.defaults) raw.defaults = {};
-    if (!raw.quickOverrides) raw.quickOverrides = {};
-
-    return raw;
-  } catch {
-    return { defaults: {}, quickOverrides: {} };
-  }
-}
-
-export function saveSettings(projectPath: string, settings: ProjectSettings): void {
-  ensureDir(clubhouseDir(projectPath));
-
-  // Compute diff to know what changed
-  const oldSettings = getSettings(projectPath);
-  const oldDefaults = resolveProjectDefaults(projectPath);
-
-  fs.writeFileSync(settingsPath(projectPath), JSON.stringify(settings, null, 2), 'utf-8');
-
-  // Sync agents with changed defaults
-  const newDefaults = resolveProjectDefaults(projectPath);
-  const changedKeys = diffConfigLayers(oldDefaults, newDefaults);
-  if (changedKeys.length > 0) {
-    syncAllAgents(projectPath, changedKeys);
-  }
-}
-
-export function getLocalSettings(projectPath: string): ConfigLayer {
-  const p = localSettingsPath(projectPath);
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
-  } catch {
-    return {};
-  }
-}
-
-export function saveLocalSettings(projectPath: string, localConfig: ConfigLayer): void {
-  ensureDir(clubhouseDir(projectPath));
-
-  const oldDefaults = resolveProjectDefaults(projectPath);
-  fs.writeFileSync(localSettingsPath(projectPath), JSON.stringify(localConfig, null, 2), 'utf-8');
-
-  const newDefaults = resolveProjectDefaults(projectPath);
-  const changedKeys = diffConfigLayers(oldDefaults, newDefaults);
-  if (changedKeys.length > 0) {
-    syncAllAgents(projectPath, changedKeys);
-  }
-}
-
-/**
- * Iterate all agents, re-materialize non-overridden items for changed keys.
- */
-export function syncAllAgents(projectPath: string, changedKeys?: ConfigItemKey[]): void {
-  const agents = readAgents(projectPath);
-  const defaults = resolveProjectDefaults(projectPath);
-
-  for (const agent of agents) {
-    if (agent.role === 'host') continue; // Host manages its own config
-    if (!fs.existsSync(agent.worktreePath)) continue;
-    const overrides = agent.overrides || defaultOverrideFlags();
-
-    // Build a resolved layer with only the changed (and non-overridden) items
-    const toApply: ConfigLayer = {};
-    const keysToCheck = changedKeys || (['claudeMd', 'permissions', 'mcpConfig'] as ConfigItemKey[]);
-
-    for (const key of keysToCheck) {
-      if (!overrides[key] && key in defaults) {
-        (toApply as Record<string, unknown>)[key] = (defaults as Record<string, unknown>)[key];
-      }
-    }
-
-    const agentContext = buildAgentContext(agent, projectPath);
-    materializeAll(agent.worktreePath, toApply, overrides, projectPath, agentContext);
-  }
-}
-
-/**
- * Toggle an override flag for an agent.
- * If disabling: re-materialize from defaults.
- * If enabling for dirs: current content stays (snapshot).
- */
-export function toggleOverride(
-  projectPath: string,
-  agentId: string,
-  key: ConfigItemKey,
-  enable: boolean,
-): DurableAgentConfig | null {
-  const agents = readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
-  if (!agent) return null;
-
-  if (!agent.overrides) agent.overrides = defaultOverrideFlags();
-  agent.overrides[key] = enable;
-
-  writeAgents(projectPath, agents);
-
-  // If disabling override (reverting to synced), re-materialize from defaults
-  if (!enable && fs.existsSync(agent.worktreePath)) {
-    const defaults = resolveProjectDefaults(projectPath);
-    const resolved: ConfigLayer = {};
-
-    if (key === 'claudeMd' || key === 'permissions' || key === 'mcpConfig') {
-      (resolved as Record<string, unknown>)[key] = (defaults as Record<string, unknown>)[key];
-    }
-
-    const agentContext = buildAgentContext(agent, projectPath);
-    materializeAll(agent.worktreePath, resolved, agent.overrides, projectPath, agentContext);
-  }
-
-  return agent;
-}
-
-/**
- * Prepare an agent for spawn: repair missing config + write hooks.
- */
-export function prepareSpawn(projectPath: string, agentId: string): void {
-  const agents = readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
-  if (!agent) return;
-
-  const resolved = resolveDurableConfig(projectPath, agentId);
-  const overrides = agent.overrides || defaultOverrideFlags();
-  const agentContext = buildAgentContext(agent, projectPath);
-  repairMissing(agent.worktreePath, resolved, overrides, projectPath, agentContext);
 }
 
 function detectBaseBranch(projectPath: string): string {
@@ -464,14 +262,14 @@ export function getWorktreeStatus(projectPath: string, agentId: string): Worktre
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
-  // Host agents run at project root — not a meaningful worktree to diff
-  if (agent.role === 'host') {
-    return { isValid: true, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
+  // Non-worktree agents have no worktree to inspect
+  if (!agent.worktreePath) {
+    return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
   const wt = agent.worktreePath;
   if (!fs.existsSync(wt) || !fs.existsSync(path.join(wt, '.git'))) {
-    return { isValid: false, branch: agent.branch, uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
+    return { isValid: false, branch: agent.branch || '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
   // Get uncommitted files
@@ -509,7 +307,7 @@ export function getWorktreeStatus(projectPath: string, agentId: string): Worktre
 
   return {
     isValid: true,
-    branch: agent.branch,
+    branch: agent.branch || '',
     uncommittedFiles,
     unpushedCommits,
     hasRemote,
@@ -520,9 +318,13 @@ export function deleteCommitAndPush(projectPath: string, agentId: string): Delet
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
-  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
+  if (!wt) {
+    deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Deleted (no worktree)' };
+  }
+
   try {
     // Stage all and commit
     execSync('git add -A', { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
@@ -535,7 +337,7 @@ export function deleteCommitAndPush(projectPath: string, agentId: string): Delet
     // Push if remote exists
     try {
       const remoteOut = execSync('git remote', { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
-      if (remoteOut.trim()) {
+      if (remoteOut.trim() && agent.branch) {
         execSync(`git push -u origin "${agent.branch}"`, { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
       }
     } catch {
@@ -553,9 +355,13 @@ export function deleteWithCleanupBranch(projectPath: string, agentId: string): D
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
-  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
+  if (!wt) {
+    deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Deleted (no worktree)' };
+  }
+
   const cleanupBranch = `${agent.name}/cleanup`;
 
   try {
@@ -596,9 +402,13 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
-  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
+  if (!wt) {
+    deleteDurable(projectPath, agentId);
+    return { ok: true, message: 'Deleted (no worktree)' };
+  }
+
   const base = detectBaseBranch(projectPath);
 
   try {
@@ -658,10 +468,6 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
 }
 
 export function deleteForce(projectPath: string, agentId: string): DeleteResult {
-  const agents = readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
-  if (agent?.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
-
   try {
     deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Force deleted' };
@@ -672,92 +478,7 @@ export function deleteForce(projectPath: string, agentId: string): DeleteResult 
 
 export function deleteUnregister(projectPath: string, agentId: string): DeleteResult {
   const agents = readAgents(projectPath);
-  const agent = agents.find((a) => a.id === agentId);
-  if (agent?.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
-
   const filtered = agents.filter((a) => a.id !== agentId);
   writeAgents(projectPath, filtered);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
-}
-
-const CLUBHOUSE_README = `# .clubhouse/
-
-This directory is managed by [Clubhouse](https://github.com/Clubhouse) — a multi-agent manager for Claude Code.
-
-## Directory Structure
-
-### Tracked (committed to git)
-- \`settings.json\` — Project-level defaults for all agents (CLAUDE.md template, permissions, MCP config)
-- \`skills/\` — Shared Claude Code skills available to all agents
-- \`notes/\` — Project notes accessible to agents
-- \`README.md\` — This file
-
-### Gitignored (machine-local)
-- \`agents/\` — Git worktrees for each durable agent
-- \`.local/\` — Legacy local-only agent worktrees
-- \`agents.json\` — Agent registry (IDs, names, branches, overrides)
-- \`settings.local.json\` — Personal overrides layered on top of settings.json
-
-## How Settings Work
-
-### settings.json (shared)
-Team-wide defaults. All agents inherit from this unless they override a specific item.
-
-\`\`\`json
-{
-  "defaults": {
-    "claudeMd": "# Instructions for all agents...",
-    "permissions": { "allow": ["Bash(git:*)", "Bash(npm:*)"] }
-  },
-  "quickOverrides": {
-    "claudeMd": "# Quick agent specific instructions..."
-  }
-}
-\`\`\`
-
-### settings.local.json (personal)
-Your personal overrides. Merged on top of settings.json. Not committed.
-
-### Per-agent overrides
-Each agent can override specific config items (CLAUDE.md, permissions, MCP).
-When an override is enabled, the agent manages that item locally instead of inheriting from defaults.
-
-## Template Variables
-
-CLAUDE.md templates support these variables:
-- \`{{AGENT_NAME}}\` — The agent's name
-- \`{{AGENT_TYPE}}\` — \`durable\` or \`quick\`
-- \`{{WORKTREE_PATH}}\` — Absolute path to the agent's worktree
-- \`{{BRANCH}}\` — The agent's standby branch
-- \`{{PROJECT_PATH}}\` — Absolute path to the project root
-
-## Agent Lifecycle
-
-1. **Create** — A worktree + branch are created, config is materialized from defaults
-2. **Materialize** — CLAUDE.md, permissions, MCP config, skills are written to the worktree
-3. **Wake** — Missing config is repaired, hooks are set up, Claude Code is launched
-4. **Work** — The agent works in its worktree on a feature branch
-5. **Sleep** — Claude Code exits, the agent returns to sleeping state
-`;
-
-function ensureClubhouseReadme(projectPath: string): void {
-  const readmePath = path.join(clubhouseDir(projectPath), 'README.md');
-  if (fs.existsSync(readmePath)) return;
-  ensureDir(clubhouseDir(projectPath));
-  fs.writeFileSync(readmePath, CLUBHOUSE_README, 'utf-8');
-}
-
-/**
- * Idempotent: ensure a project host agent exists. Creates one if none found.
- * Also ensures gitignore and README are up-to-date.
- */
-export function ensureHostAgent(projectPath: string): DurableAgentConfig {
-  ensureGitignore(projectPath);
-  ensureClubhouseReadme(projectPath);
-
-  const agents = readAgents(projectPath);
-  const existing = agents.find((a) => a.role === 'host');
-  if (existing) return existing;
-
-  return createDurable(projectPath, 'project-host', 'amber', undefined, 'host');
 }

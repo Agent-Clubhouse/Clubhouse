@@ -5,8 +5,6 @@ import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { WebpackPlugin } from '@electron-forge/plugin-webpack';
-import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import path from 'path';
 import fs from 'fs';
 
@@ -42,6 +40,12 @@ const config: ForgeConfig = {
     extendInfo: {
       CFBundleDisplayName: 'Clubhouse',
       NSUserNotificationAlertStyle: 'alert',
+    },
+    osxSign: {
+      identity: '-', // ad-hoc signing
+      optionsForFile: () => ({
+        entitlements: path.resolve(__dirname, 'entitlements.plist'),
+      }),
     },
     asar: {
       unpack: '**/node_modules/node-pty/**',
@@ -94,15 +98,6 @@ const config: ForgeConfig = {
           },
         ],
       },
-    }),
-    new FusesPlugin({
-      version: FuseVersion.V1,
-      [FuseV1Options.RunAsNode]: false,
-      [FuseV1Options.EnableCookieEncryption]: true,
-      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-      [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
     }),
   ],
 };

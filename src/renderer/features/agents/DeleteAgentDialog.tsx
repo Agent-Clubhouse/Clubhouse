@@ -91,8 +91,22 @@ export function DeleteAgentDialog() {
 
   if (!agent || !activeProject) return null;
 
-  // Host agents get a simplified dialog
-  if (agent.role === 'host') {
+  const handleExecute = async (mode: DeleteMode) => {
+    setExecuting(true);
+    setError(null);
+    try {
+      const result = await executeDelete(mode, activeProject.path);
+      if (!result.ok && result.message !== 'cancelled') {
+        setError(result.message);
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    }
+    setExecuting(false);
+  };
+
+  // Non-worktree agents get a simple unregister dialog
+  if (!agent.worktreePath) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeDeleteDialog}>
         <div
@@ -103,7 +117,7 @@ export function DeleteAgentDialog() {
             Remove {agent.name}?
           </h2>
           <p className="text-sm text-ctp-subtext0 mb-4">
-            This will remove the host agent from the sidebar. All project files remain on disk.
+            This agent has no worktree. It will be removed from the sidebar.
           </p>
           {error && (
             <div className="mb-3 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
@@ -136,20 +150,6 @@ export function DeleteAgentDialog() {
 
   const isDirty = status?.isValid &&
     (status.uncommittedFiles.length > 0 || status.unpushedCommits.length > 0);
-
-  const handleExecute = async (mode: DeleteMode) => {
-    setExecuting(true);
-    setError(null);
-    try {
-      const result = await executeDelete(mode, activeProject.path);
-      if (!result.ok && result.message !== 'cancelled') {
-        setError(result.message);
-      }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
-    }
-    setExecuting(false);
-  };
 
   const handleSimpleDelete = () => handleExecute('force');
   const handleLeaveFiles = () => handleExecute('unregister');

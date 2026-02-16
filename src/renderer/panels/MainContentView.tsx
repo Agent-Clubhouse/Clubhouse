@@ -11,10 +11,11 @@ import { NotificationSettingsView } from '../features/settings/NotificationSetti
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { PluginSettingsView } from '../features/settings/PluginSettingsView';
 import { CommandCenter } from '../features/hub/CommandCenter';
+import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
 import { getPlugin } from '../plugins';
 
 export function MainContentView() {
-  const { explorerTab, settingsSubPage } = useUIStore();
+  const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
   const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
   const selectedCompleted = useQuickAgentStore((s) => s.getSelectedCompleted());
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
@@ -72,11 +73,16 @@ export function MainContentView() {
     return <CommandCenter />;
   }
 
+  if (explorerTab === 'terminal') {
+    return <StandaloneTerminal />;
+  }
+
   if (explorerTab === 'settings') {
+    const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
-    if (settingsSubPage === 'plugins') return <PluginSettingsView />;
-    return <ProjectSettings />;
+    if (settingsSubPage === 'plugins') return <PluginSettingsView projectId={projectId} />;
+    return <ProjectSettings projectId={projectId} />;
   }
 
   // --- Generic plugin lookup fallback ---

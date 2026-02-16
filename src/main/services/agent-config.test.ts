@@ -26,15 +26,13 @@ import {
   renameDurable,
   updateDurable,
   deleteDurable,
-  getSettings,
-  saveSettings,
   getWorktreeStatus,
   deleteCommitAndPush,
   deleteUnregister,
   deleteForce,
   getDurableConfig,
   updateDurableConfig,
-  ensureHostAgent,
+  ensureGitignore,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
@@ -79,10 +77,6 @@ describe('readAgents (via listDurable)', () => {
     expect(result.length).toBe(1);
     expect(result[0].id).toBe('durable_1');
     expect(result[0].name).toBe('test-agent');
-    // Migration adds override fields
-    expect(result[0].overrides).toBeDefined();
-    expect(result[0].quickOverrides).toBeDefined();
-    expect(result[0].quickConfigLayer).toBeDefined();
   });
 });
 
@@ -188,30 +182,6 @@ describe('createDurable', () => {
     expect(written[1].id).toMatch(/^durable_/);
   });
 
-  it('copies defaultClaudeMd from settings to CLAUDE.local.md', () => {
-    const settingsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'settings.json');
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s === settingsJsonPath) return true;
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('.gitignore')) return false;
-      if (s.endsWith('agents.json')) return false;
-      if (s.endsWith('CLAUDE.local.md')) return false;
-      if (s.endsWith('settings.local.json')) return false;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p) === settingsJsonPath) return JSON.stringify({ defaults: { claudeMd: '# My Rules' }, quickOverrides: {} });
-      return '[]';
-    });
-
-    createDurable(PROJECT_PATH, 'claude-md-agent', 'indigo');
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
-    expect(claudeMdWrite).toBeDefined();
-    expect(claudeMdWrite![1]).toBe('# My Rules');
-  });
-
   it('omits model field when "default"', () => {
     const config = createDurable(PROJECT_PATH, 'default-model', 'indigo', 'default');
     expect(config).not.toHaveProperty('model');
@@ -220,6 +190,15 @@ describe('createDurable', () => {
   it('includes model field when not "default"', () => {
     const config = createDurable(PROJECT_PATH, 'custom-model', 'indigo', 'claude-sonnet-4-5-20250929');
     expect(config.model).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  it('skips worktree when useWorktree is false', () => {
+    const config = createDurable(PROJECT_PATH, 'no-wt', 'indigo', 'default', false);
+    expect(config.id).toMatch(/^durable_/);
+    expect(config.worktreePath).toBeUndefined();
+    expect(config.branch).toBeUndefined();
+    // No git commands should be called
+    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
   });
 
   it('ensureGitignore uses selective patterns', () => {
@@ -363,6 +342,23 @@ describe('deleteDurable', () => {
     expect(() => deleteDurable(PROJECT_PATH, 'nonexistent')).not.toThrow();
     expect(vi.mocked(execSync)).not.toHaveBeenCalled();
   });
+
+  it('handles non-worktree agent (just unregisters)', () => {
+    const agents = [{ id: 'durable_nowt', name: 'nowt', color: 'indigo', createdAt: '2024-01-01' }];
+    let writtenAgents = '';
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
+
+    deleteDurable(PROJECT_PATH, 'durable_nowt');
+    const result = JSON.parse(writtenAgents);
+    expect(result.length).toBe(0);
+    // No git commands for non-worktree agents
+    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+  });
 });
 
 describe('renameDurable', () => {
@@ -426,11 +422,8 @@ describe('updateDurable', () => {
 
   it('no-op for unknown agentId', () => {
     updateDurable(PROJECT_PATH, 'nonexistent', { name: 'foo' });
-    // readAgents may write once for migration, but updateDurable itself should not write again
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    // Check that no second write happened beyond any migration write
     const agentWrites = writeCalls.filter((c) => String(c[0]).endsWith('agents.json'));
-    // If migration wrote, that's fine; the agent name should NOT have changed
     if (agentWrites.length > 0) {
       const lastWritten = JSON.parse(String(agentWrites[agentWrites.length - 1][1]));
       expect(lastWritten[0].name).toBe('old-name'); // not 'foo'
@@ -457,6 +450,18 @@ describe('getWorktreeStatus', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
 
     const status = getWorktreeStatus(PROJECT_PATH, 'durable_nogit');
+    expect(status.isValid).toBe(false);
+  });
+
+  it('non-worktree agent returns isValid:false', () => {
+    const agents = [{ id: 'durable_nowt', name: 'nowt', color: 'indigo', createdAt: '2024-01-01' }];
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    const status = getWorktreeStatus(PROJECT_PATH, 'durable_nowt');
     expect(status.isValid).toBe(false);
   });
 });
@@ -597,170 +602,6 @@ describe('updateDurableConfig', () => {
   });
 });
 
-describe('getSettings / saveSettings', () => {
-  it('roundtrip persistence', () => {
-    const written: Record<string, string> = {};
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => !!written[String(p)]);
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => written[String(p)] || '');
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { written[String(p)] = String(data); });
-
-    const settings = { defaults: { claudeMd: '# Custom' }, quickOverrides: { claudeMd: '# Quick' } };
-    saveSettings(PROJECT_PATH, settings as any);
-    // Now mark the file as existing
-    const settingsKey = path.join(PROJECT_PATH, '.clubhouse', 'settings.json');
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => String(p) === settingsKey);
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => written[String(p)] || '');
-
-    const loaded = getSettings(PROJECT_PATH);
-    expect(loaded.defaults.claudeMd).toBe('# Custom');
-    expect(loaded.quickOverrides.claudeMd).toBe('# Quick');
-  });
-
-  it('returns defaults when no file exists', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    const settings = getSettings(PROJECT_PATH);
-    expect(settings).toEqual({ defaults: {}, quickOverrides: {} });
-  });
-
-  it('migrates old format to new format', () => {
-    const settingsKey = path.join(PROJECT_PATH, '.clubhouse', 'settings.json');
-    const written: Record<string, string> = {};
-    written[settingsKey] = JSON.stringify({ defaultClaudeMd: '# Old', quickAgentClaudeMd: '# Quick Old' });
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => !!written[String(p)]);
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => written[String(p)] || '');
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { written[String(p)] = String(data); });
-
-    const loaded = getSettings(PROJECT_PATH);
-    expect(loaded.defaults.claudeMd).toBe('# Old');
-    expect(loaded.quickOverrides.claudeMd).toBe('# Quick Old');
-    // Should have written migrated format back
-    const rewritten = JSON.parse(written[settingsKey]);
-    expect(rewritten.defaults).toBeDefined();
-    expect(rewritten.defaultClaudeMd).toBeUndefined();
-  });
-});
-
-describe('ensureHostAgent', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const writtenData: Record<string, string> = {};
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('.gitignore')) return false;
-      if (s.endsWith('agents.json')) return !!writtenData[s];
-      if (s.endsWith('CLAUDE.local.md')) return false;
-      if (s.endsWith('settings.json')) return false;
-      if (s.endsWith('README.md')) return false;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (writtenData[s]) return writtenData[s];
-      return '[]';
-    });
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
-      writtenData[String(p)] = String(data);
-    });
-    vi.mocked(execSync).mockReturnValue('');
-  });
-
-  it('creates host agent on first call', () => {
-    const config = ensureHostAgent(PROJECT_PATH);
-    expect(config.name).toBe('project-host');
-    expect(config.role).toBe('host');
-    expect(config.color).toBe('amber');
-  });
-
-  it('returns existing host on second call', () => {
-    const first = ensureHostAgent(PROJECT_PATH);
-    const second = ensureHostAgent(PROJECT_PATH);
-    expect(second.id).toBe(first.id);
-    expect(second.role).toBe('host');
-  });
-
-  it('writes README.md', () => {
-    ensureHostAgent(PROJECT_PATH);
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const readmeWrite = writeCalls.find((c) => String(c[0]).endsWith('README.md'));
-    expect(readmeWrite).toBeDefined();
-  });
-});
-
-describe('deleteDurable host guard', () => {
-  it('throws when trying to delete host agent', () => {
-    const agents = [
-      { id: 'durable_host', name: 'project-host', color: 'amber', role: 'host', branch: 'project-host/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' },
-    ];
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s.endsWith('agents.json')) return true;
-      if (s.endsWith('.git')) return true;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
-
-    expect(() => deleteDurable(PROJECT_PATH, 'durable_host')).toThrow('Cannot delete the project host agent');
-  });
-});
-
-describe('delete host guards (all variants)', () => {
-  const hostAgents = [
-    { id: 'durable_host', name: 'project-host', color: 'amber', role: 'host', branch: 'project-host/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' },
-  ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s.endsWith('agents.json')) return true;
-      if (s.endsWith('.git')) return true;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(hostAgents));
-  });
-
-  it('deleteCommitAndPush rejects host agent', () => {
-    const result = deleteCommitAndPush(PROJECT_PATH, 'durable_host');
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('host');
-  });
-
-  it('deleteForce rejects host agent', () => {
-    const result = deleteForce(PROJECT_PATH, 'durable_host');
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('host');
-  });
-
-  it('deleteUnregister rejects host agent', () => {
-    const result = deleteUnregister(PROJECT_PATH, 'durable_host');
-    expect(result.ok).toBe(false);
-    expect(result.message).toContain('host');
-  });
-});
-
-describe('getWorktreeStatus — host agent short-circuit', () => {
-  it('returns valid empty status for host agents', () => {
-    const agents = [
-      { id: 'host_1', name: 'project-host', color: 'amber', branch: 'project-host/standby', worktreePath: PROJECT_PATH, createdAt: '2024-01-01', role: 'host' },
-    ];
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('agents.json')) return true;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
-
-    const status = getWorktreeStatus(PROJECT_PATH, 'host_1');
-    expect(status.isValid).toBe(true);
-    expect(status.branch).toBe('');
-    expect(status.uncommittedFiles).toEqual([]);
-    expect(status.unpushedCommits).toEqual([]);
-    expect(status.hasRemote).toBe(false);
-    // Should NOT have called any git commands
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
-  });
-});
-
 describe('ensureGitignore edge cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -808,76 +649,5 @@ describe('ensureGitignore edge cases', () => {
     const gitignoreWrite = writeCalls.find((c) => String(c[0]).endsWith('.gitignore'));
     expect(gitignoreWrite).toBeDefined();
     expect(String(gitignoreWrite![1])).toContain('.clubhouse/agents/');
-  });
-});
-
-describe('ensureClubhouseReadme', () => {
-  it('does not overwrite existing README.md', () => {
-    vi.clearAllMocks();
-    const writtenData: Record<string, string> = {};
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('.gitignore')) return false;
-      if (s.endsWith('agents.json')) return !!writtenData[s];
-      if (s.endsWith('README.md')) return true; // README already exists
-      if (s.endsWith('settings.json')) return false;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (writtenData[s]) return writtenData[s];
-      return '[]';
-    });
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
-      writtenData[String(p)] = String(data);
-    });
-    vi.mocked(execSync).mockReturnValue('');
-
-    ensureHostAgent(PROJECT_PATH);
-
-    // README should NOT have been written since it already exists
-    const readmeWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
-      (c) => String(c[0]).endsWith('.clubhouse/README.md')
-    );
-    expect(readmeWrites).toHaveLength(0);
-  });
-});
-
-describe('createDurable template expansion', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const writtenData: Record<string, string> = {};
-    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (s.endsWith('.git')) return true;
-      if (s.endsWith('.gitignore')) return false;
-      if (s.endsWith('agents.json')) return !!writtenData[s];
-      if (s.endsWith('settings.json')) return true;
-      return false;
-    });
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      const s = String(p);
-      if (writtenData[s]) return writtenData[s];
-      if (s.endsWith('settings.json')) {
-        return JSON.stringify({
-          defaults: { claudeMd: 'Agent: {{AGENT_NAME}} on {{BRANCH}}' },
-          quickOverrides: {},
-        });
-      }
-      return '[]';
-    });
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
-      writtenData[String(p)] = String(data);
-    });
-    vi.mocked(execSync).mockReturnValue('');
-  });
-
-  it('expands template variables in CLAUDE.local.md', () => {
-    createDurable(PROJECT_PATH, 'tmpl-agent', 'indigo');
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
-    expect(claudeMdWrite).toBeDefined();
-    expect(claudeMdWrite![1]).toBe('Agent: tmpl-agent on tmpl-agent/standby');
   });
 });

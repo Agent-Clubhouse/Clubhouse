@@ -3,7 +3,6 @@ import * as http from 'http';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;

@@ -4,18 +4,19 @@ import { MODEL_OPTIONS } from '../../../shared/models';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean) => void;
 }
 
 export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [name, setName] = useState(generateDurableName());
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
+  const [useWorktree, setUseWorktree] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, model);
+    onCreate(name.trim(), color, model, useWorktree);
   };
 
   return (
@@ -82,6 +83,20 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
                 <option key={opt.id} value={opt.id}>{opt.label}</option>
               ))}
             </select>
+          </label>
+
+          {/* Use Worktree */}
+          <label className="flex items-center gap-2 mb-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useWorktree}
+              onChange={(e) => setUseWorktree(e.target.checked)}
+              className="w-4 h-4 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+            />
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Use git worktree</span>
+            <span className="text-[10px] text-ctp-subtext0/70 ml-1">
+              (isolated branch + directory)
+            </span>
           </label>
 
           {/* Actions */}

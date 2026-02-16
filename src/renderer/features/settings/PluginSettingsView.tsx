@@ -3,15 +3,18 @@ import { usePluginStore } from '../../stores/pluginStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 
-export function PluginSettingsView() {
+export function PluginSettingsView({ projectId }: { projectId?: string }) {
   const plugins = getAllPlugins();
-  const { activeProjectId, projects } = useProjectStore();
+  const { projects } = useProjectStore();
+  const enabledPlugins = usePluginStore((s) => s.enabledPlugins);
   const isPluginEnabled = usePluginStore((s) => s.isPluginEnabled);
   const setPluginEnabled = usePluginStore((s) => s.setPluginEnabled);
   const { explorerTab, setExplorerTab } = useUIStore();
-  const activeProject = projects.find((p) => p.id === activeProjectId);
 
-  if (!activeProjectId || !activeProject) {
+  const id = projectId ?? useProjectStore.getState().activeProjectId;
+  const project = id ? projects.find((p) => p.id === id) : null;
+
+  if (!id || !project) {
     return (
       <div className="flex items-center justify-center h-full bg-ctp-base">
         <p className="text-ctp-subtext0">No project selected</p>
@@ -20,7 +23,7 @@ export function PluginSettingsView() {
   }
 
   const handleToggle = async (pluginId: string, enabled: boolean) => {
-    await setPluginEnabled(activeProjectId, activeProject.path, pluginId, enabled);
+    await setPluginEnabled(id, project.path, pluginId, enabled);
     // If we just disabled the tab we're currently on, switch to agents
     if (!enabled && explorerTab === pluginId) {
       setExplorerTab('agents');
@@ -36,7 +39,7 @@ export function PluginSettingsView() {
         </p>
         <div className="space-y-3">
           {plugins.map((plugin) => {
-            const enabled = isPluginEnabled(activeProjectId, plugin.id);
+            const enabled = isPluginEnabled(id, plugin.id);
             return (
               <div
                 key={plugin.id}
@@ -49,14 +52,14 @@ export function PluginSettingsView() {
                 <button
                   onClick={() => handleToggle(plugin.id, !enabled)}
                   className={`
-                    relative w-10 h-5 rounded-full transition-colors duration-200 cursor-pointer
-                    ${enabled ? 'bg-ctp-accent' : 'bg-surface-1'}
+                    relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
+                    ${enabled ? 'bg-indigo-500' : 'bg-surface-2'}
                   `}
                 >
                   <span
                     className={`
-                      absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-                      ${enabled ? 'translate-x-5' : 'translate-x-0'}
+                      absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200
+                      ${enabled ? 'translate-x-4' : 'translate-x-0'}
                     `}
                   />
                 </button>

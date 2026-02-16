@@ -113,8 +113,8 @@ describe('add', () => {
   });
 
   it('generates proj_ prefixed ID and uses basename as name', () => {
-    let writtenData = '';
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+    let _writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { _writtenData = String(data); });
     const project = add('/Users/me/my-project');
     expect(project.id).toMatch(/^proj_/);
     expect(project.name).toBe('my-project');

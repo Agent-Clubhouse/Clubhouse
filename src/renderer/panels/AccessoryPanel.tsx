@@ -1,9 +1,50 @@
 import { useUIStore } from '../stores/uiStore';
 import { AgentList } from '../features/agents/AgentList';
 import { getPlugin } from '../plugins';
+import { SettingsSubPage } from '../../shared/types';
+
+function SettingsCategoryNav() {
+  const { settingsContext, settingsSubPage, setSettingsSubPage } = useUIStore();
+
+  const navButton = (label: string, page: SettingsSubPage) => (
+    <button
+      onClick={() => setSettingsSubPage(page)}
+      className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
+        settingsSubPage === page ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const isApp = settingsContext === 'app';
+
+  return (
+    <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full overflow-hidden">
+      <div className="px-3 py-2 border-b border-surface-0">
+        <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">
+          {isApp ? 'App Settings' : 'Project Settings'}
+        </span>
+      </div>
+      <nav className="py-1">
+        {isApp ? (
+          <>
+            {navButton('Display & UI', 'display')}
+            {navButton('Notifications', 'notifications')}
+          </>
+        ) : (
+          <>
+            {navButton('Project Settings', 'project')}
+            {navButton('Plugins', 'plugins')}
+          </>
+        )}
+      </nav>
+    </div>
+  );
+}
 
 export function AccessoryPanel() {
-  const { explorerTab, settingsSubPage, setSettingsSubPage } = useUIStore();
+  const { explorerTab } = useUIStore();
 
   // Core tabs with explicit handling
   if (explorerTab === 'agents') {
@@ -15,49 +56,7 @@ export function AccessoryPanel() {
   }
 
   if (explorerTab === 'settings') {
-    return (
-      <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full overflow-hidden">
-        <div className="flex flex-col h-full">
-          <div className="px-3 py-2 border-b border-surface-0">
-            <span className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Settings</span>
-          </div>
-          <nav className="py-1">
-            <button
-              onClick={() => setSettingsSubPage('project')}
-              className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
-                settingsSubPage === 'project' ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-              }`}
-            >
-              Project Settings
-            </button>
-            <button
-              onClick={() => setSettingsSubPage('notifications')}
-              className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
-                settingsSubPage === 'notifications' ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-              }`}
-            >
-              Notifications
-            </button>
-            <button
-              onClick={() => setSettingsSubPage('display')}
-              className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
-                settingsSubPage === 'display' ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-              }`}
-            >
-              Display & UI
-            </button>
-            <button
-              onClick={() => setSettingsSubPage('plugins')}
-              className={`w-full px-3 py-2 text-sm text-left cursor-pointer ${
-                settingsSubPage === 'plugins' ? 'text-ctp-text bg-surface-1' : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-              }`}
-            >
-              Plugins
-            </button>
-          </nav>
-        </div>
-      </div>
-    );
+    return <SettingsCategoryNav />;
   }
 
   // Generic plugin lookup fallback
