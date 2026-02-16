@@ -128,4 +128,15 @@ export const IPC = {
     GET_LOG_NAMESPACES: 'log:get-namespaces',
     GET_LOG_PATH: 'log:get-path',
   },
+  VOICE: {
+    CHECK_MODELS: 'voice:check-models',
+    DOWNLOAD_MODELS: 'voice:download-models',
+    DOWNLOAD_PROGRESS: 'voice:download-progress',
+    TRANSCRIBE: 'voice:transcribe',
+    START_SESSION: 'voice:start-session',
+    SEND_TURN: 'voice:send-turn',
+    TURN_CHUNK: 'voice:turn-chunk',
+    TURN_COMPLETE: 'voice:turn-complete',
+    END_SESSION: 'voice:end-session',
+  },
 } as const;

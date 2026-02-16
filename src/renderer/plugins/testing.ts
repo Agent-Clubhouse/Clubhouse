@@ -113,6 +113,17 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       onExit: () => ({ dispose: noop }),
       ShellTerminal: noop as unknown as PluginAPI['terminal']['ShellTerminal'],
     },
+    voice: {
+      checkModels: async () => [],
+      downloadModels: asyncNoop,
+      onDownloadProgress: () => ({ dispose: noop }),
+      transcribe: async () => '',
+      startSession: async () => ({ sessionId: '' }),
+      sendTurn: asyncNoop,
+      onTurnChunk: () => ({ dispose: noop }),
+      onTurnComplete: () => ({ dispose: noop }),
+      endSession: asyncNoop,
+    },
     logging: {
       debug: noop,
       info: noop,

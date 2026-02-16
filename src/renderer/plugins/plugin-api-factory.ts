@@ -16,6 +16,7 @@ import type {
   NavigationAPI,
   WidgetsAPI,
   TerminalAPI,
+  VoiceAPI,
   LoggingAPI,
   FilesAPI,
   GitHubAPI,
@@ -664,6 +665,41 @@ function createGitHubAPI(ctx: PluginContext): GitHubAPI {
   };
 }
 
+function createVoiceAPI(): VoiceAPI {
+  return {
+    async checkModels() {
+      return window.clubhouse.voice.checkModels();
+    },
+    async downloadModels() {
+      await window.clubhouse.voice.downloadModels();
+    },
+    onDownloadProgress(callback) {
+      const remove = window.clubhouse.voice.onDownloadProgress(callback);
+      return { dispose: remove };
+    },
+    async transcribe(pcmBuffer: ArrayBuffer) {
+      return window.clubhouse.voice.transcribe(pcmBuffer);
+    },
+    async startSession(agentId: string, cwd: string, model?: string) {
+      return window.clubhouse.voice.startSession(agentId, cwd, model);
+    },
+    async sendTurn(text: string) {
+      await window.clubhouse.voice.sendTurn(text);
+    },
+    onTurnChunk(callback) {
+      const remove = window.clubhouse.voice.onTurnChunk(callback);
+      return { dispose: remove };
+    },
+    onTurnComplete(callback) {
+      const remove = window.clubhouse.voice.onTurnComplete(callback);
+      return { dispose: remove };
+    },
+    async endSession() {
+      await window.clubhouse.voice.endSession();
+    },
+  };
+}
+
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): PluginAPI {
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const hasProjectContext = effectiveMode === 'project' && !!ctx.projectId;
@@ -700,6 +736,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode): Pl
     navigation: createNavigationAPI(),
     widgets: createWidgetsAPI(),
     terminal: createTerminalAPI(ctx),
+    voice: createVoiceAPI(),
     logging: createLoggingAPI(ctx),
     files: projectAvailable && ctx.projectPath
       ? createFilesAPI(ctx)
