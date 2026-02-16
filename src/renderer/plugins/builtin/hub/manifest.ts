@@ -9,7 +9,7 @@ const GRID_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" s
 export const manifest: PluginManifest = {
   id: 'hub',
   name: 'Hub',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Split-pane workspace for managing agents — per-project or across all projects.',
   author: 'Clubhouse',
   engine: { api: 0.5 },

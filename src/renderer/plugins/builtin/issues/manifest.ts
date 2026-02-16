@@ -5,7 +5,7 @@ const ISSUES_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
 export const manifest: PluginManifest = {
   id: 'issues',
   name: 'Issues',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Browse, view, and file GitHub issues for the current project.',
   author: 'Clubhouse',
   engine: { api: 0.5 },

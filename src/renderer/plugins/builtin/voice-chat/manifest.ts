@@ -5,7 +5,7 @@ const MIC_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
 export const manifest: PluginManifest = {
   id: 'voice-chat',
   name: 'Voice Chat',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Push-to-talk voice conversations with durable agents using Whisper STT and Piper TTS.',
   author: 'Clubhouse',
   engine: { api: 0.5 },
