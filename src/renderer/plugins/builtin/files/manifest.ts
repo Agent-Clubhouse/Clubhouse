@@ -8,8 +8,9 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Project file browser with Monaco editor, markdown preview, and image display.',
   author: 'Clubhouse',
-  engine: { api: 0.4 },
+  engine: { api: 0.5 },
   scope: 'project',
+  permissions: ['files', 'git', 'commands', 'notifications'],
   contributes: {
     tab: { label: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'refresh', title: 'Refresh File Tree' }],

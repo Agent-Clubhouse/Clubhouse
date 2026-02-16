@@ -15,8 +15,15 @@ describe('files plugin', () => {
       expect(manifest.id).toBe('files');
     });
 
-    it('targets API v0.4', () => {
-      expect(manifest.engine.api).toBe(0.4);
+    it('targets API v0.5', () => {
+      expect(manifest.engine.api).toBe(0.5);
+    });
+
+    it('declares required permissions', () => {
+      expect(manifest.permissions).toEqual(
+        expect.arrayContaining(['files', 'git', 'commands', 'notifications']),
+      );
+      expect(manifest.permissions).toHaveLength(4);
     });
 
     it('is project-scoped', () => {
