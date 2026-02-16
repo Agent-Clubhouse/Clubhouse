@@ -5,6 +5,8 @@ import { manifest as hubManifest } from './hub/manifest';
 import * as hubModule from './hub/main';
 import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
+import { manifest as automationsManifest } from './automations/manifest';
+import * as automationsModule from './automations/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -16,5 +18,6 @@ export function getBuiltinPlugins(): BuiltinPlugin[] {
     { manifest: helloWorldManifest, module: helloWorldModule },
     { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
+    { manifest: automationsManifest, module: automationsModule },
   ];
 }
