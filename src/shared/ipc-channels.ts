@@ -1,6 +1,5 @@
 export const IPC = {
   PTY: {
-    SPAWN: 'pty:spawn',
     SPAWN_SHELL: 'pty:spawn-shell',
     WRITE: 'pty:write',
     RESIZE: 'pty:resize',
@@ -27,11 +26,10 @@ export const IPC = {
     CREATE_DURABLE: 'agent:create-durable',
     LIST_DURABLE: 'agent:list-durable',
     DELETE_DURABLE: 'agent:delete-durable',
-    READ_CLAUDE_MD: 'agent:read-claude-md',
-    SAVE_CLAUDE_MD: 'agent:save-claude-md',
+    READ_INSTRUCTIONS: 'agent:read-instructions',
+    SAVE_INSTRUCTIONS: 'agent:save-instructions',
     READ_MCP_CONFIG: 'agent:read-mcp-config',
     LIST_SKILLS: 'agent:list-skills',
-    SETUP_HOOKS: 'agent:setup-hooks',
     HOOK_EVENT: 'agent:hook-event',
     GET_WORKTREE_STATUS: 'agent:get-worktree-status',
     DELETE_COMMIT_PUSH: 'agent:delete-commit-push',
@@ -49,6 +47,13 @@ export const IPC = {
     LIST_SOURCE_AGENT_TEMPLATES: 'agent:list-source-agent-templates',
     CREATE_SKILL: 'agent:create-skill',
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
+    SPAWN_AGENT: 'agent:spawn-agent',
+    KILL_AGENT: 'agent:kill-agent',
+    GET_MODEL_OPTIONS: 'agent:get-model-options',
+    CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
+    GET_ORCHESTRATORS: 'agent:get-orchestrators',
+    GET_TOOL_VERB: 'agent:get-tool-verb',
+    GET_SUMMARY_INSTRUCTION: 'agent:get-summary-instruction',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
@@ -75,11 +80,6 @@ export const IPC = {
     STASH: 'git:stash',
     STASH_POP: 'git:stash-pop',
   },
-  WATCH: {
-    START: 'watch:start',
-    STOP: 'watch:stop',
-    EVENT: 'watch:event',
-  },
   APP: {
     OPEN_SETTINGS: 'app:open-settings',
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
@@ -87,5 +87,7 @@ export const IPC = {
     SEND_NOTIFICATION: 'app:send-notification',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
+    GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
+    SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
   },
 } as const;

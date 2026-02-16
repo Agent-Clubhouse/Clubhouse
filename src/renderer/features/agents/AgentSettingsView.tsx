@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { Agent, QuickAgentDefaults } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { MODEL_OPTIONS } from '../../../shared/models';
+import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { UtilityTerminal } from './UtilityTerminal';
 
 interface Props {
@@ -16,6 +17,10 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
+  const MODEL_OPTIONS = useModelOptions();
+  const enabled = useOrchestratorStore((s) => s.enabled);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
   // Appearance editing state
   const [isRenaming, setIsRenaming] = useState(false);
@@ -70,6 +75,15 @@ export function AgentSettingsView({ agent }: Props) {
     if (!activeProject) return;
     await updateAgent(agent.id, { emoji: null }, activeProject.path);
   };
+
+  const handleOrchestratorChange = async (value: string) => {
+    if (!projectPath) return;
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
+  };
+
+  // Resolve orchestrator display name
+  const agentOrchestrator = agent.orchestrator || 'claude-code';
+  const orchestratorInfo = allOrchestrators.find((o) => o.id === agentOrchestrator);
 
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
@@ -231,6 +245,28 @@ export function AgentSettingsView({ agent }: Props) {
                   )}
                 </div>
               </div>
+
+              {/* Orchestrator */}
+              {enabledOrchestrators.length > 1 ? (
+                <div>
+                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+                  <select
+                    value={agentOrchestrator}
+                    onChange={(e) => handleOrchestratorChange(e.target.value)}
+                    disabled={agent.status === 'running'}
+                    className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {enabledOrchestrators.map((o) => (
+                      <option key={o.id} value={o.id}>{o.displayName}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : orchestratorInfo ? (
+                <div>
+                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+                  <p className="mt-1 text-sm text-ctp-text">{orchestratorInfo.displayName}</p>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

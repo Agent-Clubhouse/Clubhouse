@@ -3,10 +3,6 @@ import { IPC } from '../../shared/ipc-channels';
 import * as ptyManager from '../services/pty-manager';
 
 export function registerPtyHandlers(): void {
-  ipcMain.handle(IPC.PTY.SPAWN, (_event, { agentId, projectPath, claudeArgs }) => {
-    ptyManager.spawn(agentId, projectPath, claudeArgs);
-  });
-
   ipcMain.handle(IPC.PTY.SPAWN_SHELL, (_event, id: string, projectPath: string) => {
     ptyManager.spawnShell(id, projectPath);
   });

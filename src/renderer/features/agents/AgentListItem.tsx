@@ -72,7 +72,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     <div
       onClick={onSelect}
       className={`
-        flex items-center gap-3 py-2.5 cursor-pointer transition-colors
+        flex items-center gap-3 py-3 cursor-pointer transition-colors
         ${isNested ? 'pl-7 pr-3' : 'px-3'}
         ${isActive ? 'bg-surface-1' : 'hover:bg-surface-0'}
       `}

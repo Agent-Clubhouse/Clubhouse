@@ -3,16 +3,15 @@ import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
-import { SleepingClaude } from '../features/agents/SleepingClaude';
+import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/hub/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
-import { PluginSettingsView } from '../features/settings/PluginSettingsView';
+import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
 import { CommandCenter } from '../features/hub/CommandCenter';
 import { StandaloneTerminal } from '../features/terminal/StandaloneTerminal';
-import { getPlugin } from '../plugins';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -59,7 +58,7 @@ export function MainContentView() {
     }
 
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
-      return <SleepingClaude agent={activeAgent} />;
+      return <SleepingAgent agent={activeAgent} />;
     }
 
     return (
@@ -79,18 +78,10 @@ export function MainContentView() {
 
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
+    if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
-    if (settingsSubPage === 'plugins') return <PluginSettingsView projectId={projectId} />;
     return <ProjectSettings projectId={projectId} />;
-  }
-
-  // --- Generic plugin lookup fallback ---
-
-  const plugin = getPlugin(explorerTab);
-  if (plugin) {
-    const MainPanel = plugin.MainPanel;
-    return <MainPanel />;
   }
 
   return (

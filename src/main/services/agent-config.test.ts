@@ -201,7 +201,7 @@ describe('createDurable', () => {
     expect(vi.mocked(execSync)).not.toHaveBeenCalled();
   });
 
-  it('ensureGitignore uses selective patterns', () => {
+  it('ensureGitignore skips when all patterns already present', () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return true;
@@ -213,17 +213,18 @@ describe('createDurable', () => {
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('.gitignore')) return 'node_modules/\n.clubhouse/agents/\n';
+      if (String(p).endsWith('.gitignore'))
+        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/settings.local.json\n';
       return '[]';
     });
 
     createDurable(PROJECT_PATH, 'gitignore-test', 'indigo');
-    // Should NOT append because selective patterns already exist
+    // Should NOT append because all patterns already exist
     expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
   });
 
-  it('migrates old blanket .clubhouse/ pattern to selective patterns', () => {
-    const writtenData: Record<string, string> = {};
+  it('appends only missing gitignore patterns', () => {
+    const appendedData: string[] = [];
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return true;
@@ -235,21 +236,23 @@ describe('createDurable', () => {
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('.gitignore')) return '# Clubhouse agent manager\n.clubhouse/\n';
+      if (String(p).endsWith('.gitignore')) return '# Clubhouse agent manager\n.clubhouse/agents/\n';
       return '[]';
     });
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
-      writtenData[String(p)] = String(data);
+    vi.mocked(fs.appendFileSync).mockImplementation((_p: any, data: any) => {
+      appendedData.push(String(data));
     });
 
-    createDurable(PROJECT_PATH, 'migrate-test', 'indigo');
-    const gitignorePath = path.join(PROJECT_PATH, '.gitignore');
-    const written = writtenData[gitignorePath];
-    expect(written).toBeDefined();
-    expect(written).toContain('.clubhouse/agents/');
-    expect(written).toContain('.clubhouse/agents.json');
-    expect(written).toContain('.clubhouse/settings.local.json');
-    expect(written).not.toMatch(/^\.clubhouse\/$/m);
+    createDurable(PROJECT_PATH, 'partial-test', 'indigo');
+    expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalled();
+    const appended = appendedData.join('');
+    // Should add the missing lines but not duplicate existing ones
+    expect(appended).toContain('.clubhouse/.local/');
+    expect(appended).toContain('.clubhouse/agents.json');
+    expect(appended).toContain('.clubhouse/settings.local.json');
+    expect(appended).not.toContain('.clubhouse/agents/');
+    // Header should not be duplicated
+    expect(appended).not.toContain('# Clubhouse agent manager');
   });
 });
 

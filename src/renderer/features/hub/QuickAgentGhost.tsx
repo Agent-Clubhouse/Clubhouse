@@ -167,29 +167,15 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
       {/* Timestamp */}
       <span className="text-[10px] text-ctp-overlay0 flex-shrink-0">{relativeTime(completed.completedAt)}</span>
 
-      {/* Delete */}
-      {onDelete && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/20 text-ctp-overlay0 hover:text-red-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-          title="Delete"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-          </svg>
-        </button>
-      )}
-
-      {/* Dismiss */}
+      {/* Dismiss (trash icon) */}
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        className="w-4 h-4 flex items-center justify-center rounded hover:bg-surface-2 text-ctp-overlay0 hover:text-ctp-text cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+        className="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/20 text-ctp-overlay0 hover:text-red-400 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
         title="Dismiss"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
+          <polyline points="3 6 5 6 21 6" />
+          <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
         </svg>
       </button>
     </div>

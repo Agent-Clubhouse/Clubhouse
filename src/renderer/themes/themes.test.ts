@@ -105,34 +105,6 @@ describe('theme registry', () => {
     }
   });
 
-  describe('theme monaco', () => {
-    for (const id of THEME_IDS) {
-      it(`${id} has valid monaco theme structure`, () => {
-        const monaco = THEMES[id].monaco as any;
-        expect(monaco.base).toMatch(/^(vs|vs-dark|hc-black|hc-light)$/);
-        expect(monaco.inherit).toBe(true);
-        expect(Array.isArray(monaco.rules)).toBe(true);
-        expect(monaco.rules.length).toBeGreaterThan(0);
-        expect(typeof monaco.colors).toBe('object');
-        expect(monaco.colors['editor.background']).toBeTruthy();
-        expect(monaco.colors['editor.foreground']).toBeTruthy();
-      });
-    }
-
-    it('catppuccin-latte uses vs (light) base', () => {
-      const monaco = THEMES['catppuccin-latte'].monaco as any;
-      expect(monaco.base).toBe('vs');
-    });
-
-    it('dark themes use vs-dark base', () => {
-      for (const id of THEME_IDS) {
-        if (id === 'catppuccin-latte') continue;
-        const monaco = THEMES[id].monaco as any;
-        expect(monaco.base).toBe('vs-dark');
-      }
-    });
-  });
-
   describe('catppuccin-mocha default values match original hardcoded values', () => {
     const mocha = THEMES['catppuccin-mocha'];
 
@@ -155,12 +127,6 @@ describe('theme registry', () => {
       expect(mocha.terminal.red).toBe('#f38ba8');
       expect(mocha.terminal.green).toBe('#a6e3a1');
       expect(mocha.terminal.blue).toBe('#89b4fa');
-    });
-
-    it('monaco editor.background matches base color', () => {
-      const monaco = mocha.monaco as any;
-      expect(monaco.colors['editor.background']).toBe('#1e1e2e');
-      expect(monaco.colors['editor.foreground']).toBe('#cdd6f4');
     });
   });
 });

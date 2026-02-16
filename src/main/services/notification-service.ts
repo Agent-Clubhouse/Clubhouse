@@ -1,33 +1,18 @@
-import { app, Notification } from 'electron';
-import * as path from 'path';
-import * as fs from 'fs';
+import { Notification } from 'electron';
 import { NotificationSettings } from '../../shared/types';
+import { createSettingsStore } from './settings-store';
 
-const DEFAULTS: NotificationSettings = {
+const store = createSettingsStore<NotificationSettings>('notification-settings.json', {
   enabled: true,
   permissionNeeded: true,
   agentIdle: false,
   agentStopped: false,
   agentError: false,
   playSound: true,
-};
+});
 
-function settingsPath(): string {
-  return path.join(app.getPath('userData'), 'notification-settings.json');
-}
-
-export function getSettings(): NotificationSettings {
-  try {
-    const raw = fs.readFileSync(settingsPath(), 'utf-8');
-    return { ...DEFAULTS, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULTS };
-  }
-}
-
-export function saveSettings(s: NotificationSettings): void {
-  fs.writeFileSync(settingsPath(), JSON.stringify(s, null, 2), 'utf-8');
-}
+export const getSettings = store.get;
+export const saveSettings = store.save;
 
 export function sendNotification(title: string, body: string, silent: boolean): void {
   if (!Notification.isSupported()) return;

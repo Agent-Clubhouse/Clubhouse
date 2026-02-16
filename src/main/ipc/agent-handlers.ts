@@ -1,9 +1,9 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
+import { SpawnAgentParams } from '../../shared/types';
 import * as agentConfig from '../services/agent-config';
-import { writeHooksConfig } from '../services/agent-hooks';
+import * as agentSystem from '../services/agent-system';
+import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 
 export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, (_event, projectPath: string) => {
@@ -12,8 +12,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
-    (_event, projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean) => {
-      return agentConfig.createDurable(projectPath, name, color, model, useWorktree);
+    (_event, projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string) => {
+      return agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator);
     }
   );
 
@@ -31,10 +31,6 @@ export function registerAgentHandlers(): void {
       agentConfig.updateDurable(projectPath, agentId, updates);
     }
   );
-
-  ipcMain.handle(IPC.AGENT.SETUP_HOOKS, async (_event, worktreePath: string, agentId: string, options?: { allowedTools?: string[] }) => {
-    await writeHooksConfig(worktreePath, agentId, options);
-  });
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, (_event, projectPath: string, agentId: string) => {
     return agentConfig.getDurableConfig(projectPath, agentId);
@@ -79,18 +75,39 @@ export function registerAgentHandlers(): void {
     return agentConfig.deleteUnregister(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_QUICK_SUMMARY, (_event, agentId: string) => {
-    const filePath = path.join('/tmp', `clubhouse-summary-${agentId}.json`);
-    try {
-      const raw = fs.readFileSync(filePath, 'utf-8');
-      const data = JSON.parse(raw);
-      fs.unlinkSync(filePath);
-      return {
-        summary: typeof data.summary === 'string' ? data.summary : null,
-        filesModified: Array.isArray(data.filesModified) ? data.filesModified : [],
-      };
-    } catch {
-      return null;
-    }
+  // --- Orchestrator-based handlers ---
+
+  ipcMain.handle(IPC.AGENT.SPAWN_AGENT, async (_event, params: SpawnAgentParams) => {
+    await agentSystem.spawnAgent(params);
+  });
+
+  ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string, orchestrator?: string) => {
+    await agentSystem.killAgent(agentId, projectPath, orchestrator);
+  });
+
+  ipcMain.handle(IPC.AGENT.READ_QUICK_SUMMARY, async (_event, agentId: string) => {
+    return readQuickSummary(agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.GET_MODEL_OPTIONS, (_event, projectPath: string, orchestrator?: string) => {
+    const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+    return provider.getModelOptions();
+  });
+
+  ipcMain.handle(IPC.AGENT.CHECK_ORCHESTRATOR, async (_event, projectPath?: string, orchestrator?: string) => {
+    return agentSystem.checkAvailability(projectPath, orchestrator);
+  });
+
+  ipcMain.handle(IPC.AGENT.GET_ORCHESTRATORS, () => {
+    return agentSystem.getAvailableOrchestrators();
+  });
+
+  ipcMain.handle(IPC.AGENT.GET_TOOL_VERB, (_event, toolName: string, projectPath: string, orchestrator?: string) => {
+    const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+    return provider.toolVerb(toolName) || `Using ${toolName}`;
+  });
+
+  ipcMain.handle(IPC.AGENT.GET_SUMMARY_INSTRUCTION, (_event, agentId: string) => {
+    return buildSummaryInstruction(agentId);
   });
 }

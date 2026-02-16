@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -26,24 +26,28 @@ const GITIGNORE_BLOCK = `# Clubhouse agent manager
 export function ensureGitignore(projectPath: string): void {
   const gitignorePath = path.join(projectPath, '.gitignore');
 
+  const requiredLines = [
+    '.clubhouse/agents/',
+    '.clubhouse/.local/',
+    '.clubhouse/agents.json',
+    '.clubhouse/settings.local.json',
+  ];
+
   if (fs.existsSync(gitignorePath)) {
-    let content = fs.readFileSync(gitignorePath, 'utf-8');
+    const content = fs.readFileSync(gitignorePath, 'utf-8');
 
-    // Migrate old blanket pattern to selective patterns
-    const oldPatternRe = /# Clubhouse agent manager\n\.clubhouse\/\n?/;
-    if (oldPatternRe.test(content)) {
-      content = content.replace(oldPatternRe, GITIGNORE_BLOCK + '\n');
-      fs.writeFileSync(gitignorePath, content, 'utf-8');
-      return;
+    // Check which lines are missing
+    const missing = requiredLines.filter((line) => !content.includes(line));
+    if (missing.length === 0) return;
+
+    // Append only the missing lines under a header (if header isn't there yet)
+    const parts: string[] = [];
+    if (!content.includes('# Clubhouse agent manager')) {
+      parts.push('# Clubhouse agent manager');
     }
+    parts.push(...missing);
 
-    // Already has selective patterns
-    if (content.includes('.clubhouse/agents/')) {
-      return;
-    }
-
-    // Append new block
-    fs.appendFileSync(gitignorePath, `\n${GITIGNORE_BLOCK}\n`);
+    fs.appendFileSync(gitignorePath, `\n${parts.join('\n')}\n`);
   } else {
     fs.writeFileSync(gitignorePath, `${GITIGNORE_BLOCK}\n`);
   }
@@ -77,13 +81,16 @@ export function getDurableConfig(projectPath: string, agentId: string): DurableA
 export function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   if (updates.quickAgentDefaults !== undefined) {
     agent.quickAgentDefaults = updates.quickAgentDefaults;
+  }
+  if (updates.orchestrator !== undefined) {
+    agent.orchestrator = updates.orchestrator;
   }
   writeAgents(projectPath, agents);
 }
@@ -94,6 +101,7 @@ export function createDurable(
   color: string,
   model?: string,
   useWorktree: boolean = true,
+  orchestrator?: OrchestratorId,
 ): DurableAgentConfig {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
@@ -139,6 +147,7 @@ export function createDurable(
     ...(worktreePath ? { worktreePath } : {}),
     createdAt: new Date().toISOString(),
     ...(model && model !== 'default' ? { model } : {}),
+    ...(orchestrator ? { orchestrator } : {}),
   };
 
   const agents = readAgents(projectPath);

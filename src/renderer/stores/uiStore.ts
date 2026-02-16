@@ -51,12 +51,12 @@ export const useUIStore = create<UIState>((set, get) => ({
   setSettingsSubPage: (page) => set({ settingsSubPage: page }),
   setSettingsContext: (context) => set({
     settingsContext: context,
-    settingsSubPage: context === 'app' ? 'display' : 'project',
+    settingsSubPage: context === 'app' ? 'orchestrators' : 'project',
   }),
   toggleSettings: () => {
     const { explorerTab, previousExplorerTab } = get();
     if (explorerTab !== 'settings') {
-      set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'display', settingsContext: 'app' });
+      set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'orchestrators', settingsContext: 'app' });
     } else {
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }

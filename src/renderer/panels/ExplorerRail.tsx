@@ -1,8 +1,6 @@
 import { ReactNode } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
-import { usePluginStore } from '../stores/pluginStore';
-import { getAllPlugins } from '../plugins';
 
 interface TabEntry { id: string; label: string; icon: ReactNode }
 
@@ -100,29 +98,11 @@ function SettingsContextPicker() {
 export function ExplorerRail() {
   const { explorerTab, setExplorerTab } = useUIStore();
   const { projects, activeProjectId } = useProjectStore();
-  // Subscribe to raw data so component re-renders when configs change
-  const enabledPlugins = usePluginStore((s) => s.enabledPlugins);
-  const hiddenCoreTabs = usePluginStore((s) => s.hiddenCoreTabs);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   if (explorerTab === 'settings') {
     return <SettingsContextPicker />;
   }
-
-  const hiddenSet = activeProjectId ? (hiddenCoreTabs[activeProjectId] ?? []) : [];
-  const enabledSet = activeProjectId ? (enabledPlugins[activeProjectId] ?? []) : null;
-
-  // Filter core tabs by hidden state
-  const visibleCoreTabs = activeProjectId
-    ? CORE_TABS.filter((t) => !hiddenSet.includes(t.id))
-    : CORE_TABS;
-
-  // Build plugin tabs from registry, filtered by enabled state
-  const pluginTabs: TabEntry[] = getAllPlugins()
-    .filter((p) => enabledSet ? enabledSet.includes(p.id) : true)
-    .map((p) => ({ id: p.id, label: p.label, icon: p.icon }));
-
-  const topTabs = [...visibleCoreTabs, ...pluginTabs];
 
   return (
     <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
@@ -132,7 +112,7 @@ export function ExplorerRail() {
         </h2>
       </div>
       <nav className="flex-1 py-1 flex flex-col">
-        {topTabs.map((tab) => (
+        {CORE_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setExplorerTab(tab.id)}

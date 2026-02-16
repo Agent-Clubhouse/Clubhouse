@@ -3,8 +3,6 @@ import { IPC } from '../shared/ipc-channels';
 
 const api = {
   pty: {
-    spawn: (agentId: string, projectPath: string, claudeArgs?: string[]) =>
-      ipcRenderer.invoke(IPC.PTY.SPAWN, { agentId, projectPath, claudeArgs }),
     spawnShell: (id: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.PTY.SPAWN_SHELL, id, projectPath),
     write: (agentId: string, data: string) =>
@@ -51,8 +49,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -71,16 +69,53 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_FORCE, projectPath, agentId),
     deleteUnregister: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_UNREGISTER, projectPath, agentId),
-    readQuickSummary: (agentId: string) =>
-      ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId),
-    setupHooks: (worktreePath: string, agentId: string, options?: { allowedTools?: string[] }) =>
-      ipcRenderer.invoke(IPC.AGENT.SETUP_HOOKS, worktreePath, agentId, options),
+    readQuickSummary: (agentId: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_QUICK_SUMMARY, agentId, projectPath),
     getDurableConfig: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
     updateDurableConfig: (projectPath: string, agentId: string, updates: any) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
-    onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; notificationType?: string; message?: string; timestamp: number }) =>
+
+    // New orchestrator-based methods
+    spawnAgent: (params: {
+      agentId: string;
+      projectPath: string;
+      cwd: string;
+      kind: 'durable' | 'quick';
+      model?: string;
+      mission?: string;
+      systemPrompt?: string;
+      allowedTools?: string[];
+      orchestrator?: string;
+    }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
+
+    killAgent: (agentId: string, projectPath: string, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath, orchestrator),
+
+    getModelOptions: (projectPath: string, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),
+
+    checkOrchestrator: (projectPath?: string, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CHECK_ORCHESTRATOR, projectPath, orchestrator),
+
+    getOrchestrators: () =>
+      ipcRenderer.invoke(IPC.AGENT.GET_ORCHESTRATORS),
+
+    getToolVerb: (toolName: string, projectPath: string, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_TOOL_VERB, toolName, projectPath, orchestrator),
+
+    getSummaryInstruction: (agentId: string, projectPath: string, orchestrator?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_SUMMARY_INSTRUCTION, agentId, projectPath, orchestrator),
+
+    onHookEvent: (callback: (agentId: string, event: {
+      kind: string;
+      toolName?: string;
+      toolInput?: Record<string, unknown>;
+      message?: string;
+      toolVerb?: string;
+      timestamp: number;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: any) =>
         callback(agentId, hookEvent);
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
@@ -112,10 +147,10 @@ const api = {
     stashPop: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH_POP, dirPath),
   },
   agentSettings: {
-    readClaudeMd: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.READ_CLAUDE_MD, worktreePath),
-    saveClaudeMd: (worktreePath: string, content: string, projectPath?: string, agentId?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.SAVE_CLAUDE_MD, worktreePath, content, projectPath, agentId),
+    readInstructions: (worktreePath: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_INSTRUCTIONS, worktreePath, projectPath),
+    saveInstructions: (worktreePath: string, content: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_INSTRUCTIONS, worktreePath, content, projectPath),
     readMcpConfig: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath),
     listSkills: (worktreePath: string) =>
@@ -160,6 +195,10 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_THEME, settings),
+    getOrchestratorSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATOR_SETTINGS),
+    saveOrchestratorSettings: (settings: { enabled: string[] }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
   },
 };
 

@@ -109,7 +109,7 @@ export function remove(id: string): void {
   removeIconFile(id);
 }
 
-export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName'>>): Project[] {
+export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
   const projects = readProjects();
   const idx = projects.findIndex((p) => p.id === id);
   if (idx === -1) return projects;
@@ -139,6 +139,10 @@ export function update(id: string, updates: Partial<Pick<Project, 'color' | 'ico
     } else {
       projects[idx].displayName = updates.displayName;
     }
+  }
+
+  if (updates.orchestrator !== undefined) {
+    projects[idx].orchestrator = updates.orchestrator;
   }
 
   writeProjects(projects);

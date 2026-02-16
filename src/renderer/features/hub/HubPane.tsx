@@ -1,6 +1,6 @@
 import { useState, useCallback, DragEvent } from 'react';
 import { AgentTerminal } from '../agents/AgentTerminal';
-import { SleepingClaude } from '../agents/SleepingClaude';
+import { SleepingAgent } from '../agents/SleepingAgent';
 import { AgentPicker } from './AgentPicker';
 import { QuickAgentGhost } from './QuickAgentGhost';
 import { useHubStore } from '../../stores/hubStore';
@@ -149,7 +149,7 @@ export function HubPane({ paneId, agentId }: Props) {
       {agent.status === 'running' ? (
         <AgentTerminal agentId={agentId} focused={isFocused} />
       ) : (
-        <SleepingClaude agent={agent} />
+        <SleepingAgent agent={agent} />
       )}
 
       {/* Status chip — expands to full width on hover; drag handle */}

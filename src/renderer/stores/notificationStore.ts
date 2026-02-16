@@ -5,7 +5,7 @@ interface NotificationState {
   settings: NotificationSettings | null;
   loadSettings: () => Promise<void>;
   saveSettings: (partial: Partial<NotificationSettings>) => Promise<void>;
-  checkAndNotify: (agentName: string, eventName: string, detail?: string) => void;
+  checkAndNotify: (agentName: string, eventKind: string, detail?: string) => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
@@ -24,7 +24,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     await window.clubhouse.app.saveNotificationSettings(merged);
   },
 
-  checkAndNotify: (agentName, eventName, detail) => {
+  checkAndNotify: (agentName, eventKind, detail) => {
     const s = get().settings;
     if (!s || !s.enabled) return;
 
@@ -32,16 +32,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     let title = '';
     let body = '';
 
-    if ((eventName === 'Notification' || eventName === 'PermissionRequest') && s.permissionNeeded) {
+    if ((eventKind === 'notification' || eventKind === 'permission_request') && s.permissionNeeded) {
       title = `${agentName} needs permission`;
       body = detail ? `Wants to use ${detail}` : 'Agent is waiting for approval';
-    } else if (eventName === 'Stop' && s.agentStopped) {
+    } else if (eventKind === 'stop' && s.agentStopped) {
       title = `${agentName} finished`;
       body = 'Agent has stopped';
-    } else if (eventName === 'Stop' && s.agentIdle) {
+    } else if (eventKind === 'stop' && s.agentIdle) {
       title = `${agentName} is idle`;
       body = 'Agent is waiting for input';
-    } else if (eventName === 'PostToolUseFailure' && s.agentError) {
+    } else if (eventKind === 'tool_error' && s.agentError) {
       title = `${agentName} hit an error`;
       body = detail ? `${detail} failed` : 'A tool call failed';
     } else {

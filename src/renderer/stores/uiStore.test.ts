@@ -29,7 +29,7 @@ describe('uiStore', () => {
       getState().toggleSettings();
       expect(getState().explorerTab).toBe('settings');
       expect(getState().previousExplorerTab).toBe('hub');
-      expect(getState().settingsSubPage).toBe('display');
+      expect(getState().settingsSubPage).toBe('orchestrators');
       expect(getState().settingsContext).toBe('app');
     });
 
@@ -61,11 +61,11 @@ describe('uiStore', () => {
       expect(getState().settingsContext).toBe('app');
     });
 
-    it('switching to app context sets subPage to display', () => {
+    it('switching to app context sets subPage to orchestrators', () => {
       useUIStore.setState({ settingsSubPage: 'plugins', settingsContext: 'proj-1' });
       getState().setSettingsContext('app');
       expect(getState().settingsContext).toBe('app');
-      expect(getState().settingsSubPage).toBe('display');
+      expect(getState().settingsSubPage).toBe('orchestrators');
     });
 
     it('switching to project context sets subPage to project', () => {

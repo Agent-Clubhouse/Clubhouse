@@ -4,12 +4,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.stubGlobal('window', {
   clubhouse: {
     pty: {
-      spawn: vi.fn(),
       kill: vi.fn(),
     },
     agent: {
       listDurable: vi.fn().mockResolvedValue([]),
-      setupHooks: vi.fn().mockResolvedValue(undefined),
       renameDurable: vi.fn().mockResolvedValue(undefined),
       updateDurable: vi.fn().mockResolvedValue(undefined),
       deleteDurable: vi.fn().mockResolvedValue(undefined),
@@ -19,6 +17,15 @@ vi.stubGlobal('window', {
       deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       getDurableConfig: vi.fn().mockResolvedValue(null),
+      spawnAgent: vi.fn().mockResolvedValue(undefined),
+      killAgent: vi.fn().mockResolvedValue(undefined),
+      getSummaryInstruction: vi.fn().mockResolvedValue('Write summary to /tmp/clubhouse-summary-test.json'),
+      getModelOptions: vi.fn().mockResolvedValue([
+        { id: 'default', label: 'Default' },
+        { id: 'opus', label: 'Opus' },
+        { id: 'sonnet', label: 'Sonnet' },
+        { id: 'haiku', label: 'Haiku' },
+      ]),
     },
   },
 });
@@ -137,63 +144,63 @@ describe('agentStore', () => {
   describe('handleHookEvent', () => {
     it('ignores non-running agents', () => {
       seedAgent({ id: 'a_sleep', status: 'sleeping' });
-      const event: AgentHookEvent = { eventName: 'PreToolUse', toolName: 'Read', timestamp: Date.now() };
+      const event: AgentHookEvent = { kind: 'pre_tool', toolName: 'Read', toolVerb: 'Reading file', timestamp: Date.now() };
       getState().handleHookEvent('a_sleep', event);
       expect(getState().agentDetailedStatus['a_sleep']).toBeUndefined();
     });
 
-    it('PreToolUse sets state:working with tool verb', () => {
+    it('pre_tool sets state:working with tool verb', () => {
       seedAgent({ id: 'a_pre', status: 'running' });
-      getState().handleHookEvent('a_pre', { eventName: 'PreToolUse', toolName: 'Read', timestamp: 100 });
+      getState().handleHookEvent('a_pre', { kind: 'pre_tool', toolName: 'Read', toolVerb: 'Reading file', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_pre'];
       expect(status.state).toBe('working');
       expect(status.message).toBe('Reading file');
     });
 
-    it('PostToolUse sets state:idle, "Thinking"', () => {
+    it('post_tool sets state:idle, "Thinking"', () => {
       seedAgent({ id: 'a_post', status: 'running' });
-      getState().handleHookEvent('a_post', { eventName: 'PostToolUse', timestamp: 100 });
+      getState().handleHookEvent('a_post', { kind: 'post_tool', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_post'];
       expect(status.state).toBe('idle');
       expect(status.message).toBe('Thinking');
     });
 
-    it('PostToolUseFailure sets state:tool_error', () => {
+    it('tool_error sets state:tool_error', () => {
       seedAgent({ id: 'a_fail', status: 'running' });
-      getState().handleHookEvent('a_fail', { eventName: 'PostToolUseFailure', toolName: 'Bash', timestamp: 100 });
+      getState().handleHookEvent('a_fail', { kind: 'tool_error', toolName: 'Bash', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_fail'];
       expect(status.state).toBe('tool_error');
       expect(status.message).toContain('Bash');
     });
 
-    it('Stop sets state:idle, "Idle"', () => {
+    it('stop sets state:idle, "Idle"', () => {
       seedAgent({ id: 'a_stop2', status: 'running' });
-      getState().handleHookEvent('a_stop2', { eventName: 'Stop', timestamp: 100 });
+      getState().handleHookEvent('a_stop2', { kind: 'stop', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_stop2'];
       expect(status.state).toBe('idle');
       expect(status.message).toBe('Idle');
     });
 
-    it('Notification sets state:needs_permission', () => {
+    it('notification sets state:needs_permission', () => {
       seedAgent({ id: 'a_notif', status: 'running' });
-      getState().handleHookEvent('a_notif', { eventName: 'Notification', timestamp: 100 });
+      getState().handleHookEvent('a_notif', { kind: 'notification', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_notif'];
       expect(status.state).toBe('needs_permission');
       expect(status.message).toBe('Needs permission');
     });
 
-    it('PermissionRequest sets state:needs_permission with toolName', () => {
+    it('permission_request sets state:needs_permission with toolName', () => {
       seedAgent({ id: 'a_perm', status: 'running' });
-      getState().handleHookEvent('a_perm', { eventName: 'PermissionRequest', toolName: 'Bash', timestamp: 100 });
+      getState().handleHookEvent('a_perm', { kind: 'permission_request', toolName: 'Bash', timestamp: 100 });
       const status = getState().agentDetailedStatus['a_perm'];
       expect(status.state).toBe('needs_permission');
       expect(status.message).toBe('Needs permission');
       expect(status.toolName).toBe('Bash');
     });
 
-    it('unknown event causes no state change', () => {
+    it('unknown event kind causes no state change', () => {
       seedAgent({ id: 'a_unk', status: 'running' });
-      getState().handleHookEvent('a_unk', { eventName: 'SomeUnknownEvent', timestamp: 100 });
+      getState().handleHookEvent('a_unk', { kind: 'unknown_event' as any, timestamp: 100 });
       expect(getState().agentDetailedStatus['a_unk']).toBeUndefined();
     });
   });
@@ -252,7 +259,7 @@ describe('agentStore', () => {
   });
 
   describe('toolVerb (tested via handleHookEvent)', () => {
-    it('known tools map correctly', () => {
+    it('tool verb from event is used as message', () => {
       const mappings: Record<string, string> = {
         Bash: 'Running command',
         Edit: 'Editing file',
@@ -267,20 +274,14 @@ describe('agentStore', () => {
 
       for (const [tool, expected] of Object.entries(mappings)) {
         seedAgent({ id: `a_tool_${tool}`, status: 'running' });
-        getState().handleHookEvent(`a_tool_${tool}`, { eventName: 'PreToolUse', toolName: tool, timestamp: 100 });
+        getState().handleHookEvent(`a_tool_${tool}`, { kind: 'pre_tool', toolName: tool, toolVerb: expected, timestamp: 100 });
         expect(getState().agentDetailedStatus[`a_tool_${tool}`].message).toBe(expected);
       }
     });
 
-    it('unknown tool shows "Using {name}"', () => {
-      seedAgent({ id: 'a_custom', status: 'running' });
-      getState().handleHookEvent('a_custom', { eventName: 'PreToolUse', toolName: 'CustomTool', timestamp: 100 });
-      expect(getState().agentDetailedStatus['a_custom'].message).toBe('Using CustomTool');
-    });
-
-    it('undefined tool shows "Working"', () => {
+    it('undefined toolVerb shows "Working"', () => {
       seedAgent({ id: 'a_noname', status: 'running' });
-      getState().handleHookEvent('a_noname', { eventName: 'PreToolUse', timestamp: 100 });
+      getState().handleHookEvent('a_noname', { kind: 'pre_tool', timestamp: 100 });
       expect(getState().agentDetailedStatus['a_noname'].message).toBe('Working');
     });
   });
@@ -342,16 +343,15 @@ describe('agentStore', () => {
   });
 
   describe('spawnQuickAgent with quick agent defaults', () => {
-    const mockPty = window.clubhouse.pty as any;
     const mockAgent = window.clubhouse.agent as any;
 
     beforeEach(() => {
-      mockPty.spawn.mockResolvedValue(undefined);
-      mockAgent.setupHooks.mockResolvedValue(undefined);
+      mockAgent.spawnAgent.mockResolvedValue(undefined);
+      mockAgent.getSummaryInstruction.mockResolvedValue('Write summary to /tmp/clubhouse-summary-test.json');
       mockAgent.getDurableConfig.mockResolvedValue(null);
     });
 
-    it('parent with systemPrompt — includes in --append-system-prompt', async () => {
+    it('parent with systemPrompt — included in spawnAgent systemPrompt', async () => {
       seedAgent({ id: 'parent_1', kind: 'durable', worktreePath: '/wt/parent' });
       mockAgent.getDurableConfig.mockResolvedValue({
         id: 'parent_1',
@@ -361,16 +361,12 @@ describe('agentStore', () => {
 
       await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', undefined, 'parent_1');
 
-      const spawnCall = mockPty.spawn.mock.calls[0];
-      const claudeArgs: string[] = spawnCall[2];
-      const appendIdx = claudeArgs.indexOf('--append-system-prompt');
-      expect(appendIdx).toBeGreaterThan(-1);
-      const systemPromptArg = claudeArgs[appendIdx + 1];
-      expect(systemPromptArg).toContain('Be concise and focused');
-      expect(systemPromptArg).toContain('clubhouse-summary');
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.systemPrompt).toContain('Be concise and focused');
+      expect(spawnCall.systemPrompt).toContain('clubhouse-summary');
     });
 
-    it('parent with allowedTools — passes to setupHooks', async () => {
+    it('parent with allowedTools — passes to spawnAgent', async () => {
       seedAgent({ id: 'parent_2', kind: 'durable', worktreePath: '/wt/parent' });
       mockAgent.getDurableConfig.mockResolvedValue({
         id: 'parent_2',
@@ -380,11 +376,8 @@ describe('agentStore', () => {
 
       await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', undefined, 'parent_2');
 
-      expect(mockAgent.setupHooks).toHaveBeenCalledWith(
-        '/wt/parent',
-        expect.any(String),
-        { allowedTools: ['Bash(npm test:*)', 'Edit'] },
-      );
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.allowedTools).toEqual(['Bash(npm test:*)', 'Edit']);
     });
 
     it('parent with defaultModel, no explicit model — uses parent model', async () => {
@@ -397,10 +390,8 @@ describe('agentStore', () => {
 
       await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', undefined, 'parent_3');
 
-      const spawnCall = mockPty.spawn.mock.calls[0];
-      const claudeArgs: string[] = spawnCall[2];
-      expect(claudeArgs).toContain('--model');
-      expect(claudeArgs[claudeArgs.indexOf('--model') + 1]).toBe('haiku');
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.model).toBe('haiku');
     });
 
     it('explicit model overrides parent defaultModel', async () => {
@@ -413,10 +404,8 @@ describe('agentStore', () => {
 
       await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', 'opus', 'parent_4');
 
-      const spawnCall = mockPty.spawn.mock.calls[0];
-      const claudeArgs: string[] = spawnCall[2];
-      expect(claudeArgs).toContain('--model');
-      expect(claudeArgs[claudeArgs.indexOf('--model') + 1]).toBe('opus');
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.model).toBe('opus');
     });
 
     it('orphan quick agent — no getDurableConfig call', async () => {
@@ -425,22 +414,15 @@ describe('agentStore', () => {
       expect(mockAgent.getDurableConfig).not.toHaveBeenCalled();
     });
 
-    it('no systemPrompt — only summary instruction in append-system-prompt', async () => {
-      seedAgent({ id: 'parent_5', kind: 'durable', worktreePath: '/wt/parent' });
-      mockAgent.getDurableConfig.mockResolvedValue({
-        id: 'parent_5',
-        name: 'parent',
-        quickAgentDefaults: {},
-      });
+    it('calls spawnAgent with correct params', async () => {
+      await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', 'sonnet');
 
-      await getState().spawnQuickAgent('proj_1', '/project', 'do stuff', undefined, 'parent_5');
-
-      const spawnCall = mockPty.spawn.mock.calls[0];
-      const claudeArgs: string[] = spawnCall[2];
-      const appendIdx = claudeArgs.indexOf('--append-system-prompt');
-      expect(appendIdx).toBeGreaterThan(-1);
-      const systemPromptArg = claudeArgs[appendIdx + 1];
-      expect(systemPromptArg).toContain('clubhouse-summary');
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.projectPath).toBe('/project');
+      expect(spawnCall.cwd).toBe('/project');
+      expect(spawnCall.kind).toBe('quick');
+      expect(spawnCall.model).toBe('sonnet');
+      expect(spawnCall.mission).toBe('do stuff');
     });
   });
 });

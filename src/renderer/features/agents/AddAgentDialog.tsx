@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
-import { MODEL_OPTIONS } from '../../../shared/models';
+import { useModelOptions } from '../../hooks/useModelOptions';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string) => void;
 }
 
 export function AddAgentDialog({ onClose, onCreate }: Props) {
@@ -12,11 +13,16 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
+  const MODEL_OPTIONS = useModelOptions();
+  const enabled = useOrchestratorStore((s) => s.enabled);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+  const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, model, useWorktree);
+    onCreate(name.trim(), color, model, useWorktree, enabledOrchestrators.length > 1 ? orchestrator : undefined);
   };
 
   return (
@@ -84,6 +90,23 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
               ))}
             </select>
           </label>
+
+          {/* Orchestrator (only when >1 enabled) */}
+          {enabledOrchestrators.length > 1 && (
+            <label className="block mb-3">
+              <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+              <select
+                value={orchestrator}
+                onChange={(e) => setOrchestrator(e.target.value)}
+                className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                  text-ctp-text focus:outline-none focus:border-indigo-500"
+              >
+                {enabledOrchestrators.map((o) => (
+                  <option key={o.id} value={o.id}>{o.displayName}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           {/* Use Worktree */}
           <label className="flex items-center gap-2 mb-4 cursor-pointer">

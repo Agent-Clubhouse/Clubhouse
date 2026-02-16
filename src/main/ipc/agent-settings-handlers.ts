@@ -1,14 +1,24 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as agentSettings from '../services/agent-settings-service';
+import { resolveOrchestrator } from '../services/agent-system';
 
 export function registerAgentSettingsHandlers(): void {
-  ipcMain.handle(IPC.AGENT.READ_CLAUDE_MD, (_event, worktreePath: string) => {
+  ipcMain.handle(IPC.AGENT.READ_INSTRUCTIONS, (_event, worktreePath: string, projectPath?: string) => {
+    if (projectPath) {
+      const provider = resolveOrchestrator(projectPath);
+      return provider.readInstructions(worktreePath);
+    }
     return agentSettings.readClaudeMd(worktreePath);
   });
 
-  ipcMain.handle(IPC.AGENT.SAVE_CLAUDE_MD, (_event, worktreePath: string, content: string) => {
-    agentSettings.writeClaudeMd(worktreePath, content);
+  ipcMain.handle(IPC.AGENT.SAVE_INSTRUCTIONS, (_event, worktreePath: string, content: string, projectPath?: string) => {
+    if (projectPath) {
+      const provider = resolveOrchestrator(projectPath);
+      provider.writeInstructions(worktreePath, content);
+    } else {
+      agentSettings.writeClaudeMd(worktreePath, content);
+    }
   });
 
   ipcMain.handle(IPC.AGENT.READ_MCP_CONFIG, (_event, worktreePath: string) => {

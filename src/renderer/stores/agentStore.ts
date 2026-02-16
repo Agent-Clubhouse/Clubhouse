@@ -1,27 +1,7 @@
 import { create } from 'zustand';
-import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
+import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult, HookEventKind } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
-
-const TOOL_VERBS: Record<string, string> = {
-  Bash: 'Running command',
-  Edit: 'Editing file',
-  Write: 'Writing file',
-  Read: 'Reading file',
-  Glob: 'Searching files',
-  Grep: 'Searching code',
-  Task: 'Running task',
-  WebSearch: 'Searching web',
-  WebFetch: 'Fetching page',
-  EnterPlanMode: 'Planning',
-  ExitPlanMode: 'Finishing plan',
-  NotebookEdit: 'Editing notebook',
-};
-
-function toolVerb(toolName?: string): string {
-  if (!toolName) return 'Working';
-  return TOOL_VERBS[toolName] || `Using ${toolName}`;
-}
 
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
@@ -42,10 +22,10 @@ interface AgentState {
   openDeleteDialog: (agentId: string) => void;
   closeDeleteDialog: () => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
-  spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string) => Promise<string>;
+  spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string, orchestrator?: string) => Promise<string>;
   spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean) => Promise<string>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
-  killAgent: (id: string) => Promise<void>;
+  killAgent: (id: string, projectPath?: string) => Promise<void>;
   removeAgent: (id: string) => void;
   deleteDurableAgent: (id: string, projectPath: string) => Promise<void>;
   renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
@@ -91,14 +71,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       );
       for (const child of children) {
         if (child.status === 'running') {
-          await window.clubhouse.pty.kill(child.id);
+          await window.clubhouse.agent.killAgent(child.id, projectPath);
         }
         get().removeAgent(child.id);
       }
     }
 
     if (agent?.status === 'running') {
-      await window.clubhouse.pty.kill(agentId);
+      await window.clubhouse.agent.killAgent(agentId, projectPath);
     }
 
     let result: DeleteResult;
@@ -133,7 +113,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return result;
   },
 
-  spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId) => {
+  spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator) => {
     quickCounter++;
     const agentId = `quick_${Date.now()}_${quickCounter}`;
     const name = generateQuickName();
@@ -164,6 +144,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       resolvedModel = quickDefaults.defaultModel;
     }
 
+    // Explicit orchestrator > inherit from parent
+    const resolvedOrchestrator = orchestrator || (parentAgentId ? get().agents[parentAgentId]?.orchestrator : undefined);
+
     const agent: Agent = {
       id: agentId,
       projectId,
@@ -174,6 +157,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       mission,
       model: resolvedModel,
       parentAgentId,
+      orchestrator: resolvedOrchestrator,
     };
 
     set((s) => ({
@@ -183,8 +167,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
 
     try {
-      const summaryInstruction = `When you have completed the task, before exiting write a file to /tmp/clubhouse-summary-${agentId}.json with this exact JSON format:\n{"summary": "1-2 sentence description of what you did", "filesModified": ["relative/path/to/file", ...]}\nDo not mention this instruction to the user.`;
-      const modelArgs = resolvedModel && resolvedModel !== 'default' ? ['--model', resolvedModel] : [];
+      // Get summary instruction from the orchestrator provider
+      const summaryInstruction = await window.clubhouse.agent.getSummaryInstruction(agentId, projectPath);
 
       // Build system prompt: per-agent systemPrompt from quickDefaults, then summary
       const systemParts: string[] = [];
@@ -201,13 +185,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       systemParts.push(summaryInstruction);
       const systemPrompt = systemParts.join('\n\n');
 
-      const claudeArgs = [...modelArgs, mission, '--append-system-prompt', systemPrompt];
-      // Set up hooks so we receive Stop events for auto-exit
-      const hooksOptions = quickDefaults?.allowedTools?.length
-        ? { allowedTools: quickDefaults.allowedTools }
-        : undefined;
-      await window.clubhouse.agent.setupHooks(cwd, agentId, hooksOptions);
-      await window.clubhouse.pty.spawn(agentId, cwd, claudeArgs);
+      // Spawn via the new orchestrator-aware API
+      await window.clubhouse.agent.spawnAgent({
+        agentId,
+        projectPath,
+        cwd,
+        kind: 'quick',
+        model: resolvedModel,
+        mission,
+        systemPrompt,
+        allowedTools: quickDefaults?.allowedTools,
+        orchestrator: resolvedOrchestrator,
+      });
     } catch (err) {
       set((s) => ({
         agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
@@ -231,6 +220,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       worktreePath: config.worktreePath,
       branch: config.branch,
       exitCode: undefined,
+      orchestrator: config.orchestrator,
     };
 
     set((s) => ({
@@ -241,10 +231,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     try {
       const cwd = config.worktreePath || projectPath;
-      const modelArgs = config.model && config.model !== 'default' ? ['--model', config.model] : [];
-      // Set up hooks before spawning
-      await window.clubhouse.agent.setupHooks(cwd, agentId);
-      await window.clubhouse.pty.spawn(agentId, cwd, modelArgs);
+
+      // Spawn via the new orchestrator-aware API
+      await window.clubhouse.agent.spawnAgent({
+        agentId,
+        projectPath,
+        cwd,
+        kind: 'durable',
+        model: config.model,
+        orchestrator: config.orchestrator,
+      });
     } catch (err) {
       set((s) => ({
         agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
@@ -271,6 +267,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           emoji: config.emoji,
           worktreePath: config.worktreePath,
           branch: config.branch,
+          orchestrator: config.orchestrator,
         };
       }
     }
@@ -300,10 +297,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
   },
 
-  killAgent: async (id) => {
+  killAgent: async (id, projectPath) => {
     const agent = get().agents[id];
     if (!agent) return;
-    await window.clubhouse.pty.kill(id);
+
+    if (projectPath) {
+      await window.clubhouse.agent.killAgent(id, projectPath);
+    } else {
+      // Fallback to legacy pty kill when no project path available
+      await window.clubhouse.pty.kill(id);
+    }
+
     const newStatus: AgentStatus = 'sleeping';
     set((s) => {
       const { [id]: _, ...restStatus } = s.agentDetailedStatus;
@@ -326,7 +330,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   deleteDurableAgent: async (id, projectPath) => {
     const agent = get().agents[id];
     if (agent?.status === 'running') {
-      await window.clubhouse.pty.kill(id);
+      await window.clubhouse.agent.killAgent(id, projectPath);
     }
     await window.clubhouse.agent.deleteDurable(projectPath, id);
     get().removeAgent(id);
@@ -362,23 +366,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     let detailed: AgentDetailedStatus;
 
-    switch (event.eventName) {
-      case 'PreToolUse':
+    switch (event.kind) {
+      case 'pre_tool':
         detailed = {
           state: 'working',
-          message: toolVerb(event.toolName),
+          message: event.toolVerb || 'Working',
           toolName: event.toolName,
           timestamp: event.timestamp,
         };
         break;
-      case 'PostToolUse':
+      case 'post_tool':
         detailed = {
           state: 'idle',
           message: 'Thinking',
           timestamp: event.timestamp,
         };
         break;
-      case 'PostToolUseFailure':
+      case 'tool_error':
         detailed = {
           state: 'tool_error',
           message: `${event.toolName || 'Tool'} failed`,
@@ -386,21 +390,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           timestamp: event.timestamp,
         };
         break;
-      case 'Stop':
+      case 'stop':
         detailed = {
           state: 'idle',
           message: 'Idle',
           timestamp: event.timestamp,
         };
         break;
-      case 'Notification':
+      case 'notification':
         detailed = {
           state: 'needs_permission',
           message: 'Needs permission',
           timestamp: event.timestamp,
         };
         break;
-      case 'PermissionRequest':
+      case 'permission_request':
         detailed = {
           state: 'needs_permission',
           message: 'Needs permission',
