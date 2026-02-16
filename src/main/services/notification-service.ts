@@ -30,5 +30,6 @@ export function saveSettings(s: NotificationSettings): void {
 }
 
 export function sendNotification(title: string, body: string, silent: boolean): void {
+  if (!Notification.isSupported()) return;
   new Notification({ title, body, silent }).show();
 }

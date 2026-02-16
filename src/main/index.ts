@@ -43,6 +43,7 @@ const createWindow = (): void => {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    show: false,
     titleBarStyle: 'hiddenInset',
     backgroundColor: getThemeBgColor(),
     webPreferences: {
@@ -53,6 +54,11 @@ const createWindow = (): void => {
   });
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  // Show window once the renderer is ready (avoids white flash on startup).
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show();
+  });
 
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -65,9 +71,12 @@ app.on('ready', () => {
   createWindow();
 
   // Trigger macOS notification permission prompt on first launch.
-  // Sending a notification is the only way to make macOS show the permission dialog.
+  // Must wait until the window is visible — macOS suppresses the permission
+  // dialog if the app hasn't finished presenting its first window.
   if (process.platform === 'darwin' && Notification.isSupported()) {
-    new Notification({ title: 'Clubhouse', body: 'Notifications are enabled', silent: true }).show();
+    mainWindow?.once('show', () => {
+      new Notification({ title: 'Clubhouse', body: 'Notifications are enabled' }).show();
+    });
   }
 });
 

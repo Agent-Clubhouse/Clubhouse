@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Agent, McpServerEntry, SkillEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig, QuickAgentDefaults } from '../../../shared/types';
+import { Agent, McpServerEntry, SkillEntry, AgentTemplateEntry, DurableAgentConfig, ConfigItemKey, OverrideFlags, PermissionsConfig, QuickAgentDefaults } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { MODEL_OPTIONS } from '../../../shared/models';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ConfigOverrideToggle } from '../settings/ConfigOverrideToggle';
 import { PermissionsEditor } from '../settings/PermissionsEditor';
+import { SkillAgentList } from '../settings/SkillAgentList';
+import { AddSkillAgentDialog } from '../settings/AddSkillAgentDialog';
 
 interface Props {
   agent: Agent;
@@ -21,8 +24,9 @@ const DEFAULT_OVERRIDES: OverrideFlags = {
 };
 
 export function AgentSettingsView({ agent }: Props) {
-  const { closeAgentSettings, updateAgent } = useAgentStore();
+  const { closeAgentSettings, updateAgent, spawnQuickAgent } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
+  const { setExplorerTab, setSelectedFilePath } = useUIStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath as string;
@@ -32,8 +36,10 @@ export function AgentSettingsView({ agent }: Props) {
   const [saving, setSaving] = useState(false);
   const [mcpServers, setMcpServers] = useState<McpServerEntry[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplateEntry[]>([]);
   const [overrides, setOverrides] = useState<OverrideFlags>(DEFAULT_OVERRIDES);
   const [permissions, setPermissions] = useState<PermissionsConfig>({});
+  const [addDialog, setAddDialog] = useState<{ kind: 'skill' | 'agent-template' } | null>(null);
 
   // Load override flags from agent config
   const loadOverrides = useCallback(async () => {
@@ -100,7 +106,6 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   // Quick Agent Defaults state
-  const projects = useProjectStore((s) => s.projects);
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
   const [qadAllowedTools, setQadAllowedTools] = useState('');
@@ -109,27 +114,31 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
 
-  // Refresh only MCP + skills (won't clobber unsaved CLAUDE.md edits)
+  // Refresh only MCP + skills + agent templates (won't clobber unsaved CLAUDE.md edits)
   const refreshLists = useCallback(async () => {
-    const [servers, skillList] = await Promise.all([
+    const [servers, skillList, templateList] = await Promise.all([
       window.clubhouse.agentSettings.readMcpConfig(worktreePath),
       window.clubhouse.agentSettings.listSkills(worktreePath),
+      window.clubhouse.agentSettings.listAgentTemplates(worktreePath),
     ]);
     setMcpServers(servers);
     setSkills(skillList);
+    setAgentTemplates(templateList);
   }, [worktreePath]);
 
   // Full load (including CLAUDE.md)
   const loadData = useCallback(async () => {
-    const [md, servers, skillList] = await Promise.all([
+    const [md, servers, skillList, templateList] = await Promise.all([
       window.clubhouse.agentSettings.readClaudeMd(worktreePath),
       window.clubhouse.agentSettings.readMcpConfig(worktreePath),
       window.clubhouse.agentSettings.listSkills(worktreePath),
+      window.clubhouse.agentSettings.listAgentTemplates(worktreePath),
     ]);
     setClaudeMd(md);
     setClaudeMdDirty(false);
     setMcpServers(servers);
     setSkills(skillList);
+    setAgentTemplates(templateList);
   }, [worktreePath]);
 
   useEffect(() => {
@@ -216,6 +225,31 @@ export function AgentSettingsView({ agent }: Props) {
   const permissionsSynced = !overrides.permissions;
   const mcpSynced = !overrides.mcpConfig;
   const skillsSynced = !overrides.skills;
+  const agentsSynced = !overrides.agents;
+
+  const handleViewFile = (item: SkillEntry | AgentTemplateEntry) => {
+    const readmePath = item.path + '/README.md';
+    setExplorerTab('files');
+    setSelectedFilePath(readmePath);
+  };
+
+  const handleCreateItem = async (kind: 'skill' | 'agent-template', name: string, method: 'manual' | 'generate', prompt?: string) => {
+    const createFn = kind === 'skill'
+      ? window.clubhouse.agentSettings.createSkill
+      : window.clubhouse.agentSettings.createAgentTemplate;
+
+    const readmePath = await createFn(worktreePath, name, false);
+    await refreshLists();
+    setAddDialog(null);
+
+    if (method === 'generate' && prompt && activeProject) {
+      const mission = `Populate the README.md at ${readmePath} with a complete ${kind} definition. ${prompt}`;
+      spawnQuickAgent(activeProject.id, activeProject.path, mission, undefined, agent.id);
+    } else {
+      setExplorerTab('files');
+      setSelectedFilePath(readmePath);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-ctp-base">
@@ -467,34 +501,37 @@ export function AgentSettingsView({ agent }: Props) {
 
         {/* Skills Section */}
         <section>
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-          </div>
+          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Skills</h3>
           <ConfigOverrideToggle
             label="Skills"
             synced={skillsSynced}
             onToggle={(synced) => handleToggleOverride('skills', synced)}
           />
-          {skillsSynced && (
-            <div className="text-[10px] text-ctp-green uppercase tracking-wider mb-2">Managed by project</div>
+          {!skillsSynced && (
+            <SkillAgentList
+              kind="skill"
+              items={skills}
+              onView={handleViewFile}
+              onAdd={() => setAddDialog({ kind: 'skill' })}
+            />
           )}
-          {skills.length === 0 ? (
-            <div className="text-xs text-ctp-subtext0 bg-surface-0 rounded-lg p-3">
-              No skills installed. {!skillsSynced && <>Use the terminal below to add skills to <code className="text-ctp-blue">.claude/skills/</code>.</>}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {skills.map((skill) => (
-                <div key={skill.name} className="bg-surface-0 rounded-lg px-3 py-2 border border-surface-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-ctp-text font-medium">{skill.name}</span>
-                    {skill.hasReadme && (
-                      <span className="text-[10px] bg-surface-2 text-ctp-subtext0 px-1.5 py-0.5 rounded">README</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+        </section>
+
+        {/* Agent Templates Section */}
+        <section>
+          <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-1">Agent Templates</h3>
+          <ConfigOverrideToggle
+            label="Agents"
+            synced={agentsSynced}
+            onToggle={(synced) => handleToggleOverride('agents', synced)}
+          />
+          {!agentsSynced && (
+            <SkillAgentList
+              kind="agent-template"
+              items={agentTemplates}
+              onView={handleViewFile}
+              onAdd={() => setAddDialog({ kind: 'agent-template' })}
+            />
           )}
         </section>
 
@@ -562,6 +599,14 @@ export function AgentSettingsView({ agent }: Props) {
           <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />
         </div>
       </div>
+
+      {addDialog && (
+        <AddSkillAgentDialog
+          kind={addDialog.kind}
+          onCancel={() => setAddDialog(null)}
+          onCreate={(name, method, prompt) => handleCreateItem(addDialog.kind, name, method, prompt)}
+        />
+      )}
     </div>
   );
 }

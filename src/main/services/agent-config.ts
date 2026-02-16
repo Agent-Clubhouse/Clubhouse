@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DurableAgentConfig, QuickAgentDefaults, ProjectSettings, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry, ConfigLayer, ConfigItemKey } from '../../shared/types';
+import { AgentContext } from '../../shared/template-engine';
 import { resolveProjectDefaults, resolveDurableConfig, diffConfigLayers, defaultOverrideFlags } from './config-resolver';
 import { materializeAll, repairMissing } from './config-materializer';
 
@@ -27,16 +28,46 @@ function localSettingsPath(projectPath: string): string {
   return path.join(clubhouseDir(projectPath), 'settings.local.json');
 }
 
+function buildAgentContext(config: DurableAgentConfig, projectPath: string): AgentContext {
+  return {
+    agentName: config.name,
+    agentType: 'durable',
+    worktreePath: config.worktreePath,
+    branch: config.branch,
+    projectPath,
+    role: config.role,
+  };
+}
+
+const GITIGNORE_BLOCK = `# Clubhouse agent manager
+.clubhouse/agents/
+.clubhouse/.local/
+.clubhouse/agents.json
+.clubhouse/settings.local.json`;
+
 function ensureGitignore(projectPath: string): void {
   const gitignorePath = path.join(projectPath, '.gitignore');
-  const entry = '.clubhouse/';
+
   if (fs.existsSync(gitignorePath)) {
-    const content = fs.readFileSync(gitignorePath, 'utf-8');
-    if (!content.includes(entry)) {
-      fs.appendFileSync(gitignorePath, `\n# Clubhouse agent manager\n${entry}\n`);
+    let content = fs.readFileSync(gitignorePath, 'utf-8');
+
+    // Migrate old blanket pattern to selective patterns
+    const oldPatternRe = /# Clubhouse agent manager\n\.clubhouse\/\n?/;
+    if (oldPatternRe.test(content)) {
+      content = content.replace(oldPatternRe, GITIGNORE_BLOCK + '\n');
+      fs.writeFileSync(gitignorePath, content, 'utf-8');
+      return;
     }
+
+    // Already has selective patterns
+    if (content.includes('.clubhouse/agents/')) {
+      return;
+    }
+
+    // Append new block
+    fs.appendFileSync(gitignorePath, `\n${GITIGNORE_BLOCK}\n`);
   } else {
-    fs.writeFileSync(gitignorePath, `# Clubhouse agent manager\n${entry}\n`);
+    fs.writeFileSync(gitignorePath, `${GITIGNORE_BLOCK}\n`);
   }
 }
 
@@ -115,16 +146,15 @@ export function createDurable(
   projectPath: string,
   name: string,
   color: string,
-  localOnly: boolean,
   model?: string,
+  role?: 'host',
 ): DurableAgentConfig {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
 
   const id = `durable_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const branch = `${name}/standby`;
-  const agentSubdir = localOnly ? '.local' : 'agents';
-  const worktreePath = path.join(clubhouseDir(projectPath), agentSubdir, name);
+  const worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
 
   // Create the branch (from current HEAD)
   const hasGit = fs.existsSync(path.join(projectPath, '.git'));
@@ -154,15 +184,11 @@ export function createDurable(
 
   const overrides = defaultOverrideFlags();
 
-  // Materialize all config from project defaults
-  const resolved = resolveProjectDefaults(projectPath);
-  materializeAll(worktreePath, resolved, overrides, projectPath);
-
   const config: DurableAgentConfig = {
     id,
     name,
     color,
-    localOnly,
+    ...(role ? { role } : {}),
     branch,
     worktreePath,
     createdAt: new Date().toISOString(),
@@ -171,6 +197,11 @@ export function createDurable(
     quickOverrides: defaultOverrideFlags(),
     quickConfigLayer: {},
   };
+
+  // Materialize all config from project defaults (with template expansion)
+  const resolved = resolveProjectDefaults(projectPath);
+  const agentContext = buildAgentContext(config, projectPath);
+  materializeAll(worktreePath, resolved, overrides, projectPath, agentContext);
 
   const agents = readAgents(projectPath);
   agents.push(config);
@@ -211,6 +242,10 @@ export function deleteDurable(projectPath: string, agentId: string): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
+
+  if (agent.role === 'host') {
+    throw new Error('Cannot delete the project host agent');
+  }
 
   // Remove worktree
   const hasGit = fs.existsSync(path.join(projectPath, '.git'));
@@ -333,7 +368,8 @@ export function syncAllAgents(projectPath: string, changedKeys?: ConfigItemKey[]
       }
     }
 
-    materializeAll(agent.worktreePath, toApply, overrides, projectPath);
+    const agentContext = buildAgentContext(agent, projectPath);
+    materializeAll(agent.worktreePath, toApply, overrides, projectPath, agentContext);
   }
 }
 
@@ -366,7 +402,8 @@ export function toggleOverride(
       (resolved as Record<string, unknown>)[key] = (defaults as Record<string, unknown>)[key];
     }
 
-    materializeAll(agent.worktreePath, resolved, agent.overrides, projectPath);
+    const agentContext = buildAgentContext(agent, projectPath);
+    materializeAll(agent.worktreePath, resolved, agent.overrides, projectPath, agentContext);
   }
 
   return agent;
@@ -382,7 +419,8 @@ export function prepareSpawn(projectPath: string, agentId: string): void {
 
   const resolved = resolveDurableConfig(projectPath, agentId);
   const overrides = agent.overrides || defaultOverrideFlags();
-  repairMissing(agent.worktreePath, resolved, overrides, projectPath);
+  const agentContext = buildAgentContext(agent, projectPath);
+  repairMissing(agent.worktreePath, resolved, overrides, projectPath, agentContext);
 }
 
 function detectBaseBranch(projectPath: string): string {
@@ -476,6 +514,7 @@ export function deleteCommitAndPush(projectPath: string, agentId: string): Delet
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
+  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
   try {
@@ -508,6 +547,7 @@ export function deleteWithCleanupBranch(projectPath: string, agentId: string): D
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
+  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
   const cleanupBranch = `${agent.name}/cleanup`;
@@ -550,6 +590,7 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
+  if (agent.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
 
   const wt = agent.worktreePath;
   const base = detectBaseBranch(projectPath);
@@ -611,6 +652,10 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
 }
 
 export function deleteForce(projectPath: string, agentId: string): DeleteResult {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (agent?.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
+
   try {
     deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Force deleted' };
@@ -621,7 +666,92 @@ export function deleteForce(projectPath: string, agentId: string): DeleteResult 
 
 export function deleteUnregister(projectPath: string, agentId: string): DeleteResult {
   const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (agent?.role === 'host') return { ok: false, message: 'Cannot delete the project host agent' };
+
   const filtered = agents.filter((a) => a.id !== agentId);
   writeAgents(projectPath, filtered);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
+}
+
+const CLUBHOUSE_README = `# .clubhouse/
+
+This directory is managed by [Clubhouse](https://github.com/Clubhouse) — a multi-agent manager for Claude Code.
+
+## Directory Structure
+
+### Tracked (committed to git)
+- \`settings.json\` — Project-level defaults for all agents (CLAUDE.md template, permissions, MCP config)
+- \`skills/\` — Shared Claude Code skills available to all agents
+- \`notes/\` — Project notes accessible to agents
+- \`README.md\` — This file
+
+### Gitignored (machine-local)
+- \`agents/\` — Git worktrees for each durable agent
+- \`.local/\` — Legacy local-only agent worktrees
+- \`agents.json\` — Agent registry (IDs, names, branches, overrides)
+- \`settings.local.json\` — Personal overrides layered on top of settings.json
+
+## How Settings Work
+
+### settings.json (shared)
+Team-wide defaults. All agents inherit from this unless they override a specific item.
+
+\`\`\`json
+{
+  "defaults": {
+    "claudeMd": "# Instructions for all agents...",
+    "permissions": { "allow": ["Bash(git:*)", "Bash(npm:*)"] }
+  },
+  "quickOverrides": {
+    "claudeMd": "# Quick agent specific instructions..."
+  }
+}
+\`\`\`
+
+### settings.local.json (personal)
+Your personal overrides. Merged on top of settings.json. Not committed.
+
+### Per-agent overrides
+Each agent can override specific config items (CLAUDE.md, permissions, MCP).
+When an override is enabled, the agent manages that item locally instead of inheriting from defaults.
+
+## Template Variables
+
+CLAUDE.md templates support these variables:
+- \`{{AGENT_NAME}}\` — The agent's name
+- \`{{AGENT_TYPE}}\` — \`durable\` or \`quick\`
+- \`{{WORKTREE_PATH}}\` — Absolute path to the agent's worktree
+- \`{{BRANCH}}\` — The agent's standby branch
+- \`{{PROJECT_PATH}}\` — Absolute path to the project root
+
+## Agent Lifecycle
+
+1. **Create** — A worktree + branch are created, config is materialized from defaults
+2. **Materialize** — CLAUDE.md, permissions, MCP config, skills are written to the worktree
+3. **Wake** — Missing config is repaired, hooks are set up, Claude Code is launched
+4. **Work** — The agent works in its worktree on a feature branch
+5. **Sleep** — Claude Code exits, the agent returns to sleeping state
+`;
+
+function ensureClubhouseReadme(projectPath: string): void {
+  const readmePath = path.join(clubhouseDir(projectPath), 'README.md');
+  if (fs.existsSync(readmePath)) return;
+  ensureDir(clubhouseDir(projectPath));
+  fs.writeFileSync(readmePath, CLUBHOUSE_README, 'utf-8');
+}
+
+/**
+ * Idempotent: ensure a project host agent exists. Creates one if none found.
+ * Also ensures gitignore and README are up-to-date.
+ */
+export function ensureHostAgent(projectPath: string): DurableAgentConfig {
+  ensureGitignore(projectPath);
+  ensureClubhouseReadme(projectPath);
+
+  const agents = readAgents(projectPath);
+  const existing = agents.find((a) => a.role === 'host');
+  if (existing) return existing;
+
+  return createDurable(projectPath, 'project-host', 'amber', undefined, 'host');
 }

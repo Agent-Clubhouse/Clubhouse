@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useNotesStore, notesDir } from '../../stores/notesStore';
+import { InputDialog } from './InputDialog';
 import { FileNode } from '../../../shared/types';
 
 export function NotesList() {
@@ -9,6 +10,7 @@ export function NotesList() {
   const { tree, selectedNote, loadNotes, setSelectedNote, createNote, deleteEntry, renameNote } = useNotesStore();
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [creating, setCreating] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -24,11 +26,15 @@ export function NotesList() {
     }
   }, [renamingPath]);
 
-  const handleCreate = useCallback(async () => {
+  const handleCreate = useCallback(() => {
     if (!activeProject) return;
-    const title = window.prompt('Note title:');
-    if (!title?.trim()) return;
-    await createNote(activeProject.path, notesDir(activeProject.path), title.trim());
+    setCreating(true);
+  }, [activeProject]);
+
+  const handleCreateConfirm = useCallback(async (title: string) => {
+    if (!activeProject) return;
+    await createNote(activeProject.path, notesDir(activeProject.path), title);
+    setCreating(false);
   }, [activeProject, createNote]);
 
   const handleDelete = useCallback(async (notePath: string) => {
@@ -133,6 +139,14 @@ export function NotesList() {
           </div>
         ))}
       </div>
+      {creating && (
+        <InputDialog
+          title="New Note"
+          placeholder="Note title"
+          onConfirm={handleCreateConfirm}
+          onCancel={() => setCreating(false)}
+        />
+      )}
     </div>
   );
 }

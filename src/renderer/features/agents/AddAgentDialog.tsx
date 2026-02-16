@@ -4,19 +4,18 @@ import { MODEL_OPTIONS } from '../../../shared/models';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, localOnly: boolean, model: string) => void;
+  onCreate: (name: string, color: string, model: string) => void;
 }
 
 export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [name, setName] = useState(generateDurableName());
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
-  const [localOnly, setLocalOnly] = useState(false);
   const [model, setModel] = useState('default');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, localOnly, model);
+    onCreate(name.trim(), color, model);
   };
 
   return (
@@ -83,18 +82,6 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
                 <option key={opt.id} value={opt.id}>{opt.label}</option>
               ))}
             </select>
-          </label>
-
-          {/* Local only */}
-          <label className="flex items-center gap-2 mb-4 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={localOnly}
-              onChange={(e) => setLocalOnly(e.target.checked)}
-              className="rounded border-surface-2"
-            />
-            <span className="text-sm text-ctp-subtext1">Local only</span>
-            <span className="text-xs text-ctp-subtext0">(not shared with team)</span>
           </label>
 
           {/* Actions */}

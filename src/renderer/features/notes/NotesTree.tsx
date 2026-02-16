@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useNotesStore, notesDir } from '../../stores/notesStore';
 import { DeleteNoteDialog } from './DeleteNoteDialog';
+import { InputDialog } from './InputDialog';
 import { FileNode } from '../../../shared/types';
 
 function FileIcon({ isDirectory, name }: { isDirectory: boolean; name: string }) {
@@ -196,6 +197,8 @@ export function NotesTree() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [createNoteDir, setCreateNoteDir] = useState<string | null>(null);
+  const [createFolderDir, setCreateFolderDir] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -214,19 +217,27 @@ export function NotesTree() {
 
   const rootDir = activeProject ? notesDir(activeProject.path) : '';
 
-  const handleCreateNote = useCallback(async (parentDir: string) => {
+  const handleCreateNote = useCallback((parentDir: string) => {
     if (!activeProject) return;
-    const title = window.prompt('Note title:');
-    if (!title?.trim()) return;
-    await createNote(activeProject.path, parentDir, title.trim());
-  }, [activeProject, createNote]);
+    setCreateNoteDir(parentDir);
+  }, [activeProject]);
 
-  const handleCreateFolder = useCallback(async (parentDir: string) => {
+  const handleCreateNoteConfirm = useCallback(async (title: string) => {
+    if (!activeProject || !createNoteDir) return;
+    await createNote(activeProject.path, createNoteDir, title);
+    setCreateNoteDir(null);
+  }, [activeProject, createNoteDir, createNote]);
+
+  const handleCreateFolder = useCallback((parentDir: string) => {
     if (!activeProject) return;
-    const name = window.prompt('Folder name:');
-    if (!name?.trim()) return;
-    await createFolder(activeProject.path, parentDir, name.trim());
-  }, [activeProject, createFolder]);
+    setCreateFolderDir(parentDir);
+  }, [activeProject]);
+
+  const handleCreateFolderConfirm = useCallback(async (name: string) => {
+    if (!activeProject || !createFolderDir) return;
+    await createFolder(activeProject.path, createFolderDir, name);
+    setCreateFolderDir(null);
+  }, [activeProject, createFolderDir, createFolder]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget || !activeProject) return;
@@ -319,6 +330,22 @@ export function NotesTree() {
           isDirectory={deleteTarget.isDirectory}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {createNoteDir && (
+        <InputDialog
+          title="New Note"
+          placeholder="Note title"
+          onConfirm={handleCreateNoteConfirm}
+          onCancel={() => setCreateNoteDir(null)}
+        />
+      )}
+      {createFolderDir && (
+        <InputDialog
+          title="New Folder"
+          placeholder="Folder name"
+          onConfirm={handleCreateFolderConfirm}
+          onCancel={() => setCreateFolderDir(null)}
         />
       )}
     </div>

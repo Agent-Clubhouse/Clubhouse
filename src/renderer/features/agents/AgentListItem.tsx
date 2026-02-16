@@ -103,6 +103,9 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
+          {agent.role === 'host' && (
+            <span className="text-amber-400 text-xs" title="Project Host">{'\u{1F451}'}</span>
+          )}
           <span className="text-sm text-ctp-text truncate font-medium">{agent.name}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
@@ -159,7 +162,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             {'\u25A0'}
           </button>
         )}
-        {isDurable && agent.status !== 'running' && (
+        {isDurable && agent.status !== 'running' && agent.role !== 'host' && (
           <button
             onClick={handleDelete}
             title="Delete agent"

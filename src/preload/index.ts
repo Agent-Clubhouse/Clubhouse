@@ -47,8 +47,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, localOnly: boolean, model?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, localOnly, model),
+    createDurable: (projectPath: string, name: string, color: string, model?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -89,6 +89,8 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.GET_DURABLE_CONFIG, projectPath, agentId),
     updateDurableConfig: (projectPath: string, agentId: string, updates: any) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE_CONFIG, projectPath, agentId, updates),
+    ensureHost: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.ENSURE_HOST, projectPath),
     onHookEvent: (callback: (agentId: string, event: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: { eventName: string; toolName?: string; toolInput?: Record<string, unknown>; timestamp: number }) =>
         callback(agentId, hookEvent);
@@ -104,12 +106,22 @@ const api = {
       ipcRenderer.invoke(IPC.GIT.STAGE, dirPath, filePath),
     unstage: (dirPath: string, filePath: string) =>
       ipcRenderer.invoke(IPC.GIT.UNSTAGE, dirPath, filePath),
+    stageAll: (dirPath: string) =>
+      ipcRenderer.invoke(IPC.GIT.STAGE_ALL, dirPath),
+    unstageAll: (dirPath: string) =>
+      ipcRenderer.invoke(IPC.GIT.UNSTAGE_ALL, dirPath),
+    discard: (dirPath: string, filePath: string, isUntracked: boolean) =>
+      ipcRenderer.invoke(IPC.GIT.DISCARD, dirPath, filePath, isUntracked),
     commit: (dirPath: string, message: string) =>
       ipcRenderer.invoke(IPC.GIT.COMMIT, dirPath, message),
     push: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PUSH, dirPath),
     pull: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.PULL, dirPath),
     diff: (dirPath: string, filePath: string, staged: boolean) =>
       ipcRenderer.invoke(IPC.GIT.DIFF, dirPath, filePath, staged),
+    createBranch: (dirPath: string, branchName: string) =>
+      ipcRenderer.invoke(IPC.GIT.CREATE_BRANCH, dirPath, branchName),
+    stash: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH, dirPath),
+    stashPop: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH_POP, dirPath),
   },
   agentSettings: {
     readClaudeMd: (worktreePath: string) =>
@@ -120,6 +132,16 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath),
     listSkills: (worktreePath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath),
+    listAgentTemplates: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath),
+    listSourceSkills: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_SKILLS, projectPath),
+    listSourceAgentTemplates: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, projectPath),
+    createSkill: (basePath: string, name: string, isSource: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource),
+    createAgentTemplate: (basePath: string, name: string, isSource: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource),
   },
   file: {
     readTree: (dirPath: string) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath),

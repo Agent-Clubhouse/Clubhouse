@@ -14,8 +14,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
-    (_event, projectPath: string, name: string, color: string, localOnly: boolean, model?: string) => {
-      return agentConfig.createDurable(projectPath, name, color, localOnly, model);
+    (_event, projectPath: string, name: string, color: string, model?: string) => {
+      return agentConfig.createDurable(projectPath, name, color, model);
     }
   );
 
@@ -123,5 +123,9 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.RESOLVE_QUICK_CONFIG, (_event, projectPath: string, parentAgentId?: string) => {
     return resolveQuickConfig(projectPath, parentAgentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.ENSURE_HOST, (_event, projectPath: string) => {
+    return agentConfig.ensureHostAgent(projectPath);
   });
 }

@@ -19,6 +19,18 @@ export function registerGitHandlers(): void {
     return gitService.unstage(dirPath, filePath);
   });
 
+  ipcMain.handle(IPC.GIT.STAGE_ALL, (_event, dirPath: string) => {
+    return gitService.stageAll(dirPath);
+  });
+
+  ipcMain.handle(IPC.GIT.UNSTAGE_ALL, (_event, dirPath: string) => {
+    return gitService.unstageAll(dirPath);
+  });
+
+  ipcMain.handle(IPC.GIT.DISCARD, (_event, dirPath: string, filePath: string, isUntracked: boolean) => {
+    return gitService.discardFile(dirPath, filePath, isUntracked);
+  });
+
   ipcMain.handle(IPC.GIT.COMMIT, (_event, dirPath: string, message: string) => {
     return gitService.commit(dirPath, message);
   });
@@ -33,5 +45,17 @@ export function registerGitHandlers(): void {
 
   ipcMain.handle(IPC.GIT.DIFF, (_event, dirPath: string, filePath: string, staged: boolean) => {
     return gitService.getFileDiff(dirPath, filePath, staged);
+  });
+
+  ipcMain.handle(IPC.GIT.CREATE_BRANCH, (_event, dirPath: string, branchName: string) => {
+    return gitService.createBranch(dirPath, branchName);
+  });
+
+  ipcMain.handle(IPC.GIT.STASH, (_event, dirPath: string) => {
+    return gitService.stash(dirPath);
+  });
+
+  ipcMain.handle(IPC.GIT.STASH_POP, (_event, dirPath: string) => {
+    return gitService.stashPop(dirPath);
   });
 }

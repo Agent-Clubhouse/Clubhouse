@@ -1,6 +1,7 @@
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
+import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingClaude } from '../features/agents/SleepingClaude';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
@@ -21,6 +22,8 @@ export function MainContentView() {
   const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
   const selectedCompleted = useQuickAgentStore((s) => s.getSelectedCompleted());
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
+  const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   if (explorerTab === 'agents') {
     const activeAgent = activeAgentId ? agents[activeAgentId] : null;
@@ -42,6 +45,10 @@ export function MainContentView() {
           <QuickAgentGhost
             completed={selectedCompleted}
             onDismiss={() => selectCompleted(null)}
+            onDelete={() => {
+              if (activeProjectId) dismissCompleted(activeProjectId, selectedCompleted.id);
+              selectCompleted(null);
+            }}
           />
         );
       }

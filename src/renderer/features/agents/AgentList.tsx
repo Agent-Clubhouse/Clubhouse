@@ -60,7 +60,9 @@ export function AgentList() {
     (a) => a.projectId === activeProjectId
   );
 
-  const durableAgents = projectAgents.filter((a) => a.kind === 'durable');
+  const durableAgents = projectAgents
+    .filter((a) => a.kind === 'durable')
+    .sort((a, b) => (a.role === 'host' ? -1 : b.role === 'host' ? 1 : 0));
   const quickAgents = projectAgents.filter((a) => a.kind === 'quick');
   const orphanQuickAgents = quickAgents.filter((a) => !a.parentAgentId);
   const orphanCompleted = activeProjectId ? getCompletedOrphans(activeProjectId) : [];
@@ -104,12 +106,12 @@ export function AgentList() {
     setQuickTargetParentId(null);
   };
 
-  const handleCreateDurable = async (name: string, color: string, localOnly: boolean, model: string) => {
+  const handleCreateDurable = async (name: string, color: string, model: string) => {
     if (!activeProject) return;
     setShowDialog(false);
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, localOnly, model !== 'default' ? model : undefined
+        activeProject.path, name, color, model !== 'default' ? model : undefined
       );
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
     } catch (err) {
@@ -269,6 +271,7 @@ export function AgentList() {
                       key={completed.id}
                       completed={completed}
                       onDismiss={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
+                      onDelete={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
                       onSelect={() => { setActiveAgent(null); selectCompleted(completed.id); }}
                       isNested
                     />
@@ -317,6 +320,7 @@ export function AgentList() {
                 key={completed.id}
                 completed={completed}
                 onDismiss={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
+                onDelete={() => activeProjectId && dismissCompleted(activeProjectId, completed.id)}
                 onSelect={() => { setActiveAgent(null); selectCompleted(completed.id); }}
               />
             ))}

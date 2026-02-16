@@ -21,28 +21,44 @@ import {
   repairMissing,
 } from './config-materializer';
 import { defaultOverrideFlags } from './config-resolver';
+import { AgentContext } from '../../shared/template-engine';
 
 const WORKTREE = '/test/worktree';
 const PROJECT = '/test/project';
+
+const TEST_CONTEXT: AgentContext = {
+  agentName: 'test-agent',
+  agentType: 'durable',
+  worktreePath: WORKTREE,
+  branch: 'test-agent/standby',
+  projectPath: PROJECT,
+};
 
 describe('materializeClaudeMd', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('writes CLAUDE.md when content is a string', () => {
+  it('writes .claude/CLAUDE.local.md when content is a string', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
     materializeClaudeMd(WORKTREE, '# Hello');
+    expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.claude'),
+      { recursive: true },
+    );
     expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
-      path.join(WORKTREE, 'CLAUDE.md'),
+      path.join(WORKTREE, '.claude', 'CLAUDE.local.md'),
       '# Hello',
       'utf-8',
     );
   });
 
-  it('deletes CLAUDE.md when content is null', () => {
+  it('deletes .claude/CLAUDE.local.md when content is null', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     materializeClaudeMd(WORKTREE, null);
-    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(path.join(WORKTREE, 'CLAUDE.md'));
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.claude', 'CLAUDE.local.md'),
+    );
   });
 
   it('does nothing when content is null and file does not exist', () => {
@@ -56,6 +72,20 @@ describe('materializeClaudeMd', () => {
     materializeClaudeMd(WORKTREE, undefined);
     expect(vi.mocked(fs.writeFileSync)).not.toHaveBeenCalled();
     expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalled();
+  });
+
+  it('expands template variables when agentContext is provided', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    materializeClaudeMd(WORKTREE, 'Agent: {{AGENT_NAME}} on {{BRANCH}}', TEST_CONTEXT);
+    const writeCall = vi.mocked(fs.writeFileSync).mock.calls[0];
+    expect(writeCall[1]).toBe('Agent: test-agent on test-agent/standby');
+  });
+
+  it('does not expand when agentContext is not provided', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    materializeClaudeMd(WORKTREE, 'Agent: {{AGENT_NAME}}');
+    const writeCall = vi.mocked(fs.writeFileSync).mock.calls[0];
+    expect(writeCall[1]).toBe('Agent: {{AGENT_NAME}}');
   });
 });
 
@@ -147,13 +177,13 @@ describe('materializeAll', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
   });
 
-  it('writes claudeMd when not overridden', () => {
+  it('writes CLAUDE.local.md when not overridden', () => {
     const overrides = defaultOverrideFlags();
     const resolved = { claudeMd: '# Test' };
     materializeAll(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeDefined();
     expect(claudeMdWrite![1]).toBe('# Test');
   });
@@ -164,7 +194,7 @@ describe('materializeAll', () => {
     materializeAll(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeUndefined();
   });
 
@@ -205,9 +235,9 @@ describe('repairMissing', () => {
     vi.clearAllMocks();
   });
 
-  it('re-materializes CLAUDE.md when missing', () => {
+  it('re-materializes CLAUDE.local.md when missing', () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('CLAUDE.md')) return false;
+      if (String(p).endsWith('CLAUDE.local.md')) return false;
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
@@ -217,14 +247,14 @@ describe('repairMissing', () => {
     repairMissing(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeDefined();
     expect(claudeMdWrite![1]).toBe('# Repaired');
   });
 
-  it('does not re-materialize CLAUDE.md when it already exists', () => {
+  it('does not re-materialize CLAUDE.local.md when it already exists', () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('CLAUDE.md')) return true;
+      if (String(p).endsWith('CLAUDE.local.md')) return true;
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('not found'); });
@@ -234,7 +264,7 @@ describe('repairMissing', () => {
     repairMissing(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeUndefined();
   });
 
@@ -247,7 +277,7 @@ describe('repairMissing', () => {
     repairMissing(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeUndefined();
   });
 
@@ -260,7 +290,7 @@ describe('repairMissing', () => {
     repairMissing(WORKTREE, resolved, overrides, PROJECT);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
-    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
+    const claudeMdWrite = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.local.md'));
     expect(claudeMdWrite).toBeUndefined();
   });
 });

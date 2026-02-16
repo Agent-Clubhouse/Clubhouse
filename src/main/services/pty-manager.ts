@@ -180,7 +180,7 @@ export function gracefulKill(agentId: string): void {
 
   // Send /exit to Claude CLI
   try {
-    managed.process.write('/exit\n');
+    managed.process.write('/exit\r');
   } catch {
     // already dead
   }
@@ -213,7 +213,7 @@ export function kill(agentId: string): void {
 export function killAll(): void {
   for (const [id, managed] of ptys) {
     try {
-      managed.process.write('/exit\n');
+      managed.process.write('/exit\r');
     } catch {
       // ignore
     }

@@ -1,20 +1,31 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigLayer, OverrideFlags, PermissionsConfig, McpConfig } from '../../shared/types';
+import { AgentContext, expandTemplate } from '../../shared/template-engine';
 import { resolveProjectDefaults, resolveDurableConfig } from './config-resolver';
 
 /**
- * Write or delete CLAUDE.md in a worktree.
+ * Write or delete .claude/CLAUDE.local.md in a worktree.
+ * When agentContext is provided, expands template variables before writing.
  */
-export function materializeClaudeMd(worktreePath: string, content: string | null | undefined): void {
-  const filePath = path.join(worktreePath, 'CLAUDE.md');
+export function materializeClaudeMd(
+  worktreePath: string,
+  content: string | null | undefined,
+  agentContext?: AgentContext,
+): void {
+  const claudeDir = path.join(worktreePath, '.claude');
+  const filePath = path.join(claudeDir, 'CLAUDE.local.md');
   if (content === null || content === undefined) {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
     return;
   }
-  fs.writeFileSync(filePath, content, 'utf-8');
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+  const expanded = agentContext ? expandTemplate(content, agentContext) : content;
+  fs.writeFileSync(filePath, expanded, 'utf-8');
 }
 
 /**
@@ -97,10 +108,11 @@ export function materializeAll(
   resolved: ConfigLayer,
   overrides: OverrideFlags,
   projectPath: string,
+  agentContext?: AgentContext,
 ): void {
   // claudeMd
   if (!overrides.claudeMd && 'claudeMd' in resolved) {
-    materializeClaudeMd(worktreePath, resolved.claudeMd);
+    materializeClaudeMd(worktreePath, resolved.claudeMd, agentContext);
   }
 
   // permissions
@@ -153,12 +165,13 @@ export function repairMissing(
   resolved: ConfigLayer,
   overrides: OverrideFlags,
   projectPath: string,
+  agentContext?: AgentContext,
 ): void {
   // claudeMd
   if (!overrides.claudeMd && resolved.claudeMd !== null && resolved.claudeMd !== undefined) {
-    const claudeMdPath = path.join(worktreePath, 'CLAUDE.md');
+    const claudeMdPath = path.join(worktreePath, '.claude', 'CLAUDE.local.md');
     if (!fs.existsSync(claudeMdPath)) {
-      materializeClaudeMd(worktreePath, resolved.claudeMd);
+      materializeClaudeMd(worktreePath, resolved.claudeMd, agentContext);
     }
   }
 
