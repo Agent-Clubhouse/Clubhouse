@@ -4,30 +4,36 @@ import {
   OrchestratorProvider,
   OrchestratorConventions,
   SpawnOpts,
+  HeadlessOpts,
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
 
+// OpenCode (anomalyco/opencode) uses lowercase tool names
 const TOOL_VERBS: Record<string, string> = {
-  Bash: 'Running command',
-  Edit: 'Editing file',
-  Write: 'Writing file',
-  Read: 'Reading file',
-  Glob: 'Searching files',
-  Grep: 'Searching code',
-  Task: 'Running task',
+  bash: 'Running command',
+  edit: 'Editing file',
+  write: 'Writing file',
+  read: 'Reading file',
+  glob: 'Searching files',
+  grep: 'Searching code',
 };
 
-const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
-  PreToolUse: 'pre_tool',
-  PostToolUse: 'post_tool',
-  Stop: 'stop',
-};
+const MODEL_OPTIONS = [
+  { id: 'default', label: 'Default' },
+  { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+  { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+];
+
+// OpenCode uses lowercase tool names
+const DEFAULT_DURABLE_PERMISSIONS = ['bash(git:*)', 'bash(npm:*)', 'bash(npx:*)'];
+const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'read', 'edit', 'glob', 'grep'];
 
 function findOpenCodeBinary(): string {
   return findBinaryInPath(['opencode'], [
     homePath('.local/bin/opencode'),
-    homePath('go/bin/opencode'),
+    homePath('.bun/bin/opencode'),
     '/usr/local/bin/opencode',
     '/opt/homebrew/bin/opencode',
   ]);
@@ -42,10 +48,10 @@ export class OpenCodeProvider implements OrchestratorProvider {
     configDir: '.opencode',
     localInstructionsFile: 'instructions.md',
     legacyInstructionsFile: 'instructions.md',
-    mcpConfigFile: '.opencode/config.json',
+    mcpConfigFile: 'opencode.json',
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
-    localSettingsFile: 'config.json',
+    localSettingsFile: 'opencode.json',
   };
 
   async checkAvailability(): Promise<{ available: boolean; error?: string }> {
@@ -63,9 +69,11 @@ export class OpenCodeProvider implements OrchestratorProvider {
   async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
     const binary = findOpenCodeBinary();
     const args: string[] = [];
-    if (opts.mission) {
-      args.push(opts.mission);
+
+    if (opts.model && opts.model !== 'default') {
+      args.push('--model', opts.model);
     }
+
     return { binary, args };
   }
 
@@ -74,19 +82,21 @@ export class OpenCodeProvider implements OrchestratorProvider {
   }
 
   async writeHooksConfig(_cwd: string, _hookUrl: string): Promise<void> {
-    // OpenCode hook integration is TBD — no-op for now
+    // OpenCode uses TypeScript plugins for hooks, not config-level shell scripts — no-op
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
     if (!raw || typeof raw !== 'object') return null;
     const obj = raw as Record<string, unknown>;
-    const eventName = (obj.hook_event_name as string) || '';
-    const kind = EVENT_NAME_MAP[eventName];
+
+    // OpenCode structured output provides tool events directly
+    const toolName = (obj.tool_name ?? obj.toolName) as string | undefined;
+    const kind = obj.kind as NormalizedHookEvent['kind'] | undefined;
     if (!kind) return null;
 
     return {
       kind,
-      toolName: obj.tool_name as string | undefined,
+      toolName,
       toolInput: obj.tool_input as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,
     };
@@ -109,8 +119,23 @@ export class OpenCodeProvider implements OrchestratorProvider {
     fs.writeFileSync(path.join(dir, 'instructions.md'), content, 'utf-8');
   }
 
-  getModelOptions() { return [{ id: 'default', label: 'Default' }]; }
-  getDefaultPermissions(): string[] { return []; }
+  async buildHeadlessCommand(opts: HeadlessOpts): Promise<{ binary: string; args: string[] } | null> {
+    if (!opts.mission) return null;
+
+    const binary = findOpenCodeBinary();
+    const args = ['run', opts.mission, '--format', 'json'];
+
+    if (opts.model && opts.model !== 'default') {
+      args.push('--model', opts.model);
+    }
+
+    return { binary, args };
+  }
+
+  getModelOptions() { return MODEL_OPTIONS; }
+  getDefaultPermissions(kind: 'durable' | 'quick') {
+    return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
+  }
   toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
   buildSummaryInstruction(agentId: string) { return buildSummaryInstruction(agentId); }
   readQuickSummary(agentId: string) { return readQuickSummary(agentId); }

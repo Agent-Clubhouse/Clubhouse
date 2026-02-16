@@ -49,17 +49,20 @@ describe('Provider integration tests', () => {
       expect(args[args.length - 1]).toBe('Fix bug');
     });
 
-    it('CopilotCli: generates correct flags for model and mission', async () => {
+    it('CopilotCli: generates correct flags for model, mission, and allowedTools', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
-        model: 'gpt-5',
+        model: 'claude-sonnet-4-5',
         mission: 'Fix bug',
         systemPrompt: 'Context info',
+        allowedTools: ['read', 'edit'],
       });
 
       expect(args).toContain('--model');
-      expect(args[args.indexOf('--model') + 1]).toBe('gpt-5');
+      expect(args[args.indexOf('--model') + 1]).toBe('claude-sonnet-4-5');
+      // Copilot uses --allow-tool for individual tools
+      expect(args.filter(a => a === '--allow-tool')).toHaveLength(2);
       // Copilot bakes mission and system prompt into -p
       expect(args).toContain('-p');
       const pIdx = args.indexOf('-p');
@@ -67,23 +70,22 @@ describe('Provider integration tests', () => {
       expect(args[pIdx + 1]).toContain('Fix bug');
     });
 
-    it('OpenCode: only passes mission as positional arg', async () => {
+    it('OpenCode: passes model flag when provided', async () => {
       const provider = new OpenCodeProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
-        mission: 'Fix bug',
+        model: 'anthropic/claude-sonnet-4-5',
       });
-      expect(args).toEqual(['Fix bug']);
+      expect(args).toContain('--model');
+      expect(args[args.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-5');
     });
 
-    it('OpenCode: ignores model flag (unsupported)', async () => {
+    it('OpenCode: no args when no options', async () => {
       const provider = new OpenCodeProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
-        model: 'opus',
-        mission: 'Fix bug',
       });
-      expect(args).not.toContain('--model');
+      expect(args).toEqual([]);
     });
   });
 
@@ -109,8 +111,9 @@ describe('Provider integration tests', () => {
       expect(args[args.indexOf('-p') + 1]).toBe('Fix the auth bug');
       expect(args).toContain('--output-format');
       expect(args[args.indexOf('--output-format') + 1]).toBe('stream-json');
-      // Permission is handled via env var, not CLI flag
-      expect(result!.env).toEqual({ CLAUDE_AUTO_ACCEPT_PERMISSIONS: '1' });
+      // Permission is handled via --dangerously-skip-permissions flag
+      expect(args).toContain('--dangerously-skip-permissions');
+      expect(result!.env).toBeUndefined();
       expect(args).toContain('--model');
       expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
       expect(args).toContain('--max-turns');
@@ -121,6 +124,17 @@ describe('Provider integration tests', () => {
       expect(args).toContain('--append-system-prompt');
       expect(args[args.indexOf('--append-system-prompt') + 1]).toBe('Be thorough');
       expect(args.filter(a => a === '--allowedTools')).toHaveLength(2);
+    });
+
+    it('ClaudeCode: always adds --dangerously-skip-permissions even without permissionMode', async () => {
+      const provider = new ClaudeCodeProvider();
+      const result = await provider.buildHeadlessCommand({
+        cwd: '/p',
+        mission: 'test',
+      });
+      expect(result).not.toBeNull();
+      expect(result!.args).toContain('--dangerously-skip-permissions');
+      expect(result!.env).toBeUndefined();
     });
 
     it('ClaudeCode: returns null when no mission provided', async () => {
@@ -153,14 +167,55 @@ describe('Provider integration tests', () => {
       expect(args[args.indexOf('--disallowedTools') + 1]).toBe('Bash');
     });
 
-    it('CopilotCli: does not have buildHeadlessCommand', () => {
+    it('CopilotCli: generates headless command with --allow-all --silent', async () => {
       const provider = new CopilotCliProvider();
-      expect(provider.buildHeadlessCommand).toBeUndefined();
+      const result = await provider.buildHeadlessCommand!({
+        cwd: '/p',
+        mission: 'Fix the bug',
+        model: 'claude-sonnet-4-5',
+        systemPrompt: 'Be thorough',
+      });
+
+      expect(result).not.toBeNull();
+      const { args } = result!;
+      expect(args).toContain('-p');
+      const pIdx = args.indexOf('-p');
+      expect(args[pIdx + 1]).toContain('Be thorough');
+      expect(args[pIdx + 1]).toContain('Fix the bug');
+      expect(args).toContain('--allow-all');
+      expect(args).toContain('--silent');
+      expect(args).toContain('--model');
+      expect(args[args.indexOf('--model') + 1]).toBe('claude-sonnet-4-5');
     });
 
-    it('OpenCode: does not have buildHeadlessCommand', () => {
+    it('CopilotCli: returns null when no mission', async () => {
+      const provider = new CopilotCliProvider();
+      const result = await provider.buildHeadlessCommand!({ cwd: '/p' });
+      expect(result).toBeNull();
+    });
+
+    it('OpenCode: generates headless command with run --format json', async () => {
       const provider = new OpenCodeProvider();
-      expect(provider.buildHeadlessCommand).toBeUndefined();
+      const result = await provider.buildHeadlessCommand!({
+        cwd: '/p',
+        mission: 'Fix the bug',
+        model: 'anthropic/claude-sonnet-4-5',
+      });
+
+      expect(result).not.toBeNull();
+      const { args } = result!;
+      expect(args[0]).toBe('run');
+      expect(args[1]).toBe('Fix the bug');
+      expect(args).toContain('--format');
+      expect(args[args.indexOf('--format') + 1]).toBe('json');
+      expect(args).toContain('--model');
+      expect(args[args.indexOf('--model') + 1]).toBe('anthropic/claude-sonnet-4-5');
+    });
+
+    it('OpenCode: returns null when no mission', async () => {
+      const provider = new OpenCodeProvider();
+      const result = await provider.buildHeadlessCommand!({ cwd: '/p' });
+      expect(result).toBeNull();
     });
   });
 
@@ -194,7 +249,7 @@ describe('Provider integration tests', () => {
       );
     });
 
-    it('CopilotCli: writes hooks in Copilot format', async () => {
+    it('CopilotCli: writes hooks with version 1 wrapper and bash/timeoutSec properties', async () => {
       const provider = new CopilotCliProvider();
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
@@ -204,12 +259,20 @@ describe('Provider integration tests', () => {
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
       const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      // Must have version 1 wrapper
+      expect(written.version).toBe(1);
       expect(written.hooks).toBeDefined();
       // Copilot uses camelCase event names
       expect(written.hooks.preToolUse).toBeDefined();
       expect(written.hooks.postToolUse).toBeDefined();
       expect(written.hooks.errorOccurred).toBeDefined();
-      expect(written.hooks.sessionEnd).toBeDefined();
+      // Flat array per event, uses bash and timeoutSec (not command/timeout)
+      const entry = written.hooks.preToolUse[0];
+      expect(entry.bash).toBeDefined();
+      expect(entry.timeoutSec).toBe(5);
+      expect(entry.command).toBeUndefined();
+      expect(entry.timeout).toBeUndefined();
+      expect(entry.async).toBeUndefined();
     });
 
     it('CopilotCli: writes to .github/hooks/hooks.json', async () => {
@@ -246,17 +309,39 @@ describe('Provider integration tests', () => {
       expect(perms).toContain('Grep');
     });
 
-    it('CopilotCli quick agents get file tools', () => {
+    it('CopilotCli quick agents get lowercase file tools', () => {
       const provider = new CopilotCliProvider();
       const perms = provider.getDefaultPermissions('quick');
-      expect(perms).toContain('Read');
-      expect(perms).toContain('Write');
+      expect(perms).toContain('read');
+      expect(perms).toContain('edit');
+      expect(perms).toContain('search');
     });
 
-    it('OpenCode returns empty permissions', () => {
+    it('CopilotCli durable agents get lowercase shell permissions', () => {
+      const provider = new CopilotCliProvider();
+      const perms = provider.getDefaultPermissions('durable');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).toContain('shell(npm:*)');
+      expect(perms).toContain('shell(npx:*)');
+    });
+
+    it('OpenCode quick agents get lowercase tool permissions', () => {
       const provider = new OpenCodeProvider();
       const perms = provider.getDefaultPermissions('quick');
-      expect(perms).toEqual([]);
+      expect(perms).toContain('read');
+      expect(perms).toContain('edit');
+      expect(perms).toContain('glob');
+      expect(perms).toContain('grep');
+      expect(perms).toContain('bash(git:*)');
+    });
+
+    it('OpenCode durable agents get bash permissions', () => {
+      const provider = new OpenCodeProvider();
+      const perms = provider.getDefaultPermissions('durable');
+      expect(perms).toContain('bash(git:*)');
+      expect(perms).toContain('bash(npm:*)');
+      expect(perms).toContain('bash(npx:*)');
+      expect(perms).not.toContain('read');
     });
   });
 
@@ -273,26 +358,54 @@ describe('Provider integration tests', () => {
 
     it('CopilotCli: normalizes camelCase events', () => {
       const provider = new CopilotCliProvider();
-      expect(provider.parseHookEvent({ hook_event_name: 'preToolUse', tool_name: 'Bash' })?.kind).toBe('pre_tool');
+      expect(provider.parseHookEvent({ hook_event_name: 'preToolUse', tool_name: 'shell' })?.kind).toBe('pre_tool');
       expect(provider.parseHookEvent({ hook_event_name: 'postToolUse' })?.kind).toBe('post_tool');
       expect(provider.parseHookEvent({ hook_event_name: 'errorOccurred' })?.kind).toBe('tool_error');
       expect(provider.parseHookEvent({ hook_event_name: 'sessionEnd' })?.kind).toBe('stop');
     });
 
-    it('OpenCode: normalizes PascalCase events', () => {
+    it('CopilotCli: handles camelCase tool fields (toolName, toolArgs)', () => {
+      const provider = new CopilotCliProvider();
+      const event = provider.parseHookEvent({
+        hook_event_name: 'preToolUse',
+        toolName: 'shell',
+        toolArgs: '{"command": "git status"}',
+      });
+      expect(event).not.toBeNull();
+      expect(event!.toolName).toBe('shell');
+      expect(event!.toolInput).toEqual({ command: 'git status' });
+    });
+
+    it('CopilotCli: handles snake_case tool fields as fallback', () => {
+      const provider = new CopilotCliProvider();
+      const event = provider.parseHookEvent({
+        hook_event_name: 'preToolUse',
+        tool_name: 'read',
+        tool_input: { path: '/foo' },
+      });
+      expect(event).not.toBeNull();
+      expect(event!.toolName).toBe('read');
+      expect(event!.toolInput).toEqual({ path: '/foo' });
+    });
+
+    it('OpenCode: uses kind field directly', () => {
       const provider = new OpenCodeProvider();
-      expect(provider.parseHookEvent({ hook_event_name: 'PreToolUse' })?.kind).toBe('pre_tool');
-      expect(provider.parseHookEvent({ hook_event_name: 'PostToolUse' })?.kind).toBe('post_tool');
-      expect(provider.parseHookEvent({ hook_event_name: 'Stop' })?.kind).toBe('stop');
+      expect(provider.parseHookEvent({ kind: 'pre_tool', toolName: 'bash' })?.kind).toBe('pre_tool');
+      expect(provider.parseHookEvent({ kind: 'post_tool' })?.kind).toBe('post_tool');
+      expect(provider.parseHookEvent({ kind: 'stop' })?.kind).toBe('stop');
     });
 
     it('all providers return null for unknown event', () => {
       const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new OpenCodeProvider()];
       for (const p of providers) {
-        expect(p.parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
         expect(p.parseHookEvent(null)).toBeNull();
         expect(p.parseHookEvent('not-object')).toBeNull();
       }
+      // Claude and Copilot return null for unknown hook_event_name
+      expect(new ClaudeCodeProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
+      expect(new CopilotCliProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
+      // OpenCode returns null when kind is missing
+      expect(new OpenCodeProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
     });
   });
 
@@ -316,12 +429,35 @@ describe('Provider integration tests', () => {
       expect(provider.conventions.localSettingsFile).toBe('hooks/hooks.json');
     });
 
-    it('OpenCode uses .opencode/', () => {
+    it('OpenCode uses .opencode/ with opencode.json', () => {
       const provider = new OpenCodeProvider();
       expect(provider.conventions.configDir).toBe('.opencode');
       expect(provider.conventions.localInstructionsFile).toBe('instructions.md');
-      expect(provider.conventions.mcpConfigFile).toBe('.opencode/config.json');
-      expect(provider.conventions.localSettingsFile).toBe('config.json');
+      expect(provider.conventions.mcpConfigFile).toBe('opencode.json');
+      expect(provider.conventions.localSettingsFile).toBe('opencode.json');
+    });
+  });
+
+  describe('getModelOptions', () => {
+    it('CopilotCli: includes real model options without gpt-5', () => {
+      const provider = new CopilotCliProvider();
+      const options = provider.getModelOptions();
+      const ids = options.map(o => o.id);
+      expect(ids).toContain('default');
+      expect(ids).toContain('claude-sonnet-4-5');
+      expect(ids).toContain('claude-haiku-4-5');
+      expect(ids).toContain('o4-mini');
+      expect(ids).not.toContain('gpt-5');
+    });
+
+    it('OpenCode: uses provider/model format', () => {
+      const provider = new OpenCodeProvider();
+      const options = provider.getModelOptions();
+      const ids = options.map(o => o.id);
+      expect(ids).toContain('default');
+      expect(ids).toContain('anthropic/claude-sonnet-4-5');
+      expect(ids).toContain('anthropic/claude-opus-4-6');
+      expect(ids).toContain('anthropic/claude-haiku-4-5');
     });
   });
 });

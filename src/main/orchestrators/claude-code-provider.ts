@@ -185,8 +185,8 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     args.push('--output-format', opts.outputFormat || 'stream-json');
     args.push('--verbose');
 
-    // Permission handling: use env var for broad compatibility instead of --permission-mode flag
-    // (flag value set varies across Claude Code versions)
+    // Skip all permission prompts for headless agents
+    args.push('--dangerously-skip-permissions');
 
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
@@ -220,13 +220,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       args.push('--no-session-persistence');
     }
 
-    const env: Record<string, string> = {};
-    if (opts.permissionMode) {
-      // Skip all permission prompts for headless agents
-      env.CLAUDE_AUTO_ACCEPT_PERMISSIONS = '1';
-    }
-
-    return { binary, args, env };
+    return { binary, args };
   }
 
   getModelOptions() { return MODEL_OPTIONS; }

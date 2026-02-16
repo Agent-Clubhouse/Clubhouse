@@ -4,31 +4,31 @@ import {
   OrchestratorProvider,
   OrchestratorConventions,
   SpawnOpts,
+  HeadlessOpts,
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
 
+// Copilot CLI uses lowercase tool names
 const TOOL_VERBS: Record<string, string> = {
-  Bash: 'Running command',
-  Edit: 'Editing file',
-  Write: 'Writing file',
-  Read: 'Reading file',
-  Glob: 'Searching files',
-  Grep: 'Searching code',
-  Task: 'Running task',
-  WebSearch: 'Searching web',
-  WebFetch: 'Fetching page',
+  shell: 'Running command',
+  edit: 'Editing file',
+  read: 'Reading file',
+  search: 'Searching code',
+  agent: 'Running agent',
 };
 
 const MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
-  { id: 'gpt-5', label: 'GPT-5' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  { id: 'o4-mini', label: 'o4-mini' },
 ];
 
-const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
-const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
+// Copilot CLI uses lowercase tool names
+const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
+const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'read', 'edit', 'search'];
 
 const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   preToolUse: 'pre_tool',
@@ -80,6 +80,12 @@ export class CopilotCliProvider implements OrchestratorProvider {
       args.push('--model', opts.model);
     }
 
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+      for (const tool of opts.allowedTools) {
+        args.push('--allow-tool', tool);
+      }
+    }
+
     if (opts.mission || opts.systemPrompt) {
       const parts: string[] = [];
       if (opts.systemPrompt) parts.push(opts.systemPrompt);
@@ -97,11 +103,15 @@ export class CopilotCliProvider implements OrchestratorProvider {
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const curlBase = `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 
-    const hooks: Record<string, unknown[]> = {
-      preToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      postToolUse: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      errorOccurred: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      sessionEnd: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+    const hookEntry = { type: 'command', bash: curlBase, timeoutSec: 5 };
+
+    const config = {
+      version: 1,
+      hooks: {
+        preToolUse: [hookEntry],
+        postToolUse: [hookEntry],
+        errorOccurred: [hookEntry],
+      },
     };
 
     const githubDir = path.join(cwd, '.github');
@@ -111,16 +121,7 @@ export class CopilotCliProvider implements OrchestratorProvider {
     }
 
     const settingsPath = path.join(hooksDir, 'hooks.json');
-
-    let existing: Record<string, unknown> = {};
-    try {
-      existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    } catch {
-      // No existing file
-    }
-
-    const merged: Record<string, unknown> = { ...existing, hooks };
-    fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+    fs.writeFileSync(settingsPath, JSON.stringify(config, null, 2), 'utf-8');
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {
@@ -130,10 +131,14 @@ export class CopilotCliProvider implements OrchestratorProvider {
     const kind = EVENT_NAME_MAP[eventName];
     if (!kind) return null;
 
+    // Copilot sends camelCase (toolName, toolArgs) in hook stdin
+    const toolName = (obj.tool_name ?? obj.toolName) as string | undefined;
+    const rawInput = obj.tool_input ?? (typeof obj.toolArgs === 'string' ? JSON.parse(obj.toolArgs as string) : obj.toolArgs);
+
     return {
       kind,
-      toolName: obj.tool_name as string | undefined,
-      toolInput: obj.tool_input as Record<string, unknown> | undefined,
+      toolName,
+      toolInput: rawInput as Record<string, unknown> | undefined,
       message: obj.message as string | undefined,
     };
   }
@@ -154,6 +159,22 @@ export class CopilotCliProvider implements OrchestratorProvider {
     }
     const filePath = path.join(githubDir, 'copilot-instructions.md');
     fs.writeFileSync(filePath, content, 'utf-8');
+  }
+
+  async buildHeadlessCommand(opts: HeadlessOpts): Promise<{ binary: string; args: string[] } | null> {
+    if (!opts.mission) return null;
+
+    const binary = findCopilotBinary();
+    const parts: string[] = [];
+    if (opts.systemPrompt) parts.push(opts.systemPrompt);
+    parts.push(opts.mission);
+    const args = ['-p', parts.join('\n\n'), '--allow-all', '--silent'];
+
+    if (opts.model && opts.model !== 'default') {
+      args.push('--model', opts.model);
+    }
+
+    return { binary, args };
   }
 
   getModelOptions() { return MODEL_OPTIONS; }
