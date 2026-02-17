@@ -10,6 +10,7 @@ vi.mock('fs', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
+  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: Function) => cb(new Error('not found'), '', '')),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -214,8 +215,8 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('getModelOptions', () => {
-    it('returns list including default, opus, sonnet, haiku', () => {
-      const options = provider.getModelOptions();
+    it('returns list including default, opus, sonnet, haiku', async () => {
+      const options = await provider.getModelOptions();
       expect(options.length).toBeGreaterThanOrEqual(4);
       expect(options[0]).toEqual({ id: 'default', label: 'Default' });
       const ids = options.map(o => o.id);

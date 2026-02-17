@@ -89,7 +89,7 @@ export function registerAgentHandlers(): void {
     return readQuickSummary(agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.GET_MODEL_OPTIONS, (_event, projectPath: string, orchestrator?: string) => {
+  ipcMain.handle(IPC.AGENT.GET_MODEL_OPTIONS, async (_event, projectPath: string, orchestrator?: string) => {
     const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
     return provider.getModelOptions();
   });

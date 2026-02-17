@@ -1,38 +1,51 @@
 import { useState, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 
-const DEFAULT_OPTIONS = [
-  { id: 'default', label: 'Default' },
-  { id: 'opus', label: 'Opus' },
-  { id: 'sonnet', label: 'Sonnet' },
-  { id: 'haiku', label: 'Haiku' },
-];
+const LOADING_OPTIONS = [{ id: 'default', label: 'Default' }];
+
+interface ModelOptionsResult {
+  options: Array<{ id: string; label: string }>;
+  loading: boolean;
+}
 
 /**
  * Fetches model options from the orchestrator provider for the active project.
- * Falls back to defaults if no project is active or fetch fails.
+ * Resets to a minimal placeholder immediately on orchestrator change so stale
+ * options from the previous provider are never shown.
  */
-export function useModelOptions(): Array<{ id: string; label: string }> {
-  const [options, setOptions] = useState(DEFAULT_OPTIONS);
+export function useModelOptions(orchestrator?: string): ModelOptionsResult {
+  const [options, setOptions] = useState(LOADING_OPTIONS);
+  const [loading, setLoading] = useState(true);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   useEffect(() => {
+    // Immediately clear stale options from previous provider
+    setOptions(LOADING_OPTIONS);
+    setLoading(true);
+
     if (!activeProject?.path) {
-      setOptions(DEFAULT_OPTIONS);
+      setLoading(false);
       return;
     }
-    window.clubhouse.agent.getModelOptions(activeProject.path)
+
+    let cancelled = false;
+    window.clubhouse.agent.getModelOptions(activeProject.path, orchestrator)
       .then((result) => {
-        if (Array.isArray(result) && result.length > 0) {
+        if (!cancelled && Array.isArray(result) && result.length > 0) {
           setOptions(result);
         }
       })
       .catch(() => {
-        // Keep defaults on error
+        // Keep loading placeholder on error
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-  }, [activeProject?.path]);
 
-  return options;
+    return () => { cancelled = true; };
+  }, [activeProject?.path, orchestrator]);
+
+  return { options, loading };
 }

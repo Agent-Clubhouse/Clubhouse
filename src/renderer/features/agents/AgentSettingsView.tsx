@@ -17,7 +17,7 @@ export function AgentSettingsView({ agent }: Props) {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const worktreePath = agent.worktreePath || activeProject?.path || '';
-  const MODEL_OPTIONS = useModelOptions();
+  const { options: MODEL_OPTIONS } = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));

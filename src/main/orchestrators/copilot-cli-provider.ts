@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   OrchestratorProvider,
   OrchestratorConventions,
@@ -7,6 +9,8 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+
+const execFileAsync = promisify(execFile);
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -20,12 +24,32 @@ const TOOL_VERBS: Record<string, string> = {
   WebFetch: 'Fetching page',
 };
 
-const MODEL_OPTIONS = [
+const FALLBACK_MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
   { id: 'gpt-5', label: 'GPT-5' },
 ];
+
+function humanizeModelId(id: string): string {
+  return id
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Parse model choices from `copilot --help` output */
+function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label: string }> | null {
+  const match = helpText.match(/--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/);
+  if (!match) return null;
+  const raw = match[1].replace(/\n/g, ' ');
+  const ids = [...raw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (ids.length === 0) return null;
+  return [
+    { id: 'default', label: 'Default' },
+    ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
+  ];
+}
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -156,7 +180,17 @@ export class CopilotCliProvider implements OrchestratorProvider {
     fs.writeFileSync(filePath, content, 'utf-8');
   }
 
-  getModelOptions() { return MODEL_OPTIONS; }
+  async getModelOptions() {
+    try {
+      const binary = findCopilotBinary();
+      const { stdout } = await execFileAsync(binary, ['--help'], { timeout: 5000 });
+      const parsed = parseModelChoicesFromHelp(stdout);
+      if (parsed) return parsed;
+    } catch {
+      // Fall back to static list
+    }
+    return FALLBACK_MODEL_OPTIONS;
+  }
   getDefaultPermissions(kind: 'durable' | 'quick') {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }

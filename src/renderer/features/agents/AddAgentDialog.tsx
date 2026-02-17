@@ -13,16 +13,18 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
-  const MODEL_OPTIONS = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const availability = useOrchestratorStore((s) => s.availability);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
+  const selectedAvail = availability[orchestrator];
+  const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, model, useWorktree, enabledOrchestrators.length > 1 ? orchestrator : undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator);
   };
 
   return (
@@ -79,34 +81,47 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
           {/* Model */}
           <label className="block mb-3">
             <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
-                text-ctp-text focus:outline-none focus:border-indigo-500"
-            >
-              {MODEL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-
-          {/* Orchestrator (only when >1 enabled) */}
-          {enabledOrchestrators.length > 1 && (
-            <label className="block mb-3">
-              <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+            {modelsLoading ? (
+              <div className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-subtext0 flex items-center gap-2">
+                <span className="inline-block w-3 h-3 border-2 border-ctp-subtext0 border-t-transparent rounded-full animate-spin" />
+                Loading models…
+              </div>
+            ) : (
               <select
-                value={orchestrator}
-                onChange={(e) => setOrchestrator(e.target.value)}
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
                 className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                   text-ctp-text focus:outline-none focus:border-indigo-500"
               >
-                {enabledOrchestrators.map((o) => (
-                  <option key={o.id} value={o.id}>{o.displayName}</option>
+                {MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.label}</option>
                 ))}
               </select>
-            </label>
-          )}
+            )}
+          </label>
+
+          {/* Orchestrator */}
+          <label className="block mb-3">
+            <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
+            <select
+              value={orchestrator}
+              onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
+              className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
+                text-ctp-text focus:outline-none focus:border-indigo-500"
+            >
+              {enabledOrchestrators.map((o) => {
+                const avail = availability[o.id];
+                const suffix = avail && !avail.available ? ' (not found)' : '';
+                return <option key={o.id} value={o.id}>{o.displayName}{suffix}</option>;
+              })}
+            </select>
+            {selectedAvail && !selectedAvail.available && (
+              <p className="mt-1 text-xs text-yellow-500">
+                ⚠ {selectedAvail.error || 'CLI not found — agent may fail to start'}
+              </p>
+            )}
+          </label>
 
           {/* Use Worktree */}
           <label className="flex items-center gap-2 mb-4 cursor-pointer">

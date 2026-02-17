@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   OrchestratorProvider,
   OrchestratorConventions,
@@ -7,6 +9,8 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+
+const execFileAsync = promisify(execFile);
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -23,12 +27,48 @@ const TOOL_VERBS: Record<string, string> = {
   NotebookEdit: 'Editing notebook',
 };
 
-const MODEL_OPTIONS = [
+const FALLBACK_MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'opus', label: 'Opus' },
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
 ];
+
+function humanizeModelId(id: string): string {
+  return id
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Parse model choices from `claude --help` output (if present) */
+function parseClaudeModelsFromHelp(helpText: string): Array<{ id: string; label: string }> | null {
+  // Claude may list choices like: (choices: "model-a", "model-b")
+  const choicesMatch = helpText.match(/--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/);
+  if (choicesMatch) {
+    const ids = [...choicesMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    if (ids.length > 0) {
+      return [
+        { id: 'default', label: 'Default' },
+        ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
+      ];
+    }
+  }
+
+  // Claude also accepts aliases — extract known aliases from help text
+  const aliasMatch = helpText.match(/alias[^\n]*\(e\.g\.\s*'([^)]+)'\)/i);
+  if (aliasMatch) {
+    const aliases = aliasMatch[1].split(/'\s*or\s*'|',\s*'/).map((s) => s.replace(/'/g, '').trim()).filter(Boolean);
+    if (aliases.length > 0) {
+      return [
+        { id: 'default', label: 'Default' },
+        ...aliases.map((id) => ({ id, label: humanizeModelId(id) })),
+      ];
+    }
+  }
+
+  return null;
+}
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -67,15 +107,31 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
   };
 
   async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+    let binary: string;
     try {
-      findClaudeBinary();
-      return { available: true };
+      binary = findClaudeBinary();
     } catch (err: unknown) {
       return {
         available: false,
         error: err instanceof Error ? err.message : 'Could not find Claude CLI',
       };
     }
+
+    // Binary found — verify authentication with a quick no-op call
+    try {
+      const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], { timeout: 10000 });
+      const result = JSON.parse(stdout);
+      if (result.is_error && typeof result.result === 'string') {
+        const msg = result.result as string;
+        if (msg.includes('API key') || msg.includes('/login') || msg.includes('authentication')) {
+          return { available: false, error: 'Not signed in — run "claude" and follow login prompts' };
+        }
+        return { available: false, error: msg };
+      }
+    } catch {
+      // Timeout or parse failure — binary exists so treat as available
+    }
+    return { available: true };
   }
 
   async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
@@ -175,7 +231,17 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     fs.writeFileSync(filePath, content, 'utf-8');
   }
 
-  getModelOptions() { return MODEL_OPTIONS; }
+  async getModelOptions() {
+    try {
+      const binary = findClaudeBinary();
+      const { stdout } = await execFileAsync(binary, ['--help'], { timeout: 5000 });
+      const parsed = parseClaudeModelsFromHelp(stdout);
+      if (parsed) return parsed;
+    } catch {
+      // Fall back to static list
+    }
+    return FALLBACK_MODEL_OPTIONS;
+  }
   getDefaultPermissions(kind: 'durable' | 'quick') {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }
