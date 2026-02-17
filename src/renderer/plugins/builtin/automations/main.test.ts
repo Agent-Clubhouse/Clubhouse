@@ -531,7 +531,7 @@ describe('automations plugin MainPanel', () => {
 });
 
 // ── API assumptions ──────────────────────────────────────────────────
-// Documents exactly what the plugin expects from the v0.2 API.
+// Documents exactly what the plugin expects from the v0.5 API.
 // If any assumption breaks, these tests pinpoint the incompatibility.
 
 describe('automations plugin API assumptions', () => {

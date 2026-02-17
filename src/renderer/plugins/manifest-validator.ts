@@ -1,6 +1,7 @@
 import type { PluginManifest } from '../../shared/plugin-types';
+import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
-export const SUPPORTED_API_VERSIONS = [0.4];
+export const SUPPORTED_API_VERSIONS = [0.5];
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -63,13 +64,13 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Dual-scoped plugins can have both tab and railItem — no restriction
   }
 
-  // v0.4+ requires contributes.help
+  // v0.5+ requires contributes.help
   const engineObj = m.engine as Record<string, unknown> | undefined;
   const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
-  if (apiVersion >= 0.4) {
+  if (apiVersion >= 0.5) {
     const contrib = m.contributes as Record<string, unknown> | undefined;
     if (!contrib || typeof contrib.help !== 'object' || contrib.help === null) {
-      errors.push('Plugins targeting API >= 0.4 must include contributes.help');
+      errors.push('Plugins targeting API >= 0.5 must include contributes.help');
     } else {
       const help = contrib.help as Record<string, unknown>;
       if (help.topics !== undefined) {
@@ -91,6 +92,79 @@ export function validateManifest(raw: unknown): ValidationResult {
                 errors.push(`contributes.help.topics[${i}].content must be a non-empty string`);
               }
             }
+          }
+        }
+      }
+    }
+  }
+
+  // v0.5+ permission validation
+  if (apiVersion >= 0.5) {
+    if (!Array.isArray(m.permissions)) {
+      errors.push('Plugins targeting API >= 0.5 must include a permissions array');
+    } else {
+      const seen = new Set<string>();
+      for (let i = 0; i < m.permissions.length; i++) {
+        const perm = m.permissions[i];
+        if (typeof perm !== 'string') {
+          errors.push(`permissions[${i}] must be a string`);
+          continue;
+        }
+        if (!(ALL_PLUGIN_PERMISSIONS as readonly string[]).includes(perm)) {
+          errors.push(`permissions[${i}]: unknown permission "${perm}"`);
+          continue;
+        }
+        if (seen.has(perm)) {
+          errors.push(`permissions[${i}]: duplicate permission "${perm}"`);
+        }
+        seen.add(perm);
+      }
+
+      const permissions = m.permissions as string[];
+      const hasExternalPerm = permissions.includes('files.external');
+      const hasExternalRoots = Array.isArray(m.externalRoots) && m.externalRoots.length > 0;
+
+      if (hasExternalRoots && !hasExternalPerm) {
+        errors.push('externalRoots requires the "files.external" permission');
+      }
+      if (hasExternalPerm && !hasExternalRoots) {
+        errors.push('"files.external" permission requires at least one externalRoots entry');
+      }
+
+      if (Array.isArray(m.externalRoots)) {
+        for (let i = 0; i < m.externalRoots.length; i++) {
+          const root = m.externalRoots[i] as Record<string, unknown>;
+          if (!root || typeof root !== 'object') {
+            errors.push(`externalRoots[${i}] must be an object`);
+          } else {
+            if (typeof root.settingKey !== 'string' || !root.settingKey) {
+              errors.push(`externalRoots[${i}].settingKey must be a non-empty string`);
+            }
+            if (typeof root.root !== 'string' || !root.root) {
+              errors.push(`externalRoots[${i}].root must be a non-empty string`);
+            }
+          }
+        }
+      }
+
+      // allowedCommands / process permission validation
+      const hasProcessPerm = permissions.includes('process');
+      const hasAllowedCommands = Array.isArray(m.allowedCommands) && m.allowedCommands.length > 0;
+
+      if (hasProcessPerm && !hasAllowedCommands) {
+        errors.push('"process" permission requires at least one allowedCommands entry');
+      }
+      if (hasAllowedCommands && !hasProcessPerm) {
+        errors.push('allowedCommands requires the "process" permission');
+      }
+
+      if (Array.isArray(m.allowedCommands)) {
+        for (let i = 0; i < m.allowedCommands.length; i++) {
+          const cmd = m.allowedCommands[i];
+          if (typeof cmd !== 'string' || !cmd) {
+            errors.push(`allowedCommands[${i}] must be a non-empty string`);
+          } else if (cmd.includes('/') || cmd.includes('\\') || cmd.includes('..')) {
+            errors.push(`allowedCommands[${i}]: "${cmd}" must not contain path separators`);
           }
         }
       }

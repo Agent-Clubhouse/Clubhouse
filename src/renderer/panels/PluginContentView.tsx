@@ -6,7 +6,7 @@ import { getActiveContext, activatePlugin } from '../plugins/plugin-loader';
 import { useProjectStore } from '../stores/projectStore';
 import type { PluginRenderMode } from '../../shared/plugin-types';
 
-class PluginErrorBoundary extends React.Component<
+export class PluginErrorBoundary extends React.Component<
   { pluginId: string; children: React.ReactNode },
   { hasError: boolean; error?: Error }
 > {
@@ -65,7 +65,8 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   // PluginContentView created a new api → Hub's loadHub effect re-ran with the new
   // storage ref → reloaded the old pane tree from disk before the debounced save.
   const api = useMemo(
-    () => ctx ? createPluginAPI(ctx, mode) : null,
+    () => ctx ? createPluginAPI(ctx, mode, entry?.manifest) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ctx, mode],
   );
 
@@ -109,7 +110,7 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   const MainPanel = mod.MainPanel;
 
   return (
-    <PluginErrorBoundary pluginId={pluginId}>
+    <PluginErrorBoundary key={pluginId} pluginId={pluginId}>
       <PluginAPIProvider api={api}>
         <div className="h-full bg-ctp-base overflow-auto">
           <MainPanel api={api} />

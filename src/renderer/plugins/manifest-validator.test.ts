@@ -6,14 +6,19 @@ describe('manifest-validator', () => {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.4 },
+    engine: { api: 0.5 },
     scope: 'project',
+    permissions: ['files'],
     contributes: { help: {} },
   };
 
   describe('SUPPORTED_API_VERSIONS', () => {
-    it('includes version 0.4', () => {
-      expect(SUPPORTED_API_VERSIONS).toContain(0.4);
+    it('includes version 0.5', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.5);
+    });
+
+    it('does not include version 0.4', () => {
+      expect(SUPPORTED_API_VERSIONS).not.toContain(0.4);
     });
   });
 
@@ -284,31 +289,28 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    // --- v0.4 help validation ---
+    // --- v0.5 help validation ---
 
-    it('rejects v0.4 manifest without contributes.help', () => {
+    it('rejects v0.5 manifest without contributes.help', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {},
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('contributes.help');
     });
 
-    it('accepts v0.4 manifest with contributes.help: {}', () => {
+    it('accepts v0.5 manifest with contributes.help: {}', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: { help: {} },
       });
       expect(result.valid).toBe(true);
     });
 
-    it('accepts v0.4 manifest with valid help topics', () => {
+    it('accepts v0.5 manifest with valid help topics', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {
           help: {
             topics: [
@@ -320,10 +322,9 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects v0.4 manifest with malformed help topics', () => {
+    it('rejects v0.5 manifest with malformed help topics', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: {
           help: {
             topics: [
@@ -336,14 +337,199 @@ describe('manifest-validator', () => {
       expect(result.errors.some((e: string) => e.includes('topics[0].id'))).toBe(true);
     });
 
-    it('rejects v0.4 manifest with no contributes at all', () => {
+    it('rejects v0.5 manifest with no contributes at all', () => {
       const result = validateManifest({
         ...validManifest,
-        engine: { api: 0.4 },
         contributes: undefined,
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('contributes.help');
+    });
+  });
+
+  // --- v0.5 permission validation ---
+
+  describe('v0.5 permission validation', () => {
+    const v05Base = {
+      ...validManifest,
+      engine: { api: 0.5 },
+      permissions: ['files', 'git'],
+    };
+
+    it('0.5 is in SUPPORTED_API_VERSIONS', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.5);
+    });
+
+    it('rejects v0.5 without permissions array', () => {
+      const { permissions, ...rest } = v05Base;
+      const result = validateManifest(rest);
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('permissions array');
+    });
+
+    it('accepts v0.5 with empty permissions array', () => {
+      const result = validateManifest({ ...v05Base, permissions: [] });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts v0.5 with valid permissions', () => {
+      const result = validateManifest(v05Base);
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects unknown permission strings', () => {
+      const result = validateManifest({ ...v05Base, permissions: ['files', 'teleport'] });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('unknown permission "teleport"');
+    });
+
+    it('rejects duplicate permissions', () => {
+      const result = validateManifest({ ...v05Base, permissions: ['files', 'git', 'files'] });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('duplicate permission "files"');
+    });
+
+    it('rejects non-string permission entries', () => {
+      const result = validateManifest({ ...v05Base, permissions: ['files', 42] });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('must be a string');
+    });
+
+    it('rejects externalRoots without files.external permission', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files'],
+        externalRoots: [{ settingKey: 'wiki-root', root: 'wiki' }],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires the "files.external" permission');
+    });
+
+    it('rejects files.external without externalRoots', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'files.external'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires at least one externalRoots entry');
+    });
+
+    it('accepts files.external with valid externalRoots', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'files.external'],
+        externalRoots: [{ settingKey: 'wiki-root', root: 'wiki' }],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates externalRoots entry shape — missing settingKey', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'files.external'],
+        externalRoots: [{ root: 'wiki' }],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('settingKey'))).toBe(true);
+    });
+
+    it('validates externalRoots entry shape — missing root', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'files.external'],
+        externalRoots: [{ settingKey: 'wiki-root' }],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('root'))).toBe(true);
+    });
+
+    it('validates externalRoots entry shape — empty strings', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'files.external'],
+        externalRoots: [{ settingKey: '', root: '' }],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // --- allowedCommands / process permission validation ---
+
+    it('rejects process permission without allowedCommands', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires at least one allowedCommands entry');
+    });
+
+    it('rejects allowedCommands without process permission', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files'],
+        allowedCommands: ['gh'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires the "process" permission');
+    });
+
+    it('accepts process permission with valid allowedCommands', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: ['gh'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects allowedCommands entries with forward slash', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: ['/usr/bin/gh'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('path separators'))).toBe(true);
+    });
+
+    it('rejects allowedCommands entries with backslash', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: ['bin\\gh'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('path separators'))).toBe(true);
+    });
+
+    it('rejects allowedCommands entries with dot-dot', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: ['..gh'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('path separators'))).toBe(true);
+    });
+
+    it('rejects empty string in allowedCommands', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: [''],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('non-empty string'))).toBe(true);
+    });
+
+    it('accepts multiple valid allowedCommands', () => {
+      const result = validateManifest({
+        ...v05Base,
+        permissions: ['files', 'process'],
+        allowedCommands: ['gh', 'node', 'npx'],
+      });
+      expect(result.valid).toBe(true);
     });
   });
 });

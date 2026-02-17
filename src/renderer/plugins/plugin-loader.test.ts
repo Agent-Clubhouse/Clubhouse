@@ -17,6 +17,8 @@ const mockGit = { info: vi.fn(), diff: vi.fn() };
 const mockAgent = { listDurable: vi.fn(), killAgent: vi.fn() };
 const mockPty = { kill: vi.fn() };
 
+const mockLog = { write: vi.fn() };
+
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
@@ -25,6 +27,7 @@ Object.defineProperty(globalThis, 'window', {
       git: mockGit,
       agent: mockAgent,
       pty: mockPty,
+      log: mockLog,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -35,6 +38,7 @@ Object.defineProperty(globalThis, 'window', {
 // Mock the builtin module
 vi.mock('./builtin', () => ({
   getBuiltinPlugins: vi.fn(() => []),
+  getDefaultEnabledIds: vi.fn(() => new Set<string>()),
 }));
 
 // Mock plugin-styles to avoid DOM operations
@@ -51,15 +55,16 @@ import {
   getActiveContext,
   _resetActiveContexts,
 } from './plugin-loader';
-import { getBuiltinPlugins } from './builtin';
+import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 
 function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
   return {
     id: 'test-plugin',
     name: 'Test Plugin',
     version: '1.0.0',
-    engine: { api: 0.4 },
+    engine: { api: 0.5 },
     scope: 'project',
+    permissions: [],
     contributes: {
       help: { topics: [{ id: 'test', title: 'Test', content: 'Test help' }] },
     },
@@ -197,31 +202,46 @@ describe('plugin-loader', () => {
       expect(usePluginStore.getState().modules['builtin-1']).toBe(module);
     });
 
-    it('auto-enables app-scoped built-in plugins', async () => {
-      const manifest = makeManifest({ id: 'builtin-app', scope: 'app' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
+    it('auto-enables default built-in plugins at app level', async () => {
+      const appManifest = makeManifest({ id: 'builtin-app', scope: 'app' });
+      const dualManifest = makeManifest({ id: 'builtin-dual', scope: 'dual' });
+      const projManifest = makeManifest({ id: 'builtin-proj', scope: 'project' });
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: appManifest, module: {} },
+        { manifest: dualManifest, module: {} },
+        { manifest: projManifest, module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['builtin-app', 'builtin-dual', 'builtin-proj']),
+      );
 
       await initializePluginSystem();
 
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-app');
+      const { appEnabled } = usePluginStore.getState();
+      expect(appEnabled).toContain('builtin-app');
+      expect(appEnabled).toContain('builtin-dual');
+      expect(appEnabled).toContain('builtin-proj');
     });
 
-    it('auto-enables dual-scoped built-in plugins', async () => {
-      const manifest = makeManifest({ id: 'builtin-dual', scope: 'dual' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
+    it('does not auto-enable non-default built-in plugins', async () => {
+      const defaultManifest = makeManifest({ id: 'default-plug', scope: 'project' });
+      const optionalManifest = makeManifest({ id: 'optional-plug', scope: 'project' });
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: defaultManifest, module: {} },
+        { manifest: optionalManifest, module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['default-plug']),
+      );
 
       await initializePluginSystem();
 
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-dual');
-    });
-
-    it('auto-enables project-scoped built-in plugins at app level (availability gate)', async () => {
-      const manifest = makeManifest({ id: 'builtin-proj', scope: 'project' });
-      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest, module: {} }]);
-
-      await initializePluginSystem();
-
-      expect(usePluginStore.getState().appEnabled).toContain('builtin-proj');
+      const { appEnabled, plugins } = usePluginStore.getState();
+      expect(appEnabled).toContain('default-plug');
+      expect(appEnabled).not.toContain('optional-plug');
+      // Non-default plugin is still registered
+      expect(plugins['optional-plug']).toBeDefined();
+      expect(plugins['optional-plug'].source).toBe('builtin');
     });
 
     it('registers multiple built-in plugins', async () => {
@@ -244,35 +264,52 @@ describe('plugin-loader', () => {
 
   describe('activatePlugin()', () => {
     it('does not activate unknown plugin', async () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockLog.write.mockClear();
       await activatePlugin('nonexistent');
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Cannot activate unknown plugin'));
-      spy.mockRestore();
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot activate unknown plugin') }),
+      );
     });
 
     it('skips activation of incompatible plugin', async () => {
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLog.write.mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'bad' }), 'community', '/path', 'incompatible', 'bad engine'
       );
 
       await activatePlugin('bad');
 
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Skipping activation'));
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
       expect(usePluginStore.getState().plugins['bad'].status).toBe('incompatible');
-      spy.mockRestore();
     });
 
     it('skips activation of errored plugin', async () => {
-      const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLog.write.mockClear();
       usePluginStore.getState().registerPlugin(
         makeManifest({ id: 'err' }), 'community', '/path', 'errored', 'load failed'
       );
 
       await activatePlugin('err');
 
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Skipping activation'));
-      spy.mockRestore();
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
+    });
+
+    it('skips activation of disabled plugin', async () => {
+      mockLog.write.mockClear();
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'dis' }), 'community', '/path', 'disabled', 'permission violation'
+      );
+
+      await activatePlugin('dis');
+
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Skipping activation') }),
+      );
+      expect(usePluginStore.getState().plugins['dis'].status).toBe('disabled');
     });
 
     it('does not activate same plugin twice (idempotent)', async () => {

@@ -6,6 +6,8 @@ import { createPluginAPI } from '../../plugins/plugin-api-factory';
 import { getActiveContext } from '../../plugins/plugin-loader';
 import { useProjectStore } from '../../stores/projectStore';
 import { PluginSettingsRenderer } from '../../plugins/plugin-settings-renderer';
+import type { PluginPermission } from '../../../shared/plugin-types';
+import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
 
 export function PluginDetailSettings() {
   const pluginSettingsId = useUIStore((s) => s.pluginSettingsId);
@@ -62,6 +64,45 @@ export function PluginDetailSettings() {
         <h2 className="text-lg font-semibold text-ctp-text mb-1">{entry.manifest.name} Settings</h2>
         <p className="text-xs text-ctp-subtext0 mb-6">v{entry.manifest.version}</p>
 
+        {entry.manifest.permissions && entry.manifest.permissions.length > 0 && (
+          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
+            <h3 className="text-sm font-semibold text-ctp-text mb-3">Permissions</h3>
+            <div className="space-y-2">
+              {entry.manifest.permissions.map((perm: PluginPermission) => (
+                <div key={perm} className="flex items-start gap-2">
+                  <span className="text-xs font-mono text-ctp-accent whitespace-nowrap">{perm}</span>
+                  <span className="text-xs text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {entry.manifest.externalRoots && entry.manifest.externalRoots.length > 0 && (
+          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
+            <h3 className="text-sm font-semibold text-ctp-text mb-3">External Roots</h3>
+            <div className="space-y-2">
+              {entry.manifest.externalRoots.map((root) => (
+                <div key={root.root} className="flex items-start gap-2">
+                  <span className="text-xs font-mono text-ctp-accent whitespace-nowrap">{root.root}</span>
+                  <span className="text-xs text-ctp-subtext0">Setting: <code className="font-mono bg-surface-0 px-1 py-0.5 rounded">{root.settingKey}</code></span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {entry.manifest.allowedCommands && entry.manifest.allowedCommands.length > 0 && (
+          <div className="mb-6 p-4 rounded-lg bg-ctp-mantle border border-surface-0">
+            <h3 className="text-sm font-semibold text-ctp-text mb-3">Allowed Commands</h3>
+            <div className="flex flex-wrap gap-2">
+              {entry.manifest.allowedCommands.map((cmd) => (
+                <code key={cmd} className="text-xs font-mono bg-surface-0 px-2 py-1 rounded text-ctp-accent">{cmd}</code>
+              ))}
+            </div>
+          </div>
+        )}
+
         {isDeclarative && entry.manifest.contributes?.settings && (
           <PluginSettingsRenderer
             pluginId={pluginSettingsId}
@@ -73,7 +114,7 @@ export function PluginDetailSettings() {
         {isCustom && mod?.SettingsPanel && (() => {
           const ctx = getActiveContext(pluginSettingsId, activeProjectId || undefined);
           if (!ctx) return <p className="text-ctp-subtext0 text-sm">Plugin is not activated</p>;
-          const api = createPluginAPI(ctx);
+          const api = createPluginAPI(ctx, undefined, entry.manifest);
           const SettingsPanel = mod.SettingsPanel!;
           return (
             <PluginAPIProvider api={api}>

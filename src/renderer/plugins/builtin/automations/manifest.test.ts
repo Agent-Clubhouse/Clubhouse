@@ -17,8 +17,15 @@ describe('automations plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.4', () => {
-    expect(manifest.engine.api).toBe(0.4);
+  it('targets API v0.5', () => {
+    expect(manifest.engine.api).toBe(0.5);
+  });
+
+  it('declares required permissions', () => {
+    expect(manifest.permissions).toEqual(
+      expect.arrayContaining(['storage', 'agents', 'commands', 'notifications', 'navigation', 'widgets']),
+    );
+    expect(manifest.permissions).toHaveLength(6);
   });
 
   it('contributes help topics', () => {

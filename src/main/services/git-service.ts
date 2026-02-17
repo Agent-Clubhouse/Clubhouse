@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult } from '../../shared/types';
+import { appLog } from './log-service';
 
 // Conflict status codes from git porcelain format
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
@@ -20,6 +21,9 @@ function runResult(cmd: string, cwd: string): GitOpResult {
     return { ok: true, message: output };
   } catch (err: any) {
     const msg = err?.stderr?.toString?.() || err?.message || 'Unknown error';
+    appLog('core:git', 'warn', 'Git operation failed', {
+      meta: { cmd: cmd.split(' ').slice(0, 3).join(' '), cwd, error: msg.trim() },
+    });
     return { ok: false, message: msg.trim() };
   }
 }

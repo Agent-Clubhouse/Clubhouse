@@ -21,7 +21,6 @@ export function DisplaySettingsView() {
   const setTheme = useThemeStore((s) => s.setTheme);
   const showHome = useUIStore((s) => s.showHome);
   const setShowHome = useUIStore((s) => s.setShowHome);
-
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
   };
@@ -57,8 +56,6 @@ export function DisplaySettingsView() {
             );
           })}
         </div>
-
-        <div className="border-t border-surface-0 mb-6" />
 
         {/* Color theme */}
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Color Theme</h3>

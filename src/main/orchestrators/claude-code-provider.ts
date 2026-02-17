@@ -5,10 +5,14 @@ import { promisify } from 'util';
 import {
   OrchestratorProvider,
   OrchestratorConventions,
+  ProviderCapabilities,
   SpawnOpts,
+  HeadlessOpts,
+  HeadlessCommandResult,
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const execFileAsync = promisify(execFile);
 
@@ -27,48 +31,13 @@ const TOOL_VERBS: Record<string, string> = {
   NotebookEdit: 'Editing notebook',
 };
 
-const FALLBACK_MODEL_OPTIONS = [
+// Claude Code uses well-known aliases — no machine-readable model list in --help
+const MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'opus', label: 'Opus' },
   { id: 'sonnet', label: 'Sonnet' },
   { id: 'haiku', label: 'Haiku' },
 ];
-
-function humanizeModelId(id: string): string {
-  return id
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
-
-/** Parse model choices from `claude --help` output (if present) */
-function parseClaudeModelsFromHelp(helpText: string): Array<{ id: string; label: string }> | null {
-  // Claude may list choices like: (choices: "model-a", "model-b")
-  const choicesMatch = helpText.match(/--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/);
-  if (choicesMatch) {
-    const ids = [...choicesMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-    if (ids.length > 0) {
-      return [
-        { id: 'default', label: 'Default' },
-        ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
-      ];
-    }
-  }
-
-  // Claude also accepts aliases — extract known aliases from help text
-  const aliasMatch = helpText.match(/alias[^\n]*\(e\.g\.\s*'([^)]+)'\)/i);
-  if (aliasMatch) {
-    const aliases = aliasMatch[1].split(/'\s*or\s*'|',\s*'/).map((s) => s.replace(/'/g, '').trim()).filter(Boolean);
-    if (aliases.length > 0) {
-      return [
-        { id: 'default', label: 'Default' },
-        ...aliases.map((id) => ({ id, label: humanizeModelId(id) })),
-      ];
-    }
-  }
-
-  return null;
-}
 
 const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
@@ -95,10 +64,21 @@ function findClaudeBinary(): string {
 export class ClaudeCodeProvider implements OrchestratorProvider {
   readonly id = 'claude-code' as const;
   readonly displayName = 'Claude Code';
+  readonly shortName = 'CC';
+
+  getCapabilities(): ProviderCapabilities {
+    return {
+      headless: true,
+      structuredOutput: true,
+      hooks: true,
+      sessionResume: true,
+      permissions: true,
+    };
+  }
 
   readonly conventions: OrchestratorConventions = {
     configDir: '.claude',
-    localInstructionsFile: 'CLAUDE.local.md',
+    localInstructionsFile: 'CLAUDE.md',
     legacyInstructionsFile: 'CLAUDE.md',
     mcpConfigFile: '.mcp.json',
     skillsDir: 'skills',
@@ -189,7 +169,17 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       // No existing file
     }
 
-    const merged: Record<string, unknown> = { ...existing, hooks };
+    // Merge per-event key: preserve user hooks, replace stale Clubhouse entries
+    const existingHooks = (existing.hooks || {}) as Record<string, unknown[]>;
+    const mergedHooks: Record<string, unknown[]> = { ...existingHooks };
+
+    for (const [eventKey, ourEntries] of Object.entries(hooks)) {
+      const current = mergedHooks[eventKey] || [];
+      const userEntries = current.filter(e => !isClubhouseHookEntry(e));
+      mergedHooks[eventKey] = [...userEntries, ...ourEntries];
+    }
+
+    const merged: Record<string, unknown> = { ...existing, hooks: mergedHooks };
     fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
   }
 
@@ -209,38 +199,60 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
   }
 
   readInstructions(worktreePath: string): string {
-    const localPath = path.join(worktreePath, '.claude', 'CLAUDE.local.md');
+    const filePath = path.join(worktreePath, 'CLAUDE.md');
     try {
-      return fs.readFileSync(localPath, 'utf-8');
+      return fs.readFileSync(filePath, 'utf-8');
     } catch {
-      const legacyPath = path.join(worktreePath, 'CLAUDE.md');
-      try {
-        return fs.readFileSync(legacyPath, 'utf-8');
-      } catch {
-        return '';
-      }
+      return '';
     }
   }
 
   writeInstructions(worktreePath: string, content: string): void {
-    const claudeDir = path.join(worktreePath, '.claude');
-    if (!fs.existsSync(claudeDir)) {
-      fs.mkdirSync(claudeDir, { recursive: true });
-    }
-    const filePath = path.join(claudeDir, 'CLAUDE.local.md');
+    const filePath = path.join(worktreePath, 'CLAUDE.md');
     fs.writeFileSync(filePath, content, 'utf-8');
   }
 
-  async getModelOptions() {
-    try {
-      const binary = findClaudeBinary();
-      const { stdout } = await execFileAsync(binary, ['--help'], { timeout: 5000 });
-      const parsed = parseClaudeModelsFromHelp(stdout);
-      if (parsed) return parsed;
-    } catch {
-      // Fall back to static list
+  async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
+    if (!opts.mission) return null;
+
+    const binary = findClaudeBinary();
+    const args: string[] = ['-p', opts.mission];
+
+    args.push('--output-format', opts.outputFormat || 'stream-json');
+    args.push('--verbose');
+
+    // Skip all permission prompts for headless agents
+    args.push('--dangerously-skip-permissions');
+
+    if (opts.model && opts.model !== 'default') {
+      args.push('--model', opts.model);
     }
-    return FALLBACK_MODEL_OPTIONS;
+
+    if (opts.allowedTools && opts.allowedTools.length > 0) {
+      for (const tool of opts.allowedTools) {
+        args.push('--allowedTools', tool);
+      }
+    }
+
+    if (opts.disallowedTools && opts.disallowedTools.length > 0) {
+      for (const tool of opts.disallowedTools) {
+        args.push('--disallowedTools', tool);
+      }
+    }
+
+    if (opts.systemPrompt) {
+      args.push('--append-system-prompt', opts.systemPrompt);
+    }
+
+    if (opts.noSessionPersistence) {
+      args.push('--no-session-persistence');
+    }
+
+    return { binary, args, outputKind: 'stream-json' };
+  }
+
+  async getModelOptions() {
+    return MODEL_OPTIONS;
   }
   getDefaultPermissions(kind: 'durable' | 'quick') {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];

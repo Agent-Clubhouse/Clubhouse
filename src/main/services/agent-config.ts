@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { appLog } from './log-service';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -59,7 +60,10 @@ function readAgents(projectPath: string): DurableAgentConfig[] {
   try {
     const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     return agents;
-  } catch {
+  } catch (err) {
+    appLog('core:agent-config', 'error', 'Failed to parse agents.json', {
+      meta: { configPath, error: err instanceof Error ? err.message : String(err) },
+    });
     return [];
   }
 }
@@ -130,8 +134,15 @@ export function createDurable(
           cwd: projectPath,
           encoding: 'utf-8',
         });
-      } catch {
-        // Worktree may already exist, or git worktree not supported
+      } catch (err) {
+        appLog('core:agent-config', 'warn', 'Git worktree creation failed, falling back to plain directory', {
+          meta: {
+            agentName: name,
+            branch,
+            worktreePath,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
         ensureDir(worktreePath);
       }
     } else {
@@ -205,8 +216,13 @@ export function deleteDurable(projectPath: string, agentId: string): void {
         cwd: projectPath,
         encoding: 'utf-8',
       });
-    } catch {
-      // Manual cleanup
+    } catch (err) {
+      appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
+        meta: {
+          agentId, worktreePath: agent.worktreePath,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
     }
 
     // Optionally delete branch
@@ -216,8 +232,10 @@ export function deleteDurable(projectPath: string, agentId: string): void {
           cwd: projectPath,
           encoding: 'utf-8',
         });
-      } catch {
-        // Branch may not exist
+      } catch (err) {
+        appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
+          meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
   }
@@ -349,10 +367,15 @@ export function deleteCommitAndPush(projectPath: string, agentId: string): Delet
       if (remoteOut.trim() && agent.branch) {
         execSync(`git push -u origin "${agent.branch}"`, { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
       }
-    } catch {
-      // Push failed — continue with deletion, work is committed locally
+    } catch (pushErr) {
+      appLog('core:agent-config', 'warn', 'Push failed during delete-commit-push, work saved locally', {
+        meta: { agentId, branch: agent.branch, error: pushErr instanceof Error ? pushErr.message : String(pushErr) },
+      });
     }
   } catch (err: any) {
+    appLog('core:agent-config', 'error', 'Failed to commit during agent deletion', {
+      meta: { agentId, error: err.message },
+    });
     return { ok: false, message: err.message || 'Failed to commit' };
   }
 
@@ -396,10 +419,15 @@ export function deleteWithCleanupBranch(projectPath: string, agentId: string): D
       if (remoteOut.trim()) {
         execSync(`git push -u origin "${cleanupBranch}"`, { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
       }
-    } catch {
-      // Push failed — work is saved locally
+    } catch (pushErr) {
+      appLog('core:agent-config', 'warn', 'Push failed during cleanup-branch deletion, work saved locally', {
+        meta: { agentId, cleanupBranch, error: pushErr instanceof Error ? pushErr.message : String(pushErr) },
+      });
     }
   } catch (err: any) {
+    appLog('core:agent-config', 'error', 'Failed to create cleanup branch during agent deletion', {
+      meta: { agentId, error: err.message },
+    });
     return { ok: false, message: err.message || 'Failed to create cleanup branch' };
   }
 
@@ -469,6 +497,9 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
 
     fs.writeFileSync(savePath, patchContent, 'utf-8');
   } catch (err: any) {
+    appLog('core:agent-config', 'error', 'Failed to save patch file during agent deletion', {
+      meta: { agentId, savePath, error: err.message },
+    });
     return { ok: false, message: err.message || 'Failed to save patch' };
   }
 

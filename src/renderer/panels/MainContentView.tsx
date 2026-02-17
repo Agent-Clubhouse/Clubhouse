@@ -4,6 +4,7 @@ import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
+import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
@@ -25,7 +26,9 @@ export function MainContentView() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   if (explorerTab === 'agents') {
-    const activeAgent = activeAgentId ? agents[activeAgentId] : null;
+    const rawAgent = activeAgentId ? agents[activeAgentId] : null;
+    // Guard: never show an agent from a different project
+    const activeAgent = rawAgent && rawAgent.projectId === activeProjectId ? rawAgent : null;
 
     if (
       agentSettingsOpenFor &&
@@ -51,7 +54,7 @@ export function MainContentView() {
         );
       }
       return (
-        <div className="flex items-center justify-center h-full bg-ctp-base">
+        <div className="flex items-center justify-center h-full bg-ctp-base" data-testid="no-active-agent">
           <div className="text-center text-ctp-subtext0">
             <p className="text-lg mb-2">No active agent</p>
             <p className="text-sm">Add an agent from the sidebar to get started</p>
@@ -64,8 +67,13 @@ export function MainContentView() {
       return <SleepingAgent agent={activeAgent} />;
     }
 
+    // Headless running agents get the animated clubhouse view instead of a terminal
+    if (activeAgent.headless) {
+      return <HeadlessAgentView agent={activeAgent} />;
+    }
+
     return (
-      <div className="h-full bg-ctp-base">
+      <div className="h-full bg-ctp-base" data-testid="agent-terminal-view">
         <AgentTerminal agentId={activeAgentId!} />
       </div>
     );
@@ -73,7 +81,7 @@ export function MainContentView() {
 
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
-    if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView />;
+    if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;

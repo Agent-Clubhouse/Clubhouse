@@ -4,6 +4,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext } from '../plugins/plugin-loader';
+import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
@@ -35,7 +36,7 @@ function SettingsCategoryNav() {
       <nav className="py-1 flex-1 flex flex-col">
         {isApp ? (
           <>
-            {navButton('Orchestrators', 'orchestrators')}
+            {navButton('Agents', 'orchestrators')}
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
             {navButton('Logging', 'logging')}
@@ -46,6 +47,7 @@ function SettingsCategoryNav() {
         ) : (
           <>
             {navButton('Project Settings', 'project')}
+            {navButton('Agents', 'orchestrators')}
             {navButton('Plugins', 'plugins')}
           </>
         )}
@@ -61,16 +63,21 @@ function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
   const mod = modules[pluginId];
   if (!mod?.SidebarPanel) return null;
 
+  const plugins = usePluginStore((s) => s.plugins);
+  const entry = plugins[pluginId];
+
   const ctx = getActiveContext(pluginId, activeProjectId || undefined);
   if (!ctx) return null;
 
-  const api = createPluginAPI(ctx);
+  const api = createPluginAPI(ctx, undefined, entry?.manifest);
   const SidebarPanel = mod.SidebarPanel;
 
   return (
-    <PluginAPIProvider api={api}>
-      <SidebarPanel api={api} />
-    </PluginAPIProvider>
+    <PluginErrorBoundary key={pluginId} pluginId={pluginId}>
+      <PluginAPIProvider api={api}>
+        <SidebarPanel api={api} />
+      </PluginAPIProvider>
+    </PluginErrorBoundary>
   );
 }
 

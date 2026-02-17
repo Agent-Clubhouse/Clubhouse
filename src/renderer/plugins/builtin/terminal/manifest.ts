@@ -5,11 +5,12 @@ const TERMINAL_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="non
 export const manifest: PluginManifest = {
   id: 'terminal',
   name: 'Terminal',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Interactive shell terminal scoped to each project.',
   author: 'Clubhouse',
-  engine: { api: 0.4 },
+  engine: { api: 0.5 },
   scope: 'project',
+  permissions: ['terminal', 'commands', 'agents'],
   contributes: {
     tab: { label: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'restart', title: 'Restart Terminal' }],

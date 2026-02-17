@@ -30,7 +30,9 @@ interface UIState {
   pluginSettingsId: string | null;
   helpSectionId: string;
   helpTopicId: string | null;
-  setExplorerTab: (tab: ExplorerTab) => void;
+  projectExplorerTab: Record<string, ExplorerTab>;
+  setExplorerTab: (tab: ExplorerTab, projectId?: string) => void;
+  restoreProjectView: (projectId: string) => void;
   setSettingsSubPage: (page: SettingsSubPage) => void;
   setSettingsContext: (context: 'app' | string) => void;
   toggleSettings: () => void;
@@ -53,8 +55,19 @@ export const useUIStore = create<UIState>((set, get) => ({
   pluginSettingsId: null,
   helpSectionId: 'general',
   helpTopicId: null,
+  projectExplorerTab: {},
 
-  setExplorerTab: (tab) => set({ explorerTab: tab }),
+  setExplorerTab: (tab, projectId?) => {
+    set({ explorerTab: tab });
+    if (projectId && tab !== 'settings' && tab !== 'help') {
+      set((s) => ({ projectExplorerTab: { ...s.projectExplorerTab, [projectId]: tab } }));
+    }
+  },
+
+  restoreProjectView: (projectId) => {
+    const saved = get().projectExplorerTab[projectId];
+    set({ explorerTab: saved || 'agents' });
+  },
   setSettingsSubPage: (page) => set({ settingsSubPage: page }),
   setSettingsContext: (context) => set({
     settingsContext: context,

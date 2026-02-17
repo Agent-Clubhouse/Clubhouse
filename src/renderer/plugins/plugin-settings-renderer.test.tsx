@@ -140,6 +140,74 @@ describe('PluginSettingsRenderer', () => {
     });
   });
 
+  // ── Directory setting ────────────────────────────────────────────────
+
+  it('directory setting renders text input and Browse button', () => {
+    const settings: PluginSettingDeclaration[] = [
+      { key: 'wikiPath', type: 'directory', label: 'Wiki path', default: '' },
+    ];
+
+    render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
+    expect(screen.getByText('Wiki path')).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse...' })).toBeInTheDocument();
+  });
+
+  it('directory setting shows stored value in input', () => {
+    resetStore({ wikiPath: '/home/user/wiki' });
+    const settings: PluginSettingDeclaration[] = [
+      { key: 'wikiPath', type: 'directory', label: 'Wiki path', default: '' },
+    ];
+
+    render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
+    expect(screen.getByRole('textbox')).toHaveValue('/home/user/wiki');
+  });
+
+  it('directory setting manual text input persists', async () => {
+    const settings: PluginSettingDeclaration[] = [
+      { key: 'wikiPath', type: 'directory', label: 'Wiki path', default: '' },
+    ];
+
+    render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: './wiki' } });
+
+    await waitFor(() => {
+      expect(usePluginStore.getState().pluginSettings[`${SCOPE}:${PLUGIN_ID}`]?.wikiPath).toBe('./wiki');
+    });
+  });
+
+  it('directory setting Browse button sets value from picker', async () => {
+    window.clubhouse.project.pickDirectory = vi.fn(async () => '/picked/folder');
+    const settings: PluginSettingDeclaration[] = [
+      { key: 'wikiPath', type: 'directory', label: 'Wiki path', default: '' },
+    ];
+
+    render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Browse...' }));
+
+    await waitFor(() => {
+      expect(usePluginStore.getState().pluginSettings[`${SCOPE}:${PLUGIN_ID}`]?.wikiPath).toBe('/picked/folder');
+    });
+  });
+
+  it('directory setting cancelled Browse preserves current value', async () => {
+    resetStore({ wikiPath: '/existing/path' });
+    window.clubhouse.project.pickDirectory = vi.fn(async () => null);
+    const settings: PluginSettingDeclaration[] = [
+      { key: 'wikiPath', type: 'directory', label: 'Wiki path', default: '' },
+    ];
+
+    render(<PluginSettingsRenderer pluginId={PLUGIN_ID} settings={settings} scope={SCOPE} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Browse...' }));
+
+    // Wait a tick to ensure the async handler ran
+    await waitFor(() => {
+      expect(window.clubhouse.project.pickDirectory).toHaveBeenCalled();
+    });
+    // Value should remain unchanged
+    expect(usePluginStore.getState().pluginSettings[`${SCOPE}:${PLUGIN_ID}`]?.wikiPath).toBe('/existing/path');
+  });
+
   it('reads initial value from store', () => {
     resetStore({ greeting: 'Custom hello' });
     const settings: PluginSettingDeclaration[] = [

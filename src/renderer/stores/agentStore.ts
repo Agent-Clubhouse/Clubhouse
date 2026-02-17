@@ -2,9 +2,13 @@ import { create } from 'zustand';
 import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult, HookEventKind } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
+import { useHeadlessStore } from './headlessStore';
 
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
+
+/** Track agents that were user-cancelled (not naturally completed) */
+const cancelledAgentIds = new Set<string>();
 
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
@@ -16,7 +20,9 @@ interface AgentState {
   agentActivity: Record<string, number>; // agentId -> last data timestamp
   agentSpawnedAt: Record<string, number>; // agentId -> spawn timestamp
   agentDetailedStatus: Record<string, AgentDetailedStatus>;
-  setActiveAgent: (id: string | null) => void;
+  projectActiveAgent: Record<string, string | null>;
+  setActiveAgent: (id: string | null, projectId?: string) => void;
+  restoreProjectAgent: (projectId: string) => void;
   openAgentSettings: (agentId: string) => void;
   closeAgentSettings: () => void;
   openDeleteDialog: (agentId: string) => void;
@@ -47,10 +53,34 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentActivity: {},
   agentSpawnedAt: {},
   agentDetailedStatus: {},
+  projectActiveAgent: {},
 
-  setActiveAgent: (id) => set({ activeAgentId: id, agentSettingsOpenFor: null }),
+  setActiveAgent: (id, projectId?) => {
+    set({ activeAgentId: id, agentSettingsOpenFor: null });
+    if (projectId) {
+      set((s) => ({ projectActiveAgent: { ...s.projectActiveAgent, [projectId]: id } }));
+    }
+  },
 
-  openAgentSettings: (agentId) => set({ agentSettingsOpenFor: agentId, activeAgentId: agentId }),
+  restoreProjectAgent: (projectId) => {
+    const saved = get().projectActiveAgent[projectId];
+    if (saved) {
+      const agent = get().agents[saved];
+      if (agent && agent.projectId === projectId) {
+        set({ activeAgentId: saved, agentSettingsOpenFor: null });
+        return;
+      }
+    }
+    set({ activeAgentId: null, agentSettingsOpenFor: null });
+  },
+
+  openAgentSettings: (agentId) => {
+    const agent = get().agents[agentId];
+    set({ agentSettingsOpenFor: agentId, activeAgentId: agentId });
+    if (agent) {
+      set((s) => ({ projectActiveAgent: { ...s.projectActiveAgent, [agent.projectId]: agentId } }));
+    }
+  },
 
   closeAgentSettings: () => set({ agentSettingsOpenFor: null }),
 
@@ -147,6 +177,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // Explicit orchestrator > inherit from parent
     const resolvedOrchestrator = orchestrator || (parentAgentId ? get().agents[parentAgentId]?.orchestrator : undefined);
 
+    const isHeadless = useHeadlessStore.getState().getProjectMode(projectPath) === 'headless';
+
     const agent: Agent = {
       id: agentId,
       projectId,
@@ -158,12 +190,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       model: resolvedModel,
       parentAgentId,
       orchestrator: resolvedOrchestrator,
+      headless: isHeadless || undefined,
     };
 
     set((s) => ({
       agents: { ...s.agents, [agentId]: agent },
       activeAgentId: agentId,
       agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+      projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },
     }));
 
     try {
@@ -227,6 +261,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       agents: { ...s.agents, [agentId]: agent },
       activeAgentId: agentId,
       agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+      projectActiveAgent: { ...s.projectActiveAgent, [projectId]: agentId },
     }));
 
     try {
@@ -301,10 +336,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const agent = get().agents[id];
     if (!agent) return;
 
-    if (projectPath) {
-      await window.clubhouse.agent.killAgent(id, projectPath);
+    // Mark as user-cancelled so exit handler can distinguish from natural completion
+    if (agent.kind === 'quick') {
+      cancelledAgentIds.add(id);
+    }
+
+    // Resolve projectPath from agent if not provided
+    const resolvedPath = projectPath || (() => {
+      const { useProjectStore } = require('./projectStore');
+      const project = useProjectStore.getState().projects.find(
+        (p: { id: string; path: string }) => p.id === agent.projectId,
+      );
+      return project?.path;
+    })();
+
+    if (resolvedPath) {
+      await window.clubhouse.agent.killAgent(id, resolvedPath, agent.orchestrator);
     } else {
-      // Fallback to legacy pty kill when no project path available
+      // Last resort fallback
       await window.clubhouse.pty.kill(id);
     }
 
@@ -323,7 +372,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const { [id]: _, ...rest } = s.agents;
       const { [id]: _ds, ...restStatus } = s.agentDetailedStatus;
       const activeAgentId = s.activeAgentId === id ? null : s.activeAgentId;
-      return { agents: rest, activeAgentId, agentDetailedStatus: restStatus };
+      // Clear projectActiveAgent entry if this agent was the active one for its project
+      const removedAgent = s.agents[id];
+      let projectActiveAgent = s.projectActiveAgent;
+      if (removedAgent && s.projectActiveAgent[removedAgent.projectId] === id) {
+        const { [removedAgent.projectId]: _pa, ...restPA } = s.projectActiveAgent;
+        projectActiveAgent = restPA;
+      }
+      return { agents: rest, activeAgentId, agentDetailedStatus: restStatus, projectActiveAgent };
     });
   },
 
@@ -459,3 +515,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return Date.now() - last < 3000;
   },
 }));
+
+/** Check if an agent was user-cancelled (consumes the flag) */
+export function consumeCancelled(agentId: string): boolean {
+  const was = cancelledAgentIds.has(agentId);
+  cancelledAgentIds.delete(agentId);
+  return was;
+}

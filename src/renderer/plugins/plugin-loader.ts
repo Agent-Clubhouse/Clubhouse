@@ -3,14 +3,19 @@ import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI } from './plugin-api-factory';
 import { injectStyles, removeStyles } from './plugin-styles';
-import { getBuiltinPlugins } from './builtin';
+import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
+import { rendererLog } from './renderer-logger';
 
 const activeContexts = new Map<string, PluginContext>();
 
 /** Returns IDs of built-in plugins that should be auto-enabled per project. */
 export function getBuiltinProjectPluginIds(): string[] {
+  const defaults = getDefaultEnabledIds();
   return getBuiltinPlugins()
-    .filter(({ manifest }) => manifest.scope === 'project' || manifest.scope === 'dual')
+    .filter(({ manifest }) =>
+      defaults.has(manifest.id) &&
+      (manifest.scope === 'project' || manifest.scope === 'dual'),
+    )
     .map(({ manifest }) => manifest.id);
 }
 
@@ -21,17 +26,24 @@ export async function initializePluginSystem(): Promise<void> {
   const marker = await window.clubhouse.plugin.startupMarkerRead();
   if (marker && marker.attempt >= 2) {
     store.setSafeModeActive(true);
-    console.warn('[Plugins] Safe mode active — no plugins will be loaded');
+    rendererLog('core:plugins', 'warn', 'Safe mode active — no plugins will be loaded', {
+      meta: { attempt: marker.attempt, lastEnabledPlugins: marker.lastEnabledPlugins },
+    });
     return;
   }
 
+  rendererLog('core:plugins', 'info', 'Initializing plugin system');
+
   // Register built-in plugins
   const builtins = getBuiltinPlugins();
+  const defaults = getDefaultEnabledIds();
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
     store.setPluginModule(manifest.id, mod);
-    // Auto-enable built-in plugins at app level (app-level acts as availability gate for all scopes)
-    store.enableApp(manifest.id);
+    // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
+    if (defaults.has(manifest.id)) {
+      store.enableApp(manifest.id);
+    }
   }
 
   // Discover community plugins
@@ -41,6 +53,9 @@ export async function initializePluginSystem(): Promise<void> {
     if (result.valid && result.manifest) {
       store.registerPlugin(result.manifest, 'community', pluginPath, 'registered');
     } else {
+      rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
+        meta: { pluginPath, errors: result.errors },
+      });
       // Register as incompatible so it appears in settings
       const partialManifest: PluginManifest = {
         id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
@@ -82,6 +97,13 @@ export async function initializePluginSystem(): Promise<void> {
 
   // Clear startup marker after successful init
   await window.clubhouse.plugin.startupMarkerClear();
+
+  const state = usePluginStore.getState();
+  const pluginCount = Object.keys(state.plugins).length;
+  const activeCount = Object.values(state.plugins).filter((p) => p.status === 'activated').length;
+  rendererLog('core:plugins', 'info', 'Plugin system initialized', {
+    meta: { pluginCount, activeCount, appEnabled: state.appEnabled },
+  });
 }
 
 export async function activatePlugin(
@@ -92,12 +114,14 @@ export async function activatePlugin(
   const store = usePluginStore.getState();
   const entry = store.plugins[pluginId];
   if (!entry) {
-    console.error(`[Plugins] Cannot activate unknown plugin: ${pluginId}`);
+    rendererLog('core:plugins', 'error', `Cannot activate unknown plugin: ${pluginId}`);
     return;
   }
 
-  if (entry.status === 'incompatible' || entry.status === 'errored') {
-    console.warn(`[Plugins] Skipping activation of ${pluginId}: ${entry.status}`);
+  if (entry.status === 'incompatible' || entry.status === 'errored' || entry.status === 'disabled') {
+    rendererLog('core:plugins', 'warn', `Skipping activation of ${pluginId}: ${entry.status}`, {
+      meta: { pluginId, status: entry.status, error: entry.error },
+    });
     return;
   }
 
@@ -130,7 +154,7 @@ export async function activatePlugin(
       // Built-in plugins already have their module set during registration
       mod = store.modules[pluginId];
       if (!mod) {
-        console.error(`[Plugins] Built-in plugin ${pluginId} has no module`);
+        rendererLog('core:plugins', 'error', `Built-in plugin ${pluginId} has no module`);
         return;
       }
     } else {
@@ -143,7 +167,9 @@ export async function activatePlugin(
         const dynamicImport = new Function('path', 'return import(path)') as (path: string) => Promise<PluginModule>;
         mod = await dynamicImport(fullModulePath);
       } catch (err) {
-        console.error(`[Plugins] Failed to load module for ${pluginId}:`, err);
+        rendererLog('core:plugins', 'error', `Failed to load module for ${pluginId}`, {
+          meta: { pluginId, modulePath: fullModulePath, error: err instanceof Error ? err.message : String(err) },
+        });
         store.setPluginStatus(pluginId, 'errored', `Failed to load: ${err}`);
         return;
       }
@@ -153,7 +179,7 @@ export async function activatePlugin(
 
     // Create the API — for dual plugins activated at app level, set mode explicitly
     const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
-    const api = createPluginAPI(ctx, activationMode);
+    const api = createPluginAPI(ctx, activationMode, entry.manifest);
 
     // Call activate if it exists
     if (mod.activate) {
@@ -164,7 +190,14 @@ export async function activatePlugin(
     store.setPluginStatus(pluginId, 'activated');
     activeContexts.set(contextKey, ctx);
   } catch (err) {
-    console.error(`[Plugins] Error activating ${pluginId}:`, err);
+    rendererLog('core:plugins', 'error', `Error activating plugin ${pluginId}`, {
+      meta: {
+        pluginId,
+        source: entry.source,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      },
+    });
     store.setPluginStatus(pluginId, 'errored', `Activation failed: ${err}`);
   }
 }
@@ -182,7 +215,9 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
     try {
       sub.dispose();
     } catch (err) {
-      console.error(`[Plugins] Error disposing subscription for ${pluginId}:`, err);
+      rendererLog('core:plugins', 'error', `Error disposing subscription for ${pluginId}`, {
+        meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
+      });
     }
   }
 
@@ -201,7 +236,9 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
       try {
         await mod.deactivate();
       } catch (err) {
-        console.error(`[Plugins] Error in deactivate for ${pluginId}:`, err);
+        rendererLog('core:plugins', 'error', `Error in deactivate for ${pluginId}`, {
+          meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
+        });
       }
     }
 

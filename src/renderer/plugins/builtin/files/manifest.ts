@@ -5,11 +5,12 @@ const FOLDER_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
 export const manifest: PluginManifest = {
   id: 'files',
   name: 'Files',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Project file browser with Monaco editor, markdown preview, and image display.',
   author: 'Clubhouse',
-  engine: { api: 0.4 },
+  engine: { api: 0.5 },
   scope: 'project',
+  permissions: ['files', 'git', 'commands', 'notifications'],
   contributes: {
     tab: { label: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'refresh', title: 'Refresh File Tree' }],

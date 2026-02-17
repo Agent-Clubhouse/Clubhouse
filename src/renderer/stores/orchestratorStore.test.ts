@@ -147,12 +147,35 @@ describe('orchestratorStore', () => {
     });
   });
 
+  describe('getCapabilities', () => {
+    it('returns capabilities for a known orchestrator', () => {
+      const caps = { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true };
+      useOrchestratorStore.setState({
+        allOrchestrators: [
+          { id: 'claude-code', displayName: 'Claude Code', capabilities: caps },
+        ],
+      });
+
+      expect(useOrchestratorStore.getState().getCapabilities('claude-code')).toEqual(caps);
+    });
+
+    it('returns undefined for unknown orchestrator', () => {
+      useOrchestratorStore.setState({
+        allOrchestrators: [
+          { id: 'claude-code', displayName: 'Claude Code', capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true } },
+        ],
+      });
+
+      expect(useOrchestratorStore.getState().getCapabilities('nonexistent')).toBeUndefined();
+    });
+  });
+
   describe('checkAllAvailability', () => {
     it('checks each orchestrator and stores results', async () => {
       useOrchestratorStore.setState({
         allOrchestrators: [
-          { id: 'claude-code', displayName: 'Claude Code' },
-          { id: 'opencode', displayName: 'OpenCode' },
+          { id: 'claude-code', displayName: 'Claude Code' } as any,
+          { id: 'opencode', displayName: 'OpenCode' } as any,
         ],
       });
 
@@ -170,7 +193,7 @@ describe('orchestratorStore', () => {
 
     it('handles check failure for individual orchestrator', async () => {
       useOrchestratorStore.setState({
-        allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' }],
+        allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' } as any],
       });
 
       mockCheckOrchestrator.mockRejectedValue(new Error('Check failed'));
@@ -187,8 +210,8 @@ describe('orchestratorStore', () => {
       useOrchestratorStore.setState({
         enabled: ['claude-code'],
         allOrchestrators: [
-          { id: 'claude-code', displayName: 'Claude Code' },
-          { id: 'opencode', displayName: 'OpenCode' },
+          { id: 'claude-code', displayName: 'Claude Code' } as any,
+          { id: 'opencode', displayName: 'OpenCode' } as any,
         ],
       });
 
@@ -199,7 +222,7 @@ describe('orchestratorStore', () => {
     it('returns empty when none enabled match', () => {
       useOrchestratorStore.setState({
         enabled: ['nonexistent'],
-        allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' }],
+        allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' } as any],
       });
 
       const result = useOrchestratorStore.getState().getEnabledOrchestrators();

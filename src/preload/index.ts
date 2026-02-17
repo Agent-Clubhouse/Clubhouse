@@ -107,6 +107,12 @@ const api = {
     getSummaryInstruction: (agentId: string, projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_SUMMARY_INSTRUCTION, agentId, projectPath, orchestrator),
 
+    readTranscript: (agentId: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT, agentId),
+
+    isHeadlessAgent: (agentId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.AGENT.IS_HEADLESS_AGENT, agentId),
+
     onHookEvent: (callback: (agentId: string, event: {
       kind: string;
       toolName?: string;
@@ -235,13 +241,31 @@ const api = {
     getPath: (): Promise<string> =>
       ipcRenderer.invoke(IPC.LOG.GET_LOG_PATH),
   },
+  process: {
+    exec: (req: {
+      pluginId: string;
+      command: string;
+      args: string[];
+      allowedCommands: string[];
+      projectPath: string;
+      options?: { timeout?: number };
+    }) => ipcRenderer.invoke(IPC.PROCESS.EXEC, req),
+  },
   app: {
+    openExternalUrl: (url: string) =>
+      ipcRenderer.invoke(IPC.APP.OPEN_EXTERNAL_URL, url),
     getNotificationSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_NOTIFICATION_SETTINGS),
     saveNotificationSettings: (settings: any) =>
       ipcRenderer.invoke(IPC.APP.SAVE_NOTIFICATION_SETTINGS, settings),
-    sendNotification: (title: string, body: string, silent: boolean) =>
-      ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent),
+    sendNotification: (title: string, body: string, silent: boolean, agentId?: string, projectId?: string) =>
+      ipcRenderer.invoke(IPC.APP.SEND_NOTIFICATION, title, body, silent, agentId, projectId),
+    onNotificationClicked: (callback: (agentId: string, projectId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, projectId: string) =>
+        callback(agentId, projectId);
+      ipcRenderer.on(IPC.APP.NOTIFICATION_CLICKED, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.NOTIFICATION_CLICKED, listener); };
+    },
     onOpenSettings: (callback: () => void) => {
       const listener = () => callback();
       ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);
@@ -257,6 +281,10 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    getHeadlessSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
+    saveHeadlessSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, string> }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_HEADLESS_SETTINGS, settings),
   },
 };
 

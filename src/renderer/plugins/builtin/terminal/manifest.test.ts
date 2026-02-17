@@ -17,8 +17,15 @@ describe('terminal plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.4', () => {
-    expect(manifest.engine.api).toBe(0.4);
+  it('targets API v0.5', () => {
+    expect(manifest.engine.api).toBe(0.5);
+  });
+
+  it('declares required permissions', () => {
+    expect(manifest.permissions).toEqual(
+      expect.arrayContaining(['terminal', 'commands', 'agents']),
+    );
+    expect(manifest.permissions).toHaveLength(3);
   });
 
   it('contributes help topics', () => {

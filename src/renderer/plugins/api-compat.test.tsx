@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { render, screen, act } from '@testing-library/react';
+import { vi } from 'vitest';
 import { PluginAPIProvider, usePluginAPI } from './plugin-context';
 import { createMockAPI } from './testing';
 import type { PluginAPI } from '../../shared/plugin-types';
@@ -33,7 +34,7 @@ function renderCanary(
   );
 }
 
-describe('Plugin API v0.4.0 canary tests', () => {
+describe('Plugin API core canary tests', () => {
   it('api.project.readTree() renders result', async () => {
     renderCanary(
       async (api) => {
@@ -153,5 +154,52 @@ describe('Plugin API v0.4.0 canary tests', () => {
     expect(api.context.mode).toBe('project');
     expect(api.context.projectId).toBe('test-project');
     expect(api.context.projectPath).toBe('/tmp/test-project');
+  });
+});
+
+describe('Plugin API v0.5.0 canary tests', () => {
+  it('api.files.forRoot exists as a function', () => {
+    const api = createMockAPI();
+    expect(typeof api.files.forRoot).toBe('function');
+  });
+
+  it('api.files.forRoot throws in stub (no real external root)', () => {
+    const api = createMockAPI();
+    expect(() => api.files.forRoot('wiki')).toThrow();
+  });
+
+  it('api.files.forRoot can be overridden in mock', () => {
+    const mockForRoot = vi.fn(() => createMockAPI().files);
+    const api = createMockAPI({
+      files: {
+        ...createMockAPI().files,
+        forRoot: mockForRoot,
+      },
+    });
+    const extFiles = api.files.forRoot('wiki');
+    expect(mockForRoot).toHaveBeenCalledWith('wiki');
+    expect(typeof extFiles.readFile).toBe('function');
+  });
+
+  it('permission-denied APIs surface exists in PluginAPI type', () => {
+    // Canary: these are the APIs that v0.5 gates behind permissions.
+    // They should all be defined on the mock.
+    const api = createMockAPI();
+    const gatedSurfaces: (keyof PluginAPI)[] = [
+      'project', 'projects', 'git', 'storage', 'ui', 'commands',
+      'events', 'agents', 'navigation', 'widgets', 'terminal',
+      'logging', 'files', 'process',
+    ];
+    for (const key of gatedSurfaces) {
+      expect(api[key]).toBeDefined();
+    }
+  });
+
+  it('always-available APIs remain accessible', () => {
+    const api = createMockAPI();
+    // context, settings, hub are never gated
+    expect(api.context.mode).toBe('project');
+    expect(typeof api.settings.get).toBe('function');
+    expect(typeof api.hub.refresh).toBe('function');
   });
 });

@@ -175,6 +175,57 @@ describe('hook-server', () => {
       expect(mockResolveOrchestrator).toHaveBeenCalledWith('/my/project', 'claude-code');
     });
 
+    it('injects event hint from URL path when hook_event_name is missing (GHCP format)', async () => {
+      const parseHookEvent = vi.fn((raw: Record<string, unknown>) => ({
+        kind: 'pre_tool' as const,
+        toolName: raw.toolName as string,
+        toolInput: undefined,
+        message: undefined,
+      }));
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent,
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      // POST to /hook/{agentId}/{eventHint} — simulates GHCP hook that doesn't include hook_event_name
+      await postToServer(port, '/hook/agent-1/preToolUse', {
+        toolName: 'shell',
+        toolArgs: '{"command": "ls"}',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      // parseHookEvent should receive the injected hook_event_name
+      expect(parseHookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ hook_event_name: 'preToolUse', toolName: 'shell' })
+      );
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:hook-event',
+        'agent-1',
+        expect.objectContaining({ kind: 'pre_tool', toolName: 'shell' })
+      );
+    });
+
+    it('does not override existing hook_event_name with URL hint', async () => {
+      const parseHookEvent = vi.fn(() => mockNormalized);
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent,
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      // URL says postToolUse, but payload says PreToolUse — payload wins
+      await postToServer(port, '/hook/agent-1/postToolUse', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(parseHookEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ hook_event_name: 'PreToolUse' })
+      );
+    });
+
     it('uses fallback verb when provider returns undefined', async () => {
       mockResolveOrchestrator.mockReturnValue({
         parseHookEvent: vi.fn(() => ({

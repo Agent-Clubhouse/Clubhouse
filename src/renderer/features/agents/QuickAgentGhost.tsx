@@ -1,10 +1,23 @@
 import { useState } from 'react';
 import { CompletedQuickAgent } from '../../../shared/types';
+import { TranscriptViewer } from './TranscriptViewer';
+import { getOrchestratorColor, getModelColor } from './orchestrator-colors';
 
 interface Props {
   completed: CompletedQuickAgent;
   onDismiss: () => void;
   onDelete?: () => void;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
 function relativeTime(timestamp: number): string {
@@ -18,7 +31,17 @@ function relativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-function ExitBadge({ exitCode }: { exitCode: number }) {
+function ExitBadge({ exitCode, cancelled }: { exitCode: number; cancelled?: boolean }) {
+  if (cancelled) {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+        </svg>
+        Cancelled
+      </span>
+    );
+  }
   if (exitCode === 0) {
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400">
@@ -54,58 +77,128 @@ function ExitBadge({ exitCode }: { exitCode: number }) {
 
 export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
   const [filesExpanded, setFilesExpanded] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const showToggle = completed.filesModified.length > 3;
   const visibleFiles = filesExpanded ? completed.filesModified : completed.filesModified.slice(0, 3);
 
   return (
     <div className="flex items-center justify-center h-full bg-ctp-base">
-      <div className="w-[360px] bg-ctp-mantle border border-surface-0 rounded-xl p-5 space-y-3">
+      <div className="w-[360px] max-w-full max-h-[80vh] bg-ctp-mantle border border-surface-0 rounded-xl p-5 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <ExitBadge exitCode={completed.exitCode} />
-          <span className="text-xs text-ctp-subtext0">{relativeTime(completed.completedAt)}</span>
+        <div className="flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <ExitBadge exitCode={completed.exitCode} cancelled={completed.cancelled} />
+            {completed.headless && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-400">
+                Headless
+              </span>
+            )}
+            {(() => {
+              const orchId = completed.orchestrator || 'claude-code';
+              const c = getOrchestratorColor(orchId);
+              return (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px]"
+                  style={{ backgroundColor: c.bg, color: c.text }}>
+                  {orchId}
+                </span>
+              );
+            })()}
+            {completed.model && (() => {
+              const c = getModelColor(completed.model);
+              return (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono"
+                  style={{ backgroundColor: c.bg, color: c.text }}>
+                  {completed.model}
+                </span>
+              );
+            })()}
+          </div>
+          <span className="text-xs text-ctp-subtext0 flex-shrink-0">{relativeTime(completed.completedAt)}</span>
         </div>
 
-        {/* Mission */}
-        <div>
-          <div className="text-xs text-ctp-subtext0 mb-1">Mission</div>
-          <p className="text-sm text-ctp-text">{completed.mission}</p>
-        </div>
+        {/* Scrollable content */}
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
+          {/* Cost / Duration / Tools row */}
+          {(completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {completed.durationMs != null && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
+                  {formatDuration(completed.durationMs)}
+                </span>
+              )}
+              {completed.toolsUsed && completed.toolsUsed.map((tool) => (
+                <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext0 font-mono">
+                  {tool}
+                </span>
+              ))}
+            </div>
+          )}
 
-        {/* Summary */}
-        <div>
-          <div className="text-xs text-ctp-subtext0 mb-1">Summary</div>
-          {completed.summary ? (
-            <p className="text-sm text-ctp-subtext1">{completed.summary}</p>
-          ) : (
-            <p className="text-sm text-ctp-overlay0 italic">Interrupted — no summary available</p>
+          {/* Mission */}
+          <div className="overflow-hidden">
+            <div className="text-xs text-ctp-subtext0 mb-1">Mission</div>
+            <p className="text-sm text-ctp-text line-clamp-3 break-words">{completed.mission}</p>
+          </div>
+
+          {/* Summary */}
+          <div>
+            <div className="text-xs text-ctp-subtext0 mb-1">Summary</div>
+            {completed.summary ? (
+              <p className="text-sm text-ctp-subtext1">{completed.summary}</p>
+            ) : (
+              <p className="text-sm text-ctp-overlay0 italic">Interrupted — no summary available</p>
+            )}
+          </div>
+
+          {/* Files modified */}
+          {completed.filesModified.length > 0 && (
+            <div>
+              <div className="text-xs text-ctp-subtext0 mb-1">
+                Files modified ({completed.filesModified.length})
+              </div>
+              <div className="space-y-0.5">
+                {visibleFiles.map((f) => (
+                  <div key={f} className="text-xs text-ctp-subtext1 font-mono truncate">{f}</div>
+                ))}
+              </div>
+              {showToggle && (
+                <button
+                  onClick={() => setFilesExpanded(!filesExpanded)}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 cursor-pointer"
+                >
+                  {filesExpanded ? 'Show less' : `+${completed.filesModified.length - 3} more`}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Transcript viewer for headless agents */}
+          {completed.headless && (
+            <div>
+              <button
+                onClick={() => setTranscriptOpen(!transcriptOpen)}
+                className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer flex items-center gap-1"
+              >
+                <svg
+                  width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className={`transition-transform ${transcriptOpen ? 'rotate-90' : ''}`}
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                {transcriptOpen ? 'Hide transcript' : 'View transcript'}
+              </button>
+              {transcriptOpen && (
+                <div className="mt-2 border border-surface-0 rounded-lg overflow-hidden bg-ctp-base">
+                  <TranscriptViewer agentId={completed.id} />
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Files modified */}
-        {completed.filesModified.length > 0 && (
-          <div>
-            <div className="text-xs text-ctp-subtext0 mb-1">
-              Files modified ({completed.filesModified.length})
-            </div>
-            <div className="space-y-0.5">
-              {visibleFiles.map((f) => (
-                <div key={f} className="text-xs text-ctp-subtext1 font-mono truncate">{f}</div>
-              ))}
-            </div>
-            {showToggle && (
-              <button
-                onClick={() => setFilesExpanded(!filesExpanded)}
-                className="text-xs text-indigo-400 hover:text-indigo-300 mt-1 cursor-pointer"
-              >
-                {filesExpanded ? 'Show less' : `+${completed.filesModified.length - 3} more`}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex gap-2 mt-2">
+        {/* Actions — pinned at bottom */}
+        <div className="flex gap-2 pt-3 flex-shrink-0">
           <button
             onClick={onDismiss}
             className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-0
@@ -139,7 +232,11 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
     >
       {/* Exit indicator */}
       <span className="flex-shrink-0">
-        {completed.exitCode === 0 ? (
+        {completed.cancelled ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        ) : completed.exitCode === 0 ? (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
@@ -158,9 +255,31 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="text-xs text-ctp-text truncate">{completed.mission}</div>
-        <div className="text-[10px] text-ctp-subtext0 truncate">
-          {completed.summary || 'Interrupted'}
-          {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
+        <div className="flex items-center gap-1 mt-0.5">
+          {(() => {
+            const orchId = completed.orchestrator || 'claude-code';
+            const c = getOrchestratorColor(orchId);
+            return (
+              <span className="inline-flex items-center px-1 py-0 rounded text-[9px] flex-shrink-0"
+                style={{ backgroundColor: c.bg, color: c.text }}>
+                {orchId}
+              </span>
+            );
+          })()}
+          {completed.model && (() => {
+            const c = getModelColor(completed.model);
+            return (
+              <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-mono flex-shrink-0"
+                style={{ backgroundColor: c.bg, color: c.text }}>
+                {completed.model}
+              </span>
+            );
+          })()}
+          <span className="text-[10px] text-ctp-subtext0 truncate">
+            {completed.summary || 'Interrupted'}
+            {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
+            {completed.durationMs != null && ` · ${formatDuration(completed.durationMs)}`}
+          </span>
         </div>
       </div>
 

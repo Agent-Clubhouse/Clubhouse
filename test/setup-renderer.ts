@@ -13,6 +13,7 @@ vi.stubGlobal('clubhouse', {
     deleteFile: asyncNoop,
     fileExists: async () => false,
     listDirectory: async () => [],
+    pickDirectory: async () => null,
   },
   agent: {
     list: () => [],
@@ -59,6 +60,17 @@ vi.stubGlobal('clubhouse', {
     getBuffer: async () => '',
     onData: () => ({ dispose: noop }),
     onExit: () => ({ dispose: noop }),
+  },
+  voice: {
+    checkModels: async () => [],
+    downloadModels: asyncNoop,
+    onDownloadProgress: () => noop,
+    transcribe: async () => '',
+    startSession: async () => ({ sessionId: '' }),
+    sendTurn: asyncNoop,
+    onTurnChunk: () => noop,
+    onTurnComplete: () => noop,
+    endSession: asyncNoop,
   },
   log: {
     write: noop,

@@ -1,5 +1,25 @@
 export type OrchestratorId = 'claude-code' | (string & {});
 
+export interface ProviderCapabilities {
+  headless: boolean;
+  structuredOutput: boolean;
+  hooks: boolean;
+  sessionResume: boolean;
+  permissions: boolean;
+}
+
+export interface OrchestratorInfo {
+  id: string;
+  displayName: string;
+  shortName: string;
+  badge?: string;
+  capabilities: ProviderCapabilities;
+  conventions?: {
+    configDir: string;
+    localInstructionsFile: string;
+  };
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -28,6 +48,7 @@ export interface Agent {
   model?: string;
   parentAgentId?: string;
   orchestrator?: OrchestratorId;
+  headless?: boolean;
 }
 
 export interface CompletedQuickAgent {
@@ -40,6 +61,14 @@ export interface CompletedQuickAgent {
   exitCode: number;
   completedAt: number;
   parentAgentId?: string;
+  headless?: boolean;
+  transcriptPath?: string;
+  costUsd?: number;
+  durationMs?: number;
+  toolsUsed?: string[];
+  orchestrator?: string;
+  model?: string;
+  cancelled?: boolean;
 }
 
 // --- Config inheritance types ---

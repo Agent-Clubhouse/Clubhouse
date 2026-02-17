@@ -17,8 +17,18 @@ describe('hub manifest', () => {
     expect(manifest.scope).toBe('dual');
   });
 
-  it('targets engine.api 0.4', () => {
-    expect(manifest.engine.api).toBe(0.4);
+  it('targets engine.api 0.5', () => {
+    expect(manifest.engine.api).toBe(0.5);
+  });
+
+  it('declares required permissions', () => {
+    expect(manifest.permissions).toEqual(
+      expect.arrayContaining([
+        'commands', 'storage', 'agents', 'projects',
+        'widgets', 'navigation', 'notifications',
+      ]),
+    );
+    expect(manifest.permissions).toHaveLength(7);
   });
 
   it('contributes help topics', () => {

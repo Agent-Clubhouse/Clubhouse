@@ -54,6 +54,9 @@ export const IPC = {
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
     GET_TOOL_VERB: 'agent:get-tool-verb',
     GET_SUMMARY_INSTRUCTION: 'agent:get-summary-instruction',
+    HEADLESS_EVENT: 'agent:headless-event',
+    READ_TRANSCRIPT: 'agent:read-transcript',
+    IS_HEADLESS_AGENT: 'agent:is-headless-agent',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
@@ -84,15 +87,19 @@ export const IPC = {
     STASH_POP: 'git:stash-pop',
   },
   APP: {
+    OPEN_EXTERNAL_URL: 'app:open-external-url',
     OPEN_SETTINGS: 'app:open-settings',
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
     SEND_NOTIFICATION: 'app:send-notification',
+    NOTIFICATION_CLICKED: 'app:notification-clicked',
     GET_THEME: 'app:get-theme',
     SAVE_THEME: 'app:save-theme',
     GET_ORCHESTRATOR_SETTINGS: 'app:get-orchestrator-settings',
     SAVE_ORCHESTRATOR_SETTINGS: 'app:save-orchestrator-settings',
     GET_VERSION: 'app:get-version',
+    GET_HEADLESS_SETTINGS: 'app:get-headless-settings',
+    SAVE_HEADLESS_SETTINGS: 'app:save-headless-settings',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
@@ -120,5 +127,8 @@ export const IPC = {
     SAVE_LOG_SETTINGS: 'log:save-settings',
     GET_LOG_NAMESPACES: 'log:get-namespaces',
     GET_LOG_PATH: 'log:get-path',
+  },
+  PROCESS: {
+    EXEC: 'process:exec',
   },
 } as const;

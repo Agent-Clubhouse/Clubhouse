@@ -5,6 +5,7 @@ import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
+import { appLog } from '../services/log-service';
 
 export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.LIST, () => {
@@ -101,9 +102,15 @@ export function registerProjectHandlers(): void {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     if (!fs.existsSync(clubhouseDir)) return true;
     try {
+      appLog('core:project', 'warn', 'Resetting project .clubhouse directory', {
+        meta: { projectPath },
+      });
       fs.rmSync(clubhouseDir, { recursive: true, force: true });
       return true;
-    } catch {
+    } catch (err) {
+      appLog('core:project', 'error', 'Failed to reset project directory', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
       return false;
     }
   });

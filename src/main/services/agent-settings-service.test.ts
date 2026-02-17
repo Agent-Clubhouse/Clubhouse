@@ -19,32 +19,31 @@ describe('readClaudeMd', () => {
     vi.clearAllMocks();
   });
 
-  it('reads from .claude/CLAUDE.local.md when available', () => {
+  it('reads from CLAUDE.md at project root', () => {
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('CLAUDE.local.md')) return '# Local content';
+      if (String(p) === path.join(WORKTREE, 'CLAUDE.md')) return '# Project content';
       throw new Error('not found');
     });
 
     const result = readClaudeMd(WORKTREE);
-    expect(result).toBe('# Local content');
+    expect(result).toBe('# Project content');
     expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'CLAUDE.local.md'),
+      path.join(WORKTREE, 'CLAUDE.md'),
       'utf-8',
     );
   });
 
-  it('falls back to CLAUDE.md when .claude/CLAUDE.local.md does not exist', () => {
+  it('does not read from .claude/CLAUDE.local.md', () => {
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p).endsWith('CLAUDE.local.md')) throw new Error('not found');
-      if (String(p).endsWith('CLAUDE.md')) return '# Legacy content';
+      if (String(p).includes('CLAUDE.local.md')) return '# Local content';
       throw new Error('not found');
     });
 
     const result = readClaudeMd(WORKTREE);
-    expect(result).toBe('# Legacy content');
+    expect(result).toBe('');
   });
 
-  it('returns empty string when neither file exists', () => {
+  it('returns empty string when file does not exist', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => {
       throw new Error('not found');
     });
@@ -59,22 +58,17 @@ describe('writeClaudeMd', () => {
     vi.clearAllMocks();
   });
 
-  it('writes to .claude/CLAUDE.local.md', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
+  it('writes to CLAUDE.md at project root', () => {
     writeClaudeMd(WORKTREE, '# New content');
     expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude', 'CLAUDE.local.md'),
+      path.join(WORKTREE, 'CLAUDE.md'),
       '# New content',
       'utf-8',
     );
   });
 
-  it('creates .claude directory if missing', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+  it('does not create .claude directory', () => {
     writeClaudeMd(WORKTREE, '# Content');
-    expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude'),
-      { recursive: true },
-    );
+    expect(vi.mocked(fs.mkdirSync)).not.toHaveBeenCalled();
   });
 });

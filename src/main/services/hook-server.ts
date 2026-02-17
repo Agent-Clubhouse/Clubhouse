@@ -2,6 +2,7 @@ import * as http from 'http';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
+import { appLog } from './log-service';
 
 let server: any = null;
 let serverPort = 0;
@@ -32,7 +33,11 @@ export function start(): Promise<number> {
         return;
       }
 
-      const agentId = req.url.slice('/hook/'.length);
+      // URL: /hook/{agentId} or /hook/{agentId}/{eventHint}
+      const urlPath = req.url.slice('/hook/'.length);
+      const slashIdx = urlPath.indexOf('/');
+      const agentId = slashIdx === -1 ? urlPath : urlPath.slice(0, slashIdx);
+      const eventHint = slashIdx === -1 ? undefined : urlPath.slice(slashIdx + 1);
       if (!agentId) {
         res.writeHead(400);
         res.end();
@@ -47,6 +52,11 @@ export function start(): Promise<number> {
 
         try {
           const raw = JSON.parse(body);
+          // Inject event type hint from URL when not present in payload
+          // (GHCP doesn't include hook_event_name in stdin, unlike Claude Code)
+          if (eventHint && !raw.hook_event_name) {
+            raw.hook_event_name = eventHint;
+          }
           const projectPath = getAgentProjectPath(agentId);
           const orchestrator = getAgentOrchestrator(agentId);
 
@@ -54,7 +64,12 @@ export function start(): Promise<number> {
             // Validate nonce to reject events from external CLI instances
             const expectedNonce = getAgentNonce(agentId);
             const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
-            if (expectedNonce && receivedNonce !== expectedNonce) return;
+            if (expectedNonce && receivedNonce !== expectedNonce) {
+              appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
+                meta: { agentId },
+              });
+              return;
+            }
 
             const provider = resolveOrchestrator(projectPath, orchestrator);
             const normalized = provider.parseHookEvent(raw);
@@ -77,8 +92,10 @@ export function start(): Promise<number> {
               }
             }
           }
-        } catch {
-          // Ignore malformed JSON
+        } catch (err) {
+          appLog('core:hook-server', 'error', 'Failed to parse hook event', {
+            meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+          });
         }
       });
     });
@@ -87,14 +104,23 @@ export function start(): Promise<number> {
       const addr = server?.address();
       if (addr && typeof addr === 'object') {
         serverPort = addr.port;
-        console.log(`Hook server listening on 127.0.0.1:${serverPort}`);
+        appLog('core:hook-server', 'info', `Hook server listening on 127.0.0.1:${serverPort}`, {
+          meta: { port: serverPort },
+        });
         resolve(serverPort);
       } else {
-        reject(new Error('Failed to get hook server address'));
+        const err = new Error('Failed to get hook server address');
+        appLog('core:hook-server', 'error', err.message);
+        reject(err);
       }
     });
 
-    server.on('error', reject);
+    server.on('error', (err: Error) => {
+      appLog('core:hook-server', 'error', 'Hook server error', {
+        meta: { error: err.message, stack: err.stack },
+      });
+      reject(err);
+    });
   });
 
   return readyPromise;

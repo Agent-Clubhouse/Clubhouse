@@ -97,6 +97,38 @@ export function PluginSettingsRenderer({ pluginId, settings, scope }: Props) {
           );
         }
 
+        if (setting.type === 'directory') {
+          return (
+            <div key={setting.key} className="py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
+              <div className="text-sm text-ctp-text mb-1">{setting.label}</div>
+              {setting.description && (
+                <div className="text-xs text-ctp-subtext0 mb-2">{setting.description}</div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={String(value ?? '')}
+                  onChange={(e) => handleChange(setting.key, e.target.value)}
+                  placeholder="/path/to/directory"
+                  className="flex-1 bg-surface-0 text-ctp-text text-sm px-2 py-1.5 rounded border border-surface-2 outline-none focus:border-ctp-accent"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const picked = await window.clubhouse.project.pickDirectory();
+                    if (picked != null) {
+                      handleChange(setting.key, picked);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-sm bg-surface-0 text-ctp-text rounded border border-surface-2 hover:bg-surface-1 whitespace-nowrap"
+                >
+                  Browse...
+                </button>
+              </div>
+            </div>
+          );
+        }
+
         // Default: string input
         return (
           <div key={setting.key} className="py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">

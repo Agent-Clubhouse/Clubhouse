@@ -19,8 +19,8 @@ function useNavigateToAgent() {
   return useCallback(
     (projectId: string, agentId: string) => {
       setActiveProject(projectId);
-      setActiveAgent(agentId);
-      setExplorerTab('agents');
+      setActiveAgent(agentId, projectId);
+      setExplorerTab('agents', projectId);
     },
     [setActiveProject, setActiveAgent, setExplorerTab]
   );
@@ -270,7 +270,7 @@ function ProjectCard({ project }: { project: Project }) {
       if (tab === 'settings') {
         toggleSettings();
       } else {
-        setExplorerTab(tab);
+        setExplorerTab(tab, project.id);
       }
     },
     [project.id, setActiveProject, setExplorerTab, toggleSettings]

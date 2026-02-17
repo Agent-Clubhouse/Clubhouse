@@ -231,7 +231,9 @@ export function ExplorerRail() {
               <div className="absolute -top-0.5 left-3 right-3 h-0.5 bg-indigo-500 rounded-full" />
             )}
             <button
-              onClick={() => setExplorerTab(tab.id)}
+              onClick={() => setExplorerTab(tab.id, activeProjectId ?? undefined)}
+              data-testid={`explorer-tab-${tab.id}`}
+              data-active={explorerTab === tab.id}
               className={`
                 w-full px-3 py-3 text-left text-sm flex items-center gap-3
                 transition-colors duration-100 cursor-pointer

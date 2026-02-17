@@ -64,6 +64,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       showError: noop,
       showConfirm: async () => false,
       showInput: asyncNull,
+      openExternalUrl: asyncNoop,
     },
     commands: {
       register: () => ({ dispose: noop }),
@@ -130,6 +131,10 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       mkdir: asyncNoop,
       delete: asyncNoop,
       showInFolder: asyncNoop,
+      forRoot: () => { throw new Error('forRoot not available in test stub'); },
+    },
+    process: {
+      exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
     },
     context: {
       mode: 'project',

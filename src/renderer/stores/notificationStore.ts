@@ -1,11 +1,41 @@
 import { create } from 'zustand';
 import { NotificationSettings } from '../../shared/types';
+import { useAgentStore } from './agentStore';
+import { useUIStore } from './uiStore';
+import { useProjectStore } from './projectStore';
+import { useProjectHubStore, useAppHubStore } from '../plugins/builtin/hub/main';
+import { collectLeaves } from '../plugins/builtin/hub/pane-tree';
+
+function isAgentVisible(agentId: string, projectId: string): boolean {
+  if (!document.hasFocus()) return false;
+
+  const { explorerTab } = useUIStore.getState();
+  const { activeProjectId } = useProjectStore.getState();
+
+  // Agent is selected in the agents panel
+  if (explorerTab === 'agents' && activeProjectId === projectId) {
+    const { activeAgentId } = useAgentStore.getState();
+    if (activeAgentId === agentId) return true;
+  }
+
+  // Agent is in a visible hub pane
+  if (explorerTab === 'plugin:hub' && activeProjectId === projectId) {
+    const leaves = collectLeaves(useProjectHubStore.getState().paneTree);
+    if (leaves.some((l) => l.agentId === agentId)) return true;
+  }
+  if (explorerTab === 'plugin:app:hub' || explorerTab.startsWith('plugin:app:hub')) {
+    const leaves = collectLeaves(useAppHubStore.getState().paneTree);
+    if (leaves.some((l) => l.agentId === agentId)) return true;
+  }
+
+  return false;
+}
 
 interface NotificationState {
   settings: NotificationSettings | null;
   loadSettings: () => Promise<void>;
   saveSettings: (partial: Partial<NotificationSettings>) => Promise<void>;
-  checkAndNotify: (agentName: string, eventKind: string, detail?: string) => void;
+  checkAndNotify: (agentName: string, eventKind: string, detail?: string, agentId?: string, projectId?: string) => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set, get) => ({
@@ -24,9 +54,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     await window.clubhouse.app.saveNotificationSettings(merged);
   },
 
-  checkAndNotify: (agentName, eventKind, detail) => {
+  checkAndNotify: (agentName, eventKind, detail, agentId, projectId) => {
     const s = get().settings;
     if (!s || !s.enabled) return;
+
+    // Suppress notifications for agents currently visible on screen
+    if (agentId && projectId && isAgentVisible(agentId, projectId)) return;
 
     const silent = !s.playSound;
     let title = '';
@@ -48,6 +81,6 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       return;
     }
 
-    window.clubhouse.app.sendNotification(title, body, silent);
+    window.clubhouse.app.sendNotification(title, body, silent, agentId, projectId);
   },
 }));

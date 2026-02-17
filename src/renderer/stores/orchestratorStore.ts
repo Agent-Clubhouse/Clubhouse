@@ -1,10 +1,5 @@
 import { create } from 'zustand';
-
-interface OrchestratorInfo {
-  id: string;
-  displayName: string;
-  badge?: string;
-}
+import type { ProviderCapabilities, OrchestratorInfo } from '../../shared/types';
 
 interface OrchestratorState {
   enabled: string[];
@@ -14,6 +9,7 @@ interface OrchestratorState {
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
   checkAllAvailability: () => Promise<void>;
   getEnabledOrchestrators: () => OrchestratorInfo[];
+  getCapabilities: (orchestratorId: string) => ProviderCapabilities | undefined;
 }
 
 export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
@@ -74,5 +70,9 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
   getEnabledOrchestrators: () => {
     const { enabled, allOrchestrators } = get();
     return allOrchestrators.filter((o) => enabled.includes(o.id));
+  },
+
+  getCapabilities: (orchestratorId: string) => {
+    return get().allOrchestrators.find((o) => o.id === orchestratorId)?.capabilities;
   },
 }));

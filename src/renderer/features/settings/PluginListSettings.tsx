@@ -1,7 +1,54 @@
+import { useState, useRef, useEffect } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { activatePlugin, deactivatePlugin } from '../../plugins/plugin-loader';
+import type { PluginPermission, PluginRegistryEntry } from '../../../shared/plugin-types';
+import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
+
+function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const permissions = entry.manifest.permissions;
+  if (!permissions || permissions.length === 0) return null;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
+        title="View permissions"
+      >
+        i
+      </button>
+      {open && (
+        <div className="absolute z-50 top-6 right-0 w-64 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg">
+          <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
+          <div className="space-y-1.5">
+            {permissions.map((perm: PluginPermission) => (
+              <div key={perm}>
+                <span className="text-xs font-mono text-ctp-accent">{perm}</span>
+                <p className="text-[10px] text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function PluginListSettings() {
   const plugins = usePluginStore((s) => s.plugins);
@@ -63,6 +110,10 @@ export function PluginListSettings() {
       } catch { /* ignore */ }
     } else {
       if (isAppContext) {
+        const entry = usePluginStore.getState().plugins[pluginId];
+        if (entry?.status === 'disabled') {
+          usePluginStore.getState().setPluginStatus(pluginId, 'registered');
+        }
         enableApp(pluginId);
         await activatePlugin(pluginId);
       } else if (projectId) {
@@ -124,6 +175,7 @@ export function PluginListSettings() {
                       <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
                       <span className="text-xs text-ctp-subtext0">v{entry.manifest.version}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
+                      <PermissionInfoPopup entry={entry} />
                       {entry.source === 'builtin' && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Built-in</span>
                       )}

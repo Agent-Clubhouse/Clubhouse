@@ -5,7 +5,16 @@ import type {
   PluginStatus,
   PluginManifest,
   PluginSource,
+  PluginPermission,
 } from '../../shared/plugin-types';
+
+export interface PermissionViolation {
+  pluginId: string;
+  pluginName: string;
+  permission: PluginPermission;
+  apiName: string;
+  timestamp: number;
+}
 
 interface PluginState {
   plugins: Record<string, PluginRegistryEntry>;
@@ -14,6 +23,7 @@ interface PluginState {
   modules: Record<string, PluginModule>;
   safeModeActive: boolean;
   pluginSettings: Record<string, Record<string, unknown>>; // "projectId:pluginId" or "app:pluginId" -> settings
+  permissionViolations: PermissionViolation[];
 
   // Actions
   registerPlugin: (manifest: PluginManifest, source: PluginSource, pluginPath: string, status?: PluginStatus, error?: string) => void;
@@ -29,6 +39,8 @@ interface PluginState {
   setPluginSetting: (scope: string, pluginId: string, key: string, value: unknown) => void;
   loadPluginSettings: (settingsKey: string, settings: Record<string, unknown>) => void;
   setSafeModeActive: (active: boolean) => void;
+  recordPermissionViolation: (violation: PermissionViolation) => void;
+  clearPermissionViolation: (pluginId: string) => void;
 }
 
 export const usePluginStore = create<PluginState>((set) => ({
@@ -38,6 +50,7 @@ export const usePluginStore = create<PluginState>((set) => ({
   modules: {},
   safeModeActive: false,
   pluginSettings: {},
+  permissionViolations: [],
 
   registerPlugin: (manifest, source, pluginPath, status = 'registered', error) =>
     set((s) => ({
@@ -137,4 +150,14 @@ export const usePluginStore = create<PluginState>((set) => ({
 
   setSafeModeActive: (active) =>
     set({ safeModeActive: active }),
+
+  recordPermissionViolation: (violation) =>
+    set((s) => ({
+      permissionViolations: [...s.permissionViolations, violation],
+    })),
+
+  clearPermissionViolation: (pluginId) =>
+    set((s) => ({
+      permissionViolations: s.permissionViolations.filter((v) => v.pluginId !== pluginId),
+    })),
 }));

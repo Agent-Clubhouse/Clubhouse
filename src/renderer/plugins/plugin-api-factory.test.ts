@@ -1,12 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createPluginAPI } from './plugin-api-factory';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createPluginAPI, _resetEnforcedViolations } from './plugin-api-factory';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
 import { usePluginStore } from './plugin-store';
 import { useAgentStore } from '../stores/agentStore';
 import { useUIStore } from '../stores/uiStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
-import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
+import type { PluginContext, PluginAPI, PluginManifest } from '../../shared/plugin-types';
+import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
 // Mock window.clubhouse for IPC calls
 const mockLog = {
@@ -52,6 +53,10 @@ const mockPty = {
   onExit: vi.fn(),
 };
 
+const mockProcess = {
+  exec: vi.fn(),
+};
+
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
@@ -61,6 +66,7 @@ Object.defineProperty(globalThis, 'window', {
       agent: mockAgent,
       pty: mockPty,
       log: mockLog,
+      process: mockProcess,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -81,6 +87,21 @@ function makeCtx(overrides?: Partial<PluginContext>): PluginContext {
   };
 }
 
+/** Manifest granting all permissions — used when testing API behavior (not permission gating). */
+const allPermsManifest: PluginManifest = {
+  id: 'test-plugin',
+  name: 'Test Plugin',
+  version: '1.0.0',
+  engine: { api: 0.5 },
+  scope: 'project',
+  permissions: [...ALL_PLUGIN_PERMISSIONS],
+  contributes: { help: {} },
+};
+
+function makeAllPermsManifest(overrides?: Partial<PluginManifest>): PluginManifest {
+  return { ...allPermsManifest, ...overrides };
+}
+
 describe('plugin-api-factory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,7 +119,7 @@ describe('plugin-api-factory', () => {
 
   describe('createPluginAPI', () => {
     it('returns an object with all required API namespaces', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.project).toBeDefined();
       expect(api.projects).toBeDefined();
       expect(api.git).toBeDefined();
@@ -114,6 +135,7 @@ describe('plugin-api-factory', () => {
       expect(api.terminal).toBeDefined();
       expect(api.logging).toBeDefined();
       expect(api.files).toBeDefined();
+      expect(api.process).toBeDefined();
       expect(api.context).toBeDefined();
     });
   });
@@ -124,7 +146,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx({ scope: 'project' }));
+      api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
     });
 
     it('provides a working project API', () => {
@@ -151,7 +173,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
     });
 
     it('provides a working projects API', () => {
@@ -179,7 +201,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('readFile calls window.clubhouse.file.read with full path', async () => {
@@ -228,7 +250,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('project storage passes correct scope and projectPath', async () => {
@@ -270,7 +292,7 @@ describe('plugin-api-factory', () => {
 
   describe('storage API — projectLocal', () => {
     it('read passes scope project-local with projectPath', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.read('my-key');
       expect(mockPlugin.storageRead).toHaveBeenCalledWith({
         pluginId: 'test-plugin',
@@ -281,7 +303,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('write passes scope project-local with projectPath', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.write('key', { data: true });
       expect(mockPlugin.storageWrite).toHaveBeenCalledWith({
         pluginId: 'test-plugin',
@@ -293,7 +315,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('delete passes scope project-local', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.projectLocal.delete('old-key');
       expect(mockPlugin.storageDelete).toHaveBeenCalledWith(
         expect.objectContaining({ pluginId: 'test-plugin', key: 'old-key', scope: 'project-local' }),
@@ -302,7 +324,7 @@ describe('plugin-api-factory', () => {
 
     it('list passes scope project-local', async () => {
       mockPlugin.storageList.mockResolvedValue(['a', 'b']);
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const keys = await api.storage.projectLocal.list();
       expect(keys).toEqual(['a', 'b']);
       expect(mockPlugin.storageList).toHaveBeenCalledWith(
@@ -311,7 +333,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('projectLocal is distinct from project scope (separate IPC calls)', async () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       await api.storage.project.read('k');
       await api.storage.projectLocal.read('k');
       expect(mockPlugin.storageRead).toHaveBeenCalledTimes(2);
@@ -324,7 +346,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('app-scoped plugin passes undefined projectPath for projectLocal', async () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       await api.storage.projectLocal.read('k');
       expect(mockPlugin.storageRead).toHaveBeenCalledWith(
         expect.objectContaining({ scope: 'project-local', projectPath: undefined }),
@@ -338,7 +360,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('register prefixes command id with pluginId', () => {
@@ -373,7 +395,7 @@ describe('plugin-api-factory', () => {
 
   describe('events API', () => {
     it('on subscribes to pluginEventBus', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const handler = vi.fn();
       api.events.on('agent:completed', handler);
       pluginEventBus.emit('agent:completed', { id: 'a1' });
@@ -381,7 +403,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('on returns a disposable that unsubscribes', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const handler = vi.fn();
       const d = api.events.on('test', handler);
       d.dispose();
@@ -397,13 +419,13 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { theme: 'dark', size: 14 } },
       });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.get('theme')).toBe('dark');
       expect(api.settings.get('size')).toBe(14);
     });
 
     it('get returns undefined for missing key', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.get('nonexistent')).toBeUndefined();
     });
 
@@ -411,12 +433,12 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
       });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.getAll()).toEqual({ a: 1, b: 2 });
     });
 
     it('getAll returns empty object when no settings exist', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.settings.getAll()).toEqual({});
     });
 
@@ -424,12 +446,12 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'app:test-plugin': { mode: 'zen' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined }), undefined, allPermsManifest);
       expect(api.settings.get('mode')).toBe('zen');
     });
 
     it('onChange returns a disposable', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const cb = vi.fn();
       const d = api.settings.onChange(cb);
       expect(typeof d.dispose).toBe('function');
@@ -443,7 +465,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('showNotice logs to console', () => {
@@ -467,11 +489,10 @@ describe('plugin-api-factory', () => {
       expect((window as any).confirm).toHaveBeenCalledWith('Are you sure?');
     });
 
-    it('showInput delegates to window.prompt', async () => {
-      (window as any).prompt = vi.fn(() => 'user input');
-      const result = await api.ui.showInput('Enter name:', 'default');
-      expect(result).toBe('user input');
-      expect((window as any).prompt).toHaveBeenCalledWith('Enter name:', 'default');
+    it('showInput returns a promise', async () => {
+      // showInput now renders a DOM-based modal; in test env verify it returns a promise
+      const promise = api.ui.showInput('Enter name:', 'default');
+      expect(promise).toBeInstanceOf(Promise);
     });
   });
 
@@ -479,7 +500,7 @@ describe('plugin-api-factory', () => {
 
   describe('hub API', () => {
     it('refresh is callable without error', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(() => api.hub.refresh()).not.toThrow();
     });
   });
@@ -488,43 +509,43 @@ describe('plugin-api-factory', () => {
 
   describe('context', () => {
     it('reflects project mode for project-scoped plugin', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'project' }));
+      const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
       expect(api.context.projectId).toBe('proj-1');
       expect(api.context.projectPath).toBe('/projects/my-project');
     });
 
     it('reflects app mode for app-scoped plugin', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('app');
       expect(api.context.projectId).toBeUndefined();
       expect(api.context.projectPath).toBeUndefined();
     });
 
     it('reflects explicit mode parameter', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(api.context.mode).toBe('app');
     });
 
     it('defaults to project mode for dual-scoped without explicit mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }));
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
     });
 
     it('preserves projectId/projectPath in context even for dual app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: 'proj-1', projectPath: '/p' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: 'proj-1', projectPath: '/p' }), 'app', allPermsManifest);
       expect(api.context.mode).toBe('app');
       expect(api.context.projectId).toBe('proj-1');
     });
 
     it('project-scoped plugin always gets project mode regardless of mode arg', () => {
       // mode param is ignored for single-scope plugins — they use scope-derived mode
-      const api = createPluginAPI(makeCtx({ scope: 'project' }));
+      const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('project');
     });
 
     it('app-scoped plugin always gets app mode regardless of mode arg', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(api.context.mode).toBe('app');
     });
   });
@@ -533,34 +554,34 @@ describe('plugin-api-factory', () => {
 
   describe('dual-scoped plugin', () => {
     it('provides project API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.project.projectPath).toBe('/projects/my-project');
       expect(api.project.projectId).toBe('proj-1');
     });
 
     it('throws when calling project API methods in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.project.readFile('x')).toThrow('not available');
     });
 
     it('does not throw on property access of unavailable project API in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.project.projectPath).not.toThrow();
     });
 
     it('provides projects API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(typeof api.projects.list).toBe('function');
     });
 
     it('provides projects API in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof api.projects.list).toBe('function');
       expect(typeof api.projects.getActive).toBe('function');
     });
 
     it('provides git API in project mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(typeof api.git.status).toBe('function');
       expect(typeof api.git.log).toBe('function');
       expect(typeof api.git.currentBranch).toBe('function');
@@ -568,28 +589,28 @@ describe('plugin-api-factory', () => {
     });
 
     it('throws when calling git API methods in app mode', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(() => api.git.status()).toThrow('not available');
       expect(() => api.git.log()).toThrow('not available');
     });
 
     it('agents API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.agents.list).toBe('function');
       expect(typeof appApi.agents.list).toBe('function');
     });
 
     it('navigation API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.navigation.focusAgent).toBe('function');
       expect(typeof appApi.navigation.focusAgent).toBe('function');
     });
 
     it('storage API works in both modes', () => {
-      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
-      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+      const projectApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
+      const appApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
       expect(typeof projectApi.storage.project.read).toBe('function');
       expect(typeof appApi.storage.global.read).toBe('function');
     });
@@ -602,7 +623,7 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { key1: 'val1' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.get('key1')).toBe('val1');
     });
 
@@ -610,7 +631,7 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'app:test-plugin': { key2: 'val2' } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: undefined }), 'app');
+      const api = createPluginAPI(makeCtx({ scope: 'dual', projectId: undefined }), 'app', allPermsManifest);
       expect(api.settings.get('key2')).toBe('val2');
     });
 
@@ -618,17 +639,17 @@ describe('plugin-api-factory', () => {
       usePluginStore.setState({
         pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
       });
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.getAll()).toEqual({ a: 1, b: 2 });
     });
 
     it('settings getAll returns empty for dual scope with no saved settings', () => {
-      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
       expect(api.settings.getAll()).toEqual({});
     });
 
     it('multiple onChange handlers can coexist and dispose independently', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       const cb1 = vi.fn();
       const cb2 = vi.fn();
       const d1 = api.settings.onChange(cb1);
@@ -643,14 +664,14 @@ describe('plugin-api-factory', () => {
 
   describe('navigation API', () => {
     it('focusAgent sets explorer tab to agents and active agent', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('agent-123');
       expect(useUIStore.getState().explorerTab).toBe('agents');
       expect(useAgentStore.getState().activeAgentId).toBe('agent-123');
     });
 
     it('focusAgent with non-existent agent still sets state', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('nonexistent-id');
       expect(useUIStore.getState().explorerTab).toBe('agents');
       expect(useAgentStore.getState().activeAgentId).toBe('nonexistent-id');
@@ -658,25 +679,25 @@ describe('plugin-api-factory', () => {
 
     it('focusAgent overrides any previously set tab', () => {
       useUIStore.setState({ explorerTab: 'settings' });
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('a1');
       expect(useUIStore.getState().explorerTab).toBe('agents');
     });
 
     it('setExplorerTab sets the explorer tab', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.setExplorerTab('settings');
       expect(useUIStore.getState().explorerTab).toBe('settings');
     });
 
     it('setExplorerTab to plugin tab works', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.setExplorerTab('plugin:my-plugin');
       expect(useUIStore.getState().explorerTab).toBe('plugin:my-plugin');
     });
 
     it('calling focusAgent twice updates agent each time', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       api.navigation.focusAgent('a1');
       expect(useAgentStore.getState().activeAgentId).toBe('a1');
       api.navigation.focusAgent('a2');
@@ -688,7 +709,7 @@ describe('plugin-api-factory', () => {
 
   describe('widgets API', () => {
     it('provides all four widget component types', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api.widgets.AgentTerminal).toBeDefined();
       expect(api.widgets.SleepingAgent).toBeDefined();
       expect(api.widgets.AgentAvatar).toBeDefined();
@@ -696,7 +717,7 @@ describe('plugin-api-factory', () => {
     });
 
     it('widget components are callable functions (stubs in test)', () => {
-      const api = createPluginAPI(makeCtx());
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(typeof api.widgets.AgentTerminal).toBe('function');
       expect(typeof api.widgets.SleepingAgent).toBe('function');
       expect(typeof api.widgets.AgentAvatar).toBe('function');
@@ -704,15 +725,15 @@ describe('plugin-api-factory', () => {
     });
 
     it('widgets are cached across multiple createPluginAPI calls', () => {
-      const api1 = createPluginAPI(makeCtx());
-      const api2 = createPluginAPI(makeCtx());
+      const api1 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       expect(api1.widgets.AgentTerminal).toBe(api2.widgets.AgentTerminal);
       expect(api1.widgets.SleepingAgent).toBe(api2.widgets.SleepingAgent);
     });
 
     it('widgets object is same reference across calls (cached)', () => {
-      const api1 = createPluginAPI(makeCtx());
-      const api2 = createPluginAPI(makeCtx());
+      const api1 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       // Same cache object
       expect(api1.widgets).toBe(api2.widgets);
     });
@@ -775,7 +796,7 @@ describe('plugin-api-factory', () => {
 
     describe('list()', () => {
       it('returns enriched agent info with all fields', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const agents = api.agents.list();
         const alpha = agents.find((a) => a.id === 'agent-1')!;
         expect(alpha).toEqual({
@@ -796,38 +817,38 @@ describe('plugin-api-factory', () => {
       });
 
       it('includes parentAgentId for child agents', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
         expect(beta.parentAgentId).toBe('agent-1');
       });
 
       it('filters agents by project context', () => {
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         const agents = api.agents.list();
         expect(agents.every((a) => a.projectId === 'proj-1')).toBe(true);
         expect(agents.find((a) => a.id === 'agent-3')).toBeUndefined();
       });
 
       it('lists all agents when no projectId in context', () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         const agents = api.agents.list();
         expect(agents).toHaveLength(3);
       });
 
       it('returns empty array when no agents exist', () => {
         useAgentStore.setState({ agents: {} });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.list()).toEqual([]);
       });
 
       it('includes worktreePath when present on store agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
         expect(alpha.worktreePath).toBe('.clubhouse/agents/alpha');
       });
 
       it('returns worktreePath as undefined when not set on store agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const beta = api.agents.list().find((a) => a.id === 'agent-2')!;
         expect(beta.worktreePath).toBeUndefined();
       });
@@ -842,14 +863,14 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent').mockResolvedValue();
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('agent-1');
         expect(killSpy).toHaveBeenCalledWith('agent-1', '/projects/p1');
       });
 
       it('does nothing when agent does not exist', async () => {
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('nonexistent');
         expect(killSpy).not.toHaveBeenCalled();
       });
@@ -858,7 +879,7 @@ describe('plugin-api-factory', () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
         const killSpy = vi.spyOn(useAgentStore.getState(), 'killAgent').mockResolvedValue();
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.kill('agent-1');
         expect(killSpy).toHaveBeenCalledWith('agent-1', undefined);
       });
@@ -868,19 +889,19 @@ describe('plugin-api-factory', () => {
 
     describe('resume()', () => {
       it('throws when agent does not exist', async () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('nonexistent')).rejects.toThrow('Can only resume durable agents');
       });
 
       it('throws when agent is a quick agent', async () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-2')).rejects.toThrow('Can only resume durable agents');
       });
 
       it('throws when project not found for agent', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-1')).rejects.toThrow('Project not found');
       });
 
@@ -890,7 +911,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.listDurable.mockResolvedValue([]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.resume('agent-1')).rejects.toThrow('Durable config not found');
       });
 
@@ -902,7 +923,7 @@ describe('plugin-api-factory', () => {
         const durableConfig = { id: 'agent-1', name: 'Alpha', color: 'emerald' };
         mockAgent.listDurable.mockResolvedValue([durableConfig]);
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('agent-1');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.resume('agent-1');
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/p1', durableConfig, true);
       });
@@ -923,7 +944,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(1);
         expect(completed[0].name).toBe('Gamma');
@@ -933,7 +954,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns empty when no project context', () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         expect(api.agents.listCompleted()).toEqual([]);
       });
 
@@ -949,7 +970,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         const completed = api.agents.listCompleted('proj-2');
         expect(completed).toHaveLength(1);
         expect(completed[0].id).toBe('q-2');
@@ -957,7 +978,7 @@ describe('plugin-api-factory', () => {
 
       it('returns empty for project with no completed agents', () => {
         useQuickAgentStore.setState({ completedAgents: {} });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.listCompleted()).toEqual([]);
       });
 
@@ -973,7 +994,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.listCompleted()[0].parentAgentId).toBe('parent-1');
       });
 
@@ -987,7 +1008,7 @@ describe('plugin-api-factory', () => {
             ],
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(3);
         expect(completed.map((c) => c.name)).toEqual(['A', 'B', 'C']);
@@ -999,13 +1020,13 @@ describe('plugin-api-factory', () => {
     describe('dismissCompleted()', () => {
       it('delegates to quick agent store', () => {
         const spy = vi.spyOn(useQuickAgentStore.getState(), 'dismissCompleted');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         api.agents.dismissCompleted('proj-1', 'q-1');
         expect(spy).toHaveBeenCalledWith('proj-1', 'q-1');
       });
 
       it('does not throw for non-existent agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(() => api.agents.dismissCompleted('proj-1', 'nonexistent')).not.toThrow();
       });
     });
@@ -1014,7 +1035,7 @@ describe('plugin-api-factory', () => {
 
     describe('getDetailedStatus()', () => {
       it('returns full status for agent with detailed status', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status).toEqual({
           state: 'working',
@@ -1024,17 +1045,17 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns null for agent without detailed status', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('agent-2')).toBeNull();
       });
 
       it('returns null for completely unknown agent', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('nonexistent')).toBeNull();
       });
 
       it('omits timestamp from returned status (not in plugin type)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status).not.toHaveProperty('timestamp');
       });
@@ -1045,7 +1066,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'idle', message: 'Thinking', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status!.toolName).toBeUndefined();
         expect(status!.state).toBe('idle');
@@ -1057,7 +1078,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'needs_permission', message: 'Needs permission', toolName: 'Bash', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const status = api.agents.getDetailedStatus('agent-1');
         expect(status!.state).toBe('needs_permission');
         expect(status!.toolName).toBe('Bash');
@@ -1069,7 +1090,7 @@ describe('plugin-api-factory', () => {
             'agent-1': { state: 'tool_error', message: 'Edit failed', toolName: 'Edit', timestamp: Date.now() },
           },
         });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.agents.getDetailedStatus('agent-1')!.state).toBe('tool_error');
       });
     });
@@ -1078,7 +1099,7 @@ describe('plugin-api-factory', () => {
 
     describe('onStatusChange()', () => {
       it('fires callback on agent status transition', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1093,7 +1114,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires for each agent that changes in a single update', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1111,7 +1132,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('does not fire for unchanged statuses', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1120,7 +1141,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('does not fire for new agents (no previous status)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1138,7 +1159,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires for sequential status changes', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onStatusChange(callback);
 
@@ -1163,7 +1184,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('dispose prevents further callbacks', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         const disposable = api.agents.onStatusChange(callback);
 
@@ -1180,21 +1201,21 @@ describe('plugin-api-factory', () => {
       });
 
       it('returns a valid Disposable with dispose function', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onStatusChange(() => {});
         expect(disposable).toHaveProperty('dispose');
         expect(typeof disposable.dispose).toBe('function');
       });
 
       it('double dispose does not throw', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onStatusChange(() => {});
         disposable.dispose();
         expect(() => disposable.dispose()).not.toThrow();
       });
 
       it('multiple subscriptions fire independently', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const cb1 = vi.fn();
         const cb2 = vi.fn();
         const d1 = api.agents.onStatusChange(cb1);
@@ -1228,7 +1249,7 @@ describe('plugin-api-factory', () => {
 
     describe('getModelOptions()', () => {
       it('returns 4 default options when no project context', async () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
         expect(options.map((o) => o.id)).toEqual(['default', 'opus', 'sonnet', 'haiku']);
@@ -1242,7 +1263,7 @@ describe('plugin-api-factory', () => {
         mockAgent.getModelOptions.mockResolvedValue([
           { id: 'custom', label: 'Custom' },
         ]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p1');
         expect(options).toEqual([{ id: 'custom', label: 'Custom' }]);
@@ -1257,7 +1278,7 @@ describe('plugin-api-factory', () => {
           ] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue([{ id: 'x', label: 'X' }]);
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         await api.agents.getModelOptions('proj-2');
         expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p2');
       });
@@ -1268,7 +1289,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockRejectedValue(new Error('fail'));
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
         expect(options[0].id).toBe('default');
@@ -1280,7 +1301,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue([]);
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1291,7 +1312,7 @@ describe('plugin-api-factory', () => {
           projects: [{ id: 'proj-1', name: 'P1', path: '/projects/p1' }] as any,
         });
         mockAgent.getModelOptions.mockResolvedValue('not an array');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1299,7 +1320,7 @@ describe('plugin-api-factory', () => {
       it('returns defaults when project not found', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
         expect(options).toHaveLength(4);
       });
@@ -1309,7 +1330,7 @@ describe('plugin-api-factory', () => {
 
     describe('onAnyChange()', () => {
       it('fires on any store change (not just status)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1324,7 +1345,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on agent added', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1342,7 +1363,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on agent removed', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1353,7 +1374,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('fires on detailedStatus change', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         api.agents.onAnyChange(callback);
 
@@ -1367,7 +1388,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('dispose stops callbacks', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const callback = vi.fn();
         const disposable = api.agents.onAnyChange(callback);
         disposable.dispose();
@@ -1383,14 +1404,14 @@ describe('plugin-api-factory', () => {
       });
 
       it('double dispose is safe', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const disposable = api.agents.onAnyChange(() => {});
         disposable.dispose();
         expect(() => disposable.dispose()).not.toThrow();
       });
 
       it('multiple independent subscriptions', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const cb1 = vi.fn();
         const cb2 = vi.fn();
         const d1 = api.agents.onAnyChange(cb1);
@@ -1431,7 +1452,7 @@ describe('plugin-api-factory', () => {
         mockPty.getBuffer.mockResolvedValue('');
         mockPty.onData.mockReturnValue(() => {});
         mockPty.onExit.mockReturnValue(() => {});
-        api = createPluginAPI(makeCtx());
+        api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
       });
 
       // ── surface check ────────────────────────────────────────────────
@@ -1448,22 +1469,22 @@ describe('plugin-api-factory', () => {
       });
 
       it('terminal API is available for project-scoped plugins', () => {
-        const projectApi = createPluginAPI(makeCtx({ scope: 'project' }));
+        const projectApi = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
         expect(typeof projectApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for app-scoped plugins', () => {
-        const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         expect(typeof appApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for dual-scoped plugins in project mode', () => {
-        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project');
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', allPermsManifest);
         expect(typeof dualApi.terminal.spawn).toBe('function');
       });
 
       it('terminal API is available for dual-scoped plugins in app mode', () => {
-        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+        const dualApi = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
         expect(typeof dualApi.terminal.spawn).toBe('function');
       });
 
@@ -1503,12 +1524,12 @@ describe('plugin-api-factory', () => {
         });
 
         it('throws without cwd and without project context', async () => {
-          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }), undefined, allPermsManifest);
           await expect(appApi.terminal.spawn('s1')).rejects.toThrow('working directory');
         });
 
         it('app-scoped plugin can spawn with explicit cwd', async () => {
-          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }));
+          const appApi = createPluginAPI(makeCtx({ scope: 'app', projectPath: undefined, projectId: undefined }), undefined, allPermsManifest);
           await appApi.terminal.spawn('s1', '/explicit/dir');
           expect(mockPty.spawnShell).toHaveBeenCalledWith(
             'plugin:test-plugin:s1',
@@ -1797,13 +1818,13 @@ describe('plugin-api-factory', () => {
         });
 
         it('each plugin gets its own ShellTerminal instance (not shared)', () => {
-          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }), undefined, allPermsManifest);
           // They should be different closures (different namespace)
           expect(api.terminal.ShellTerminal).not.toBe(api2.terminal.ShellTerminal);
         });
 
         it('terminal API is a fresh instance per createPluginAPI call', () => {
-          const api2 = createPluginAPI(makeCtx());
+          const api2 = createPluginAPI(makeCtx(), undefined, allPermsManifest);
           expect(api.terminal).not.toBe(api2.terminal);
         });
       });
@@ -1812,7 +1833,7 @@ describe('plugin-api-factory', () => {
 
       describe('namespace isolation', () => {
         it('different plugins get different namespaces', async () => {
-          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }));
+          const api2 = createPluginAPI(makeCtx({ pluginId: 'other-plugin' }), undefined, allPermsManifest);
           await api.terminal.spawn('shared-name');
           await api2.terminal.spawn('shared-name');
           expect(mockPty.spawnShell).toHaveBeenCalledWith('plugin:test-plugin:shared-name', expect.any(String));
@@ -1885,7 +1906,7 @@ describe('plugin-api-factory', () => {
 
     describe('logging API', () => {
       it('provides all five log level methods', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(typeof api.logging.debug).toBe('function');
         expect(typeof api.logging.info).toBe('function');
         expect(typeof api.logging.warn).toBe('function');
@@ -1894,7 +1915,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('sends log entries with plugin namespace', () => {
-        const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }));
+        const api = createPluginAPI(makeCtx({ pluginId: 'my-plugin' }), undefined, allPermsManifest);
         api.logging.info('test message');
 
         expect(mockLog.write).toHaveBeenCalledTimes(1);
@@ -1905,7 +1926,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('includes projectId from context', () => {
-        const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }));
+        const api = createPluginAPI(makeCtx({ pluginId: 'test-plugin', projectId: 'proj-1' }), undefined, allPermsManifest);
         api.logging.warn('warning');
 
         const entry = mockLog.write.mock.calls[0][0];
@@ -1913,7 +1934,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('passes meta through', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         api.logging.error('failed', { code: 500, source: 'api' });
 
         const entry = mockLog.write.mock.calls[0][0];
@@ -1921,7 +1942,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('each level method sends the correct level', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
         for (const level of levels) {
           mockLog.write.mockClear();
@@ -1931,8 +1952,8 @@ describe('plugin-api-factory', () => {
       });
 
       it('different plugins get different namespaces', () => {
-        const api1 = createPluginAPI(makeCtx({ pluginId: 'plugin-a' }));
-        const api2 = createPluginAPI(makeCtx({ pluginId: 'plugin-b' }));
+        const api1 = createPluginAPI(makeCtx({ pluginId: 'plugin-a' }), undefined, allPermsManifest);
+        const api2 = createPluginAPI(makeCtx({ pluginId: 'plugin-b' }), undefined, allPermsManifest);
 
         api1.logging.info('from a');
         api2.logging.info('from b');
@@ -1942,9 +1963,9 @@ describe('plugin-api-factory', () => {
       });
 
       it('is available for all scopes', () => {
-        const project = createPluginAPI(makeCtx({ scope: 'project' }));
-        const app = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
-        const dual = createPluginAPI(makeCtx({ scope: 'dual' }), 'app');
+        const project = createPluginAPI(makeCtx({ scope: 'project' }), undefined, allPermsManifest);
+        const app = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
+        const dual = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', allPermsManifest);
 
         expect(typeof project.logging.info).toBe('function');
         expect(typeof app.logging.info).toBe('function');
@@ -1952,7 +1973,7 @@ describe('plugin-api-factory', () => {
       });
 
       it('is fire-and-forget (returns void)', () => {
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         expect(api.logging.info('test')).toBeUndefined();
       });
     });
@@ -1962,7 +1983,7 @@ describe('plugin-api-factory', () => {
     describe('runQuick()', () => {
       it('uses context project when no override', async () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-1');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('do stuff');
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined);
       });
@@ -1976,7 +1997,7 @@ describe('plugin-api-factory', () => {
           ] as any,
         });
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-2');
-        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }));
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.runQuick('task', { projectId: 'proj-2' });
         expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined);
       });
@@ -1984,21 +2005,688 @@ describe('plugin-api-factory', () => {
       it('throws on unknown projectId', async () => {
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({ projects: [] });
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await expect(api.agents.runQuick('task', { projectId: 'nope' })).rejects.toThrow('Project not found');
       });
 
       it('throws without project context', async () => {
-        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
         await expect(api.agents.runQuick('task')).rejects.toThrow('runQuick requires a project context');
       });
 
       it('passes model option through', async () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-3');
-        const api = createPluginAPI(makeCtx());
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('task', { model: 'opus' });
         expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus');
       });
+    });
+  });
+
+  // ── Permission enforcement (v0.5) ────────────────────────────────────
+
+  describe('permission enforcement (v0.5)', () => {
+    const v05Manifest = (permissions: string[], overrides?: Partial<PluginManifest>): PluginManifest => ({
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.5 },
+      scope: 'project',
+      contributes: { help: {} },
+      permissions: permissions as PluginManifest['permissions'],
+      ...overrides,
+    });
+
+    // ── Per-API permission isolation ──────────────────────────────────
+
+    describe('per-API permission isolation', () => {
+      // Each gated API paired with its permission and a method to invoke
+      // Each gated API paired with its permission.
+      // `invokeSync` exercises a synchronous call path that will throw immediately
+      // if the permission proxy is in place (avoids unhandled promise rejections).
+      // `verifyGranted` checks the API object is a real implementation (not a proxy).
+      const gatedAPIs: Array<{
+        apiName: keyof PluginAPI;
+        permission: string;
+        invokeSync: (api: PluginAPI) => void;
+        verifyGranted: (api: PluginAPI) => void;
+      }> = [
+        {
+          apiName: 'project', permission: 'files',
+          invokeSync: (a) => a.project.readFile('x'),
+          verifyGranted: (a) => { expect(a.project.projectPath).toBe('/projects/my-project'); },
+        },
+        {
+          apiName: 'git', permission: 'git',
+          invokeSync: (a) => a.git.status(),
+          verifyGranted: (a) => { expect(typeof a.git.status).toBe('function'); expect(typeof a.git.log).toBe('function'); },
+        },
+        {
+          apiName: 'files', permission: 'files',
+          invokeSync: (a) => a.files.readFile('x'),
+          verifyGranted: (a) => { expect(typeof a.files.readFile).toBe('function'); expect(typeof a.files.writeFile).toBe('function'); },
+        },
+        {
+          apiName: 'storage', permission: 'storage',
+          // The proxy is at api.storage level; .project returns a function, not a ScopedStorage
+          invokeSync: (a) => (a.storage as any).project(),
+          verifyGranted: (a) => { expect(typeof a.storage.project.read).toBe('function'); },
+        },
+        {
+          apiName: 'ui', permission: 'notifications',
+          invokeSync: (a) => a.ui.showNotice('hi'),
+          verifyGranted: (a) => { expect(typeof a.ui.showNotice).toBe('function'); },
+        },
+        {
+          apiName: 'commands', permission: 'commands',
+          invokeSync: (a) => a.commands.register('x', () => {}),
+          verifyGranted: (a) => { expect(typeof a.commands.register).toBe('function'); },
+        },
+        {
+          apiName: 'events', permission: 'events',
+          invokeSync: (a) => a.events.on('x', () => {}),
+          verifyGranted: (a) => { expect(typeof a.events.on).toBe('function'); },
+        },
+        {
+          apiName: 'agents', permission: 'agents',
+          invokeSync: (a) => a.agents.list(),
+          verifyGranted: (a) => { expect(typeof a.agents.list).toBe('function'); expect(typeof a.agents.runQuick).toBe('function'); },
+        },
+        {
+          apiName: 'navigation', permission: 'navigation',
+          invokeSync: (a) => a.navigation.focusAgent('a'),
+          verifyGranted: (a) => { expect(typeof a.navigation.focusAgent).toBe('function'); },
+        },
+        {
+          apiName: 'widgets', permission: 'widgets',
+          invokeSync: (a) => (a.widgets.AgentTerminal as unknown as () => void)(),
+          verifyGranted: (a) => { expect(typeof a.widgets.AgentTerminal).toBe('function'); },
+        },
+        {
+          apiName: 'terminal', permission: 'terminal',
+          invokeSync: (a) => a.terminal.write('s1', 'x'),
+          verifyGranted: (a) => { expect(typeof a.terminal.spawn).toBe('function'); expect(typeof a.terminal.write).toBe('function'); },
+        },
+        {
+          apiName: 'logging', permission: 'logging',
+          invokeSync: (a) => a.logging.info('msg'),
+          verifyGranted: (a) => { expect(typeof a.logging.info).toBe('function'); expect(typeof a.logging.error).toBe('function'); },
+        },
+        {
+          apiName: 'process', permission: 'process',
+          invokeSync: (a) => a.process.exec('gh', []),
+          verifyGranted: (a) => { expect(typeof a.process.exec).toBe('function'); },
+        },
+      ];
+
+      for (const { apiName, permission, invokeSync, verifyGranted } of gatedAPIs) {
+        it(`api.${apiName} works when '${permission}' permission is granted`, () => {
+          const manifest = v05Manifest([permission]);
+          const api = createPluginAPI(makeCtx(), undefined, manifest);
+          verifyGranted(api);
+        });
+
+        it(`api.${apiName} throws when '${permission}' permission is NOT granted`, () => {
+          const manifest = v05Manifest([]);
+          const api = createPluginAPI(makeCtx(), undefined, manifest);
+          expect(() => invokeSync(api)).toThrow(`requires '${permission}' permission`);
+        });
+
+        it(`api.${apiName} error message includes plugin name and API name`, () => {
+          const manifest = v05Manifest([]);
+          const api = createPluginAPI(makeCtx(), undefined, manifest);
+          expect(() => invokeSync(api)).toThrow(`Plugin 'test-plugin'`);
+          expect(() => invokeSync(api)).toThrow(`api.${apiName}`);
+        });
+      }
+
+      it('granting one permission does not leak to another', () => {
+        const manifest = v05Manifest(['git']);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        // git works
+        expect(typeof api.git.status).toBe('function');
+        expect(typeof api.git.log).toBe('function');
+        // terminal does not
+        expect(() => api.terminal.write('s1', 'x')).toThrow("requires 'terminal' permission");
+        // files does not
+        expect(() => api.files.readFile('x')).toThrow("requires 'files' permission");
+        // agents does not
+        expect(() => api.agents.list()).toThrow("requires 'agents' permission");
+        // process does not
+        expect(() => api.process.exec('gh', [])).toThrow("requires 'process' permission");
+      });
+
+      it('granting all permissions makes everything work', () => {
+        const allPerms = ['files', 'git', 'storage', 'notifications', 'commands', 'events', 'agents', 'navigation', 'widgets', 'terminal', 'logging', 'process'];
+        const manifest = v05Manifest(allPerms);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        for (const { verifyGranted } of gatedAPIs) {
+          verifyGranted(api);
+        }
+      });
+    });
+
+    // ── Always-available APIs ─────────────────────────────────────────
+
+    describe('always-available APIs (no permission needed)', () => {
+      it('api.context is available with empty permissions', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(api.context.mode).toBe('project');
+        expect(api.context.projectId).toBe('proj-1');
+        expect(api.context.projectPath).toBe('/projects/my-project');
+      });
+
+      it('api.settings is available with empty permissions', () => {
+        usePluginStore.setState({
+          pluginSettings: { 'proj-1:test-plugin': { theme: 'dark' } },
+        });
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(api.settings.get('theme')).toBe('dark');
+        expect(typeof api.settings.getAll).toBe('function');
+        expect(typeof api.settings.onChange).toBe('function');
+      });
+
+      it('api.hub is available with empty permissions', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(typeof api.hub.refresh).toBe('function');
+        expect(() => api.hub.refresh()).not.toThrow();
+      });
+    });
+
+    // ── permissionDeniedProxy React dev-mode safety ────────────────────
+
+    describe('permissionDeniedProxy React dev-mode safety', () => {
+      it('property access on denied API does not throw', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        // React 19 dev-mode enumerates props — must not throw
+        expect(() => api.git.status).not.toThrow();
+        expect(() => api.git.log).not.toThrow();
+        expect(() => api.git.currentBranch).not.toThrow();
+        expect(() => api.git.diff).not.toThrow();
+        expect(() => api.terminal.spawn).not.toThrow();
+        expect(() => api.terminal.write).not.toThrow();
+        expect(() => api.terminal.kill).not.toThrow();
+        expect(() => api.agents.list).not.toThrow();
+        expect(() => api.agents.runQuick).not.toThrow();
+        expect(() => api.files.readFile).not.toThrow();
+        expect(() => api.files.writeFile).not.toThrow();
+        expect(() => api.storage.project).not.toThrow();
+      });
+
+      it('Symbol access on denied proxy returns undefined (React $$typeof, iterator)', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        // Proxied denied APIs
+        expect((api.git as any)[Symbol.toPrimitive]).toBeUndefined();
+        expect((api.git as any)[Symbol.iterator]).toBeUndefined();
+        expect((api.git as any)[Symbol.toStringTag]).toBeUndefined();
+        expect((api.terminal as any)[Symbol.toPrimitive]).toBeUndefined();
+        expect((api.agents as any)[Symbol.iterator]).toBeUndefined();
+      });
+
+      it('denied proxy methods are typeof function', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(typeof api.git.status).toBe('function');
+        expect(typeof api.terminal.spawn).toBe('function');
+        expect(typeof api.agents.list).toBe('function');
+        expect(typeof api.logging.info).toBe('function');
+      });
+
+      it('accessing the same denied method multiple times returns consistent functions', () => {
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        // Each access creates a new function via Proxy get trap — but both should throw same error
+        const fn1 = api.git.status;
+        const fn2 = api.git.status;
+        expect(typeof fn1).toBe('function');
+        expect(typeof fn2).toBe('function');
+        expect(() => (fn1 as () => void)()).toThrow("requires 'git' permission");
+        expect(() => (fn2 as () => void)()).toThrow("requires 'git' permission");
+      });
+    });
+
+    // ── Backward compatibility ────────────────────────────────────────
+
+    describe('backward compatibility', () => {
+      it('no manifest → all APIs work', () => {
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        expect(typeof api.git.status).toBe('function');
+        expect(typeof api.terminal.spawn).toBe('function');
+        expect(typeof api.agents.list).toBe('function');
+        expect(typeof api.logging.info).toBe('function');
+        expect(typeof api.files.readFile).toBe('function');
+        expect(typeof api.storage.project.read).toBe('function');
+        expect(typeof api.ui.showNotice).toBe('function');
+        expect(typeof api.commands.register).toBe('function');
+        expect(typeof api.events.on).toBe('function');
+        expect(typeof api.navigation.focusAgent).toBe('function');
+      });
+
+    });
+
+    // ── Scope vs permission priority ──────────────────────────────────
+
+    describe('scope vs permission priority', () => {
+      it('scope denial takes priority over permission denial', () => {
+        // project-scoped plugin with 'projects' permission → scope denies before permission
+        const manifest = v05Manifest(['projects']);
+        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
+        expect(() => api.projects.list()).toThrow('not available for project-scoped');
+      });
+
+      it('scope denial message shown when both scope and permission deny', () => {
+        // project-scoped plugin, no 'projects' permission, scope also denies
+        const manifest = v05Manifest([]);
+        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
+        // Should get scope error, not permission error
+        expect(() => api.projects.list()).toThrow('not available for project-scoped');
+      });
+
+      it('app-scoped plugin: scope denies project/git/files even with permissions', () => {
+        const manifest = v05Manifest(['files', 'git'], { scope: 'app' });
+        const api = createPluginAPI(
+          makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }),
+          undefined,
+          manifest,
+        );
+        expect(() => api.project.readFile('x')).toThrow('not available for app-scoped');
+        expect(() => api.git.status()).toThrow('not available for app-scoped');
+        expect(() => api.files.readFile('x')).toThrow('not available for app-scoped');
+      });
+    });
+
+    // ── Dual-scope + permissions ──────────────────────────────────────
+
+    describe('dual-scope with permissions', () => {
+      it('dual-scope plugin in project mode: permissions enforced', () => {
+        const manifest = v05Manifest(['git'], { scope: 'dual' });
+        const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', manifest);
+        // git permitted
+        expect(typeof api.git.status).toBe('function');
+        // files not permitted
+        expect(() => api.files.readFile('x')).toThrow("requires 'files' permission");
+      });
+
+      it('dual-scope plugin in app mode: project-scope APIs denied by scope, not permission', () => {
+        const manifest = v05Manifest(['files', 'git'], { scope: 'dual' });
+        const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', manifest);
+        // project/git/files denied by scope (app mode)
+        expect(() => api.project.readFile('x')).toThrow('not available');
+        expect(() => api.git.status()).toThrow('not available');
+        expect(() => api.files.readFile('x')).toThrow('not available');
+      });
+
+      it('dual-scope plugin: projects API requires permission even though scope allows', () => {
+        const manifest = v05Manifest([], { scope: 'dual' });
+        const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'app', manifest);
+        // projects is scope-available for dual, but permission not granted
+        expect(() => api.projects.list()).toThrow("requires 'projects' permission");
+      });
+
+      it('dual-scope plugin: scope-free APIs still need permissions', () => {
+        const manifest = v05Manifest([], { scope: 'dual' });
+        const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', manifest);
+        expect(() => api.terminal.spawn('s1')).toThrow("requires 'terminal' permission");
+        expect(() => api.agents.list()).toThrow("requires 'agents' permission");
+        expect(() => api.logging.info('x')).toThrow("requires 'logging' permission");
+      });
+    });
+  });
+
+  // ── forRoot() ────────────────────────────────────────────────────────
+
+  describe('forRoot()', () => {
+    function v05ManifestWithExternal(
+      settings?: Record<string, unknown>,
+      roots?: Array<{ settingKey: string; root: string }>,
+      overrides?: Partial<PluginManifest>,
+    ): { manifest: PluginManifest; ctx: PluginContext } {
+      const manifest: PluginManifest = {
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        contributes: { help: {} },
+        permissions: ['files', 'files.external'],
+        externalRoots: roots || [{ settingKey: 'wiki-path', root: 'wiki' }],
+        ...overrides,
+      };
+      const ctx = makeCtx();
+      if (settings) {
+        usePluginStore.setState({
+          pluginSettings: { 'proj-1:test-plugin': settings },
+        });
+      }
+      return { manifest, ctx };
+    }
+
+    // ── Permission checks ─────────────────────────────────────────────
+
+    it('forRoot() without files.external permission → throws', () => {
+      const manifest: PluginManifest = {
+        id: 'test-plugin', name: 'Test', version: '1.0.0',
+        engine: { api: 0.5 }, scope: 'project', contributes: { help: {} },
+        permissions: ['files'],
+      };
+      const api = createPluginAPI(makeCtx(), undefined, manifest);
+      expect(() => api.files.forRoot('wiki')).toThrow("requires 'files.external' permission");
+    });
+
+    it('plugin without externalRoots throws on forRoot()', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      expect(() => api.files.forRoot('wiki')).toThrow('no externalRoots declared');
+    });
+
+    // ── Root resolution ───────────────────────────────────────────────
+
+    it('forRoot() with unknown root name → throws', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/wiki' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('unknown')).toThrow('Unknown external root "unknown"');
+    });
+
+    it('forRoot() with unconfigured setting → throws', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({});
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+    });
+
+    it('forRoot() with null setting value → throws', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': null });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+    });
+
+    it('forRoot() with numeric setting value → throws', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': 42 });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+    });
+
+    it('forRoot() with empty string setting value → throws', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+    });
+
+    // ── Multiple external roots ───────────────────────────────────────
+
+    it('selects correct root when multiple roots are declared', () => {
+      const roots = [
+        { settingKey: 'wiki-path', root: 'wiki' },
+        { settingKey: 'docs-path', root: 'docs' },
+      ];
+      const { manifest, ctx } = v05ManifestWithExternal(
+        { 'wiki-path': '/external/wiki', 'docs-path': '/external/docs' },
+        roots,
+      );
+      const api = createPluginAPI(ctx, undefined, manifest);
+
+      const wikiFiles = api.files.forRoot('wiki');
+      const docsFiles = api.files.forRoot('docs');
+
+      // Verify they resolve to different paths
+      mockFile.read.mockResolvedValue('content');
+      wikiFiles.readFile('page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/external/wiki/page.md');
+      mockFile.read.mockClear();
+      docsFiles.readFile('readme.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/external/docs/readme.md');
+    });
+
+    it('unknown root with multiple roots still throws', () => {
+      const roots = [
+        { settingKey: 'wiki-path', root: 'wiki' },
+        { settingKey: 'docs-path', root: 'docs' },
+      ];
+      const { manifest, ctx } = v05ManifestWithExternal(
+        { 'wiki-path': '/w', 'docs-path': '/d' },
+        roots,
+      );
+      const api = createPluginAPI(ctx, undefined, manifest);
+      expect(() => api.files.forRoot('other')).toThrow('Unknown external root "other"');
+    });
+
+    // ── Full FilesAPI surface on external root ────────────────────────
+
+    describe('external root FilesAPI — all methods', () => {
+      let extFiles: ReturnType<typeof createPluginAPI>['files'];
+
+      beforeEach(() => {
+        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+        const api = createPluginAPI(ctx, undefined, manifest);
+        extFiles = api.files.forRoot('wiki');
+      });
+
+      it('readFile resolves against external root', async () => {
+        mockFile.read.mockResolvedValue('content');
+        const result = await extFiles.readFile('page.md');
+        expect(mockFile.read).toHaveBeenCalledWith('/ext/wiki/page.md');
+        expect(result).toBe('content');
+      });
+
+      it('readTree resolves against external root', async () => {
+        mockFile.readTree.mockResolvedValue([{ name: 'a.md', path: '/ext/wiki/a.md', isDirectory: false }]);
+        const result = await extFiles.readTree('subdir');
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/subdir', undefined);
+        expect(result).toHaveLength(1);
+      });
+
+      it('readTree default path resolves to root', async () => {
+        mockFile.readTree.mockResolvedValue([]);
+        await extFiles.readTree();
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/.', undefined);
+      });
+
+      it('readTree passes options through', async () => {
+        mockFile.readTree.mockResolvedValue([]);
+        await extFiles.readTree('.', { includeHidden: true, depth: 2 });
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/.', { includeHidden: true, depth: 2 });
+      });
+
+      it('readBinary resolves against external root', async () => {
+        mockFile.readBinary.mockResolvedValue('base64data');
+        const result = await extFiles.readBinary('image.png');
+        expect(mockFile.readBinary).toHaveBeenCalledWith('/ext/wiki/image.png');
+        expect(result).toBe('base64data');
+      });
+
+      it('writeFile resolves against external root', async () => {
+        await extFiles.writeFile('new.md', '# New Page');
+        expect(mockFile.write).toHaveBeenCalledWith('/ext/wiki/new.md', '# New Page');
+      });
+
+      it('stat resolves against external root', async () => {
+        mockFile.stat.mockResolvedValue({ size: 256, isDirectory: false, isFile: true, modifiedAt: 1000 });
+        const result = await extFiles.stat('page.md');
+        expect(mockFile.stat).toHaveBeenCalledWith('/ext/wiki/page.md');
+        expect(result.size).toBe(256);
+      });
+
+      it('rename resolves both paths against external root', async () => {
+        await extFiles.rename('old.md', 'new.md');
+        expect(mockFile.rename).toHaveBeenCalledWith('/ext/wiki/old.md', '/ext/wiki/new.md');
+      });
+
+      it('copy resolves both paths against external root', async () => {
+        await extFiles.copy('src.md', 'dest.md');
+        expect(mockFile.copy).toHaveBeenCalledWith('/ext/wiki/src.md', '/ext/wiki/dest.md');
+      });
+
+      it('mkdir resolves against external root', async () => {
+        await extFiles.mkdir('subdir');
+        expect(mockFile.mkdir).toHaveBeenCalledWith('/ext/wiki/subdir');
+      });
+
+      it('delete resolves against external root', async () => {
+        await extFiles.delete('old.md');
+        expect(mockFile.delete).toHaveBeenCalledWith('/ext/wiki/old.md');
+      });
+
+      it('showInFolder resolves against external root', async () => {
+        await extFiles.showInFolder('page.md');
+        expect(mockFile.showInFolder).toHaveBeenCalledWith('/ext/wiki/page.md');
+      });
+    });
+
+    // ── Path traversal on external root ───────────────────────────────
+
+    describe('external root path traversal prevention', () => {
+      let extFiles: ReturnType<typeof createPluginAPI>['files'];
+
+      beforeEach(() => {
+        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+        const api = createPluginAPI(ctx, undefined, manifest);
+        extFiles = api.files.forRoot('wiki');
+      });
+
+      it('readFile prevents traversal via ../', async () => {
+        await expect(extFiles.readFile('../../etc/passwd')).rejects.toThrow('traversal');
+      });
+
+      it('writeFile prevents traversal', async () => {
+        await expect(extFiles.writeFile('../../../tmp/evil', 'x')).rejects.toThrow('traversal');
+      });
+
+      it('readBinary prevents traversal', async () => {
+        await expect(extFiles.readBinary('../../secret')).rejects.toThrow('traversal');
+      });
+
+      it('rename prevents traversal on source', async () => {
+        await expect(extFiles.rename('../../etc/shadow', 'x')).rejects.toThrow('traversal');
+      });
+
+      it('rename prevents traversal on destination', async () => {
+        await expect(extFiles.rename('x.md', '../../etc/shadow')).rejects.toThrow('traversal');
+      });
+
+      it('copy prevents traversal on source', async () => {
+        await expect(extFiles.copy('../../etc/hosts', 'x')).rejects.toThrow('traversal');
+      });
+
+      it('copy prevents traversal on destination', async () => {
+        await expect(extFiles.copy('x.md', '../../../tmp/evil')).rejects.toThrow('traversal');
+      });
+
+      it('mkdir prevents traversal', async () => {
+        await expect(extFiles.mkdir('../../evil-dir')).rejects.toThrow('traversal');
+      });
+
+      it('delete prevents traversal', async () => {
+        await expect(extFiles.delete('../../etc/passwd')).rejects.toThrow('traversal');
+      });
+
+      it('stat prevents traversal', async () => {
+        await expect(extFiles.stat('../../etc/passwd')).rejects.toThrow('traversal');
+      });
+
+      it('showInFolder prevents traversal', async () => {
+        await expect(extFiles.showInFolder('../../etc/passwd')).rejects.toThrow('traversal');
+      });
+
+      it('readTree prevents traversal', async () => {
+        await expect(extFiles.readTree('../../etc')).rejects.toThrow('traversal');
+      });
+    });
+
+    // ── No nesting ────────────────────────────────────────────────────
+
+    it('forRoot() on external root FilesAPI → throws (no nesting)', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      const extFiles = api.files.forRoot('wiki');
+      expect(() => extFiles.forRoot('wiki')).toThrow('no nesting');
+      expect(() => extFiles.forRoot('other')).toThrow('no nesting');
+    });
+
+    // ── Settings key resolution ───────────────────────────────────────
+
+    it('resolves settings from app:pluginId for app-scoped plugin', () => {
+      const manifest: PluginManifest = {
+        id: 'test-plugin', name: 'Test', version: '1.0.0',
+        engine: { api: 0.5 }, scope: 'app', contributes: { help: {} },
+        permissions: ['files', 'files.external'],
+        externalRoots: [{ settingKey: 'ext-path', root: 'ext' }],
+      };
+      // For app-scoped, files is scope-denied (no project context), so
+      // we test via a dual plugin in project mode instead
+      const dualManifest: PluginManifest = {
+        ...manifest,
+        scope: 'dual',
+      };
+      usePluginStore.setState({
+        pluginSettings: { 'proj-1:test-plugin': { 'ext-path': '/dual/ext' } },
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'dual' }), 'project', dualManifest);
+      const extFiles = api.files.forRoot('ext');
+      mockFile.read.mockResolvedValue('ok');
+      extFiles.readFile('test.txt');
+      expect(mockFile.read).toHaveBeenCalledWith('/dual/ext/test.txt');
+    });
+
+    // ── Path resolution (tilde & relative) ────────────────────────────
+
+    it('forRoot() expands ~ to HOME', () => {
+      const originalHome = process.env.HOME;
+      process.env.HOME = '/home/testuser';
+      try {
+        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '~/my-wiki' });
+        const api = createPluginAPI(ctx, undefined, manifest);
+        const extFiles = api.files.forRoot('wiki');
+        mockFile.read.mockResolvedValue('ok');
+        extFiles.readFile('page.md');
+        expect(mockFile.read).toHaveBeenCalledWith('/home/testuser/my-wiki/page.md');
+      } finally {
+        process.env.HOME = originalHome;
+      }
+    });
+
+    it('forRoot() expands bare ~ to HOME', () => {
+      const originalHome = process.env.HOME;
+      process.env.HOME = '/home/testuser';
+      try {
+        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '~' });
+        const api = createPluginAPI(ctx, undefined, manifest);
+        const extFiles = api.files.forRoot('wiki');
+        mockFile.read.mockResolvedValue('ok');
+        extFiles.readFile('page.md');
+        expect(mockFile.read).toHaveBeenCalledWith('/home/testuser/page.md');
+      } finally {
+        process.env.HOME = originalHome;
+      }
+    });
+
+    it('forRoot() resolves relative path against projectPath', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': 'wiki' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      const extFiles = api.files.forRoot('wiki');
+      mockFile.read.mockResolvedValue('ok');
+      extFiles.readFile('page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/wiki/page.md');
+    });
+
+    it('forRoot() resolves ./relative path against projectPath', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': './docs/wiki' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      const extFiles = api.files.forRoot('wiki');
+      mockFile.read.mockResolvedValue('ok');
+      extFiles.readFile('page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/./docs/wiki/page.md');
+    });
+
+    it('forRoot() leaves absolute paths unchanged', () => {
+      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/absolute/wiki' });
+      const api = createPluginAPI(ctx, undefined, manifest);
+      const extFiles = api.files.forRoot('wiki');
+      mockFile.read.mockResolvedValue('ok');
+      extFiles.readFile('page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/absolute/wiki/page.md');
     });
   });
 
@@ -2008,7 +2696,7 @@ describe('plugin-api-factory', () => {
     let api: PluginAPI;
 
     beforeEach(() => {
-      api = createPluginAPI(makeCtx());
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
     });
 
     it('provides all files API methods for project-scoped plugins', () => {
@@ -2066,12 +2754,12 @@ describe('plugin-api-factory', () => {
     });
 
     it('throws when calling files API methods on app-scoped plugin', () => {
-      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(() => appApi.files.readTree()).toThrow('not available for app-scoped');
     });
 
     it('does not throw on property access of unavailable files API (React dev-mode safe)', () => {
-      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }));
+      const appApi = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
       expect(() => appApi.files.readTree).not.toThrow();
     });
 
@@ -2081,6 +2769,119 @@ describe('plugin-api-factory', () => {
 
     it('prevents path traversal in rename', async () => {
       await expect(api.files.rename('file.txt', '../../etc/shadow')).rejects.toThrow('traversal');
+    });
+  });
+
+  // ── Permission violation enforcement ──────────────────────────────────
+
+  describe('permission violation enforcement', () => {
+    beforeEach(() => {
+      _resetEnforcedViolations();
+      usePluginStore.setState({ permissionViolations: [] });
+      // Register a plugin so handlePermissionViolation can find its name
+      usePluginStore.getState().registerPlugin(
+        {
+          id: 'test-plugin',
+          name: 'Test Plugin',
+          version: '1.0.0',
+          engine: { api: 0.5 },
+          scope: 'project',
+          permissions: [],
+          contributes: { help: {} },
+        },
+        'community',
+        '/path',
+        'activated',
+      );
+    });
+
+    afterEach(() => {
+      _resetEnforcedViolations();
+    });
+
+    it('denied proxy calls recordPermissionViolation before throwing', () => {
+      const manifest: PluginManifest = {
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        permissions: [],
+        contributes: { help: {} },
+      };
+      const api = createPluginAPI(makeCtx(), undefined, manifest);
+
+      expect(() => api.git.status()).toThrow("requires 'git' permission");
+
+      const violations = usePluginStore.getState().permissionViolations;
+      expect(violations).toHaveLength(1);
+      expect(violations[0].pluginId).toBe('test-plugin');
+      expect(violations[0].pluginName).toBe('Test Plugin');
+      expect(violations[0].permission).toBe('git');
+      expect(violations[0].apiName).toBe('git');
+    });
+
+    it('one-shot guard: second call does not re-record', () => {
+      const manifest: PluginManifest = {
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        permissions: [],
+        contributes: { help: {} },
+      };
+      const api = createPluginAPI(makeCtx(), undefined, manifest);
+
+      expect(() => api.git.status()).toThrow();
+      expect(() => api.git.log()).toThrow();
+
+      // Only one violation recorded (same pluginId:permission pair)
+      expect(usePluginStore.getState().permissionViolations).toHaveLength(1);
+    });
+
+    it('deactivation is deferred via setTimeout', () => {
+      vi.useFakeTimers();
+      const manifest: PluginManifest = {
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        permissions: [],
+        contributes: { help: {} },
+      };
+      const api = createPluginAPI(makeCtx(), undefined, manifest);
+      usePluginStore.getState().enableApp('test-plugin');
+
+      expect(() => api.git.status()).toThrow();
+
+      // Before timer fires, plugin should still be activated
+      expect(usePluginStore.getState().plugins['test-plugin'].status).toBe('activated');
+
+      vi.runAllTimers();
+      vi.useRealTimers();
+    });
+
+    it('records correct metadata for different APIs', () => {
+      const manifest: PluginManifest = {
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        permissions: [],
+        contributes: { help: {} },
+      };
+      const api = createPluginAPI(makeCtx(), undefined, manifest);
+
+      expect(() => api.terminal.spawn('s1')).toThrow();
+
+      const violations = usePluginStore.getState().permissionViolations;
+      // git and terminal are different permissions, so both should be recorded
+      expect(violations).toHaveLength(1);
+      expect(violations[0].permission).toBe('terminal');
+      expect(violations[0].apiName).toBe('terminal');
     });
   });
 });

@@ -2,6 +2,7 @@ import * as pty from 'node-pty';
 import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
+import { appLog } from './log-service';
 
 interface ManagedSession {
   process: pty.IPty;
@@ -41,7 +42,7 @@ function cleanupSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>): void {
+export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number) => void): void {
   if (sessions.has(agentId)) {
     const existing = sessions.get(agentId)!;
     try { existing.process.kill(); } catch {}
@@ -53,15 +54,26 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
   const spawnEnv = extraEnv
     ? { ...getShellEnvironment(), ...extraEnv }
-    : getShellEnvironment();
+    : { ...getShellEnvironment() };
+  // Remove markers that prevent nested Claude Code sessions
+  delete spawnEnv.CLAUDECODE;
+  delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
 
-  const proc = pty.spawn(shell, ['-il'], {
-    name: 'xterm-256color',
-    cwd,
-    env: spawnEnv,
-    cols: 120,
-    rows: 30,
-  });
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(shell, ['-il'], {
+      name: 'xterm-256color',
+      cwd,
+      env: spawnEnv,
+      cols: 120,
+      rows: 30,
+    });
+  } catch (err) {
+    appLog('core:pty', 'error', 'Failed to spawn PTY process', {
+      meta: { agentId, binary, cwd, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 
   const session: ManagedSession = {
     process: proc,
@@ -91,7 +103,14 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
+    const ptyBuffer = current.outputChunks.join('').slice(-500);
+    appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
+      meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
+    });
+    console.error(`[pty-exit] agentId=${agentId} exitCode=${exitCode} binary=${binary} lastOutput=${ptyBuffer.slice(-200)}`);
+
     cleanupSession(agentId);
+    onExit?.(agentId, exitCode);
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.PTY.EXIT, agentId, exitCode);
@@ -108,13 +127,21 @@ export function spawnShell(id: string, projectPath: string): void {
 
   const shellPath = process.env.SHELL || '/bin/zsh';
 
-  const proc = pty.spawn(shellPath, ['-il'], {
-    name: 'xterm-256color',
-    cwd: projectPath,
-    env: getShellEnvironment(),
-    cols: 120,
-    rows: 30,
-  });
+  let proc: pty.IPty;
+  try {
+    proc = pty.spawn(shellPath, ['-il'], {
+      name: 'xterm-256color',
+      cwd: projectPath,
+      env: getShellEnvironment(),
+      cols: 120,
+      rows: 30,
+    });
+  } catch (err) {
+    appLog('core:pty', 'error', 'Failed to spawn shell PTY', {
+      meta: { sessionId: id, cwd: projectPath, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 
   const session: ManagedSession = {
     process: proc,

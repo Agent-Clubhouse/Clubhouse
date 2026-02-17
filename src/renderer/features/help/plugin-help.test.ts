@@ -8,8 +8,10 @@ describe('plugin-help', () => {
     name: 'Test Plugin',
     version: '1.2.3',
     author: 'Test Author',
-    engine: { api: 0.4 },
+    engine: { api: 0.5 },
     scope: 'project',
+    permissions: [],
+    contributes: { help: {} },
   };
 
   it('always returns About as the first topic', () => {
@@ -31,7 +33,7 @@ describe('plugin-help', () => {
 
   it('About contains API version', () => {
     const topics = getPluginHelpTopics(baseManifest);
-    expect(topics[0].content).toContain('0.4');
+    expect(topics[0].content).toContain('0.5');
   });
 
   it('About contains scope', () => {

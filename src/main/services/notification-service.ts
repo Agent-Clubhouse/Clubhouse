@@ -1,5 +1,6 @@
-import { Notification } from 'electron';
+import { BrowserWindow, Notification } from 'electron';
 import { NotificationSettings } from '../../shared/types';
+import { IPC } from '../../shared/ipc-channels';
 import { createSettingsStore } from './settings-store';
 
 const store = createSettingsStore<NotificationSettings>('notification-settings.json', {
@@ -14,7 +15,26 @@ const store = createSettingsStore<NotificationSettings>('notification-settings.j
 export const getSettings = store.get;
 export const saveSettings = store.save;
 
-export function sendNotification(title: string, body: string, silent: boolean): void {
+export function sendNotification(
+  title: string,
+  body: string,
+  silent: boolean,
+  agentId?: string,
+  projectId?: string,
+): void {
   if (!Notification.isSupported()) return;
-  new Notification({ title, body, silent }).show();
+  const n = new Notification({ title, body, silent });
+  n.on('click', () => {
+    // Focus the app window
+    const win = BrowserWindow.getAllWindows()[0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+      // Tell renderer to navigate to the agent
+      if (agentId && projectId) {
+        win.webContents.send(IPC.APP.NOTIFICATION_CLICKED, agentId, projectId);
+      }
+    }
+  });
+  n.show();
 }

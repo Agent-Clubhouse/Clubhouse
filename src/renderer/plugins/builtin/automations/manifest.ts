@@ -5,11 +5,12 @@ const CLOCK_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" 
 export const manifest: PluginManifest = {
   id: 'automations',
   name: 'Automations',
-  version: '0.1.0',
+  version: '1.0.0',
   description: 'Schedule recurring quick-agent tasks with cron expressions.',
   author: 'Clubhouse',
-  engine: { api: 0.4 },
+  engine: { api: 0.5 },
   scope: 'project',
+  permissions: ['storage', 'agents', 'commands', 'notifications', 'navigation', 'widgets'],
   contributes: {
     tab: { label: 'Automations', icon: CLOCK_ICON, layout: 'full' },
     commands: [{ id: 'create', title: 'Create Automation' }],

@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock config-pipeline
+const mockSnapshotFile = vi.fn();
+const mockRestoreForAgent = vi.fn();
+const mockGetHooksConfigPath = vi.fn(() => '/project/.claude/settings.local.json');
+vi.mock('./config-pipeline', () => ({
+  snapshotFile: (...args: unknown[]) => mockSnapshotFile(...args),
+  restoreForAgent: (...args: unknown[]) => mockRestoreForAgent(...args),
+  getHooksConfigPath: (...args: unknown[]) => mockGetHooksConfigPath(...args),
+  restoreAll: vi.fn(),
+}));
+
 // Mock pty-manager
 const mockPtySpawn = vi.fn();
 const mockPtyGracefulKill = vi.fn();
@@ -42,6 +53,10 @@ const mockProvider = {
   toolVerb: vi.fn(),
   buildSummaryInstruction: vi.fn(() => ''),
   readQuickSummary: vi.fn(() => Promise.resolve(null)),
+  getCapabilities: vi.fn(() => ({
+    headless: true, structuredOutput: true, hooks: true,
+    sessionResume: true, permissions: true,
+  })),
 };
 
 const mockAltProvider = {
@@ -191,7 +206,8 @@ describe('agent-system', () => {
         expect.objectContaining({
           CLUBHOUSE_AGENT_ID: 'agent-1',
           CLUBHOUSE_HOOK_NONCE: nonce,
-        })
+        }),
+        expect.any(Function),
       );
     });
 
@@ -279,11 +295,68 @@ describe('agent-system', () => {
   });
 
   describe('getAvailableOrchestrators', () => {
-    it('returns all registered providers', () => {
+    it('returns all registered providers with capabilities', () => {
       const result = getAvailableOrchestrators();
       expect(result).toHaveLength(2);
-      expect(result[0]).toEqual({ id: 'claude-code', displayName: 'Claude Code', badge: undefined });
-      expect(result[1]).toEqual({ id: 'opencode', displayName: 'OpenCode', badge: undefined });
+      expect(result[0].id).toBe('claude-code');
+      expect(result[0].displayName).toBe('Claude Code');
+      expect(result[0].capabilities).toBeDefined();
+      expect(result[0].capabilities.headless).toBe(true);
+      expect(result[1].id).toBe('opencode');
+      expect(result[1].displayName).toBe('OpenCode');
+      expect(result[1].capabilities).toBeDefined();
+    });
+  });
+
+  describe('config pipeline integration', () => {
+    it('calls snapshotFile before writeHooksConfig', async () => {
+      const callOrder: string[] = [];
+      mockSnapshotFile.mockImplementation(() => { callOrder.push('snapshot'); });
+      mockProvider.writeHooksConfig.mockImplementation(() => {
+        callOrder.push('writeHooks');
+        return Promise.resolve();
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockSnapshotFile).toHaveBeenCalledWith('agent-1', '/project/.claude/settings.local.json');
+      expect(callOrder).toEqual(['snapshot', 'writeHooks']);
+    });
+
+    it('passes onExit callback to pty spawn that calls restoreForAgent', async () => {
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // pty spawn should have received an onExit callback as the 6th arg
+      expect(mockPtySpawn).toHaveBeenCalled();
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      expect(typeof onExitCallback).toBe('function');
+
+      // Simulate agent exit
+      onExitCallback('agent-1', 0);
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('skips snapshot when provider does not support hooks', async () => {
+      mockGetHooksConfigPath.mockReturnValueOnce(null);
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockSnapshotFile).not.toHaveBeenCalled();
     });
   });
 });

@@ -10,8 +10,8 @@ import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
 const PANE_PREFIX = 'hub';
 
 // Separate store instances for project vs app mode so they don't collide
-const useProjectHubStore = createHubStore(PANE_PREFIX);
-const useAppHubStore = createHubStore(PANE_PREFIX);
+export const useProjectHubStore = createHubStore(PANE_PREFIX);
+export const useAppHubStore = createHubStore(PANE_PREFIX);
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   const disposable = api.commands.register('split-pane', () => {

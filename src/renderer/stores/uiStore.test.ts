@@ -13,6 +13,7 @@ describe('uiStore', () => {
       settingsSubPage: 'display',
       settingsContext: 'app',
       showHome: true,
+      projectExplorerTab: {},
     });
   });
 
@@ -82,6 +83,52 @@ describe('uiStore', () => {
     it('setHelpTopic updates topic', () => {
       getState().setHelpTopic('getting-started');
       expect(getState().helpTopicId).toBe('getting-started');
+    });
+  });
+
+  describe('per-project tab persistence', () => {
+    it('setExplorerTab with projectId saves to projectExplorerTab', () => {
+      getState().setExplorerTab('agents', 'proj-1');
+      expect(getState().projectExplorerTab['proj-1']).toBe('agents');
+    });
+
+    it('setExplorerTab without projectId does not save to projectExplorerTab', () => {
+      getState().setExplorerTab('agents');
+      expect(getState().projectExplorerTab).toEqual({});
+    });
+
+    it('setExplorerTab with settings tab does not save to projectExplorerTab', () => {
+      getState().setExplorerTab('settings', 'proj-1');
+      expect(getState().projectExplorerTab['proj-1']).toBeUndefined();
+    });
+
+    it('setExplorerTab with help tab does not save to projectExplorerTab', () => {
+      getState().setExplorerTab('help', 'proj-1');
+      expect(getState().projectExplorerTab['proj-1']).toBeUndefined();
+    });
+
+    it('setExplorerTab saves plugin tabs to projectExplorerTab', () => {
+      getState().setExplorerTab('plugin:hub', 'proj-1');
+      expect(getState().projectExplorerTab['proj-1']).toBe('plugin:hub');
+    });
+
+    it('restoreProjectView restores saved tab', () => {
+      useUIStore.setState({ projectExplorerTab: { 'proj-1': 'plugin:hub' } });
+      getState().restoreProjectView('proj-1');
+      expect(getState().explorerTab).toBe('plugin:hub');
+    });
+
+    it('restoreProjectView defaults to agents when no saved tab', () => {
+      useUIStore.setState({ explorerTab: 'settings', projectExplorerTab: {} });
+      getState().restoreProjectView('proj-2');
+      expect(getState().explorerTab).toBe('agents');
+    });
+
+    it('different projects maintain independent tabs', () => {
+      getState().setExplorerTab('agents', 'proj-1');
+      getState().setExplorerTab('plugin:hub', 'proj-2');
+      expect(getState().projectExplorerTab['proj-1']).toBe('agents');
+      expect(getState().projectExplorerTab['proj-2']).toBe('plugin:hub');
     });
   });
 
