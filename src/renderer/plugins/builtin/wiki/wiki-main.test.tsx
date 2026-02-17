@@ -19,6 +19,11 @@ vi.mock('../files/MarkdownPreview', () => ({
     React.createElement('div', { 'data-testid': 'markdown-preview' }, content),
 }));
 
+vi.mock('./WikiMarkdownPreview', () => ({
+  WikiMarkdownPreview: ({ content, pageNames, onNavigate }: { content: string; pageNames: string[]; onNavigate: (name: string) => void }) =>
+    React.createElement('div', { 'data-testid': 'markdown-preview' }, content),
+}));
+
 // ── Test data ─────────────────────────────────────────────────────────
 
 const MOCK_WIKI_TREE: FileNode[] = [
