@@ -345,9 +345,11 @@ export function AgentList() {
                   onDragOver={(e) => handleDragOver(e, i)}
                   onDrop={(e) => handleDrop(e, i)}
                   className="relative"
+                  data-testid={`durable-drag-${i}`}
+                  data-agent-id={durable.id}
                 >
                   {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-                    <div className="absolute -top-px left-3 right-3 h-0.5 bg-indigo-500 rounded-full z-10" />
+                    <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-indigo-500 rounded-full z-10" />
                   )}
                   <AgentListItem
                     agent={durable}
@@ -416,10 +418,11 @@ export function AgentList() {
       </div>
 
       {/* Completed footer — pinned to bottom, expands upward */}
-      <div className="flex-shrink-0 border-t border-surface-0">
+      <div className="flex-shrink-0 border-t border-surface-0" data-testid="completed-footer">
         <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider flex items-center justify-between">
           <button
             onClick={toggleCompletedCollapsed}
+            data-testid="completed-toggle"
             className="flex items-center gap-1 cursor-pointer hover:text-ctp-text transition-colors"
           >
             <svg
@@ -434,6 +437,7 @@ export function AgentList() {
           {!completedCollapsed && orphanCompleted.length > 0 && (
             <button
               onClick={() => activeProjectId && clearCompleted(activeProjectId)}
+              data-testid="completed-clear-all"
               className="text-[10px] normal-case tracking-normal text-ctp-overlay0 hover:text-ctp-text cursor-pointer font-normal"
             >
               Clear all
@@ -441,6 +445,7 @@ export function AgentList() {
           )}
         </div>
         <div
+          data-testid="completed-items"
           className="overflow-hidden transition-[max-height] duration-300 ease-in-out"
           style={{ maxHeight: completedCollapsed ? 0 : '33vh' }}
         >
