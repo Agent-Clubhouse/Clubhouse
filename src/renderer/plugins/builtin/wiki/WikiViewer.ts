@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginAPI, FilesAPI } from '../../../../shared/plugin-types';
+import type { FileNode } from '../../../../shared/types';
 import { wikiState } from './state';
 import { MonacoEditor } from '../files/MonacoEditor';
-import { MarkdownPreview } from '../files/MarkdownPreview';
+import { WikiMarkdownPreview } from './WikiMarkdownPreview';
 import { SendToAgentDialog } from './SendToAgentDialog';
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -20,6 +21,20 @@ function prettifyName(name: string): string {
 
 function getBreadcrumb(path: string): string {
   return path.replace(/\//g, ' / ');
+}
+
+// ── Collect markdown files from a FileNode tree ────────────────────────
+
+function collectMarkdownFiles(nodes: FileNode[], result: { name: string; path: string }[]): void {
+  for (const node of nodes) {
+    if (node.isDirectory) {
+      if (node.children) {
+        collectMarkdownFiles(node.children, result);
+      }
+    } else if (node.name.endsWith('.md')) {
+      result.push({ name: node.name, path: node.path });
+    }
+  }
 }
 
 // ── Unsaved Changes Dialog ────────────────────────────────────────────
@@ -69,6 +84,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
   const [loading, setLoading] = useState(false);
   const [unsavedDialog, setUnsavedDialog] = useState<{ pendingPath: string } | null>(null);
   const [showSendDialog, setShowSendDialog] = useState(false);
+  const [pageNames, setPageNames] = useState<string[]>([]);
 
   const contentRef = useRef(content);
   contentRef.current = content;
@@ -80,6 +96,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
   selectedPathRef.current = selectedPath;
 
   const wikiFilesRef = useRef<FilesAPI | null>(null);
+  const pagePathMapRef = useRef<Map<string, string>>(new Map());
 
   // Obtain scoped files API
   const getScopedFiles = useCallback((): FilesAPI | null => {
@@ -92,6 +109,45 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
       return null;
     }
   }, [api]);
+
+  // Load page names from the wiki root
+  const loadPageNames = useCallback(async () => {
+    const scoped = getScopedFiles();
+    if (!scoped) {
+      setPageNames([]);
+      pagePathMapRef.current = new Map();
+      return;
+    }
+
+    try {
+      const tree = await scoped.readTree('.', { depth: 10 });
+      const files: { name: string; path: string }[] = [];
+      collectMarkdownFiles(tree, files);
+
+      const names: string[] = [];
+      const pathMap = new Map<string, string>();
+
+      for (const file of files) {
+        const baseName = file.name.replace(/\.md$/i, '');
+        names.push(baseName);
+        pathMap.set(baseName.toLowerCase(), file.path);
+      }
+
+      setPageNames(names);
+      pagePathMapRef.current = pathMap;
+    } catch {
+      setPageNames([]);
+      pagePathMapRef.current = new Map();
+    }
+  }, [getScopedFiles]);
+
+  // Handle wiki link navigation
+  const handleWikiNavigate = useCallback((pageName: string) => {
+    const match = pagePathMapRef.current.get(pageName.toLowerCase());
+    if (match) {
+      wikiState.setSelectedPath(match);
+    }
+  }, []);
 
   // Load file content
   const loadFile = useCallback(async (path: string) => {
@@ -111,6 +167,18 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
     }
     setLoading(false);
   }, [getScopedFiles]);
+
+  // Load page names on mount
+  useEffect(() => {
+    loadPageNames();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload page names on refreshCount changes
+  useEffect(() => {
+    return wikiState.subscribe(() => {
+      loadPageNames();
+    });
+  }, [loadPageNames]);
 
   // Load initial file if selectedPath is already set on mount
   useEffect(() => {
@@ -288,7 +356,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
 
   if (viewMode === 'view') {
     body = React.createElement('div', { className: 'flex-1 min-h-0 overflow-auto' },
-      React.createElement(MarkdownPreview, { content }),
+      React.createElement(WikiMarkdownPreview, { content, pageNames, onNavigate: handleWikiNavigate }),
     );
   } else {
     body = React.createElement('div', { className: 'flex-1 min-h-0' },

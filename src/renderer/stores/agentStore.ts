@@ -29,7 +29,7 @@ interface AgentState {
   closeDeleteDialog: () => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
   spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string, orchestrator?: string) => Promise<string>;
-  spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean) => Promise<string>;
+  spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean, mission?: string) => Promise<string>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
   killAgent: (id: string, projectPath?: string) => Promise<void>;
   removeAgent: (id: string) => void;
@@ -241,7 +241,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return agentId;
   },
 
-  spawnDurableAgent: async (projectId, projectPath, config, _resume) => {
+  spawnDurableAgent: async (projectId, projectPath, config, _resume, mission?) => {
     const agentId = config.id;
 
     const agent: Agent = {
@@ -275,6 +275,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         kind: 'durable',
         model: config.model,
         orchestrator: config.orchestrator,
+        mission,
       });
     } catch (err) {
       set((s) => ({
