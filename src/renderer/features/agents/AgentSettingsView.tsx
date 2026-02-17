@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function AgentSettingsView({ agent }: Props) {
+  const isRunning = agent.status === 'running';
   const { closeAgentSettings, updateAgent } = useAgentStore();
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -130,9 +131,9 @@ export function AgentSettingsView({ agent }: Props) {
   };
 
   return (
-    <div className="h-full flex flex-col bg-ctp-base">
+    <div className="h-full flex flex-col bg-ctp-base overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-surface-0">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-surface-0 flex-shrink-0">
         <button
           onClick={closeAgentSettings}
           className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer"
@@ -154,6 +155,13 @@ export function AgentSettingsView({ agent }: Props) {
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
         <span className="text-xs text-ctp-subtext0">Settings</span>
       </div>
+
+      {/* Running banner */}
+      {isRunning && (
+        <div className="px-4 py-2 bg-ctp-yellow/10 border-b border-ctp-yellow/20 text-xs text-ctp-yellow flex-shrink-0">
+          Settings are read-only while this agent is running.
+        </div>
+      )}
 
       {/* Top 2/3: scrollable settings */}
       <div className="flex-[2] overflow-y-auto min-h-0 px-4 py-4 space-y-6">
@@ -218,8 +226,10 @@ export function AgentSettingsView({ agent }: Props) {
                       key={c.id}
                       type="button"
                       onClick={() => handleColorChange(c.id)}
-                      className={`w-6 h-6 rounded-full cursor-pointer transition-all ${
-                        agent.color === c.id ? 'ring-2 ring-offset-2 ring-offset-ctp-base scale-110' : 'opacity-60 hover:opacity-100'
+                      disabled={isRunning}
+                      className={`w-6 h-6 rounded-full transition-all ${
+                        isRunning ? 'cursor-not-allowed opacity-40' :
+                        agent.color === c.id ? 'ring-2 ring-offset-2 ring-offset-ctp-base scale-110 cursor-pointer' : 'opacity-60 hover:opacity-100 cursor-pointer'
                       }`}
                       style={{ backgroundColor: c.hex, ...(agent.color === c.id ? { boxShadow: `0 0 0 2px ${c.hex}40` } : {}) }}
                       title={c.label}
@@ -235,10 +245,11 @@ export function AgentSettingsView({ agent }: Props) {
                   <input
                     value={emojiValue}
                     onChange={(e) => handleEmojiChange(e.target.value)}
+                    disabled={isRunning}
                     placeholder="Paste an emoji..."
-                    className="w-24 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text text-center focus:outline-none focus:border-ctp-blue"
+                    className={`w-24 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text text-center focus:outline-none focus:border-ctp-blue ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                   />
-                  {(agent.emoji || emojiValue) && (
+                  {(agent.emoji || emojiValue) && !isRunning && (
                     <button
                       onClick={handleClearEmoji}
                       className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
@@ -281,10 +292,11 @@ export function AgentSettingsView({ agent }: Props) {
               <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Quick Agent Defaults</h3>
               <button
                 onClick={handleSaveQad}
-                disabled={!qadDirty || qadSaving}
-                className={`text-xs px-3 py-1 rounded transition-colors cursor-pointer ${
+                disabled={isRunning || !qadDirty || qadSaving}
+                className={`text-xs px-3 py-1 rounded transition-colors ${
+                  isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
                   qadDirty
-                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80'
+                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80 cursor-pointer'
                     : 'bg-surface-1 text-ctp-subtext0 cursor-default'
                 }`}
               >
@@ -297,8 +309,9 @@ export function AgentSettingsView({ agent }: Props) {
                 <textarea
                   value={qadSystemPrompt}
                   onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
+                  disabled={isRunning}
                   placeholder="System prompt appended to quick agents spawned by this agent..."
-                  className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                  className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                   spellCheck={false}
                 />
               </div>
@@ -307,8 +320,9 @@ export function AgentSettingsView({ agent }: Props) {
                 <textarea
                   value={qadAllowedTools}
                   onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
+                  disabled={isRunning}
                   placeholder="Bash(npm test:*)&#10;Edit&#10;Write"
-                  className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                  className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                   spellCheck={false}
                 />
               </div>
@@ -317,7 +331,8 @@ export function AgentSettingsView({ agent }: Props) {
                 <select
                   value={qadDefaultModel}
                   onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
-                  className="w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none"
+                  disabled={isRunning}
+                  className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {MODEL_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id}>{opt.label}</option>
