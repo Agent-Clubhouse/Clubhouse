@@ -26,6 +26,7 @@ import {
   renameDurable,
   updateDurable,
   deleteDurable,
+  reorderDurable,
   getWorktreeStatus,
   deleteCommitAndPush,
   deleteUnregister,
@@ -361,6 +362,46 @@ describe('deleteDurable', () => {
     expect(result.length).toBe(0);
     // No git commands for non-worktree agents
     expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+  });
+});
+
+describe('reorderDurable', () => {
+  let writtenAgents: string;
+  const agents = [
+    { id: 'durable_a', name: 'alpha', color: 'indigo', createdAt: '2024-01-01' },
+    { id: 'durable_b', name: 'bravo', color: 'emerald', createdAt: '2024-01-02' },
+    { id: 'durable_c', name: 'charlie', color: 'amber', createdAt: '2024-01-03' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    writtenAgents = '';
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
+  });
+
+  it('reorders by orderedIds', () => {
+    reorderDurable(PROJECT_PATH, ['durable_c', 'durable_a', 'durable_b']);
+    const result = JSON.parse(writtenAgents);
+    expect(result.map((a: any) => a.id)).toEqual(['durable_c', 'durable_a', 'durable_b']);
+  });
+
+  it('appends agents not in orderedIds', () => {
+    reorderDurable(PROJECT_PATH, ['durable_b']);
+    const result = JSON.parse(writtenAgents);
+    expect(result.map((a: any) => a.id)).toEqual(['durable_b', 'durable_a', 'durable_c']);
+  });
+
+  it('ignores unknown ids in orderedIds', () => {
+    reorderDurable(PROJECT_PATH, ['nonexistent', 'durable_c', 'durable_a']);
+    const result = JSON.parse(writtenAgents);
+    expect(result.map((a: any) => a.id)).toEqual(['durable_c', 'durable_a', 'durable_b']);
+  });
+
+  it('returns the reordered array', () => {
+    const result = reorderDurable(PROJECT_PATH, ['durable_b', 'durable_c', 'durable_a']);
+    expect(result.map((a) => a.id)).toEqual(['durable_b', 'durable_c', 'durable_a']);
   });
 });
 
