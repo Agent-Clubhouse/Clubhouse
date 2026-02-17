@@ -23,7 +23,7 @@ function getState() {
 
 function reset() {
   useBadgeSettingsStore.setState({
-    enabled: true,
+    enabled: false,
     pluginBadges: true,
     projectRailBadges: true,
     projectOverrides: {},
@@ -54,7 +54,7 @@ describe('badgeSettingsStore', () => {
     it('uses defaults when IPC returns null', async () => {
       mockGetBadgeSettings.mockResolvedValue(null);
       await getState().loadSettings();
-      expect(getState().enabled).toBe(true);
+      expect(getState().enabled).toBe(false);
       expect(getState().pluginBadges).toBe(true);
       expect(getState().projectRailBadges).toBe(true);
     });
@@ -62,7 +62,7 @@ describe('badgeSettingsStore', () => {
     it('keeps defaults on error', async () => {
       mockGetBadgeSettings.mockRejectedValue(new Error('fail'));
       await getState().loadSettings();
-      expect(getState().enabled).toBe(true);
+      expect(getState().enabled).toBe(false);
     });
   });
 
@@ -79,6 +79,7 @@ describe('badgeSettingsStore', () => {
     });
 
     it('reverts on save failure', async () => {
+      useBadgeSettingsStore.setState({ enabled: true });
       mockSaveBadgeSettings.mockImplementation(() => { throw new Error('fail'); });
       await getState().saveAppSettings({ enabled: false });
       // Should revert to previous
@@ -89,11 +90,12 @@ describe('badgeSettingsStore', () => {
   describe('getProjectSettings', () => {
     it('returns app defaults when no project override exists', () => {
       const settings = getState().getProjectSettings('proj1');
-      expect(settings).toEqual({ enabled: true, pluginBadges: true, projectRailBadges: true });
+      expect(settings).toEqual({ enabled: false, pluginBadges: true, projectRailBadges: true });
     });
 
     it('merges project overrides with app defaults', () => {
       useBadgeSettingsStore.setState({
+        enabled: true,
         projectOverrides: { proj1: { pluginBadges: false } },
       });
       const settings = getState().getProjectSettings('proj1');

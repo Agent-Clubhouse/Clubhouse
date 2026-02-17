@@ -29,7 +29,7 @@ function persist(state: BadgeSettingsState): void {
 }
 
 export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
-  enabled: true,
+  enabled: false,
   pluginBadges: true,
   projectRailBadges: true,
   projectOverrides: {},
@@ -38,7 +38,7 @@ export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
     try {
       const settings = await window.clubhouse.app.getBadgeSettings();
       set({
-        enabled: settings?.enabled ?? true,
+        enabled: settings?.enabled ?? false,
         pluginBadges: settings?.pluginBadges ?? true,
         projectRailBadges: settings?.projectRailBadges ?? true,
         projectOverrides: settings?.projectOverrides ?? {},
