@@ -81,7 +81,7 @@ export function MainContentView() {
 
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
-    if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView />;
+    if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
