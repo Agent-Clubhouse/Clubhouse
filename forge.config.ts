@@ -48,7 +48,7 @@ const config: ForgeConfig = {
       }),
     },
     asar: {
-      unpack: '{**/node_modules/node-pty/**}',
+      unpack: '{**/node_modules/node-pty/**/*.node,**/node_modules/node-pty/**/spawn-helper}',
     },
     afterCopy: [
       (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (err?: Error) => void) => {

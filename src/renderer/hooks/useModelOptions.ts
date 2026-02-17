@@ -10,9 +10,11 @@ const DEFAULT_OPTIONS = [
 
 /**
  * Fetches model options from the orchestrator provider for the active project.
+ * Pass an orchestrator ID to get options for a specific provider (e.g. in the
+ * Add Agent dialog where the user picks an orchestrator per-agent).
  * Falls back to defaults if no project is active or fetch fails.
  */
-export function useModelOptions(): Array<{ id: string; label: string }> {
+export function useModelOptions(orchestrator?: string): Array<{ id: string; label: string }> {
   const [options, setOptions] = useState(DEFAULT_OPTIONS);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
@@ -23,7 +25,7 @@ export function useModelOptions(): Array<{ id: string; label: string }> {
       setOptions(DEFAULT_OPTIONS);
       return;
     }
-    window.clubhouse.agent.getModelOptions(activeProject.path)
+    window.clubhouse.agent.getModelOptions(activeProject.path, orchestrator)
       .then((result: Array<{ id: string; label: string }>) => {
         if (Array.isArray(result) && result.length > 0) {
           setOptions(result);
@@ -32,7 +34,7 @@ export function useModelOptions(): Array<{ id: string; label: string }> {
       .catch(() => {
         // Keep defaults on error
       });
-  }, [activeProject?.path]);
+  }, [activeProject?.path, orchestrator]);
 
   return options;
 }

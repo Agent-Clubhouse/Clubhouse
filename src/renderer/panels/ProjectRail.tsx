@@ -291,41 +291,42 @@ export function ProjectRail() {
           <div className="border-t border-surface-2 my-1 flex-shrink-0" />
         )}
 
-        {projects.map((p, i) => (
-          <div
-            key={p.id}
-            ref={dragIndex === i ? dragNodeRef : undefined}
-            draggable
-            onDragStart={(e) => handleDragStart(e, i)}
-            onDragEnd={handleDragEnd}
-            onDragOver={(e) => handleDragOver(e, i)}
-            onDrop={(e) => handleDrop(e, i)}
-            className="relative flex-shrink-0"
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2">
+          {projects.map((p, i) => (
+            <div
+              key={p.id}
+              ref={dragIndex === i ? dragNodeRef : undefined}
+              draggable
+              onDragStart={(e) => handleDragStart(e, i)}
+              onDragEnd={handleDragEnd}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={(e) => handleDrop(e, i)}
+              className="relative flex-shrink-0"
+            >
+              {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
+                <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-indigo-500 rounded-full" />
+              )}
+              <ProjectIcon
+                project={p}
+                isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
+                onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
+                expanded={expanded}
+              />
+            </div>
+          ))}
+          <button
+            onClick={() => pickAndAddProject()}
+            title="Add project"
+            data-testid="nav-add-project"
+            className="
+              w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0
+              text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1
+              cursor-pointer border border-dashed border-surface-2
+            "
           >
-            {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-              <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-indigo-500 rounded-full" />
-            )}
-            <ProjectIcon
-              project={p}
-              isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
-              onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
-              expanded={expanded}
-            />
-          </div>
-        ))}
-        <button
-          onClick={() => pickAndAddProject()}
-          title="Add project"
-          data-testid="nav-add-project"
-          className="
-            w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0
-            text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1
-            cursor-pointer border border-dashed border-surface-2
-          "
-        >
-          +
-        </button>
-        <div className="flex-1" />
+            +
+          </button>
+        </div>
         {/* Bottom app-scoped plugin items */}
         {bottomPluginItems.map((entry) => {
           const tabId = `plugin:app:${entry.manifest.id}`;

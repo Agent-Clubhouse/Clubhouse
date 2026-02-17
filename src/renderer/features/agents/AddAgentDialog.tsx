@@ -13,11 +13,11 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
-  const MODEL_OPTIONS = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
+  const MODEL_OPTIONS = useModelOptions(enabledOrchestrators.length > 1 ? orchestrator : undefined);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,7 +97,7 @@ export function AddAgentDialog({ onClose, onCreate }: Props) {
               <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</span>
               <select
                 value={orchestrator}
-                onChange={(e) => setOrchestrator(e.target.value)}
+                onChange={(e) => { setOrchestrator(e.target.value); setModel('default'); }}
                 className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-3 py-1.5 text-sm
                   text-ctp-text focus:outline-none focus:border-indigo-500"
               >
