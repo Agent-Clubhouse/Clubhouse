@@ -1,33 +1,7 @@
 import { useState } from 'react';
 import { CompletedQuickAgent } from '../../../shared/types';
 import { TranscriptViewer } from './TranscriptViewer';
-
-const ORCHESTRATOR_COLORS: Record<string, { bg: string; text: string }> = {
-  'claude-code': { bg: 'rgba(249,115,22,0.2)', text: '#fb923c' },   // orange
-  'copilot-cli': { bg: 'rgba(59,130,246,0.2)', text: '#60a5fa' },   // blue
-};
-const DEFAULT_ORCH_COLOR = { bg: 'rgba(148,163,184,0.2)', text: '#94a3b8' }; // grey
-
-const MODEL_PALETTE = [
-  { bg: 'rgba(168,85,247,0.2)',  text: '#c084fc' },  // purple
-  { bg: 'rgba(20,184,166,0.2)',  text: '#2dd4bf' },  // teal
-  { bg: 'rgba(236,72,153,0.2)',  text: '#f472b6' },  // pink
-  { bg: 'rgba(34,197,94,0.2)',   text: '#4ade80' },  // green
-  { bg: 'rgba(251,191,36,0.2)',  text: '#fbbf24' },  // amber
-  { bg: 'rgba(99,102,241,0.2)',  text: '#818cf8' },  // indigo
-  { bg: 'rgba(14,165,233,0.2)',  text: '#38bdf8' },  // sky
-];
-const modelColorCache = new Map<string, { bg: string; text: string }>();
-function getModelColor(model: string) {
-  let color = modelColorCache.get(model);
-  if (!color) {
-    let hash = 0;
-    for (let i = 0; i < model.length; i++) hash = (hash * 31 + model.charCodeAt(i)) | 0;
-    color = MODEL_PALETTE[((hash % MODEL_PALETTE.length) + MODEL_PALETTE.length) % MODEL_PALETTE.length];
-    modelColorCache.set(model, color);
-  }
-  return color;
-}
+import { getOrchestratorColor, getModelColor } from './orchestrator-colors';
 
 interface Props {
   completed: CompletedQuickAgent;
@@ -110,7 +84,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               </span>
             )}
             {completed.orchestrator && (() => {
-              const c = ORCHESTRATOR_COLORS[completed.orchestrator] || DEFAULT_ORCH_COLOR;
+              const c = getOrchestratorColor(completed.orchestrator);
               return (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px]"
                   style={{ backgroundColor: c.bg, color: c.text }}>
@@ -263,10 +237,30 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="text-xs text-ctp-text truncate">{completed.mission}</div>
-        <div className="text-[10px] text-ctp-subtext0 truncate">
-          {completed.summary || 'Interrupted'}
-          {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
-          {completed.durationMs != null && ` · ${formatDuration(completed.durationMs)}`}
+        <div className="flex items-center gap-1 mt-0.5">
+          {completed.orchestrator && (() => {
+            const c = getOrchestratorColor(completed.orchestrator);
+            return (
+              <span className="inline-flex items-center px-1 py-0 rounded text-[9px] flex-shrink-0"
+                style={{ backgroundColor: c.bg, color: c.text }}>
+                {completed.orchestrator}
+              </span>
+            );
+          })()}
+          {completed.model && (() => {
+            const c = getModelColor(completed.model);
+            return (
+              <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-mono flex-shrink-0"
+                style={{ backgroundColor: c.bg, color: c.text }}>
+                {completed.model}
+              </span>
+            );
+          })()}
+          <span className="text-[10px] text-ctp-subtext0 truncate">
+            {completed.summary || 'Interrupted'}
+            {completed.filesModified.length > 0 && ` · ${completed.filesModified.length} file${completed.filesModified.length === 1 ? '' : 's'}`}
+            {completed.durationMs != null && ` · ${formatDuration(completed.durationMs)}`}
+          </span>
         </div>
       </div>
 
