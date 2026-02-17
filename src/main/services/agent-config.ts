@@ -168,6 +168,25 @@ export function createDurable(
   return config;
 }
 
+export function reorderDurable(projectPath: string, orderedIds: string[]): DurableAgentConfig[] {
+  const agents = readAgents(projectPath);
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const result: DurableAgentConfig[] = [];
+  for (const id of orderedIds) {
+    const agent = byId.get(id);
+    if (agent) {
+      result.push(agent);
+      byId.delete(id);
+    }
+  }
+  // Append any agents not in orderedIds (shouldn't happen, but safe)
+  for (const agent of byId.values()) {
+    result.push(agent);
+  }
+  writeAgents(projectPath, result);
+  return result;
+}
+
 export function renameDurable(projectPath: string, agentId: string, newName: string): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);

@@ -251,7 +251,7 @@ describe('wiki plugin API assumptions', () => {
       expect(api.agents.resume('agent-1')).toBeInstanceOf(Promise);
     });
 
-    it('accepts optional mission parameter', async () => {
+    it('accepts optional mission option', async () => {
       const resumeSpy = vi.fn(async () => {});
       const testApi = createMockAPI({
         agents: {
@@ -259,8 +259,8 @@ describe('wiki plugin API assumptions', () => {
           resume: resumeSpy,
         },
       });
-      await testApi.agents.resume('agent-1', 'Wiki page: test.md\n\nContent here');
-      expect(resumeSpy).toHaveBeenCalledWith('agent-1', 'Wiki page: test.md\n\nContent here');
+      await testApi.agents.resume('agent-1', { mission: 'Wiki page: test.md\n\nContent here' });
+      expect(resumeSpy).toHaveBeenCalledWith('agent-1', { mission: 'Wiki page: test.md\n\nContent here' });
     });
   });
 

@@ -16,6 +16,7 @@ vi.stubGlobal('window', {
       deleteSavePatch: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
+      reorderDurable: vi.fn().mockResolvedValue(undefined),
       getDurableConfig: vi.fn().mockResolvedValue(null),
       spawnAgent: vi.fn().mockResolvedValue(undefined),
       killAgent: vi.fn().mockResolvedValue(undefined),
@@ -500,6 +501,13 @@ describe('agentStore', () => {
       expect(spawnCall.kind).toBe('quick');
       expect(spawnCall.model).toBe('sonnet');
       expect(spawnCall.mission).toBe('do stuff');
+    });
+  });
+
+  describe('reorderAgents', () => {
+    it('calls reorderDurable IPC with correct args', async () => {
+      await getState().reorderAgents('/project', ['id_b', 'id_a', 'id_c']);
+      expect(window.clubhouse.agent.reorderDurable).toHaveBeenCalledWith('/project', ['id_b', 'id_a', 'id_c']);
     });
   });
 });

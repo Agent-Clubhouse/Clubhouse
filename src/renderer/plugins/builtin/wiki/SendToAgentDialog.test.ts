@@ -99,7 +99,7 @@ describe('SendToAgentDialog', () => {
       if (runningAgent.status === 'running') {
         const ok = await api.ui.showConfirm('interrupt?');
         if (!ok) return;
-        await api.agents.resume(runningAgent.id, 'mission');
+        await api.agents.resume(runningAgent.id, { mission: 'mission' });
       }
 
       expect(resumeSpy).not.toHaveBeenCalled();
@@ -113,13 +113,13 @@ describe('SendToAgentDialog', () => {
       // Simulate what handleDurableAgent does for a sleeping agent
       if (sleepingAgent.status !== 'running') {
         const mission = `Wiki page: test.md\n\nPage content:\n\`\`\`markdown\n# Hello\n\`\`\``;
-        await api.agents.resume(sleepingAgent.id, mission);
+        await api.agents.resume(sleepingAgent.id, { mission });
       }
 
       expect(confirmSpy).not.toHaveBeenCalled();
       expect(resumeSpy).toHaveBeenCalledWith(
         'agent-1',
-        expect.stringContaining('Wiki page: test.md'),
+        expect.objectContaining({ mission: expect.stringContaining('Wiki page: test.md') }),
       );
     });
   });

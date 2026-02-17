@@ -83,7 +83,7 @@ export function SendToAgentDialog({ api, filePath, content, onClose }: SendToAge
 
     const mission = buildMission();
     try {
-      await api.agents.resume(agent.id, mission);
+      await api.agents.resume(agent.id, { mission });
       api.ui.showNotice(`Wiki page sent to ${agent.name}`);
     } catch {
       api.ui.showError(`Failed to send to ${agent.name}`);

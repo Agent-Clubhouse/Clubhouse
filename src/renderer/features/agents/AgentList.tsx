@@ -14,7 +14,7 @@ export function AgentList() {
     agents, activeAgentId, setActiveAgent,
     spawnQuickAgent, spawnDurableAgent,
     loadDurableAgents, agentActivity, recordActivity,
-    deleteDialogAgent,
+    deleteDialogAgent, reorderAgents,
   } = useAgentStore();
   const { activeProjectId, projects } = useProjectStore();
   const { options: MODEL_OPTIONS } = useModelOptions();
@@ -41,6 +41,27 @@ export function AgentList() {
   const missionInputRef = useRef<HTMLInputElement>(null);
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
+
+  // Drag-to-reorder state for durable agents
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Collapsible completed section (persisted in localStorage)
+  const [completedCollapsed, setCompletedCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('clubhouse_completed_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleCompletedCollapsed = useCallback(() => {
+    setCompletedCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('clubhouse_completed_collapsed', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   // Load durable agents on project switch
   useEffect(() => {
@@ -132,6 +153,50 @@ export function AgentList() {
     if (!last) return false;
     return Date.now() - last < 3000;
   }, [agentActivity]);
+
+  // Drag-to-reorder handlers for durable agents
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === dropIndex) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const newOrder = [...durableAgents];
+    const [moved] = newOrder.splice(dragIndex, 1);
+    newOrder.splice(dropIndex, 0, moved);
+
+    if (activeProject) {
+      reorderAgents(activeProject.path, newOrder.map((a) => a.id));
+    }
+
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, [dragIndex, durableAgents, activeProject, reorderAgents]);
 
   // Get the parent durable agent name for the mission input label
   const targetParentAgent = quickTargetParentId ? agents[quickTargetParentId] : null;
@@ -259,20 +324,33 @@ export function AgentList() {
         <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {/* ALL section — durables with their nested children */}
         {durableAgents.length > 0 && (
           <div>
             <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0/50">
               All
             </div>
-            {durableAgents.map((durable) => {
+            {durableAgents.map((durable, i) => {
               const childQuick = quickAgents.filter((a) => a.parentAgentId === durable.id);
               const childCompleted = activeProjectId ? getCompletedByParent(activeProjectId, durable.id) : [];
               const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
 
               return (
-                <div key={durable.id}>
+                <div
+                  key={durable.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, i)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={(e) => handleDrop(e, i)}
+                  className="relative"
+                  data-testid={`durable-drag-${i}`}
+                  data-agent-id={durable.id}
+                >
+                  {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
+                    <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-indigo-500 rounded-full z-10" />
+                  )}
                   <AgentListItem
                     agent={durable}
                     isActive={durable.id === activeAgentId}
@@ -331,18 +409,47 @@ export function AgentList() {
           </div>
         )}
 
-        {/* Orphan completed section */}
-        {orphanCompleted.length > 0 && (
-          <div>
-            <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0/50 flex items-center justify-between">
-              <span>Completed</span>
-              <button
-                onClick={() => activeProjectId && clearCompleted(activeProjectId)}
-                className="text-[10px] normal-case tracking-normal text-ctp-overlay0 hover:text-ctp-text cursor-pointer font-normal"
-              >
-                Clear all
-              </button>
-            </div>
+        {durableAgents.length === 0 && quickAgents.length === 0 && completedAgents.length === 0 && (
+          <div className="p-4 text-ctp-subtext0 text-xs text-center">
+            <p className="mb-2">No agents yet</p>
+            <p>Click <span className="text-indigo-300">+ Agent</span> to create a durable agent, or use the dropdown for a quick session.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Completed footer — pinned to bottom, expands upward */}
+      <div className="flex-shrink-0 border-t border-surface-0" data-testid="completed-footer">
+        <div className="px-3 py-1.5 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider flex items-center justify-between">
+          <button
+            onClick={toggleCompletedCollapsed}
+            data-testid="completed-toggle"
+            className="flex items-center gap-1 cursor-pointer hover:text-ctp-text transition-colors"
+          >
+            <svg
+              width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              className={`transition-transform duration-200 ${completedCollapsed ? '' : 'rotate-90'}`}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>Completed ({orphanCompleted.length})</span>
+          </button>
+          {!completedCollapsed && orphanCompleted.length > 0 && (
+            <button
+              onClick={() => activeProjectId && clearCompleted(activeProjectId)}
+              data-testid="completed-clear-all"
+              className="text-[10px] normal-case tracking-normal text-ctp-overlay0 hover:text-ctp-text cursor-pointer font-normal"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
+        <div
+          data-testid="completed-items"
+          className="overflow-hidden transition-[max-height] duration-300 ease-in-out"
+          style={{ maxHeight: completedCollapsed ? 0 : '33vh' }}
+        >
+          <div className="overflow-y-auto" style={{ maxHeight: '33vh' }}>
             {orphanCompleted.map((completed) => (
               <QuickAgentGhostCompact
                 key={completed.id}
@@ -353,14 +460,7 @@ export function AgentList() {
               />
             ))}
           </div>
-        )}
-
-        {durableAgents.length === 0 && quickAgents.length === 0 && completedAgents.length === 0 && (
-          <div className="p-4 text-ctp-subtext0 text-xs text-center">
-            <p className="mb-2">No agents yet</p>
-            <p>Click <span className="text-indigo-300">+ Agent</span> to create a durable agent, or use the dropdown for a quick session.</p>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Dialogs */}

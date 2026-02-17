@@ -42,6 +42,10 @@ export function registerAgentHandlers(): void {
     agentConfig.updateDurableConfig(projectPath, agentId, updates);
   });
 
+  ipcMain.handle(IPC.AGENT.REORDER_DURABLE, (_event, projectPath: string, orderedIds: string[]) => {
+    return agentConfig.reorderDurable(projectPath, orderedIds);
+  });
+
   ipcMain.handle(IPC.AGENT.GET_WORKTREE_STATUS, (_event, projectPath: string, agentId: string) => {
     return agentConfig.getWorktreeStatus(projectPath, agentId);
   });

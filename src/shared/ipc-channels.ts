@@ -57,6 +57,7 @@ export const IPC = {
     HEADLESS_EVENT: 'agent:headless-event',
     READ_TRANSCRIPT: 'agent:read-transcript',
     IS_HEADLESS_AGENT: 'agent:is-headless-agent',
+    REORDER_DURABLE: 'agent:reorder-durable',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
