@@ -442,7 +442,7 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
       await useAgentStore.getState().killAgent(agentId, project?.path);
     },
 
-    async resume(agentId: string): Promise<void> {
+    async resume(agentId: string, options?: { mission?: string }): Promise<void> {
       const agent = useAgentStore.getState().agents[agentId];
       if (!agent || agent.kind !== 'durable') {
         throw new Error('Can only resume durable agents');
@@ -452,7 +452,7 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
       const configs = await window.clubhouse.agent.listDurable(project.path);
       const config = configs.find((c: { id: string }) => c.id === agentId);
       if (!config) throw new Error('Durable config not found for agent');
-      await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, true);
+      await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, true, options?.mission);
     },
 
     listCompleted(projectId?: string): CompletedQuickAgentInfo[] {

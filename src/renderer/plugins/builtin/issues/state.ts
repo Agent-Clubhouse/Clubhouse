@@ -29,6 +29,7 @@ export const issueState = {
   page: 1,
   hasMore: false,
   loading: false,
+  needsRefresh: false,
   listeners: new Set<() => void>(),
 
   setSelectedIssue(num: number | null): void {
@@ -58,6 +59,11 @@ export const issueState = {
     this.notify();
   },
 
+  requestRefresh(): void {
+    this.needsRefresh = true;
+    this.notify();
+  },
+
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => {
@@ -78,6 +84,7 @@ export const issueState = {
     this.page = 1;
     this.hasMore = false;
     this.loading = false;
+    this.needsRefresh = false;
     this.listeners.clear();
   },
 };

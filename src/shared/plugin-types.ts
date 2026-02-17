@@ -308,7 +308,7 @@ export interface AgentsAPI {
   list(): AgentInfo[];
   runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string }): Promise<string>;
   kill(agentId: string): Promise<void>;
-  resume(agentId: string): Promise<void>;
+  resume(agentId: string, options?: { mission?: string }): Promise<void>;
   listCompleted(projectId?: string): CompletedQuickAgentInfo[];
   dismissCompleted(projectId: string, agentId: string): void;
   getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null;
