@@ -43,6 +43,18 @@ npm run typecheck     # TypeScript type checking
 npm run validate      # Full pipeline: typecheck + test + make + e2e
 ```
 
+## Extensibility Principles
+
+Clubhouse is designed around the idea that opinionated workflows belong in plugins, not in the core. Three principles guide what goes where:
+
+1. **Opinions are opt-in.** The core host provides capabilities (run agents, manage files, access git) without assuming how you use them. Opinionated workflows — review flows, auto-organization, approval gates — are plugins that users choose to enable.
+
+2. **Change at the least obtrusive layer.** Default to the outermost layer that can support a change: community plugin > core plugin > plugin API > core feature > app host. The further inward, the higher the burden of proof.
+
+3. **Explicit support, no silent regression.** Supported plugin API versions are fully tested and guaranteed. Unsupported versions are rejected at load time. No quiet breakage.
+
+The test for any feature: *would a reasonable user want to turn this off?* If yes, it's a plugin. See the [full principles](https://github.com/masra91/Clubhouse/wiki/Extensibility-Principles) in the wiki.
+
 ## Architecture
 
 Clubhouse is an Electron app with a clean separation between processes:
