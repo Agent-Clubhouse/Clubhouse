@@ -278,7 +278,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         model: config.model,
         mission,
         orchestrator: config.orchestrator,
-        mission,
       });
     } catch (err) {
       set((s) => ({
