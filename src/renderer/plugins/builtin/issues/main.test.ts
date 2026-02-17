@@ -50,7 +50,7 @@ describe('issues plugin activate()', () => {
     }
   });
 
-  it('refresh command resets issue state', () => {
+  it('refresh command sets needsRefresh flag', () => {
     activate(ctx, api);
     // Add some state
     issueState.setIssues([{ number: 1, title: 'Test', state: 'OPEN', url: '', createdAt: '', updatedAt: '', author: { login: 'a' }, labels: [] }]);
@@ -61,8 +61,9 @@ describe('issues plugin activate()', () => {
     expect(refreshCall).toBeDefined();
     refreshCall![1]();
 
-    expect(issueState.page).toBe(1);
-    expect(issueState.issues).toEqual([]);
+    // Issues should remain visible while needsRefresh triggers a re-fetch
+    expect(issueState.needsRefresh).toBe(true);
+    expect(issueState.issues).toHaveLength(1);
   });
 
   it('create command sets creatingNew state', () => {
@@ -321,6 +322,26 @@ describe('issueState', () => {
     unsub();
     issueState.setSelectedIssue(2);
     expect(listener).toHaveBeenCalledTimes(1); // still 1, not called again
+  });
+
+  it('requestRefresh sets needsRefresh and notifies', () => {
+    const listener = vi.fn();
+    issueState.subscribe(listener);
+
+    issueState.requestRefresh();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(issueState.needsRefresh).toBe(true);
+  });
+
+  it('needsRefresh is false by default', () => {
+    expect(issueState.needsRefresh).toBe(false);
+  });
+
+  it('reset clears needsRefresh', () => {
+    issueState.requestRefresh();
+    expect(issueState.needsRefresh).toBe(true);
+    issueState.reset();
+    expect(issueState.needsRefresh).toBe(false);
   });
 
   it('reset clears all state and listeners', () => {

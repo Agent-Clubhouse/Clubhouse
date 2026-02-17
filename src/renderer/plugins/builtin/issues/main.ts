@@ -49,9 +49,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   pluginApi = api;
 
   const refreshCmd = api.commands.register('refresh', () => {
-    issueState.page = 1;
-    issueState.setIssues([]);
-    issueState.notify();
+    issueState.requestRefresh();
   });
   ctx.subscriptions.push(refreshCmd);
 
@@ -74,6 +72,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(issueState.hasMore);
   const [error, setError] = useState<string | null>(null);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   const mountedRef = useRef(true);
 
   // Subscribe to shared state
@@ -85,6 +84,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       setSelected(issueState.selectedIssueNumber);
       setLoading(issueState.loading);
       setHasMore(issueState.hasMore);
+      setNeedsRefresh(issueState.needsRefresh);
     });
     return () => { mountedRef.current = false; unsub(); };
   }, []);
@@ -130,6 +130,14 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       fetchIssues(1, false);
     }
   }, [fetchIssues]);
+
+  // React to needsRefresh flag
+  useEffect(() => {
+    if (needsRefresh) {
+      issueState.needsRefresh = false;
+      fetchIssues(1, false);
+    }
+  }, [needsRefresh, fetchIssues]);
 
   const loadMore = useCallback(() => {
     fetchIssues(issueState.page + 1, true);
@@ -178,6 +186,12 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     React.createElement('div', { className: 'flex items-center justify-between px-3 py-2 border-b border-ctp-surface0' },
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, 'Issues'),
       React.createElement('div', { className: 'flex items-center gap-1' },
+        React.createElement('button', {
+          className: 'px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: () => fetchIssues(1, false),
+          disabled: loading,
+          title: 'Refresh issues',
+        }, '\u21BB'),
         React.createElement('button', {
           className: 'px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
           onClick: handleNewIssue,
@@ -251,12 +265,22 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [detailVersion, setDetailVersion] = useState(0);
 
   // Inline create form state
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newLabels, setNewLabels] = useState('');
   const [creating, setCreating] = useState(false);
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editBody, setEditBody] = useState('');
+  const [editLabels, setEditLabels] = useState('');
+
+  // Comment form state
+  const [commentBody, setCommentBody] = useState('');
 
   // Subscribe to shared state
   useEffect(() => {
@@ -294,7 +318,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         }
       });
     return () => { cancelled = true; };
-  }, [selected, api]);
+  }, [selected, api, detailVersion]);
 
   // Close agent menu on outside click
   useEffect(() => {
@@ -309,28 +333,37 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [showAgentMenu]);
 
   // ── Agent assignment ──────────────────────────────────────────────────
-  const handleQuickAgent = useCallback(async () => {
-    if (!detail) return;
-    setShowAgentMenu(false);
-    const prompt = buildAgentPrompt(detail);
-    try {
-      await api.agents.runQuick(prompt);
-      api.ui.showNotice(`Quick agent launched for issue #${detail.number}`);
-    } catch {
-      api.ui.showError('Failed to launch quick agent');
-    }
-  }, [detail, api]);
-
   const handleDurableAgent = useCallback(async (agent: AgentInfo) => {
     if (!detail) return;
     setShowAgentMenu(false);
-    const prompt = buildAgentPrompt(detail);
+
+    // If agent is running, confirm before killing
+    if (agent.status === 'running') {
+      const confirmed = await api.ui.showConfirm(
+        `Agent "${agent.name}" is currently running. Restarting will interrupt its work. Continue?`,
+      );
+      if (!confirmed) return;
+      await api.agents.kill(agent.id);
+    }
+
+    // Ask for user instructions
+    const userInstructions = await api.ui.showInput(
+      'Add instructions for the agent (optional):',
+      '',
+    );
+    if (userInstructions === null) return; // user cancelled
+
+    // Build mission from issue context + user instructions
+    const issueContext = buildAgentPrompt(detail);
+    const mission = userInstructions.trim()
+      ? `${issueContext}\n\nAdditional instructions:\n${userInstructions.trim()}`
+      : issueContext;
 
     try {
-      await api.agents.runQuick(prompt);
-      api.ui.showNotice(`Quick agent launched for issue #${detail.number} (via ${agent.name})`);
+      await api.agents.resume(agent.id, { mission });
+      api.ui.showNotice(`Agent "${agent.name}" assigned to issue #${detail.number}`);
     } catch {
-      api.ui.showError(`Failed to launch agent for issue #${detail.number}`);
+      api.ui.showError(`Failed to assign agent to issue #${detail.number}`);
     }
   }, [detail, api]);
 
@@ -339,6 +372,122 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     setDurableAgents(agents);
     setShowAgentMenu(true);
   }, [api]);
+
+  // ── Detail refresh ──────────────────────────────────────────────────
+  const refreshDetail = useCallback(() => {
+    setDetailVersion((v) => v + 1);
+  }, []);
+
+  // ── Edit handlers ──────────────────────────────────────────────────
+  const startEditing = useCallback(() => {
+    if (!detail) return;
+    setEditTitle(detail.title);
+    setEditBody(detail.body || '');
+    setEditLabels(detail.labels.map((l) => l.name).join(', '));
+    setEditing(true);
+  }, [detail]);
+
+  const cancelEditing = useCallback(() => {
+    setEditing(false);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!detail) return;
+    const num = String(detail.number);
+    const args: string[] = ['issue', 'edit', num];
+
+    if (editTitle.trim() !== detail.title) {
+      args.push('--title', editTitle.trim());
+    }
+    if (editBody !== (detail.body || '')) {
+      args.push('--body', editBody);
+    }
+
+    // Handle label changes
+    const oldLabels = new Set(detail.labels.map((l) => l.name));
+    const newLabelSet = new Set(editLabels.split(',').map((l) => l.trim()).filter(Boolean));
+    for (const l of newLabelSet) {
+      if (!oldLabels.has(l)) args.push('--add-label', l);
+    }
+    for (const l of oldLabels) {
+      if (!newLabelSet.has(l)) args.push('--remove-label', l);
+    }
+
+    if (args.length === 3) {
+      // No changes
+      setEditing(false);
+      return;
+    }
+
+    const r = await api.process.exec('gh', args, { timeout: 30000 });
+    if (r.exitCode === 0) {
+      api.ui.showNotice('Issue updated');
+      setEditing(false);
+      refreshDetail();
+      issueState.requestRefresh();
+    } else {
+      api.ui.showError(r.stderr.trim() || 'Failed to update issue');
+    }
+  }, [detail, editTitle, editBody, editLabels, api, refreshDetail]);
+
+  // ── Comment handler ─────────────────────────────────────────────────
+  const handleAddComment = useCallback(async () => {
+    if (!detail || !commentBody.trim()) return;
+    const r = await api.process.exec('gh', [
+      'issue', 'comment', String(detail.number), '--body', commentBody.trim(),
+    ], { timeout: 30000 });
+    if (r.exitCode === 0) {
+      api.ui.showNotice('Comment added');
+      setCommentBody('');
+      refreshDetail();
+    } else {
+      api.ui.showError(r.stderr.trim() || 'Failed to add comment');
+    }
+  }, [detail, commentBody, api, refreshDetail]);
+
+  // ── Close / Reopen handler ──────────────────────────────────────────
+  const handleToggleState = useCallback(async () => {
+    if (!detail) return;
+    const isOpen = detail.state === 'OPEN' || detail.state === 'open';
+    const cmd = isOpen ? 'close' : 'reopen';
+    const r = await api.process.exec('gh', ['issue', cmd, String(detail.number)], { timeout: 30000 });
+    if (r.exitCode === 0) {
+      api.ui.showNotice(`Issue ${isOpen ? 'closed' : 'reopened'}`);
+      refreshDetail();
+      issueState.requestRefresh();
+    } else {
+      api.ui.showError(r.stderr.trim() || `Failed to ${cmd} issue`);
+    }
+  }, [detail, api, refreshDetail]);
+
+  // ── Assignee handlers ───────────────────────────────────────────────
+  const handleAddAssignee = useCallback(async () => {
+    if (!detail) return;
+    const login = await api.ui.showInput('GitHub username to assign:');
+    if (!login) return;
+    const r = await api.process.exec('gh', [
+      'issue', 'edit', String(detail.number), '--add-assignee', login.trim(),
+    ], { timeout: 30000 });
+    if (r.exitCode === 0) {
+      api.ui.showNotice(`Assigned ${login.trim()}`);
+      refreshDetail();
+    } else {
+      api.ui.showError(r.stderr.trim() || 'Failed to add assignee');
+    }
+  }, [detail, api, refreshDetail]);
+
+  const handleRemoveAssignee = useCallback(async (login: string) => {
+    if (!detail) return;
+    const r = await api.process.exec('gh', [
+      'issue', 'edit', String(detail.number), '--remove-assignee', login,
+    ], { timeout: 30000 });
+    if (r.exitCode === 0) {
+      api.ui.showNotice(`Removed ${login}`);
+      refreshDetail();
+    } else {
+      api.ui.showError(r.stderr.trim() || 'Failed to remove assignee');
+    }
+  }, [detail, api, refreshDetail]);
 
   // ── Create form handlers ─────────────────────────────────────────────
   const handleCreate = useCallback(async () => {
@@ -357,8 +506,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       setNewBody('');
       setNewLabels('');
       issueState.setCreatingNew(false);
-      issueState.page = 1;
-      issueState.setIssues([]);
+      issueState.requestRefresh();
     } else {
       api.ui.showError(r.stderr.trim() || 'Failed to create issue');
     }
@@ -464,72 +612,99 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     React.createElement('div', {
       className: 'flex items-center gap-2 px-4 py-2.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
     },
-      // Issue title
-      React.createElement('div', { className: 'flex-1 min-w-0' },
-        React.createElement('div', { className: 'flex items-center gap-1.5' },
-          React.createElement('span', { className: 'text-xs text-ctp-subtext0' }, `#${detail.number}`),
-          React.createElement('span', { className: 'text-sm font-medium text-ctp-text truncate' }, detail.title),
-        ),
-      ),
-      // View in Browser
-      React.createElement('button', {
-        className: 'px-2.5 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors flex-shrink-0',
-        onClick: () => api.ui.openExternalUrl(detail.url),
-        title: 'Open in browser',
-      }, 'View in Browser'),
-      // Assign to Agent
-      React.createElement('div', { className: 'relative flex-shrink-0', ref: menuRef },
-        React.createElement('button', {
-          className: 'px-2.5 py-1 text-xs bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors',
-          onClick: openAgentMenu,
-        }, 'Assign to Agent'),
-        // Dropdown menu
-        showAgentMenu && React.createElement('div', {
-          className: 'absolute right-0 top-full mt-1 w-56 bg-ctp-mantle border border-ctp-surface1 rounded-lg shadow-lg z-50 py-1',
-        },
-          // Quick Agent option
-          React.createElement('button', {
-            className: 'w-full text-left px-3 py-2 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors',
-            onClick: handleQuickAgent,
-          },
-            React.createElement('div', { className: 'font-medium' }, 'Quick Agent'),
-            React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 mt-0.5' }, 'Spawn a quick agent to fix this issue'),
-          ),
-          // Divider
-          durableAgents.length > 0 && React.createElement('div', {
-            className: 'border-t border-ctp-surface0 my-1',
-          }),
-          // Durable agents
-          ...durableAgents.map((agent) =>
-            React.createElement('button', {
-              key: agent.id,
-              className: 'w-full text-left px-3 py-2 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors',
-              onClick: () => handleDurableAgent(agent),
-            },
-              React.createElement('div', { className: 'flex items-center gap-1.5' },
-                React.createElement('span', {
-                  className: 'w-2 h-2 rounded-full flex-shrink-0',
-                  style: { backgroundColor: agent.color || 'var(--ctp-accent)' },
-                }),
-                React.createElement('span', { className: 'font-medium' }, agent.name),
-                agent.status === 'running' && React.createElement('span', {
-                  className: 'text-[9px] px-1 py-px rounded bg-ctp-yellow/15 text-ctp-yellow',
-                }, 'running'),
-              ),
-              React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 mt-0.5 pl-3.5' }, 'Assign issue to this agent'),
+      // Issue title (editable or static)
+      editing
+        ? React.createElement('div', { className: 'flex-1 min-w-0' },
+            React.createElement('input', {
+              type: 'text',
+              className: 'w-full px-2 py-1 text-sm bg-ctp-base text-ctp-text border border-ctp-surface1 rounded focus:outline-none focus:border-ctp-accent',
+              value: editTitle,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setEditTitle(e.target.value),
+            }),
+          )
+        : React.createElement('div', { className: 'flex-1 min-w-0' },
+            React.createElement('div', { className: 'flex items-center gap-1.5' },
+              React.createElement('span', { className: 'text-xs text-ctp-subtext0' }, `#${detail.number}`),
+              React.createElement('span', { className: 'text-sm font-medium text-ctp-text truncate' }, detail.title),
             ),
           ),
-        ),
-      ),
+      // Edit / Save / Cancel buttons
+      editing
+        ? React.createElement(React.Fragment, null,
+            React.createElement('button', {
+              className: 'px-2.5 py-1 text-xs bg-ctp-green/10 text-ctp-green border border-ctp-green/30 rounded hover:bg-ctp-green/20 transition-colors flex-shrink-0',
+              onClick: saveEdit,
+            }, 'Save'),
+            React.createElement('button', {
+              className: 'px-2.5 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors flex-shrink-0',
+              onClick: cancelEditing,
+            }, 'Cancel'),
+          )
+        : React.createElement(React.Fragment, null,
+            React.createElement('button', {
+              className: 'px-2.5 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors flex-shrink-0',
+              onClick: startEditing,
+              title: 'Edit issue',
+            }, 'Edit'),
+            // View in Browser
+            React.createElement('button', {
+              className: 'px-2.5 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors flex-shrink-0',
+              onClick: () => api.ui.openExternalUrl(detail.url),
+              title: 'Open in browser',
+            }, 'View in Browser'),
+            // Assign to Agent
+            React.createElement('div', { className: 'relative flex-shrink-0', ref: menuRef },
+              React.createElement('button', {
+                className: 'px-2.5 py-1 text-xs bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors',
+                onClick: openAgentMenu,
+              }, 'Assign to Agent'),
+              // Dropdown menu
+              showAgentMenu && React.createElement('div', {
+                className: 'absolute right-0 top-full mt-1 w-56 bg-ctp-mantle border border-ctp-surface1 rounded-lg shadow-lg z-50 py-1',
+              },
+                // Empty state
+                durableAgents.length === 0 && React.createElement('div', {
+                  className: 'px-3 py-2 text-xs text-ctp-subtext0 text-center',
+                }, 'No durable agents available'),
+                // Durable agents
+                ...durableAgents.map((agent) =>
+                  React.createElement('button', {
+                    key: agent.id,
+                    className: 'w-full text-left px-3 py-2 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors',
+                    onClick: () => handleDurableAgent(agent),
+                  },
+                    React.createElement('div', { className: 'flex items-center gap-1.5' },
+                      React.createElement(api.widgets.AgentAvatar, {
+                        agentId: agent.id,
+                        size: 'sm',
+                        showStatusRing: true,
+                      }),
+                      React.createElement('span', { className: 'font-medium' }, agent.name),
+                      React.createElement('span', {
+                        className: `text-[9px] px-1 py-px rounded ${
+                          agent.status === 'running'
+                            ? 'bg-ctp-yellow/15 text-ctp-yellow'
+                            : 'bg-ctp-surface0 text-ctp-subtext0'
+                        }`,
+                      }, agent.status === 'running' ? 'running' : 'sleeping'),
+                    ),
+                    React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 mt-0.5 pl-5' }, 'Assign issue to this agent'),
+                  ),
+                ),
+              ),
+            ),
+          ),
     ),
 
     // ── Metadata row ──────────────────────────────────────────────────
     React.createElement('div', {
       className: 'flex items-center flex-wrap gap-2 px-4 py-2 border-b border-ctp-surface0 bg-ctp-mantle/50',
     },
-      // State badge
-      React.createElement('span', {
-        className: `text-[10px] px-2 py-0.5 rounded-full border ${stateColor}`,
+      // State badge + close/reopen toggle
+      React.createElement('button', {
+        className: `text-[10px] px-2 py-0.5 rounded-full border cursor-pointer hover:opacity-80 transition-opacity ${stateColor}`,
+        onClick: handleToggleState,
+        title: (detail.state === 'OPEN' || detail.state === 'open') ? 'Close issue' : 'Reopen issue',
       }, detail.state),
       // Author
       React.createElement('span', { className: 'text-[10px] text-ctp-subtext0' },
@@ -539,38 +714,71 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       React.createElement('span', { className: 'text-[10px] text-ctp-subtext0' },
         `opened ${relativeTime(detail.createdAt)}`,
       ),
-      // Labels
-      ...detail.labels.map((label) =>
-        React.createElement('span', {
-          key: label.name,
-          className: 'text-[9px] px-1.5 py-px rounded-full',
-          style: {
-            backgroundColor: `${labelColor(label.color)}22`,
-            color: labelColor(label.color),
-            border: `1px solid ${labelColor(label.color)}44`,
-          },
-        }, label.name),
+      // Labels (editable in edit mode)
+      ...(editing
+        ? [React.createElement('input', {
+            key: '__edit-labels',
+            type: 'text',
+            className: 'text-[10px] px-2 py-0.5 bg-ctp-base text-ctp-text border border-ctp-surface1 rounded focus:outline-none focus:border-ctp-accent',
+            value: editLabels,
+            onChange: (e: React.ChangeEvent<HTMLInputElement>) => setEditLabels(e.target.value),
+            placeholder: 'Labels (comma separated)',
+          })]
+        : detail.labels.map((label) =>
+            React.createElement('span', {
+              key: label.name,
+              className: 'text-[9px] px-1.5 py-px rounded-full',
+              style: {
+                backgroundColor: `${labelColor(label.color)}22`,
+                color: labelColor(label.color),
+                border: `1px solid ${labelColor(label.color)}44`,
+              },
+            }, label.name),
+          )
       ),
-      // Assignees
+      // Assignees with remove button
       ...detail.assignees.map((a) =>
         React.createElement('span', {
           key: a.login,
-          className: 'text-[10px] px-1.5 py-0.5 bg-ctp-surface0 text-ctp-subtext1 rounded',
-        }, a.login),
+          className: 'text-[10px] px-1.5 py-0.5 bg-ctp-surface0 text-ctp-subtext1 rounded inline-flex items-center gap-1',
+        },
+          a.login,
+          React.createElement('button', {
+            className: 'text-ctp-subtext0 hover:text-ctp-red transition-colors',
+            onClick: () => handleRemoveAssignee(a.login),
+            title: `Remove ${a.login}`,
+          }, '\u00d7'),
+        ),
       ),
+      // Add assignee button
+      React.createElement('button', {
+        className: 'text-[10px] px-1.5 py-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+        onClick: handleAddAssignee,
+        title: 'Add assignee',
+      }, '+ Assignee'),
     ),
 
     // ── Body ────────────────────────────────────────────────────────────
-    detail.body
+    editing
       ? React.createElement('div', { className: 'px-4 py-3 border-b border-ctp-surface0' },
-          React.createElement(MarkdownPreview, { content: detail.body }),
+          React.createElement('textarea', {
+            className: 'w-full px-3 py-2 text-sm bg-ctp-mantle text-ctp-text border border-ctp-surface1 rounded-lg focus:outline-none focus:border-ctp-accent resize-y',
+            rows: 10,
+            value: editBody,
+            onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => setEditBody(e.target.value),
+            placeholder: 'Issue body...',
+          }),
         )
-      : React.createElement('div', { className: 'px-4 py-3 text-xs text-ctp-subtext0 italic border-b border-ctp-surface0' },
-          'No description provided.',
-        ),
+      : detail.body
+        ? React.createElement('div', { className: 'px-4 py-3 border-b border-ctp-surface0' },
+            React.createElement(MarkdownPreview, { content: detail.body }),
+          )
+        : React.createElement('div', { className: 'px-4 py-3 text-xs text-ctp-subtext0 italic border-b border-ctp-surface0' },
+            'No description provided.',
+          ),
 
     // ── Comments ────────────────────────────────────────────────────────
-    detail.comments.length > 0 && React.createElement('div', { className: 'px-4 py-3' },
+    detail.comments.length > 0 && React.createElement('div', { className: 'px-4 py-3 border-b border-ctp-surface0' },
       React.createElement('div', { className: 'text-xs font-medium text-ctp-text mb-3' },
         `${detail.comments.length} comment${detail.comments.length === 1 ? '' : 's'}`,
       ),
@@ -593,6 +801,25 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             ),
           ),
         ),
+      ),
+    ),
+
+    // ── Add comment form ────────────────────────────────────────────────
+    React.createElement('div', { className: 'px-4 py-3' },
+      React.createElement('div', { className: 'text-xs font-medium text-ctp-text mb-2' }, 'Add a comment'),
+      React.createElement('textarea', {
+        className: 'w-full px-3 py-2 text-sm bg-ctp-mantle text-ctp-text border border-ctp-surface1 rounded-lg focus:outline-none focus:border-ctp-accent resize-y',
+        rows: 3,
+        value: commentBody,
+        onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => setCommentBody(e.target.value),
+        placeholder: 'Write a comment...',
+      }),
+      React.createElement('div', { className: 'flex justify-end mt-2' },
+        React.createElement('button', {
+          className: 'px-3 py-1.5 text-xs bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors disabled:opacity-50',
+          onClick: handleAddComment,
+          disabled: !commentBody.trim(),
+        }, 'Comment'),
       ),
     ),
   );
