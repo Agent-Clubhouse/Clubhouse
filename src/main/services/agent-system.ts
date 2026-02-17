@@ -212,7 +212,12 @@ export function getAvailableOrchestrators() {
   return getAllProviders().map((p) => ({
     id: p.id,
     displayName: p.displayName,
+    shortName: p.shortName,
     badge: p.badge,
     capabilities: p.getCapabilities(),
+    conventions: {
+      configDir: p.conventions.configDir,
+      localInstructionsFile: p.conventions.localInstructionsFile,
+    },
   }));
 }

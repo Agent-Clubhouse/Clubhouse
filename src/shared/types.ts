@@ -14,6 +14,10 @@ export interface OrchestratorInfo {
   shortName: string;
   badge?: string;
   capabilities: ProviderCapabilities;
+  conventions?: {
+    configDir: string;
+    localInstructionsFile: string;
+  };
 }
 
 export interface Project {
@@ -64,6 +68,7 @@ export interface CompletedQuickAgent {
   toolsUsed?: string[];
   orchestrator?: string;
   model?: string;
+  cancelled?: boolean;
 }
 
 // --- Config inheritance types ---

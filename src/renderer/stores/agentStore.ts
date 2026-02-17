@@ -7,6 +7,9 @@ import { useHeadlessStore } from './headlessStore';
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
 
+/** Track agents that were user-cancelled (not naturally completed) */
+const cancelledAgentIds = new Set<string>();
+
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
 interface AgentState {
@@ -333,6 +336,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const agent = get().agents[id];
     if (!agent) return;
 
+    // Mark as user-cancelled so exit handler can distinguish from natural completion
+    if (agent.kind === 'quick') {
+      cancelledAgentIds.add(id);
+    }
+
     // Resolve projectPath from agent if not provided
     const resolvedPath = projectPath || (() => {
       const { useProjectStore } = require('./projectStore');
@@ -507,3 +515,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return Date.now() - last < 3000;
   },
 }));
+
+/** Check if an agent was user-cancelled (consumes the flag) */
+export function consumeCancelled(agentId: string): boolean {
+  const was = cancelledAgentIds.has(agentId);
+  cancelledAgentIds.delete(agentId);
+  return was;
+}

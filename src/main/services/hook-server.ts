@@ -33,7 +33,11 @@ export function start(): Promise<number> {
         return;
       }
 
-      const agentId = req.url.slice('/hook/'.length);
+      // URL: /hook/{agentId} or /hook/{agentId}/{eventHint}
+      const urlPath = req.url.slice('/hook/'.length);
+      const slashIdx = urlPath.indexOf('/');
+      const agentId = slashIdx === -1 ? urlPath : urlPath.slice(0, slashIdx);
+      const eventHint = slashIdx === -1 ? undefined : urlPath.slice(slashIdx + 1);
       if (!agentId) {
         res.writeHead(400);
         res.end();
@@ -48,6 +52,11 @@ export function start(): Promise<number> {
 
         try {
           const raw = JSON.parse(body);
+          // Inject event type hint from URL when not present in payload
+          // (GHCP doesn't include hook_event_name in stdin, unlike Claude Code)
+          if (eventHint && !raw.hook_event_name) {
+            raw.hook_event_name = eventHint;
+          }
           const projectPath = getAgentProjectPath(agentId);
           const orchestrator = getAgentOrchestrator(agentId);
 

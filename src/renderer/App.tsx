@@ -6,7 +6,7 @@ import { MainContentView } from './panels/MainContentView';
 import { Dashboard } from './features/projects/Dashboard';
 import { GitBanner } from './features/projects/GitBanner';
 import { useProjectStore } from './stores/projectStore';
-import { useAgentStore } from './stores/agentStore';
+import { useAgentStore, consumeCancelled } from './stores/agentStore';
 import { useUIStore } from './stores/uiStore';
 import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
@@ -258,6 +258,7 @@ export function App() {
 
           // If the summary was found, treat as success regardless of exit code
           // (we often force-kill quick agents after they finish, giving >128 codes)
+          const cancelled = consumeCancelled(agentId);
           const effectiveExitCode = summary ? 0 : exitCode;
 
           addCompleted({
@@ -276,6 +277,7 @@ export function App() {
             toolsUsed,
             orchestrator: agent.orchestrator || 'claude-code',
             model: agent.model,
+            cancelled,
           });
 
           removeAgent(agentId);

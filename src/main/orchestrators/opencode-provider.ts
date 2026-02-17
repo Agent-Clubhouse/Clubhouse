@@ -69,6 +69,7 @@ function parseOpenCodeModels(stdout: string): Array<{ id: string; label: string 
 export class OpenCodeProvider implements OrchestratorProvider {
   readonly id = 'opencode' as const;
   readonly displayName = 'OpenCode';
+  readonly shortName = 'OC';
   readonly badge = 'Beta';
 
   getCapabilities(): ProviderCapabilities {

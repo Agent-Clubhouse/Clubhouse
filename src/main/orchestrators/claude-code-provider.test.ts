@@ -46,8 +46,8 @@ describe('ClaudeCodeProvider', () => {
       expect(provider.conventions.configDir).toBe('.claude');
     });
 
-    it('uses CLAUDE.local.md for local instructions', () => {
-      expect(provider.conventions.localInstructionsFile).toBe('CLAUDE.local.md');
+    it('uses CLAUDE.md for local instructions', () => {
+      expect(provider.conventions.localInstructionsFile).toBe('CLAUDE.md');
     });
 
     it('uses CLAUDE.md as legacy instructions', () => {
@@ -299,22 +299,14 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from .claude/CLAUDE.local.md', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('local instructions');
+    it('reads from CLAUDE.md at project root', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
       const result = provider.readInstructions('/project');
-      expect(result).toBe('local instructions');
+      expect(result).toBe('project instructions');
+      expect(fs.readFileSync).toHaveBeenCalledWith(path.join('/project', 'CLAUDE.md'), 'utf-8');
     });
 
-    it('falls back to CLAUDE.md', () => {
-      vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        if (String(p).includes('CLAUDE.local.md')) throw new Error('ENOENT');
-        return 'legacy instructions';
-      });
-      const result = provider.readInstructions('/project');
-      expect(result).toBe('legacy instructions');
-    });
-
-    it('returns empty string when neither file exists', () => {
+    it('returns empty string when file does not exist', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const result = provider.readInstructions('/project');
       expect(result).toBe('');
@@ -322,17 +314,11 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('writeInstructions', () => {
-    it('creates .claude dir and writes CLAUDE.local.md', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        if (String(p).endsWith('/claude')) return true;
-        return false;
-      });
-
+    it('writes CLAUDE.md at project root', () => {
       provider.writeInstructions('/project', 'new instructions');
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith(path.join('/project', '.claude'), { recursive: true });
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        path.join('/project', '.claude', 'CLAUDE.local.md'),
+        path.join('/project', 'CLAUDE.md'),
         'new instructions',
         'utf-8'
       );

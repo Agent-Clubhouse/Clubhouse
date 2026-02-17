@@ -61,6 +61,7 @@ export interface ProviderCapabilities {
 export interface OrchestratorProvider {
   readonly id: OrchestratorId;
   readonly displayName: string;
+  readonly shortName: string;
   readonly badge?: string;
 
   // Capabilities

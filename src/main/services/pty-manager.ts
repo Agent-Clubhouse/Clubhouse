@@ -103,11 +103,11 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
-    if (exitCode !== 0 && !current.killing) {
-      appLog('core:pty', 'error', `PTY exited with non-zero code`, {
-        meta: { agentId, exitCode, binary },
-      });
-    }
+    const ptyBuffer = current.outputChunks.join('').slice(-500);
+    appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
+      meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
+    });
+    console.error(`[pty-exit] agentId=${agentId} exitCode=${exitCode} binary=${binary} lastOutput=${ptyBuffer.slice(-200)}`);
 
     cleanupSession(agentId);
     onExit?.(agentId, exitCode);

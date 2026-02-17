@@ -31,7 +31,17 @@ function relativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-function ExitBadge({ exitCode }: { exitCode: number }) {
+function ExitBadge({ exitCode, cancelled }: { exitCode: number; cancelled?: boolean }) {
+  if (cancelled) {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+        </svg>
+        Cancelled
+      </span>
+    );
+  }
   if (exitCode === 0) {
     return (
       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-green-500/20 text-green-400">
@@ -77,7 +87,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <ExitBadge exitCode={completed.exitCode} />
+            <ExitBadge exitCode={completed.exitCode} cancelled={completed.cancelled} />
             {completed.headless && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-400">
                 Headless
@@ -222,7 +232,11 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
     >
       {/* Exit indicator */}
       <span className="flex-shrink-0">
-        {completed.exitCode === 0 ? (
+        {completed.cancelled ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        ) : completed.exitCode === 0 ? (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>

@@ -269,13 +269,20 @@ describe('Provider integration tests', () => {
       expect(written.hooks.preToolUse).toBeDefined();
       expect(written.hooks.postToolUse).toBeDefined();
       expect(written.hooks.errorOccurred).toBeDefined();
-      // Flat array per event, uses bash and timeoutSec (not command/timeout)
+      // Flat array per event, uses type/bash/timeoutSec (not command/timeout)
       const entry = written.hooks.preToolUse[0];
+      expect(entry.type).toBe('command');
       expect(entry.bash).toBeDefined();
       expect(entry.timeoutSec).toBe(5);
       expect(entry.command).toBeUndefined();
       expect(entry.timeout).toBeUndefined();
       expect(entry.async).toBeUndefined();
+      // Each event type encodes its name in the URL path
+      expect(entry.bash).toContain('/preToolUse');
+      const postEntry = written.hooks.postToolUse[0];
+      expect(postEntry.bash).toContain('/postToolUse');
+      const errEntry = written.hooks.errorOccurred[0];
+      expect(errEntry.bash).toContain('/errorOccurred');
     });
 
     it('CopilotCli: writes to .github/hooks/hooks.json', async () => {
@@ -418,7 +425,7 @@ describe('Provider integration tests', () => {
     it('ClaudeCode uses .claude/', () => {
       const provider = new ClaudeCodeProvider();
       expect(provider.conventions.configDir).toBe('.claude');
-      expect(provider.conventions.localInstructionsFile).toBe('CLAUDE.local.md');
+      expect(provider.conventions.localInstructionsFile).toBe('CLAUDE.md');
       expect(provider.conventions.legacyInstructionsFile).toBe('CLAUDE.md');
       expect(provider.conventions.mcpConfigFile).toBe('.mcp.json');
       expect(provider.conventions.skillsDir).toBe('skills');

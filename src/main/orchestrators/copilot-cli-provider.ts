@@ -74,6 +74,7 @@ function findCopilotBinary(): string {
 export class CopilotCliProvider implements OrchestratorProvider {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
+  readonly shortName = 'GHCP';
   readonly badge = 'Beta';
 
   getCapabilities(): ProviderCapabilities {
@@ -137,14 +138,13 @@ export class CopilotCliProvider implements OrchestratorProvider {
   }
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
-    const curlBase = `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
-
-    const hookEntry = { bash: curlBase, timeoutSec: 5 };
+    const makeCurl = (event: string) =>
+      `cat | curl -s -X POST ${hookUrl}/\${CLUBHOUSE_AGENT_ID}/${event} -H 'Content-Type: application/json' -H "X-Clubhouse-Nonce: \${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true`;
 
     const ourHooks: Record<string, unknown[]> = {
-      preToolUse: [hookEntry],
-      postToolUse: [hookEntry],
-      errorOccurred: [hookEntry],
+      preToolUse: [{ type: 'command', bash: makeCurl('preToolUse'), timeoutSec: 5 }],
+      postToolUse: [{ type: 'command', bash: makeCurl('postToolUse'), timeoutSec: 5 }],
+      errorOccurred: [{ type: 'command', bash: makeCurl('errorOccurred'), timeoutSec: 5 }],
     };
 
     const githubDir = path.join(cwd, '.github');

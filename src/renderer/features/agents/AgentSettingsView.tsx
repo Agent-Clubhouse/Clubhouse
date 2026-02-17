@@ -23,6 +23,15 @@ export function AgentSettingsView({ agent }: Props) {
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
+  // Utility terminal collapse state
+  const [terminalExpanded, setTerminalExpanded] = useState(false);
+  const [terminalHasOpened, setTerminalHasOpened] = useState(false);
+
+  const handleTerminalToggle = () => {
+    if (!terminalExpanded) setTerminalHasOpened(true);
+    setTerminalExpanded((prev) => !prev);
+  };
+
   // Appearance editing state
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(agent.name);
@@ -89,6 +98,12 @@ export function AgentSettingsView({ agent }: Props) {
   // Resolve capabilities for the agent's orchestrator
   const capabilities = allOrchestrators.find((o) => o.id === agentOrchestrator)?.capabilities;
 
+  // Instructions state
+  const [instructions, setInstructions] = useState('');
+  const [instructionsDirty, setInstructionsDirty] = useState(false);
+  const [instructionsSaving, setInstructionsSaving] = useState(false);
+  const [instructionsLoaded, setInstructionsLoaded] = useState(false);
+
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
@@ -97,6 +112,15 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
+
+  // Refresh counter — increment to force re-read from disk
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRefreshAll = () => {
+    setRefreshKey((k) => k + 1);
+    setInstructionsDirty(false);
+    setQadDirty(false);
+  };
 
   // Load quick agent defaults
   useEffect(() => {
@@ -115,7 +139,48 @@ export function AgentSettingsView({ agent }: Props) {
         setQadLoaded(true);
       }
     })();
-  }, [projectPath, agent.id]);
+  }, [projectPath, agent.id, refreshKey]);
+
+  // Load instructions file for agent's orchestrator
+  useEffect(() => {
+    const readPath = worktreePath || projectPath;
+    if (!readPath || !projectPath) return;
+    (async () => {
+      try {
+        const content = await window.clubhouse.agentSettings.readInstructions(readPath, projectPath);
+        setInstructions(content || '');
+        setInstructionsLoaded(true);
+        setInstructionsDirty(false);
+      } catch {
+        setInstructionsLoaded(true);
+      }
+    })();
+  }, [worktreePath, projectPath, refreshKey]);
+
+  const handleSaveInstructions = async () => {
+    const writePath = worktreePath || projectPath;
+    if (!writePath || !projectPath) return;
+    setInstructionsSaving(true);
+    await window.clubhouse.agentSettings.saveInstructions(writePath, instructions, projectPath);
+    setInstructionsDirty(false);
+    setInstructionsSaving(false);
+  };
+
+  const handleOpenAgentRoot = () => {
+    const rootPath = worktreePath || projectPath;
+    if (rootPath) {
+      window.clubhouse.file.showInFolder(rootPath);
+    }
+  };
+
+  // Resolve instructions file label from orchestrator conventions
+  const instructionsFileLabel = (() => {
+    if (!orchestratorInfo?.conventions) return 'instructions';
+    const { configDir, localInstructionsFile } = orchestratorInfo.conventions;
+    // Claude Code: CLAUDE.md lives at project root, not under configDir
+    if (localInstructionsFile === 'CLAUDE.md') return 'CLAUDE.md';
+    return `${configDir}/${localInstructionsFile}`;
+  })();
 
   const handleSaveQad = async () => {
     if (!projectPath) return;
@@ -154,6 +219,20 @@ export function AgentSettingsView({ agent }: Props) {
         </div>
         <span className="text-sm font-medium text-ctp-text">{agent.name}</span>
         <span className="text-xs text-ctp-subtext0">Settings</span>
+        <div className="ml-auto">
+          <button
+            onClick={handleRefreshAll}
+            className="text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer p-1"
+            title="Refresh from disk"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 2v6h-6" />
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+              <path d="M3 22v-6h6" />
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Running banner */}
@@ -285,6 +364,47 @@ export function AgentSettingsView({ agent }: Props) {
           </div>
         </section>
 
+        {/* Instructions Section */}
+        {instructionsLoaded && (
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Instructions</h3>
+                <span className="text-[10px] text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleOpenAgentRoot}
+                  className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+                  title="Open agent root in Finder"
+                >
+                  Open in Finder
+                </button>
+                <button
+                  onClick={handleSaveInstructions}
+                  disabled={isRunning || !instructionsDirty || instructionsSaving}
+                  className={`text-xs px-3 py-1 rounded transition-colors ${
+                    isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
+                    instructionsDirty
+                      ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                      : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                  }`}
+                >
+                  {instructionsSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+            <textarea
+              value={instructions}
+              onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
+              disabled={isRunning}
+              placeholder={`Agent instructions written to ${instructionsFileLabel}...`}
+              className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+              spellCheck={false}
+            />
+          </section>
+        )}
+
         {/* Quick Agent Defaults Section */}
         {qadLoaded && (
           <section>
@@ -296,7 +416,7 @@ export function AgentSettingsView({ agent }: Props) {
                 className={`text-xs px-3 py-1 rounded transition-colors ${
                   isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
                   qadDirty
-                    ? 'bg-ctp-blue text-ctp-base hover:bg-ctp-blue/80 cursor-pointer'
+                    ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
                     : 'bg-surface-1 text-ctp-subtext0 cursor-default'
                 }`}
               >
@@ -344,13 +464,25 @@ export function AgentSettingsView({ agent }: Props) {
         )}
       </div>
 
-      {/* Bottom 1/3: utility terminal */}
-      <div className="flex-[1] min-h-0 flex flex-col border-t border-surface-0">
-        <div className="px-4 py-1.5 text-[11px] text-ctp-subtext0 bg-surface-0 border-b border-surface-1">
-          Utility shell
-        </div>
-        <div className="flex-1 min-h-0">
-          <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />
+      {/* Bottom: collapsible utility terminal */}
+      <div className={`flex flex-col border-t border-surface-0 ${terminalExpanded ? 'flex-[1] min-h-0' : ''}`}>
+        <button
+          onClick={handleTerminalToggle}
+          className="w-full px-4 py-1.5 text-[11px] text-ctp-subtext0 bg-surface-0 border-b border-surface-1 flex items-center justify-between hover:bg-surface-1 transition-colors cursor-pointer"
+        >
+          <span>Utility shell</span>
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className={`transition-transform ${terminalExpanded ? 'rotate-180' : ''}`}
+          >
+            <path d="M18 15l-6-6-6 6" />
+          </svg>
+        </button>
+        <div className={terminalExpanded ? 'flex-1 min-h-0' : 'h-0 overflow-hidden'}>
+          {terminalHasOpened && (
+            <UtilityTerminal agentId={agent.id} worktreePath={worktreePath} />
+          )}
         </div>
       </div>
     </div>

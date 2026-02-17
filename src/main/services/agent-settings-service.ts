@@ -12,27 +12,16 @@ interface ProjectSettings {
 }
 
 export function readClaudeMd(worktreePath: string): string {
-  // Prefer .claude/CLAUDE.local.md, fall back to legacy CLAUDE.md
-  const localPath = path.join(worktreePath, '.claude', 'CLAUDE.local.md');
+  const filePath = path.join(worktreePath, 'CLAUDE.md');
   try {
-    return fs.readFileSync(localPath, 'utf-8');
+    return fs.readFileSync(filePath, 'utf-8');
   } catch {
-    // Fall back to legacy location
-    const legacyPath = path.join(worktreePath, 'CLAUDE.md');
-    try {
-      return fs.readFileSync(legacyPath, 'utf-8');
-    } catch {
-      return '';
-    }
+    return '';
   }
 }
 
 export function writeClaudeMd(worktreePath: string, content: string): void {
-  const claudeDir = path.join(worktreePath, '.claude');
-  if (!fs.existsSync(claudeDir)) {
-    fs.mkdirSync(claudeDir, { recursive: true });
-  }
-  const filePath = path.join(claudeDir, 'CLAUDE.local.md');
+  const filePath = path.join(worktreePath, 'CLAUDE.md');
   fs.writeFileSync(filePath, content, 'utf-8');
 }
 

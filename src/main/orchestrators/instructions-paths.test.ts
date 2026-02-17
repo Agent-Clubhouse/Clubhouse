@@ -42,85 +42,47 @@ describe('Instructions path resolution', () => {
       provider = new ClaudeCodeProvider();
     });
 
-    it('reads .claude/CLAUDE.local.md first', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('local content');
+    it('reads CLAUDE.md at project root', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
       const result = provider.readInstructions('/project');
-      expect(result).toBe('local content');
+      expect(result).toBe('project instructions');
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        path.join('/project', '.claude', 'CLAUDE.local.md'),
+        path.join('/project', 'CLAUDE.md'),
         'utf-8'
       );
     });
 
-    it('falls back to CLAUDE.md when .claude/CLAUDE.local.md missing', () => {
-      vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        if (String(p).includes('CLAUDE.local.md')) throw new Error('ENOENT');
-        return 'legacy content';
-      });
-      const result = provider.readInstructions('/project');
-      expect(result).toBe('legacy content');
-    });
-
-    it('returns empty string when neither file exists', () => {
+    it('returns empty string when file does not exist', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const result = provider.readInstructions('/project');
       expect(result).toBe('');
     });
 
-    it('writes to .claude/CLAUDE.local.md', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return s.endsWith('/claude') || s.includes('.claude');
-      });
-
+    it('writes CLAUDE.md at project root', () => {
       provider.writeInstructions('/project', 'new instructions');
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        path.join('/project', '.claude', 'CLAUDE.local.md'),
+        path.join('/project', 'CLAUDE.md'),
         'new instructions',
         'utf-8'
       );
     });
 
-    it('creates .claude/ directory if missing', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('/claude'));
-
-      provider.writeInstructions('/project', 'content');
-
-      expect(fs.mkdirSync).toHaveBeenCalledWith(
-        path.join('/project', '.claude'),
-        { recursive: true }
-      );
-    });
-
-    it('verifies correct file casing (uppercase CLAUDE.local.md)', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('/claude'));
+    it('does not write to .claude/CLAUDE.local.md', () => {
       provider.writeInstructions('/project', 'test');
 
       const writePath = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string;
-      expect(writePath).toContain('CLAUDE.local.md');
-      expect(writePath).not.toContain('claude.local.md');
+      expect(writePath).not.toContain('CLAUDE.local.md');
+      expect(writePath).not.toContain('.claude');
     });
 
     it('round-trip: write then read returns same content', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => String(p).endsWith('/claude'));
-
       const content = 'My custom instructions\nWith multiple lines';
       provider.writeInstructions('/project', content);
 
-      // Simulate reading back what was written
       vi.mocked(fs.readFileSync).mockReturnValue(content);
       const result = provider.readInstructions('/project');
       expect(result).toBe(content);
-    });
-
-    it('precedence: .claude/CLAUDE.local.md wins over CLAUDE.md', () => {
-      vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        if (String(p).includes('CLAUDE.local.md')) return 'local wins';
-        return 'legacy loses';
-      });
-      const result = provider.readInstructions('/project');
-      expect(result).toBe('local wins');
     });
   });
 
