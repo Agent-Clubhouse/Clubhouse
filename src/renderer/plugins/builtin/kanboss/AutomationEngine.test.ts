@@ -9,14 +9,14 @@ function makeBoard(overrides?: Partial<Board>): Board {
     id: 'board-1',
     name: 'Test Board',
     states: [
-      { id: 'state-todo', name: 'Todo', order: 0, isAutomatic: false, automationPrompt: '', accentColor: 'var(--ctp-blue)' },
-      { id: 'state-auto', name: 'In Progress', order: 1, isAutomatic: true, automationPrompt: 'Complete the task', accentColor: 'var(--ctp-yellow)' },
-      { id: 'state-done', name: 'Done', order: 2, isAutomatic: false, automationPrompt: '', accentColor: 'var(--ctp-green)' },
+      { id: 'state-todo', name: 'Todo', order: 0, isAutomatic: false, automationPrompt: '' },
+      { id: 'state-auto', name: 'In Progress', order: 1, isAutomatic: true, automationPrompt: 'Complete the task' },
+      { id: 'state-done', name: 'Done', order: 2, isAutomatic: false, automationPrompt: '' },
     ],
     swimlanes: [
-      { id: 'lane-1', name: 'Default', order: 0, managerAgentId: 'agent-durable-1' },
+      { id: 'lane-1', name: 'Default', order: 0, managerAgentId: 'agent-durable-1', evaluationAgentId: null },
     ],
-    config: { maxRetries: 3, zoomLevel: 1.0 },
+    config: { maxRetries: 3, zoomLevel: 1.0, gitHistory: false },
     createdAt: Date.now(),
     updatedAt: Date.now(),
     ...overrides,
@@ -93,7 +93,7 @@ describe('AutomationEngine', () => {
 
     it('does not spawn agent when swimlane has no manager', async () => {
       const board = makeBoard({
-        swimlanes: [{ id: 'lane-1', name: 'Default', order: 0, managerAgentId: null }],
+        swimlanes: [{ id: 'lane-1', name: 'Default', order: 0, managerAgentId: null, evaluationAgentId: null }],
       });
       const card = makeCard();
       const runQuick = vi.fn(async () => 'agent-1');

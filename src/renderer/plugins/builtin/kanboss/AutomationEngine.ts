@@ -15,13 +15,17 @@ async function loadBoard(api: PluginAPI, boardId: string): Promise<Board | null>
   return boards.find((b) => b.id === boardId) ?? null;
 }
 
-async function loadCards(api: PluginAPI, boardId: string): Promise<Card[]> {
-  const raw = await api.storage.projectLocal.read(cardsKey(boardId));
+function cardsStor(api: PluginAPI, board: Board) {
+  return board.config.gitHistory ? api.storage.project : api.storage.projectLocal;
+}
+
+async function loadCards(api: PluginAPI, board: Board): Promise<Card[]> {
+  const raw = await cardsStor(api, board).read(cardsKey(board.id));
   return Array.isArray(raw) ? raw : [];
 }
 
-async function saveCards(api: PluginAPI, boardId: string, cards: Card[]): Promise<void> {
-  await api.storage.projectLocal.write(cardsKey(boardId), cards);
+async function saveCards(api: PluginAPI, board: Board, cards: Card[]): Promise<void> {
+  await cardsStor(api, board).write(cardsKey(board.id), cards);
 }
 
 async function loadRuns(api: PluginAPI): Promise<AutomationRun[]> {
@@ -67,7 +71,8 @@ export async function triggerAutomation(api: PluginAPI, card: Card, board: Board
   try {
     const executionAgentId = await api.agents.runQuick(prompt);
 
-    // Record run
+    // Record run — track the configured evaluation agent for this swimlane
+    const configuredEvalAgent = swimlane.evaluationAgentId ?? swimlane.managerAgentId;
     const runs = await loadRuns(api);
     runs.push({
       cardId: card.id,
@@ -76,6 +81,7 @@ export async function triggerAutomation(api: PluginAPI, card: Card, board: Board
       swimlaneId: card.swimlaneId,
       executionAgentId,
       evaluationAgentId: null,
+      configuredEvaluationAgentId: configuredEvalAgent,
       phase: 'executing',
       attempt: card.automationAttempts + 1,
       startedAt: Date.now(),
@@ -83,13 +89,13 @@ export async function triggerAutomation(api: PluginAPI, card: Card, board: Board
     await saveRuns(api, runs);
 
     // Update card
-    const cards = await loadCards(api, board.id);
+    const cards = await loadCards(api, board);
     const idx = cards.findIndex((c) => c.id === card.id);
     if (idx !== -1) {
       cards[idx].automationAttempts++;
       addHistory(cards[idx], 'automation-started',
         `Automation attempt ${cards[idx].automationAttempts} started`, executionAgentId);
-      await saveCards(api, board.id, cards);
+      await saveCards(api, board, cards);
     }
 
     kanBossState.triggerRefresh();
@@ -113,7 +119,7 @@ async function onAgentCompleted(api: PluginAPI, agentId: string, outcome: 'succe
   const board = await loadBoard(api, run.boardId);
   if (!board) return;
 
-  const cards = await loadCards(api, run.boardId);
+  const cards = await loadCards(api, board);
   const cardIdx = cards.findIndex((c) => c.id === run.cardId);
   if (cardIdx === -1) return;
 
@@ -125,7 +131,7 @@ async function onAgentCompleted(api: PluginAPI, agentId: string, outcome: 'succe
       checkStuck(card, board);
       runs.splice(runIdx, 1);
       await saveRuns(api, runs);
-      await saveCards(api, run.boardId, cards);
+      await saveCards(api, board, cards);
       kanBossState.triggerRefresh();
       return;
     }
@@ -163,7 +169,7 @@ async function onAgentCompleted(api: PluginAPI, agentId: string, outcome: 'succe
       checkStuck(card, board);
       runs.splice(runIdx, 1);
       await saveRuns(api, runs);
-      await saveCards(api, run.boardId, cards);
+      await saveCards(api, board, cards);
       kanBossState.triggerRefresh();
     }
     return;
@@ -195,12 +201,12 @@ async function onAgentCompleted(api: PluginAPI, agentId: string, outcome: 'succe
         addHistory(card, 'automation-succeeded',
           `Automation passed — moved to "${nextState.name}"`, agentId);
         addHistory(card, 'moved', `Moved from "${currentState.name}" to "${nextState.name}"`);
-        await saveCards(api, run.boardId, cards);
+        await saveCards(api, board, cards);
         kanBossState.triggerRefresh();
 
         // If next state is also automatic, trigger recursively
         if (nextState.isAutomatic) {
-          const freshCards = await loadCards(api, run.boardId);
+          const freshCards = await loadCards(api, board);
           const freshCard = freshCards.find((c) => c.id === card.id);
           if (freshCard) {
             await triggerAutomation(api, freshCard, board);
@@ -209,14 +215,14 @@ async function onAgentCompleted(api: PluginAPI, agentId: string, outcome: 'succe
       } else {
         // Already at last state — just mark success
         addHistory(card, 'automation-succeeded', 'Automation passed (already at final state)', agentId);
-        await saveCards(api, run.boardId, cards);
+        await saveCards(api, board, cards);
         kanBossState.triggerRefresh();
       }
     } else {
       const reason = summary.replace(/RESULT:\s*FAIL\s*/i, '').trim() || 'Evaluation failed';
       addHistory(card, 'automation-failed', `Automation failed: ${reason}`, agentId);
       checkStuck(card, board);
-      await saveCards(api, run.boardId, cards);
+      await saveCards(api, board, cards);
       kanBossState.triggerRefresh();
 
       // Retry if not stuck

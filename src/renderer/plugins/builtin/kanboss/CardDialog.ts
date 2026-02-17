@@ -27,7 +27,8 @@ function HistoryItem({ entry }: { entry: HistoryEntry }) {
 // ── CardDialog ──────────────────────────────────────────────────────────
 
 export function CardDialog({ api, boardId }: CardDialogProps) {
-  const storage = api.storage.projectLocal;
+  const currentBoard = kanBossState.boards.find((b) => b.id === boardId);
+  const storage = currentBoard?.config.gitHistory ? api.storage.project : api.storage.projectLocal;
   const isNew = kanBossState.editingCardId === 'new';
   const cardId = isNew ? null : kanBossState.editingCardId;
 

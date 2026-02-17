@@ -110,7 +110,7 @@ describe('kanBossState', () => {
 
   it('setBoards updates boards array', () => {
     const boards = [
-      { id: 'b1', name: 'Board 1', states: [], swimlanes: [], config: { maxRetries: 3, zoomLevel: 1 }, createdAt: 0, updatedAt: 0 },
+      { id: 'b1', name: 'Board 1', states: [], swimlanes: [], config: { maxRetries: 3, zoomLevel: 1, gitHistory: false }, createdAt: 0, updatedAt: 0 },
     ];
     kanBossState.setBoards(boards as any);
     expect(kanBossState.boards).toEqual(boards);

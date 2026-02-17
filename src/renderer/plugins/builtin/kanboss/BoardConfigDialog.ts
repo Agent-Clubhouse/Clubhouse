@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import type { Board, BoardState, Swimlane } from './types';
-import { BOARDS_KEY, generateId, ACCENT_COLORS } from './types';
+import { BOARDS_KEY, generateId } from './types';
 import { kanBossState } from './state';
 
 interface BoardConfigDialogProps {
@@ -23,6 +23,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
   const [states, setStates] = useState<BoardState[]>([...board.states]);
   const [swimlanes, setSwimlanes] = useState<Swimlane[]>([...board.swimlanes]);
   const [maxRetries, setMaxRetries] = useState(board.config.maxRetries);
+  const [gitHistory, setGitHistory] = useState(board.config.gitHistory ?? false);
   const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
 
   // Load durable agents for swimlane assignment
@@ -34,14 +35,12 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
   // ── State management ────────────────────────────────────────────────
   const addState = useCallback(() => {
     const order = states.length;
-    const colorIdx = order % ACCENT_COLORS.length;
     setStates([...states, {
       id: generateId('state'),
       name: `State ${order + 1}`,
       order,
       isAutomatic: false,
       automationPrompt: '',
-      accentColor: ACCENT_COLORS[colorIdx],
     }]);
   }, [states]);
 
@@ -63,6 +62,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
       name: `Swimlane ${order + 1}`,
       order,
       managerAgentId: null,
+      evaluationAgentId: null,
     }]);
   }, [swimlanes]);
 
@@ -76,6 +76,23 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
     setSwimlanes(swimlanes.map((l) => l.id === laneId ? { ...l, ...updates } : l));
   }, [swimlanes]);
 
+  // ── Drag reorder ──────────────────────────────────────────────────
+  const moveState = useCallback((fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const result = [...states];
+    const [moved] = result.splice(fromIdx, 1);
+    result.splice(toIdx, 0, moved);
+    setStates(result.map((s, i) => ({ ...s, order: i })));
+  }, [states]);
+
+  const moveSwimlane = useCallback((fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const result = [...swimlanes];
+    const [moved] = result.splice(fromIdx, 1);
+    result.splice(toIdx, 0, moved);
+    setSwimlanes(result.map((l, i) => ({ ...l, order: i })));
+  }, [swimlanes]);
+
   // ── Save ────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     const raw = await storage.read(BOARDS_KEY);
@@ -86,7 +103,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
         ...boards[idx],
         states,
         swimlanes,
-        config: { ...boards[idx].config, maxRetries },
+        config: { ...boards[idx].config, maxRetries, gitHistory },
         updatedAt: Date.now(),
       };
       await storage.write(BOARDS_KEY, boards);
@@ -94,7 +111,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
     }
     kanBossState.closeBoardConfig();
     kanBossState.triggerRefresh();
-  }, [storage, board.id, states, swimlanes, maxRetries]);
+  }, [storage, board.id, states, swimlanes, maxRetries, gitHistory]);
 
   // ── Cancel ──────────────────────────────────────────────────────────
   const handleCancel = useCallback(() => {
@@ -148,31 +165,27 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
             React.createElement('div', {
               key: state.id,
               className: 'p-3 bg-ctp-mantle border border-ctp-surface0 rounded-lg space-y-2',
+              draggable: true,
+              onDragStart: (e: React.DragEvent) => e.dataTransfer.setData('kanboss/state-idx', String(idx)),
+              onDragOver: (e: React.DragEvent) => e.preventDefault(),
+              onDrop: (e: React.DragEvent) => {
+                e.preventDefault();
+                const from = e.dataTransfer.getData('kanboss/state-idx');
+                if (from !== '') moveState(parseInt(from), idx);
+              },
             },
-              // Name + color + remove
+              // Name + drag handle + remove
               React.createElement('div', { className: 'flex items-center gap-2' },
-                React.createElement('div', {
-                  className: 'w-3 h-3 rounded-full flex-shrink-0',
-                  style: { backgroundColor: state.accentColor },
-                }),
+                React.createElement('span', {
+                  className: 'text-ctp-subtext0 cursor-grab active:cursor-grabbing text-xs select-none',
+                  title: 'Drag to reorder',
+                }, '\u2261'),
                 React.createElement('input', {
                   type: 'text',
                   className: 'flex-1 px-2 py-1 text-xs rounded bg-ctp-base border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50',
                   value: state.name,
                   onChange: (e: React.ChangeEvent<HTMLInputElement>) => updateState(state.id, { name: e.target.value }),
                 }),
-                // Color picker (cycle through accent colors)
-                React.createElement('select', {
-                  className: 'px-1 py-1 text-[10px] rounded bg-ctp-base border border-ctp-surface2 text-ctp-text',
-                  value: state.accentColor,
-                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => updateState(state.id, { accentColor: e.target.value }),
-                },
-                  ACCENT_COLORS.map((color, ci) =>
-                    React.createElement('option', { key: ci, value: color },
-                      ['Blue', 'Yellow', 'Green', 'Mauve', 'Peach', 'Teal'][ci],
-                    ),
-                  ),
-                ),
                 states.length > 1 && React.createElement('button', {
                   className: 'text-ctp-subtext0 hover:text-ctp-red text-xs px-1',
                   onClick: () => removeState(state.id),
@@ -213,13 +226,25 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
 
         // ── Swimlanes tab ─────────────────────────────────────────────
         tab === 'swimlanes' && React.createElement('div', { className: 'space-y-3' },
-          swimlanes.map((lane) =>
+          swimlanes.map((lane, laneIdx) =>
             React.createElement('div', {
               key: lane.id,
               className: 'p-3 bg-ctp-mantle border border-ctp-surface0 rounded-lg space-y-2',
+              draggable: true,
+              onDragStart: (e: React.DragEvent) => e.dataTransfer.setData('kanboss/lane-idx', String(laneIdx)),
+              onDragOver: (e: React.DragEvent) => e.preventDefault(),
+              onDrop: (e: React.DragEvent) => {
+                e.preventDefault();
+                const from = e.dataTransfer.getData('kanboss/lane-idx');
+                if (from !== '') moveSwimlane(parseInt(from), laneIdx);
+              },
             },
-              // Name + remove
+              // Name + drag handle + remove
               React.createElement('div', { className: 'flex items-center gap-2' },
+                React.createElement('span', {
+                  className: 'text-ctp-subtext0 cursor-grab active:cursor-grabbing text-xs select-none',
+                  title: 'Drag to reorder',
+                }, '\u2261'),
                 React.createElement('input', {
                   type: 'text',
                   className: 'flex-1 px-2 py-1 text-xs rounded bg-ctp-base border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50',
@@ -234,18 +259,36 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
               ),
 
               // Agent assignment
-              React.createElement('div', null,
-                React.createElement('label', { className: 'block text-[10px] text-ctp-subtext1 mb-0.5' }, 'Manager Agent'),
-                React.createElement('select', {
-                  className: 'w-full px-2 py-1 text-xs rounded bg-ctp-base border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50',
-                  value: lane.managerAgentId ?? '',
-                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-                    updateSwimlane(lane.id, { managerAgentId: e.target.value || null }),
-                },
-                  React.createElement('option', { value: '' }, 'None (manual only)'),
-                  durableAgents.map((agent) =>
-                    React.createElement('option', { key: agent.id, value: agent.id },
-                      `${agent.emoji ?? ''} ${agent.name}`.trim(),
+              React.createElement('div', { className: 'space-y-2' },
+                React.createElement('div', null,
+                  React.createElement('label', { className: 'block text-[10px] text-ctp-subtext1 mb-0.5' }, 'Manager Agent'),
+                  React.createElement('select', {
+                    className: 'w-full px-2 py-1 text-xs rounded bg-ctp-base border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50',
+                    value: lane.managerAgentId ?? '',
+                    onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                      updateSwimlane(lane.id, { managerAgentId: e.target.value || null }),
+                  },
+                    React.createElement('option', { value: '' }, 'None (manual only)'),
+                    durableAgents.map((agent) =>
+                      React.createElement('option', { key: agent.id, value: agent.id },
+                        `${agent.emoji ?? ''} ${agent.name}`.trim(),
+                      ),
+                    ),
+                  ),
+                ),
+                React.createElement('div', null,
+                  React.createElement('label', { className: 'block text-[10px] text-ctp-subtext1 mb-0.5' }, 'Evaluation Agent'),
+                  React.createElement('select', {
+                    className: 'w-full px-2 py-1 text-xs rounded bg-ctp-base border border-ctp-surface2 text-ctp-text focus:outline-none focus:border-ctp-accent/50',
+                    value: lane.evaluationAgentId ?? '',
+                    onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                      updateSwimlane(lane.id, { evaluationAgentId: e.target.value || null }),
+                  },
+                    React.createElement('option', { value: '' }, 'Same as manager'),
+                    durableAgents.map((agent) =>
+                      React.createElement('option', { key: agent.id, value: agent.id },
+                        `${agent.emoji ?? ''} ${agent.name}`.trim(),
+                      ),
                     ),
                   ),
                 ),
@@ -272,6 +315,30 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
             }),
             React.createElement('p', { className: 'text-[10px] text-ctp-subtext0 mt-0.5' },
               'Number of times automation will retry before marking a card as stuck.',
+            ),
+          ),
+
+          // Git history toggle
+          React.createElement('div', {
+            className: 'flex items-start gap-2.5 p-2.5 rounded-lg bg-ctp-mantle border border-ctp-surface0',
+          },
+            React.createElement('input', {
+              type: 'checkbox',
+              id: 'cfg-git-history',
+              checked: gitHistory,
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => setGitHistory(e.target.checked),
+              className: 'mt-0.5 rounded',
+            }),
+            React.createElement('label', {
+              htmlFor: 'cfg-git-history',
+              className: 'cursor-pointer select-none',
+            },
+              React.createElement('div', {
+                className: 'text-xs text-ctp-text',
+              }, 'Enable git history'),
+              React.createElement('p', {
+                className: 'text-[10px] text-ctp-subtext0 mt-0.5 leading-relaxed',
+              }, 'Store board data in a git-tracked location so it can be shared with your team.'),
             ),
           ),
         ),

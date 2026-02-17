@@ -39,7 +39,6 @@ export interface BoardState {
   order: number;
   isAutomatic: boolean;
   automationPrompt: string;
-  accentColor: string;
 }
 
 export interface Swimlane {
@@ -47,11 +46,13 @@ export interface Swimlane {
   name: string;
   order: number;
   managerAgentId: string | null;
+  evaluationAgentId: string | null; // null = same as manager agent
 }
 
 export interface BoardConfig {
   maxRetries: number;
   zoomLevel: number;
+  gitHistory: boolean;
 }
 
 export interface Board {
@@ -71,6 +72,7 @@ export interface AutomationRun {
   swimlaneId: string;
   executionAgentId: string;
   evaluationAgentId: string | null;
+  configuredEvaluationAgentId: string | null; // from swimlane config; null = same as manager
   phase: 'executing' | 'evaluating';
   attempt: number;
   startedAt: number;
@@ -82,25 +84,14 @@ export const BOARDS_KEY = 'boards';
 export const cardsKey = (boardId: string): string => `cards:${boardId}`;
 export const AUTOMATION_RUNS_KEY = 'automation-runs';
 
-// ── Default accent colors ───────────────────────────────────────────────
-
-export const ACCENT_COLORS = [
-  'var(--ctp-blue)',
-  'var(--ctp-yellow)',
-  'var(--ctp-green)',
-  'var(--ctp-mauve)',
-  'var(--ctp-peach)',
-  'var(--ctp-teal)',
-] as const;
-
 // ── Priority display config ─────────────────────────────────────────────
 
-export const PRIORITY_CONFIG: Record<Priority, { label: string; className: string; hidden?: boolean }> = {
-  none:     { label: 'None',     className: '', hidden: true },
-  low:      { label: 'Low',      className: 'bg-ctp-blue/15 text-ctp-blue' },
-  medium:   { label: 'Medium',   className: 'bg-ctp-yellow/15 text-ctp-yellow' },
-  high:     { label: 'High',     className: 'bg-ctp-peach/15 text-ctp-peach' },
-  critical: { label: 'Critical', className: 'bg-ctp-red/15 text-ctp-red' },
+export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; hidden?: boolean }> = {
+  none:     { label: 'None',     color: '', hidden: true },
+  low:      { label: 'Low',      color: '#3b82f6' },
+  medium:   { label: 'Medium',   color: '#eab308' },
+  high:     { label: 'High',     color: '#f97316' },
+  critical: { label: 'Critical', color: '#ef4444' },
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────

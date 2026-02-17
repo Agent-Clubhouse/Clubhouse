@@ -10,8 +10,13 @@ import { triggerAutomation } from './AutomationEngine';
 
 // ── BoardView (MainPanel) ───────────────────────────────────────────────
 
+// Helper: get the right storage for card data based on gitHistory setting
+function cardsStorage(api: PluginAPI, board: Board) {
+  return board.config.gitHistory ? api.storage.project : api.storage.projectLocal;
+}
+
 export function BoardView({ api }: { api: PluginAPI }) {
-  const storage = api.storage.projectLocal;
+  const boardsStorage = api.storage.projectLocal;
 
   const [board, setBoard] = useState<Board | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
@@ -39,18 +44,19 @@ export function BoardView({ api }: { api: PluginAPI }) {
       setCards([]);
       return;
     }
-    const raw = await storage.read(BOARDS_KEY);
+    const raw = await boardsStorage.read(BOARDS_KEY);
     const boards: Board[] = Array.isArray(raw) ? raw : [];
     const found = boards.find((b) => b.id === selectedBoardId) ?? null;
     setBoard(found);
     if (found) {
       setZoomLevel(found.config.zoomLevel);
-      const cardsRaw = await storage.read(cardsKey(found.id));
+      const cardsStor = cardsStorage(api, found);
+      const cardsRaw = await cardsStor.read(cardsKey(found.id));
       setCards(Array.isArray(cardsRaw) ? cardsRaw : []);
     } else {
       setCards([]);
     }
-  }, [selectedBoardId, storage]);
+  }, [selectedBoardId, boardsStorage, api]);
 
   useEffect(() => {
     loadBoard();
@@ -69,54 +75,159 @@ export function BoardView({ api }: { api: PluginAPI }) {
   }, [loadBoard]);
 
   // ── Zoom controls ─────────────────────────────────────────────────────
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoomLevel);
+  zoomRef.current = zoomLevel;
+
   const adjustZoom = useCallback(async (delta: number) => {
     if (!board) return;
-    const newZoom = Math.max(0.5, Math.min(2.0, Math.round((zoomLevel + delta) * 10) / 10));
+    const newZoom = Math.max(0.5, Math.min(2.0, Math.round((zoomLevel + delta) * 20) / 20));
     setZoomLevel(newZoom);
 
     // Persist zoom
-    const raw = await storage.read(BOARDS_KEY);
+    const raw = await boardsStorage.read(BOARDS_KEY);
     const boards: Board[] = Array.isArray(raw) ? raw : [];
     const idx = boards.findIndex((b) => b.id === board.id);
     if (idx !== -1) {
       boards[idx].config.zoomLevel = newZoom;
-      await storage.write(BOARDS_KEY, boards);
+      await boardsStorage.write(BOARDS_KEY, boards);
     }
-  }, [board, zoomLevel, storage]);
+  }, [board, zoomLevel, boardsStorage]);
+
+  // Pinch-to-zoom on trackpad (ctrlKey + wheel)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      const cur = zoomRef.current;
+      const next = Math.max(0.5, Math.min(2.0, Math.round((cur + delta) * 100) / 100));
+      if (next !== cur) adjustZoom(next - cur);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [adjustZoom]);
 
   // ── Move card ─────────────────────────────────────────────────────────
-  const handleMoveCard = useCallback(async (cardId: string, targetStateId: string) => {
+  const handleMoveCard = useCallback(async (cardId: string, targetStateId: string, targetSwimlaneId?: string) => {
     if (!board) return;
 
-    const raw = await storage.read(cardsKey(board.id));
+    const raw = await cardsStorage(api, board).read(cardsKey(board.id));
     const allCards: Card[] = Array.isArray(raw) ? raw : [];
     const idx = allCards.findIndex((c) => c.id === cardId);
     if (idx === -1) return;
 
     const card = allCards[idx];
+    const stateChanged = card.stateId !== targetStateId;
+    const laneChanged = targetSwimlaneId != null && card.swimlaneId !== targetSwimlaneId;
+
+    if (!stateChanged && !laneChanged) return;
+
     const fromState = board.states.find((s) => s.id === card.stateId);
     const toState = board.states.find((s) => s.id === targetStateId);
     if (!fromState || !toState) return;
 
+    const fromLane = laneChanged ? board.swimlanes.find((l) => l.id === card.swimlaneId) : null;
+    const toLane = laneChanged && targetSwimlaneId ? board.swimlanes.find((l) => l.id === targetSwimlaneId) : null;
+
     card.stateId = targetStateId;
+    if (targetSwimlaneId) card.swimlaneId = targetSwimlaneId;
+    card.automationAttempts = 0;
+    card.updatedAt = Date.now();
+
+    let detail = '';
+    if (stateChanged) detail = `Moved from "${fromState.name}" to "${toState.name}"`;
+    if (laneChanged && fromLane && toLane) {
+      detail += detail ? `, lane "${fromLane.name}" \u2192 "${toLane.name}"` : `Moved to lane "${toLane.name}"`;
+    }
+
+    card.history.push({
+      action: 'moved',
+      timestamp: Date.now(),
+      detail,
+    });
+
+    allCards[idx] = card;
+    await cardsStorage(api, board).write(cardsKey(board.id), allCards);
+    setCards([...allCards]);
+    kanBossState.triggerRefresh();
+
+    // Trigger automation if target state is automatic (only on state change)
+    if (stateChanged && toState.isAutomatic) {
+      await triggerAutomation(api, card, board);
+    }
+  }, [board, api]);
+
+  // ── Delete card ─────────────────────────────────────────────────────────
+  const handleDeleteCard = useCallback(async (cardId: string) => {
+    if (!board) return;
+    const raw = await cardsStorage(api, board).read(cardsKey(board.id));
+    const allCards: Card[] = Array.isArray(raw) ? raw : [];
+    const filtered = allCards.filter((c) => c.id !== cardId);
+    await cardsStorage(api, board).write(cardsKey(board.id), filtered);
+    setCards(filtered);
+    kanBossState.triggerRefresh();
+  }, [board, api]);
+
+  // ── Clear retries (reset automation attempts so it can retry) ──────────
+  const handleClearRetries = useCallback(async (cardId: string) => {
+    if (!board) return;
+    const raw = await cardsStorage(api, board).read(cardsKey(board.id));
+    const allCards: Card[] = Array.isArray(raw) ? raw : [];
+    const idx = allCards.findIndex((c) => c.id === cardId);
+    if (idx === -1) return;
+
+    allCards[idx].automationAttempts = 0;
+    allCards[idx].updatedAt = Date.now();
+    allCards[idx].history.push({
+      action: 'edited',
+      timestamp: Date.now(),
+      detail: 'Retries cleared — automation can retry',
+    });
+
+    await cardsStorage(api, board).write(cardsKey(board.id), allCards);
+    setCards([...allCards]);
+    kanBossState.triggerRefresh();
+
+    // Re-trigger automation if current state is automatic
+    const state = board.states.find((s) => s.id === allCards[idx].stateId);
+    if (state?.isAutomatic) {
+      await triggerAutomation(api, allCards[idx], board);
+    }
+  }, [board, api]);
+
+  // ── Manual advance (move to next state, bypass automation) ─────────────
+  const handleManualAdvance = useCallback(async (cardId: string) => {
+    if (!board) return;
+    const raw = await cardsStorage(api, board).read(cardsKey(board.id));
+    const allCards: Card[] = Array.isArray(raw) ? raw : [];
+    const idx = allCards.findIndex((c) => c.id === cardId);
+    if (idx === -1) return;
+
+    const card = allCards[idx];
+    const sortedStates = [...board.states].sort((a, b) => a.order - b.order);
+    const curIdx = sortedStates.findIndex((s) => s.id === card.stateId);
+    if (curIdx === -1 || curIdx >= sortedStates.length - 1) return;
+
+    const nextState = sortedStates[curIdx + 1];
+    const fromState = sortedStates[curIdx];
+
+    card.stateId = nextState.id;
     card.automationAttempts = 0;
     card.updatedAt = Date.now();
     card.history.push({
       action: 'moved',
       timestamp: Date.now(),
-      detail: `Moved from "${fromState.name}" to "${toState.name}"`,
+      detail: `Manually advanced from "${fromState.name}" to "${nextState.name}"`,
     });
 
     allCards[idx] = card;
-    await storage.write(cardsKey(board.id), allCards);
+    await cardsStorage(api, board).write(cardsKey(board.id), allCards);
     setCards([...allCards]);
     kanBossState.triggerRefresh();
-
-    // Trigger automation if target state is automatic
-    if (toState.isAutomatic) {
-      await triggerAutomation(api, card, board);
-    }
-  }, [board, storage, api]);
+  }, [board, api]);
 
   // ── No board selected ─────────────────────────────────────────────────
   if (!board) {
@@ -158,7 +269,7 @@ export function BoardView({ api }: { api: PluginAPI }) {
       ),
       // Config button
       React.createElement('button', {
-        className: 'px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+        className: 'w-9 h-9 flex items-center justify-center text-xl text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
         onClick: () => kanBossState.openBoardConfig(),
         title: 'Board settings',
       }, '\u2699'),
@@ -166,6 +277,7 @@ export function BoardView({ api }: { api: PluginAPI }) {
 
     // Grid container (scrollable + zoomable)
     React.createElement('div', {
+      ref: scrollRef,
       className: 'flex-1 overflow-auto',
     },
       React.createElement('div', {
@@ -176,31 +288,31 @@ export function BoardView({ api }: { api: PluginAPI }) {
         },
       },
         React.createElement('div', {
-          style: { display: 'grid', gridTemplateColumns: gridCols },
+          className: 'bg-ctp-surface0/30 rounded-xl overflow-hidden',
+          style: { display: 'grid', gridTemplateColumns: gridCols, gap: '1px' },
         },
           // ── Header row ──────────────────────────────────────────────
           // Empty corner cell
           React.createElement('div', {
-            className: 'bg-ctp-mantle border-b border-r border-ctp-surface0 p-2',
+            className: 'bg-ctp-mantle p-2',
           }),
           // State headers
           ...sortedStates.map((state) =>
             React.createElement('div', {
               key: `header-${state.id}`,
-              className: 'bg-ctp-mantle border-b-2 border-r border-ctp-surface0 p-2',
-              style: { borderBottomColor: state.accentColor },
+              className: 'bg-ctp-mantle p-2 flex flex-col',
             },
-              React.createElement('div', { className: 'flex items-center gap-1.5' },
+              React.createElement('div', { className: 'flex items-center gap-1.5 flex-1' },
                 React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, state.name),
                 state.isAutomatic && React.createElement('span', {
-                  className: 'text-[8px] px-1 py-px rounded bg-ctp-mauve/15 text-ctp-mauve',
+                  className: 'text-[8px] px-1.5 py-px rounded-full bg-ctp-mauve/15 text-ctp-mauve',
                 }, 'auto'),
               ),
             ),
           ),
 
           // ── Swimlane rows ───────────────────────────────────────────
-          ...sortedLanes.flatMap((lane) => {
+          ...sortedLanes.flatMap((lane, laneIndex) => {
             const laneAgents = api.agents.list();
             const managerAgent = lane.managerAgentId
               ? laneAgents.find((a) => a.id === lane.managerAgentId)
@@ -210,7 +322,7 @@ export function BoardView({ api }: { api: PluginAPI }) {
               // Swimlane label cell
               React.createElement('div', {
                 key: `lane-${lane.id}`,
-                className: 'bg-ctp-mantle border-r border-b border-ctp-surface0 p-2 flex flex-col justify-center',
+                className: `${laneIndex % 2 === 0 ? 'bg-ctp-mantle' : 'bg-ctp-mantle/70'} p-2 flex flex-col justify-center`,
               },
                 React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, lane.name),
                 managerAgent && React.createElement('div', { className: 'flex items-center gap-1 mt-1' },
@@ -225,7 +337,7 @@ export function BoardView({ api }: { api: PluginAPI }) {
                 );
                 return React.createElement('div', {
                   key: `cell-${lane.id}-${state.id}`,
-                  className: 'border-b border-r border-ctp-surface0',
+                  className: `${laneIndex % 2 === 0 ? 'bg-ctp-base' : 'bg-ctp-mantle/50'} flex flex-col`,
                 },
                   React.createElement(CardCell, {
                     api,
@@ -235,6 +347,9 @@ export function BoardView({ api }: { api: PluginAPI }) {
                     isLastState: state.id === lastStateId,
                     allStates: sortedStates,
                     onMoveCard: handleMoveCard,
+                    onDeleteCard: handleDeleteCard,
+                    onClearRetries: handleClearRetries,
+                    onManualAdvance: handleManualAdvance,
                   }),
                 );
               }),
