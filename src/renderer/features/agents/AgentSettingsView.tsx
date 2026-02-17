@@ -91,6 +91,26 @@ export function AgentSettingsView({ agent }: Props) {
     await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { orchestrator: value });
   };
 
+  // Agent model state
+  const [agentModel, setAgentModel] = useState(agent.model || 'default');
+
+  const handleModelChange = async (value: string) => {
+    if (!projectPath) return;
+    setAgentModel(value);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { model: value });
+    // Update in-memory store so the agent list badge reflects immediately
+    useAgentStore.setState((s) => {
+      const existing = s.agents[agent.id];
+      if (!existing) return s;
+      return {
+        agents: {
+          ...s.agents,
+          [agent.id]: { ...existing, model: value === 'default' ? undefined : value },
+        },
+      };
+    });
+  };
+
   // Resolve orchestrator display name
   const agentOrchestrator = agent.orchestrator || 'claude-code';
   const orchestratorInfo = allOrchestrators.find((o) => o.id === agentOrchestrator);
@@ -122,7 +142,7 @@ export function AgentSettingsView({ agent }: Props) {
     setQadDirty(false);
   };
 
-  // Load quick agent defaults
+  // Load quick agent defaults and agent model from config
   useEffect(() => {
     if (!projectPath) return;
     (async () => {
@@ -134,6 +154,8 @@ export function AgentSettingsView({ agent }: Props) {
           setQadAllowedTools((defaults.allowedTools || []).join('\n'));
           setQadDefaultModel(defaults.defaultModel || '');
         }
+        // Sync agent model from disk
+        setAgentModel(config?.model || 'default');
         setQadLoaded(true);
       } catch {
         setQadLoaded(true);
@@ -360,6 +382,21 @@ export function AgentSettingsView({ agent }: Props) {
                   <p className="mt-1 text-sm text-ctp-text">{orchestratorInfo.displayName}</p>
                 </div>
               ) : null}
+
+              {/* Model */}
+              <div>
+                <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Model</span>
+                <select
+                  value={agentModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  disabled={agent.status === 'running'}
+                  className="mt-1 w-full bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {MODEL_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </section>

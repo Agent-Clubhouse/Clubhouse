@@ -34,8 +34,7 @@ export function MainContentView() {
       agentSettingsOpenFor &&
       agentSettingsOpenFor === activeAgentId &&
       activeAgent &&
-      activeAgent.kind === 'durable' &&
-      activeAgent.worktreePath
+      activeAgent.kind === 'durable'
     ) {
       return <AgentSettingsView agent={activeAgent} />;
     }
