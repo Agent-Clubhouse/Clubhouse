@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { useBadgeStore } from '../stores/badgeStore';
+import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { AGENT_COLORS } from '../../shared/name-generator';
@@ -23,6 +25,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const label = project.displayName || project.name;
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
+  const projectBadge = useBadgeStore((s) => s.getProjectBadge(project.id));
 
   return (
     <button
@@ -34,30 +37,37 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
         expanded ? 'hover:bg-surface-0' : ''
       }`}
     >
-      <div
-        className={`
-          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden text-sm font-bold
-          transition-colors duration-100
-          ${isActive
-            ? 'text-white shadow-lg'
-            : expanded
-              ? 'bg-surface-1 text-ctp-subtext0'
-              : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-          }
-        `}
-        style={isActive ? {
-          backgroundColor: hasImage ? undefined : hex,
-          boxShadow: `0 10px 15px -3px ${hex}30, 0 4px 6px -4px ${hex}30`,
-        } : undefined}
-      >
-        {hasImage ? (
-          <img
-            src={iconDataUrl}
-            alt={label}
-            className={`w-full h-full object-cover ${isActive ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
-          />
-        ) : (
-          letter
+      <div className="relative w-10 h-10 flex-shrink-0">
+        <div
+          className={`
+            w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden text-sm font-bold
+            transition-colors duration-100
+            ${isActive
+              ? 'text-white shadow-lg'
+              : expanded
+                ? 'bg-surface-1 text-ctp-subtext0'
+                : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+            }
+          `}
+          style={isActive ? {
+            backgroundColor: hasImage ? undefined : hex,
+            boxShadow: `0 10px 15px -3px ${hex}30, 0 4px 6px -4px ${hex}30`,
+          } : undefined}
+        >
+          {hasImage ? (
+            <img
+              src={iconDataUrl}
+              alt={label}
+              className={`w-full h-full object-cover ${isActive ? 'ring-2 ring-white/30 rounded-lg' : ''}`}
+            />
+          ) : (
+            letter
+          )}
+        </div>
+        {projectBadge && (
+          <span className="absolute -top-1 -right-1 z-10">
+            <Badge type={projectBadge.type} value={projectBadge.value} />
+          </span>
         )}
       </div>
       <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">
@@ -75,6 +85,7 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
 }) {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
+  const pluginBadge = useBadgeStore((s) => s.getAppPluginBadge(entry.manifest.id));
 
   return (
     <button
@@ -84,24 +95,31 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
         expanded ? 'hover:bg-surface-0' : ''
       }`}
     >
-      <div
-        className={`
-          w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-          transition-colors duration-100
-          ${isActive
-            ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-            : expanded
-              ? 'bg-surface-1 text-ctp-subtext0'
-              : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-          }
-        `}
-      >
-        {customIcon ? (
-          <span dangerouslySetInnerHTML={{ __html: customIcon }} />
-        ) : (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-          </svg>
+      <div className="relative w-10 h-10 flex-shrink-0">
+        <div
+          className={`
+            w-10 h-10 rounded-lg flex items-center justify-center
+            transition-colors duration-100
+            ${isActive
+              ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+              : expanded
+                ? 'bg-surface-1 text-ctp-subtext0'
+                : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+            }
+          `}
+        >
+          {customIcon ? (
+            <span dangerouslySetInnerHTML={{ __html: customIcon }} />
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+            </svg>
+          )}
+        </div>
+        {pluginBadge && (
+          <span className="absolute -top-1 -right-1 z-10">
+            <Badge type={pluginBadge.type} value={pluginBadge.value} />
+          </span>
         )}
       </div>
       <span className="text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text">{label}</span>

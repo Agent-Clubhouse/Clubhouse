@@ -2,6 +2,8 @@ import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { useBadgeStore } from '../stores/badgeStore';
+import { Badge } from '../components/Badge';
 
 interface TabEntry { id: string; label: string; icon: ReactNode }
 
@@ -100,6 +102,30 @@ const PLUGIN_FALLBACK_ICON = (
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
   </svg>
 );
+
+function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
+  const tabBadge = useBadgeStore((s) => projectId ? s.getTabBadge(projectId, tab.id) : null);
+
+  return (
+    <button
+      onClick={onClick}
+      data-testid={`explorer-tab-${tab.id}`}
+      data-active={isActive}
+      className={`
+        w-full px-3 py-3 text-left text-sm flex items-center gap-3
+        transition-colors duration-100 cursor-pointer
+        ${isActive
+          ? 'bg-surface-1 text-ctp-text'
+          : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
+        }
+      `}
+    >
+      {tab.icon}
+      <span className="flex-1">{tab.label}</span>
+      {tabBadge && <Badge type={tabBadge.type} value={tabBadge.value} inline />}
+    </button>
+  );
+}
 
 export function ExplorerRail() {
   const { explorerTab, setExplorerTab } = useUIStore();
@@ -230,22 +256,7 @@ export function ExplorerRail() {
             {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
               <div className="absolute -top-0.5 left-3 right-3 h-0.5 bg-indigo-500 rounded-full" />
             )}
-            <button
-              onClick={() => setExplorerTab(tab.id, activeProjectId ?? undefined)}
-              data-testid={`explorer-tab-${tab.id}`}
-              data-active={explorerTab === tab.id}
-              className={`
-                w-full px-3 py-3 text-left text-sm flex items-center gap-3
-                transition-colors duration-100 cursor-pointer
-                ${explorerTab === tab.id
-                  ? 'bg-surface-1 text-ctp-text'
-                  : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
-                }
-              `}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
+            <TabButton tab={tab} isActive={explorerTab === tab.id} projectId={activeProjectId} onClick={() => setExplorerTab(tab.id, activeProjectId ?? undefined)} />
           </div>
         ))}
       </nav>

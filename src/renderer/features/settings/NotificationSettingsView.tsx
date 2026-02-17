@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useNotificationStore } from '../../stores/notificationStore';
+import { useBadgeStore } from '../../stores/badgeStore';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'Permission Needed', description: 'Notify when an agent is waiting for approval' },
@@ -101,6 +102,23 @@ export function NotificationSettingsView() {
               className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
             >
               Send Test
+            </button>
+          </div>
+
+          <div className="border-t border-surface-0" />
+
+          {/* Clear all badges */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <div className="text-sm text-ctp-text font-medium">Clear All Badges</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">Remove all badge indicators from tabs, projects, and the dock</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => useBadgeStore.getState().clearAll()}
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
+            >
+              Clear All
             </button>
           </div>
         </div>

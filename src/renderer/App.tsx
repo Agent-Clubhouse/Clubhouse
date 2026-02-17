@@ -14,6 +14,7 @@ import { useThemeStore } from './stores/themeStore';
 import { useOrchestratorStore } from './stores/orchestratorStore';
 import { useLoggingStore } from './stores/loggingStore';
 import { useHeadlessStore } from './stores/headlessStore';
+import { initBadgeSideEffects } from './stores/badgeStore';
 import { usePluginStore } from './plugins/plugin-store';
 import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { pluginEventBus } from './plugins/plugin-events';
@@ -56,6 +57,7 @@ export function App() {
     loadOrchestratorSettings();
     loadLoggingSettings();
     loadHeadlessSettings();
+    initBadgeSideEffects();
     initializePluginSystem().catch((err) => {
       console.error('[Plugins] Failed to initialize plugin system:', err);
     });
