@@ -250,6 +250,18 @@ describe('wiki plugin API assumptions', () => {
       expect(typeof api.agents.resume).toBe('function');
       expect(api.agents.resume('agent-1')).toBeInstanceOf(Promise);
     });
+
+    it('accepts optional mission parameter', async () => {
+      const resumeSpy = vi.fn(async () => {});
+      const testApi = createMockAPI({
+        agents: {
+          ...api.agents,
+          resume: resumeSpy,
+        },
+      });
+      await testApi.agents.resume('agent-1', 'Wiki page: test.md\n\nContent here');
+      expect(resumeSpy).toHaveBeenCalledWith('agent-1', 'Wiki page: test.md\n\nContent here');
+    });
   });
 
   describe('ui.showInput', () => {
