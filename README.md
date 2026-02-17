@@ -57,13 +57,13 @@ src/
 
 The **orchestrator system** abstracts CLI-specific logic behind a provider interface, so adding support for a new coding agent CLI requires implementing a single `OrchestratorProvider`. The **plugin system** exposes a rich API for building custom tabs, commands, and integrations.
 
-See the [docs/](docs/) directory for detailed developer documentation:
+See the [Wiki](https://github.com/masra91/Clubhouse/wiki) for detailed developer documentation:
 
-- [Architecture](docs/architecture.md) — Process model, IPC, services, and data flow
-- [Orchestrator System](docs/orchestrator-system.md) — Provider interface, registry, and built-in providers
-- [Plugin System](docs/plugin-system.md) — API reference, manifest format, permissions, and built-in plugins
-- [Agent Lifecycle](docs/agent-lifecycle.md) — Durable vs quick agents, spawn modes, hooks, and deletion
-- [Development Guide](docs/development.md) — Setup, build, test, and project conventions
+- [Architecture](https://github.com/masra91/Clubhouse/wiki/Architecture) — Process model, IPC, services, and data flow
+- [Orchestrator System](https://github.com/masra91/Clubhouse/wiki/Orchestrator-System) — Provider interface, registry, and built-in providers
+- [Plugin System](https://github.com/masra91/Clubhouse/wiki/Plugin-System) — API reference, manifest format, permissions, and built-in plugins
+- [Agent Lifecycle](https://github.com/masra91/Clubhouse/wiki/Agent-Lifecycle) — Durable vs quick agents, spawn modes, hooks, and deletion
+- [Development Guide](https://github.com/masra91/Clubhouse/wiki/Development-Guide) — Setup, build, test, and project conventions
 
 ## Tech Stack
 
