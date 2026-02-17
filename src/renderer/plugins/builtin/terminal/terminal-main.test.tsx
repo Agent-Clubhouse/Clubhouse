@@ -284,13 +284,17 @@ describe('Terminal SidebarPanel', () => {
     expect(screen.queryByText('quick-scout')).not.toBeInTheDocument();
   });
 
-  it('filters out durable agents without worktreePath', () => {
+  it('shows durable agents without worktreePath greyed out under "No worktree" section', () => {
     const noWorktree: AgentInfo = { ...DURABLE_AGENT, worktreePath: undefined };
     const { api } = createSidebarAPI([noWorktree]);
     render(<SidebarPanel api={api} />);
 
     expect(screen.getByText('Project')).toBeInTheDocument();
-    expect(screen.queryByText('snazzy-fox')).not.toBeInTheDocument();
+    expect(screen.getByText('No worktree')).toBeInTheDocument();
+    expect(screen.getByText('snazzy-fox')).toBeInTheDocument();
+    // Should not be a clickable target button
+    const el = screen.getByText('snazzy-fox');
+    expect(el.closest('button')).toBeNull();
   });
 
   it('auto-selects Project target on mount', () => {

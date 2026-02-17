@@ -29,6 +29,7 @@ function useTerminalState() {
 
 export function SidebarPanel({ api }: { api: PluginAPI }) {
   const { activeTarget, targets } = useTerminalState();
+  const [noWorktreeAgents, setNoWorktreeAgents] = useState<string[]>([]);
 
   // Build and refresh target list
   const refreshTargets = useCallback(() => {
@@ -42,8 +43,10 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       kind: 'project',
     };
 
-    const agentTargets: TerminalTarget[] = api.agents.list()
-      .filter((a) => a.kind === 'durable' && a.worktreePath)
+    const allDurable = api.agents.list().filter((a) => a.kind === 'durable');
+
+    const agentTargets: TerminalTarget[] = allDurable
+      .filter((a) => a.worktreePath)
       .map((a) => ({
         sessionId: makeSessionId(projectId, 'agent', a.name),
         label: a.name,
@@ -53,6 +56,9 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
     const allTargets = [projectTarget, ...agentTargets];
     terminalState.setTargets(allTargets);
+
+    // Track non-worktree agents for greyed-out display
+    setNoWorktreeAgents(allDurable.filter((a) => !a.worktreePath).map((a) => a.name));
 
     // Auto-select project target if nothing is active
     if (!terminalState.activeTarget) {
@@ -95,6 +101,29 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
               }`,
             }),
             React.createElement('span', { className: 'truncate' }, target.label),
+          ),
+        ),
+      ),
+      // Non-worktree agents section
+      noWorktreeAgents.length > 0 && React.createElement(React.Fragment, null,
+        React.createElement('div', {
+          className: 'mx-3 my-2 border-t border-ctp-surface0',
+        }),
+        React.createElement('div', {
+          className: 'px-3 py-1 text-[10px] text-ctp-subtext0 uppercase tracking-wider',
+        }, 'No worktree'),
+        noWorktreeAgents.map((name) =>
+          React.createElement('div', {
+            key: `no-wt-${name}`,
+            className: 'w-full text-left px-3 py-2 text-sm text-ctp-overlay0 cursor-default',
+            title: 'Create agent with "Use git worktree" to enable terminal',
+          },
+            React.createElement('div', { className: 'flex items-center gap-3' },
+              React.createElement('span', {
+                className: 'w-2 h-2 rounded-full flex-shrink-0 bg-ctp-overlay0 opacity-40',
+              }),
+              React.createElement('span', { className: 'truncate' }, name),
+            ),
           ),
         ),
       ),
