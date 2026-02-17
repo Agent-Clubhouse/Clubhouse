@@ -53,6 +53,14 @@ export function registerAppHandlers(): void {
     headlessSettings.saveSettings(settings);
   });
 
+  ipcMain.handle(IPC.APP.SET_DOCK_BADGE, (_event, count: number) => {
+    if (process.platform === 'darwin') {
+      app.dock.setBadge(count > 0 ? String(count) : '');
+    } else {
+      app.setBadgeCount(count);
+    }
+  });
+
   // --- Logging ---
   ipcMain.on(IPC.LOG.LOG_WRITE, (_event, entry: LogEntry) => {
     logService.log(entry);
