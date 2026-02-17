@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainPanel, SidebarPanel } from './main';
 import { issueState, IssueDetail } from './state';
@@ -669,7 +669,9 @@ describe('SidebarPanel', () => {
     });
 
     // Simulate post-create refresh via requestRefresh
-    issueState.requestRefresh();
+    act(() => {
+      issueState.requestRefresh();
+    });
 
     // Issues should still be visible (not cleared)
     expect(screen.getByText('Issue 1')).toBeTruthy();
