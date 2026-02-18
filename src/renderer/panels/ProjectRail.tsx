@@ -299,7 +299,7 @@ export function ProjectRail() {
 
   return (
     <div
-      className="relative h-full min-h-0 overflow-hidden"
+      className="relative h-full min-h-0"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
