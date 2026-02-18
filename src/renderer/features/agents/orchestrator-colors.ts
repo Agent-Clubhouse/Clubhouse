@@ -32,3 +32,32 @@ export function getModelColor(model: string): { bg: string; text: string } {
 export function getOrchestratorColor(id: string): { bg: string; text: string } {
   return ORCHESTRATOR_COLORS[id] || DEFAULT_ORCH_COLOR;
 }
+
+/**
+ * Format an orchestrator ID into a display label.
+ * Looks up the shortName from the provided orchestrator list, falling back
+ * to a static map of known short names, then to the raw ID.
+ */
+const ORCHESTRATOR_SHORT_NAMES: Record<string, string> = {
+  'claude-code': 'CC',
+  'copilot-cli': 'GHCP',
+  'opencode': 'OC',
+};
+
+export function getOrchestratorLabel(
+  orchId: string,
+  allOrchestrators?: Array<{ id: string; shortName?: string; displayName?: string }>,
+): string {
+  const info = allOrchestrators?.find((o) => o.id === orchId);
+  if (info) return info.shortName || info.displayName || orchId;
+  return ORCHESTRATOR_SHORT_NAMES[orchId] || orchId;
+}
+
+/**
+ * Format a model string into a display label.
+ * Capitalizes the first letter (e.g., "sonnet" → "Sonnet").
+ */
+export function formatModelLabel(model: string | undefined): string {
+  if (!model || model === 'default') return 'Default';
+  return model.charAt(0).toUpperCase() + model.slice(1);
+}
