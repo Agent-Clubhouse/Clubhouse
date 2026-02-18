@@ -273,6 +273,11 @@ const api = {
       ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.OPEN_SETTINGS, listener); };
     },
+    onOpenAbout: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.OPEN_ABOUT, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.OPEN_ABOUT, listener); };
+    },
     getTheme: () =>
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>

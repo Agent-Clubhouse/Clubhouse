@@ -40,6 +40,7 @@ interface UIState {
   setHelpSection: (id: string) => void;
   setHelpTopic: (id: string | null) => void;
   setShowHome: (show: boolean) => void;
+  openAbout: () => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;
 }
@@ -94,6 +95,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   setShowHome: (show) => {
     set({ showHome: show });
     saveViewPrefs({ showHome: show });
+  },
+  openAbout: () => {
+    const { explorerTab } = get();
+    set({ previousExplorerTab: explorerTab, explorerTab: 'settings', settingsSubPage: 'about', settingsContext: 'app' });
   },
   openPluginSettings: (pluginId) => {
     set({ pluginSettingsId: pluginId, settingsSubPage: 'plugin-detail' });
