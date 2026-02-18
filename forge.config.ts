@@ -1,6 +1,7 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
+import { MakerDMG } from '@electron-forge/maker-dmg';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
@@ -42,11 +43,20 @@ const config: ForgeConfig = {
       NSUserNotificationAlertStyle: 'alert',
     },
     osxSign: {
-      identity: '-', // ad-hoc signing
+      identity: process.env.APPLE_SIGNING_IDENTITY || '-',
       optionsForFile: () => ({
         entitlements: path.resolve(__dirname, 'entitlements.plist'),
       }),
     },
+    ...(process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD && process.env.APPLE_TEAM_ID
+      ? {
+          osxNotarize: {
+            appleId: process.env.APPLE_ID,
+            appleIdPassword: process.env.APPLE_ID_PASSWORD,
+            teamId: process.env.APPLE_TEAM_ID,
+          },
+        }
+      : {}),
     asar: {
       unpack: '{**/node_modules/node-pty/**/*.node,**/node_modules/node-pty/**/spawn-helper}',
     },
@@ -65,6 +75,9 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerZIP({}, ['darwin']),
+    new MakerDMG({
+      icon: path.resolve(__dirname, 'assets', 'icon.icns'),
+    }, ['darwin']),
     new MakerSquirrel({
       iconUrl: 'https://raw.githubusercontent.com/masonallen/Clubhouse/main/assets/icon.ico',
       ...(fs.existsSync(path.resolve(__dirname, 'assets', 'icon.ico'))

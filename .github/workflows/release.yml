@@ -1,0 +1,294 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  verify-tag:
+    name: Verify Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      release_notes: ${{ steps.meta.outputs.release_notes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag signature via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_SHA=$(gh api "repos/${{ github.repository }}/git/ref/tags/${TAG_NAME}" --jq '.object.sha')
+
+          # Dereference if it's an annotated tag (points to a tag object, not a commit)
+          TAG_TYPE=$(gh api "repos/${{ github.repository }}/git/tags/${TAG_SHA}" --jq '.object.type' 2>/dev/null || echo "commit")
+          if [ "$TAG_TYPE" = "commit" ]; then
+            VERIFIED=$(gh api "repos/${{ github.repository }}/git/tags/${TAG_SHA}" --jq '.verification.verified')
+          else
+            VERIFIED=$(gh api "repos/${{ github.repository }}/git/tags/${TAG_SHA}" --jq '.verification.verified')
+          fi
+
+          if [ "$VERIFIED" != "true" ]; then
+            echo "::error::Tag ${TAG_NAME} is not signed or signature verification failed"
+            exit 1
+          fi
+          echo "Tag ${TAG_NAME} signature verified"
+
+      - name: Extract version and release notes
+        id: meta
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # Verify tag version matches package.json
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version (${VERSION}) does not match package.json (${PKG_VERSION})"
+            exit 1
+          fi
+
+          # Extract annotated tag message as release notes
+          NOTES=$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | head -50)
+          {
+            echo "release_notes<<RELEASE_NOTES_EOF"
+            echo "$NOTES"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: verify-tag
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+          - arch: x64
+            runner: macos-13
+    outputs:
+      sha256_arm64: ${{ steps.hash.outputs.sha256_arm64 }}
+      size_arm64: ${{ steps.hash.outputs.size_arm64 }}
+      sha256_x64: ${{ steps.hash.outputs.sha256_x64 }}
+      size_x64: ${{ steps.hash.outputs.size_x64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Extract the signing identity name from the imported cert
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "APPLE_SIGNING_IDENTITY=${IDENTITY}" >> "$GITHUB_ENV"
+          echo "Signing identity: ${IDENTITY}"
+
+      - name: Build, sign, and notarize
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Compute artifact hashes
+        id: hash
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+
+          # Find the ZIP (for auto-updater)
+          ZIP_PATH=$(find out/make -name "*.zip" -type f | head -1)
+          SHA256=$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')
+          SIZE=$(stat -f%z "$ZIP_PATH")
+
+          echo "sha256_${ARCH}=${SHA256}" >> "$GITHUB_OUTPUT"
+          echo "size_${ARCH}=${SIZE}" >> "$GITHUB_OUTPUT"
+
+      - name: Rename artifacts for upload
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          mkdir -p dist
+
+          # Find and rename ZIP
+          ZIP_PATH=$(find out/make -name "*.zip" -type f | head -1)
+          cp "$ZIP_PATH" "dist/Clubhouse-${VERSION}-darwin-${ARCH}.zip"
+
+          # Find and rename DMG
+          DMG_PATH=$(find out/make -name "*.dmg" -type f | head -1)
+          cp "$DMG_PATH" "dist/Clubhouse-${VERSION}-darwin-${ARCH}.dmg"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-darwin-${{ matrix.arch }}
+          path: dist/
+          retention-days: 5
+
+  publish:
+    name: Publish
+    needs: [verify-tag, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate latest.json
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          NOTES=$(cat <<'NOTES_EOF'
+          ${{ needs.verify-tag.outputs.release_notes }}
+          NOTES_EOF
+          )
+          BASE_URL="https://stclubhousereleases.blob.core.windows.net/releases/artifacts"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg notes "$NOTES" \
+            --arg min_version "0.1.0" \
+            --arg url_arm64 "${BASE_URL}/Clubhouse-${VERSION}-darwin-arm64.zip" \
+            --arg sha256_arm64 "${{ needs.build.outputs.sha256_arm64 }}" \
+            --argjson size_arm64 ${{ needs.build.outputs.size_arm64 }} \
+            --arg url_x64 "${BASE_URL}/Clubhouse-${VERSION}-darwin-x64.zip" \
+            --arg sha256_x64 "${{ needs.build.outputs.sha256_x64 }}" \
+            --argjson size_x64 ${{ needs.build.outputs.size_x64 }} \
+            '{
+              version: $version,
+              releaseDate: $date,
+              releaseNotes: $notes,
+              minVersion: $min_version,
+              artifacts: {
+                "darwin-arm64": {
+                  url: $url_arm64,
+                  sha256: $sha256_arm64,
+                  size: $size_arm64
+                },
+                "darwin-x64": {
+                  url: $url_x64,
+                  sha256: $sha256_x64,
+                  size: $size_x64
+                }
+              }
+            }' > artifacts/latest.json
+
+          echo "Generated latest.json:"
+          cat artifacts/latest.json
+
+      - name: Authenticate to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload to Azure Blob Storage
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          ACCOUNT="stclubhousereleases"
+          CONTAINER="releases"
+
+          # Upload versioned artifacts (immutable)
+          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg; do
+            BLOB_NAME="artifacts/$(basename "$file")"
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "$BLOB_NAME" \
+              --file "$file" \
+              --overwrite false \
+              --auth-mode login
+          done
+
+          # Upload latest.json
+          az storage blob upload \
+            --account-name "$ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "updates/latest.json" \
+            --file artifacts/latest.json \
+            --overwrite \
+            --content-type "application/json" \
+            --auth-mode login
+
+          # Copy DMGs to the latest slot
+          for ARCH in arm64 x64; do
+            az storage blob copy start \
+              --account-name "$ACCOUNT" \
+              --destination-container "$CONTAINER" \
+              --destination-blob "latest/Clubhouse-latest-darwin-${ARCH}.dmg" \
+              --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-darwin-${ARCH}.dmg" \
+              --auth-mode login
+          done
+
+          # Wait for copies to complete
+          for ARCH in arm64 x64; do
+            while true; do
+              STATUS=$(az storage blob show \
+                --account-name "$ACCOUNT" \
+                --container-name "$CONTAINER" \
+                --name "latest/Clubhouse-latest-darwin-${ARCH}.dmg" \
+                --query "properties.copy.status" \
+                --output tsv \
+                --auth-mode login)
+              if [ "$STATUS" = "success" ]; then
+                echo "Copy complete: latest/Clubhouse-latest-darwin-${ARCH}.dmg"
+                break
+              elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "aborted" ]; then
+                echo "::error::Blob copy failed for darwin-${ARCH}"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+
+          gh release create "v${VERSION}" \
+            --repo "${{ github.repository }}" \
+            --title "v${VERSION}" \
+            --notes "${{ needs.verify-tag.outputs.release_notes }}" \
+            artifacts/Clubhouse-*.zip \
+            artifacts/Clubhouse-*.dmg \
+            artifacts/latest.json
