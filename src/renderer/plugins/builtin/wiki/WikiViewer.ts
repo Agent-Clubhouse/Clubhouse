@@ -12,11 +12,14 @@ function getFileName(path: string): string {
   return path.split('/').pop() || path;
 }
 
-function prettifyName(name: string): string {
-  const base = name.replace(/\.md$/i, '');
-  return base
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function prettifyName(name: string, wikiStyle: string = 'github'): string {
+  let base = name.replace(/\.md$/i, '');
+  if (wikiStyle === 'ado') {
+    base = base.replace(/%2D/gi, '\x00').replace(/-/g, ' ').replace(/\x00/g, '-');
+  } else {
+    base = base.replace(/[-_]/g, ' ');
+  }
+  return base.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function getBreadcrumb(path: string): string {
@@ -97,6 +100,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
 
   const wikiFilesRef = useRef<FilesAPI | null>(null);
   const pagePathMapRef = useRef<Map<string, string>>(new Map());
+  const wikiStyle = api.settings.get<string>('wikiStyle') || 'github';
 
   // Obtain scoped files API
   const getScopedFiles = useCallback((): FilesAPI | null => {
@@ -130,7 +134,11 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
       for (const file of files) {
         const baseName = file.name.replace(/\.md$/i, '');
         names.push(baseName);
+        // Map by basename (for GitHub [[wiki links]])
         pathMap.set(baseName.toLowerCase(), file.path);
+        // Also map by relative path without extension (for ADO path-based links)
+        const pathWithoutExt = file.path.replace(/\.md$/i, '').toLowerCase();
+        pathMap.set(pathWithoutExt, file.path);
       }
 
       setPageNames(names);
@@ -143,9 +151,24 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
 
   // Handle wiki link navigation
   const handleWikiNavigate = useCallback((pageName: string) => {
-    const match = pagePathMapRef.current.get(pageName.toLowerCase());
+    const key = pageName.toLowerCase();
+    // Try direct match (works for both basename and path-based lookup)
+    const match = pagePathMapRef.current.get(key);
     if (match) {
       wikiState.setSelectedPath(match);
+      return;
+    }
+    // For ADO-style, also try with .md appended and path variations
+    const withMd = pagePathMapRef.current.get(key.replace(/\.md$/i, ''));
+    if (withMd) {
+      wikiState.setSelectedPath(withMd);
+      return;
+    }
+    // Try matching just the last segment (page name) for cross-directory links
+    const lastSegment = key.split('/').pop() || key;
+    const fallback = pagePathMapRef.current.get(lastSegment);
+    if (fallback) {
+      wikiState.setSelectedPath(fallback);
     }
   }, []);
 
@@ -311,7 +334,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
   }
 
   const fileName = getFileName(selectedPath);
-  const displayName = viewMode === 'view' ? prettifyName(fileName) : fileName;
+  const displayName = viewMode === 'view' ? prettifyName(fileName, wikiStyle) : fileName;
 
   // Header
   const header = React.createElement('div', {
@@ -356,7 +379,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
 
   if (viewMode === 'view') {
     body = React.createElement('div', { className: 'flex-1 min-h-0 overflow-auto' },
-      React.createElement(WikiMarkdownPreview, { content, pageNames, onNavigate: handleWikiNavigate }),
+      React.createElement(WikiMarkdownPreview, { content, pageNames, onNavigate: handleWikiNavigate, wikiStyle }),
     );
   } else {
     body = React.createElement('div', { className: 'flex-1 min-h-0' },
