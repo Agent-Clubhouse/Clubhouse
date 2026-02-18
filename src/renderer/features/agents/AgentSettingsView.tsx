@@ -8,6 +8,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 
+type SettingsTab = 'main' | 'quick';
+
 interface Props {
   agent: Agent;
 }
@@ -23,6 +25,9 @@ export function AgentSettingsView({ agent }: Props) {
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<SettingsTab>('main');
 
   // Utility terminal collapse state
   const [terminalExpanded, setTerminalExpanded] = useState(false);
@@ -132,6 +137,13 @@ export function AgentSettingsView({ agent }: Props) {
   const [instructionsSaving, setInstructionsSaving] = useState(false);
   const [instructionsLoaded, setInstructionsLoaded] = useState(false);
 
+  // Permissions state (main agent — stored in .claude/settings.local.json)
+  const [permAllow, setPermAllow] = useState('');
+  const [permDeny, setPermDeny] = useState('');
+  const [permDirty, setPermDirty] = useState(false);
+  const [permSaving, setPermSaving] = useState(false);
+  const [permLoaded, setPermLoaded] = useState(false);
+
   // Quick Agent Defaults state
   const projectPath = projects.find((p) => p.id === agent.projectId)?.path;
   const [qadSystemPrompt, setQadSystemPrompt] = useState('');
@@ -147,6 +159,7 @@ export function AgentSettingsView({ agent }: Props) {
   const handleRefreshAll = () => {
     setRefreshKey((k) => k + 1);
     setInstructionsDirty(false);
+    setPermDirty(false);
     setQadDirty(false);
   };
 
@@ -187,6 +200,23 @@ export function AgentSettingsView({ agent }: Props) {
     })();
   }, [worktreePath, projectPath, refreshKey]);
 
+  // Load permissions from .claude/settings.local.json
+  useEffect(() => {
+    const readPath = worktreePath || projectPath;
+    if (!readPath) return;
+    (async () => {
+      try {
+        const perms = await window.clubhouse.agentSettings.readPermissions(readPath);
+        setPermAllow((perms.allow || []).join('\n'));
+        setPermDeny((perms.deny || []).join('\n'));
+        setPermLoaded(true);
+        setPermDirty(false);
+      } catch {
+        setPermLoaded(true);
+      }
+    })();
+  }, [worktreePath, projectPath, refreshKey]);
+
   const handleSaveInstructions = async () => {
     const writePath = worktreePath || projectPath;
     if (!writePath || !projectPath) return;
@@ -194,6 +224,20 @@ export function AgentSettingsView({ agent }: Props) {
     await window.clubhouse.agentSettings.saveInstructions(writePath, instructions, projectPath);
     setInstructionsDirty(false);
     setInstructionsSaving(false);
+  };
+
+  const handleSavePermissions = async () => {
+    const writePath = worktreePath || projectPath;
+    if (!writePath) return;
+    setPermSaving(true);
+    const allow = permAllow.split('\n').map((l) => l.trim()).filter(Boolean);
+    const deny = permDeny.split('\n').map((l) => l.trim()).filter(Boolean);
+    await window.clubhouse.agentSettings.savePermissions(writePath, {
+      allow: allow.length > 0 ? allow : undefined,
+      deny: deny.length > 0 ? deny : undefined,
+    });
+    setPermDirty(false);
+    setPermSaving(false);
   };
 
   const handleOpenAgentRoot = () => {
@@ -224,6 +268,9 @@ export function AgentSettingsView({ agent }: Props) {
     setQadDirty(false);
     setQadSaving(false);
   };
+
+  // Check if the main tab has unsaved changes
+  const mainDirty = instructionsDirty || permDirty;
 
   return (
     <div className="h-full flex flex-col bg-ctp-base overflow-hidden">
@@ -280,7 +327,7 @@ export function AgentSettingsView({ agent }: Props) {
 
       {/* Top 2/3: scrollable settings */}
       <div className="flex-[2] overflow-y-auto min-h-0 px-4 py-4 space-y-6">
-        {/* Appearance Section */}
+        {/* Appearance Section (shared, above tabs) */}
         <section>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-3">Appearance</h3>
           <div className="flex items-start gap-4">
@@ -419,103 +466,194 @@ export function AgentSettingsView({ agent }: Props) {
           </div>
         </section>
 
-        {/* Instructions Section */}
-        {instructionsLoaded && (
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Instructions</h3>
-                <span className="text-[10px] text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
-              </div>
-              <div className="flex gap-2">
+        {/* Tab Bar */}
+        <div className="flex border-b border-surface-1">
+          <button
+            onClick={() => setActiveTab('main')}
+            className={`px-4 py-2 text-xs font-medium transition-colors relative cursor-pointer ${
+              activeTab === 'main'
+                ? 'text-ctp-text'
+                : 'text-ctp-subtext0 hover:text-ctp-text'
+            }`}
+          >
+            Main Agent
+            {mainDirty && (
+              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-ctp-blue inline-block" />
+            )}
+            {activeTab === 'main' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-ctp-blue" />
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('quick')}
+            className={`px-4 py-2 text-xs font-medium transition-colors relative cursor-pointer ${
+              activeTab === 'quick'
+                ? 'text-ctp-text'
+                : 'text-ctp-subtext0 hover:text-ctp-text'
+            }`}
+          >
+            Quick Agent
+            {qadDirty && (
+              <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-ctp-blue inline-block" />
+            )}
+            {activeTab === 'quick' && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-ctp-blue" />
+            )}
+          </button>
+        </div>
+
+        {/* Main Agent Tab */}
+        {activeTab === 'main' && (
+          <div className="space-y-6">
+            {/* Instructions Section */}
+            {instructionsLoaded && (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Instructions</h3>
+                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">{instructionsFileLabel}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleOpenAgentRoot}
+                      className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+                      title="Open agent root in Finder"
+                    >
+                      Open in Finder
+                    </button>
+                    <button
+                      onClick={handleSaveInstructions}
+                      disabled={isRunning || !instructionsDirty || instructionsSaving}
+                      className={`text-xs px-3 py-1 rounded transition-colors ${
+                        isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
+                        instructionsDirty
+                          ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                          : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                      }`}
+                    >
+                      {instructionsSaving ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
+                  disabled={isRunning}
+                  placeholder={`Agent instructions written to ${instructionsFileLabel}...`}
+                  className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  spellCheck={false}
+                />
+              </section>
+            )}
+
+            {/* Permissions Section */}
+            {permLoaded && (
+              <section>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Permissions</h3>
+                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">.claude/settings.local.json</span>
+                  </div>
+                  <button
+                    onClick={handleSavePermissions}
+                    disabled={isRunning || !permDirty || permSaving}
+                    className={`text-xs px-3 py-1 rounded transition-colors ${
+                      isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
+                      permDirty
+                        ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                        : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+                    }`}
+                  >
+                    {permSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
+                    <textarea
+                      value={permAllow}
+                      onChange={(e) => { setPermAllow(e.target.value); setPermDirty(true); }}
+                      disabled={isRunning}
+                      placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
+                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      spellCheck={false}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ctp-subtext0 mb-1">Auto-deny tools (one per line)</label>
+                    <textarea
+                      value={permDeny}
+                      onChange={(e) => { setPermDeny(e.target.value); setPermDirty(true); }}
+                      disabled={isRunning}
+                      placeholder={"WebFetch\nBash(curl *)\nRead(./.env)"}
+                      className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      spellCheck={false}
+                    />
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+
+        {/* Quick Agent Tab */}
+        {activeTab === 'quick' && qadLoaded && (
+          <div className="space-y-6">
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Quick Agent Defaults</h3>
                 <button
-                  onClick={handleOpenAgentRoot}
-                  className="text-xs px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-                  title="Open agent root in Finder"
-                >
-                  Open in Finder
-                </button>
-                <button
-                  onClick={handleSaveInstructions}
-                  disabled={isRunning || !instructionsDirty || instructionsSaving}
+                  onClick={handleSaveQad}
+                  disabled={isRunning || !qadDirty || qadSaving}
                   className={`text-xs px-3 py-1 rounded transition-colors ${
                     isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-                    instructionsDirty
+                    qadDirty
                       ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
                       : 'bg-surface-1 text-ctp-subtext0 cursor-default'
                   }`}
                 >
-                  {instructionsSaving ? 'Saving...' : 'Save'}
+                  {qadSaving ? 'Saving...' : 'Save'}
                 </button>
               </div>
-            </div>
-            <textarea
-              value={instructions}
-              onChange={(e) => { setInstructions(e.target.value); setInstructionsDirty(true); }}
-              disabled={isRunning}
-              placeholder={`Agent instructions written to ${instructionsFileLabel}...`}
-              className={`w-full h-40 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-              spellCheck={false}
-            />
-          </section>
-        )}
-
-        {/* Quick Agent Defaults Section */}
-        {qadLoaded && (
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Quick Agent Defaults</h3>
-              <button
-                onClick={handleSaveQad}
-                disabled={isRunning || !qadDirty || qadSaving}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
-                  isRunning ? 'bg-surface-1 text-ctp-subtext0/50 cursor-not-allowed' :
-                  qadDirty
-                    ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
-                    : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-                }`}
-              >
-                {qadSaving ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-ctp-subtext0 mb-1">Custom instructions</label>
-                <textarea
-                  value={qadSystemPrompt}
-                  onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
-                  disabled={isRunning}
-                  placeholder="System prompt appended to quick agents spawned by this agent..."
-                  className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  spellCheck={false}
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-ctp-subtext0 mb-1">Custom instructions</label>
+                  <textarea
+                    value={qadSystemPrompt}
+                    onChange={(e) => { setQadSystemPrompt(e.target.value); setQadDirty(true); }}
+                    disabled={isRunning}
+                    placeholder="System prompt appended to quick agents spawned by this agent..."
+                    className={`w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    spellCheck={false}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
+                  <textarea
+                    value={qadAllowedTools}
+                    onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
+                    disabled={isRunning}
+                    placeholder={"Bash(npm test:*)\nEdit\nWrite"}
+                    className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    spellCheck={false}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-ctp-subtext0 mb-1">Default model</label>
+                  <select
+                    value={qadDefaultModel}
+                    onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
+                    disabled={isRunning}
+                    className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {MODEL_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-ctp-subtext0 mb-1">Allowed tools (one per line)</label>
-                <textarea
-                  value={qadAllowedTools}
-                  onChange={(e) => { setQadAllowedTools(e.target.value); setQadDirty(true); }}
-                  disabled={isRunning}
-                  placeholder="Bash(npm test:*)&#10;Edit&#10;Write"
-                  className={`w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  spellCheck={false}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-ctp-subtext0 mb-1">Default model</label>
-                <select
-                  value={qadDefaultModel}
-                  onChange={(e) => { setQadDefaultModel(e.target.value); setQadDirty(true); }}
-                  disabled={isRunning}
-                  className={`w-full bg-surface-0 text-ctp-text text-sm rounded-lg px-3 py-2 border border-surface-1 focus:border-ctp-blue focus:outline-none ${isRunning ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {MODEL_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </section>
+            </section>
+          </div>
         )}
       </div>
 
