@@ -2,6 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
 import type { IssueDetail } from './state';
 
+// ── Storage key ─────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'defaultAgentInstructions';
+
 // ── Props ────────────────────────────────────────────────────────────────
 
 interface SendToAgentDialogProps {
@@ -52,13 +56,25 @@ function buildAgentPrompt(issue: IssueDetail): string {
 
 export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProps) {
   const [instructions, setInstructions] = useState('');
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
+  const [defaultLoaded, setDefaultLoaded] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Load durable agents on mount
+  // Load durable agents and saved default instructions on mount
   useEffect(() => {
     const agents = api.agents.list().filter((a) => a.kind === 'durable');
     setDurableAgents(agents);
+
+    api.storage.projectLocal.read(STORAGE_KEY).then((saved) => {
+      if (typeof saved === 'string' && saved.length > 0) {
+        setInstructions(saved);
+        setSaveAsDefault(true);
+      }
+      setDefaultLoaded(true);
+    }).catch(() => {
+      setDefaultLoaded(true);
+    });
   }, [api]);
 
   // Close on outside click
@@ -90,6 +106,15 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
     return issueContext;
   }, [issue, instructions]);
 
+  // Persist or clear default instructions
+  const persistDefault = useCallback(async () => {
+    if (saveAsDefault && instructions.trim()) {
+      await api.storage.projectLocal.write(STORAGE_KEY, instructions.trim());
+    } else if (!saveAsDefault) {
+      await api.storage.projectLocal.delete(STORAGE_KEY);
+    }
+  }, [api, saveAsDefault, instructions]);
+
   // Durable agent handler
   const handleDurableAgent = useCallback(async (agent: AgentInfo) => {
     if (agent.status === 'running') {
@@ -102,13 +127,14 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
 
     const mission = buildMission();
     try {
+      await persistDefault();
       await api.agents.resume(agent.id, { mission });
       api.ui.showNotice(`Agent "${agent.name}" assigned to issue #${issue.number}`);
     } catch {
       api.ui.showError(`Failed to assign agent to issue #${issue.number}`);
     }
     onClose();
-  }, [api, issue, buildMission, onClose]);
+  }, [api, issue, buildMission, persistDefault, onClose]);
 
   const AgentAvatar = api.widgets.AgentAvatar;
 
@@ -136,6 +162,21 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
         onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => setInstructions(e.target.value),
         autoFocus: true,
       }),
+
+      // Set as default checkbox
+      defaultLoaded && React.createElement('label', {
+        className: 'flex items-center gap-1.5 mt-1.5 cursor-pointer',
+        'data-testid': 'save-default-label',
+      },
+        React.createElement('input', {
+          type: 'checkbox',
+          className: 'accent-ctp-accent',
+          checked: saveAsDefault,
+          onChange: (e: React.ChangeEvent<HTMLInputElement>) => setSaveAsDefault(e.target.checked),
+          'data-testid': 'save-default-checkbox',
+        }),
+        React.createElement('span', { className: 'text-[10px] text-ctp-subtext0' }, 'Set as default prompt'),
+      ),
 
       // Agent list
       React.createElement('div', { className: 'mt-3 space-y-1' },

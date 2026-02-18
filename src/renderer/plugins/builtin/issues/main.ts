@@ -138,21 +138,6 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     issueState.setCreatingNew(true);
   }, []);
 
-  // ── New Issue with Agent ──────────────────────────────────────────────
-  const handleNewIssueAgent = useCallback(async () => {
-    const mission = [
-      'Help the user create a well-structured GitHub issue for this project.',
-      'Ask them to describe the problem or feature request, then use `gh issue create` to file it.',
-      'Include a clear title, detailed body with steps to reproduce (for bugs), and suggest appropriate labels.',
-    ].join(' ');
-    try {
-      await api.agents.runQuick(mission);
-      api.ui.showNotice('Agent launched to help create an issue');
-    } catch {
-      api.ui.showError('Failed to launch agent');
-    }
-  }, [api]);
-
   // ── Error / empty state ───────────────────────────────────────────────
   if (error) {
     return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle' },
@@ -183,11 +168,6 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
           onClick: handleNewIssue,
           title: 'Create a new issue',
         }, '+ New'),
-        React.createElement('button', {
-          className: 'px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
-          onClick: handleNewIssueAgent,
-          title: 'Create an issue with AI agent assistance',
-        }, '+ Agent'),
       ),
     ),
 
