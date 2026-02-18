@@ -47,6 +47,11 @@ vi.mock('./plugin-styles', () => ({
   removeStyles: vi.fn(),
 }));
 
+// Mock dynamic-import module for community plugin loading tests
+vi.mock('./dynamic-import', () => ({
+  dynamicImportModule: vi.fn(),
+}));
+
 import {
   initializePluginSystem,
   activatePlugin,
@@ -55,6 +60,7 @@ import {
   getActiveContext,
   _resetActiveContexts,
 } from './plugin-loader';
+import { dynamicImportModule } from './dynamic-import';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 
 function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
@@ -602,6 +608,121 @@ describe('plugin-loader', () => {
 
     it('handles project switch with no enabled plugins at all', async () => {
       await expect(handleProjectSwitch('proj-1', 'proj-2', '/p2')).resolves.toBeUndefined();
+    });
+  });
+
+  // ── Community plugin ESM loading (P0a) ───────────────────────────────
+
+  describe('community plugin loading', () => {
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    it('converts unix path to file:// URL for dynamic import', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-1' }), 'community', '/home/user/.clubhouse/plugins/comm-1', 'registered'
+      );
+
+      await activatePlugin('comm-1', 'proj-1', '/p1');
+
+      expect(mockDynamicImport).toHaveBeenCalledTimes(1);
+      const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
+      expect(importedUrl).toMatch(/^file:\/\/\/home\/user\/.clubhouse\/plugins\/comm-1\/main\.js\?v=\d+$/);
+    });
+
+    it('uses custom main path from manifest', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-main', main: 'dist/index.js' }), 'community', '/plugins/comm-main', 'registered'
+      );
+
+      await activatePlugin('comm-main', 'proj-1', '/p1');
+
+      const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
+      expect(importedUrl).toMatch(/^file:\/\/\/plugins\/comm-main\/dist\/index\.js\?v=\d+$/);
+    });
+
+    it('sets errored status when dynamic import fails', async () => {
+      mockDynamicImport.mockRejectedValue(new Error('Module not found'));
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-fail' }), 'community', '/plugins/comm-fail', 'registered'
+      );
+
+      await activatePlugin('comm-fail', 'proj-1', '/p1');
+
+      const entry = usePluginStore.getState().plugins['comm-fail'];
+      expect(entry.status).toBe('errored');
+      expect(entry.error).toContain('Failed to load module');
+      expect(entry.error).toContain('Module not found');
+    });
+
+    it('sets errored status when module exports are invalid', async () => {
+      mockDynamicImport.mockResolvedValue(null);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-invalid' }), 'community', '/plugins/comm-invalid', 'registered'
+      );
+
+      await activatePlugin('comm-invalid', 'proj-1', '/p1');
+
+      const entry = usePluginStore.getState().plugins['comm-invalid'];
+      expect(entry.status).toBe('errored');
+      expect(entry.error).toContain('did not export a valid module object');
+    });
+
+    it('stores module on successful load', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-ok' }), 'community', '/plugins/comm-ok', 'registered'
+      );
+
+      await activatePlugin('comm-ok', 'proj-1', '/p1');
+
+      expect(usePluginStore.getState().modules['comm-ok']).toBe(mod);
+      expect(usePluginStore.getState().plugins['comm-ok'].status).toBe('activated');
+    });
+
+    it('includes stack trace in activation error', async () => {
+      const err = new Error('activate crashed');
+      err.stack = 'Error: activate crashed\n    at Plugin.activate (main.js:10:5)';
+      const mod: PluginModule = { activate: vi.fn().mockRejectedValue(err) };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-stack' }), 'community', '/plugins/comm-stack', 'registered'
+      );
+
+      await activatePlugin('comm-stack', 'proj-1', '/p1');
+
+      const entry = usePluginStore.getState().plugins['comm-stack'];
+      expect(entry.status).toBe('errored');
+      expect(entry.error).toContain('Activation failed: activate crashed');
+      expect(entry.error).toContain('at Plugin.activate');
+    });
+
+    it('appends cache-busting query param to import URL', async () => {
+      const mod: PluginModule = {};
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const before = Date.now();
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'comm-cache' }), 'community', '/plugins/comm-cache', 'registered'
+      );
+
+      await activatePlugin('comm-cache', 'proj-1', '/p1');
+
+      const importedUrl = mockDynamicImport.mock.calls[0][0] as string;
+      const match = importedUrl.match(/\?v=(\d+)$/);
+      expect(match).not.toBeNull();
+      const timestamp = parseInt(match![1], 10);
+      expect(timestamp).toBeGreaterThanOrEqual(before);
+      expect(timestamp).toBeLessThanOrEqual(Date.now());
     });
   });
 

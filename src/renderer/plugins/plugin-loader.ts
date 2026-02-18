@@ -5,6 +5,7 @@ import { createPluginAPI } from './plugin-api-factory';
 import { injectStyles, removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { rendererLog } from './renderer-logger';
+import { dynamicImportModule } from './dynamic-import';
 
 const activeContexts = new Map<string, PluginContext>();
 
@@ -178,15 +179,33 @@ export async function activatePlugin(
       const mainPath = entry.manifest.main || 'main.js';
       const fullModulePath = `${entry.pluginPath}/${mainPath}`;
 
+      // Convert filesystem path to file:// URL for ESM import resolution.
+      // On macOS/Linux paths start with '/', on Windows they start with a drive letter.
+      const moduleUrl = fullModulePath.startsWith('/')
+        ? `file://${fullModulePath}`
+        : `file:///${fullModulePath.replace(/\\/g, '/')}`;
+
+      // Append cache-busting param so re-imports after plugin rebuild
+      // don't return the stale cached module.
+      const cacheBustedUrl = `${moduleUrl}?v=${Date.now()}`;
+
       try {
-        // Use indirect eval to prevent webpack from analyzing the expression
-        const dynamicImport = new Function('path', 'return import(path)') as (path: string) => Promise<PluginModule>;
-        mod = await dynamicImport(fullModulePath);
+        mod = await dynamicImportModule(cacheBustedUrl);
       } catch (err) {
-        rendererLog('core:plugins', 'error', `Failed to load module for ${pluginId}`, {
-          meta: { pluginId, modulePath: fullModulePath, error: err instanceof Error ? err.message : String(err) },
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const errStack = err instanceof Error ? err.stack : undefined;
+        rendererLog('core:plugins', 'error', `Failed to load module for plugin "${pluginId}"`, {
+          meta: { pluginId, modulePath: fullModulePath, moduleUrl: cacheBustedUrl, error: errMsg, stack: errStack },
         });
-        store.setPluginStatus(pluginId, 'errored', `Failed to load: ${err}`);
+        store.setPluginStatus(pluginId, 'errored', `Failed to load module: ${errMsg}`);
+        return;
+      }
+
+      // Validate that the loaded module has expected exports
+      if (!mod || (typeof mod !== 'object' && typeof mod !== 'function')) {
+        const errMsg = `Plugin module at "${fullModulePath}" did not export a valid module object`;
+        rendererLog('core:plugins', 'error', errMsg, { meta: { pluginId, modulePath: fullModulePath } });
+        store.setPluginStatus(pluginId, 'errored', errMsg);
         return;
       }
 
@@ -206,15 +225,14 @@ export async function activatePlugin(
     store.setPluginStatus(pluginId, 'activated');
     activeContexts.set(contextKey, ctx);
   } catch (err) {
-    rendererLog('core:plugins', 'error', `Error activating plugin ${pluginId}`, {
-      meta: {
-        pluginId,
-        source: entry.source,
-        error: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined,
-      },
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const errStack = err instanceof Error ? err.stack : undefined;
+    rendererLog('core:plugins', 'error', `Error activating plugin "${pluginId}"`, {
+      meta: { pluginId, source: entry.source, error: errMsg, stack: errStack },
     });
-    store.setPluginStatus(pluginId, 'errored', `Activation failed: ${err}`);
+    // Store a detailed error: message on first line, stack on subsequent lines
+    const errorDetail = errStack ? `Activation failed: ${errMsg}\n${errStack}` : `Activation failed: ${errMsg}`;
+    store.setPluginStatus(pluginId, 'errored', errorDetail);
   }
 }
 

@@ -6,6 +6,7 @@ import { createPluginAPI } from '../../plugins/plugin-api-factory';
 import { getActiveContext } from '../../plugins/plugin-loader';
 import { useProjectStore } from '../../stores/projectStore';
 import { PluginSettingsRenderer } from '../../plugins/plugin-settings-renderer';
+import { PluginErrorBoundary } from '../../panels/PluginContentView';
 import type { PluginPermission } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
 
@@ -124,9 +125,11 @@ export function PluginDetailSettings() {
           const api = createPluginAPI(ctx, undefined, entry.manifest);
           const SettingsPanel = mod.SettingsPanel!;
           return (
-            <PluginAPIProvider api={api}>
-              <SettingsPanel api={api} />
-            </PluginAPIProvider>
+            <PluginErrorBoundary pluginId={pluginSettingsId}>
+              <PluginAPIProvider api={api}>
+                <SettingsPanel api={api} />
+              </PluginAPIProvider>
+            </PluginErrorBoundary>
           );
         })()}
 

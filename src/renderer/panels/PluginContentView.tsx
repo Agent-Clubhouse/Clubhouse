@@ -4,6 +4,7 @@ import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext, activatePlugin } from '../plugins/plugin-loader';
 import { useProjectStore } from '../stores/projectStore';
+import { rendererLog } from '../plugins/renderer-logger';
 import type { PluginRenderMode } from '../../shared/plugin-types';
 
 export class PluginErrorBoundary extends React.Component<
@@ -20,7 +21,14 @@ export class PluginErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error) {
-    console.error(`[Plugin: ${this.props.pluginId}] Render error:`, error);
+    const { pluginId } = this.props;
+    console.error(`[Plugin: ${pluginId}] Render error:`, error);
+    rendererLog('core:plugins', 'error', `Plugin "${pluginId}" render error`, {
+      meta: { pluginId, error: error.message, stack: error.stack },
+    });
+    // Store the render error in the plugin store so it's visible in Settings
+    usePluginStore.getState().setPluginStatus(pluginId, 'errored',
+      `Render error: ${error.message}`);
   }
 
   render() {
@@ -32,9 +40,19 @@ export class PluginErrorBoundary extends React.Component<
             <p className="text-sm mb-4">
               The plugin &quot;{this.props.pluginId}&quot; encountered an error while rendering.
             </p>
-            <pre className="text-xs text-left bg-surface-0 p-3 rounded overflow-auto max-h-32">
-              {this.state.error?.message}
-            </pre>
+            {this.state.error?.message && (
+              <pre className="text-xs text-left bg-surface-0 p-3 rounded overflow-auto max-h-32">
+                {this.state.error.message}
+              </pre>
+            )}
+            {this.state.error?.stack && (
+              <details className="mt-2 text-left">
+                <summary className="text-xs text-ctp-subtext0 cursor-pointer">Stack trace</summary>
+                <pre className="text-xs bg-surface-0 p-3 rounded overflow-auto max-h-48 mt-1">
+                  {this.state.error.stack}
+                </pre>
+              </details>
+            )}
           </div>
         </div>
       );

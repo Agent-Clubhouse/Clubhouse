@@ -200,9 +200,23 @@ export function PluginListSettings() {
                     {entry.manifest.description && (
                       <p className="text-xs text-ctp-subtext0 mt-0.5 truncate">{entry.manifest.description}</p>
                     )}
-                    {entry.error && (
-                      <p className="text-xs text-red-400 mt-0.5 truncate">{entry.error}</p>
-                    )}
+                    {entry.error && (() => {
+                      // Split on first newline: message on line 1, stack trace on rest
+                      const newlineIdx = entry.error.indexOf('\n');
+                      const message = newlineIdx >= 0 ? entry.error.slice(0, newlineIdx) : entry.error;
+                      const stack = newlineIdx >= 0 ? entry.error.slice(newlineIdx + 1) : null;
+                      return (
+                        <div className="mt-1">
+                          <p className="text-xs text-red-400">{message}</p>
+                          {stack && (
+                            <details className="mt-1">
+                              <summary className="text-[10px] text-red-400/70 cursor-pointer">View details</summary>
+                              <pre className="text-[10px] text-red-400/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
+                            </details>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-2 ml-3">
                     {enabled && hasSettings(entry) && (
