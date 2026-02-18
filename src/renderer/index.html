@@ -7,6 +7,20 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-eval' 'unsafe-inline' data: blob:; worker-src 'self' blob:"
     />
+    <!-- Import map for community plugin ESM imports.
+         Plugins use native ESM dynamic import outside webpack, so bare specifiers
+         like 'react' must be resolved via import map. These data URI modules
+         re-export from the globalThis references set by the renderer entry. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "data:text/javascript,const R=globalThis.React;export default R;export const{Children,Component,Fragment,PureComponent,Suspense,cloneElement,createContext,createElement,createRef,forwardRef,isValidElement,lazy,memo,startTransition,use,useCallback,useContext,useDebugValue,useDeferredValue,useEffect,useId,useImperativeHandle,useInsertionEffect,useLayoutEffect,useMemo,useReducer,useRef,useState,useSyncExternalStore,useTransition,version}=R;",
+        "react-dom": "data:text/javascript,const D=globalThis.ReactDOM;export default D;export const{createPortal,flushSync}=D;",
+        "react-dom/client": "data:text/javascript,const D=globalThis.ReactDOM;export default D;export const{createRoot,hydrateRoot}=D;",
+        "react/jsx-runtime": "data:text/javascript,const J=globalThis.__REACT_JSX_RUNTIME__;export const{jsx,jsxs,Fragment}=J;"
+      }
+    }
+    </script>
     <script>
       // Flash-prevention: apply cached theme CSS vars before stylesheets load
       (function() {
