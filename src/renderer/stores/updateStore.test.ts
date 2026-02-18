@@ -8,6 +8,9 @@ const mockCheckForUpdates = vi.fn();
 const mockGetUpdateStatus = vi.fn();
 const mockApplyUpdate = vi.fn();
 const mockOnUpdateStatusChanged = vi.fn();
+const mockGetVersion = vi.fn();
+const mockGetPendingReleaseNotes = vi.fn();
+const mockClearPendingReleaseNotes = vi.fn();
 
 Object.defineProperty(globalThis, 'window', {
   value: {
@@ -19,6 +22,9 @@ Object.defineProperty(globalThis, 'window', {
         getUpdateStatus: mockGetUpdateStatus,
         applyUpdate: mockApplyUpdate,
         onUpdateStatusChanged: mockOnUpdateStatusChanged,
+        getVersion: mockGetVersion,
+        getPendingReleaseNotes: mockGetPendingReleaseNotes,
+        clearPendingReleaseNotes: mockClearPendingReleaseNotes,
       },
     },
   },
@@ -28,11 +34,15 @@ Object.defineProperty(globalThis, 'window', {
 describe('updateStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetVersion.mockResolvedValue('0.27.0');
+    mockGetPendingReleaseNotes.mockResolvedValue(null);
+    mockClearPendingReleaseNotes.mockResolvedValue(undefined);
     useUpdateStore.setState({
       status: {
         state: 'idle',
         availableVersion: null,
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 0,
         error: null,
         downloadPath: null,
@@ -41,8 +51,11 @@ describe('updateStore', () => {
         autoUpdate: true,
         lastCheck: null,
         dismissedVersion: null,
+        lastSeenVersion: null,
       },
       dismissed: false,
+      whatsNew: null,
+      showWhatsNew: false,
     });
   });
 
@@ -61,6 +74,12 @@ describe('updateStore', () => {
       const { dismissed } = useUpdateStore.getState();
       expect(dismissed).toBe(false);
     });
+
+    it('defaults whatsNew to null', () => {
+      const { whatsNew, showWhatsNew } = useUpdateStore.getState();
+      expect(whatsNew).toBeNull();
+      expect(showWhatsNew).toBe(false);
+    });
   });
 
   describe('loadSettings', () => {
@@ -69,11 +88,13 @@ describe('updateStore', () => {
         autoUpdate: false,
         lastCheck: '2026-02-17T00:00:00Z',
         dismissedVersion: '0.26.0',
+        lastSeenVersion: '0.25.0',
       });
       mockGetUpdateStatus.mockResolvedValue({
         state: 'ready',
         availableVersion: '0.27.0',
         releaseNotes: 'Bug fixes',
+        releaseMessage: 'Bug Fixes & More',
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -84,8 +105,10 @@ describe('updateStore', () => {
       const state = useUpdateStore.getState();
       expect(state.settings.autoUpdate).toBe(false);
       expect(state.settings.lastCheck).toBe('2026-02-17T00:00:00Z');
+      expect(state.settings.lastSeenVersion).toBe('0.25.0');
       expect(state.status.state).toBe('ready');
       expect(state.status.availableVersion).toBe('0.27.0');
+      expect(state.status.releaseMessage).toBe('Bug Fixes & More');
     });
 
     it('keeps defaults on API error', async () => {
@@ -119,6 +142,7 @@ describe('updateStore', () => {
         autoUpdate: false,
         lastCheck: '2026-02-17T12:00:00Z',
         dismissedVersion: null,
+        lastSeenVersion: '0.26.0',
       };
 
       await useUpdateStore.getState().saveSettings(newSettings);
@@ -134,6 +158,7 @@ describe('updateStore', () => {
         state: 'ready' as const,
         availableVersion: '0.26.0',
         releaseNotes: 'New features',
+        releaseMessage: 'New Features',
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -154,6 +179,7 @@ describe('updateStore', () => {
         state: 'idle',
         availableVersion: null,
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 0,
         error: null,
         downloadPath: null,
@@ -182,6 +208,90 @@ describe('updateStore', () => {
     });
   });
 
+  describe('checkWhatsNew', () => {
+    it('shows dialog when pending release notes exist for an upgrade', async () => {
+      mockGetPendingReleaseNotes.mockResolvedValue({
+        version: '0.27.0',
+        releaseNotes: '## New Features\n\n- Cool stuff',
+      });
+      mockGetVersion.mockResolvedValue('0.27.0');
+      useUpdateStore.setState({
+        settings: {
+          autoUpdate: true,
+          lastCheck: null,
+          dismissedVersion: null,
+          lastSeenVersion: '0.26.0', // different from current = upgrade
+        },
+      });
+
+      await useUpdateStore.getState().checkWhatsNew();
+
+      const state = useUpdateStore.getState();
+      expect(state.showWhatsNew).toBe(true);
+      expect(state.whatsNew).toEqual({
+        version: '0.27.0',
+        releaseNotes: '## New Features\n\n- Cool stuff',
+      });
+    });
+
+    it('does not show dialog when no pending notes', async () => {
+      mockGetPendingReleaseNotes.mockResolvedValue(null);
+
+      await useUpdateStore.getState().checkWhatsNew();
+
+      expect(useUpdateStore.getState().showWhatsNew).toBe(false);
+    });
+
+    it('cleans up stale file when lastSeenVersion matches current (not an upgrade)', async () => {
+      mockGetPendingReleaseNotes.mockResolvedValue({
+        version: '0.27.0',
+        releaseNotes: 'Some notes',
+      });
+      mockGetVersion.mockResolvedValue('0.27.0');
+      useUpdateStore.setState({
+        settings: {
+          autoUpdate: true,
+          lastCheck: null,
+          dismissedVersion: null,
+          lastSeenVersion: '0.27.0', // same as current = not an upgrade
+        },
+      });
+
+      await useUpdateStore.getState().checkWhatsNew();
+
+      expect(useUpdateStore.getState().showWhatsNew).toBe(false);
+      expect(mockClearPendingReleaseNotes).toHaveBeenCalled();
+    });
+  });
+
+  describe('dismissWhatsNew', () => {
+    it('clears dialog state and saves lastSeenVersion', async () => {
+      mockSaveUpdateSettings.mockResolvedValue(undefined);
+      mockGetVersion.mockResolvedValue('0.27.0');
+      useUpdateStore.setState({
+        showWhatsNew: true,
+        whatsNew: { version: '0.27.0', releaseNotes: 'Notes' },
+        settings: {
+          autoUpdate: true,
+          lastCheck: null,
+          dismissedVersion: null,
+          lastSeenVersion: '0.26.0',
+        },
+      });
+
+      await useUpdateStore.getState().dismissWhatsNew();
+
+      const state = useUpdateStore.getState();
+      expect(state.showWhatsNew).toBe(false);
+      expect(state.whatsNew).toBeNull();
+      expect(state.settings.lastSeenVersion).toBe('0.27.0');
+      expect(mockClearPendingReleaseNotes).toHaveBeenCalled();
+      expect(mockSaveUpdateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ lastSeenVersion: '0.27.0' }),
+      );
+    });
+  });
+
   describe('initUpdateListener', () => {
     it('subscribes to status change events', () => {
       const unsubscribe = vi.fn();
@@ -207,6 +317,7 @@ describe('updateStore', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: 'Bug fixes',
+        releaseMessage: 'Bug Fixes',
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -232,6 +343,7 @@ describe('updateStore', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',

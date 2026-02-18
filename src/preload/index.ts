@@ -295,7 +295,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
     getUpdateSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_SETTINGS),
-    saveUpdateSettings: (settings: { autoUpdate: boolean; lastCheck: string | null; dismissedVersion: string | null }) =>
+    saveUpdateSettings: (settings: { autoUpdate: boolean; lastCheck: string | null; dismissedVersion: string | null; lastSeenVersion: string | null }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_UPDATE_SETTINGS, settings),
     checkForUpdates: () =>
       ipcRenderer.invoke(IPC.APP.CHECK_FOR_UPDATES),

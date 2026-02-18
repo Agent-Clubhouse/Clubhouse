@@ -31,6 +31,8 @@ Object.defineProperty(globalThis, 'window', {
         getBadgeSettings: vi.fn().mockResolvedValue({}),
         saveBadgeSettings: vi.fn().mockResolvedValue(undefined),
         openExternalUrl: vi.fn().mockResolvedValue(undefined),
+        getPendingReleaseNotes: vi.fn().mockResolvedValue(null),
+        clearPendingReleaseNotes: vi.fn().mockResolvedValue(undefined),
       },
       pty: {
         onData: vi.fn().mockReturnValue(vi.fn()),
@@ -58,6 +60,7 @@ function resetStores() {
       state: 'idle',
       availableVersion: null,
       releaseNotes: null,
+      releaseMessage: null,
       downloadProgress: 0,
       error: null,
       downloadPath: null,
@@ -66,6 +69,7 @@ function resetStores() {
       autoUpdate: true,
       lastCheck: null,
       dismissedVersion: null,
+      lastSeenVersion: null,
     },
     dismissed: false,
   });
@@ -91,6 +95,7 @@ describe('UpdateBanner', () => {
         state: 'checking',
         availableVersion: null,
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 0,
         error: null,
         downloadPath: null,
@@ -106,6 +111,7 @@ describe('UpdateBanner', () => {
         state: 'downloading',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 50,
         error: null,
         downloadPath: null,
@@ -121,6 +127,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -135,12 +142,13 @@ describe('UpdateBanner', () => {
     expect(screen.getByTestId('update-restart-btn')).toBeInTheDocument();
   });
 
-  it('shows release notes when available', () => {
+  it('shows release message tagline when available', () => {
     useUpdateStore.setState({
       status: {
         state: 'ready',
         availableVersion: '0.26.0',
-        releaseNotes: 'Bug fixes and performance improvements',
+        releaseNotes: '## Full release notes markdown',
+        releaseMessage: 'Plugin Improvements & More',
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -149,7 +157,26 @@ describe('UpdateBanner', () => {
 
     render(<UpdateBanner />);
 
-    expect(screen.getByText('Bug fixes and performance improvements')).toBeInTheDocument();
+    expect(screen.getByTestId('update-release-message')).toBeInTheDocument();
+    expect(screen.getByText(/Plugin Improvements & More/)).toBeInTheDocument();
+  });
+
+  it('does not show tagline when releaseMessage is null', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: 'Some notes',
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.queryByTestId('update-release-message')).toBeNull();
   });
 
   it('renders nothing when dismissed', () => {
@@ -158,6 +185,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -175,6 +203,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -197,6 +226,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -217,6 +247,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -251,6 +282,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -285,6 +317,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
@@ -323,6 +356,7 @@ describe('UpdateBanner', () => {
         state: 'ready',
         availableVersion: '0.26.0',
         releaseNotes: null,
+        releaseMessage: null,
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
