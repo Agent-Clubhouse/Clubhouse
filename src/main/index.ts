@@ -6,6 +6,7 @@ import { buildMenu } from './menu';
 import { getSettings as getThemeSettings } from './services/theme-service';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
+import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks } from './services/auto-update-service';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -139,6 +140,9 @@ app.on('ready', () => {
 
   createWindow();
 
+  // Start periodic update checks (respects user's autoUpdate setting)
+  startUpdateChecks();
+
   // macOS notification permission is triggered on-demand when the user
   // sends their first test notification or an agent event fires.
   // The app must be codesigned (even ad-hoc) for macOS to show the prompt.
@@ -158,6 +162,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
+  stopUpdateChecks();
   restoreAll();
   killAll();
 });

@@ -6,8 +6,10 @@ import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
 import * as badgeSettings from '../services/badge-settings';
+import * as autoUpdateService from '../services/auto-update-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
+import { UpdateSettings } from '../../shared/types';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, (_event, url: string) => {
@@ -68,6 +70,32 @@ export function registerAppHandlers(): void {
     } else {
       app.setBadgeCount(count);
     }
+  });
+
+  // --- Auto-update ---
+  ipcMain.handle(IPC.APP.GET_UPDATE_SETTINGS, () => {
+    return autoUpdateService.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, (_event, settings: UpdateSettings) => {
+    autoUpdateService.saveSettings(settings);
+    if (settings.autoUpdate) {
+      autoUpdateService.startPeriodicChecks();
+    } else {
+      autoUpdateService.stopPeriodicChecks();
+    }
+  });
+
+  ipcMain.handle(IPC.APP.CHECK_FOR_UPDATES, () => {
+    return autoUpdateService.checkForUpdates(true);
+  });
+
+  ipcMain.handle(IPC.APP.GET_UPDATE_STATUS, () => {
+    return autoUpdateService.getStatus();
+  });
+
+  ipcMain.handle(IPC.APP.APPLY_UPDATE, () => {
+    return autoUpdateService.applyUpdate();
   });
 
   // --- Logging ---
