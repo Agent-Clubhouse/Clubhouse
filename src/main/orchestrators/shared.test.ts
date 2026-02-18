@@ -89,6 +89,7 @@ describe('shared orchestrator utilities', () => {
     });
 
     it('handles \\r\\n line endings from where on Windows', () => {
+      if (process.platform !== 'win32') return; // where output format is Windows-only
       // Windows `where` outputs results with \r\n
       vi.mocked(execSync).mockReturnValue('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd\r\nC:\\another\\claude.cmd\r\n');
       vi.mocked(fs.existsSync).mockImplementation((p) => p === 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
