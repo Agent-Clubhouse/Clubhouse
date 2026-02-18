@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 
@@ -205,18 +206,18 @@ export function renameDurable(projectPath: string, agentId: string, newName: str
 export function updateDurable(
   projectPath: string,
   agentId: string,
-  updates: { name?: string; color?: string; emoji?: string | null },
+  updates: { name?: string; color?: string; icon?: string | null },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   if (updates.name !== undefined) agent.name = updates.name;
   if (updates.color !== undefined) agent.color = updates.color;
-  if (updates.emoji !== undefined) {
-    if (updates.emoji === null || updates.emoji === '') {
-      delete agent.emoji;
+  if (updates.icon !== undefined) {
+    if (updates.icon === null || updates.icon === '') {
+      delete agent.icon;
     } else {
-      agent.emoji = updates.emoji;
+      agent.icon = updates.icon;
     }
   }
   writeAgents(projectPath, agents);
@@ -547,4 +548,71 @@ export function deleteUnregister(projectPath: string, agentId: string): DeleteRe
   const filtered = agents.filter((a) => a.id !== agentId);
   writeAgents(projectPath, filtered);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
+}
+
+// --- Agent icon storage ---
+
+function getAgentIconsDir(): string {
+  const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
+  const dir = path.join(app.getPath('home'), dirName, 'agent-icons');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/** Save a cropped PNG data URL as the agent's icon. Returns the filename. */
+export function saveAgentIcon(projectPath: string, agentId: string, dataUrl: string): string {
+  removeAgentIconFile(agentId);
+
+  const filename = `${agentId}.png`;
+  const dest = path.join(getAgentIconsDir(), filename);
+
+  // Strip data URL prefix and write binary
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
+
+  // Update agents.json
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (agent) {
+    agent.icon = filename;
+    writeAgents(projectPath, agents);
+  }
+
+  return filename;
+}
+
+/** Read an agent icon file and return a data URL, or null if not found. */
+export function readAgentIconData(filename: string): string | null {
+  const filePath = path.join(getAgentIconsDir(), filename);
+  if (!fs.existsSync(filePath)) return null;
+  const data = fs.readFileSync(filePath);
+  return `data:image/png;base64,${data.toString('base64')}`;
+}
+
+/** Remove the icon file for an agent. */
+export function removeAgentIconFile(agentId: string): void {
+  const iconsDir = getAgentIconsDir();
+  try {
+    const files = fs.readdirSync(iconsDir);
+    for (const file of files) {
+      if (file.startsWith(agentId + '.')) {
+        fs.unlinkSync(path.join(iconsDir, file));
+      }
+    }
+  } catch {
+    // icons dir may not exist yet
+  }
+}
+
+/** Remove agent icon metadata and file. */
+export function removeAgentIcon(projectPath: string, agentId: string): void {
+  removeAgentIconFile(agentId);
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (agent) {
+    delete agent.icon;
+    writeAgents(projectPath, agents);
+  }
 }

@@ -35,7 +35,12 @@ interface AgentState {
   removeAgent: (id: string) => void;
   deleteDurableAgent: (id: string, projectPath: string) => Promise<void>;
   renameAgent: (id: string, newName: string, projectPath: string) => Promise<void>;
-  updateAgent: (id: string, updates: { name?: string; color?: string; emoji?: string | null }, projectPath: string) => Promise<void>;
+  agentIcons: Record<string, string>; // agentId -> data URL
+  updateAgent: (id: string, updates: { name?: string; color?: string; icon?: string | null }, projectPath: string) => Promise<void>;
+  pickAgentIcon: (agentId: string, projectPath: string) => Promise<string | null>;
+  saveAgentIcon: (agentId: string, projectPath: string, dataUrl: string) => Promise<void>;
+  removeAgentIcon: (agentId: string, projectPath: string) => Promise<void>;
+  loadAgentIcon: (agent: Agent) => Promise<void>;
   updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
   clearStaleStatuses: () => void;
@@ -55,6 +60,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentSpawnedAt: {},
   agentDetailedStatus: {},
   projectActiveAgent: {},
+  agentIcons: {},
 
   setActiveAgent: (id, projectId?) => {
     set({ activeAgentId: id, agentSettingsOpenFor: null });
@@ -302,7 +308,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           kind: 'durable',
           status: 'sleeping',
           color: config.color,
-          emoji: config.emoji,
+          icon: config.icon,
           worktreePath: config.worktreePath,
           branch: config.branch,
           model: config.model,
@@ -312,6 +318,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     set({ agents });
+
+    // Load icons for agents that have them
+    for (const config of configs) {
+      if (config.icon && agents[config.id]) {
+        get().loadAgentIcon(agents[config.id]);
+      }
+    }
   },
 
   renameAgent: async (id, newName, projectPath) => {
@@ -329,11 +342,52 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const patched = { ...agent };
       if (updates.name !== undefined) patched.name = updates.name;
       if (updates.color !== undefined) patched.color = updates.color;
-      if (updates.emoji !== undefined) {
-        patched.emoji = updates.emoji === null ? undefined : updates.emoji;
+      if (updates.icon !== undefined) {
+        patched.icon = updates.icon === null ? undefined : updates.icon;
       }
       return { agents: { ...s.agents, [id]: patched } };
     });
+  },
+
+  pickAgentIcon: async () => {
+    return window.clubhouse.agent.pickIcon();
+  },
+
+  saveAgentIcon: async (agentId, projectPath, dataUrl) => {
+    const filename = await window.clubhouse.agent.saveIcon(projectPath, agentId, dataUrl);
+    if (!filename) return;
+    // Update in-memory agent
+    set((s) => {
+      const agent = s.agents[agentId];
+      if (!agent) return s;
+      return {
+        agents: { ...s.agents, [agentId]: { ...agent, icon: filename } },
+        agentIcons: { ...s.agentIcons, [agentId]: dataUrl },
+      };
+    });
+  },
+
+  removeAgentIcon: async (agentId, projectPath) => {
+    await window.clubhouse.agent.removeIcon(projectPath, agentId);
+    set((s) => {
+      const agent = s.agents[agentId];
+      if (!agent) return s;
+      const { [agentId]: _, ...agentIcons } = s.agentIcons;
+      return {
+        agents: { ...s.agents, [agentId]: { ...agent, icon: undefined } },
+        agentIcons,
+      };
+    });
+  },
+
+  loadAgentIcon: async (agent) => {
+    if (!agent.icon) return;
+    const dataUrl = await window.clubhouse.agent.readIcon(agent.icon);
+    if (dataUrl) {
+      set((s) => ({
+        agentIcons: { ...s.agentIcons, [agent.id]: dataUrl },
+      }));
+    }
   },
 
   killAgent: async (id, projectPath) => {

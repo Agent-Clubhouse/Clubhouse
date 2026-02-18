@@ -40,7 +40,7 @@ export interface Agent {
   kind: AgentKind;
   status: AgentStatus;
   color: string;
-  emoji?: string;
+  icon?: string;         // filename in ~/.clubhouse/agent-icons/
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
@@ -100,7 +100,7 @@ export interface DurableAgentConfig {
   id: string;
   name: string;
   color: string;
-  emoji?: string;
+  icon?: string;        // filename in ~/.clubhouse/agent-icons/
   branch?: string;
   worktreePath?: string;
   createdAt: string;

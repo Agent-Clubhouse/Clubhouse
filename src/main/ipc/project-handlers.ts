@@ -74,6 +74,30 @@ export function registerProjectHandlers(): void {
     return projectStore.readIconData(filename);
   });
 
+  ipcMain.handle(IPC.PROJECT.PICK_IMAGE, async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      title: 'Choose Image',
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    };
+    const mime = mimeMap[ext] || 'image/png';
+    const data = fs.readFileSync(filePath);
+    return `data:${mime};base64,${data.toString('base64')}`;
+  });
+
+  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, (_event, projectId: string, dataUrl: string) => {
+    return projectStore.saveCroppedIcon(projectId, dataUrl);
+  });
+
   ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, (_event, projectPath: string): string[] => {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     if (!fs.existsSync(clubhouseDir)) return [];

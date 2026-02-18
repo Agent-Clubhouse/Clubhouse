@@ -15,6 +15,8 @@ interface ProjectState {
   gitInit: (projectId: string, dirPath: string) => Promise<boolean>;
   updateProject: (id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>) => Promise<void>;
   pickProjectIcon: (projectId: string) => Promise<void>;
+  pickProjectImage: () => Promise<string | null>;
+  saveCroppedProjectIcon: (projectId: string, dataUrl: string) => Promise<void>;
   reorderProjects: (orderedIds: string[]) => Promise<void>;
   loadProjectIcon: (project: Project) => Promise<void>;
 }
@@ -116,6 +118,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (project?.icon) {
       get().loadProjectIcon(project);
     }
+  },
+
+  pickProjectImage: async () => {
+    return window.clubhouse.project.pickImage();
+  },
+
+  saveCroppedProjectIcon: async (projectId, dataUrl) => {
+    const filename = await window.clubhouse.project.saveCroppedIcon(projectId, dataUrl);
+    if (!filename) return;
+    // Reload projects to get updated icon field
+    const projects = await window.clubhouse.project.list();
+    set({ projects });
+    // Store the cropped data URL directly (no need to re-read)
+    set((s) => ({
+      projectIcons: { ...s.projectIcons, [projectId]: dataUrl },
+    }));
   },
 
   reorderProjects: async (orderedIds) => {

@@ -29,10 +29,45 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.UPDATE_DURABLE,
-    (_event, projectPath: string, agentId: string, updates: { name?: string; color?: string; emoji?: string | null }) => {
+    (_event, projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) => {
       agentConfig.updateDurable(projectPath, agentId, updates);
     }
   );
+
+  ipcMain.handle(IPC.AGENT.PICK_ICON, async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) return null;
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      title: 'Choose Agent Icon',
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    // Read the file and return as data URL for crop preview
+    const fs = require('fs');
+    const path = require('path');
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    };
+    const mime = mimeMap[ext] || 'image/png';
+    const data = fs.readFileSync(filePath);
+    return `data:${mime};base64,${data.toString('base64')}`;
+  });
+
+  ipcMain.handle(IPC.AGENT.SAVE_ICON, (_event, projectPath: string, agentId: string, dataUrl: string) => {
+    return agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
+  });
+
+  ipcMain.handle(IPC.AGENT.READ_ICON, (_event, filename: string) => {
+    return agentConfig.readAgentIconData(filename);
+  });
+
+  ipcMain.handle(IPC.AGENT.REMOVE_ICON, (_event, projectPath: string, agentId: string) => {
+    agentConfig.removeAgentIcon(projectPath, agentId);
+  });
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, (_event, projectPath: string, agentId: string) => {
     return agentConfig.getDurableConfig(projectPath, agentId);

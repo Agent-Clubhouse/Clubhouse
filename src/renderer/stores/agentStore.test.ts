@@ -302,16 +302,16 @@ describe('agentStore', () => {
       expect(getState().agents['a_color'].color).toBe('emerald');
     });
 
-    it('sets emoji in local state', async () => {
-      seedAgent({ id: 'a_emoji' });
-      await getState().updateAgent('a_emoji', { emoji: '🔥' }, '/proj');
-      expect(getState().agents['a_emoji'].emoji).toBe('🔥');
+    it('sets icon in local state', async () => {
+      seedAgent({ id: 'a_icon' });
+      await getState().updateAgent('a_icon', { icon: 'a_icon.png' }, '/proj');
+      expect(getState().agents['a_icon'].icon).toBe('a_icon.png');
     });
 
-    it('clears emoji (null → undefined) in local state', async () => {
-      seedAgent({ id: 'a_clear', emoji: '🔥' });
-      await getState().updateAgent('a_clear', { emoji: null }, '/proj');
-      expect(getState().agents['a_clear'].emoji).toBeUndefined();
+    it('clears icon (null → undefined) in local state', async () => {
+      seedAgent({ id: 'a_clear', icon: 'a_clear.png' });
+      await getState().updateAgent('a_clear', { icon: null }, '/proj');
+      expect(getState().agents['a_clear'].icon).toBeUndefined();
     });
 
     it('calls updateDurable IPC', async () => {
