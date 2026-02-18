@@ -421,7 +421,7 @@ describe('renameDurable', () => {
 
 describe('updateDurable', () => {
   let writtenAgents: string;
-  const agents = [{ id: 'durable_upd', name: 'old-name', color: 'indigo', emoji: '🔥', branch: 'old-name/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+  const agents = [{ id: 'durable_upd', name: 'old-name', color: 'indigo', icon: 'durable_upd.png', branch: 'old-name/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -436,7 +436,7 @@ describe('updateDurable', () => {
     const result = JSON.parse(writtenAgents);
     expect(result[0].name).toBe('new-name');
     expect(result[0].color).toBe('indigo');
-    expect(result[0].emoji).toBe('🔥');
+    expect(result[0].icon).toBe('durable_upd.png');
   });
 
   it('updates color only', () => {
@@ -446,22 +446,22 @@ describe('updateDurable', () => {
     expect(result[0].name).toBe('old-name');
   });
 
-  it('sets emoji', () => {
-    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '🚀' });
+  it('sets icon', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { icon: 'durable_upd_new.png' });
     const result = JSON.parse(writtenAgents);
-    expect(result[0].emoji).toBe('🚀');
+    expect(result[0].icon).toBe('durable_upd_new.png');
   });
 
-  it('clears emoji when null', () => {
-    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: null });
+  it('clears icon when null', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { icon: null });
     const result = JSON.parse(writtenAgents);
-    expect(result[0]).not.toHaveProperty('emoji');
+    expect(result[0]).not.toHaveProperty('icon');
   });
 
-  it('clears emoji when empty string', () => {
-    updateDurable(PROJECT_PATH, 'durable_upd', { emoji: '' });
+  it('clears icon when empty string', () => {
+    updateDurable(PROJECT_PATH, 'durable_upd', { icon: '' });
     const result = JSON.parse(writtenAgents);
-    expect(result[0]).not.toHaveProperty('emoji');
+    expect(result[0]).not.toHaveProperty('icon');
   });
 
   it('no-op for unknown agentId', () => {
