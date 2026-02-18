@@ -180,7 +180,10 @@ export class OpenCodeProvider implements OrchestratorProvider {
   async getModelOptions() {
     try {
       const binary = findOpenCodeBinary();
-      const { stdout } = await execFileAsync(binary, ['models'], { timeout: 15000 });
+      const { stdout } = await execFileAsync(binary, ['models'], {
+        timeout: 15000,
+        shell: process.platform === 'win32',
+      });
       const parsed = parseOpenCodeModels(stdout);
       if (parsed) return parsed;
     } catch {

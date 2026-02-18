@@ -46,7 +46,7 @@ export function registerProcessHandlers(): void {
         command,
         args,
         {
-          shell: false,
+          shell: process.platform === 'win32', // .cmd/.bat commands need shell on Windows
           cwd: projectPath,
           timeout,
           env: getShellEnvironment(),

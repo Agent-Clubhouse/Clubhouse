@@ -63,8 +63,11 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
   try {
     if (isWin) {
-      // On Windows, spawn the binary directly — no shell wrapper needed
-      proc = pty.spawn(binary, args, {
+      // On Windows, npm shims (.cmd/.ps1) and other non-exe scripts can't be
+      // executed directly by winpty — they need cmd.exe to resolve PATHEXT and
+      // launch the interpreter.  This mirrors the Unix side which wraps through
+      // the user's login shell.
+      proc = pty.spawn('cmd.exe', ['/c', binary, ...args], {
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,

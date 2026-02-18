@@ -107,7 +107,10 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
 
     // Binary found — verify authentication with a quick no-op call
     try {
-      const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], { timeout: 10000 });
+      const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], {
+        timeout: 10000,
+        shell: process.platform === 'win32', // .cmd shims need shell on Windows
+      });
       const result = JSON.parse(stdout);
       if (result.is_error && typeof result.result === 'string') {
         const msg = result.result as string;

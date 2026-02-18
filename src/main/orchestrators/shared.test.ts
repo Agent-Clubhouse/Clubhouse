@@ -33,34 +33,28 @@ describe('shared orchestrator utilities', () => {
   });
 
   describe('findBinaryInPath', () => {
-    it('returns extraPath if file exists there', () => {
-      vi.mocked(fs.existsSync).mockReturnValueOnce(true);
-      const result = findBinaryInPath(['claude'], ['/custom/path/claude']);
-      expect(result).toBe('/custom/path/claude');
+    it('finds binary via where/which (shell-native lookup)', () => {
+      const shellResult = process.platform === 'win32'
+        ? 'C:\\Program Files\\cli\\claude.exe\r\n'
+        : '/usr/local/bin/claude\n';
+      const expected = shellResult.trim().split(/\r?\n/)[0].trim();
+      vi.mocked(execSync).mockReturnValue(shellResult);
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);
+      const result = findBinaryInPath(['claude'], []);
+      expect(result).toBe(expected);
     });
 
-    it('checks extraPaths in order, returns first hit', () => {
-      vi.mocked(fs.existsSync)
-        .mockReturnValueOnce(false)
-        .mockReturnValueOnce(true);
-      const result = findBinaryInPath(['claude'], ['/first/claude', '/second/claude']);
-      expect(result).toBe('/second/claude');
-    });
-
-    it('finds binary on shell PATH', () => {
+    it('falls back to PATH scan when where/which fails', () => {
       const expected = path.join('/usr/local/bin', 'claude');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        return p === expected;
-      });
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);
+      // execSync throws by default (where/which fails)
       const result = findBinaryInPath(['claude'], ['/nonexistent/claude']);
       expect(result).toBe(expected);
     });
 
     it('tries multiple binary names on PATH', () => {
       const expected = path.join('/usr/bin', 'code');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        return p === expected;
-      });
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);
       const result = findBinaryInPath(['claude', 'code'], ['/nope/claude']);
       expect(result).toBe(expected);
     });
@@ -75,18 +69,49 @@ describe('shared orchestrator utilities', () => {
       expect(result).toBe(path.join('/usr/bin', 'claude'));
     });
 
-    it('falls back to interactive shell which', () => {
+    it('falls back to extraPaths when PATH has no match', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === '/custom/path/claude');
+      const result = findBinaryInPath(['claude'], ['/custom/path/claude']);
+      expect(result).toBe('/custom/path/claude');
+    });
+
+    it('checks extraPaths in order, returns first hit', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        return p === '/found/by/which/claude';
+        return p === '/second/claude';
       });
-      vi.mocked(execSync).mockReturnValue('/found/by/which/claude\n');
-      const result = findBinaryInPath(['claude'], []);
-      expect(result).toBe('/found/by/which/claude');
+      const result = findBinaryInPath(['claude'], ['/first/claude', '/second/claude']);
+      expect(result).toBe('/second/claude');
     });
 
     it('throws when binary not found anywhere', () => {
       expect(() => findBinaryInPath(['claude'], []))
         .toThrowError(/Could not find any of \[claude\] on PATH/);
+    });
+
+    it('handles \\r\\n line endings from where on Windows', () => {
+      // Windows `where` outputs results with \r\n
+      vi.mocked(execSync).mockReturnValue('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd\r\nC:\\another\\claude.cmd\r\n');
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
+      const result = findBinaryInPath(['claude'], []);
+      expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
+    });
+
+    it('prioritizes where/which result over PATH scan and extraPaths', () => {
+      const whereResult = '/found/by/where/claude';
+      const pathResult = path.join('/usr/local/bin', 'claude');
+      vi.mocked(execSync).mockReturnValue(whereResult + '\n');
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        return p === whereResult || p === pathResult || p === '/extra/claude';
+      });
+      const result = findBinaryInPath(['claude'], ['/extra/claude']);
+      expect(result).toBe(whereResult);
+    });
+
+    it('falls through all stages in order when earlier stages miss', () => {
+      // where/which fails (default mock), PATH has no match, extraPath works
+      vi.mocked(fs.existsSync).mockImplementation((p) => p === '/fallback/claude');
+      const result = findBinaryInPath(['claude'], ['/fallback/claude']);
+      expect(result).toBe('/fallback/claude');
     });
   });
 

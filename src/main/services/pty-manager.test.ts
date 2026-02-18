@@ -343,10 +343,10 @@ describe('pty-manager', () => {
       spawn('agent_env', '/test', '/usr/local/bin/claude', [], { CUSTOM_VAR: 'value' });
 
       if (process.platform === 'win32') {
-        // On Windows, binary is spawned directly with its args
+        // On Windows, binary is wrapped through cmd.exe
         expect(pty.spawn).toHaveBeenCalledWith(
-          '/usr/local/bin/claude',
-          [],
+          'cmd.exe',
+          ['/c', '/usr/local/bin/claude'],
           expect.objectContaining({
             env: expect.objectContaining({ CUSTOM_VAR: 'value' }),
           })
@@ -361,6 +361,43 @@ describe('pty-manager', () => {
           })
         );
       }
+    });
+  });
+
+  describe('Windows cmd.exe wrapping', () => {
+    it('wraps binary and args through cmd.exe on Windows', async () => {
+      if (process.platform !== 'win32') return; // Windows-only test
+
+      const pty = await import('node-pty');
+      vi.mocked(pty.spawn).mockClear();
+      spawn('agent_cmd', '/test', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', ['--model', 'opus']);
+
+      expect(pty.spawn).toHaveBeenCalledWith(
+        'cmd.exe',
+        ['/c', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', '--model', 'opus'],
+        expect.objectContaining({
+          cwd: '/test',
+          cols: 120,
+          rows: 30,
+        })
+      );
+    });
+
+    it('removes CLAUDECODE env vars to prevent nested-session errors', async () => {
+      const pty = await import('node-pty');
+      vi.mocked(pty.spawn).mockClear();
+
+      spawn('agent_noenv', '/test', '/usr/local/bin/claude', [], {
+        CLAUDECODE: 'should-be-removed',
+        CLAUDE_CODE_ENTRYPOINT: 'should-be-removed',
+        KEEP_THIS: 'yes',
+      });
+
+      const callArgs = vi.mocked(pty.spawn).mock.calls[0];
+      const env = callArgs[2].env;
+      expect(env.CLAUDECODE).toBeUndefined();
+      expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+      expect(env.KEEP_THIS).toBe('yes');
     });
   });
 });

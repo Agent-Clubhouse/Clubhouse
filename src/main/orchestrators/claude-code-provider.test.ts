@@ -74,6 +74,21 @@ describe('ClaudeCodeProvider', () => {
       expect(result.available).toBe(false);
       expect(result.error).toMatch(/Could not find/);
     });
+
+    it('passes shell option to execFile on Windows for .cmd compatibility', async () => {
+      const { execFile } = await import('child_process');
+      vi.mocked(execFile).mockImplementation(
+        (_cmd: any, _args: any, opts: any, cb: any) => {
+          // Verify shell option matches platform
+          if (process.platform === 'win32') {
+            expect(opts.shell).toBe(true);
+          }
+          cb(null, '{}', '');
+          return {} as any;
+        }
+      );
+      await provider.checkAvailability();
+    });
   });
 
   describe('buildSpawnCommand', () => {

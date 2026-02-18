@@ -69,6 +69,7 @@ export function spawnHeadless(
     cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32', // .cmd/.ps1 shims need shell on Windows
   });
 
   // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.

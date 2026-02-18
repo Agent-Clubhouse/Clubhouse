@@ -240,7 +240,10 @@ export class CopilotCliProvider implements OrchestratorProvider {
   async getModelOptions() {
     try {
       const binary = findCopilotBinary();
-      const { stdout } = await execFileAsync(binary, ['--help'], { timeout: 5000 });
+      const { stdout } = await execFileAsync(binary, ['--help'], {
+        timeout: 5000,
+        shell: process.platform === 'win32',
+      });
       const parsed = parseModelChoicesFromHelp(stdout);
       if (parsed) return parsed;
     } catch {

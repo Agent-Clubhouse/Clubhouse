@@ -544,4 +544,30 @@ describe('headless-manager', () => {
       expect(envArg.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
     });
   });
+
+  // ============================================================
+  // Windows shell wrapping
+  // ============================================================
+  describe('Windows spawn options', () => {
+    it('sets shell: true on Windows for .cmd shim compatibility', () => {
+      spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
+
+      const spawnOpts = (mockCpSpawn.mock.calls[0] as any[])[2];
+      if (process.platform === 'win32') {
+        expect(spawnOpts.shell).toBe(true);
+      } else {
+        expect(spawnOpts.shell).toBeFalsy();
+      }
+    });
+
+    it('shell option does not break non-Windows platforms', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const spawnOpts = (mockCpSpawn.mock.calls[0] as any[])[2];
+      // On non-Windows, shell should be false (not undefined or true)
+      if (process.platform !== 'win32') {
+        expect(spawnOpts.shell).toBe(false);
+      }
+    });
+  });
 });

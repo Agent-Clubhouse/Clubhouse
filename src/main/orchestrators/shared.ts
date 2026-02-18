@@ -7,36 +7,29 @@ import { getShellEnvironment } from '../util/shell';
 
 /**
  * Shared binary finder used by all orchestrator providers.
- * Searches common paths, shell PATH, and interactive shell `which`/`where`.
+ *
+ * On Windows the most reliable check is `where` — it resolves the binary
+ * exactly the way cmd.exe does (honoring PATH, PATHEXT, App Paths, etc.).
+ * We try that first, then fall back to a manual PATH scan and finally
+ * provider-supplied extra paths.
+ *
+ * On macOS/Linux we source the user's login shell to get the full PATH
+ * (packaged Electron apps launched from the Dock only see a minimal PATH),
+ * then check extra paths.
  */
 export function findBinaryInPath(names: string[], extraPaths: string[]): string {
-  for (const p of extraPaths) {
-    if (fs.existsSync(p)) return p;
-  }
-
   const isWin = process.platform === 'win32';
-  const shellPATH = getShellEnvironment().PATH || process.env.PATH || '';
-  for (const dir of shellPATH.split(path.delimiter)) {
-    if (!dir) continue;
-    for (const name of names) {
-      const candidate = path.join(dir, name);
-      if (fs.existsSync(candidate)) return candidate;
-      if (isWin) {
-        for (const ext of ['.exe', '.cmd']) {
-          const withExt = candidate + ext;
-          if (fs.existsSync(withExt)) return withExt;
-        }
-      }
-    }
-  }
 
+  // ── 1. Shell-native lookup (`where` / `which`) — most authoritative ──
   for (const name of names) {
     try {
       if (isWin) {
         const result = execSync(`where ${name}`, {
           encoding: 'utf-8',
           timeout: 5000,
-        }).trim().split('\n')[0].trim();
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'], // suppress "INFO: Could not find files" on stderr
+        }).trim().split(/\r?\n/)[0].trim();
         if (result && fs.existsSync(result)) return result;
       } else {
         const shell = process.env.SHELL || '/bin/zsh';
@@ -47,8 +40,34 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
         if (result && fs.existsSync(result)) return result;
       }
     } catch {
-      // continue
+      // not on PATH — continue to manual search
     }
+  }
+
+  // ── 2. Manual PATH scan ──
+  // getShellEnvironment() spreads process.env into a plain object which loses
+  // Windows' case-insensitive key access (actual key is "Path", not "PATH").
+  // Try the shell env first (works on Unix and in tests), fall back to the
+  // case-insensitive process.env.PATH accessor which always works on Windows.
+  const shellEnv = getShellEnvironment();
+  const shellPATH = shellEnv.PATH || process.env.PATH || '';
+  for (const dir of shellPATH.split(path.delimiter)) {
+    if (!dir) continue;
+    for (const name of names) {
+      const candidate = path.join(dir, name);
+      if (fs.existsSync(candidate)) return candidate;
+      if (isWin) {
+        for (const ext of ['.exe', '.cmd', '.ps1']) {
+          const withExt = candidate + ext;
+          if (fs.existsSync(withExt)) return withExt;
+        }
+      }
+    }
+  }
+
+  // ── 3. Provider-supplied well-known paths (fallback) ──
+  for (const p of extraPaths) {
+    if (fs.existsSync(p)) return p;
   }
 
   throw new Error(
