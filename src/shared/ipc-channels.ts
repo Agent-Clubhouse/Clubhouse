@@ -110,6 +110,8 @@ export const IPC = {
     GET_UPDATE_STATUS: 'app:get-update-status',
     APPLY_UPDATE: 'app:apply-update',
     UPDATE_STATUS_CHANGED: 'app:update-status-changed',
+    GET_PENDING_RELEASE_NOTES: 'app:get-pending-release-notes',
+    CLEAR_PENDING_RELEASE_NOTES: 'app:clear-pending-release-notes',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

@@ -23,6 +23,7 @@ import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
+import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
 
@@ -55,6 +56,7 @@ export function App() {
   const loadHeadlessSettings = useHeadlessStore((s) => s.loadSettings);
   const loadBadgeSettings = useBadgeSettingsStore((s) => s.loadSettings);
   const loadUpdateSettings = useUpdateStore((s) => s.loadSettings);
+  const checkWhatsNew = useUpdateStore((s) => s.checkWhatsNew);
 
   useEffect(() => {
     loadProjects();
@@ -76,6 +78,14 @@ export function App() {
     const remove = initUpdateListener();
     return () => remove();
   }, []);
+
+  // Check for What's New dialog after startup
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkWhatsNew();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [checkWhatsNew]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
@@ -397,6 +407,7 @@ export function App() {
           <ProjectRail />
           <Dashboard />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -414,6 +425,7 @@ export function App() {
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -430,6 +442,7 @@ export function App() {
           <ProjectRail />
           <HelpView />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -453,6 +466,7 @@ export function App() {
         {!isFullWidth && <AccessoryPanel />}
         <MainContentView />
       </div>
+      <WhatsNewDialog />
     </div>
   );
 }

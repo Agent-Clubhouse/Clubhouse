@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { IPC } from '../../shared/ipc-channels';
-import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact } from '../../shared/types';
+import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
 import { appLog } from './log-service';
 
@@ -24,6 +24,7 @@ const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json'
   autoUpdate: true,
   lastCheck: null,
   dismissedVersion: null,
+  lastSeenVersion: null,
 });
 
 export const getSettings = settingsStore.get;
@@ -37,6 +38,7 @@ let status: UpdateStatus = {
   state: 'idle',
   availableVersion: null,
   releaseNotes: null,
+  releaseMessage: null,
   downloadProgress: 0,
   error: null,
   downloadPath: null,
@@ -228,7 +230,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
 
     // Start download
     saveSettings({ ...settings, lastCheck: new Date().toISOString(), dismissedVersion: null });
-    await downloadUpdate(manifest.version, manifest.releaseNotes || null, artifact);
+    await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
 
     return status;
   } catch (err) {
@@ -242,6 +244,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
 async function downloadUpdate(
   version: string,
   releaseNotes: string | null,
+  releaseMessage: string | null,
   artifact: UpdateArtifact,
 ): Promise<void> {
   const tmpDir = path.join(app.getPath('temp'), 'clubhouse-updates');
@@ -259,6 +262,7 @@ async function downloadUpdate(
         setState('ready', {
           availableVersion: version,
           releaseNotes,
+          releaseMessage,
           downloadProgress: 100,
           downloadPath: destPath,
           error: null,
@@ -274,6 +278,7 @@ async function downloadUpdate(
   setState('downloading', {
     availableVersion: version,
     releaseNotes,
+    releaseMessage,
     downloadProgress: 0,
     error: null,
   });
@@ -316,6 +321,14 @@ export async function applyUpdate(): Promise<void> {
 
   const downloadPath = status.downloadPath!;
 
+  // Persist release notes for the What's New dialog after restart
+  if (status.availableVersion && status.releaseNotes) {
+    writePendingReleaseNotes({
+      version: status.availableVersion,
+      releaseNotes: status.releaseNotes,
+    });
+  }
+
   appLog('update:apply', 'info', 'Applying update', {
     meta: { version: status.availableVersion, downloadPath },
   });
@@ -323,6 +336,7 @@ export async function applyUpdate(): Promise<void> {
   setState('idle', {
     availableVersion: null,
     releaseNotes: null,
+    releaseMessage: null,
     downloadProgress: 0,
     downloadPath: null,
     error: null,
@@ -410,10 +424,44 @@ export function dismissUpdate(): void {
   setState('idle', {
     availableVersion: null,
     releaseNotes: null,
+    releaseMessage: null,
     downloadProgress: 0,
     downloadPath: null,
     error: null,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Pending release notes (persisted across restarts for What's New dialog)
+// ---------------------------------------------------------------------------
+
+function pendingNotesPath(): string {
+  return path.join(app.getPath('userData'), 'pending-release-notes.json');
+}
+
+function writePendingReleaseNotes(notes: PendingReleaseNotes): void {
+  try {
+    fs.writeFileSync(pendingNotesPath(), JSON.stringify(notes), 'utf-8');
+  } catch {
+    // Non-critical — dialog just won't show
+  }
+}
+
+export function getPendingReleaseNotes(): PendingReleaseNotes | null {
+  try {
+    const data = fs.readFileSync(pendingNotesPath(), 'utf-8');
+    return JSON.parse(data) as PendingReleaseNotes;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingReleaseNotes(): void {
+  try {
+    fs.unlinkSync(pendingNotesPath());
+  } catch {
+    // File may not exist
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +476,12 @@ export function startPeriodicChecks(): void {
   if (checkTimer) return;
 
   const settings = getSettings();
+
+  // Seed lastSeenVersion on first launch to prevent What's New on fresh install
+  if (settings.lastSeenVersion === null) {
+    saveSettings({ ...settings, lastSeenVersion: app.getVersion() });
+  }
+
   if (!settings.autoUpdate) return;
 
   // Check on startup (delayed to let the app settle)

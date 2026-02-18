@@ -46,10 +46,10 @@ export function UpdateBanner() {
         </span>
       ) : (
         <span className="flex-1">
-          Update v{status.availableVersion} is ready.
-          {status.releaseNotes && (
-            <span className="text-blue-300/60 ml-1">{status.releaseNotes}</span>
-          )}
+          Update v{status.availableVersion} is ready
+          {status.releaseMessage ? (
+            <span className="text-blue-300/60 ml-1" data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
+          ) : '.'}
         </span>
       )}
 

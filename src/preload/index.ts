@@ -295,7 +295,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
     getUpdateSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_SETTINGS),
-    saveUpdateSettings: (settings: { autoUpdate: boolean; lastCheck: string | null; dismissedVersion: string | null }) =>
+    saveUpdateSettings: (settings: { autoUpdate: boolean; lastCheck: string | null; dismissedVersion: string | null; lastSeenVersion: string | null }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_UPDATE_SETTINGS, settings),
     checkForUpdates: () =>
       ipcRenderer.invoke(IPC.APP.CHECK_FOR_UPDATES),
@@ -303,10 +303,15 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
     applyUpdate: () =>
       ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
+    clearPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.CLEAR_PENDING_RELEASE_NOTES),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
       availableVersion: string | null;
       releaseNotes: string | null;
+      releaseMessage: string | null;
       downloadProgress: number;
       error: string | null;
       downloadPath: string | null;

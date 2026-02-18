@@ -1,21 +1,26 @@
 import { create } from 'zustand';
-import type { UpdateStatus, UpdateSettings } from '../../shared/types';
+import type { UpdateStatus, UpdateSettings, PendingReleaseNotes } from '../../shared/types';
 
 interface UpdateStoreState {
   status: UpdateStatus;
   settings: UpdateSettings;
   dismissed: boolean;
+  whatsNew: PendingReleaseNotes | null;
+  showWhatsNew: boolean;
   loadSettings: () => Promise<void>;
   saveSettings: (settings: UpdateSettings) => Promise<void>;
   checkForUpdates: () => Promise<void>;
   applyUpdate: () => Promise<void>;
   dismiss: () => void;
+  checkWhatsNew: () => Promise<void>;
+  dismissWhatsNew: () => Promise<void>;
 }
 
 const DEFAULT_STATUS: UpdateStatus = {
   state: 'idle',
   availableVersion: null,
   releaseNotes: null,
+  releaseMessage: null,
   downloadProgress: 0,
   error: null,
   downloadPath: null,
@@ -25,12 +30,15 @@ const DEFAULT_SETTINGS: UpdateSettings = {
   autoUpdate: true,
   lastCheck: null,
   dismissedVersion: null,
+  lastSeenVersion: null,
 };
 
 export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   status: DEFAULT_STATUS,
   settings: DEFAULT_SETTINGS,
   dismissed: false,
+  whatsNew: null,
+  showWhatsNew: false,
 
   loadSettings: async () => {
     try {
@@ -75,6 +83,40 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
 
   dismiss: () => {
     set({ dismissed: true });
+  },
+
+  checkWhatsNew: async () => {
+    try {
+      const pending = await window.clubhouse.app.getPendingReleaseNotes();
+      if (!pending) return;
+
+      // Check if this is actually an upgrade (not a fresh install)
+      const currentVersion = await window.clubhouse.app.getVersion();
+      const { settings } = get();
+      if (settings.lastSeenVersion === currentVersion) {
+        // Same version — not an upgrade; clean up stale file
+        await window.clubhouse.app.clearPendingReleaseNotes();
+        return;
+      }
+
+      set({ whatsNew: pending, showWhatsNew: true });
+    } catch {
+      // Non-critical
+    }
+  },
+
+  dismissWhatsNew: async () => {
+    set({ whatsNew: null, showWhatsNew: false });
+    try {
+      await window.clubhouse.app.clearPendingReleaseNotes();
+      const currentVersion = await window.clubhouse.app.getVersion();
+      const { settings } = get();
+      const updated = { ...settings, lastSeenVersion: currentVersion };
+      set({ settings: updated });
+      await window.clubhouse.app.saveUpdateSettings(updated);
+    } catch {
+      // Non-critical
+    }
   },
 }));
 
