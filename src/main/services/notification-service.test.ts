@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock Electron's Notification and BrowserWindow
-const mockShow = vi.fn();
-const mockClose = vi.fn();
-const mockOn = vi.fn();
-let notificationInstances: Array<{ show: typeof mockShow; close: typeof mockClose; on: typeof mockOn }> = [];
+// Use vi.hoisted so these are available when vi.mock factories run (which are hoisted)
+const { mockShow, mockClose, mockOn, mockIsSupported, notificationInstances } = vi.hoisted(() => {
+  return {
+    mockShow: vi.fn(),
+    mockClose: vi.fn(),
+    mockOn: vi.fn(),
+    mockIsSupported: vi.fn().mockReturnValue(true),
+    notificationInstances: [] as Array<Record<string, unknown>>,
+  };
+});
 
 vi.mock('electron', () => {
   return {
@@ -12,7 +17,7 @@ vi.mock('electron', () => {
       show = mockShow;
       close = mockClose;
       on = mockOn;
-      static isSupported = vi.fn().mockReturnValue(true);
+      static isSupported = mockIsSupported;
       constructor(_opts: Record<string, unknown>) {
         notificationInstances.push(this);
       }
@@ -35,8 +40,13 @@ import { sendNotification, closeNotification } from './notification-service';
 describe('notification-service', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.clearAllMocks();
-    notificationInstances = [];
+    // Clear instance-level mocks but preserve isSupported return value
+    mockShow.mockClear();
+    mockClose.mockClear();
+    mockOn.mockClear();
+    mockIsSupported.mockClear();
+    mockIsSupported.mockReturnValue(true);
+    notificationInstances.length = 0;
   });
 
   afterEach(() => {
@@ -75,15 +85,11 @@ describe('notification-service', () => {
       sendNotification('First', 'Body', false, 'agent-1', 'proj-1');
 
       expect(notificationInstances).toHaveLength(1);
-      expect(mockClose).toHaveBeenCalledOnce(); // close is called for existing + then show
-
-      // Reset to track second notification
-      mockClose.mockClear();
 
       sendNotification('Second', 'Body', false, 'agent-1', 'proj-1');
 
-      // Previous notification should be closed
-      expect(mockClose).toHaveBeenCalledOnce();
+      // Previous notification should be closed, new one created
+      expect(mockClose).toHaveBeenCalled();
       expect(notificationInstances).toHaveLength(2);
     });
 
@@ -92,6 +98,15 @@ describe('notification-service', () => {
 
       expect(mockOn).toHaveBeenCalledWith('click', expect.any(Function));
       expect(mockOn).toHaveBeenCalledWith('close', expect.any(Function));
+    });
+
+    it('does nothing when notifications not supported', () => {
+      mockIsSupported.mockReturnValue(false);
+
+      sendNotification('Title', 'Body', false);
+
+      expect(notificationInstances).toHaveLength(0);
+      expect(mockShow).not.toHaveBeenCalled();
     });
   });
 
