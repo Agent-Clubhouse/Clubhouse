@@ -132,6 +132,24 @@ describe('uiStore', () => {
     });
   });
 
+  describe('openAbout', () => {
+    it('opens settings to about page and saves previous tab', () => {
+      useUIStore.setState({ explorerTab: 'agents' });
+      getState().openAbout();
+      expect(getState().explorerTab).toBe('settings');
+      expect(getState().previousExplorerTab).toBe('agents');
+      expect(getState().settingsSubPage).toBe('about');
+      expect(getState().settingsContext).toBe('app');
+    });
+
+    it('preserves previous tab when coming from a plugin tab', () => {
+      useUIStore.setState({ explorerTab: 'plugin:hub' });
+      getState().openAbout();
+      expect(getState().previousExplorerTab).toBe('plugin:hub');
+      expect(getState().settingsSubPage).toBe('about');
+    });
+  });
+
   describe('settingsContext', () => {
     it('defaults to app', () => {
       expect(getState().settingsContext).toBe('app');

@@ -76,6 +76,18 @@ export function App() {
     return () => remove();
   }, []);
 
+  useEffect(() => {
+    const remove = window.clubhouse.app.onOpenAbout(() => {
+      const state = useUIStore.getState();
+      if (state.explorerTab !== 'settings') {
+        state.openAbout();
+      } else {
+        state.setSettingsSubPage('about');
+      }
+    });
+    return () => remove();
+  }, []);
+
   // Navigate to agent when notification is clicked
   useEffect(() => {
     const remove = window.clubhouse.app.onNotificationClicked((agentId: string, projectId: string) => {
