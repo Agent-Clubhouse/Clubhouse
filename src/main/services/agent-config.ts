@@ -85,7 +85,7 @@ export function getDurableConfig(projectPath: string, agentId: string): DurableA
 export function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -95,6 +95,13 @@ export function updateDurableConfig(
   }
   if (updates.orchestrator !== undefined) {
     agent.orchestrator = updates.orchestrator;
+  }
+  if (updates.model !== undefined) {
+    if (updates.model && updates.model !== 'default') {
+      agent.model = updates.model;
+    } else {
+      delete agent.model;
+    }
   }
   writeAgents(projectPath, agents);
 }

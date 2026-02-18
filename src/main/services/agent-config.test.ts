@@ -644,6 +644,58 @@ describe('updateDurableConfig', () => {
     // Should not throw
     expect(() => updateDurableConfig(PROJECT_PATH, 'nonexistent', { quickAgentDefaults: { systemPrompt: 'x' } })).not.toThrow();
   });
+
+  it('persists model field and round-trips', () => {
+    const agents = [
+      { id: 'durable_model', name: 'model-agent', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateDurableConfig(PROJECT_PATH, 'durable_model', { model: 'sonnet' });
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_model');
+    expect(result).not.toBeNull();
+    expect(result!.model).toBe('sonnet');
+  });
+
+  it('removes model field when set to "default"', () => {
+    const agents = [
+      { id: 'durable_defmodel', name: 'def-model', color: 'indigo', model: 'opus', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateDurableConfig(PROJECT_PATH, 'durable_defmodel', { model: 'default' });
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_defmodel');
+    expect(result).not.toBeNull();
+    expect(result!.model).toBeUndefined();
+  });
 });
 
 describe('ensureGitignore edge cases', () => {

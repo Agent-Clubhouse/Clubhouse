@@ -305,6 +305,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           emoji: config.emoji,
           worktreePath: config.worktreePath,
           branch: config.branch,
+          model: config.model,
           orchestrator: config.orchestrator,
         };
       }
