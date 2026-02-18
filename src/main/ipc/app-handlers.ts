@@ -1,6 +1,7 @@
+import { execSync } from 'child_process';
 import { app, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
@@ -18,6 +19,19 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.GET_VERSION, () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle(IPC.APP.GET_ARCH_INFO, (): ArchInfo => {
+    let rosetta = false;
+    if (process.platform === 'darwin' && process.arch === 'x64') {
+      try {
+        const result = execSync('sysctl -n sysctl.proc_translated', { encoding: 'utf8' }).trim();
+        rosetta = result === '1';
+      } catch {
+        // sysctl key doesn't exist on Intel Macs — not Rosetta
+      }
+    }
+    return { arch: process.arch, platform: process.platform, rosetta };
   });
 
   ipcMain.handle(IPC.APP.GET_NOTIFICATION_SETTINGS, () => {

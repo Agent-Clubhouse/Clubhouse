@@ -288,6 +288,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
+      ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
     getHeadlessSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
     saveHeadlessSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, string> }) =>

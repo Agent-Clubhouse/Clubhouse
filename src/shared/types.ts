@@ -1,3 +1,9 @@
+export interface ArchInfo {
+  arch: string;
+  platform: string;
+  rosetta: boolean;
+}
+
 export type OrchestratorId = 'claude-code' | (string & {});
 
 export interface ProviderCapabilities {
