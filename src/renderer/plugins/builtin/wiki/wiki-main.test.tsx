@@ -103,7 +103,7 @@ describe('WikiTree', () => {
     render(<WikiTree api={api} />);
 
     expect(await screen.findByText('Home')).toBeInTheDocument(); // prettified
-    expect(screen.getByText('guides')).toBeInTheDocument();
+    expect(screen.getByText('Guides')).toBeInTheDocument(); // directories also prettified in view mode
   });
 
   it('in view mode, filters to .md files only and prettifies names', async () => {
