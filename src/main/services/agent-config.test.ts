@@ -155,6 +155,71 @@ describe('createDurable', () => {
     expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalled();
   });
 
+  it('creates initial commit with .gitignore when repo has no commits', () => {
+    const writtenData: Record<string, string> = {};
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.endsWith('.git')) return true;
+      // .gitignore exists after ensureGitignore creates it
+      if (s.endsWith('.gitignore')) return true;
+      if (s.endsWith('agents.json')) return !!writtenData[s];
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.endsWith('.gitignore')) return '';
+      if (writtenData[s]) return writtenData[s];
+      return '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      // Simulate empty repo: rev-parse HEAD fails
+      if (c.includes('git rev-parse HEAD')) throw new Error('fatal: bad default revision \'HEAD\'');
+      return '';
+    });
+    createDurable(PROJECT_PATH, 'empty-repo-agent', 'indigo');
+    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+    // Should check for HEAD validity
+    expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
+    // Should stage .gitignore
+    expect(calls.some((c) => c.includes('git add .gitignore'))).toBe(true);
+    // Should create initial commit with Clubhouse branding
+    expect(calls.some((c) => c.includes('git commit --allow-empty -m "Clubhouse - Initial Commit"'))).toBe(true);
+    // Should still create branch and worktree
+    expect(calls.some((c) => c.includes('git branch'))).toBe(true);
+    expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
+  });
+
+  it('skips initial commit when repo already has commits', () => {
+    // Default mock returns '' for all commands (success)
+    createDurable(PROJECT_PATH, 'normal-repo-agent', 'indigo');
+    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+    // Should check for HEAD validity
+    expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
+    // Should NOT create initial commit
+    expect(calls.some((c) => c.includes('git commit --allow-empty'))).toBe(false);
+    // Should still create branch and worktree
+    expect(calls.some((c) => c.includes('git branch'))).toBe(true);
+    expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
+  });
+
+  it('falls back to mkdir when initial commit also fails', () => {
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('git rev-parse HEAD')) throw new Error('fatal: bad default revision');
+      if (c.includes('git commit --allow-empty')) throw new Error('commit failed');
+      if (c.includes('git worktree add')) throw new Error('invalid reference');
+      return '';
+    });
+    const config = createDurable(PROJECT_PATH, 'commit-fail-agent', 'indigo');
+    expect(config.id).toMatch(/^durable_/);
+    // Should still create the directory as fallback
+    expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalled();
+  });
+
   it('appends to existing config, does not overwrite', () => {
     const existing = [{ id: 'durable_old', name: 'old', color: 'amber', branch: 'old/standby', worktreePath: '/old', createdAt: '2024-01-01' }];
     const writtenData: Record<string, string> = {};

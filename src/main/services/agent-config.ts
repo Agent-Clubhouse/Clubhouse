@@ -130,6 +130,36 @@ export function createDurable(
     // Create the branch (from current HEAD)
     const hasGit = fs.existsSync(path.join(projectPath, '.git'));
     if (hasGit) {
+      // Ensure repo has at least one commit (required for branching/worktrees)
+      try {
+        execSync('git rev-parse HEAD', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' });
+      } catch {
+        // Empty repo with no commits — bootstrap with an initial commit
+        // Include .gitignore which ensureGitignore() has already created/updated
+        appLog('core:agent-config', 'info', 'Empty repository detected, creating initial commit for worktree support', {
+          meta: { agentName: name, projectPath },
+        });
+        try {
+          const gitignorePath = path.join(projectPath, '.gitignore');
+          if (fs.existsSync(gitignorePath)) {
+            execSync('git add .gitignore', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' });
+          }
+          execSync('git commit --allow-empty -m "Clubhouse - Initial Commit"', {
+            cwd: projectPath,
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          });
+        } catch (commitErr) {
+          appLog('core:agent-config', 'warn', 'Failed to create initial commit in empty repository', {
+            meta: {
+              agentName: name,
+              projectPath,
+              error: commitErr instanceof Error ? commitErr.message : String(commitErr),
+            },
+          });
+        }
+      }
+
       try {
         execSync(`git branch "${branch}"`, { cwd: projectPath, encoding: 'utf-8' });
       } catch {
