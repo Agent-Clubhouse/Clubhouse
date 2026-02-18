@@ -151,6 +151,7 @@ export interface UpdateManifest {
   version: string;
   releaseDate: string;
   releaseNotes?: string;
+  releaseMessage?: string;
   mandatory?: boolean;
   artifacts: Record<string, UpdateArtifact>;
 }
@@ -159,6 +160,7 @@ export interface UpdateStatus {
   state: UpdateState;
   availableVersion: string | null;
   releaseNotes: string | null;
+  releaseMessage: string | null;
   downloadProgress: number;  // 0-100
   error: string | null;
   downloadPath: string | null;
@@ -168,6 +170,12 @@ export interface UpdateSettings {
   autoUpdate: boolean;
   lastCheck: string | null;
   dismissedVersion: string | null;
+  lastSeenVersion: string | null;
+}
+
+export interface PendingReleaseNotes {
+  version: string;
+  releaseNotes: string;
 }
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';

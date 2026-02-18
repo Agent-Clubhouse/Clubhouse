@@ -98,6 +98,14 @@ export function registerAppHandlers(): void {
     return autoUpdateService.applyUpdate();
   });
 
+  ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, () => {
+    return autoUpdateService.getPendingReleaseNotes();
+  });
+
+  ipcMain.handle(IPC.APP.CLEAR_PENDING_RELEASE_NOTES, () => {
+    autoUpdateService.clearPendingReleaseNotes();
+  });
+
   // --- Logging ---
   ipcMain.on(IPC.LOG.LOG_WRITE, (_event, entry: LogEntry) => {
     logService.log(entry);

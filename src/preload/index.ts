@@ -303,10 +303,15 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
     applyUpdate: () =>
       ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
+    clearPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.CLEAR_PENDING_RELEASE_NOTES),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
       availableVersion: string | null;
       releaseNotes: string | null;
+      releaseMessage: string | null;
       downloadProgress: number;
       error: string | null;
       downloadPath: string | null;
