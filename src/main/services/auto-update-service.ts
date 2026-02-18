@@ -314,8 +314,10 @@ export async function applyUpdate(): Promise<void> {
     throw new Error('No update ready to apply');
   }
 
+  const downloadPath = status.downloadPath!;
+
   appLog('update:apply', 'info', 'Applying update', {
-    meta: { version: status.availableVersion, downloadPath: status.downloadPath },
+    meta: { version: status.availableVersion, downloadPath },
   });
 
   setState('idle', {
@@ -326,20 +328,8 @@ export async function applyUpdate(): Promise<void> {
     error: null,
   });
 
-  // The actual replacement happens on restart.
-  // For macOS: extract ZIP and replace .app
-  // For Windows: run the installer with --update
-  // For Linux: show download page (manual install)
-  //
-  // We use app.relaunch() + app.exit() to restart cleanly.
-  // The replacement logic will be handled by a small helper script
-  // that runs between quit and relaunch, or by Squirrel on Windows.
-
   if (process.platform === 'darwin') {
-    // On macOS, we need to extract the ZIP and replace the running .app
-    // This is deferred to a pre-relaunch step (the app extracts, replaces, relaunches)
     try {
-      const downloadPath = status.downloadPath || '';
       const appPath = app.getPath('exe');
       // The exe path is like /Applications/Clubhouse.app/Contents/MacOS/Clubhouse
       // We need /Applications/Clubhouse.app
@@ -391,7 +381,6 @@ export async function applyUpdate(): Promise<void> {
   } else if (process.platform === 'win32') {
     // On Windows, Squirrel handles the update — just run the installer
     try {
-      const downloadPath = status.downloadPath || '';
       if (fs.existsSync(downloadPath)) {
         const { spawn } = require('child_process');
         spawn(downloadPath, ['--update'], { detached: true, stdio: 'ignore' }).unref();
