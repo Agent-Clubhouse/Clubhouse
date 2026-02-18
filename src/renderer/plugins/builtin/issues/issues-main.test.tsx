@@ -79,7 +79,7 @@ describe('MainPanel agent assignment', () => {
     issueState.reset();
   });
 
-  it('opens SendToAgentDialog with agent list and instructions textarea', async () => {
+  it('opens SendToAgentDialog with agent list, instructions textarea, and default checkbox', async () => {
     const { api } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
@@ -91,10 +91,11 @@ describe('MainPanel agent assignment', () => {
     // Open agent dialog
     fireEvent.click(screen.getByText('Assign to Agent'));
 
-    // Dialog should show title, issue reference, instructions textarea, and agent
+    // Dialog should show title, issue reference, instructions textarea, checkbox, and agent
     expect(screen.getByText('Assign to Agent', { selector: 'div' })).toBeTruthy();
     expect(screen.getByText('#42 Fix login bug')).toBeTruthy();
     expect(screen.getByPlaceholderText('Additional instructions (optional)')).toBeTruthy();
+    expect(screen.getByText('Set as default prompt')).toBeTruthy();
     expect(screen.getByText('Worker Bee')).toBeTruthy();
     expect(screen.getByText('Cancel')).toBeTruthy();
   });
@@ -287,6 +288,179 @@ describe('MainPanel agent assignment', () => {
     fireEvent.click(screen.getByText('Assign to Agent'));
 
     expect(screen.queryByText('Quick Agent')).toBeNull();
+  });
+
+  it('pre-populates instructions from saved default and checks the checkbox', async () => {
+    const storageReadSpy = vi.fn(async () => 'saved default prompt');
+    const { api } = createIssuesAPI({
+      storage: {
+        ...createMockAPI().storage,
+        projectLocal: {
+          ...createMockAPI().storage.projectLocal,
+          read: storageReadSpy,
+          write: vi.fn(async () => {}),
+          delete: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
+        },
+      },
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Wait for storage read to complete and populate the textarea
+    await waitFor(() => {
+      const textarea = screen.getByPlaceholderText('Additional instructions (optional)') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('saved default prompt');
+    });
+
+    // Checkbox should be checked since a default exists
+    const checkbox = screen.getByTestId('save-default-checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('saves instructions to storage when "Set as default" is checked on assignment', async () => {
+    const storageWriteSpy = vi.fn(async () => {});
+    const { api, resumeSpy } = createIssuesAPI({
+      storage: {
+        ...createMockAPI().storage,
+        projectLocal: {
+          ...createMockAPI().storage.projectLocal,
+          read: vi.fn(async () => undefined),
+          write: storageWriteSpy,
+          delete: vi.fn(async () => {}),
+          list: vi.fn(async () => []),
+        },
+      },
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Wait for default to load (no saved default)
+    await waitFor(() => {
+      expect(screen.getByTestId('save-default-checkbox')).toBeTruthy();
+    });
+
+    // Type instructions
+    const textarea = screen.getByPlaceholderText('Additional instructions (optional)');
+    fireEvent.change(textarea, { target: { value: 'my custom prompt' } });
+
+    // Check "Set as default"
+    const checkbox = screen.getByTestId('save-default-checkbox');
+    fireEvent.click(checkbox);
+
+    // Click the agent
+    fireEvent.click(screen.getByText('Worker Bee'));
+
+    await waitFor(() => {
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Storage should have been written with the instructions
+    expect(storageWriteSpy).toHaveBeenCalledWith('defaultAgentInstructions', 'my custom prompt');
+  });
+
+  it('deletes stored default when "Set as default" is unchecked on assignment', async () => {
+    const storageDeleteSpy = vi.fn(async () => {});
+    const { api, resumeSpy } = createIssuesAPI({
+      storage: {
+        ...createMockAPI().storage,
+        projectLocal: {
+          ...createMockAPI().storage.projectLocal,
+          read: vi.fn(async () => 'existing default'),
+          write: vi.fn(async () => {}),
+          delete: storageDeleteSpy,
+          list: vi.fn(async () => []),
+        },
+      },
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Wait for default to load
+    await waitFor(() => {
+      const textarea = screen.getByPlaceholderText('Additional instructions (optional)') as HTMLTextAreaElement;
+      expect(textarea.value).toBe('existing default');
+    });
+
+    // Uncheck "Set as default"
+    const checkbox = screen.getByTestId('save-default-checkbox');
+    fireEvent.click(checkbox);
+
+    // Click the agent
+    fireEvent.click(screen.getByText('Worker Bee'));
+
+    await waitFor(() => {
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Storage default should have been deleted
+    expect(storageDeleteSpy).toHaveBeenCalledWith('defaultAgentInstructions');
+  });
+
+  it('one-off override: changed text without "Set as default" does not persist', async () => {
+    const storageWriteSpy = vi.fn(async () => {});
+    const storageDeleteSpy = vi.fn(async () => {});
+    const { api, resumeSpy } = createIssuesAPI({
+      storage: {
+        ...createMockAPI().storage,
+        projectLocal: {
+          ...createMockAPI().storage.projectLocal,
+          read: vi.fn(async () => undefined),
+          write: storageWriteSpy,
+          delete: storageDeleteSpy,
+          list: vi.fn(async () => []),
+        },
+      },
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Wait for default to load
+    await waitFor(() => {
+      expect(screen.getByTestId('save-default-checkbox')).toBeTruthy();
+    });
+
+    // Type instructions without checking "Set as default"
+    const textarea = screen.getByPlaceholderText('Additional instructions (optional)');
+    fireEvent.change(textarea, { target: { value: 'one-off instruction' } });
+
+    // Click the agent
+    fireEvent.click(screen.getByText('Worker Bee'));
+
+    await waitFor(() => {
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Mission should contain the instructions
+    const opts = resumeSpy.mock.calls[0][1] as { mission: string };
+    expect(opts.mission).toContain('one-off instruction');
+
+    // But storage should NOT have been written (delete is called since checkbox is unchecked)
+    expect(storageWriteSpy).not.toHaveBeenCalled();
   });
 
   it('shows error when resume fails', async () => {
@@ -632,6 +806,28 @@ describe('SidebarPanel', () => {
 
   afterEach(() => {
     issueState.reset();
+  });
+
+  it('does not render + Agent button', async () => {
+    const execSpy = vi.fn(async (_cmd: string, args: string[]) => {
+      if (args[0] === 'issue' && args[1] === 'list') {
+        return { stdout: EMPTY_ISSUE_LIST, stderr: '', exitCode: 0 };
+      }
+      return { stdout: '', stderr: '', exitCode: 0 };
+    });
+
+    const api = createMockAPI({
+      process: { exec: execSpy },
+    });
+
+    render(React.createElement(SidebarPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('+ New')).toBeTruthy();
+    });
+
+    // The + Agent button should not exist
+    expect(screen.queryByText('+ Agent')).toBeNull();
   });
 
   it('+ New sets creatingNew state for inline form', async () => {
