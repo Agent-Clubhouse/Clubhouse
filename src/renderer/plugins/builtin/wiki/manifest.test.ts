@@ -60,13 +60,23 @@ describe('wiki plugin manifest', () => {
     );
   });
 
-  it('contributes wikiPath and showHiddenFiles settings', () => {
+  it('contributes wikiPath, wikiStyle, and showHiddenFiles settings', () => {
     expect(manifest.contributes?.settings).toContainEqual(
       expect.objectContaining({ key: 'wikiPath', type: 'directory' }),
     );
     expect(manifest.contributes?.settings).toContainEqual(
+      expect.objectContaining({ key: 'wikiStyle', type: 'select', default: 'github' }),
+    );
+    expect(manifest.contributes?.settings).toContainEqual(
       expect.objectContaining({ key: 'showHiddenFiles', type: 'boolean' }),
     );
+  });
+
+  it('wikiStyle setting has github and ado options', () => {
+    const wikiStyleSetting = manifest.contributes?.settings?.find((s) => s.key === 'wikiStyle');
+    expect(wikiStyleSetting).toBeDefined();
+    expect(wikiStyleSetting!.options).toContainEqual({ label: 'GitHub', value: 'github' });
+    expect(wikiStyleSetting!.options).toContainEqual(expect.objectContaining({ value: 'ado' }));
   });
 
   it('contributes help topics', () => {

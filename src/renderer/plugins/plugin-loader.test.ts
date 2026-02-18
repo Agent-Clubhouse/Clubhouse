@@ -384,6 +384,41 @@ describe('plugin-loader', () => {
       expect(call[0].settings).toEqual({ color: 'blue' });
     });
 
+    it('loads settings from storage when not in memory store', async () => {
+      // Settings are NOT in the Zustand store but ARE persisted on disk
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'settings-proj-1-storage-p') return { wikiPath: '/wiki', wikiStyle: 'ado' };
+        return undefined;
+      });
+
+      const mod: PluginModule = { activate: vi.fn() };
+      usePluginStore.getState().registerPlugin(makeManifest({ id: 'storage-p', scope: 'project' }), 'builtin', '', 'registered');
+      usePluginStore.getState().setPluginModule('storage-p', mod);
+
+      await activatePlugin('storage-p', 'proj-1', '/p1');
+
+      // Settings should have been loaded from storage and passed to context
+      const call = (mod.activate as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(call[0].settings).toEqual({ wikiPath: '/wiki', wikiStyle: 'ado' });
+      // Settings should also be in the store now
+      expect(usePluginStore.getState().pluginSettings['proj-1:storage-p']).toEqual({ wikiPath: '/wiki', wikiStyle: 'ado' });
+    });
+
+    it('falls back gracefully when storage read fails', async () => {
+      mockPlugin.storageRead.mockRejectedValue(new Error('storage unavailable'));
+
+      const mod: PluginModule = { activate: vi.fn() };
+      usePluginStore.getState().registerPlugin(makeManifest({ id: 'no-storage', scope: 'app' }), 'builtin', '', 'registered');
+      usePluginStore.getState().setPluginModule('no-storage', mod);
+
+      await activatePlugin('no-storage');
+
+      // Should still activate, just with empty settings
+      const call = (mod.activate as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(call[0].settings).toEqual({});
+      expect(usePluginStore.getState().plugins['no-storage'].status).toBe('activated');
+    });
+
     it('creates unique context per project for project-scoped plugins', async () => {
       usePluginStore.getState().registerPlugin(makeManifest({ id: 'pp', scope: 'project' }), 'builtin', '', 'registered');
       usePluginStore.getState().setPluginModule('pp', {});

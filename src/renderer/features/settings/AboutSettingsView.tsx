@@ -1,11 +1,24 @@
 import { useState, useEffect } from 'react';
 import { SUPPORTED_API_VERSIONS } from '../../plugins/manifest-validator';
 
+interface ArchInfo {
+  arch: string;
+  platform: string;
+  rosetta: boolean;
+}
+
+function formatArch(info: ArchInfo): string {
+  if (info.rosetta) return `${info.arch} (Rosetta)`;
+  return info.arch;
+}
+
 export function AboutSettingsView() {
   const [appVersion, setAppVersion] = useState('');
+  const [archInfo, setArchInfo] = useState<ArchInfo | null>(null);
 
   useEffect(() => {
     window.clubhouse.app.getVersion().then(setAppVersion);
+    window.clubhouse.app.getArchInfo().then(setArchInfo);
   }, []);
 
   return (
@@ -19,6 +32,21 @@ export function AboutSettingsView() {
             <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Application</h3>
             <p className="text-sm text-ctp-text">Clubhouse v{appVersion}</p>
           </div>
+
+          {archInfo && (
+            <>
+              <div className="border-t border-surface-0" />
+              <div>
+                <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Architecture</h3>
+                <p className="text-sm text-ctp-text">{formatArch(archInfo)}</p>
+                {archInfo.rosetta && (
+                  <p className="text-xs text-ctp-peach mt-1">
+                    This app is running under Rosetta translation. An arm64 build is available for better performance on Apple Silicon.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="border-t border-surface-0" />
 

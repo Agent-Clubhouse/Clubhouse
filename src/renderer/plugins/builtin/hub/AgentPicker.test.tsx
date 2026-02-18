@@ -11,7 +11,7 @@ const DURABLE_AGENT: AgentInfo = {
   kind: 'durable',
   status: 'sleeping',
   color: 'emerald',
-  emoji: undefined,
+  icon: undefined,
   projectId: 'proj-1',
 };
 
@@ -21,7 +21,7 @@ const QUICK_AGENT: AgentInfo = {
   kind: 'quick',
   status: 'running',
   color: 'blue',
-  emoji: undefined,
+  icon: undefined,
   projectId: 'proj-1',
 };
 

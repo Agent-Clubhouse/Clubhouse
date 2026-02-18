@@ -3,6 +3,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
+import { ImageCropDialog } from '../../components/ImageCropDialog';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -57,8 +58,9 @@ function NameAndPathSection({ projectId }: { projectId: string }) {
 }
 
 function AppearanceSection({ projectId }: { projectId: string }) {
-  const { projects, projectIcons, updateProject, pickProjectIcon } = useProjectStore();
+  const { projects, projectIcons, updateProject, pickProjectImage, saveCroppedProjectIcon } = useProjectStore();
   const project = projects.find((p) => p.id === projectId);
+  const [cropImageDataUrl, setCropImageDataUrl] = useState<string | null>(null);
   if (!project) return null;
 
   const iconDataUrl = projectIcons[project.id];
@@ -66,6 +68,22 @@ function AppearanceSection({ projectId }: { projectId: string }) {
   const colorInfo = project.color ? AGENT_COLORS.find((c) => c.id === project.color) : null;
   const hex = colorInfo?.hex || '#6366f1';
   const label = project.displayName || project.name;
+
+  const handlePickImage = async () => {
+    const dataUrl = await pickProjectImage();
+    if (dataUrl) {
+      setCropImageDataUrl(dataUrl);
+    }
+  };
+
+  const handleCropConfirm = async (croppedDataUrl: string) => {
+    setCropImageDataUrl(null);
+    await saveCroppedProjectIcon(project.id, croppedDataUrl);
+  };
+
+  const handleCropCancel = () => {
+    setCropImageDataUrl(null);
+  };
 
   return (
     <div className="space-y-4 mb-6">
@@ -83,7 +101,7 @@ function AppearanceSection({ projectId }: { projectId: string }) {
             )}
           </div>
           <button
-            onClick={() => pickProjectIcon(project.id)}
+            onClick={handlePickImage}
             className="px-3 py-1.5 text-xs rounded-lg bg-surface-0 border border-surface-2
               text-ctp-text hover:bg-surface-1 cursor-pointer transition-colors"
           >
@@ -100,6 +118,16 @@ function AppearanceSection({ projectId }: { projectId: string }) {
           )}
         </div>
       </div>
+
+      {/* Image crop dialog */}
+      {cropImageDataUrl && (
+        <ImageCropDialog
+          imageDataUrl={cropImageDataUrl}
+          maskShape="square"
+          onConfirm={handleCropConfirm}
+          onCancel={handleCropCancel}
+        />
+      )}
 
       {/* Color */}
       <div>

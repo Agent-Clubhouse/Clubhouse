@@ -79,8 +79,8 @@ describe('MainPanel agent assignment', () => {
     issueState.reset();
   });
 
-  it('sleeping agent → showInput → resume with mission', async () => {
-    const { api, resumeSpy, showInputSpy, showNoticeSpy } = createIssuesAPI();
+  it('opens SendToAgentDialog with agent list and instructions textarea', async () => {
+    const { api } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
 
@@ -88,15 +88,35 @@ describe('MainPanel agent assignment', () => {
       expect(screen.getByText('Fix login bug')).toBeTruthy();
     });
 
-    // Open agent menu
+    // Open agent dialog
     fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Dialog should show title, issue reference, instructions textarea, and agent
+    expect(screen.getByText('Assign to Agent', { selector: 'div' })).toBeTruthy();
+    expect(screen.getByText('#42 Fix login bug')).toBeTruthy();
+    expect(screen.getByPlaceholderText('Additional instructions (optional)')).toBeTruthy();
+    expect(screen.getByText('Worker Bee')).toBeTruthy();
+    expect(screen.getByText('Cancel')).toBeTruthy();
+  });
+
+  it('sleeping agent → click agent → resume with mission', async () => {
+    const { api, resumeSpy, showNoticeSpy } = createIssuesAPI();
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    // Open agent dialog
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Type instructions in the textarea
+    const textarea = screen.getByPlaceholderText('Additional instructions (optional)');
+    fireEvent.change(textarea, { target: { value: 'user instructions' } });
 
     // Click the sleeping durable agent
     fireEvent.click(screen.getByText('Worker Bee'));
-
-    await waitFor(() => {
-      expect(showInputSpy).toHaveBeenCalledTimes(1);
-    });
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -112,8 +132,32 @@ describe('MainPanel agent assignment', () => {
     expect(showNoticeSpy).toHaveBeenCalledWith('Agent "Worker Bee" assigned to issue #42');
   });
 
+  it('sleeping agent → no instructions → resume without Additional instructions', async () => {
+    const { api, resumeSpy } = createIssuesAPI();
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    // Open agent dialog
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Don't type anything — just click the agent directly
+    fireEvent.click(screen.getByText('Worker Bee'));
+
+    await waitFor(() => {
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    const opts = resumeSpy.mock.calls[0][1] as { mission: string };
+    expect(opts.mission).toContain('GitHub Issue #42');
+    expect(opts.mission).not.toContain('Additional instructions');
+  });
+
   it('running agent → showConfirm → kill → resume', async () => {
-    const { api, resumeSpy, killSpy, showConfirmSpy, showInputSpy } = createIssuesAPI({
+    const { api } = createIssuesAPI({
       agents: {
         ...createMockAPI().agents,
         runQuick: vi.fn(async () => 'agent-id'),
@@ -188,24 +232,8 @@ describe('MainPanel agent assignment', () => {
     expect(resumeSpy).not.toHaveBeenCalled();
   });
 
-  it('user cancels input → no resume', async () => {
-    const showInputSpy = vi.fn(async () => null);
-    const resumeSpy = vi.fn(async () => {});
-    const { api } = createIssuesAPI({
-      agents: {
-        ...createMockAPI().agents,
-        resume: resumeSpy,
-        list: vi.fn(() => [
-          { id: 'durable-1', name: 'Worker Bee', kind: 'durable' as const, status: 'sleeping' as const, color: '#ff0' },
-        ]),
-      },
-      ui: {
-        ...createMockAPI().ui,
-        showInput: showInputSpy,
-        showNotice: vi.fn(),
-        showError: vi.fn(),
-      },
-    });
+  it('user clicks Cancel → dialog closes, no resume', async () => {
+    const { api, resumeSpy } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
 
@@ -213,19 +241,22 @@ describe('MainPanel agent assignment', () => {
       expect(screen.getByText('Fix login bug')).toBeTruthy();
     });
 
+    // Open agent dialog
     fireEvent.click(screen.getByText('Assign to Agent'));
-    fireEvent.click(screen.getByText('Worker Bee'));
 
-    await waitFor(() => {
-      expect(showInputSpy).toHaveBeenCalledTimes(1);
-    });
+    // Dialog should be visible
+    expect(screen.getByTestId('agent-dialog-overlay')).toBeTruthy();
 
-    await new Promise((r) => setTimeout(r, 50));
+    // Click Cancel
+    fireEvent.click(screen.getByText('Cancel'));
+
+    // Dialog should be closed
+    expect(screen.queryByTestId('agent-dialog-overlay')).toBeNull();
 
     expect(resumeSpy).not.toHaveBeenCalled();
   });
 
-  it('no durable agents → empty state message', async () => {
+  it('no durable agents → empty state message in dialog', async () => {
     const { api } = createIssuesAPI({
       agents: {
         ...createMockAPI().agents,
@@ -241,7 +272,7 @@ describe('MainPanel agent assignment', () => {
 
     fireEvent.click(screen.getByText('Assign to Agent'));
 
-    expect(screen.getByText('No durable agents available')).toBeTruthy();
+    expect(screen.getByText('No durable agents found')).toBeTruthy();
   });
 
   it('Quick Agent option is not rendered', async () => {
@@ -571,7 +602,7 @@ describe('MainPanel assignees', () => {
       expect(screen.getByText('Fix login bug')).toBeTruthy();
     });
 
-    // Click remove button on existing assignee (×)
+    // Click remove button on existing assignee (x)
     const removeBtn = screen.getByTitle('Remove dev1');
     fireEvent.click(removeBtn);
 

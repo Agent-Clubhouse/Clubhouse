@@ -6,7 +6,15 @@ export function buildMenu(): void {
     {
       label: app.name,
       submenu: [
-        { role: 'about', label: `About ${app.name}` },
+        {
+          label: `About ${app.name}`,
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win) {
+              win.webContents.send(IPC.APP.OPEN_ABOUT);
+            }
+          },
+        },
         { type: 'separator' },
         {
           label: 'Preferences…',

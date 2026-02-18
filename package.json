@@ -1,7 +1,7 @@
 {
   "name": "clubhouse",
   "productName": "Clubhouse",
-  "version": "0.25.0",
+  "version": "0.29.0",
   "description": "A place to hangout with your agent BFFs",
   "main": ".webpack/main",
   "private": true,
@@ -29,6 +29,7 @@
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
     "@electron-forge/maker-deb": "^7.11.1",
+    "@electron-forge/maker-dmg": "^7.11.1",
     "@electron-forge/maker-rpm": "^7.11.1",
     "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",

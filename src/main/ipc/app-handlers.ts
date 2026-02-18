@@ -1,13 +1,16 @@
+import { execSync } from 'child_process';
 import { app, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
+import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
 import * as badgeSettings from '../services/badge-settings';
+import * as autoUpdateService from '../services/auto-update-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
+import { UpdateSettings } from '../../shared/types';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, (_event, url: string) => {
@@ -16,6 +19,19 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.GET_VERSION, () => {
     return app.getVersion();
+  });
+
+  ipcMain.handle(IPC.APP.GET_ARCH_INFO, (): ArchInfo => {
+    let rosetta = false;
+    if (process.platform === 'darwin' && process.arch === 'x64') {
+      try {
+        const result = execSync('sysctl -n sysctl.proc_translated', { encoding: 'utf8' }).trim();
+        rosetta = result === '1';
+      } catch {
+        // sysctl key doesn't exist on Intel Macs — not Rosetta
+      }
+    }
+    return { arch: process.arch, platform: process.platform, rosetta };
   });
 
   ipcMain.handle(IPC.APP.GET_NOTIFICATION_SETTINGS, () => {
@@ -68,6 +84,40 @@ export function registerAppHandlers(): void {
     } else {
       app.setBadgeCount(count);
     }
+  });
+
+  // --- Auto-update ---
+  ipcMain.handle(IPC.APP.GET_UPDATE_SETTINGS, () => {
+    return autoUpdateService.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, (_event, settings: UpdateSettings) => {
+    autoUpdateService.saveSettings(settings);
+    if (settings.autoUpdate) {
+      autoUpdateService.startPeriodicChecks();
+    } else {
+      autoUpdateService.stopPeriodicChecks();
+    }
+  });
+
+  ipcMain.handle(IPC.APP.CHECK_FOR_UPDATES, () => {
+    return autoUpdateService.checkForUpdates(true);
+  });
+
+  ipcMain.handle(IPC.APP.GET_UPDATE_STATUS, () => {
+    return autoUpdateService.getStatus();
+  });
+
+  ipcMain.handle(IPC.APP.APPLY_UPDATE, () => {
+    return autoUpdateService.applyUpdate();
+  });
+
+  ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, () => {
+    return autoUpdateService.getPendingReleaseNotes();
+  });
+
+  ipcMain.handle(IPC.APP.CLEAR_PENDING_RELEASE_NOTES, () => {
+    autoUpdateService.clearPendingReleaseNotes();
   });
 
   // --- Logging ---

@@ -12,8 +12,12 @@ concurrency:
 
 jobs:
   typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
+    name: Typecheck (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,8 +28,12 @@ jobs:
       - run: npx tsc --noEmit
 
   unit-and-component:
-    name: Unit + Component Tests
-    runs-on: ubuntu-latest
+    name: Unit + Component Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -37,7 +45,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: test-results.xml
 
   # E2E disabled for now — macOS runners are expensive.

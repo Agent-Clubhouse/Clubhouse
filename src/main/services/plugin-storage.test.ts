@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   readFileSync: vi.fn(),
@@ -24,8 +26,8 @@ import {
   mkdirPlugin,
 } from './plugin-storage';
 
-// electron mock provides app.getPath('home') → '/tmp/clubhouse-test-home'
-const GLOBAL_BASE = '/tmp/clubhouse-test-home/.clubhouse/plugin-data';
+// electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
+const GLOBAL_BASE = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugin-data');
 
 describe('plugin-storage', () => {
   beforeEach(() => {
@@ -40,7 +42,7 @@ describe('plugin-storage', () => {
       const result = readKey({ pluginId: 'my-plugin', scope: 'global', key: 'config' });
       expect(result).toEqual({ hello: 'world' });
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        `${GLOBAL_BASE}/my-plugin/kv/config.json`,
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
         'utf-8',
       );
     });
@@ -53,9 +55,10 @@ describe('plugin-storage', () => {
 
     it('uses project-scoped path when scope is project', () => {
       vi.mocked(fs.readFileSync).mockReturnValue('"value"');
-      readKey({ pluginId: 'my-plugin', scope: 'project', key: 'data', projectPath: '/projects/foo' });
+      const projectPath = path.join(path.sep, 'projects', 'foo');
+      readKey({ pluginId: 'my-plugin', scope: 'project', key: 'data', projectPath });
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        '/projects/foo/.clubhouse/plugin-data/my-plugin/kv/data.json',
+        path.join(projectPath, '.clubhouse', 'plugin-data', 'my-plugin', 'kv', 'data.json'),
         'utf-8',
       );
     });
@@ -71,11 +74,11 @@ describe('plugin-storage', () => {
     it('writes JSON to kv directory and ensures dir exists', () => {
       writeKey({ pluginId: 'my-plugin', scope: 'global', key: 'config', value: { a: 1 } });
       expect(fs.mkdirSync).toHaveBeenCalledWith(
-        `${GLOBAL_BASE}/my-plugin/kv`,
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv'),
         { recursive: true },
       );
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        `${GLOBAL_BASE}/my-plugin/kv/config.json`,
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'config.json'),
         JSON.stringify({ a: 1 }),
         'utf-8',
       );
@@ -92,7 +95,7 @@ describe('plugin-storage', () => {
     it('unlinks the key file', () => {
       deleteKey({ pluginId: 'my-plugin', scope: 'global', key: 'old' });
       expect(fs.unlinkSync).toHaveBeenCalledWith(
-        `${GLOBAL_BASE}/my-plugin/kv/old.json`,
+        path.join(GLOBAL_BASE, 'my-plugin', 'kv', 'old.json'),
       );
     });
 
@@ -152,7 +155,7 @@ describe('plugin-storage', () => {
       });
       expect(fs.mkdirSync).toHaveBeenCalled();
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        expect.stringContaining('data/out.txt'),
+        expect.stringContaining(path.join('data', 'out.txt')),
         'hello',
         'utf-8',
       );
@@ -214,7 +217,7 @@ describe('plugin-storage', () => {
     it('creates directory recursively', () => {
       mkdirPlugin('p', 'global', 'sub/dir');
       expect(fs.mkdirSync).toHaveBeenCalledWith(
-        expect.stringContaining('sub/dir'),
+        expect.stringContaining(path.join('sub', 'dir')),
         { recursive: true },
       );
     });
@@ -227,42 +230,44 @@ describe('plugin-storage', () => {
   // ── project-local scope ──────────────────────────────────────────────
 
   describe('project-local scope', () => {
+    const projectPath = path.join(path.sep, 'projects', 'foo');
+
     it('readKey uses plugin-data-local path', () => {
       vi.mocked(fs.readFileSync).mockReturnValue('"value"');
-      readKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'data', projectPath: '/projects/foo' });
+      readKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'data', projectPath });
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        '/projects/foo/.clubhouse/plugin-data-local/my-plugin/kv/data.json',
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'data.json'),
         'utf-8',
       );
     });
 
     it('writeKey uses plugin-data-local path', () => {
-      writeKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'config', value: 42, projectPath: '/projects/foo' });
+      writeKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'config', value: 42, projectPath });
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/projects/foo/.clubhouse/plugin-data-local/my-plugin/kv/config.json',
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'config.json'),
         '42',
         'utf-8',
       );
     });
 
     it('deleteKey uses plugin-data-local path', () => {
-      deleteKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'old', projectPath: '/projects/foo' });
+      deleteKey({ pluginId: 'my-plugin', scope: 'project-local', key: 'old', projectPath });
       expect(fs.unlinkSync).toHaveBeenCalledWith(
-        '/projects/foo/.clubhouse/plugin-data-local/my-plugin/kv/old.json',
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv', 'old.json'),
       );
     });
 
     it('listKeys uses plugin-data-local path', () => {
       vi.mocked(fs.readdirSync).mockReturnValue(['a.json'] as any);
-      listKeys({ pluginId: 'my-plugin', scope: 'project-local', projectPath: '/projects/foo' });
+      listKeys({ pluginId: 'my-plugin', scope: 'project-local', projectPath });
       expect(fs.readdirSync).toHaveBeenCalledWith(
-        '/projects/foo/.clubhouse/plugin-data-local/my-plugin/kv',
+        path.join(projectPath, '.clubhouse', 'plugin-data-local', 'my-plugin', 'kv'),
       );
     });
 
     it('rejects path traversal for project-local', () => {
       expect(() =>
-        readKey({ pluginId: 'p', scope: 'project-local', key: '../../etc/passwd', projectPath: '/projects/foo' }),
+        readKey({ pluginId: 'p', scope: 'project-local', key: '../../etc/passwd', projectPath }),
       ).toThrow('Path traversal');
     });
   });
@@ -280,7 +285,7 @@ describe('plugin-storage', () => {
       );
 
       vi.clearAllMocks();
-      writeKey({ pluginId: 'p', scope: 'project', key: 'k', value: 'v', projectPath: '/projects/foo' });
+      writeKey({ pluginId: 'p', scope: 'project', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'foo') });
       // Project write should not touch .gitignore either
       const gitignoreCalls = vi.mocked(fs.writeFileSync).mock.calls.filter(
         (c) => typeof c[0] === 'string' && c[0].includes('.gitignore'),
@@ -313,7 +318,7 @@ describe('plugin-storage', () => {
         return '""';
       }) as typeof freshFs.readFileSync);
 
-      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: '/projects/bar' });
+      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'bar') });
 
       const gitignoreWrites = vi.mocked(freshFs.writeFileSync).mock.calls.filter(
         (c) => typeof c[0] === 'string' && c[0].endsWith('.gitignore'),
@@ -342,7 +347,7 @@ describe('plugin-storage', () => {
         return '""';
       }) as typeof freshFs.readFileSync);
 
-      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: '/projects/bar' });
+      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'bar') });
 
       const gitignoreWrites = vi.mocked(freshFs.writeFileSync).mock.calls.filter(
         (c) => typeof c[0] === 'string' && c[0].endsWith('.gitignore'),
@@ -366,7 +371,7 @@ describe('plugin-storage', () => {
 
       vi.mocked(freshFs.existsSync).mockReturnValue(false);
 
-      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: '/projects/baz' });
+      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'baz') });
 
       const gitignoreWrites = vi.mocked(freshFs.writeFileSync).mock.calls.filter(
         (c) => typeof c[0] === 'string' && c[0].endsWith('.gitignore'),
@@ -395,7 +400,7 @@ describe('plugin-storage', () => {
         return '""';
       }) as typeof freshFs.readFileSync);
 
-      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: '/projects/x' });
+      freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'x') });
 
       const gitignoreWrites = vi.mocked(freshFs.writeFileSync).mock.calls.filter(
         (c) => typeof c[0] === 'string' && c[0].endsWith('.gitignore'),
@@ -421,7 +426,7 @@ describe('plugin-storage', () => {
 
       // Should not throw
       expect(() => {
-        freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: '/projects/y' });
+        freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'y') });
       }).not.toThrow();
     });
   });

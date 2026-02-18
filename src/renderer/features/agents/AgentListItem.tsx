@@ -3,7 +3,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { getOrchestratorColor, getModelColor } from './orchestrator-colors';
+import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 
 interface Props {
   agent: Agent;
@@ -27,11 +27,11 @@ const STATUS_RING_COLOR: Record<string, string> = {
 };
 
 export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
-  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus } = useAgentStore();
+  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus, agentIcons } = useAgentStore();
+  const iconDataUrl = agentIcons[agent.id];
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const providerInfo = allOrchestrators.find((o) => o.id === (agent.orchestrator || 'claude-code'));
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
@@ -91,12 +91,18 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
           style={{ border: `2px solid ${ringColor}` }}
         >
           {isDurable ? (
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center ${agent.emoji ? 'text-sm' : 'text-[10px] font-bold text-white'}`}
-              style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
-            >
-              {agent.emoji || agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
-            </div>
+            agent.icon && iconDataUrl ? (
+              <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0">
+                <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                style={{ backgroundColor: colorInfo?.hex || '#6366f1' }}
+              >
+                {agent.name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2)}
+              </div>
+            )
           ) : (
             <div className="w-7 h-7 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -117,14 +123,12 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             return (
               <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
                 style={{ backgroundColor: c.bg, color: c.text }}>
-                {providerInfo ? (providerInfo.shortName || providerInfo.displayName) : 'Claude Code'}
+                {getOrchestratorLabel(orchId, allOrchestrators)}
               </span>
             );
           })()}
           {(() => {
-            const modelLabel = agent.model && agent.model !== 'default'
-              ? agent.model.charAt(0).toUpperCase() + agent.model.slice(1)
-              : 'Default';
+            const modelLabel = formatModelLabel(agent.model);
             const c = agent.model && agent.model !== 'default'
               ? getModelColor(agent.model)
               : { bg: 'rgba(148,163,184,0.15)', text: '#94a3b8' };

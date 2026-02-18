@@ -2,6 +2,7 @@ import { Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { SleepingMascot } from './SleepingMascots';
 
 export function SleepingAgent({ agent }: { agent: Agent }) {
   const { spawnDurableAgent } = useAgentStore();
@@ -22,31 +23,9 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   return (
     <div className="flex items-center justify-center h-full bg-ctp-base">
       <div className="flex flex-col items-center gap-6">
-        {/* Pixel agent sleeping */}
+        {/* Orchestrator-specific sleeping mascot */}
         <div className="relative">
-          <svg width="160" height="160" viewBox="0 0 80 80" className="drop-shadow-lg">
-            {/* Body */}
-            <rect x="16" y="20" width="48" height="40" rx="8" fill="#c4795b" />
-            {/* Head highlight */}
-            <rect x="20" y="24" width="40" height="4" rx="2" fill="#d4896b" opacity="0.4" />
-            {/* Eyes - closed (sleeping) */}
-            <line x1="30" y1="38" x2="35" y2="38" stroke="#2a1f1a" strokeWidth="2.5" strokeLinecap="round" />
-            <line x1="45" y1="38" x2="50" y2="38" stroke="#2a1f1a" strokeWidth="2.5" strokeLinecap="round" />
-            {/* Legs */}
-            <rect x="24" y="60" width="6" height="8" rx="2" fill="#a86a4e" />
-            <rect x="34" y="60" width="6" height="8" rx="2" fill="#a86a4e" />
-            <rect x="44" y="60" width="6" height="8" rx="2" fill="#a86a4e" />
-            {/* Zzz */}
-            <text x="60" y="18" fill="#6c7086" fontSize="10" fontWeight="bold" fontFamily="monospace">
-              <tspan className="animate-pulse">z</tspan>
-            </text>
-            <text x="65" y="12" fill="#585b70" fontSize="8" fontWeight="bold" fontFamily="monospace">
-              <tspan className="animate-pulse" style={{ animationDelay: '0.3s' }}>z</tspan>
-            </text>
-            <text x="69" y="7" fill="#45475a" fontSize="6" fontWeight="bold" fontFamily="monospace">
-              <tspan className="animate-pulse" style={{ animationDelay: '0.6s' }}>z</tspan>
-            </text>
-          </svg>
+          <SleepingMascot orchestrator={agent.orchestrator} />
         </div>
 
         {/* Agent info */}

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -14,10 +16,10 @@ vi.mock('fs', () => ({
 import * as fs from 'fs';
 import { list, add, remove, update, reorder, readIconData } from './project-store';
 
-// The module uses app.getPath('home') which returns /tmp/clubhouse-test-home from our mock
+// The module uses app.getPath('home') which returns path.join(os.tmpdir(), 'clubhouse-test-home')
 // and app.isPackaged = false → dirName = '.clubhouse-dev'
-const BASE_DIR = '/tmp/clubhouse-test-home/.clubhouse-dev';
-const STORE_PATH = `${BASE_DIR}/projects.json`;
+const BASE_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse-dev');
+const STORE_PATH = path.join(BASE_DIR, 'projects.json');
 
 function mockStoreFile(content: any) {
   vi.mocked(fs.existsSync).mockImplementation((p: any) => {

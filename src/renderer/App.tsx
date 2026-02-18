@@ -22,6 +22,10 @@ import { pluginEventBus } from './plugins/plugin-events';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
+import { UpdateBanner } from './features/app/UpdateBanner';
+import { WhatsNewDialog } from './features/app/WhatsNewDialog';
+import { useUpdateStore } from './stores/updateStore';
+import { initUpdateListener } from './stores/updateStore';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -51,6 +55,8 @@ export function App() {
   const loadLoggingSettings = useLoggingStore((s) => s.loadSettings);
   const loadHeadlessSettings = useHeadlessStore((s) => s.loadSettings);
   const loadBadgeSettings = useBadgeSettingsStore((s) => s.loadSettings);
+  const loadUpdateSettings = useUpdateStore((s) => s.loadSettings);
+  const checkWhatsNew = useUpdateStore((s) => s.checkWhatsNew);
 
   useEffect(() => {
     loadProjects();
@@ -60,17 +66,44 @@ export function App() {
     loadLoggingSettings();
     loadHeadlessSettings();
     loadBadgeSettings();
+    loadUpdateSettings();
     initBadgeSideEffects();
     initializePluginSystem().catch((err) => {
       console.error('[Plugins] Failed to initialize plugin system:', err);
     });
-  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings, loadHeadlessSettings, loadBadgeSettings]);
+  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings, loadHeadlessSettings, loadBadgeSettings, loadUpdateSettings]);
+
+  // Listen for update status changes from main process
+  useEffect(() => {
+    const remove = initUpdateListener();
+    return () => remove();
+  }, []);
+
+  // Check for What's New dialog after startup
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      checkWhatsNew();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [checkWhatsNew]);
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
       const state = useUIStore.getState();
       if (state.explorerTab !== 'settings') {
         state.toggleSettings();
+      }
+    });
+    return () => remove();
+  }, []);
+
+  useEffect(() => {
+    const remove = window.clubhouse.app.onOpenAbout(() => {
+      const state = useUIStore.getState();
+      if (state.explorerTab !== 'settings') {
+        state.openAbout();
+      } else {
+        state.setSettingsSubPage('about');
       }
     });
     return () => remove();
@@ -381,10 +414,12 @@ export function App() {
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
-        <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr] grid-rows-[1fr]">
+        <UpdateBanner />
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <Dashboard />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -397,10 +432,12 @@ export function App() {
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
-        <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr] grid-rows-[1fr]">
+        <UpdateBanner />
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -412,10 +449,12 @@ export function App() {
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
-        <div className="flex-1 min-h-0 grid grid-cols-[60px_1fr] grid-rows-[1fr]">
+        <UpdateBanner />
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <HelpView />
         </div>
+        <WhatsNewDialog />
       </div>
     );
   }
@@ -428,15 +467,18 @@ export function App() {
       </div>
       {/* Permission violation banner */}
       <PermissionViolationBanner />
+      {/* Update banner */}
+      <UpdateBanner />
       {/* Git banner */}
       <GitBanner />
       {/* Main content grid */}
-      <div className={`flex-1 min-h-0 grid grid-rows-[1fr] ${isFullWidth ? 'grid-cols-[60px_200px_1fr]' : 'grid-cols-[60px_200px_280px_1fr]'}`}>
+      <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: isFullWidth ? 'var(--rail-width, 68px) 200px 1fr' : 'var(--rail-width, 68px) 200px 280px 1fr' }}>
         <ProjectRail />
         <ExplorerRail />
         {!isFullWidth && <AccessoryPanel />}
         <MainContentView />
       </div>
+      <WhatsNewDialog />
     </div>
   );
 }

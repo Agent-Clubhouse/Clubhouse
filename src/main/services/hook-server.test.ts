@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
+import * as os from 'os';
+import * as path from 'path';
 
 // Track what gets sent to BrowserWindow
 const mockSend = vi.fn();
@@ -8,14 +10,18 @@ const mockGetAllWindows = vi.fn(() => [{
   webContents: { send: mockSend },
 }]);
 
-vi.mock('electron', () => ({
-  app: {
-    getPath: (name: string) => `/tmp/clubhouse-test-${name}`,
-  },
-  BrowserWindow: {
-    getAllWindows: () => mockGetAllWindows(),
-  },
-}));
+vi.mock('electron', () => {
+  const _os = require('os');
+  const _path = require('path');
+  return {
+    app: {
+      getPath: (name: string) => _path.join(_os.tmpdir(), `clubhouse-test-${name}`),
+    },
+    BrowserWindow: {
+      getAllWindows: () => mockGetAllWindows(),
+    },
+  };
+});
 
 // Mock agent-system functions
 const mockGetAgentProjectPath = vi.fn<(id: string) => string | undefined>();

@@ -9,6 +9,7 @@ import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
 function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -24,9 +25,12 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const permissions = entry.manifest.permissions;
   if (!permissions || permissions.length === 0) return null;
 
+  const rect = btnRef.current?.getBoundingClientRect();
+
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
         className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
         title="View permissions"
@@ -34,7 +38,11 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
         i
       </button>
       {open && (
-        <div className="absolute z-50 top-6 right-0 w-64 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg">
+        <div
+          data-testid="permission-popup"
+          className="fixed z-50 w-64 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
+          style={rect ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : undefined}
+        >
           <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
           <div className="space-y-1.5">
             {permissions.map((perm: PluginPermission) => (

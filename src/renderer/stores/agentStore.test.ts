@@ -302,16 +302,16 @@ describe('agentStore', () => {
       expect(getState().agents['a_color'].color).toBe('emerald');
     });
 
-    it('sets emoji in local state', async () => {
-      seedAgent({ id: 'a_emoji' });
-      await getState().updateAgent('a_emoji', { emoji: '🔥' }, '/proj');
-      expect(getState().agents['a_emoji'].emoji).toBe('🔥');
+    it('sets icon in local state', async () => {
+      seedAgent({ id: 'a_icon' });
+      await getState().updateAgent('a_icon', { icon: 'a_icon.png' }, '/proj');
+      expect(getState().agents['a_icon'].icon).toBe('a_icon.png');
     });
 
-    it('clears emoji (null → undefined) in local state', async () => {
-      seedAgent({ id: 'a_clear', emoji: '🔥' });
-      await getState().updateAgent('a_clear', { emoji: null }, '/proj');
-      expect(getState().agents['a_clear'].emoji).toBeUndefined();
+    it('clears icon (null → undefined) in local state', async () => {
+      seedAgent({ id: 'a_clear', icon: 'a_clear.png' });
+      await getState().updateAgent('a_clear', { icon: null }, '/proj');
+      expect(getState().agents['a_clear'].icon).toBeUndefined();
     });
 
     it('calls updateDurable IPC', async () => {
@@ -508,6 +508,44 @@ describe('agentStore', () => {
     it('calls reorderDurable IPC with correct args', async () => {
       await getState().reorderAgents('/project', ['id_b', 'id_a', 'id_c']);
       expect(window.clubhouse.agent.reorderDurable).toHaveBeenCalledWith('/project', ['id_b', 'id_a', 'id_c']);
+    });
+  });
+
+  describe('loadDurableAgents', () => {
+    it('loads model from durable config', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_m1', name: 'model-agent', color: 'indigo', model: 'opus', createdAt: '2024-01-01' },
+      ]);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_m1'].model).toBe('opus');
+    });
+
+    it('loads agent without model (undefined)', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_nomodel', name: 'no-model', color: 'emerald', createdAt: '2024-01-01' },
+      ]);
+
+      await getState().loadDurableAgents('proj_1', '/project');
+      expect(getState().agents['durable_nomodel'].model).toBeUndefined();
+    });
+  });
+
+  describe('openAgentSettings', () => {
+    it('sets agentSettingsOpenFor and activeAgentId', () => {
+      seedAgent({ id: 'settings_agent', projectId: 'proj_1' });
+      getState().openAgentSettings('settings_agent');
+      expect(getState().agentSettingsOpenFor).toBe('settings_agent');
+      expect(getState().activeAgentId).toBe('settings_agent');
+    });
+
+    it('works for agents without worktreePath', () => {
+      seedAgent({ id: 'no_wt_agent', projectId: 'proj_1', worktreePath: undefined });
+      getState().openAgentSettings('no_wt_agent');
+      expect(getState().agentSettingsOpenFor).toBe('no_wt_agent');
+      expect(getState().activeAgentId).toBe('no_wt_agent');
     });
   });
 });

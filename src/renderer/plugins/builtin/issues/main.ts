@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
+import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import { issueState, IssueListItem, IssueDetail } from './state';
 import { MarkdownPreview } from '../files/MarkdownPreview';
+import { SendToAgentDialog } from './SendToAgentDialog';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -18,21 +19,6 @@ function relativeTime(dateStr: string): string {
   if (diffD < 30) return `${diffD}d ago`;
   const diffMo = Math.floor(diffD / 30);
   return `${diffMo}mo ago`;
-}
-
-function buildAgentPrompt(issue: IssueDetail): string {
-  const labels = issue.labels.map((l) => l.name).join(', ');
-  return [
-    'Review and prepare a fix for the following GitHub issue:',
-    '',
-    `GitHub Issue #${issue.number}: ${issue.title}`,
-    '',
-    issue.body || '(no description)',
-    '',
-    labels ? `Labels: ${labels}` : '',
-    `Author: ${issue.author.login}`,
-    `State: ${issue.state}`,
-  ].filter(Boolean).join('\n');
 }
 
 /** Pad a hex color string from gh (e.g. "d73a4a") to proper CSS. */
@@ -262,9 +248,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [creatingNew, setCreatingNew] = useState(issueState.creatingNew);
   const [detail, setDetail] = useState<IssueDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showAgentMenu, setShowAgentMenu] = useState(false);
-  const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [showAgentDialog, setShowAgentDialog] = useState(false);
   const [detailVersion, setDetailVersion] = useState(0);
 
   // Inline create form state
@@ -320,58 +304,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return () => { cancelled = true; };
   }, [selected, api, detailVersion]);
 
-  // Close agent menu on outside click
-  useEffect(() => {
-    if (!showAgentMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowAgentMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showAgentMenu]);
+  // ── Agent dialog ────────────────────────────────────────────────────
+  const openAgentDialog = useCallback(() => {
+    setShowAgentDialog(true);
+  }, []);
 
-  // ── Agent assignment ──────────────────────────────────────────────────
-  const handleDurableAgent = useCallback(async (agent: AgentInfo) => {
-    if (!detail) return;
-    setShowAgentMenu(false);
-
-    // If agent is running, confirm before killing
-    if (agent.status === 'running') {
-      const confirmed = await api.ui.showConfirm(
-        `Agent "${agent.name}" is currently running. Restarting will interrupt its work. Continue?`,
-      );
-      if (!confirmed) return;
-      await api.agents.kill(agent.id);
-    }
-
-    // Ask for user instructions
-    const userInstructions = await api.ui.showInput(
-      'Add instructions for the agent (optional):',
-      '',
-    );
-    if (userInstructions === null) return; // user cancelled
-
-    // Build mission from issue context + user instructions
-    const issueContext = buildAgentPrompt(detail);
-    const mission = userInstructions.trim()
-      ? `${issueContext}\n\nAdditional instructions:\n${userInstructions.trim()}`
-      : issueContext;
-
-    try {
-      await api.agents.resume(agent.id, { mission });
-      api.ui.showNotice(`Agent "${agent.name}" assigned to issue #${detail.number}`);
-    } catch {
-      api.ui.showError(`Failed to assign agent to issue #${detail.number}`);
-    }
-  }, [detail, api]);
-
-  const openAgentMenu = useCallback(async () => {
-    const agents = api.agents.list().filter((a) => a.kind === 'durable');
-    setDurableAgents(agents);
-    setShowAgentMenu(true);
-  }, [api]);
+  const closeAgentDialog = useCallback(() => {
+    setShowAgentDialog(false);
+  }, []);
 
   // ── Detail refresh ──────────────────────────────────────────────────
   const refreshDetail = useCallback(() => {
@@ -653,46 +593,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
               title: 'Open in browser',
             }, 'View in Browser'),
             // Assign to Agent
-            React.createElement('div', { className: 'relative flex-shrink-0', ref: menuRef },
-              React.createElement('button', {
-                className: 'px-2.5 py-1 text-xs bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors',
-                onClick: openAgentMenu,
-              }, 'Assign to Agent'),
-              // Dropdown menu
-              showAgentMenu && React.createElement('div', {
-                className: 'absolute right-0 top-full mt-1 w-56 bg-ctp-mantle border border-ctp-surface1 rounded-lg shadow-lg z-50 py-1',
-              },
-                // Empty state
-                durableAgents.length === 0 && React.createElement('div', {
-                  className: 'px-3 py-2 text-xs text-ctp-subtext0 text-center',
-                }, 'No durable agents available'),
-                // Durable agents
-                ...durableAgents.map((agent) =>
-                  React.createElement('button', {
-                    key: agent.id,
-                    className: 'w-full text-left px-3 py-2 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors',
-                    onClick: () => handleDurableAgent(agent),
-                  },
-                    React.createElement('div', { className: 'flex items-center gap-1.5' },
-                      React.createElement(api.widgets.AgentAvatar, {
-                        agentId: agent.id,
-                        size: 'sm',
-                        showStatusRing: true,
-                      }),
-                      React.createElement('span', { className: 'font-medium' }, agent.name),
-                      React.createElement('span', {
-                        className: `text-[9px] px-1 py-px rounded ${
-                          agent.status === 'running'
-                            ? 'bg-ctp-yellow/15 text-ctp-yellow'
-                            : 'bg-ctp-surface0 text-ctp-subtext0'
-                        }`,
-                      }, agent.status === 'running' ? 'running' : 'sleeping'),
-                    ),
-                    React.createElement('div', { className: 'text-[10px] text-ctp-subtext0 mt-0.5 pl-5' }, 'Assign issue to this agent'),
-                  ),
-                ),
-              ),
-            ),
+            React.createElement('button', {
+              className: 'px-2.5 py-1 text-xs bg-ctp-accent/10 text-ctp-accent border border-ctp-accent/30 rounded hover:bg-ctp-accent/20 transition-colors flex-shrink-0',
+              onClick: openAgentDialog,
+            }, 'Assign to Agent'),
           ),
     ),
 
@@ -822,6 +726,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         }, 'Comment'),
       ),
     ),
+
+    // ── Agent assignment dialog ────────────────────────────────────────
+    showAgentDialog && detail && React.createElement(SendToAgentDialog, {
+      api,
+      issue: detail,
+      onClose: closeAgentDialog,
+    }),
   );
 }
 

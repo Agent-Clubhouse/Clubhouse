@@ -16,6 +16,7 @@ import { PluginDetailSettings } from '../features/settings/PluginDetailSettings'
 import { PluginListSettings } from '../features/settings/PluginListSettings';
 import { AboutSettingsView } from '../features/settings/AboutSettingsView';
 import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
+import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -34,8 +35,7 @@ export function MainContentView() {
       agentSettingsOpenFor &&
       agentSettingsOpenFor === activeAgentId &&
       activeAgent &&
-      activeAgent.kind === 'durable' &&
-      activeAgent.worktreePath
+      activeAgent.kind === 'durable'
     ) {
       return <AgentSettingsView agent={activeAgent} />;
     }
@@ -87,6 +87,7 @@ export function MainContentView() {
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
     if (settingsSubPage === 'plugins') return <PluginListSettings />;
+    if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }

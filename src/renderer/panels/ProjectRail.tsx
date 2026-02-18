@@ -192,10 +192,21 @@ export function ProjectRail() {
   );
 
   const [expanded, setExpanded] = useState(false);
+  const [overlaying, setOverlaying] = useState(false);
+  const [isScrollable, setIsScrollable] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const handleMouseEnter = useCallback(() => {
-    hoverTimerRef.current = setTimeout(() => setExpanded(true), 600);
+    if (overlayTimerRef.current) {
+      clearTimeout(overlayTimerRef.current);
+      overlayTimerRef.current = null;
+    }
+    hoverTimerRef.current = setTimeout(() => {
+      setExpanded(true);
+      setOverlaying(true);
+    }, 600);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
@@ -204,13 +215,33 @@ export function ProjectRail() {
       hoverTimerRef.current = null;
     }
     setExpanded(false);
+    // Keep overlay styling (absolute + z-30) during the 200ms close transition
+    overlayTimerRef.current = setTimeout(() => setOverlaying(false), 200);
   }, []);
 
   useEffect(() => {
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     };
   }, []);
+
+  // Detect when the project list overflows and needs a scrollbar
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const check = () => setIsScrollable(el.scrollHeight > el.clientHeight);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [projects.length]);
+
+  // Sync rail width to a CSS variable so the grid column in App.tsx can match
+  const collapsedWidth = isScrollable ? 74 : 68;
+  useEffect(() => {
+    document.documentElement.style.setProperty('--rail-width', `${collapsedWidth}px`);
+  }, [collapsedWidth]);
 
   const exitSettingsAndNavigate = useCallback((action: () => void) => {
     if (inSettings || inHelp) {
@@ -268,17 +299,17 @@ export function ProjectRail() {
 
   return (
     <div
-      className="relative h-full min-h-0 overflow-hidden"
+      className="relative h-full min-h-0"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       <div
         className={`
           flex flex-col py-3 gap-2 bg-ctp-mantle border-r border-surface-0 h-full
-          transition-[width] duration-200 ease-in-out overflow-hidden pl-[10px] pr-[10px]
-          ${expanded ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
+          transition-[width] duration-200 ease-in-out overflow-hidden pl-[14px] pr-[14px]
+          ${overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
         `}
-        style={{ width: expanded ? 200 : 60 }}
+        style={{ width: expanded ? 200 : collapsedWidth }}
       >
         {/* Home button */}
         {showHome && (
@@ -329,7 +360,7 @@ export function ProjectRail() {
           <div className="border-t border-surface-2 my-1 flex-shrink-0" />
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2">
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2">
           {projects.map((p, i) => (
             <div
               key={p.id}

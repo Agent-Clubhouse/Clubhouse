@@ -140,9 +140,25 @@ export async function activatePlugin(
     settings: {},
   };
 
-  // Load settings
+  // Load settings — try in-memory store first, then persist from disk
   const settingsKey = projectId ? `${projectId}:${pluginId}` : `app:${pluginId}`;
-  const savedSettings = store.pluginSettings[settingsKey];
+  let savedSettings = store.pluginSettings[settingsKey];
+  if (!savedSettings) {
+    try {
+      const scope = projectId || 'app';
+      const persisted = await window.clubhouse.plugin.storageRead({
+        pluginId: '_system',
+        scope: 'global',
+        key: `settings-${scope}-${pluginId}`,
+      }) as Record<string, unknown> | undefined;
+      if (persisted && typeof persisted === 'object') {
+        store.loadPluginSettings(settingsKey, persisted);
+        savedSettings = persisted;
+      }
+    } catch {
+      // No persisted settings — use defaults
+    }
+  }
   if (savedSettings) {
     ctx.settings = { ...savedSettings };
   }

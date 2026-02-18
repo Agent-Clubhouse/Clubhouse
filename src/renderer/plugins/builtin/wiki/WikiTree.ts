@@ -58,24 +58,83 @@ function getExtension(name: string): string {
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
 }
 
-function prettifyName(name: string): string {
-  // Strip .md extension, replace dashes/underscores with spaces, title-case
-  const base = name.replace(/\.md$/i, '');
-  return base
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function prettifyName(name: string, wikiStyle: string = 'github'): string {
+  // Strip .md extension
+  let base = name.replace(/\.md$/i, '');
+  if (wikiStyle === 'ado') {
+    // ADO uses %2D for literal hyphens, dashes for spaces
+    base = base.replace(/%2D/gi, '\x00').replace(/-/g, ' ').replace(/\x00/g, '-');
+  } else {
+    base = base.replace(/[-_]/g, ' ');
+  }
+  return base.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function filterMarkdownTree(nodes: FileNode[]): FileNode[] {
+/** Parse a .order file's content into an ordered list of entry names. */
+export function parseOrderFile(content: string): string[] {
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+}
+
+/** Sort FileNode[] according to a .order list. Ordered items come first; unordered items follow alphabetically. */
+export function sortByOrder(nodes: FileNode[], order: string[]): FileNode[] {
+  if (order.length === 0) return nodes;
+  const posMap = new Map<string, number>();
+  for (let i = 0; i < order.length; i++) {
+    posMap.set(order[i].toLowerCase(), i);
+  }
+
+  const getKey = (node: FileNode): string => {
+    // Match by name without extension
+    return node.name.replace(/\.md$/i, '').toLowerCase();
+  };
+
+  return [...nodes].sort((a, b) => {
+    const posA = posMap.get(getKey(a));
+    const posB = posMap.get(getKey(b));
+    if (posA !== undefined && posB !== undefined) return posA - posB;
+    if (posA !== undefined) return -1;
+    if (posB !== undefined) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/** Read and apply .order file sorting to nodes for a directory. */
+async function applyAdoOrdering(scoped: FilesAPI, dirPath: string, nodes: FileNode[]): Promise<FileNode[]> {
+  const orderPath = dirPath === '.' ? '.order' : `${dirPath}/.order`;
+  try {
+    const content = await scoped.readFile(orderPath);
+    const order = parseOrderFile(content);
+    return sortByOrder(nodes, order);
+  } catch {
+    return nodes;
+  }
+}
+
+function filterMarkdownTree(nodes: FileNode[], wikiStyle: string = 'github'): FileNode[] {
+  // In ADO mode, build a set of folder names so we can hide same-named .md files
+  // (the folder acts as the page; the .md file is its index content)
+  const folderNames = wikiStyle === 'ado'
+    ? new Set(nodes.filter((n) => n.isDirectory).map((n) => n.name.toLowerCase()))
+    : null;
+
   const result: FileNode[] = [];
   for (const node of nodes) {
+    // In ADO mode, hide .order files from the tree
+    if (wikiStyle === 'ado' && node.name === '.order') continue;
     if (node.isDirectory) {
-      const filteredChildren = node.children ? filterMarkdownTree(node.children) : [];
+      const filteredChildren = node.children ? filterMarkdownTree(node.children, wikiStyle) : [];
       // Only include directories that have markdown files (directly or in sub-dirs)
       if (filteredChildren.length > 0) {
         result.push({ ...node, children: filteredChildren });
       }
     } else if (getExtension(node.name) === 'md') {
+      // In ADO mode, hide .md files that are index pages for same-named folders
+      if (folderNames && folderNames.has(node.name.replace(/\.md$/i, '').toLowerCase())) {
+        continue;
+      }
       result.push(node);
     }
   }
@@ -139,10 +198,11 @@ interface TreeNodeProps {
   selected: string | null;
   focused: string | null;
   viewMode: 'view' | 'edit';
+  wikiStyle: string;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }
 
-function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused, viewMode, onContextMenu }: TreeNodeProps) {
+function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused, viewMode, wikiStyle, onContextMenu }: TreeNodeProps) {
   const isExpanded = expanded.has(node.path);
   const isSelected = selected === node.path;
   const isFocused = focused === node.path;
@@ -153,6 +213,15 @@ function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused
   const handleClick = () => {
     if (node.isDirectory) {
       onToggle(node.path);
+      // In ADO mode, clicking a folder also selects its index page (same-named .md)
+      if (wikiStyle === 'ado' && node.children) {
+        const indexPage = node.children.find(
+          (c) => !c.isDirectory && c.name.replace(/\.md$/i, '') === node.name,
+        );
+        if (indexPage) {
+          onSelect(indexPage.path);
+        }
+      }
     } else {
       onSelect(node.path);
     }
@@ -167,8 +236,10 @@ function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused
     : React.createElement('span', { className: 'w-3' });
 
   const displayName = viewMode === 'view' && !node.isDirectory
-    ? prettifyName(node.name)
-    : node.name;
+    ? prettifyName(node.name, wikiStyle)
+    : viewMode === 'view' && node.isDirectory
+      ? prettifyName(node.name, wikiStyle)
+      : node.name;
 
   const elements: React.ReactNode[] = [
     React.createElement('div', {
@@ -200,6 +271,7 @@ function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused
           selected,
           focused,
           viewMode,
+          wikiStyle,
           onContextMenu,
         }),
       );
@@ -223,6 +295,7 @@ export function WikiTree({ api }: { api: PluginAPI }) {
   const wikiFilesRef = useRef<FilesAPI | null>(null);
 
   const showHidden = api.settings.get<boolean>('showHiddenFiles') || false;
+  const wikiStyle = api.settings.get<string>('wikiStyle') || 'github';
 
   // Obtain scoped files API for 'wiki' root
   const getScopedFiles = useCallback((): FilesAPI | null => {
@@ -246,12 +319,15 @@ export function WikiTree({ api }: { api: PluginAPI }) {
       return;
     }
     try {
-      const nodes = await scoped.readTree('.', { includeHidden: showHidden, depth: 1 });
+      let nodes = await scoped.readTree('.', { includeHidden: showHidden, depth: 1 });
+      if (wikiStyle === 'ado') {
+        nodes = await applyAdoOrdering(scoped, '.', nodes);
+      }
       setTree(nodes);
     } catch {
       setTree([]);
     }
-  }, [getScopedFiles, showHidden]);
+  }, [getScopedFiles, showHidden, wikiStyle]);
 
   // Initial load
   useEffect(() => {
@@ -275,7 +351,7 @@ export function WikiTree({ api }: { api: PluginAPI }) {
   // Re-obtain scoped API on wikiPath setting change
   useEffect(() => {
     const disposable = api.settings.onChange((key) => {
-      if (key === 'wikiPath' || key === 'showHiddenFiles') {
+      if (key === 'wikiPath' || key === 'showHiddenFiles' || key === 'wikiStyle') {
         loadTree();
       }
     });
@@ -284,19 +360,19 @@ export function WikiTree({ api }: { api: PluginAPI }) {
 
   // Collect visible nodes for keyboard nav
   const getVisibleNodes = useCallback((): FileNode[] => {
-    const displayTree = viewMode === 'view' ? filterMarkdownTree(tree) : tree;
+    const displayTree = viewMode === 'view' ? filterMarkdownTree(tree, wikiStyle) : tree;
     const result: FileNode[] = [];
     const collect = (nodes: FileNode[]) => {
       for (const node of nodes) {
         result.push(node);
         if (node.isDirectory && expanded.has(node.path) && node.children) {
-          collect(viewMode === 'view' ? filterMarkdownTree(node.children) : node.children);
+          collect(viewMode === 'view' ? filterMarkdownTree(node.children, wikiStyle) : node.children);
         }
       }
     };
     collect(displayTree);
     return result;
-  }, [tree, expanded, viewMode]);
+  }, [tree, expanded, viewMode, wikiStyle]);
 
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
@@ -315,7 +391,10 @@ export function WikiTree({ api }: { api: PluginAPI }) {
 
     // Find relative path from the node's path
     try {
-      const nodes = await scoped.readTree(dirPath, { includeHidden: showHidden, depth: 1 });
+      let nodes = await scoped.readTree(dirPath, { includeHidden: showHidden, depth: 1 });
+      if (wikiStyle === 'ado') {
+        nodes = await applyAdoOrdering(scoped, dirPath, nodes);
+      }
       setTree((prevTree) => {
         const updateNode = (items: FileNode[]): FileNode[] => {
           return items.map((n) => {
@@ -333,7 +412,7 @@ export function WikiTree({ api }: { api: PluginAPI }) {
     } catch {
       // ignore
     }
-  }, [showHidden]);
+  }, [showHidden, wikiStyle]);
 
   // Select file
   const selectFile = useCallback((path: string) => {
@@ -467,7 +546,7 @@ export function WikiTree({ api }: { api: PluginAPI }) {
   }, []);
 
   // Display tree based on mode
-  const displayTree = viewMode === 'view' ? filterMarkdownTree(tree) : tree;
+  const displayTree = viewMode === 'view' ? filterMarkdownTree(tree, wikiStyle) : tree;
 
   // Error state
   if (configError) {
@@ -546,6 +625,7 @@ export function WikiTree({ api }: { api: PluginAPI }) {
               selected: selectedPath,
               focused: focusedPath,
               viewMode,
+              wikiStyle,
               onContextMenu: handleContextMenu,
             }),
           ),

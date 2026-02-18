@@ -1,3 +1,9 @@
+export interface ArchInfo {
+  arch: string;
+  platform: string;
+  rosetta: boolean;
+}
+
 export type OrchestratorId = 'claude-code' | (string & {});
 
 export interface ProviderCapabilities {
@@ -40,7 +46,7 @@ export interface Agent {
   kind: AgentKind;
   status: AgentStatus;
   color: string;
-  emoji?: string;
+  icon?: string;         // filename in ~/.clubhouse/agent-icons/
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
@@ -100,7 +106,7 @@ export interface DurableAgentConfig {
   id: string;
   name: string;
   color: string;
-  emoji?: string;
+  icon?: string;        // filename in ~/.clubhouse/agent-icons/
   branch?: string;
   worktreePath?: string;
   createdAt: string;
@@ -135,7 +141,48 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates';
+
+// --- Auto-update types ---
+
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'ready' | 'error';
+
+export interface UpdateArtifact {
+  url: string;
+  sha256: string;
+  size?: number;
+}
+
+export interface UpdateManifest {
+  version: string;
+  releaseDate: string;
+  releaseNotes?: string;
+  releaseMessage?: string;
+  mandatory?: boolean;
+  artifacts: Record<string, UpdateArtifact>;
+}
+
+export interface UpdateStatus {
+  state: UpdateState;
+  availableVersion: string | null;
+  releaseNotes: string | null;
+  releaseMessage: string | null;
+  downloadProgress: number;  // 0-100
+  error: string | null;
+  downloadPath: string | null;
+}
+
+export interface UpdateSettings {
+  autoUpdate: boolean;
+  lastCheck: string | null;
+  dismissedVersion: string | null;
+  lastSeenVersion: string | null;
+}
+
+export interface PendingReleaseNotes {
+  version: string;
+  releaseNotes: string;
+}
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 

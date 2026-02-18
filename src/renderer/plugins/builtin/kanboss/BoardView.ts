@@ -326,7 +326,7 @@ export function BoardView({ api }: { api: PluginAPI }) {
               },
                 React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, lane.name),
                 managerAgent && React.createElement('div', { className: 'flex items-center gap-1 mt-1' },
-                  managerAgent.emoji && React.createElement('span', { className: 'text-[10px]' }, managerAgent.emoji),
+                  managerAgent.icon && React.createElement('span', { className: 'text-[10px]' }, managerAgent.name.charAt(0)),
                   React.createElement('span', { className: 'text-[9px] text-ctp-subtext0 truncate' }, managerAgent.name),
                 ),
               ),

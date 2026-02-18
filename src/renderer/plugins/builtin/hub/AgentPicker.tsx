@@ -64,7 +64,7 @@ export function AgentPicker({ api, agents, onPick }: AgentPickerProps) {
                 >
                   <AgentAvatar agentId={a.id} size="sm" showStatusRing />
                   <span className="text-xs text-ctp-text truncate flex-1">
-                    {a.emoji ? `${a.emoji} ` : ''}{a.name}
+                    {a.name}
                   </span>
                   <span className={`text-[10px] ${a.status === 'running' ? 'text-green-400' : a.status === 'error' ? 'text-red-400' : 'text-ctp-overlay0'}`}>
                     {a.status}

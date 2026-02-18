@@ -207,6 +207,26 @@ export function readIconData(filename: string): string | null {
   return `data:${mime};base64,${data.toString('base64')}`;
 }
 
+/** Save a cropped PNG data URL as the project icon. Returns the filename. */
+export function saveCroppedIcon(projectId: string, dataUrl: string): string {
+  removeIconFile(projectId);
+
+  const filename = `${projectId}.png`;
+  const dest = path.join(getIconsDir(), filename);
+
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
+
+  const projects = readProjects();
+  const idx = projects.findIndex((p) => p.id === projectId);
+  if (idx !== -1) {
+    projects[idx].icon = filename;
+    writeProjects(projects);
+  }
+
+  return filename;
+}
+
 export function reorder(orderedIds: string[]): Project[] {
   const projects = readProjects();
   const byId = new Map(projects.map((p) => [p.id, p]));

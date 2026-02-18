@@ -41,6 +41,10 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.REORDER, orderedIds),
     readIcon: (filename: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_ICON, filename),
+    pickImage: () =>
+      ipcRenderer.invoke(IPC.PROJECT.PICK_IMAGE),
+    saveCroppedIcon: (projectId: string, dataUrl: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.SAVE_CROPPED_ICON, projectId, dataUrl),
     listClubhouseFiles: (projectPath: string): Promise<string[]> =>
       ipcRenderer.invoke(IPC.PROJECT.LIST_CLUBHOUSE_FILES, projectPath),
     resetProject: (projectPath: string): Promise<boolean> =>
@@ -55,8 +59,16 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
       ipcRenderer.invoke(IPC.AGENT.RENAME_DURABLE, projectPath, agentId, newName),
-    updateDurable: (projectPath: string, agentId: string, updates: { name?: string; color?: string; emoji?: string | null }) =>
+    updateDurable: (projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE, projectPath, agentId, updates),
+    pickIcon: () =>
+      ipcRenderer.invoke(IPC.AGENT.PICK_ICON),
+    saveIcon: (projectPath: string, agentId: string, dataUrl: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_ICON, projectPath, agentId, dataUrl),
+    readIcon: (filename: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_ICON, filename),
+    removeIcon: (projectPath: string, agentId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.REMOVE_ICON, projectPath, agentId),
     reorderDurable: (projectPath: string, orderedIds: string[]) =>
       ipcRenderer.invoke(IPC.AGENT.REORDER_DURABLE, projectPath, orderedIds),
     getWorktreeStatus: (projectPath: string, agentId: string) =>
@@ -273,6 +285,11 @@ const api = {
       ipcRenderer.on(IPC.APP.OPEN_SETTINGS, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.OPEN_SETTINGS, listener); };
     },
+    onOpenAbout: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.OPEN_ABOUT, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.OPEN_ABOUT, listener); };
+    },
     getTheme: () =>
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>
@@ -283,6 +300,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, settings),
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION),
+    getArchInfo: (): Promise<{ arch: string; platform: string; rosetta: boolean }> =>
+      ipcRenderer.invoke(IPC.APP.GET_ARCH_INFO),
     getHeadlessSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_HEADLESS_SETTINGS),
     saveHeadlessSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, string> }) =>
@@ -293,6 +312,33 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_BADGE_SETTINGS),
     saveBadgeSettings: (settings: any) =>
       ipcRenderer.invoke(IPC.APP.SAVE_BADGE_SETTINGS, settings),
+    getUpdateSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_UPDATE_SETTINGS),
+    saveUpdateSettings: (settings: { autoUpdate: boolean; lastCheck: string | null; dismissedVersion: string | null; lastSeenVersion: string | null }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_UPDATE_SETTINGS, settings),
+    checkForUpdates: () =>
+      ipcRenderer.invoke(IPC.APP.CHECK_FOR_UPDATES),
+    getUpdateStatus: () =>
+      ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
+    applyUpdate: () =>
+      ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
+    clearPendingReleaseNotes: () =>
+      ipcRenderer.invoke(IPC.APP.CLEAR_PENDING_RELEASE_NOTES),
+    onUpdateStatusChanged: (callback: (status: {
+      state: string;
+      availableVersion: string | null;
+      releaseNotes: string | null;
+      releaseMessage: string | null;
+      downloadProgress: number;
+      error: string | null;
+      downloadPath: string | null;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+      ipcRenderer.on(IPC.APP.UPDATE_STATUS_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
+    },
   },
 };
 

@@ -103,10 +103,32 @@ export function createWikiLinkExtension(pageNames: string[]) {
   };
 }
 
-export function renderWikiMarkdown(content: string, pageNames: string[]): string {
+/**
+ * Resolve an ADO wiki link href to a wiki file path.
+ * ADO links use formats like /Page-Name, /Folder/Page-Name, or ./Relative-Page.
+ * Returns the resolved page name (without .md extension) or null if external.
+ */
+export function resolveAdoLink(href: string): string | null {
+  // Skip external URLs and anchors
+  if (/^https?:\/\//i.test(href) || href.startsWith('#') || href.startsWith('mailto:')) {
+    return null;
+  }
+  // Strip leading / or ./
+  let path = href.replace(/^\.?\//, '');
+  // Strip .md extension if present
+  path = path.replace(/\.md$/i, '');
+  // Decode URI components (but keep %2D as hyphen since we're resolving to filenames)
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Invalid URI — keep as-is
+  }
+  return path || null;
+}
+
+export function renderWikiMarkdown(content: string, pageNames: string[], wikiStyle: string = 'github'): string {
   const md = new Marked();
 
-  const renderer = new Marked().defaults.renderer!;
   const codeRenderer = (args: { text: string; lang?: string }) => {
     const lang = args.lang || '';
     const code = args.text;
@@ -118,9 +140,28 @@ export function renderWikiMarkdown(content: string, pageNames: string[]): string
     return `<pre><code class="hljs">${auto}</code></pre>`;
   };
 
+  // In ADO mode, override the link renderer to mark internal links with data-wiki-link
+  const linkRenderer = wikiStyle === 'ado'
+    ? (args: { href: string; text: string; title?: string | null }) => {
+        const resolved = resolveAdoLink(args.href);
+        if (resolved) {
+          const titleAttr = args.title ? ` title="${args.title}"` : '';
+          return `<a class="wiki-link" data-wiki-link="${resolved}" href="#"${titleAttr}>${args.text}</a>`;
+        }
+        // External link — render normally
+        const titleAttr = args.title ? ` title="${args.title}"` : '';
+        return `<a href="${args.href}"${titleAttr} target="_blank" rel="noopener noreferrer">${args.text}</a>`;
+      }
+    : undefined;
+
+  const extensions = wikiStyle === 'github' ? [createWikiLinkExtension(pageNames)] : [];
+
   md.use({
-    extensions: [createWikiLinkExtension(pageNames)],
-    renderer: { code: codeRenderer },
+    extensions,
+    renderer: {
+      code: codeRenderer,
+      ...(linkRenderer ? { link: linkRenderer } : {}),
+    },
   });
 
   return md.parse(content) as string;
@@ -132,29 +173,48 @@ interface WikiMarkdownPreviewProps {
   content: string;
   pageNames: string[];
   onNavigate: (pageName: string) => void;
+  wikiStyle?: string;
 }
 
-export function WikiMarkdownPreview({ content, pageNames, onNavigate }: WikiMarkdownPreviewProps) {
+export function WikiMarkdownPreview({ content, pageNames, onNavigate, wikiStyle = 'github' }: WikiMarkdownPreviewProps) {
   injectWikiLinkStyle();
 
   const containerRef = useRef<HTMLDivElement>(null);
 
   const html = useMemo(() => {
-    return renderWikiMarkdown(content, pageNames);
-  }, [content, pageNames]);
+    return renderWikiMarkdown(content, pageNames, wikiStyle);
+  }, [content, pageNames, wikiStyle]);
 
   const handleClick = useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement;
-    const link = target.closest('[data-wiki-link]') as HTMLElement | null;
-    if (!link) return;
-    // Only navigate valid (non-broken) links
-    if (link.classList.contains('wiki-link-broken')) return;
-    e.preventDefault();
-    const pageName = link.getAttribute('data-wiki-link');
-    if (pageName) {
-      onNavigate(pageName);
+
+    // Handle wiki-link clicks (both [[wiki links]] and ADO-style marked links)
+    const wikiLink = target.closest('[data-wiki-link]') as HTMLElement | null;
+    if (wikiLink) {
+      if (wikiLink.classList.contains('wiki-link-broken')) return;
+      e.preventDefault();
+      const pageName = wikiLink.getAttribute('data-wiki-link');
+      if (pageName) {
+        onNavigate(pageName);
+      }
+      return;
     }
-  }, [onNavigate]);
+
+    // In ADO mode, intercept any remaining <a> clicks that might be internal links
+    if (wikiStyle === 'ado') {
+      const anchor = target.closest('a') as HTMLAnchorElement | null;
+      if (anchor) {
+        const href = anchor.getAttribute('href') || '';
+        if (href && !href.startsWith('#') && !/^https?:\/\//i.test(href) && !href.startsWith('mailto:')) {
+          e.preventDefault();
+          const resolved = resolveAdoLink(href);
+          if (resolved) {
+            onNavigate(resolved);
+          }
+        }
+      }
+    }
+  }, [onNavigate, wikiStyle]);
 
   useEffect(() => {
     const el = containerRef.current;

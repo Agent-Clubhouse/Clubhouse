@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { WikiTree } from './WikiTree';
+import { WikiTree, parseOrderFile, sortByOrder } from './WikiTree';
 import { WikiViewer } from './WikiViewer';
 import { wikiState } from './state';
 import { createMockAPI } from '../../testing';
@@ -20,8 +20,8 @@ vi.mock('../files/MarkdownPreview', () => ({
 }));
 
 vi.mock('./WikiMarkdownPreview', () => ({
-  WikiMarkdownPreview: ({ content, pageNames, onNavigate }: { content: string; pageNames: string[]; onNavigate: (name: string) => void }) =>
-    React.createElement('div', { 'data-testid': 'markdown-preview' }, content),
+  WikiMarkdownPreview: ({ content, pageNames, onNavigate, wikiStyle }: { content: string; pageNames: string[]; onNavigate: (name: string) => void; wikiStyle?: string }) =>
+    React.createElement('div', { 'data-testid': 'markdown-preview', 'data-wiki-style': wikiStyle || 'github' }, content),
 }));
 
 // ── Test data ─────────────────────────────────────────────────────────
@@ -65,8 +65,12 @@ function createWikiAPI(scopedOverrides?: Partial<FilesAPI>, apiOverrides?: Parti
       forRoot: vi.fn(() => scoped),
     },
     settings: {
-      get: (key: string) => key === 'wikiPath' ? '/path/to/wiki' : false,
-      getAll: () => ({ wikiPath: '/path/to/wiki', showHiddenFiles: false }),
+      get: (key: string) => {
+        if (key === 'wikiPath') return '/path/to/wiki';
+        if (key === 'wikiStyle') return 'github';
+        return false;
+      },
+      getAll: () => ({ wikiPath: '/path/to/wiki', wikiStyle: 'github', showHiddenFiles: false }),
       onChange: () => ({ dispose: () => {} }),
     },
     agents: {
@@ -99,7 +103,7 @@ describe('WikiTree', () => {
     render(<WikiTree api={api} />);
 
     expect(await screen.findByText('Home')).toBeInTheDocument(); // prettified
-    expect(screen.getByText('guides')).toBeInTheDocument();
+    expect(screen.getByText('Guides')).toBeInTheDocument(); // directories also prettified in view mode
   });
 
   it('in view mode, filters to .md files only and prettifies names', async () => {
@@ -243,5 +247,169 @@ describe('WikiViewer', () => {
 
     await screen.findByTestId('markdown-preview');
     expect(screen.getByText('Send to Agent')).toBeInTheDocument();
+  });
+});
+
+// ── parseOrderFile tests ─────────────────────────────────────────────
+
+describe('parseOrderFile', () => {
+  it('parses simple .order file content', () => {
+    const result = parseOrderFile('Home\nGetting-Started\nAPI-Reference');
+    expect(result).toEqual(['Home', 'Getting-Started', 'API-Reference']);
+  });
+
+  it('ignores empty lines', () => {
+    const result = parseOrderFile('Home\n\nGetting-Started\n\n');
+    expect(result).toEqual(['Home', 'Getting-Started']);
+  });
+
+  it('trims whitespace', () => {
+    const result = parseOrderFile('  Home  \n  Getting-Started  ');
+    expect(result).toEqual(['Home', 'Getting-Started']);
+  });
+
+  it('ignores comment lines starting with #', () => {
+    const result = parseOrderFile('# comment\nHome\n# another comment\nGuide');
+    expect(result).toEqual(['Home', 'Guide']);
+  });
+
+  it('returns empty array for empty content', () => {
+    expect(parseOrderFile('')).toEqual([]);
+    expect(parseOrderFile('\n\n')).toEqual([]);
+  });
+});
+
+// ── sortByOrder tests ────────────────────────────────────────────────
+
+describe('sortByOrder', () => {
+  const nodes: FileNode[] = [
+    { name: 'Zebra.md', path: 'Zebra.md', isDirectory: false },
+    { name: 'Apple.md', path: 'Apple.md', isDirectory: false },
+    { name: 'Banana.md', path: 'Banana.md', isDirectory: false },
+    { name: 'guides', path: 'guides', isDirectory: true },
+  ];
+
+  it('sorts nodes according to .order list', () => {
+    const order = ['Banana', 'Zebra', 'guides', 'Apple'];
+    const sorted = sortByOrder(nodes, order);
+    expect(sorted.map((n) => n.name)).toEqual(['Banana.md', 'Zebra.md', 'guides', 'Apple.md']);
+  });
+
+  it('puts ordered items first, unordered items alphabetically after', () => {
+    const order = ['Banana'];
+    const sorted = sortByOrder(nodes, order);
+    expect(sorted[0].name).toBe('Banana.md');
+    // Remaining items should be alphabetical
+    expect(sorted.slice(1).map((n) => n.name)).toEqual(['Apple.md', 'guides', 'Zebra.md']);
+  });
+
+  it('returns original order when order list is empty', () => {
+    const sorted = sortByOrder(nodes, []);
+    expect(sorted).toEqual(nodes);
+  });
+
+  it('matches case-insensitively', () => {
+    const order = ['zebra', 'APPLE'];
+    const sorted = sortByOrder(nodes, order);
+    expect(sorted[0].name).toBe('Zebra.md');
+    expect(sorted[1].name).toBe('Apple.md');
+  });
+
+  it('matches directories without extension', () => {
+    const order = ['guides', 'Apple'];
+    const sorted = sortByOrder(nodes, order);
+    expect(sorted[0].name).toBe('guides');
+    expect(sorted[1].name).toBe('Apple.md');
+  });
+});
+
+// ── ADO-style WikiTree tests ─────────────────────────────────────────
+
+describe('WikiTree (ADO mode)', () => {
+  const ADO_WIKI_TREE: FileNode[] = [
+    {
+      name: 'Architecture',
+      path: 'Architecture',
+      isDirectory: true,
+      children: [
+        { name: 'API-Design.md', path: 'Architecture/API-Design.md', isDirectory: false },
+      ],
+    },
+    { name: 'Architecture.md', path: 'Architecture.md', isDirectory: false },
+    { name: 'Getting-Started.md', path: 'Getting-Started.md', isDirectory: false },
+    { name: '.order', path: '.order', isDirectory: false },
+  ];
+
+  function createAdoWikiAPI(scopedOverrides?: Partial<FilesAPI>) {
+    const scoped = createScopedFilesAPI({
+      readTree: vi.fn(async () => ADO_WIKI_TREE),
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.order') return 'Getting-Started\nArchitecture';
+        return '# ADO Wiki Page';
+      }),
+      ...scopedOverrides,
+    });
+    return createMockAPI({
+      files: {
+        ...createMockAPI().files,
+        forRoot: vi.fn(() => scoped),
+      },
+      settings: {
+        get: (key: string) => {
+          if (key === 'wikiPath') return '/path/to/wiki';
+          if (key === 'wikiStyle') return 'ado';
+          return false;
+        },
+        getAll: () => ({ wikiPath: '/path/to/wiki', wikiStyle: 'ado', showHiddenFiles: false }),
+        onChange: () => ({ dispose: () => {} }),
+      },
+      agents: {
+        ...createMockAPI().agents,
+        list: vi.fn(() => []),
+        runQuick: vi.fn(async () => 'agent-1'),
+      },
+      ui: {
+        ...createMockAPI().ui,
+        showInput: vi.fn(async () => 'test mission'),
+      },
+      context: {
+        mode: 'project',
+        projectId: 'test-project',
+        projectPath: '/project',
+      },
+    });
+  }
+
+  beforeEach(() => {
+    wikiState.reset();
+  });
+
+  it('hides .order files from the tree in ADO mode', async () => {
+    const api = createAdoWikiAPI();
+    render(<WikiTree api={api} />);
+
+    await screen.findByText('Getting Started'); // prettified ADO name
+    expect(screen.queryByText('.order')).not.toBeInTheDocument();
+  });
+
+  it('prettifies ADO names (dashes become spaces)', async () => {
+    const api = createAdoWikiAPI();
+    render(<WikiTree api={api} />);
+
+    expect(await screen.findByText('Getting Started')).toBeInTheDocument();
+  });
+
+  it('hides same-named .md files when folder exists (ADO pattern)', async () => {
+    const api = createAdoWikiAPI();
+    render(<WikiTree api={api} />);
+
+    await screen.findByText('Getting Started');
+    // Architecture.md should be hidden because Architecture/ folder exists
+    // But the Architecture folder should be visible
+    expect(screen.getByText('Architecture')).toBeInTheDocument();
+    // The standalone Architecture.md file should be hidden in view mode
+    const architectureElements = screen.getAllByText('Architecture');
+    // Only 1: the folder (not the .md file)
+    expect(architectureElements).toHaveLength(1);
   });
 });
