@@ -140,9 +140,11 @@ Once the user confirms:
 5. **Open PR** using `gh pr create`. The PR format is critical — the release pipeline extracts release notes from the PR body.
 
    - **Title:** `chore: bump version to <new-version>`
-   - **Body:** Markdown with the following structure. Skip any section that has no items. Do not include a section header if its list would be empty.
+   - **Body:** Markdown with the following structure. The first line **must** be the `Release:` title — the release pipeline parses this to populate the update banner. Skip any section that has no items. Do not include a section header if its list would be empty.
 
    ```markdown
+   Release: <Release Title>
+
    # New Features
    - Description A from the confirmed table
    - Description B from the confirmed table
@@ -162,6 +164,8 @@ Once the user confirms:
    Use a HEREDOC to pass the body:
    ```bash
    gh pr create --title "chore: bump version to <new-version>" --body "$(cat <<'EOF'
+   Release: <Release Title>
+
    ...body content...
    EOF
    )"
@@ -192,6 +196,6 @@ git checkout <agent-name>/standby
 2. **Never propose a major version bump.**
 3. **Non-User changes never appear in the release title, release notes table, or PR body.**
 4. **Internal changes appear in the table and PR body (as "Improvements") but not in the release title.**
-5. **The PR body format is load-bearing** — the release pipeline parses it. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body.
+5. **The PR body format is load-bearing** — the release pipeline parses `Release: <title>` from the first line and the section content as release notes. Do not add extra markdown, emoji, test plans, or co-authored-by lines to the PR body.
 6. **Version bump commits from previous releases must be skipped** during classification.
 7. **Iterate with the user** — do not open the PR until the user explicitly confirms the version, title, and notes.

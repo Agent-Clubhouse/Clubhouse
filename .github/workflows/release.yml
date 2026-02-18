@@ -67,18 +67,28 @@ jobs:
           COMMIT_SHA=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
           PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" --jq '.[0].number // empty')
 
-          # Release message = tag subject line (always clean, no signature)
-          RELEASE_MESSAGE=$(git tag -l --format='%(subject)' "${GITHUB_REF_NAME}")
-          echo "release_message=${RELEASE_MESSAGE}" >> "$GITHUB_OUTPUT"
-
-          # Release notes = PR body of the tagged commit
-          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/${COMMIT_SHA}/pulls" --jq '.[0].number // empty')
+          # Tag subject as fallback for release message
+          TAG_SUBJECT=$(git tag -l --format='%(subject)' "${GITHUB_REF_NAME}")
 
           if [ -z "$PR_NUMBER" ]; then
             echo "::warning::No PR found for tagged commit — release notes will be empty"
+            RELEASE_MESSAGE="$TAG_SUBJECT"
             RELEASE_NOTES=""
           else
-            RELEASE_NOTES=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.body // ""' \
+            PR_BODY=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.body // ""')
+
+            # Release message: extract from PR body "Release: ..." line, fall back to tag subject
+            PR_FIRST_LINE=$(echo "$PR_BODY" | head -1)
+            if echo "$PR_FIRST_LINE" | grep -q '^Release: '; then
+              RELEASE_MESSAGE=$(echo "$PR_FIRST_LINE" | sed 's/^Release: //')
+            else
+              RELEASE_MESSAGE="$TAG_SUBJECT"
+            fi
+
+            # Release notes: strip release title line, test plan, and metadata
+            RELEASE_NOTES=$(echo "$PR_BODY" \
+              | sed '1{/^Release: /d}' \
+              | sed '/./,$!d' \
               | sed '/^## Test [Pp]lan/,$d' \
               | sed '/Co-[Aa]uthored-[Bb]y:/d' \
               | sed '/Generated with \[Claude Code\]/d' \
@@ -86,6 +96,8 @@ jobs:
               | sed -e :a -e '/^[[:space:]]*$/{ $d; N; ba; }' \
             )
           fi
+
+          echo "release_message=${RELEASE_MESSAGE}" >> "$GITHUB_OUTPUT"
 
           {
             echo "release_notes<<RELEASE_NOTES_EOF"
