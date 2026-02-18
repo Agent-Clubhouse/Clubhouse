@@ -128,17 +128,74 @@ function isClubhouseCommand(cmd: string): boolean {
   return cmd.includes('CLUBHOUSE_AGENT_ID') || cmd.includes('/hook/');
 }
 
+/**
+ * Strip Clubhouse hook entries from a parsed settings object.
+ * Returns a new object with only user-authored hooks preserved.
+ * If no hooks remain for an event key, that key is removed.
+ * If no hook keys remain at all, the `hooks` property is removed.
+ */
+export function stripClubhouseHooks(settings: Record<string, unknown>): Record<string, unknown> {
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== 'object') return settings;
+
+  const hooksObj = hooks as Record<string, unknown[]>;
+  const cleaned: Record<string, unknown[]> = {};
+
+  for (const [eventKey, entries] of Object.entries(hooksObj)) {
+    if (!Array.isArray(entries)) continue;
+    const userEntries = entries.filter(e => !isClubhouseHookEntry(e));
+    if (userEntries.length > 0) {
+      cleaned[eventKey] = userEntries;
+    }
+  }
+
+  const result = { ...settings };
+  if (Object.keys(cleaned).length > 0) {
+    result.hooks = cleaned;
+  } else {
+    delete result.hooks;
+  }
+  return result;
+}
+
 function restoreSnapshot(absPath: string, snapshot: FileSnapshot): void {
   try {
     if (snapshot.originalContent === null) {
-      // File didn't exist before — delete it
+      // File didn't exist before us — do a smart cleanup of the current file
+      // instead of deleting it, since permissions or other settings may have
+      // been written after the snapshot was taken.
       if (fs.existsSync(absPath)) {
-        fs.unlinkSync(absPath);
-        appLog('core:config-pipeline', 'info', `Restored (deleted)`, { meta: { filePath: absPath } });
+        try {
+          const current = JSON.parse(fs.readFileSync(absPath, 'utf-8'));
+          const cleaned = stripClubhouseHooks(current);
+          // If only hooks existed and they were all ours, delete the file
+          if (Object.keys(cleaned).length === 0) {
+            fs.unlinkSync(absPath);
+            appLog('core:config-pipeline', 'info', `Restored (deleted, no remaining settings)`, { meta: { filePath: absPath } });
+          } else {
+            fs.writeFileSync(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+            appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks, preserved other settings)`, { meta: { filePath: absPath } });
+          }
+        } catch {
+          // File isn't valid JSON — fall back to deleting
+          fs.unlinkSync(absPath);
+          appLog('core:config-pipeline', 'info', `Restored (deleted, not valid JSON)`, { meta: { filePath: absPath } });
+        }
       }
     } else {
-      fs.writeFileSync(absPath, snapshot.originalContent, 'utf-8');
-      appLog('core:config-pipeline', 'info', `Restored original`, { meta: { filePath: absPath } });
+      // File existed before — read current state, strip our hooks, and
+      // merge with any settings that were in the original snapshot.
+      // This preserves permissions and other settings added after snapshot.
+      try {
+        const current = JSON.parse(fs.readFileSync(absPath, 'utf-8'));
+        const cleaned = stripClubhouseHooks(current);
+        fs.writeFileSync(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+        appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks)`, { meta: { filePath: absPath } });
+      } catch {
+        // Current file is corrupt — fall back to original snapshot
+        fs.writeFileSync(absPath, snapshot.originalContent, 'utf-8');
+        appLog('core:config-pipeline', 'info', `Restored original (current file corrupt)`, { meta: { filePath: absPath } });
+      }
     }
   } catch (err) {
     appLog('core:config-pipeline', 'error', `Failed to restore`, {

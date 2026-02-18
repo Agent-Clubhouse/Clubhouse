@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { McpServerEntry, SkillEntry, AgentTemplateEntry } from '../../shared/types';
+import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig } from '../../shared/types';
 
 /** Local settings shape for .clubhouse/settings.json */
 interface ProjectSettings {
@@ -195,4 +195,61 @@ export function createAgentTemplateDir(basePath: string, name: string, isSource:
   }
 
   return readmePath;
+}
+
+/**
+ * Read permissions from .claude/settings.local.json in the given worktree.
+ * Returns { allow?: string[], deny?: string[] }.
+ */
+export function readPermissions(worktreePath: string): PermissionsConfig {
+  const settingsPath = path.join(worktreePath, '.claude', 'settings.local.json');
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    const perms = raw.permissions;
+    if (!perms || typeof perms !== 'object') return {};
+    return {
+      allow: Array.isArray(perms.allow) ? perms.allow : undefined,
+      deny: Array.isArray(perms.deny) ? perms.deny : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Write permissions to .claude/settings.local.json in the given worktree.
+ * Merges with existing file content (preserves hooks and other settings).
+ */
+export function writePermissions(worktreePath: string, permissions: PermissionsConfig): void {
+  const claudeDir = path.join(worktreePath, '.claude');
+  if (!fs.existsSync(claudeDir)) {
+    fs.mkdirSync(claudeDir, { recursive: true });
+  }
+
+  const settingsPath = path.join(claudeDir, 'settings.local.json');
+
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+  } catch {
+    // File doesn't exist or is invalid
+  }
+
+  // Build the permissions object, omitting empty arrays
+  const permsObj: Record<string, string[]> = {};
+  if (permissions.allow && permissions.allow.length > 0) {
+    permsObj.allow = permissions.allow;
+  }
+  if (permissions.deny && permissions.deny.length > 0) {
+    permsObj.deny = permissions.deny;
+  }
+
+  const merged: Record<string, unknown> = { ...existing };
+  if (Object.keys(permsObj).length > 0) {
+    merged.permissions = permsObj;
+  } else {
+    delete merged.permissions;
+  }
+
+  fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
 }

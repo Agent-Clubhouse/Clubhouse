@@ -48,4 +48,12 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, (_event, basePath: string, name: string, isSource: boolean) => {
     return agentSettings.createAgentTemplateDir(basePath, name, isSource);
   });
+
+  ipcMain.handle(IPC.AGENT.READ_PERMISSIONS, (_event, worktreePath: string) => {
+    return agentSettings.readPermissions(worktreePath);
+  });
+
+  ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, (_event, worktreePath: string, permissions: { allow?: string[]; deny?: string[] }) => {
+    agentSettings.writePermissions(worktreePath, permissions);
+  });
 }

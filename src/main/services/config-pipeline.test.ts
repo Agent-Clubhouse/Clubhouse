@@ -20,8 +20,11 @@ import {
   hasSnapshot,
   getHooksConfigPath,
   isClubhouseHookEntry,
+  stripClubhouseHooks,
   _resetForTesting,
 } from './config-pipeline';
+
+const CLUBHOUSE_HOOK_CMD = 'cat | curl -s -X POST http://127.0.0.1:9999/hook/${CLUBHOUSE_AGENT_ID} -H \'Content-Type: application/json\' -H "X-Clubhouse-Nonce: ${CLUBHOUSE_HOOK_NONCE}" --data-binary @- || true';
 
 describe('config-pipeline', () => {
   beforeEach(() => {
@@ -70,35 +73,110 @@ describe('config-pipeline', () => {
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(true);
 
       // After restoring agent-2, file should be restored and no longer tracked
+      // Mock readFileSync for smart restore to read current file
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
       restoreForAgent('agent-2');
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(false);
     });
   });
 
   describe('restoreForAgent', () => {
-    it('restores original content when refCount hits 0', () => {
+    it('strips Clubhouse hooks from current file when restoring (file existed before)', () => {
+      // Original file had user content
       vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
 
       snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      // Current file now has permissions + clubhouse hooks
+      const currentContent = JSON.stringify({
+        permissions: { allow: ['Read'] },
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      });
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+
       restoreForAgent('agent-1');
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
-        path.resolve('/project/.claude/settings.local.json'),
-        '{"user": true}',
-        'utf-8',
-      );
+      // Should write back with hooks stripped but permissions preserved
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(written.permissions).toEqual({ allow: ['Read'] });
+      expect(written.hooks).toBeUndefined();
     });
 
-    it('deletes file when original was null (file did not exist)', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      vi.mocked(fs.existsSync).mockReturnValue(true);
+    it('preserves user hooks while stripping Clubhouse hooks', () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce('{}');
 
       snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      const currentContent = JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: 'echo "user hook"' }] },
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      });
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+
+      restoreForAgent('agent-1');
+
+      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(written.hooks.PreToolUse).toHaveLength(1);
+      expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
+    });
+
+    it('deletes file when original was null and only clubhouse hooks remain', () => {
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      // Current file has only Clubhouse hooks
+      const currentContent = JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      });
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+
       restoreForAgent('agent-1');
 
       expect(fs.unlinkSync).toHaveBeenCalledWith(
         path.resolve('/project/.claude/settings.local.json'),
       );
+    });
+
+    it('preserves file when original was null but permissions were added', () => {
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      // Current file has permissions AND Clubhouse hooks
+      const currentContent = JSON.stringify({
+        permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] },
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      });
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+
+      restoreForAgent('agent-1');
+
+      // Should write back with hooks stripped but permissions preserved
+      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(written.permissions).toEqual({ allow: ['Bash(git:*)'], deny: ['WebFetch'] });
+      expect(written.hooks).toBeUndefined();
     });
 
     it('does not delete file when original was null and file already gone', () => {
@@ -128,6 +206,23 @@ describe('config-pipeline', () => {
       expect(fs.writeFileSync).not.toHaveBeenCalled();
       expect(fs.unlinkSync).not.toHaveBeenCalled();
     });
+
+    it('falls back to original snapshot when current file is corrupt', () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+
+      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      // Current file is corrupt JSON
+      vi.mocked(fs.readFileSync).mockReturnValueOnce('not valid json{{{');
+
+      restoreForAgent('agent-1');
+
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        path.resolve('/project/.claude/settings.local.json'),
+        '{"user": true}',
+        'utf-8',
+      );
+    });
   });
 
   describe('restoreAll', () => {
@@ -138,6 +233,11 @@ describe('config-pipeline', () => {
 
       snapshotFile('agent-1', '/project-a/.claude/settings.local.json');
       snapshotFile('agent-2', '/project-b/.github/hooks/hooks.json');
+
+      // Mock reads for smart restore
+      vi.mocked(fs.readFileSync)
+        .mockReturnValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }))
+        .mockReturnValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }));
 
       restoreAll();
 
@@ -150,12 +250,68 @@ describe('config-pipeline', () => {
       vi.mocked(fs.readFileSync).mockReturnValueOnce('original');
       snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
+      // Mock read for smart restore
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({}));
       restoreAll();
 
       // Calling restoreForAgent should be a no-op now
       vi.mocked(fs.writeFileSync).mockClear();
       restoreForAgent('agent-1');
       expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stripClubhouseHooks', () => {
+    it('removes all Clubhouse hook entries', () => {
+      const settings = {
+        permissions: { allow: ['Read'] },
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+          PostToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      };
+
+      const result = stripClubhouseHooks(settings);
+      expect(result.permissions).toEqual({ allow: ['Read'] });
+      expect(result.hooks).toBeUndefined();
+    });
+
+    it('preserves user hooks alongside Clubhouse hooks', () => {
+      const settings = {
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: 'echo "user"' }] },
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      };
+
+      const result = stripClubhouseHooks(settings);
+      expect((result.hooks as any).PreToolUse).toHaveLength(1);
+      expect((result.hooks as any).PreToolUse[0].hooks[0].command).toBe('echo "user"');
+    });
+
+    it('returns settings unchanged when no hooks present', () => {
+      const settings = { permissions: { allow: ['Read'] } };
+      const result = stripClubhouseHooks(settings);
+      expect(result).toEqual(settings);
+    });
+
+    it('does not mutate the original object', () => {
+      const settings = {
+        hooks: {
+          PreToolUse: [
+            { hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] },
+          ],
+        },
+      };
+      const original = JSON.parse(JSON.stringify(settings));
+      stripClubhouseHooks(settings);
+      expect(settings).toEqual(original);
     });
   });
 

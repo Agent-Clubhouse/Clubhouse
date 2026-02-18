@@ -185,6 +185,10 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource),
+    readPermissions: (worktreePath: string): Promise<{ allow?: string[]; deny?: string[] }> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_PERMISSIONS, worktreePath),
+    savePermissions: (worktreePath: string, permissions: { allow?: string[]; deny?: string[] }) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_PERMISSIONS, worktreePath, permissions),
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),

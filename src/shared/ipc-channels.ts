@@ -64,6 +64,8 @@ export const IPC = {
     SAVE_ICON: 'agent:save-icon',
     READ_ICON: 'agent:read-icon',
     REMOVE_ICON: 'agent:remove-icon',
+    READ_PERMISSIONS: 'agent:read-permissions',
+    SAVE_PERMISSIONS: 'agent:save-permissions',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
