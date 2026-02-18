@@ -271,7 +271,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
                     React.createElement('option', { value: '' }, 'None (manual only)'),
                     durableAgents.map((agent) =>
                       React.createElement('option', { key: agent.id, value: agent.id },
-                        `${agent.emoji ?? ''} ${agent.name}`.trim(),
+                        agent.name,
                       ),
                     ),
                   ),
@@ -287,7 +287,7 @@ export function BoardConfigDialog({ api, board }: BoardConfigDialogProps) {
                     React.createElement('option', { value: '' }, 'Same as manager'),
                     durableAgents.map((agent) =>
                       React.createElement('option', { key: agent.id, value: agent.id },
-                        `${agent.emoji ?? ''} ${agent.name}`.trim(),
+                        agent.name,
                       ),
                     ),
                   ),

@@ -12,6 +12,7 @@ interface Props {
 export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }: Props) {
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const bgColor = colorInfo?.hex || '#6366f1';
+  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
 
   const outerSize = size === 'sm' ? 'w-8 h-8' : 'w-9 h-9';
   const innerSize = size === 'sm' ? 'w-6 h-6' : 'w-7 h-7';
@@ -29,15 +30,11 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
       );
     }
 
-    // Emoji avatar
-    if (agent.emoji) {
-      const emojiSize = size === 'sm' ? 'text-sm' : 'text-base';
+    // Image icon avatar
+    if (agent.icon && iconDataUrl) {
       return (
-        <div
-          className={`${innerSize} rounded-full flex items-center justify-center ${emojiSize}`}
-          style={{ backgroundColor: bgColor }}
-        >
-          {agent.emoji}
+        <div className={`${innerSize} rounded-full overflow-hidden flex-shrink-0`}>
+          <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
         </div>
       );
     }

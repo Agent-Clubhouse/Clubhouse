@@ -213,7 +213,7 @@ export interface AgentInfo {
   kind: 'durable' | 'quick';
   status: 'running' | 'sleeping' | 'error';
   color: string;
-  emoji?: string;
+  icon?: string;
   exitCode?: number;
   mission?: string;
   projectId: string;

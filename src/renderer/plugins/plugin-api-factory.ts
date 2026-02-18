@@ -403,7 +403,7 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
           kind: a.kind,
           status: a.status,
           color: a.color,
-          emoji: a.emoji,
+          icon: a.icon,
           exitCode: a.exitCode,
           mission: a.mission,
           projectId: a.projectId,

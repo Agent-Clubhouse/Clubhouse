@@ -41,6 +41,10 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.REORDER, orderedIds),
     readIcon: (filename: string) =>
       ipcRenderer.invoke(IPC.PROJECT.READ_ICON, filename),
+    pickImage: () =>
+      ipcRenderer.invoke(IPC.PROJECT.PICK_IMAGE),
+    saveCroppedIcon: (projectId: string, dataUrl: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.SAVE_CROPPED_ICON, projectId, dataUrl),
     listClubhouseFiles: (projectPath: string): Promise<string[]> =>
       ipcRenderer.invoke(IPC.PROJECT.LIST_CLUBHOUSE_FILES, projectPath),
     resetProject: (projectPath: string): Promise<boolean> =>
@@ -55,8 +59,16 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
       ipcRenderer.invoke(IPC.AGENT.RENAME_DURABLE, projectPath, agentId, newName),
-    updateDurable: (projectPath: string, agentId: string, updates: { name?: string; color?: string; emoji?: string | null }) =>
+    updateDurable: (projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_DURABLE, projectPath, agentId, updates),
+    pickIcon: () =>
+      ipcRenderer.invoke(IPC.AGENT.PICK_ICON),
+    saveIcon: (projectPath: string, agentId: string, dataUrl: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_ICON, projectPath, agentId, dataUrl),
+    readIcon: (filename: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_ICON, filename),
+    removeIcon: (projectPath: string, agentId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.REMOVE_ICON, projectPath, agentId),
     reorderDurable: (projectPath: string, orderedIds: string[]) =>
       ipcRenderer.invoke(IPC.AGENT.REORDER_DURABLE, projectPath, orderedIds),
     getWorktreeStatus: (projectPath: string, agentId: string) =>
