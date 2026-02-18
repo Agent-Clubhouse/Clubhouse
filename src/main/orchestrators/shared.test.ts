@@ -119,12 +119,12 @@ describe('shared orchestrator utilities', () => {
   describe('homePath', () => {
     it('joins segments under home directory', () => {
       const result = homePath('.local', 'bin', 'claude');
-      expect(result).toBe(path.join('/tmp/clubhouse-test-home', '.local', 'bin', 'claude'));
+      expect(result).toBe(path.join(os.tmpdir(), 'clubhouse-test-home', '.local', 'bin', 'claude'));
     });
 
     it('works with single segment', () => {
       const result = homePath('.claude');
-      expect(result).toBe(path.join('/tmp/clubhouse-test-home', '.claude'));
+      expect(result).toBe(path.join(os.tmpdir(), 'clubhouse-test-home', '.claude'));
     });
   });
 

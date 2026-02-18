@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -10,7 +12,7 @@ vi.mock('fs', () => ({
 import * as fs from 'fs';
 import { getSettings, saveSettings } from './theme-service';
 
-const SETTINGS_PATH = '/tmp/clubhouse-test-userData/theme-settings.json';
+const SETTINGS_PATH = path.join(os.tmpdir(), 'clubhouse-test-userData', 'theme-settings.json');
 
 describe('theme-service', () => {
   beforeEach(() => {

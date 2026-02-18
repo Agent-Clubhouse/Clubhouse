@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
@@ -16,7 +17,7 @@ import * as fs from 'fs';
 import { execSync } from 'child_process';
 import { getGitInfo, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
 
-const DIR = '/test/repo';
+const DIR = path.join(path.sep, 'test', 'repo');
 
 describe('getGitInfo', () => {
   beforeEach(() => {
@@ -413,7 +414,7 @@ describe('discardFile', () => {
     const result = discardFile(DIR, 'new-file.ts', true);
     expect(result.ok).toBe(true);
     expect(result.message).toContain('Deleted');
-    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith('/test/repo/new-file.ts');
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(path.join(DIR, 'new-file.ts'));
   });
 
   it('returns error when untracked file delete fails', () => {

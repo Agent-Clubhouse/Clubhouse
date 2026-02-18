@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
@@ -16,8 +18,8 @@ import * as fs from 'fs';
 import * as logSettings from './log-settings';
 import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
 
-// The electron mock provides app.getPath('home') → '/tmp/clubhouse-test-home'
-const EXPECTED_LOG_DIR = '/tmp/clubhouse-test-home/.clubhouse/logs';
+// The electron mock provides app.getPath('home') → path.join(os.tmpdir(), 'clubhouse-test-home')
+const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
 
 describe('log-service', () => {
   beforeEach(() => {
