@@ -104,6 +104,12 @@ export const IPC = {
     SET_DOCK_BADGE: 'app:set-dock-badge',
     GET_BADGE_SETTINGS: 'app:get-badge-settings',
     SAVE_BADGE_SETTINGS: 'app:save-badge-settings',
+    GET_UPDATE_SETTINGS: 'app:get-update-settings',
+    SAVE_UPDATE_SETTINGS: 'app:save-update-settings',
+    CHECK_FOR_UPDATES: 'app:check-for-updates',
+    GET_UPDATE_STATUS: 'app:get-update-status',
+    APPLY_UPDATE: 'app:apply-update',
+    UPDATE_STATUS_CHANGED: 'app:update-status-changed',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

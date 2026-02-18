@@ -135,7 +135,40 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates';
+
+// --- Auto-update types ---
+
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'ready' | 'error';
+
+export interface UpdateArtifact {
+  url: string;
+  sha256: string;
+  size?: number;
+}
+
+export interface UpdateManifest {
+  version: string;
+  releaseDate: string;
+  releaseNotes?: string;
+  mandatory?: boolean;
+  artifacts: Record<string, UpdateArtifact>;
+}
+
+export interface UpdateStatus {
+  state: UpdateState;
+  availableVersion: string | null;
+  releaseNotes: string | null;
+  downloadProgress: number;  // 0-100
+  error: string | null;
+  downloadPath: string | null;
+}
+
+export interface UpdateSettings {
+  autoUpdate: boolean;
+  lastCheck: string | null;
+  dismissedVersion: string | null;
+}
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
