@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   readFileSync: vi.fn(),
@@ -8,8 +9,8 @@ vi.mock('fs', () => ({
 import * as fs from 'fs';
 import { addEntries, removeEntries, isIgnored } from './gitignore-manager';
 
-const PROJECT = '/projects/test-project';
-const GITIGNORE = `${PROJECT}/.gitignore`;
+const PROJECT = path.join(path.sep, 'projects', 'test-project');
+const GITIGNORE = path.join(PROJECT, '.gitignore');
 
 describe('gitignore-manager', () => {
   beforeEach(() => {

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
@@ -10,7 +12,7 @@ vi.mock('fs', () => ({
 import * as fs from 'fs';
 import { discoverCommunityPlugins, uninstallPlugin } from './plugin-discovery';
 
-const PLUGINS_DIR = '/tmp/clubhouse-test-home/.clubhouse/plugins';
+const PLUGINS_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugins');
 
 describe('plugin-discovery', () => {
   beforeEach(() => {
@@ -44,7 +46,7 @@ describe('plugin-discovery', () => {
       const result = discoverCommunityPlugins();
       expect(result).toHaveLength(1);
       expect(result[0].manifest.id).toBe('my-plugin');
-      expect(result[0].pluginPath).toBe(`${PLUGINS_DIR}/my-plugin`);
+      expect(result[0].pluginPath).toBe(path.join(PLUGINS_DIR, 'my-plugin'));
     });
 
     it('skips non-directory entries', () => {
@@ -114,7 +116,7 @@ describe('plugin-discovery', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       uninstallPlugin('my-plugin');
       expect(fs.rmSync).toHaveBeenCalledWith(
-        `${PLUGINS_DIR}/my-plugin`,
+        path.join(PLUGINS_DIR, 'my-plugin'),
         { recursive: true, force: true },
       );
     });

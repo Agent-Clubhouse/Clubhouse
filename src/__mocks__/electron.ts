@@ -1,6 +1,9 @@
 // Stub for electron module so main-process services can be imported in tests
+import * as os from 'os';
+import * as path from 'path';
+
 export const app = {
-  getPath: (name: string) => `/tmp/clubhouse-test-${name}`,
+  getPath: (name: string) => path.join(os.tmpdir(), `clubhouse-test-${name}`),
   isPackaged: false,
   getName: () => 'clubhouse-test',
   getVersion: () => '0.0.0-test',

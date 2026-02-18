@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('fs', () => ({
   readFileSync: vi.fn(),
@@ -16,7 +18,7 @@ import {
   incrementAttempt,
 } from './safe-mode';
 
-const MARKER_PATH = '/tmp/clubhouse-test-home/.clubhouse/.startup-marker';
+const MARKER_PATH = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', '.startup-marker');
 
 describe('safe-mode', () => {
   beforeEach(() => {
