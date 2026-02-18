@@ -531,6 +531,21 @@ describe('agentStore', () => {
       await getState().loadDurableAgents('proj_1', '/project');
       expect(getState().agents['durable_nomodel'].model).toBeUndefined();
     });
+
+    it('updates projectId when same agent is loaded under a different project', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'durable_dup', name: 'dup-agent', color: 'indigo', createdAt: '2024-01-01' },
+      ]);
+
+      // First load under project A
+      await getState().loadDurableAgents('proj_A', '/shared-path');
+      expect(getState().agents['durable_dup'].projectId).toBe('proj_A');
+
+      // Second load under project B (same path, different store ID)
+      await getState().loadDurableAgents('proj_B', '/shared-path');
+      expect(getState().agents['durable_dup'].projectId).toBe('proj_B');
+    });
   });
 
   describe('openAgentSettings', () => {

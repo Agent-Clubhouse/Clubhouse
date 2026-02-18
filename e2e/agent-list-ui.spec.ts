@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
+
 import { launchApp } from './launch';
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
@@ -9,7 +9,6 @@ let window: Page;
 
 const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
 const AGENTS_JSON = path.join(FIXTURE_A, '.clubhouse', 'agents.json');
-const PROJECTS_JSON = path.join(os.homedir(), '.clubhouse-dev', 'projects.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,6 +62,12 @@ function writeAgentsJson(
 
 /** Get agent IDs in DOM order from the agent list. */
 async function getDurableAgentOrder(): Promise<string[]> {
+  // Wait for at least one durable agent to render before querying DOM order.
+  // Durable agents load asynchronously via IPC after the project is added,
+  // so a raw evaluate() can return an empty array if called too early.
+  await expect(
+    window.locator('[data-testid^="durable-drag-"]').first(),
+  ).toBeVisible({ timeout: 15_000 });
   return window.evaluate(() => {
     const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
     return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
@@ -81,22 +86,6 @@ test.beforeAll(async () => {
     { id: 'durable_r2', name: 'beta-agent', color: 'green' },
     { id: 'durable_r3', name: 'gamma-agent', color: 'red' },
   ]);
-
-  // Remove project-a from the dev project store to prevent duplicate IDs
-  // from previous test runs (which would cause agent-list mismatch)
-  if (fs.existsSync(PROJECTS_JSON)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(PROJECTS_JSON, 'utf-8'));
-      const projects: any[] = Array.isArray(raw) ? raw : (raw.projects || []);
-      const filtered = projects.filter((p: any) => p.path !== FIXTURE_A);
-      const store = Array.isArray(raw)
-        ? filtered
-        : { ...raw, projects: filtered };
-      fs.writeFileSync(PROJECTS_JSON, JSON.stringify(store, null, 2), 'utf-8');
-    } catch {
-      // Ignore parse errors — app will handle gracefully
-    }
-  }
 
   ({ electronApp, window } = await launchApp());
   await addProject(FIXTURE_A);

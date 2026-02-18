@@ -314,6 +314,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           model: config.model,
           orchestrator: config.orchestrator,
         };
+      } else {
+        // Always update projectId — the same agents.json may be loaded
+        // under a different project store ID when a project is re-added
+        // or when multiple store entries share the same path.
+        agents[config.id] = { ...agents[config.id], projectId };
       }
     }
 
