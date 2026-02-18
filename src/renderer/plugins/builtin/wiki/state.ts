@@ -13,9 +13,34 @@ export const wikiState = {
   refreshCount: 0,
   listeners: new Set<() => void>(),
 
+  // Navigation history
+  history: [] as string[],
+  historyIndex: -1,
+  _isNavigatingHistory: false,
+
   setSelectedPath(path: string | null): void {
+    // Track navigation history for non-null paths
+    if (path && !this._isNavigatingHistory) {
+      // Truncate any forward history
+      this.history = this.history.slice(0, this.historyIndex + 1);
+      this.history.push(path);
+      this.historyIndex = this.history.length - 1;
+    }
+    this._isNavigatingHistory = false;
     this.selectedPath = path;
     this.notify();
+  },
+
+  goBack(): void {
+    if (this.historyIndex > 0) {
+      this.historyIndex--;
+      this._isNavigatingHistory = true;
+      this.setSelectedPath(this.history[this.historyIndex]);
+    }
+  },
+
+  canGoBack(): boolean {
+    return this.historyIndex > 0;
   },
 
   setDirty(dirty: boolean): void {
@@ -51,6 +76,9 @@ export const wikiState = {
     this.isDirty = false;
     this.viewMode = 'view';
     this.refreshCount = 0;
+    this.history = [];
+    this.historyIndex = -1;
+    this._isNavigatingHistory = false;
     this.listeners.clear();
   },
 };

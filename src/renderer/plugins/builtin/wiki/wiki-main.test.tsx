@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { WikiTree, parseOrderFile, sortByOrder } from './WikiTree';
+import { WikiTree, parseOrderFile, sortByOrder, filterMarkdownTree } from './WikiTree';
 import { WikiViewer } from './WikiViewer';
 import { wikiState } from './state';
 import { createMockAPI } from '../../testing';
@@ -411,5 +411,302 @@ describe('WikiTree (ADO mode)', () => {
     const architectureElements = screen.getAllByText('Architecture');
     // Only 1: the folder (not the .md file)
     expect(architectureElements).toHaveLength(1);
+  });
+
+  it('shows ADO folders with empty children (lazy-loaded, not yet expanded)', async () => {
+    // Simulate realistic depth-1 readTree output where subdirectories have children: []
+    const LAZY_ADO_TREE: FileNode[] = [
+      {
+        name: 'Architecture',
+        path: 'Architecture',
+        isDirectory: true,
+        children: [],  // Empty from depth-1 lazy loading
+      },
+      { name: 'Architecture.md', path: 'Architecture.md', isDirectory: false },
+      { name: 'Getting-Started.md', path: 'Getting-Started.md', isDirectory: false },
+      { name: '.order', path: '.order', isDirectory: false },
+    ];
+    const api = createAdoWikiAPI({
+      readTree: vi.fn(async () => LAZY_ADO_TREE),
+    });
+    render(<WikiTree api={api} />);
+
+    // Architecture folder should be visible even with empty children
+    expect(await screen.findByText('Architecture')).toBeInTheDocument();
+    expect(screen.getByText('Getting Started')).toBeInTheDocument();
+  });
+
+  it('expands ADO folder and auto-selects index page', async () => {
+    const LAZY_ADO_TREE: FileNode[] = [
+      {
+        name: 'Architecture',
+        path: 'Architecture',
+        isDirectory: true,
+        children: [],
+      },
+      { name: 'Architecture.md', path: 'Architecture.md', isDirectory: false },
+      { name: 'Getting-Started.md', path: 'Getting-Started.md', isDirectory: false },
+    ];
+
+    const ARCHITECTURE_CHILDREN: FileNode[] = [
+      { name: 'Architecture.md', path: 'Architecture/Architecture.md', isDirectory: false },
+      { name: 'API-Design.md', path: 'Architecture/API-Design.md', isDirectory: false },
+    ];
+
+    const readTreeMock = vi.fn(async (path: string) => {
+      if (path === 'Architecture') return ARCHITECTURE_CHILDREN;
+      return LAZY_ADO_TREE;
+    });
+
+    const api = createAdoWikiAPI({
+      readTree: readTreeMock,
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.order' || path === 'Architecture/.order') return '';
+        return '# ADO Wiki Page';
+      }),
+    });
+
+    render(<WikiTree api={api} />);
+    await screen.findByText('Architecture');
+
+    // Click the folder to expand it
+    fireEvent.click(screen.getByText('Architecture'));
+
+    // After expansion, the index page should be auto-selected
+    await waitFor(() => {
+      expect(wikiState.selectedPath).toBe('Architecture/Architecture.md');
+    });
+  });
+});
+
+// ── filterMarkdownTree tests ─────────────────────────────────────────
+
+describe('filterMarkdownTree', () => {
+  it('includes directories with loaded markdown children', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'docs',
+        path: 'docs',
+        isDirectory: true,
+        children: [
+          { name: 'guide.md', path: 'docs/guide.md', isDirectory: false },
+        ],
+      },
+      { name: 'readme.md', path: 'readme.md', isDirectory: false },
+    ];
+    const result = filterMarkdownTree(nodes, 'github');
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe('docs');
+    expect(result[1].name).toBe('readme.md');
+  });
+
+  it('excludes directories with loaded children but no markdown files', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'assets',
+        path: 'assets',
+        isDirectory: true,
+        children: [
+          { name: 'logo.png', path: 'assets/logo.png', isDirectory: false },
+        ],
+      },
+      { name: 'readme.md', path: 'readme.md', isDirectory: false },
+    ];
+    const result = filterMarkdownTree(nodes, 'github');
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('readme.md');
+  });
+
+  it('includes directories with empty children (lazy-loaded, not yet expanded)', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'guides',
+        path: 'guides',
+        isDirectory: true,
+        children: [],  // Empty from depth-1 lazy loading
+      },
+      { name: 'home.md', path: 'home.md', isDirectory: false },
+    ];
+    const result = filterMarkdownTree(nodes, 'github');
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe('guides');
+  });
+
+  it('includes directories with undefined children', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'guides',
+        path: 'guides',
+        isDirectory: true,
+        // children is undefined
+      },
+      { name: 'home.md', path: 'home.md', isDirectory: false },
+    ];
+    const result = filterMarkdownTree(nodes, 'github');
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe('guides');
+  });
+
+  it('in ADO mode, hides .order files and same-named .md files', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'Architecture',
+        path: 'Architecture',
+        isDirectory: true,
+        children: [],
+      },
+      { name: 'Architecture.md', path: 'Architecture.md', isDirectory: false },
+      { name: '.order', path: '.order', isDirectory: false },
+      { name: 'FAQ.md', path: 'FAQ.md', isDirectory: false },
+    ];
+    const result = filterMarkdownTree(nodes, 'ado');
+    expect(result).toHaveLength(2);
+    expect(result.map((n) => n.name)).toEqual(['Architecture', 'FAQ.md']);
+  });
+
+  it('in ADO mode, shows nested directories with empty children', () => {
+    const nodes: FileNode[] = [
+      {
+        name: 'Guides',
+        path: 'Guides',
+        isDirectory: true,
+        children: [
+          { name: 'Setup.md', path: 'Guides/Setup.md', isDirectory: false },
+          {
+            name: 'Advanced',
+            path: 'Guides/Advanced',
+            isDirectory: true,
+            children: [],  // Lazy-loaded subdirectory
+          },
+        ],
+      },
+    ];
+    const result = filterMarkdownTree(nodes, 'ado');
+    expect(result).toHaveLength(1);
+    expect(result[0].children).toHaveLength(2);
+    expect(result[0].children![1].name).toBe('Advanced');
+  });
+});
+
+// ── wikiState navigation history tests ───────────────────────────────
+
+describe('wikiState navigation history', () => {
+  beforeEach(() => {
+    wikiState.reset();
+  });
+
+  it('tracks navigation history when setSelectedPath is called', () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    wikiState.setSelectedPath('page3.md');
+    expect(wikiState.canGoBack()).toBe(true);
+  });
+
+  it('goBack navigates to previous page', () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    wikiState.setSelectedPath('page3.md');
+
+    wikiState.goBack();
+    expect(wikiState.selectedPath).toBe('page2.md');
+
+    wikiState.goBack();
+    expect(wikiState.selectedPath).toBe('page1.md');
+  });
+
+  it('canGoBack returns false when at start of history', () => {
+    expect(wikiState.canGoBack()).toBe(false);
+
+    wikiState.setSelectedPath('page1.md');
+    expect(wikiState.canGoBack()).toBe(false);
+
+    wikiState.setSelectedPath('page2.md');
+    expect(wikiState.canGoBack()).toBe(true);
+
+    wikiState.goBack();
+    expect(wikiState.canGoBack()).toBe(false);
+  });
+
+  it('navigating after goBack truncates forward history', () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    wikiState.setSelectedPath('page3.md');
+
+    wikiState.goBack(); // at page2
+    wikiState.setSelectedPath('page4.md'); // page3 should be dropped
+
+    wikiState.goBack();
+    expect(wikiState.selectedPath).toBe('page2.md');
+
+    // Can't go forward to page3 anymore
+    expect(wikiState.canGoBack()).toBe(true);
+  });
+
+  it('goBack notifies listeners', () => {
+    const listener = vi.fn();
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    wikiState.subscribe(listener);
+
+    wikiState.goBack();
+    expect(listener).toHaveBeenCalled();
+  });
+
+  it('reset clears history', () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    wikiState.reset();
+
+    expect(wikiState.canGoBack()).toBe(false);
+    expect(wikiState.selectedPath).toBeNull();
+  });
+
+  it('setSelectedPath(null) does not add to history', () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath(null);
+    expect(wikiState.canGoBack()).toBe(false);
+  });
+});
+
+// ── WikiViewer back button tests ─────────────────────────────────────
+
+describe('WikiViewer back button', () => {
+  beforeEach(() => {
+    wikiState.reset();
+  });
+
+  it('shows back button when there is navigation history', async () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    const api = createWikiAPI();
+    render(<WikiViewer api={api} />);
+
+    await screen.findByTestId('markdown-preview');
+    expect(screen.getByTitle('Go back')).toBeInTheDocument();
+  });
+
+  it('back button is disabled when no history', async () => {
+    wikiState.setSelectedPath('page1.md');
+    const api = createWikiAPI();
+    render(<WikiViewer api={api} />);
+
+    await screen.findByTestId('markdown-preview');
+    const backBtn = screen.getByTitle('Go back');
+    expect(backBtn).toBeDisabled();
+  });
+
+  it('clicking back button navigates to previous page', async () => {
+    wikiState.setSelectedPath('page1.md');
+    wikiState.setSelectedPath('page2.md');
+    const api = createWikiAPI();
+    render(<WikiViewer api={api} />);
+
+    await screen.findByTestId('markdown-preview');
+    const backBtn = screen.getByTitle('Go back');
+    fireEvent.click(backBtn);
+
+    await waitFor(() => {
+      expect(wikiState.selectedPath).toBe('page1.md');
+    });
   });
 });

@@ -88,6 +88,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
   const [unsavedDialog, setUnsavedDialog] = useState<{ pendingPath: string } | null>(null);
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [pageNames, setPageNames] = useState<string[]>([]);
+  const [canGoBack, setCanGoBack] = useState(wikiState.canGoBack());
 
   const contentRef = useRef(content);
   contentRef.current = content;
@@ -238,6 +239,7 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
         switchToFile(newPath);
       }
       setViewMode(wikiState.viewMode);
+      setCanGoBack(wikiState.canGoBack());
     });
   }, [switchToFile]);
 
@@ -280,6 +282,11 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
   const handleToggleMode = useCallback((mode: 'view' | 'edit') => {
     setViewMode(mode);
     wikiState.setViewMode(mode);
+  }, []);
+
+  // Back navigation
+  const handleGoBack = useCallback(() => {
+    wikiState.goBack();
   }, []);
 
   // Unsaved dialog handlers
@@ -341,6 +348,20 @@ export function WikiViewer({ api }: { api: PluginAPI }) {
     className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
   },
     React.createElement('div', { className: 'flex items-center gap-2 min-w-0' },
+      // Back button
+      React.createElement('button', {
+        className: `p-0.5 rounded transition-colors flex-shrink-0 ${canGoBack ? 'text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0' : 'text-ctp-surface1 cursor-default'}`,
+        onClick: canGoBack ? handleGoBack : undefined,
+        disabled: !canGoBack,
+        title: 'Go back',
+      },
+        React.createElement('svg', {
+          width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+          stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+        },
+          React.createElement('polyline', { points: '15 18 9 12 15 6' }),
+        ),
+      ),
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text truncate' }, displayName),
       isDirty
         ? React.createElement('span', {

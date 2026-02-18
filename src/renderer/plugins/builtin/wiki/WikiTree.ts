@@ -113,7 +113,7 @@ async function applyAdoOrdering(scoped: FilesAPI, dirPath: string, nodes: FileNo
   }
 }
 
-function filterMarkdownTree(nodes: FileNode[], wikiStyle: string = 'github'): FileNode[] {
+export function filterMarkdownTree(nodes: FileNode[], wikiStyle: string = 'github'): FileNode[] {
   // In ADO mode, build a set of folder names so we can hide same-named .md files
   // (the folder acts as the page; the .md file is its index content)
   const folderNames = wikiStyle === 'ado'
@@ -125,10 +125,16 @@ function filterMarkdownTree(nodes: FileNode[], wikiStyle: string = 'github'): Fi
     // In ADO mode, hide .order files from the tree
     if (wikiStyle === 'ado' && node.name === '.order') continue;
     if (node.isDirectory) {
-      const filteredChildren = node.children ? filterMarkdownTree(node.children, wikiStyle) : [];
-      // Only include directories that have markdown files (directly or in sub-dirs)
-      if (filteredChildren.length > 0) {
-        result.push({ ...node, children: filteredChildren });
+      // If children haven't been loaded yet (lazy loading), show the directory
+      // so users can expand it. Only filter out directories when children ARE
+      // loaded and contain no markdown files.
+      if (!node.children || node.children.length === 0) {
+        result.push(node);
+      } else {
+        const filteredChildren = filterMarkdownTree(node.children, wikiStyle);
+        if (filteredChildren.length > 0) {
+          result.push({ ...node, children: filteredChildren });
+        }
       }
     } else if (getExtension(node.name) === 'md') {
       // In ADO mode, hide .md files that are index pages for same-named folders
@@ -213,15 +219,7 @@ function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused
   const handleClick = () => {
     if (node.isDirectory) {
       onToggle(node.path);
-      // In ADO mode, clicking a folder also selects its index page (same-named .md)
-      if (wikiStyle === 'ado' && node.children) {
-        const indexPage = node.children.find(
-          (c) => !c.isDirectory && c.name.replace(/\.md$/i, '') === node.name,
-        );
-        if (indexPage) {
-          onSelect(indexPage.path);
-        }
-      }
+      // ADO index page auto-selection is handled in toggleExpand after children are loaded
     } else {
       onSelect(node.path);
     }
@@ -374,8 +372,20 @@ export function WikiTree({ api }: { api: PluginAPI }) {
     return result;
   }, [tree, expanded, viewMode, wikiStyle]);
 
+  // Track expanded state in a ref to avoid stale closures
+  // Select file
+  const selectFile = useCallback((path: string) => {
+    setSelectedPath(path);
+    wikiState.setSelectedPath(path);
+  }, []);
+
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
+    const wasExpanded = expandedRef.current.has(dirPath);
+
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(dirPath)) {
@@ -386,10 +396,12 @@ export function WikiTree({ api }: { api: PluginAPI }) {
       return next;
     });
 
+    // Only load children when expanding, not when collapsing
+    if (wasExpanded) return;
+
     const scoped = wikiFilesRef.current;
     if (!scoped) return;
 
-    // Find relative path from the node's path
     try {
       let nodes = await scoped.readTree(dirPath, { includeHidden: showHidden, depth: 1 });
       if (wikiStyle === 'ado') {
@@ -409,16 +421,21 @@ export function WikiTree({ api }: { api: PluginAPI }) {
         };
         return updateNode(prevTree);
       });
+
+      // In ADO mode, auto-select the index page when expanding a folder
+      if (wikiStyle === 'ado') {
+        const dirName = dirPath.split('/').pop() || dirPath;
+        const indexPage = nodes.find(
+          (c) => !c.isDirectory && c.name.replace(/\.md$/i, '').toLowerCase() === dirName.toLowerCase(),
+        );
+        if (indexPage) {
+          selectFile(indexPage.path);
+        }
+      }
     } catch {
       // ignore
     }
-  }, [showHidden, wikiStyle]);
-
-  // Select file
-  const selectFile = useCallback((path: string) => {
-    setSelectedPath(path);
-    wikiState.setSelectedPath(path);
-  }, []);
+  }, [showHidden, wikiStyle, selectFile]);
 
   // View/Edit mode toggle
   const handleToggleMode = useCallback((mode: 'view' | 'edit') => {
