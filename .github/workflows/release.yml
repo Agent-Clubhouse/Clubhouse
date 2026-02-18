@@ -76,9 +76,9 @@ jobs:
       matrix:
         include:
           - arch: arm64
-            runner: macos-14
+            runner: macos-latest
           - arch: x64
-            runner: macos-13
+            runner: macos-latest
     outputs:
       sha256_arm64: ${{ steps.hash.outputs.sha256_arm64 }}
       size_arm64: ${{ steps.hash.outputs.size_arm64 }}
