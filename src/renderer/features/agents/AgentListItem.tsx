@@ -3,7 +3,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
-import { getOrchestratorColor, getModelColor } from './orchestrator-colors';
+import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 
 interface Props {
   agent: Agent;
@@ -31,7 +31,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const providerInfo = allOrchestrators.find((o) => o.id === (agent.orchestrator || 'claude-code'));
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
@@ -117,14 +116,12 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
             return (
               <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
                 style={{ backgroundColor: c.bg, color: c.text }}>
-                {providerInfo ? (providerInfo.shortName || providerInfo.displayName) : 'Claude Code'}
+                {getOrchestratorLabel(orchId, allOrchestrators)}
               </span>
             );
           })()}
           {(() => {
-            const modelLabel = agent.model && agent.model !== 'default'
-              ? agent.model.charAt(0).toUpperCase() + agent.model.slice(1)
-              : 'Default';
+            const modelLabel = formatModelLabel(agent.model);
             const c = agent.model && agent.model !== 'default'
               ? getModelColor(agent.model)
               : { bg: 'rgba(148,163,184,0.15)', text: '#94a3b8' };

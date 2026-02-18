@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { CompletedQuickAgent } from '../../../shared/types';
 import { TranscriptViewer } from './TranscriptViewer';
-import { getOrchestratorColor, getModelColor } from './orchestrator-colors';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 
 interface Props {
   completed: CompletedQuickAgent;
@@ -78,6 +79,7 @@ function ExitBadge({ exitCode, cancelled }: { exitCode: number; cancelled?: bool
 export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
   const [filesExpanded, setFilesExpanded] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const showToggle = completed.filesModified.length > 3;
   const visibleFiles = filesExpanded ? completed.filesModified : completed.filesModified.slice(0, 3);
 
@@ -99,7 +101,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               return (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px]"
                   style={{ backgroundColor: c.bg, color: c.text }}>
-                  {orchId}
+                  {getOrchestratorLabel(orchId, allOrchestrators)}
                 </span>
               );
             })()}
@@ -108,7 +110,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
               return (
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono"
                   style={{ backgroundColor: c.bg, color: c.text }}>
-                  {completed.model}
+                  {formatModelLabel(completed.model)}
                 </span>
               );
             })()}
@@ -225,6 +227,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
 
 /** Compact ghost card for use in the sidebar AgentList */
 export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelect, isNested }: Props & { onSelect?: () => void; isNested?: boolean }) {
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   return (
     <div
       className={`flex items-center gap-2 py-2 group hover:bg-surface-0 transition-colors cursor-pointer ${isNested ? 'pl-7 pr-3' : 'px-3'}`}
@@ -262,7 +265,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
             return (
               <span className="inline-flex items-center px-1 py-0 rounded text-[9px] flex-shrink-0"
                 style={{ backgroundColor: c.bg, color: c.text }}>
-                {orchId}
+                {getOrchestratorLabel(orchId, allOrchestrators)}
               </span>
             );
           })()}
@@ -271,7 +274,7 @@ export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelec
             return (
               <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-mono flex-shrink-0"
                 style={{ backgroundColor: c.bg, color: c.text }}>
-                {completed.model}
+                {formatModelLabel(completed.model)}
               </span>
             );
           })()}
