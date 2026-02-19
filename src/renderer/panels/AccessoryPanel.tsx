@@ -43,6 +43,7 @@ function SettingsCategoryNav() {
             {navButton('Logging', 'logging')}
             {navButton('Plugins', 'plugins')}
             {navButton('Updates', 'updates')}
+            {navButton("What's New", 'whats-new')}
           </>
         ) : (
           <>

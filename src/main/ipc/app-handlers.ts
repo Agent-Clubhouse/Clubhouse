@@ -124,6 +124,10 @@ export function registerAppHandlers(): void {
     autoUpdateService.clearPendingReleaseNotes();
   });
 
+  ipcMain.handle(IPC.APP.GET_VERSION_HISTORY, () => {
+    return autoUpdateService.getVersionHistory();
+  });
+
   // --- Logging ---
   ipcMain.on(IPC.LOG.LOG_WRITE, (_event, entry: LogEntry) => {
     logService.log(entry);

@@ -123,6 +123,7 @@ export const IPC = {
     UPDATE_STATUS_CHANGED: 'app:update-status-changed',
     GET_PENDING_RELEASE_NOTES: 'app:get-pending-release-notes',
     CLEAR_PENDING_RELEASE_NOTES: 'app:clear-pending-release-notes',
+    GET_VERSION_HISTORY: 'app:get-version-history',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

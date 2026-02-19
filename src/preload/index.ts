@@ -332,6 +332,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
     clearPendingReleaseNotes: () =>
       ipcRenderer.invoke(IPC.APP.CLEAR_PENDING_RELEASE_NOTES),
+    getVersionHistory: () =>
+      ipcRenderer.invoke(IPC.APP.GET_VERSION_HISTORY),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
       availableVersion: string | null;

@@ -331,6 +331,53 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Update history.json
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          ACCOUNT="stclubhousereleases"
+          CONTAINER="releases"
+          MESSAGE=$(cat <<'MESSAGE_EOF'
+          ${{ needs.verify-tag.outputs.release_message }}
+          MESSAGE_EOF
+          )
+          NOTES=$(cat <<'NOTES_EOF'
+          ${{ needs.verify-tag.outputs.release_notes }}
+          NOTES_EOF
+          )
+
+          # Download existing history.json (or start with empty array)
+          az storage blob download \
+            --account-name "$ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "updates/history.json" \
+            --file history-existing.json \
+            --auth-mode login 2>/dev/null || echo '[]' > history-existing.json
+
+          # Validate existing history is valid JSON array
+          if ! jq -e 'type == "array"' history-existing.json > /dev/null 2>&1; then
+            echo "::warning::Existing history.json is not a valid array, starting fresh"
+            echo '[]' > history-existing.json
+          fi
+
+          # Create the new entry
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg message "$MESSAGE" \
+            --arg notes "$NOTES" \
+            '{
+              version: $version,
+              releaseDate: $date,
+              releaseMessage: $message,
+              releaseNotes: $notes
+            }' > new-entry.json
+
+          # Prepend new entry to history array
+          jq --slurpfile entry new-entry.json '. = [$entry[0]] + .' history-existing.json > artifacts/history.json
+
+          echo "Updated history.json ($(jq length artifacts/history.json) entries):"
+          jq '.[0]' artifacts/history.json
+
       - name: Upload to Azure Blob Storage
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
@@ -356,6 +403,16 @@ jobs:
             --container-name "$CONTAINER" \
             --name "updates/latest.json" \
             --file artifacts/latest.json \
+            --overwrite \
+            --content-type "application/json" \
+            --auth-mode login
+
+          # Upload history.json
+          az storage blob upload \
+            --account-name "$ACCOUNT" \
+            --container-name "$CONTAINER" \
+            --name "updates/history.json" \
+            --file artifacts/history.json \
             --overwrite \
             --content-type "application/json" \
             --auth-mode login

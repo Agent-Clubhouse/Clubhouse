@@ -141,7 +141,7 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new';
 
 // --- Auto-update types ---
 
@@ -183,6 +183,15 @@ export interface PendingReleaseNotes {
   version: string;
   releaseNotes: string;
 }
+
+export interface VersionHistoryEntry {
+  version: string;
+  releaseDate: string;
+  releaseMessage: string;
+  releaseNotes: string;
+}
+
+export type VersionHistory = VersionHistoryEntry[];
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 

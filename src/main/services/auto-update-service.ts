@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { IPC } from '../../shared/ipc-channels';
-import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes } from '../../shared/types';
+import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry, VersionHistory } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
 import { appLog } from './log-service';
 
@@ -14,7 +14,10 @@ import { appLog } from './log-service';
 // ---------------------------------------------------------------------------
 
 const UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/latest.json';
+const HISTORY_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/history.json';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const MAX_HISTORY_VERSIONS = 5;
+const MAX_HISTORY_MONTHS = 3;
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -85,7 +88,7 @@ function setState(state: UpdateState, patch?: Partial<UpdateStatus>): void {
   broadcastStatus();
 }
 
-function fetchJSON(url: string): Promise<UpdateManifest> {
+function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { timeout: 15_000 }, (res) => {
@@ -583,6 +586,78 @@ export function clearPendingReleaseNotes(): void {
     fs.unlinkSync(pendingNotesPath());
   } catch {
     // File may not exist
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Version history (for What's New settings page)
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter version history entries to only include versions that:
+ * - Are <= the current app version (user shouldn't see future versions)
+ * - Are within the last MAX_HISTORY_MONTHS months
+ * - Are capped at MAX_HISTORY_VERSIONS entries
+ * Results are returned newest-first.
+ */
+export function filterVersionHistory(
+  entries: VersionHistoryEntry[],
+  currentVersion: string,
+): VersionHistoryEntry[] {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - MAX_HISTORY_MONTHS);
+
+  return entries
+    .filter((entry) => {
+      // Only include versions <= current version
+      if (isNewerVersion(entry.version, currentVersion)) return false;
+      // Only include entries within the time window
+      const entryDate = new Date(entry.releaseDate);
+      if (entryDate < cutoff) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      // Newest first: sort by version descending
+      if (isNewerVersion(a.version, b.version)) return -1;
+      if (isNewerVersion(b.version, a.version)) return 1;
+      return 0;
+    })
+    .slice(0, MAX_HISTORY_VERSIONS);
+}
+
+/**
+ * Compose version history entries into a single markdown document.
+ * Each version gets an H1 header with the release title, followed by
+ * its release notes content, and separated by horizontal rules.
+ */
+export function composeVersionHistoryMarkdown(entries: VersionHistoryEntry[]): string {
+  return entries
+    .map((entry) => {
+      const title = entry.releaseMessage || `v${entry.version}`;
+      const header = `# ${title}`;
+      const notes = entry.releaseNotes || '';
+      return `${header}\n\n${notes}`;
+    })
+    .join('\n\n----\n\n');
+}
+
+export async function getVersionHistory(): Promise<{ markdown: string; entries: VersionHistoryEntry[] }> {
+  const currentVersion = app.getVersion();
+  appLog('update:history', 'info', 'Fetching version history', { meta: { currentVersion } });
+
+  try {
+    const entries = await fetchJSON<VersionHistoryEntry[]>(HISTORY_URL);
+    if (!Array.isArray(entries)) {
+      appLog('update:history', 'warn', 'Invalid history.json format');
+      return { markdown: '', entries: [] };
+    }
+    const filtered = filterVersionHistory(entries, currentVersion);
+    const markdown = composeVersionHistoryMarkdown(filtered);
+    return { markdown, entries: filtered };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    appLog('update:history', 'error', `Failed to fetch version history: ${msg}`);
+    throw err;
   }
 }
 

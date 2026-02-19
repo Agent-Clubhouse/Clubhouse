@@ -56,6 +56,12 @@ After an update is installed and Clubhouse relaunches, a **"What's New"** dialog
 
 Click **Got it** or press `Escape` to dismiss the dialog. The dialog only appears once per upgrade -- it does not show on fresh installs or when the version has not changed.
 
+## What's New Settings Page
+
+Navigate to **Settings > What's New** to view a complete history of recent release notes. This page shows release notes for versions up to your current build, including any versions you may have skipped. The history covers up to 5 versions or 3 months, whichever is fewer.
+
+Each version is displayed with its release title as a heading, followed by the full release notes, and separated by a horizontal rule from the next version. Versions are ordered newest-first so the most recent changes appear at the top.
+
 ## Update Settings
 
 Navigate to **Settings > Updates** to manage update behavior. The settings page provides:
