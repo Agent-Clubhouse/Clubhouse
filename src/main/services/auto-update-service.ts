@@ -259,6 +259,7 @@ async function downloadUpdate(
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
+        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -298,6 +299,7 @@ async function downloadUpdate(
     }
 
     appLog('update:download', 'info', 'Update verified and ready to install');
+    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
@@ -328,6 +330,8 @@ export async function applyUpdate(): Promise<void> {
       releaseNotes: status.releaseNotes,
     });
   }
+
+  clearPendingUpdateInfo();
 
   appLog('update:apply', 'info', 'Applying update', {
     meta: { version: status.availableVersion, downloadPath },
@@ -414,6 +418,83 @@ export async function applyUpdate(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Apply update silently on quit (no relaunch)
+// ---------------------------------------------------------------------------
+
+export function applyUpdateOnQuit(): void {
+  if (status.state !== 'ready' || !status.downloadPath) {
+    return; // No update ready — nothing to do
+  }
+
+  const downloadPath = status.downloadPath;
+
+  // Persist release notes for the What's New dialog after next launch
+  if (status.availableVersion && status.releaseNotes) {
+    writePendingReleaseNotes({
+      version: status.availableVersion,
+      releaseNotes: status.releaseNotes,
+    });
+  }
+
+  clearPendingUpdateInfo();
+
+  appLog('update:apply-on-quit', 'info', 'Applying update on quit (silent)', {
+    meta: { version: status.availableVersion, downloadPath },
+  });
+
+  if (process.platform === 'darwin') {
+    try {
+      const appPath = app.getPath('exe');
+      const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
+
+      if (appBundlePath.endsWith('.app') && fs.existsSync(downloadPath)) {
+        const { execSync } = require('child_process');
+        const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
+
+        if (fs.existsSync(tmpExtract)) {
+          fs.rmSync(tmpExtract, { recursive: true, force: true });
+        }
+        fs.mkdirSync(tmpExtract, { recursive: true });
+
+        execSync(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`, { timeout: 60_000 });
+
+        const extracted = fs.readdirSync(tmpExtract).find((f) => f.endsWith('.app'));
+        if (!extracted) throw new Error('No .app found in update archive');
+
+        const newAppPath = path.join(tmpExtract, extracted);
+
+        // Shell script replaces the app bundle after quit — NO relaunch
+        const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
+        fs.writeFileSync(script, [
+          '#!/bin/bash',
+          'sleep 1',
+          `rm -rf "${appBundlePath}"`,
+          `mv "${newAppPath}" "${appBundlePath}"`,
+          `rm -rf "${tmpExtract}"`,
+          `rm -f "${downloadPath}"`,
+          `rm -f "${script}"`,
+        ].join('\n'), { mode: 0o755 });
+
+        const { spawn } = require('child_process');
+        spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
+      }
+    } catch (err) {
+      appLog('update:apply-on-quit', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  } else if (process.platform === 'win32') {
+    try {
+      if (fs.existsSync(downloadPath)) {
+        const { spawn } = require('child_process');
+        spawn(downloadPath, ['--update'], { detached: true, stdio: 'ignore' }).unref();
+      }
+    } catch (err) {
+      appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  // Linux: no-op — manual install expected
+}
+
+// ---------------------------------------------------------------------------
 // Dismiss
 // ---------------------------------------------------------------------------
 
@@ -430,6 +511,46 @@ export function dismissUpdate(): void {
     downloadPath: null,
     error: null,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Pending update info (persisted so banner shows immediately on next launch)
+// ---------------------------------------------------------------------------
+
+interface PendingUpdateInfo {
+  version: string;
+  downloadPath: string;
+  releaseNotes: string | null;
+  releaseMessage: string | null;
+}
+
+function pendingUpdateInfoPath(): string {
+  return path.join(app.getPath('userData'), 'pending-update-info.json');
+}
+
+export function writePendingUpdateInfo(info: PendingUpdateInfo): void {
+  try {
+    fs.writeFileSync(pendingUpdateInfoPath(), JSON.stringify(info), 'utf-8');
+  } catch {
+    // Non-critical
+  }
+}
+
+export function readPendingUpdateInfo(): PendingUpdateInfo | null {
+  try {
+    const data = fs.readFileSync(pendingUpdateInfoPath(), 'utf-8');
+    return JSON.parse(data) as PendingUpdateInfo;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingUpdateInfo(): void {
+  try {
+    fs.unlinkSync(pendingUpdateInfoPath());
+  } catch {
+    // File may not exist
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +602,35 @@ export function startPeriodicChecks(): void {
   // Seed lastSeenVersion on first launch to prevent What's New on fresh install
   if (settings.lastSeenVersion === null) {
     saveSettings({ ...settings, lastSeenVersion: app.getVersion() });
+  }
+
+  // Clear dismissedVersion on startup so the banner always shows if an update
+  // is already downloaded. The dismiss is session-scoped (renderer-side timer).
+  if (settings.dismissedVersion) {
+    saveSettings({ ...settings, dismissedVersion: null });
+  }
+
+  // Restore ready state immediately if a pending update was downloaded in a
+  // previous session and the file is still on disk.
+  const pending = readPendingUpdateInfo();
+  if (pending && fs.existsSync(pending.downloadPath)) {
+    const currentVersion = app.getVersion();
+    if (isNewerVersion(pending.version, currentVersion)) {
+      appLog('update:restore', 'info', 'Restoring pending update from previous session', {
+        meta: { version: pending.version },
+      });
+      setState('ready', {
+        availableVersion: pending.version,
+        releaseNotes: pending.releaseNotes,
+        releaseMessage: pending.releaseMessage,
+        downloadProgress: 100,
+        downloadPath: pending.downloadPath,
+        error: null,
+      });
+    } else {
+      // The pending update is for a version we already have (or older) — clean up
+      clearPendingUpdateInfo();
+    }
   }
 
   if (!settings.autoUpdate) return;

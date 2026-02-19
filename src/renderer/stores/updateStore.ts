@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import type { UpdateStatus, UpdateSettings, PendingReleaseNotes } from '../../shared/types';
 
+export const DISMISS_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+
 interface UpdateStoreState {
   status: UpdateStatus;
   settings: UpdateSettings;
@@ -83,6 +87,12 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
 
   dismiss: () => {
     set({ dismissed: true });
+    // Re-show the banner after 4 hours
+    if (dismissTimer) clearTimeout(dismissTimer);
+    dismissTimer = setTimeout(() => {
+      set({ dismissed: false });
+      dismissTimer = null;
+    }, DISMISS_DURATION_MS);
   },
 
   checkWhatsNew: async () => {

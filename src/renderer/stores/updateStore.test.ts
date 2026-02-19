@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useUpdateStore, initUpdateListener } from './updateStore';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { useUpdateStore, initUpdateListener, DISMISS_DURATION_MS } from './updateStore';
 
 // Mock window.clubhouse API
 const mockGetUpdateSettings = vi.fn();
@@ -192,9 +192,49 @@ describe('updateStore', () => {
   });
 
   describe('dismiss', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it('sets dismissed to true', () => {
       useUpdateStore.getState().dismiss();
       expect(useUpdateStore.getState().dismissed).toBe(true);
+    });
+
+    it('re-shows banner after 4 hours', () => {
+      useUpdateStore.getState().dismiss();
+      expect(useUpdateStore.getState().dismissed).toBe(true);
+
+      // Advance just under 4 hours — should still be dismissed
+      vi.advanceTimersByTime(DISMISS_DURATION_MS - 1000);
+      expect(useUpdateStore.getState().dismissed).toBe(true);
+
+      // Advance past 4 hours — should be un-dismissed
+      vi.advanceTimersByTime(1000);
+      expect(useUpdateStore.getState().dismissed).toBe(false);
+    });
+
+    it('resets timer on re-dismiss', () => {
+      useUpdateStore.getState().dismiss();
+
+      // Advance 2 hours
+      vi.advanceTimersByTime(DISMISS_DURATION_MS / 2);
+      expect(useUpdateStore.getState().dismissed).toBe(true);
+
+      // Dismiss again — should restart the 4-hour timer
+      useUpdateStore.getState().dismiss();
+
+      // Advance another 2 hours (would have expired with original timer)
+      vi.advanceTimersByTime(DISMISS_DURATION_MS / 2);
+      expect(useUpdateStore.getState().dismissed).toBe(true);
+
+      // Advance the remaining 2 hours to hit the new timer
+      vi.advanceTimersByTime(DISMISS_DURATION_MS / 2);
+      expect(useUpdateStore.getState().dismissed).toBe(false);
     });
   });
 
