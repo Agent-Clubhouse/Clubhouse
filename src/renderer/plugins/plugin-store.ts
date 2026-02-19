@@ -23,9 +23,11 @@ interface PluginState {
   modules: Record<string, PluginModule>;
   safeModeActive: boolean;
   pluginSettings: Record<string, Record<string, unknown>>; // "projectId:pluginId" or "app:pluginId" -> settings
+  externalPluginsEnabled: boolean;
   permissionViolations: PermissionViolation[];
 
   // Actions
+  setExternalPluginsEnabled: (enabled: boolean) => void;
   registerPlugin: (manifest: PluginManifest, source: PluginSource, pluginPath: string, status?: PluginStatus, error?: string) => void;
   setPluginStatus: (pluginId: string, status: PluginStatus, error?: string) => void;
   setPluginModule: (pluginId: string, mod: PluginModule) => void;
@@ -39,6 +41,7 @@ interface PluginState {
   setPluginSetting: (scope: string, pluginId: string, key: string, value: unknown) => void;
   loadPluginSettings: (settingsKey: string, settings: Record<string, unknown>) => void;
   setSafeModeActive: (active: boolean) => void;
+  removePlugin: (pluginId: string) => void;
   recordPermissionViolation: (violation: PermissionViolation) => void;
   clearPermissionViolation: (pluginId: string) => void;
 }
@@ -50,7 +53,11 @@ export const usePluginStore = create<PluginState>((set) => ({
   modules: {},
   safeModeActive: false,
   pluginSettings: {},
+  externalPluginsEnabled: false,
   permissionViolations: [],
+
+  setExternalPluginsEnabled: (enabled) =>
+    set({ externalPluginsEnabled: enabled }),
 
   registerPlugin: (manifest, source, pluginPath, status = 'registered', error) =>
     set((s) => ({
@@ -150,6 +157,20 @@ export const usePluginStore = create<PluginState>((set) => ({
 
   setSafeModeActive: (active) =>
     set({ safeModeActive: active }),
+
+  removePlugin: (pluginId) =>
+    set((s) => {
+      const { [pluginId]: _, ...restPlugins } = s.plugins;
+      const { [pluginId]: _mod, ...restModules } = s.modules;
+      return {
+        plugins: restPlugins,
+        modules: restModules,
+        appEnabled: s.appEnabled.filter((id) => id !== pluginId),
+        projectEnabled: Object.fromEntries(
+          Object.entries(s.projectEnabled).map(([pid, ids]) => [pid, ids.filter((id) => id !== pluginId)]),
+        ),
+      };
+    }),
 
   recordPermissionViolation: (violation) =>
     set((s) => ({

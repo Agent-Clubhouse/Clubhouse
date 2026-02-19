@@ -86,6 +86,7 @@ function resetPluginStore(): void {
     modules: {},
     safeModeActive: false,
     pluginSettings: {},
+    externalPluginsEnabled: false,
   });
 }
 
@@ -109,6 +110,10 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
         { manifest, pluginPath: '/plugins/community-1' },
       ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
 
       await initializePluginSystem();
 
@@ -122,6 +127,10 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
         { manifest: { id: 'bad-plugin' }, pluginPath: '/plugins/bad' },
       ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
 
       await initializePluginSystem();
 
@@ -143,6 +152,10 @@ describe('plugin-loader', () => {
 
     it('does not activate safe mode when attempt < 2', async () => {
       mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 1, lastEnabledPlugins: [] });
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
 
       await initializePluginSystem();
 
@@ -152,6 +165,7 @@ describe('plugin-loader', () => {
 
     it('loads app-enabled config from storage', async () => {
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
         if (req.key === 'app-enabled') return ['plugin-a', 'plugin-b'];
         return undefined;
       });
@@ -263,6 +277,33 @@ describe('plugin-loader', () => {
       expect(Object.keys(store.plugins)).toContain('b1');
       expect(Object.keys(store.plugins)).toContain('b2');
       expect(Object.keys(store.plugins)).toContain('b3');
+    });
+
+    // ── External plugins master switch ─────────────────────────────
+
+    it('skips community discovery when external plugins disabled', async () => {
+      // Default: storageRead returns undefined (falsy) for external-plugins-enabled
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'community-x' }), pluginPath: '/plugins/community-x' },
+      ]);
+
+      await initializePluginSystem();
+
+      expect(mockPlugin.discoverCommunity).not.toHaveBeenCalled();
+      expect(usePluginStore.getState().plugins['community-x']).toBeUndefined();
+      expect(usePluginStore.getState().externalPluginsEnabled).toBe(false);
+    });
+
+    it('sets externalPluginsEnabled from persisted value', async () => {
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().externalPluginsEnabled).toBe(true);
+      expect(mockPlugin.discoverCommunity).toHaveBeenCalled();
     });
   });
 

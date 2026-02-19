@@ -47,25 +47,41 @@ export async function initializePluginSystem(): Promise<void> {
     }
   }
 
-  // Discover community plugins
-  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
-  for (const { manifest: rawManifest, pluginPath } of communityPlugins) {
-    const result = validateManifest(rawManifest);
-    if (result.valid && result.manifest) {
-      store.registerPlugin(result.manifest, 'community', pluginPath, 'registered');
-    } else {
-      rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
-        meta: { pluginPath, errors: result.errors },
-      });
-      // Register as incompatible so it appears in settings
-      const partialManifest: PluginManifest = {
-        id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
-        name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
-        version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
-        engine: { api: 0 },
-        scope: 'project',
-      };
-      store.registerPlugin(partialManifest, 'community', pluginPath, 'incompatible', result.errors.join('; '));
+  // Read persisted external-plugins-enabled flag
+  let externalEnabled = false;
+  try {
+    const persisted = await window.clubhouse.plugin.storageRead({
+      pluginId: '_system',
+      scope: 'global',
+      key: 'external-plugins-enabled',
+    });
+    externalEnabled = persisted === true;
+  } catch {
+    // Default to disabled
+  }
+  store.setExternalPluginsEnabled(externalEnabled);
+
+  // Discover community plugins (only when external plugins are enabled)
+  if (externalEnabled) {
+    const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+    for (const { manifest: rawManifest, pluginPath } of communityPlugins) {
+      const result = validateManifest(rawManifest);
+      if (result.valid && result.manifest) {
+        store.registerPlugin(result.manifest, 'community', pluginPath, 'registered');
+      } else {
+        rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
+          meta: { pluginPath, errors: result.errors },
+        });
+        // Register as incompatible so it appears in settings
+        const partialManifest: PluginManifest = {
+          id: (rawManifest as Record<string, unknown>)?.id as string || pluginPath.split('/').pop() || 'unknown',
+          name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
+          version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
+          engine: { api: 0 },
+          scope: 'project',
+        };
+        store.registerPlugin(partialManifest, 'community', pluginPath, 'incompatible', result.errors.join('; '));
+      }
     }
   }
 

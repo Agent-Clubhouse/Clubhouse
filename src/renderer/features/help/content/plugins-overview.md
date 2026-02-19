@@ -28,6 +28,18 @@ Clubhouse ships with several built-in plugins. Three of them (Hub, Terminal, and
 | **KanBoss** | Project | Kanban boards with AI-powered automation. Cards can trigger quick agents when they enter automatic states. |
 | **Automations** | Project | Schedule recurring quick-agent tasks using cron expressions. |
 
+## Plugin Trust Levels
+
+Every plugin in Clubhouse carries a trust-level badge that helps you understand where it came from and how much vetting it has received.
+
+| Badge | Meaning |
+|-------|---------|
+| **Built-in** | Ships with Clubhouse. Maintained and tested by the Clubhouse team. Always available. |
+| **Official** | A community plugin that has been reviewed and endorsed by the Clubhouse team. Distributed via the external plugins directory. |
+| **Community** | A third-party plugin that has not been reviewed by the Clubhouse team. Use at your own discretion. |
+
+Built-in plugins cannot be uninstalled. Official and Community plugins are loaded from `~/.clubhouse/plugins/` and can be added or removed freely.
+
 ## Enabling Plugins
 
 Plugins can be enabled at two levels. A plugin must be enabled at the appropriate level before it will appear in the UI.
@@ -39,6 +51,32 @@ Open **Settings** (gear icon in the Project Rail) and navigate to the **Plugins*
 ### Project-level
 
 Open the settings for a specific project and toggle individual plugins on or off. This allows you to customize which plugins are active in each project. A plugin must first be enabled at the app level before it can be enabled for a project.
+
+## External Plugins
+
+External plugins are plugins that are not built into Clubhouse. They are loaded from the `~/.clubhouse/plugins/` directory on your machine.
+
+### Master Switch
+
+For security, external plugin loading is **disabled by default**. To enable it:
+
+1. Open **Settings** (gear icon in the Project Rail) and navigate to the **Plugins** section.
+2. Toggle **Enable External Plugins** on in the External section header.
+3. Restart Clubhouse. External plugins will now be discovered and appear in the plugin list.
+
+When external plugins are disabled, Clubhouse will not scan for or load any plugins outside of the built-in set. This provides a safe default for users who do not need third-party extensions.
+
+### Installing External Plugins
+
+To install an external plugin:
+
+1. Ensure the **Enable External Plugins** master switch is turned on (see above).
+2. Create or download the plugin directory.
+3. Place it inside `~/.clubhouse/plugins/` (create the directory if it does not exist).
+4. Restart Clubhouse or reload plugins. The plugin will appear in **Settings > Plugins** under the External section.
+5. Enable it at the app level and, if it is project-scoped, enable it in the desired projects.
+
+To uninstall an external plugin, remove its directory from `~/.clubhouse/plugins/` or use the uninstall option in plugin settings.
 
 ## Plugin UI
 
@@ -70,19 +108,6 @@ Plugins can display indicator badges on their tabs and rail items to signal unre
 - **Dot** -- Displays a simple indicator dot to flag that something needs attention.
 
 Badges appear on the plugin's tab in the Explorer Rail and, for app or dual-scoped plugins, on the plugin's icon in the Project Rail.
-
-## Community Plugins
-
-In addition to the built-in plugins, you can install community-contributed plugins. Community plugins are stored in `~/.clubhouse/plugins/` on your machine. Each plugin is a subdirectory containing a `manifest.json` file and any supporting code.
-
-To install a community plugin:
-
-1. Create or download the plugin directory.
-2. Place it inside `~/.clubhouse/plugins/` (create the directory if it does not exist).
-3. Restart Clubhouse or reload plugins. The plugin will appear in **Settings > Plugins**.
-4. Enable it at the app level and, if it is project-scoped, enable it in the desired projects.
-
-To uninstall a community plugin, remove its directory from `~/.clubhouse/plugins/` or use the uninstall option in plugin settings.
 
 ## Plugin Settings
 

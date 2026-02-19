@@ -238,7 +238,7 @@ export function ProjectRail() {
   }, [projects.length]);
 
   // Sync rail width to a CSS variable so the grid column in App.tsx can match
-  const collapsedWidth = isScrollable ? 74 : 68;
+  const collapsedWidth = isScrollable ? 76 : 70;
   useEffect(() => {
     document.documentElement.style.setProperty('--rail-width', `${collapsedWidth}px`);
   }, [collapsedWidth]);

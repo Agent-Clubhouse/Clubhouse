@@ -116,6 +116,7 @@ export interface PluginManifest {
   version: string;
   description?: string;
   author?: string;
+  official?: boolean;
   engine: { api: number };
   scope: 'project' | 'app' | 'dual';
   main?: string;                     // path to main module relative to plugin dir

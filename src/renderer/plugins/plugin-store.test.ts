@@ -31,6 +31,7 @@ describe('pluginStore', () => {
       modules: {},
       safeModeActive: false,
       pluginSettings: {},
+      externalPluginsEnabled: false,
       permissionViolations: [],
     });
   });
@@ -216,6 +217,72 @@ describe('pluginStore', () => {
       getState().recordPermissionViolation(violation);
       getState().clearPermissionViolation('nonexistent');
       expect(getState().permissionViolations).toHaveLength(1);
+    });
+  });
+
+  describe('removePlugin', () => {
+    it('removes plugin from registry', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().removePlugin('test-plugin');
+      expect(getState().plugins['test-plugin']).toBeUndefined();
+    });
+
+    it('removes plugin module', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().setPluginModule('test-plugin', { activate: () => {} });
+      getState().removePlugin('test-plugin');
+      expect(getState().modules['test-plugin']).toBeUndefined();
+    });
+
+    it('removes plugin from appEnabled', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().enableApp('test-plugin');
+      getState().enableApp('other-plugin');
+      getState().removePlugin('test-plugin');
+      expect(getState().appEnabled).toEqual(['other-plugin']);
+    });
+
+    it('removes plugin from all projectEnabled lists', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().enableForProject('proj-1', 'test-plugin');
+      getState().enableForProject('proj-1', 'other-plugin');
+      getState().enableForProject('proj-2', 'test-plugin');
+      getState().removePlugin('test-plugin');
+      expect(getState().projectEnabled['proj-1']).toEqual(['other-plugin']);
+      expect(getState().projectEnabled['proj-2']).toEqual([]);
+    });
+
+    it('does not affect other plugins', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().registerPlugin(appManifest, 'builtin', '');
+      getState().setPluginModule('test-plugin', {});
+      getState().setPluginModule('app-plugin', {});
+      getState().removePlugin('test-plugin');
+      expect(getState().plugins['app-plugin']).toBeDefined();
+      expect(getState().modules['app-plugin']).toBeDefined();
+    });
+
+    it('is a no-op for unknown plugin id', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().removePlugin('nonexistent');
+      expect(getState().plugins['test-plugin']).toBeDefined();
+    });
+  });
+
+  describe('externalPluginsEnabled', () => {
+    it('defaults to false', () => {
+      expect(getState().externalPluginsEnabled).toBe(false);
+    });
+
+    it('can be set to true', () => {
+      getState().setExternalPluginsEnabled(true);
+      expect(getState().externalPluginsEnabled).toBe(true);
+    });
+
+    it('can be toggled back to false', () => {
+      getState().setExternalPluginsEnabled(true);
+      getState().setExternalPluginsEnabled(false);
+      expect(getState().externalPluginsEnabled).toBe(false);
     });
   });
 
