@@ -20,7 +20,16 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
   try {
     const dirs = fs.readdirSync(pluginsDir, { withFileTypes: true });
     for (const dir of dirs) {
-      if (!dir.isDirectory()) continue;
+      // Symlinks need stat() to check if target is a directory
+      if (!dir.isDirectory()) {
+        if (!dir.isSymbolicLink()) continue;
+        try {
+          const resolved = fs.statSync(path.join(pluginsDir, dir.name));
+          if (!resolved.isDirectory()) continue;
+        } catch {
+          continue; // broken symlink
+        }
+      }
       const manifestPath = path.join(pluginsDir, dir.name, 'manifest.json');
       if (!fs.existsSync(manifestPath)) continue;
       try {
