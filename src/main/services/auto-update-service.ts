@@ -393,11 +393,12 @@ export async function applyUpdate(): Promise<void> {
       throw err;
     }
   } else if (process.platform === 'win32') {
-    // On Windows, Squirrel handles the update — just run the installer
+    // On Windows, re-run the Squirrel Setup.exe to update in-place.
+    // --silent skips the animated installer UI for a seamless auto-update.
     try {
       if (fs.existsSync(downloadPath)) {
         const { spawn } = require('child_process');
-        spawn(downloadPath, ['--update'], { detached: true, stdio: 'ignore' }).unref();
+        spawn(downloadPath, ['--silent'], { detached: true, stdio: 'ignore' }).unref();
         app.exit(0);
         return;
       }

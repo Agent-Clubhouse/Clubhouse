@@ -48,6 +48,35 @@ describe('auto-update-service', () => {
     });
   });
 
+  describe('artifact URL extension parsing', () => {
+    // The downloadUpdate function uses: path.extname(new URL(url).pathname) || '.zip'
+    // This determines the local file extension, which is critical for Windows (.exe)
+
+    it('extracts .exe for Windows installer URLs', () => {
+      const url = 'https://stclubhousereleases.blob.core.windows.net/releases/artifacts/Clubhouse-1.0.0-win32-x64-Setup.exe';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.exe');
+    });
+
+    it('extracts .zip for macOS update URLs', () => {
+      const url = 'https://stclubhousereleases.blob.core.windows.net/releases/artifacts/Clubhouse-1.0.0-darwin-arm64.zip';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.zip');
+    });
+
+    it('extracts .dmg for macOS installer URLs', () => {
+      const url = 'https://stclubhousereleases.blob.core.windows.net/releases/artifacts/Clubhouse-1.0.0-darwin-arm64.dmg';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.dmg');
+    });
+
+    it('defaults to .zip when URL has no extension', () => {
+      const url = 'https://example.com/artifacts/Clubhouse';
+      const ext = path.extname(new URL(url).pathname) || '.zip';
+      expect(ext).toBe('.zip');
+    });
+  });
+
   describe('verifySHA256', () => {
     let tmpFile: string;
 

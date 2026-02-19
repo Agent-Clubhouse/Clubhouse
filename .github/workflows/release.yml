@@ -105,8 +105,8 @@ jobs:
             echo "RELEASE_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-  build:
-    name: Build (${{ matrix.arch }})
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
     needs: verify-tag
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -198,9 +198,67 @@ jobs:
           path: dist/
           retention-days: 5
 
+  build-windows:
+    name: Build Windows (x64)
+    needs: verify-tag
+    runs-on: windows-latest
+    outputs:
+      sha256_win_x64: ${{ steps.hash.outputs.sha256_win_x64 }}
+      size_win_x64: ${{ steps.hash.outputs.size_win_x64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: npx electron-forge make --arch=x64
+
+      - name: Compute artifact hashes
+        id: hash
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify-tag.outputs.version }}"
+
+          # Find the Setup exe (Squirrel output)
+          $exe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "No Setup exe found in out/make"
+            exit 1
+          }
+          Write-Host "Found installer: $($exe.FullName)"
+
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = $exe.Length
+
+          echo "sha256_win_x64=$hash" >> $env:GITHUB_OUTPUT
+          echo "size_win_x64=$size" >> $env:GITHUB_OUTPUT
+
+      - name: Rename artifacts for upload
+        shell: pwsh
+        run: |
+          $version = "${{ needs.verify-tag.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          # Find and rename Setup exe
+          $exe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "dist/Clubhouse-${version}-win32-x64-Setup.exe"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-win32-x64
+          path: dist/
+          retention-days: 5
+
   publish:
     name: Publish
-    needs: [verify-tag, build]
+    needs: [verify-tag, build-macos, build-windows]
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -230,11 +288,14 @@ jobs:
             --arg notes "$NOTES" \
             --arg min_version "0.1.0" \
             --arg url_arm64 "${BASE_URL}/Clubhouse-${VERSION}-darwin-arm64.zip" \
-            --arg sha256_arm64 "${{ needs.build.outputs.sha256_arm64 }}" \
-            --argjson size_arm64 ${{ needs.build.outputs.size_arm64 }} \
+            --arg sha256_arm64 "${{ needs.build-macos.outputs.sha256_arm64 }}" \
+            --argjson size_arm64 ${{ needs.build-macos.outputs.size_arm64 }} \
             --arg url_x64 "${BASE_URL}/Clubhouse-${VERSION}-darwin-x64.zip" \
-            --arg sha256_x64 "${{ needs.build.outputs.sha256_x64 }}" \
-            --argjson size_x64 ${{ needs.build.outputs.size_x64 }} \
+            --arg sha256_x64 "${{ needs.build-macos.outputs.sha256_x64 }}" \
+            --argjson size_x64 ${{ needs.build-macos.outputs.size_x64 }} \
+            --arg url_win_x64 "${BASE_URL}/Clubhouse-${VERSION}-win32-x64-Setup.exe" \
+            --arg sha256_win_x64 "${{ needs.build-windows.outputs.sha256_win_x64 }}" \
+            --argjson size_win_x64 ${{ needs.build-windows.outputs.size_win_x64 }} \
             '{
               version: $version,
               releaseDate: $date,
@@ -251,6 +312,11 @@ jobs:
                   url: $url_x64,
                   sha256: $sha256_x64,
                   size: $size_x64
+                },
+                "win32-x64": {
+                  url: $url_win_x64,
+                  sha256: $sha256_win_x64,
+                  size: $size_win_x64
                 }
               }
             }' > artifacts/latest.json
@@ -272,7 +338,8 @@ jobs:
           CONTAINER="releases"
 
           # Upload versioned artifacts (immutable)
-          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg; do
+          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg artifacts/Clubhouse-*.exe; do
+            [ -f "$file" ] || continue
             BLOB_NAME="artifacts/$(basename "$file")"
             az storage blob upload \
               --account-name "$ACCOUNT" \
@@ -303,21 +370,34 @@ jobs:
               --auth-mode login
           done
 
+          # Copy Windows installer to the latest slot
+          az storage blob copy start \
+            --account-name "$ACCOUNT" \
+            --destination-container "$CONTAINER" \
+            --destination-blob "latest/Clubhouse-latest-win32-x64-Setup.exe" \
+            --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-win32-x64-Setup.exe" \
+            --auth-mode login
+
           # Wait for copies to complete
-          for ARCH in arm64 x64; do
+          LATEST_BLOBS=(
+            "latest/Clubhouse-latest-darwin-arm64.dmg"
+            "latest/Clubhouse-latest-darwin-x64.dmg"
+            "latest/Clubhouse-latest-win32-x64-Setup.exe"
+          )
+          for BLOB in "${LATEST_BLOBS[@]}"; do
             while true; do
               STATUS=$(az storage blob show \
                 --account-name "$ACCOUNT" \
                 --container-name "$CONTAINER" \
-                --name "latest/Clubhouse-latest-darwin-${ARCH}.dmg" \
+                --name "$BLOB" \
                 --query "properties.copy.status" \
                 --output tsv \
                 --auth-mode login)
               if [ "$STATUS" = "success" ]; then
-                echo "Copy complete: latest/Clubhouse-latest-darwin-${ARCH}.dmg"
+                echo "Copy complete: $BLOB"
                 break
               elif [ "$STATUS" = "failed" ] || [ "$STATUS" = "aborted" ]; then
-                echo "::error::Blob copy failed for darwin-${ARCH}"
+                echo "::error::Blob copy failed for $BLOB"
                 exit 1
               fi
               sleep 2
@@ -342,4 +422,5 @@ jobs:
             --notes "${RELEASE_BODY}" \
             artifacts/Clubhouse-*.zip \
             artifacts/Clubhouse-*.dmg \
+            artifacts/Clubhouse-*.exe \
             artifacts/latest.json
