@@ -430,6 +430,16 @@ export function WikiTree({ api }: { api: PluginAPI }) {
         );
         if (indexPage) {
           selectFile(indexPage.path);
+        } else {
+          // ADO pattern: check for sibling .md file at the same level as the folder
+          // e.g., Architecture.md alongside Architecture/ folder
+          const siblingPath = dirPath + '.md';
+          try {
+            await scoped.stat(siblingPath);
+            selectFile(siblingPath);
+          } catch {
+            // No sibling .md page exists, nothing to auto-select
+          }
         }
       }
     } catch {

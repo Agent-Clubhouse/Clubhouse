@@ -477,6 +477,127 @@ describe('WikiTree (ADO mode)', () => {
       expect(wikiState.selectedPath).toBe('Architecture/Architecture.md');
     });
   });
+
+  it('expands ADO folder and auto-selects sibling .md when no child index page exists', async () => {
+    // ADO pattern: Architecture.md is a sibling of Architecture/ folder,
+    // NOT duplicated inside the folder as Architecture/Architecture.md
+    const LAZY_ADO_TREE: FileNode[] = [
+      {
+        name: 'Architecture',
+        path: 'Architecture',
+        isDirectory: true,
+        children: [],
+      },
+      { name: 'Architecture.md', path: 'Architecture.md', isDirectory: false },
+      { name: 'Getting-Started.md', path: 'Getting-Started.md', isDirectory: false },
+    ];
+
+    // The folder's children do NOT contain a same-named .md file
+    const ARCHITECTURE_CHILDREN: FileNode[] = [
+      { name: 'API-Design.md', path: 'Architecture/API-Design.md', isDirectory: false },
+      { name: 'Data-Model.md', path: 'Architecture/Data-Model.md', isDirectory: false },
+    ];
+
+    const readTreeMock = vi.fn(async (path: string) => {
+      if (path === 'Architecture') return ARCHITECTURE_CHILDREN;
+      return LAZY_ADO_TREE;
+    });
+
+    const statMock = vi.fn(async (path: string) => {
+      if (path === 'Architecture.md') {
+        return { size: 100, isDirectory: false, isFile: true, modifiedAt: 0 };
+      }
+      throw new Error('not found');
+    });
+
+    const api = createAdoWikiAPI({
+      readTree: readTreeMock,
+      stat: statMock,
+      readFile: vi.fn(async (path: string) => {
+        if (path === '.order' || path === 'Architecture/.order') return '';
+        return '# ADO Wiki Page';
+      }),
+    });
+
+    render(<WikiTree api={api} />);
+    await screen.findByText('Architecture');
+
+    // Click the folder to expand it
+    fireEvent.click(screen.getByText('Architecture'));
+
+    // After expansion, the sibling .md page should be auto-selected
+    await waitFor(() => {
+      expect(wikiState.selectedPath).toBe('Architecture.md');
+    });
+  });
+
+  it('expands nested ADO folder and auto-selects sibling .md at same level', async () => {
+    // Nested case: Guides/Architecture/ folder with Guides/Architecture.md sibling
+    const GUIDES_CHILDREN: FileNode[] = [
+      {
+        name: 'Architecture',
+        path: 'Guides/Architecture',
+        isDirectory: true,
+        children: [],
+      },
+      { name: 'Architecture.md', path: 'Guides/Architecture.md', isDirectory: false },
+    ];
+
+    const LAZY_ADO_TREE: FileNode[] = [
+      {
+        name: 'Guides',
+        path: 'Guides',
+        isDirectory: true,
+        children: GUIDES_CHILDREN,
+      },
+      { name: 'Getting-Started.md', path: 'Getting-Started.md', isDirectory: false },
+    ];
+
+    const ARCHITECTURE_CHILDREN: FileNode[] = [
+      { name: 'API-Design.md', path: 'Guides/Architecture/API-Design.md', isDirectory: false },
+    ];
+
+    const readTreeMock = vi.fn(async (path: string) => {
+      if (path === 'Guides/Architecture') return ARCHITECTURE_CHILDREN;
+      if (path === 'Guides') return GUIDES_CHILDREN;
+      return LAZY_ADO_TREE;
+    });
+
+    const statMock = vi.fn(async (path: string) => {
+      if (path === 'Guides/Architecture.md') {
+        return { size: 100, isDirectory: false, isFile: true, modifiedAt: 0 };
+      }
+      throw new Error('not found');
+    });
+
+    const api = createAdoWikiAPI({
+      readTree: readTreeMock,
+      stat: statMock,
+      readFile: vi.fn(async (path: string) => {
+        if (path.endsWith('.order')) return '';
+        return '# ADO Wiki Page';
+      }),
+    });
+
+    render(<WikiTree api={api} />);
+
+    // First expand Guides
+    await screen.findByText('Guides');
+    fireEvent.click(screen.getByText('Guides'));
+
+    // Wait for Guides to expand and show Architecture folder
+    await waitFor(() => {
+      expect(screen.getByText('Architecture')).toBeInTheDocument();
+    });
+
+    // Click Architecture folder
+    fireEvent.click(screen.getByText('Architecture'));
+
+    // The sibling Guides/Architecture.md should be auto-selected
+    await waitFor(() => {
+      expect(wikiState.selectedPath).toBe('Guides/Architecture.md');
+    });
+  });
 });
 
 // ── filterMarkdownTree tests ─────────────────────────────────────────
