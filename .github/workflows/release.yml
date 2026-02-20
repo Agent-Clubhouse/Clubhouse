@@ -199,12 +199,20 @@ jobs:
           retention-days: 5
 
   build-windows:
-    name: Build Windows (x64)
+    name: Build Windows (${{ matrix.arch }})
     needs: verify-tag
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+          - arch: arm64
     outputs:
       sha256_win_x64: ${{ steps.hash.outputs.sha256_win_x64 }}
       size_win_x64: ${{ steps.hash.outputs.size_win_x64 }}
+      sha256_win_arm64: ${{ steps.hash.outputs.sha256_win_arm64 }}
+      size_win_arm64: ${{ steps.hash.outputs.size_win_arm64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -217,13 +225,14 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npx electron-forge make --arch=x64
+        run: npx electron-forge make --arch=${{ matrix.arch }}
 
       - name: Compute artifact hashes
         id: hash
         shell: pwsh
         run: |
           $version = "${{ needs.verify-tag.outputs.version }}"
+          $arch = "${{ matrix.arch }}"
 
           # Find the Setup exe (Squirrel output)
           $exe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
@@ -236,23 +245,24 @@ jobs:
           $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLower()
           $size = $exe.Length
 
-          echo "sha256_win_x64=$hash" >> $env:GITHUB_OUTPUT
-          echo "size_win_x64=$size" >> $env:GITHUB_OUTPUT
+          echo "sha256_win_${arch}=$hash" >> $env:GITHUB_OUTPUT
+          echo "size_win_${arch}=$size" >> $env:GITHUB_OUTPUT
 
       - name: Rename artifacts for upload
         shell: pwsh
         run: |
           $version = "${{ needs.verify-tag.outputs.version }}"
+          $arch = "${{ matrix.arch }}"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
 
           # Find and rename Setup exe
           $exe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
-          Copy-Item $exe.FullName "dist/Clubhouse-${version}-win32-x64-Setup.exe"
+          Copy-Item $exe.FullName "dist/Clubhouse-${version}-win32-${arch}-Setup.exe"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-win32-x64
+          name: release-win32-${{ matrix.arch }}
           path: dist/
           retention-days: 5
 
@@ -296,6 +306,9 @@ jobs:
             --arg url_win_x64 "${BASE_URL}/Clubhouse-${VERSION}-win32-x64-Setup.exe" \
             --arg sha256_win_x64 "${{ needs.build-windows.outputs.sha256_win_x64 }}" \
             --argjson size_win_x64 ${{ needs.build-windows.outputs.size_win_x64 }} \
+            --arg url_win_arm64 "${BASE_URL}/Clubhouse-${VERSION}-win32-arm64-Setup.exe" \
+            --arg sha256_win_arm64 "${{ needs.build-windows.outputs.sha256_win_arm64 }}" \
+            --argjson size_win_arm64 ${{ needs.build-windows.outputs.size_win_arm64 }} \
             '{
               version: $version,
               releaseDate: $date,
@@ -317,6 +330,11 @@ jobs:
                   url: $url_win_x64,
                   sha256: $sha256_win_x64,
                   size: $size_win_x64
+                },
+                "win32-arm64": {
+                  url: $url_win_arm64,
+                  sha256: $sha256_win_arm64,
+                  size: $size_win_arm64
                 }
               }
             }' > artifacts/latest.json
@@ -427,19 +445,22 @@ jobs:
               --auth-mode login
           done
 
-          # Copy Windows installer to the latest slot
-          az storage blob copy start \
-            --account-name "$ACCOUNT" \
-            --destination-container "$CONTAINER" \
-            --destination-blob "latest/Clubhouse-latest-win32-x64-Setup.exe" \
-            --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-win32-x64-Setup.exe" \
-            --auth-mode login
+          # Copy Windows installers to the latest slot
+          for WIN_ARCH in x64 arm64; do
+            az storage blob copy start \
+              --account-name "$ACCOUNT" \
+              --destination-container "$CONTAINER" \
+              --destination-blob "latest/Clubhouse-latest-win32-${WIN_ARCH}-Setup.exe" \
+              --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-win32-${WIN_ARCH}-Setup.exe" \
+              --auth-mode login
+          done
 
           # Wait for copies to complete
           LATEST_BLOBS=(
             "latest/Clubhouse-latest-darwin-arm64.dmg"
             "latest/Clubhouse-latest-darwin-x64.dmg"
             "latest/Clubhouse-latest-win32-x64-Setup.exe"
+            "latest/Clubhouse-latest-win32-arm64-Setup.exe"
           )
           for BLOB in "${LATEST_BLOBS[@]}"; do
             while true; do
