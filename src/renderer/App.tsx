@@ -179,8 +179,12 @@ export function App() {
     const prevId = prevProjectIdRef.current;
     prevProjectIdRef.current = activeProjectId;
     if (activeProjectId && activeProjectId !== prevId) {
-      // Restore per-project navigation state
-      useUIStore.getState().restoreProjectView(activeProjectId);
+      // Restore per-project navigation state, but skip if the user
+      // intentionally navigated to settings (e.g. gear icon on Home dashboard)
+      const currentTab = useUIStore.getState().explorerTab;
+      if (currentTab !== 'settings' && currentTab !== 'help') {
+        useUIStore.getState().restoreProjectView(activeProjectId);
+      }
       useAgentStore.getState().restoreProjectAgent(activeProjectId);
 
       const project = projects.find((p) => p.id === activeProjectId);

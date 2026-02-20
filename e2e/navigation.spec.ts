@@ -372,6 +372,31 @@ test.describe('Home Navigation', () => {
     // Should restore to agents tab (the default/saved tab)
     expect(title).toContain('Agents');
   });
+
+  test('settings gear on project card in home view opens project settings', async () => {
+    // Navigate to Home first
+    const homeBtn = window.locator('[data-testid="nav-home"]');
+    const homeVisible = await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false);
+    if (!homeVisible) return; // Home not enabled, skip
+
+    await homeBtn.click();
+    await window.waitForTimeout(500);
+
+    let title = await getTitleBarText();
+    expect(title).toBe('Home');
+
+    // Click the gear icon on a project card — it has title="Project Settings"
+    const settingsGear = window.locator('[title="Project Settings"]').first();
+    const gearVisible = await settingsGear.isVisible({ timeout: 3_000 }).catch(() => false);
+    if (!gearVisible) return; // No project cards visible, skip
+
+    await settingsGear.click();
+    await window.waitForTimeout(500);
+
+    // Should navigate to Settings view, NOT the Agents (project root) view
+    title = await getTitleBarText();
+    expect(title).toContain('Settings');
+  });
 });
 
 // ---------------------------------------------------------------------------
