@@ -191,6 +191,24 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.READ_PERMISSIONS, worktreePath),
     savePermissions: (worktreePath: string, permissions: { allow?: string[]; deny?: string[] }) =>
       ipcRenderer.invoke(IPC.AGENT.SAVE_PERMISSIONS, worktreePath, permissions),
+    readSkillContent: (worktreePath: string, skillName: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SKILL_CONTENT, worktreePath, skillName),
+    writeSkillContent: (worktreePath: string, skillName: string, content: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SKILL_CONTENT, worktreePath, skillName, content),
+    deleteSkill: (worktreePath: string, skillName: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SKILL, worktreePath, skillName),
+    readAgentTemplateContent: (worktreePath: string, agentName: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, worktreePath, agentName),
+    writeAgentTemplateContent: (worktreePath: string, agentName: string, content: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, worktreePath, agentName, content),
+    deleteAgentTemplate: (worktreePath: string, agentName: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_AGENT_TEMPLATE, worktreePath, agentName),
+    listAgentTemplateFiles: (worktreePath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, worktreePath),
+    readMcpRawJson: (worktreePath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath),
+    writeMcpRawJson: (worktreePath: string, content: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content),
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),

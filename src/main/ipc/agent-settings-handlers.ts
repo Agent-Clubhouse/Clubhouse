@@ -56,4 +56,46 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, (_event, worktreePath: string, permissions: { allow?: string[]; deny?: string[] }) => {
     agentSettings.writePermissions(worktreePath, permissions);
   });
+
+  // --- Skill content CRUD ---
+
+  ipcMain.handle(IPC.AGENT.READ_SKILL_CONTENT, (_event, worktreePath: string, skillName: string) => {
+    return agentSettings.readSkillContent(worktreePath, skillName);
+  });
+
+  ipcMain.handle(IPC.AGENT.WRITE_SKILL_CONTENT, (_event, worktreePath: string, skillName: string, content: string) => {
+    agentSettings.writeSkillContent(worktreePath, skillName, content);
+  });
+
+  ipcMain.handle(IPC.AGENT.DELETE_SKILL, (_event, worktreePath: string, skillName: string) => {
+    agentSettings.deleteSkill(worktreePath, skillName);
+  });
+
+  // --- Agent template content CRUD ---
+
+  ipcMain.handle(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, (_event, worktreePath: string, agentName: string) => {
+    return agentSettings.readAgentTemplateContent(worktreePath, agentName);
+  });
+
+  ipcMain.handle(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, (_event, worktreePath: string, agentName: string, content: string) => {
+    agentSettings.writeAgentTemplateContent(worktreePath, agentName, content);
+  });
+
+  ipcMain.handle(IPC.AGENT.DELETE_AGENT_TEMPLATE, (_event, worktreePath: string, agentName: string) => {
+    agentSettings.deleteAgentTemplate(worktreePath, agentName);
+  });
+
+  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, (_event, worktreePath: string) => {
+    return agentSettings.listAgentTemplateFiles(worktreePath);
+  });
+
+  // --- MCP raw JSON ---
+
+  ipcMain.handle(IPC.AGENT.READ_MCP_RAW_JSON, (_event, worktreePath: string) => {
+    return agentSettings.readMcpRawJson(worktreePath);
+  });
+
+  ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, (_event, worktreePath: string, content: string) => {
+    return agentSettings.writeMcpRawJson(worktreePath, content);
+  });
 }

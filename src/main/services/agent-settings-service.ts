@@ -217,6 +217,138 @@ export function readPermissions(worktreePath: string): PermissionsConfig {
 }
 
 /**
+ * Read the content of a skill's SKILL.md file.
+ */
+export function readSkillContent(worktreePath: string, skillName: string): string {
+  const filePath = path.join(worktreePath, '.claude', 'skills', skillName, 'SKILL.md');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Write the content of a skill's SKILL.md file, creating the directory if needed.
+ */
+export function writeSkillContent(worktreePath: string, skillName: string, content: string): void {
+  const dir = path.join(worktreePath, '.claude', 'skills', skillName);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf-8');
+}
+
+/**
+ * Delete a skill directory and all its contents.
+ */
+export function deleteSkill(worktreePath: string, skillName: string): void {
+  const dir = path.join(worktreePath, '.claude', 'skills', skillName);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Read the content of an agent template markdown file.
+ */
+export function readAgentTemplateContent(worktreePath: string, agentName: string): string {
+  // Agent templates are single .md files under .claude/agents/
+  const filePath = path.join(worktreePath, '.claude', 'agents', agentName + '.md');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    // Fallback: check if it's a directory-based template
+    const dirPath = path.join(worktreePath, '.claude', 'agents', agentName, 'README.md');
+    try {
+      return fs.readFileSync(dirPath, 'utf-8');
+    } catch {
+      return '';
+    }
+  }
+}
+
+/**
+ * Write the content of an agent template markdown file, creating directory if needed.
+ */
+export function writeAgentTemplateContent(worktreePath: string, agentName: string, content: string): void {
+  const dir = path.join(worktreePath, '.claude', 'agents');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, agentName + '.md'), content, 'utf-8');
+}
+
+/**
+ * Delete an agent template (both .md file and directory forms).
+ */
+export function deleteAgentTemplate(worktreePath: string, agentName: string): void {
+  const filePath = path.join(worktreePath, '.claude', 'agents', agentName + '.md');
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+  const dirPath = path.join(worktreePath, '.claude', 'agents', agentName);
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+  }
+}
+
+/**
+ * List agent template .md files under .claude/agents/ (flat file form).
+ */
+export function listAgentTemplateFiles(worktreePath: string): AgentTemplateEntry[] {
+  const agentsDir = path.join(worktreePath, '.claude', 'agents');
+  try {
+    const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
+    const results: AgentTemplateEntry[] = [];
+    // Collect .md files (flat agent definitions)
+    for (const e of entries) {
+      if (e.isFile() && e.name.endsWith('.md')) {
+        const name = e.name.replace(/\.md$/, '');
+        results.push({ name, path: path.join(agentsDir, e.name), hasReadme: false });
+      }
+    }
+    // Also collect directory-based templates
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        const agentPath = path.join(agentsDir, e.name);
+        const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
+        // Skip if already listed as .md file
+        if (!results.find((r) => r.name === e.name)) {
+          results.push({ name: e.name, path: agentPath, hasReadme });
+        }
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Read the raw .mcp.json file content as a string.
+ */
+export function readMcpRawJson(worktreePath: string): string {
+  const filePath = path.join(worktreePath, '.mcp.json');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '{\n  "mcpServers": {}\n}';
+  }
+}
+
+/**
+ * Write raw JSON string to .mcp.json. Validates JSON before writing.
+ * Returns { ok: true } on success, or { ok: false, error: string } on parse failure.
+ */
+export function writeMcpRawJson(worktreePath: string, content: string): { ok: boolean; error?: string } {
+  try {
+    JSON.parse(content); // Validate
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Invalid JSON' };
+  }
+  const filePath = path.join(worktreePath, '.mcp.json');
+  fs.writeFileSync(filePath, content, 'utf-8');
+  return { ok: true };
+}
+
+/**
  * Write permissions to .claude/settings.local.json in the given worktree.
  * Merges with existing file content (preserves hooks and other settings).
  */
