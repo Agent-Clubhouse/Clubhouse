@@ -59,6 +59,7 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
   const [defaultLoaded, setDefaultLoaded] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Load durable agents and saved default instructions on mount
@@ -115,6 +116,11 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
     }
   }, [api, saveAsDefault, instructions]);
 
+  // Toggle agent selection
+  const toggleAgentSelection = useCallback((agentId: string) => {
+    setSelectedAgentId((prev) => (prev === agentId ? null : agentId));
+  }, []);
+
   // Durable agent handler
   const handleDurableAgent = useCallback(async (agent: AgentInfo) => {
     if (agent.status === 'running') {
@@ -135,6 +141,12 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
     }
     onClose();
   }, [api, issue, buildMission, persistDefault, onClose]);
+
+  // Confirm handler — sends issue to selected agent
+  const handleConfirm = useCallback(() => {
+    const agent = durableAgents.find((a) => a.id === selectedAgentId);
+    if (agent) handleDurableAgent(agent);
+  }, [durableAgents, selectedAgentId, handleDurableAgent]);
 
   const AgentAvatar = api.widgets.AgentAvatar;
 
@@ -188,11 +200,17 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
           : null,
 
         // Durable agents
-        ...durableAgents.map((agent) =>
-          React.createElement('button', {
+        ...durableAgents.map((agent) => {
+          const isSelected = selectedAgentId === agent.id;
+          return React.createElement('button', {
             key: agent.id,
-            className: 'w-full text-left px-3 py-2 text-xs text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
-            onClick: () => handleDurableAgent(agent),
+            className: [
+              'w-full text-left px-3 py-2 text-xs text-ctp-text rounded transition-colors',
+              isSelected
+                ? 'bg-ctp-accent/15 ring-1 ring-ctp-accent'
+                : 'hover:bg-ctp-surface0',
+            ].join(' '),
+            onClick: () => toggleAgentSelection(agent.id),
           },
             React.createElement('div', { className: 'flex items-center gap-1.5' },
               React.createElement(AgentAvatar, {
@@ -210,16 +228,27 @@ export function SendToAgentDialog({ api, issue, onClose }: SendToAgentDialogProp
               : React.createElement('div', {
                   className: 'text-[10px] text-ctp-subtext0 mt-0.5 pl-5',
                 }, 'Assign issue to this agent'),
-          ),
-        ),
+          );
+        }),
       ),
 
-      // Cancel button
-      React.createElement('div', { className: 'mt-3 flex justify-end' },
+      // Action buttons
+      React.createElement('div', { className: 'mt-3 flex justify-end gap-2' },
         React.createElement('button', {
           className: 'px-3 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
           onClick: onClose,
         }, 'Cancel'),
+        React.createElement('button', {
+          className: [
+            'px-3 py-1 text-xs rounded transition-colors',
+            selectedAgentId
+              ? 'bg-ctp-accent text-ctp-base hover:bg-ctp-accent/80'
+              : 'bg-ctp-surface0 text-ctp-subtext0 cursor-not-allowed',
+          ].join(' '),
+          disabled: !selectedAgentId,
+          onClick: handleConfirm,
+          'data-testid': 'confirm-assign-btn',
+        }, 'Confirm'),
       ),
     ),
   );

@@ -79,7 +79,7 @@ describe('MainPanel agent assignment', () => {
     issueState.reset();
   });
 
-  it('opens SendToAgentDialog with agent list, instructions textarea, and default checkbox', async () => {
+  it('opens SendToAgentDialog with agent list, instructions textarea, confirm button disabled, and default checkbox', async () => {
     const { api } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
@@ -98,13 +98,18 @@ describe('MainPanel agent assignment', () => {
     expect(screen.getByText('Worker Bee')).toBeTruthy();
     expect(screen.getByText('Cancel')).toBeTruthy();
 
+    // Confirm button should exist but be disabled (no agent selected)
+    const confirmBtn = screen.getByTestId('confirm-assign-btn');
+    expect(confirmBtn).toBeTruthy();
+    expect(confirmBtn).toHaveProperty('disabled', true);
+
     // Wait for default to load (async), then checkbox should appear
     await waitFor(() => {
       expect(screen.getByText('Set as default prompt')).toBeTruthy();
     });
   });
 
-  it('sleeping agent → click agent → resume with mission', async () => {
+  it('sleeping agent → select agent → click confirm → resume with mission', async () => {
     const { api, resumeSpy, showNoticeSpy } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
@@ -120,8 +125,16 @@ describe('MainPanel agent assignment', () => {
     const textarea = screen.getByPlaceholderText('Additional instructions (optional)');
     fireEvent.change(textarea, { target: { value: 'user instructions' } });
 
-    // Click the sleeping durable agent
+    // Click the sleeping durable agent to select it
     fireEvent.click(screen.getByText('Worker Bee'));
+
+    // Agent should not be resumed yet — confirm button should now be enabled
+    expect(resumeSpy).not.toHaveBeenCalled();
+    const confirmBtn = screen.getByTestId('confirm-assign-btn');
+    expect(confirmBtn).toHaveProperty('disabled', false);
+
+    // Click confirm to assign
+    fireEvent.click(confirmBtn);
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -137,7 +150,7 @@ describe('MainPanel agent assignment', () => {
     expect(showNoticeSpy).toHaveBeenCalledWith('Agent "Worker Bee" assigned to issue #42');
   });
 
-  it('sleeping agent → no instructions → resume without Additional instructions', async () => {
+  it('sleeping agent → no instructions → select + confirm → resume without Additional instructions', async () => {
     const { api, resumeSpy } = createIssuesAPI();
 
     render(React.createElement(MainPanel, { api }));
@@ -149,8 +162,9 @@ describe('MainPanel agent assignment', () => {
     // Open agent dialog
     fireEvent.click(screen.getByText('Assign to Agent'));
 
-    // Don't type anything — just click the agent directly
+    // Don't type anything — just select the agent and confirm
     fireEvent.click(screen.getByText('Worker Bee'));
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -161,7 +175,7 @@ describe('MainPanel agent assignment', () => {
     expect(opts.mission).not.toContain('Additional instructions');
   });
 
-  it('running agent → showConfirm → kill → resume', async () => {
+  it('running agent → select + confirm → showConfirm → kill → resume', async () => {
     const { api } = createIssuesAPI({
       agents: {
         ...createMockAPI().agents,
@@ -182,6 +196,12 @@ describe('MainPanel agent assignment', () => {
 
     fireEvent.click(screen.getByText('Assign to Agent'));
     fireEvent.click(screen.getByText('Worker Bee'));
+
+    // Agent should be selected but not yet acted upon
+    expect(api.ui.showConfirm).not.toHaveBeenCalled();
+
+    // Click confirm
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(api.ui.showConfirm).toHaveBeenCalledTimes(1);
@@ -226,6 +246,9 @@ describe('MainPanel agent assignment', () => {
 
     fireEvent.click(screen.getByText('Assign to Agent'));
     fireEvent.click(screen.getByText('Worker Bee'));
+
+    // Click confirm to trigger the running-agent confirm dialog
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(showConfirmSpy).toHaveBeenCalledTimes(1);
@@ -364,8 +387,9 @@ describe('MainPanel agent assignment', () => {
     const checkbox = screen.getByTestId('save-default-checkbox');
     fireEvent.click(checkbox);
 
-    // Click the agent
+    // Select the agent and click confirm
     fireEvent.click(screen.getByText('Worker Bee'));
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -408,8 +432,9 @@ describe('MainPanel agent assignment', () => {
     const checkbox = screen.getByTestId('save-default-checkbox');
     fireEvent.click(checkbox);
 
-    // Click the agent
+    // Select the agent and click confirm
     fireEvent.click(screen.getByText('Worker Bee'));
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -452,8 +477,9 @@ describe('MainPanel agent assignment', () => {
     const textarea = screen.getByPlaceholderText('Additional instructions (optional)');
     fireEvent.change(textarea, { target: { value: 'one-off instruction' } });
 
-    // Click the agent
+    // Select the agent and click confirm
     fireEvent.click(screen.getByText('Worker Bee'));
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(resumeSpy).toHaveBeenCalledTimes(1);
@@ -494,10 +520,65 @@ describe('MainPanel agent assignment', () => {
 
     fireEvent.click(screen.getByText('Assign to Agent'));
     fireEvent.click(screen.getByText('Worker Bee'));
+    fireEvent.click(screen.getByTestId('confirm-assign-btn'));
 
     await waitFor(() => {
       expect(showErrorSpy).toHaveBeenCalledWith('Failed to assign agent to issue #42');
     });
+  });
+
+  it('selecting an agent highlights it and deselecting another works', async () => {
+    const { api } = createIssuesAPI({
+      agents: {
+        ...createMockAPI().agents,
+        list: vi.fn(() => [
+          { id: 'durable-1', name: 'Worker Bee', kind: 'durable' as const, status: 'sleeping' as const, color: '#ff0' },
+          { id: 'durable-2', name: 'Busy Ant', kind: 'durable' as const, status: 'sleeping' as const, color: '#0ff' },
+        ]),
+      },
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    // Confirm button should be disabled initially
+    const confirmBtn = screen.getByTestId('confirm-assign-btn');
+    expect(confirmBtn).toHaveProperty('disabled', true);
+
+    // Select first agent
+    fireEvent.click(screen.getByText('Worker Bee'));
+    expect(confirmBtn).toHaveProperty('disabled', false);
+
+    // Select second agent (should deselect first)
+    fireEvent.click(screen.getByText('Busy Ant'));
+    expect(confirmBtn).toHaveProperty('disabled', false);
+  });
+
+  it('clicking a selected agent deselects it and disables confirm', async () => {
+    const { api } = createIssuesAPI();
+
+    render(React.createElement(MainPanel, { api }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Fix login bug')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('Assign to Agent'));
+
+    const confirmBtn = screen.getByTestId('confirm-assign-btn');
+
+    // Select agent
+    fireEvent.click(screen.getByText('Worker Bee'));
+    expect(confirmBtn).toHaveProperty('disabled', false);
+
+    // Click again to deselect
+    fireEvent.click(screen.getByText('Worker Bee'));
+    expect(confirmBtn).toHaveProperty('disabled', true);
   });
 });
 
