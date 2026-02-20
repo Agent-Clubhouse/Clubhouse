@@ -526,17 +526,32 @@ describe('headless-manager', () => {
         CLUBHOUSE_AGENT_ID: 'test-agent',
       });
 
-      expect(mockCpSpawn).toHaveBeenCalledWith(
-        '/usr/local/bin/claude',
-        ['-p', 'test'],
-        expect.objectContaining({
-          cwd: '/project',
-          env: expect.objectContaining({
-            ANTHROPIC_API_KEY: 'sk-test',
-            CLUBHOUSE_AGENT_ID: 'test-agent',
-          }),
-        })
-      );
+      if (process.platform === 'win32') {
+        // On Windows, binary is wrapped through cmd.exe
+        expect(mockCpSpawn).toHaveBeenCalledWith(
+          'cmd.exe',
+          expect.arrayContaining(['/d', '/s', '/c']),
+          expect.objectContaining({
+            cwd: '/project',
+            env: expect.objectContaining({
+              ANTHROPIC_API_KEY: 'sk-test',
+              CLUBHOUSE_AGENT_ID: 'test-agent',
+            }),
+          })
+        );
+      } else {
+        expect(mockCpSpawn).toHaveBeenCalledWith(
+          '/usr/local/bin/claude',
+          ['-p', 'test'],
+          expect.objectContaining({
+            cwd: '/project',
+            env: expect.objectContaining({
+              ANTHROPIC_API_KEY: 'sk-test',
+              CLUBHOUSE_AGENT_ID: 'test-agent',
+            }),
+          })
+        );
+      }
 
       // CLAUDECODE and CLAUDE_CODE_ENTRYPOINT should be removed
       const envArg = (mockCpSpawn.mock.calls[0] as any[])[2].env;
@@ -549,25 +564,48 @@ describe('headless-manager', () => {
   // Windows shell wrapping
   // ============================================================
   describe('Windows spawn options', () => {
-    it('sets shell: true on Windows for .cmd shim compatibility', () => {
+    it('uses cmd.exe with windowsVerbatimArguments on Windows', () => {
       spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
 
-      const spawnOpts = (mockCpSpawn.mock.calls[0] as any[])[2];
       if (process.platform === 'win32') {
-        expect(spawnOpts.shell).toBe(true);
+        // On Windows, binary and args are wrapped in cmd.exe /d /s /c "..."
+        const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
+        expect(spawnArgs[0]).toBe('cmd.exe');
+        expect(spawnArgs[1][0]).toBe('/d');
+        expect(spawnArgs[1][1]).toBe('/s');
+        expect(spawnArgs[1][2]).toBe('/c');
+        // The 4th arg is the quoted command string
+        expect(spawnArgs[1][3]).toContain('claude.cmd');
+        expect(spawnArgs[1][3]).toContain('-p');
+        expect(spawnArgs[2].windowsVerbatimArguments).toBe(true);
       } else {
-        expect(spawnOpts.shell).toBeFalsy();
+        // On non-Windows, binary is called directly
+        const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
+        expect(spawnArgs[0]).toBe('C:\\npm\\claude.cmd');
       }
     });
 
-    it('shell option does not break non-Windows platforms', () => {
+    it('non-Windows platforms spawn binary directly without shell', () => {
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
-      const spawnOpts = (mockCpSpawn.mock.calls[0] as any[])[2];
-      // On non-Windows, shell should be false (not undefined or true)
       if (process.platform !== 'win32') {
-        expect(spawnOpts.shell).toBe(false);
+        const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
+        expect(spawnArgs[0]).toBe('/usr/local/bin/claude');
+        expect(spawnArgs[1]).toEqual(['-p', 'test']);
+        const spawnOpts = spawnArgs[2];
+        expect(spawnOpts.shell).toBeUndefined();
+        expect(spawnOpts.windowsVerbatimArguments).toBeUndefined();
       }
+    });
+
+    it('properly quotes arguments with spaces in Windows command line', () => {
+      if (process.platform !== 'win32') return; // Windows-only test
+
+      spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
+
+      const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
+      // Mission text should be wrapped in double quotes
+      expect(cmdLine).toContain('"Fix the login bug"');
     });
   });
 });

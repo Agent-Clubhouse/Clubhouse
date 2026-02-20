@@ -16,6 +16,18 @@ interface ManagedSession {
 }
 
 const MAX_BUFFER_SIZE = 512 * 1024; // 512KB per agent
+
+/**
+ * Quote a single argument for use in a Windows cmd.exe command line.
+ * Wraps in double quotes and escapes embedded double quotes by doubling them.
+ */
+function winQuoteArg(arg: string): string {
+  if (arg.length === 0) return '""';
+  // If no special characters, return as-is
+  if (!/[\s"&|<>^%!()]/.test(arg)) return arg;
+  // Escape embedded double quotes and wrap
+  return '"' + arg.replace(/"/g, '""') + '"';
+}
 const sessions = new Map<string, ManagedSession>();
 
 function appendToBuffer(session: ManagedSession, data: string): void {
@@ -63,11 +75,14 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
   try {
     if (isWin) {
-      // On Windows, npm shims (.cmd/.ps1) and other non-exe scripts can't be
-      // executed directly by winpty — they need cmd.exe to resolve PATHEXT and
-      // launch the interpreter.  This mirrors the Unix side which wraps through
-      // the user's login shell.
-      proc = pty.spawn('cmd.exe', ['/c', binary, ...args], {
+      // On Windows, spawn cmd.exe interactively and use the pendingCommand
+      // mechanism (like macOS/Linux) to write the command on first resize.
+      // This avoids cmd.exe /c argument-quoting issues that cause the mission
+      // text to be mangled or lost when passed directly in the args array.
+      const shellCmd = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
+      pendingCommand = shellCmd;
+
+      proc = pty.spawn('cmd.exe', [], {
         name: 'xterm-256color',
         cwd,
         env: spawnEnv,
@@ -214,7 +229,14 @@ export function resize(agentId: string, cols: number, rows: number): void {
   if (session?.pendingCommand) {
     const cmd = session.pendingCommand;
     session.pendingCommand = undefined;
-    session.process.write(`exec ${cmd}\n`);
+    if (process.platform === 'win32') {
+      // On Windows cmd.exe: run the command and exit the shell when done.
+      // "& exit" ensures cmd.exe closes after the agent process exits,
+      // so the PTY exits cleanly and triggers the onExit handler (ghost creation).
+      session.process.write(`${cmd} & exit\r\n`);
+    } else {
+      session.process.write(`exec ${cmd}\n`);
+    }
   }
 }
 

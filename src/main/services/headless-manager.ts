@@ -9,6 +9,17 @@ import { getShellEnvironment } from '../util/shell';
 import { appLog } from './log-service';
 import { HeadlessOutputKind } from '../orchestrators/types';
 
+/**
+ * Quote a single argument for a Windows cmd.exe /s /c command line.
+ * Always wraps in double quotes to safely handle spaces, special chars,
+ * and long argument values (e.g. mission text, system prompts).
+ * Embedded double quotes are escaped by doubling them ("").
+ */
+function winQuoteHeadlessArg(arg: string): string {
+  if (arg.length === 0) return '""';
+  return '"' + arg.replace(/"/g, '""') + '"';
+}
+
 interface HeadlessSession {
   process: ChildProcess;
   agentId: string;
@@ -65,12 +76,22 @@ export function spawnHeadless(
     meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
   });
 
-  const proc = cpSpawn(binary, args, {
-    cwd,
-    env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    shell: process.platform === 'win32', // .cmd/.ps1 shims need shell on Windows
-  });
+  const isWin = process.platform === 'win32';
+  // On Windows, .cmd/.ps1 shims need to be run through cmd.exe.
+  // Using windowsVerbatimArguments avoids Node.js double-escaping the
+  // arguments which can mangle mission text and long system prompts.
+  const proc = isWin
+    ? cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${[binary, ...args].map(a => winQuoteHeadlessArg(a)).join(' ')}"`], {
+        cwd,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsVerbatimArguments: true,
+      })
+    : cpSpawn(binary, args, {
+        cwd,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
 
   // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.
   // An open stdin pipe can cause Claude Code to wait for input.

@@ -129,16 +129,11 @@ describe('pty-manager', () => {
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('shell startup noise');
 
-      if (process.platform === 'win32') {
-        // On Windows, binary is spawned directly — no pending command, no suppression
-        expect(getBuffer('agent_suppress')).toBe('shell startup noise');
-      } else {
-        // On Unix, data is suppressed until resize fires the pending command
-        expect(getBuffer('agent_suppress')).toBe('');
-        resize('agent_suppress', 120, 30);
-        onDataCb('real data');
-        expect(getBuffer('agent_suppress')).toBe('real data');
-      }
+      // Both Windows and Unix now use pendingCommand — data is suppressed until resize
+      expect(getBuffer('agent_suppress')).toBe('');
+      resize('agent_suppress', 120, 30);
+      onDataCb('real data');
+      expect(getBuffer('agent_suppress')).toBe('real data');
     });
   });
 
@@ -191,9 +186,9 @@ describe('pty-manager', () => {
       resize('agent_pc', 120, 30);
 
       if (process.platform === 'win32') {
-        // On Windows, binary is spawned directly — no pending command to fire
-        expect(mockProcess.write).not.toHaveBeenCalledWith(
-          expect.stringContaining('exec ')
+        // On Windows, resize writes the command to cmd.exe with "& exit" suffix
+        expect(mockProcess.write).toHaveBeenCalledWith(
+          expect.stringContaining('& exit\r\n')
         );
       } else {
         // On Unix, resize triggers the pending shell exec command
@@ -205,13 +200,19 @@ describe('pty-manager', () => {
 
     it('does not fire pending command on subsequent resize', () => {
       spawn('agent_pc2', '/test', '/usr/local/bin/claude', []);
-      resize('agent_pc2', 120, 30); // clears pending (Unix only)
+      resize('agent_pc2', 120, 30); // clears pending
       mockProcess.write.mockClear();
       resize('agent_pc2', 200, 50); // no pending command
-      // write should only have been called for resize, not exec
-      expect(mockProcess.write).not.toHaveBeenCalledWith(
-        expect.stringContaining('exec ')
-      );
+      // write should only have been called for resize, not a command
+      if (process.platform === 'win32') {
+        expect(mockProcess.write).not.toHaveBeenCalledWith(
+          expect.stringContaining('& exit')
+        );
+      } else {
+        expect(mockProcess.write).not.toHaveBeenCalledWith(
+          expect.stringContaining('exec ')
+        );
+      }
     });
 
     it('does nothing for unknown agent', () => {
@@ -343,10 +344,10 @@ describe('pty-manager', () => {
       spawn('agent_env', '/test', '/usr/local/bin/claude', [], { CUSTOM_VAR: 'value' });
 
       if (process.platform === 'win32') {
-        // On Windows, binary is wrapped through cmd.exe
+        // On Windows, cmd.exe is spawned interactively (pendingCommand mechanism)
         expect(pty.spawn).toHaveBeenCalledWith(
           'cmd.exe',
-          ['/c', '/usr/local/bin/claude'],
+          [],
           expect.objectContaining({
             env: expect.objectContaining({ CUSTOM_VAR: 'value' }),
           })
@@ -365,22 +366,40 @@ describe('pty-manager', () => {
   });
 
   describe('Windows cmd.exe wrapping', () => {
-    it('wraps binary and args through cmd.exe on Windows', async () => {
+    it('spawns cmd.exe interactively on Windows (pendingCommand mechanism)', async () => {
       if (process.platform !== 'win32') return; // Windows-only test
 
       const pty = await import('node-pty');
       vi.mocked(pty.spawn).mockClear();
       spawn('agent_cmd', '/test', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', ['--model', 'opus']);
 
+      // Windows now uses interactive cmd.exe (no /c) with pendingCommand
       expect(pty.spawn).toHaveBeenCalledWith(
         'cmd.exe',
-        ['/c', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', '--model', 'opus'],
+        [],
         expect.objectContaining({
           cwd: '/test',
           cols: 120,
           rows: 30,
         })
       );
+    });
+
+    it('fires properly quoted command with & exit suffix on Windows resize', () => {
+      if (process.platform !== 'win32') return; // Windows-only test
+
+      spawn('agent_win_resize', '/test', 'C:\\path\\to\\claude.cmd', ['--model', 'opus', 'Fix the bug']);
+      resize('agent_win_resize', 120, 30);
+
+      // Should write the quoted command with & exit
+      expect(mockProcess.write).toHaveBeenCalledWith(
+        expect.stringContaining('& exit\r\n')
+      );
+      // Verify binary is quoted (contains backslash → has special chars)
+      const writtenCmd = mockProcess.write.mock.calls.find(
+        (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
+      );
+      expect(writtenCmd).toBeDefined();
     });
 
     it('removes CLAUDECODE env vars to prevent nested-session errors', async () => {
@@ -398,6 +417,20 @@ describe('pty-manager', () => {
       expect(env.CLAUDECODE).toBeUndefined();
       expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
       expect(env.KEEP_THIS).toBe('yes');
+    });
+
+    it('quotes mission text with spaces for Windows pendingCommand', () => {
+      spawn('agent_mission_quote', '/test', '/usr/local/bin/claude', ['--model', 'opus', 'Fix the login bug']);
+      resize('agent_mission_quote', 120, 30);
+
+      if (process.platform === 'win32') {
+        // Mission text should be double-quoted in the written command
+        const writtenCmd = mockProcess.write.mock.calls.find(
+          (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
+        );
+        expect(writtenCmd).toBeDefined();
+        expect(writtenCmd![0]).toContain('"Fix the login bug"');
+      }
     });
   });
 });
