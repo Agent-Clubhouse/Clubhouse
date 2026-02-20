@@ -246,7 +246,47 @@ test.describe('Drag-to-Reorder', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Completed Footer Position (pinned at bottom)
+// 5. Completed Footer — Min Height & Padding
+// ---------------------------------------------------------------------------
+
+test.describe('Completed Footer Min Height & Padding', () => {
+  test('completed items container has minHeight 0 when collapsed', async () => {
+    // Ensure collapsed
+    const items = window.locator('[data-testid="completed-items"]');
+    const maxHeight = await items.evaluate((el) => el.style.maxHeight);
+    if (maxHeight !== '0px' && maxHeight !== '0') {
+      await window.locator('[data-testid="completed-toggle"]').click();
+      await window.waitForTimeout(400);
+    }
+
+    const minHeight = await items.evaluate((el) => el.style.minHeight);
+    expect(minHeight === '0px' || minHeight === '0' || minHeight === '').toBe(true);
+
+    // Expand back for subsequent tests
+    await window.locator('[data-testid="completed-toggle"]').click();
+    await window.waitForTimeout(400);
+  });
+
+  test('inner scroll container has bottom padding', async () => {
+    // Ensure expanded
+    const items = window.locator('[data-testid="completed-items"]');
+    const maxHeight = await items.evaluate((el) => el.style.maxHeight);
+    if (maxHeight === '0px' || maxHeight === '0') {
+      await window.locator('[data-testid="completed-toggle"]').click();
+      await window.waitForTimeout(400);
+    }
+
+    const innerContainer = items.locator('> div').first();
+    const paddingBottom = await innerContainer.evaluate((el) =>
+      window.getComputedStyle(el).paddingBottom,
+    );
+    // pb-2 = 8px
+    expect(parseFloat(paddingBottom)).toBeGreaterThanOrEqual(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Completed Footer Position (pinned at bottom)
 // ---------------------------------------------------------------------------
 
 test.describe('Completed Footer Position', () => {
