@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 
 const api = {
+  platform: process.platform as 'darwin' | 'win32' | 'linux',
   pty: {
     spawnShell: (id: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.PTY.SPAWN_SHELL, id, projectPath),
@@ -300,6 +301,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_THEME, settings),
+    updateTitleBarOverlay: (colors: { color: string; symbolColor: string }) =>
+      ipcRenderer.invoke(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, colors),
     getOrchestratorSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_ORCHESTRATOR_SETTINGS),
     saveOrchestratorSettings: (settings: { enabled: string[] }) =>

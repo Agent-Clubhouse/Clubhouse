@@ -97,6 +97,11 @@
   -webkit-app-region: no-drag;
 }
 
+/* Reserve space for Windows title bar overlay controls (min/max/close) */
+.win-overlay-padding {
+  padding-right: 138px;
+}
+
 /* xterm overrides for seamless look */
 .xterm {
   height: 100%;

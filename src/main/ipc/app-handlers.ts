@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
@@ -56,6 +56,18 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.SAVE_THEME, (_event, settings: { themeId: string }) => {
     themeService.saveSettings(settings as any);
+  });
+
+  // Update the Windows title bar overlay colors when the theme changes
+  ipcMain.handle(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, (_event, colors: { color: string; symbolColor: string }) => {
+    if (process.platform !== 'win32') return;
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    if (win) {
+      win.setTitleBarOverlay({
+        color: colors.color,
+        symbolColor: colors.symbolColor,
+      });
+    }
   });
 
   ipcMain.handle(IPC.APP.GET_ORCHESTRATOR_SETTINGS, () => {

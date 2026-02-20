@@ -416,10 +416,13 @@ export function App() {
       ? `${tabLabel} (${activeProject.displayName || activeProject.name})`
       : tabLabel;
 
+  const isWin = window.clubhouse.platform === 'win32';
+  const titleBarClass = `h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center${isWin ? ' win-overlay-padding' : ''}`;
+
   if (isHome) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
+        <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
@@ -437,7 +440,7 @@ export function App() {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
+        <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
@@ -454,7 +457,7 @@ export function App() {
   if (isHelp) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
+        <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
@@ -471,7 +474,7 @@ export function App() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
       {/* Title bar */}
-      <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
+      <div className={titleBarClass}>
         <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
       </div>
       {/* Permission violation banner */}
