@@ -4,6 +4,8 @@ import * as path from 'path';
 import { app } from 'electron';
 import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
+import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { resolveOrchestrator } from './agent-system';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -196,6 +198,10 @@ export function createDurable(
     }
   }
 
+  // Inherit freeAgentMode from project defaults if not explicitly set
+  const projectDefaults = readProjectAgentDefaults(projectPath);
+  const effectiveFreeAgent = freeAgentMode ?? (projectDefaults.freeAgentMode || undefined);
+
   const config: DurableAgentConfig = {
     id,
     name,
@@ -205,12 +211,32 @@ export function createDurable(
     createdAt: new Date().toISOString(),
     ...(model && model !== 'default' ? { model } : {}),
     ...(orchestrator ? { orchestrator } : {}),
-    ...(freeAgentMode ? { freeAgentMode } : {}),
+    ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
   };
 
   const agents = readAgents(projectPath);
   agents.push(config);
   writeAgents(projectPath, agents);
+
+  // Apply project-level defaults as snapshots into the new worktree
+  if (worktreePath) {
+    try {
+      const provider = resolveOrchestrator(projectPath, orchestrator);
+      applyAgentDefaults(
+        worktreePath,
+        projectPath,
+        (wt, content) => provider.writeInstructions(wt, content),
+        provider.conventions,
+      );
+    } catch (err) {
+      appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
+        meta: {
+          agentName: name,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
 
   return config;
 }

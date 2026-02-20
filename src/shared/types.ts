@@ -23,6 +23,11 @@ export interface OrchestratorInfo {
   conventions?: {
     configDir: string;
     localInstructionsFile: string;
+    legacyInstructionsFile: string;
+    mcpConfigFile: string;
+    skillsDir: string;
+    agentTemplatesDir: string;
+    localSettingsFile: string;
   };
 }
 
@@ -101,6 +106,14 @@ export interface QuickAgentDefaults {
   systemPrompt?: string;
   allowedTools?: string[];
   defaultModel?: string;
+  freeAgentMode?: boolean;
+}
+
+/** Project-level default settings applied as snapshots when creating new agents. */
+export interface ProjectAgentDefaults {
+  instructions?: string;
+  permissions?: PermissionsConfig;
+  mcpJson?: string;
   freeAgentMode?: boolean;
 }
 

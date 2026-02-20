@@ -7,6 +7,9 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
+import { SkillsSection } from './SkillsSection';
+import { AgentTemplatesSection } from './AgentTemplatesSection';
+import { McpJsonSection } from './McpJsonSection';
 
 type SettingsTab = 'main' | 'quick';
 
@@ -223,13 +226,13 @@ export function AgentSettingsView({ agent }: Props) {
     })();
   }, [worktreePath, projectPath, refreshKey]);
 
-  // Load permissions from .claude/settings.local.json
+  // Load permissions from settings file (convention-aware)
   useEffect(() => {
     const readPath = worktreePath || projectPath;
     if (!readPath) return;
     (async () => {
       try {
-        const perms = await window.clubhouse.agentSettings.readPermissions(readPath);
+        const perms = await window.clubhouse.agentSettings.readPermissions(readPath, projectPath);
         setPermAllow((perms.allow || []).join('\n'));
         setPermDeny((perms.deny || []).join('\n'));
         setPermLoaded(true);
@@ -258,7 +261,7 @@ export function AgentSettingsView({ agent }: Props) {
     await window.clubhouse.agentSettings.savePermissions(writePath, {
       allow: allow.length > 0 ? allow : undefined,
       deny: deny.length > 0 ? deny : undefined,
-    });
+    }, projectPath);
     setPermDirty(false);
     setPermSaving(false);
   };
@@ -270,14 +273,19 @@ export function AgentSettingsView({ agent }: Props) {
     }
   };
 
-  // Resolve instructions file label from orchestrator conventions
+  // Resolve file/dir labels from orchestrator conventions
+  const conventions = orchestratorInfo?.conventions;
   const instructionsFileLabel = (() => {
-    if (!orchestratorInfo?.conventions) return 'instructions';
-    const { configDir, localInstructionsFile } = orchestratorInfo.conventions;
+    if (!conventions) return 'instructions';
+    const { configDir, localInstructionsFile } = conventions;
     // Claude Code: CLAUDE.md lives at project root, not under configDir
     if (localInstructionsFile === 'CLAUDE.md') return 'CLAUDE.md';
     return `${configDir}/${localInstructionsFile}`;
   })();
+  const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
+  const agentTemplatesPathLabel = conventions ? `${conventions.configDir}/${conventions.agentTemplatesDir}/` : '.claude/agents/';
+  const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
+  const permissionsPathLabel = conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
   const handleSaveQad = async () => {
     if (!projectPath) return;
@@ -529,6 +537,16 @@ export function AgentSettingsView({ agent }: Props) {
         {/* Main Agent Tab */}
         {activeTab === 'main' && (
           <div className="space-y-6">
+            {/* Shared settings note */}
+            <div className="text-[10px] text-ctp-subtext0/60 flex items-start gap-1.5 bg-ctp-mantle border border-surface-0 rounded-lg px-3 py-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Skills, agent definitions, and MCP settings are stored in the agent worktree. Agents sharing the same root directory will pick up and share these settings.</span>
+            </div>
+
             {/* Instructions Section */}
             {instructionsLoaded && (
               <section>
@@ -569,6 +587,33 @@ export function AgentSettingsView({ agent }: Props) {
                 />
               </section>
             )}
+
+            {/* Skills Section */}
+            <SkillsSection
+              worktreePath={worktreePath}
+              projectPath={projectPath}
+              disabled={isRunning}
+              refreshKey={refreshKey}
+              pathLabel={skillsPathLabel}
+            />
+
+            {/* Agent Definitions Section */}
+            <AgentTemplatesSection
+              worktreePath={worktreePath}
+              projectPath={projectPath}
+              disabled={isRunning}
+              refreshKey={refreshKey}
+              pathLabel={agentTemplatesPathLabel}
+            />
+
+            {/* MCP JSON Section */}
+            <McpJsonSection
+              worktreePath={worktreePath}
+              projectPath={projectPath}
+              disabled={isRunning}
+              refreshKey={refreshKey}
+              pathLabel={mcpPathLabel}
+            />
 
             {/* Free Agent Mode Section */}
             <section>
@@ -614,7 +659,7 @@ export function AgentSettingsView({ agent }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Permissions</h3>
-                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">.claude/settings.local.json</span>
+                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">{permissionsPathLabel}</span>
                   </div>
                   <button
                     onClick={handleSavePermissions}

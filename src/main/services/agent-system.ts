@@ -221,6 +221,11 @@ export function getAvailableOrchestrators() {
     conventions: {
       configDir: p.conventions.configDir,
       localInstructionsFile: p.conventions.localInstructionsFile,
+      legacyInstructionsFile: p.conventions.legacyInstructionsFile,
+      mcpConfigFile: p.conventions.mcpConfigFile,
+      skillsDir: p.conventions.skillsDir,
+      agentTemplatesDir: p.conventions.agentTemplatesDir,
+      localSettingsFile: p.conventions.localSettingsFile,
     },
   }));
 }

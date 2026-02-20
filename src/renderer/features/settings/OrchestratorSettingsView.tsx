@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
+import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 
 interface Props {
   projectId?: string;
@@ -151,6 +152,9 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </p>
         </div>
       )}
+
+      {/* Default Agent Settings */}
+      <ProjectAgentDefaultsSection projectPath={project.path} />
 
       {/* Quick agent mode */}
       <div className="space-y-2 mb-6">
