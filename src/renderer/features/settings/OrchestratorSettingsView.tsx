@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
+import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 
 interface Props {
@@ -15,13 +16,95 @@ function AppAgentSettings() {
     useOrchestratorStore();
   const headlessEnabled = useHeadlessStore((s) => s.enabled);
   const setHeadlessEnabled = useHeadlessStore((s) => s.setEnabled);
+  const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);
+  const setClubhouseEnabled = useClubhouseModeStore((s) => s.setEnabled);
+  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
-  }, [loadSettings, checkAllAvailability]);
+    loadClubhouseSettings();
+  }, [loadSettings, checkAllAvailability, loadClubhouseSettings]);
+
+  const handleClubhouseToggle = () => {
+    if (!clubhouseEnabled) {
+      setShowConfirm(true);
+    } else {
+      setClubhouseEnabled(false);
+    }
+  };
+
+  const confirmEnable = () => {
+    setShowConfirm(false);
+    setClubhouseEnabled(true);
+  };
 
   return (
     <>
+      {/* Clubhouse Mode toggle */}
+      <div className="space-y-3 mb-6">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Durable Agents</h3>
+        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
+          <div className="flex items-center gap-2.5">
+            <span className="text-ctp-subtext1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </span>
+            <div>
+              <div className="text-sm text-ctp-text">Clubhouse Mode</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">
+                Centrally manage agent instructions, permissions, and MCP config. Settings are pushed to worktrees on agent wake.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleClubhouseToggle}
+            className="toggle-track"
+            data-on={String(clubhouseEnabled)}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+        {clubhouseEnabled && (
+          <div className="px-3 py-2 rounded-lg bg-ctp-yellow/10 border border-ctp-yellow/20 text-xs text-ctp-yellow">
+            Wildcards <code className="bg-ctp-yellow/10 px-1 rounded">@@AgentName</code>, <code className="bg-ctp-yellow/10 px-1 rounded">@@StandbyBranch</code>, and <code className="bg-ctp-yellow/10 px-1 rounded">@@Path</code> in project defaults are resolved per-agent on each wake.
+          </div>
+        )}
+      </div>
+
+      {/* Confirmation dialog */}
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-ctp-text mb-2">Enable Clubhouse Mode?</h3>
+            <p className="text-xs text-ctp-subtext0 mb-4">
+              This will overwrite agent settings in worktrees with project-level defaults on each agent wake.
+              We recommend committing or backing up your current agent configurations first.
+            </p>
+            <p className="text-xs text-ctp-subtext0 mb-4">
+              Default templates with wildcard support will be created if no project defaults exist yet.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEnable}
+                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer transition-colors"
+              >
+                Enable
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Headless Quick Agents toggle */}
       <div className="space-y-3 mb-6">
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agents</h3>
@@ -119,6 +202,16 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
 
+  const clubhouseGlobal = useClubhouseModeStore((s) => s.enabled);
+  const clubhouseOverrides = useClubhouseModeStore((s) => s.projectOverrides);
+  const setClubhouseOverride = useClubhouseModeStore((s) => s.setProjectOverride);
+  const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
+  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
+
+  useEffect(() => {
+    loadClubhouseSettings();
+  }, [loadClubhouseSettings]);
+
   if (!project) return null;
 
   const projectPath = project.path;
@@ -126,9 +219,23 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const currentMode = hasOverride ? projectOverrides[projectPath] : 'global';
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
+  const hasClubhouseOverride = projectPath in clubhouseOverrides;
+  const currentClubhouseMode = hasClubhouseOverride
+    ? (clubhouseOverrides[projectPath] ? 'on' : 'off')
+    : 'global';
+
+  const clubhouseEffective = hasClubhouseOverride
+    ? clubhouseOverrides[projectPath]
+    : clubhouseGlobal;
+
   const handleModeChange = (value: string) => {
     if (value === 'global') clearProjectMode(projectPath);
     else setProjectMode(projectPath, value as SpawnMode);
+  };
+
+  const handleClubhouseModeChange = (value: string) => {
+    if (value === 'global') clearClubhouseOverride(projectPath);
+    else setClubhouseOverride(projectPath, value === 'on');
   };
 
   return (
@@ -153,8 +260,28 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
         </div>
       )}
 
+      {/* Clubhouse Mode */}
+      <div className="space-y-2 mb-6">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Clubhouse Mode</h3>
+        <select
+          value={currentClubhouseMode}
+          onChange={(e) => handleClubhouseModeChange(e.target.value)}
+          className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+            text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+        >
+          <option value="global">Global Default ({clubhouseGlobal ? 'On' : 'Off'})</option>
+          <option value="on">On</option>
+          <option value="off">Off</option>
+        </select>
+        <p className="text-xs text-ctp-subtext0">
+          {clubhouseEffective
+            ? 'Project-level defaults are live-managed and pushed to worktrees on agent wake.'
+            : 'When on, project-level defaults are live-managed and pushed to worktrees on agent wake.'}
+        </p>
+      </div>
+
       {/* Default Agent Settings */}
-      <ProjectAgentDefaultsSection projectPath={project.path} />
+      <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
 
       {/* Quick agent mode */}
       <div className="space-y-2 mb-6">

@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { Agent, QuickAgentDefaults } from '../../../shared/types';
+import { Agent, QuickAgentDefaults, MaterializationPreview } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { SkillsSection } from './SkillsSection';
@@ -176,6 +177,53 @@ export function AgentSettingsView({ agent }: Props) {
   const [qadDirty, setQadDirty] = useState(false);
   const [qadSaving, setQadSaving] = useState(false);
   const [qadLoaded, setQadLoaded] = useState(false);
+
+  // Clubhouse Mode state
+  const isClubhouseModeEnabled = useClubhouseModeStore((s) => s.isEnabledForProject);
+  const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
+  const [clubhouseModeOverride, setClubhouseModeOverride] = useState(false);
+  const [preview, setPreview] = useState<MaterializationPreview | null>(null);
+  const clubhouseActive = projectPath ? isClubhouseModeEnabled(projectPath) : false;
+  const isManagedByClubhouse = clubhouseActive && !clubhouseModeOverride;
+
+  useEffect(() => {
+    loadClubhouseSettings();
+  }, [loadClubhouseSettings]);
+
+  // Load clubhouse mode override state from durable config
+  useEffect(() => {
+    if (!projectPath) return;
+    (async () => {
+      try {
+        const config = await window.clubhouse.agent.getDurableConfig(projectPath, agent.id);
+        setClubhouseModeOverride(config?.clubhouseModeOverride ?? false);
+      } catch {
+        // ignore
+      }
+    })();
+  }, [projectPath, agent.id]);
+
+  // Load materialization preview when managed
+  useEffect(() => {
+    if (!projectPath || !isManagedByClubhouse) {
+      setPreview(null);
+      return;
+    }
+    (async () => {
+      try {
+        const p = await window.clubhouse.agentSettings.previewMaterialization(projectPath, agent.id);
+        setPreview(p);
+      } catch {
+        setPreview(null);
+      }
+    })();
+  }, [projectPath, agent.id, isManagedByClubhouse]);
+
+  const handleClubhouseOverrideChange = async (enabled: boolean) => {
+    if (!projectPath) return;
+    setClubhouseModeOverride(enabled);
+    await window.clubhouse.agent.updateDurableConfig(projectPath, agent.id, { clubhouseModeOverride: enabled });
+  };
 
   // Refresh counter — increment to force re-read from disk
   const [refreshKey, setRefreshKey] = useState(0);
@@ -354,6 +402,33 @@ export function AgentSettingsView({ agent }: Props) {
       {isRunning && (
         <div className="px-4 py-2 bg-ctp-yellow/10 border-b border-ctp-yellow/20 text-xs text-ctp-yellow flex-shrink-0">
           Settings are read-only while this agent is running.
+        </div>
+      )}
+
+      {/* Clubhouse Mode banner */}
+      {clubhouseActive && (
+        <div className={`px-4 py-2 border-b flex-shrink-0 ${
+          isManagedByClubhouse
+            ? 'bg-ctp-green/10 border-ctp-green/20'
+            : 'bg-ctp-yellow/10 border-ctp-yellow/20'
+        }`}>
+          <div className="flex items-center justify-between">
+            <span className={`text-xs ${isManagedByClubhouse ? 'text-ctp-green' : 'text-ctp-yellow'}`}>
+              {isManagedByClubhouse
+                ? 'Clubhouse Mode is active. Settings are managed from project defaults and refreshed on agent wake.'
+                : 'Clubhouse Mode is active but local overrides are enabled for this agent.'}
+            </span>
+          </div>
+          <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={clubhouseModeOverride}
+              onChange={(e) => handleClubhouseOverrideChange(e.target.checked)}
+              disabled={isRunning}
+              className="w-3 h-3 rounded border-surface-2 bg-surface-0 accent-ctp-blue"
+            />
+            <span className="text-[10px] text-ctp-subtext0">Enable local overrides</span>
+          </label>
         </div>
       )}
 
@@ -544,11 +619,78 @@ export function AgentSettingsView({ agent }: Props) {
                 <line x1="12" y1="16" x2="12" y2="12" />
                 <line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
-              <span>Skills, agent definitions, and MCP settings are stored in the agent worktree. Agents sharing the same root directory will pick up and share these settings.</span>
+              <span>
+                {isManagedByClubhouse
+                  ? 'These values are resolved from project defaults. Wildcards have been replaced with this agent\'s actual values.'
+                  : 'Skills, agent definitions, and MCP settings are stored in the agent worktree. Agents sharing the same root directory will pick up and share these settings.'}
+              </span>
             </div>
 
-            {/* Instructions Section */}
-            {instructionsLoaded && (
+            {/* Materialization Preview (read-only when managed) */}
+            {isManagedByClubhouse && preview && (
+              <div className="space-y-4">
+                {preview.instructions && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved Instructions</h3>
+                    <pre className="w-full bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 border border-surface-1 overflow-x-auto whitespace-pre-wrap opacity-70 max-h-40 overflow-y-auto">
+                      {preview.instructions}
+                    </pre>
+                  </section>
+                )}
+                {(preview.permissions.allow?.length || preview.permissions.deny?.length) ? (
+                  <section>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved Permissions</h3>
+                    {preview.permissions.allow && preview.permissions.allow.length > 0 && (
+                      <div className="mb-2">
+                        <span className="text-[10px] text-ctp-subtext0/60">Allow</span>
+                        <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
+                          {preview.permissions.allow.join('\n')}
+                        </pre>
+                      </div>
+                    )}
+                    {preview.permissions.deny && preview.permissions.deny.length > 0 && (
+                      <div>
+                        <span className="text-[10px] text-ctp-subtext0/60">Deny</span>
+                        <pre className="bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-2 border border-surface-1 opacity-70">
+                          {preview.permissions.deny.join('\n')}
+                        </pre>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+                {preview.mcpJson && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Resolved MCP Config</h3>
+                    <pre className="w-full bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 border border-surface-1 overflow-x-auto whitespace-pre-wrap opacity-70 max-h-32 overflow-y-auto">
+                      {preview.mcpJson}
+                    </pre>
+                  </section>
+                )}
+                {preview.skills.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Managed Skills</h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preview.skills.map((s) => (
+                        <span key={s} className="px-2 py-0.5 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-subtext0">{s}</span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {preview.agentTemplates.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider mb-2">Managed Agent Templates</h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {preview.agentTemplates.map((t) => (
+                        <span key={t} className="px-2 py-0.5 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-subtext0">{t}</span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {/* Instructions Section (hidden when managed by clubhouse mode) */}
+            {!isManagedByClubhouse && instructionsLoaded && (
               <section>
                 <div className="flex items-center justify-between mb-2">
                   <div>
@@ -588,32 +730,38 @@ export function AgentSettingsView({ agent }: Props) {
               </section>
             )}
 
-            {/* Skills Section */}
-            <SkillsSection
-              worktreePath={worktreePath}
-              projectPath={projectPath}
-              disabled={isRunning}
-              refreshKey={refreshKey}
-              pathLabel={skillsPathLabel}
-            />
+            {/* Skills Section (hidden when managed) */}
+            {!isManagedByClubhouse && (
+              <SkillsSection
+                worktreePath={worktreePath}
+                projectPath={projectPath}
+                disabled={isRunning}
+                refreshKey={refreshKey}
+                pathLabel={skillsPathLabel}
+              />
+            )}
 
-            {/* Agent Definitions Section */}
-            <AgentTemplatesSection
-              worktreePath={worktreePath}
-              projectPath={projectPath}
-              disabled={isRunning}
-              refreshKey={refreshKey}
-              pathLabel={agentTemplatesPathLabel}
-            />
+            {/* Agent Definitions Section (hidden when managed) */}
+            {!isManagedByClubhouse && (
+              <AgentTemplatesSection
+                worktreePath={worktreePath}
+                projectPath={projectPath}
+                disabled={isRunning}
+                refreshKey={refreshKey}
+                pathLabel={agentTemplatesPathLabel}
+              />
+            )}
 
-            {/* MCP JSON Section */}
-            <McpJsonSection
-              worktreePath={worktreePath}
-              projectPath={projectPath}
-              disabled={isRunning}
-              refreshKey={refreshKey}
-              pathLabel={mcpPathLabel}
-            />
+            {/* MCP JSON Section (hidden when managed) */}
+            {!isManagedByClubhouse && (
+              <McpJsonSection
+                worktreePath={worktreePath}
+                projectPath={projectPath}
+                disabled={isRunning}
+                refreshKey={refreshKey}
+                pathLabel={mcpPathLabel}
+              />
+            )}
 
             {/* Free Agent Mode Section */}
             <section>
@@ -653,8 +801,8 @@ export function AgentSettingsView({ agent }: Props) {
               )}
             </section>
 
-            {/* Permissions Section */}
-            {permLoaded && (
+            {/* Permissions Section (hidden when managed) */}
+            {!isManagedByClubhouse && permLoaded && (
               <section>
                 <div className="flex items-center justify-between mb-2">
                   <div>

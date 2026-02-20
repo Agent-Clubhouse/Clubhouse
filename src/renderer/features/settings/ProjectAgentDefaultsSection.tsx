@@ -10,9 +10,10 @@ interface ProjectAgentDefaults {
 
 interface Props {
   projectPath: string;
+  clubhouseMode?: boolean;
 }
 
-export function ProjectAgentDefaultsSection({ projectPath }: Props) {
+export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Props) {
   const [defaults, setDefaults] = useState<ProjectAgentDefaults>({});
   const [instructions, setInstructions] = useState('');
   const [permAllow, setPermAllow] = useState('');
@@ -101,14 +102,25 @@ export function ProjectAgentDefaultsSection({ projectPath }: Props) {
 
       {expanded && (
         <div className="space-y-4 pl-5">
-          {/* Snapshot note */}
-          <div className="text-[10px] text-ctp-subtext0/60 flex items-start gap-1.5 bg-ctp-mantle border border-surface-0 rounded-lg px-3 py-2">
+          {/* Mode note */}
+          <div className={`text-[10px] flex items-start gap-1.5 rounded-lg px-3 py-2 ${
+            clubhouseMode
+              ? 'text-ctp-green bg-ctp-green/10 border border-ctp-green/20'
+              : 'text-ctp-subtext0/60 bg-ctp-mantle border border-surface-0'
+          }`}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="16" x2="12" y2="12" />
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
-            <span>These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.</span>
+            <span>
+              {clubhouseMode
+                ? <>
+                    <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Use wildcards: <code className="bg-ctp-green/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-green/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-green/10 px-0.5 rounded">@@Path</code>.
+                  </>
+                : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'
+              }
+            </span>
           </div>
 
           {/* Default instructions */}
