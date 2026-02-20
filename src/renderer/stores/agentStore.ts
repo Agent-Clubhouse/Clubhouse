@@ -165,7 +165,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     // Fetch quick agent defaults from parent durable agent
-    let quickDefaults: { systemPrompt?: string; allowedTools?: string[]; defaultModel?: string } | undefined;
+    let quickDefaults: { systemPrompt?: string; allowedTools?: string[]; defaultModel?: string; freeAgentMode?: boolean } | undefined;
     if (parentAgentId) {
       try {
         const parentConfig = await window.clubhouse.agent.getDurableConfig(projectPath, parentAgentId);
