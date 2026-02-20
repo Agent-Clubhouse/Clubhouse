@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
+import { attachClipboardHandlers } from '../terminal/clipboard';
 
 interface Props {
   agentId: string;
@@ -52,6 +53,13 @@ export function AgentTerminal({ agentId, focused }: Props) {
       window.clubhouse.pty.write(agentId, data);
     });
 
+    // Clipboard: Ctrl+V paste, Ctrl+C copy-on-selection, right-click
+    const removeClipboardHandlers = attachClipboardHandlers(
+      term,
+      containerRef.current,
+      (data) => window.clubhouse.pty.write(agentId, data)
+    );
+
     // Receive PTY output
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
@@ -79,6 +87,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      removeClipboardHandlers();
       inputDisposable.dispose();
       removeDataListener();
       resizeObserver.disconnect();
