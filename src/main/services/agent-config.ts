@@ -88,7 +88,7 @@ export function getDurableConfig(projectPath: string, agentId: string): DurableA
 export function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -111,6 +111,13 @@ export function updateDurableConfig(
       agent.freeAgentMode = true;
     } else {
       delete agent.freeAgentMode;
+    }
+  }
+  if (updates.clubhouseModeOverride !== undefined) {
+    if (updates.clubhouseModeOverride) {
+      agent.clubhouseModeOverride = true;
+    } else {
+      delete agent.clubhouseModeOverride;
     }
   }
   writeAgents(projectPath, agents);

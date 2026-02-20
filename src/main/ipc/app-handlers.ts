@@ -6,11 +6,14 @@ import * as notificationService from '../services/notification-service';
 import * as themeService from '../services/theme-service';
 import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
+import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
-import { UpdateSettings } from '../../shared/types';
+import { ClubhouseModeSettings, UpdateSettings } from '../../shared/types';
+import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
+import { resolveOrchestrator } from '../services/agent-system';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, (_event, url: string) => {
@@ -159,5 +162,38 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.LOG.GET_LOG_PATH, () => {
     return logService.getLogPath();
+  });
+
+  // --- Clubhouse Mode ---
+  ipcMain.handle(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS, () => {
+    return clubhouseModeSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
+    const previousEnabled = projectPath
+      ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
+      : clubhouseModeSettings.getSettings().enabled;
+
+    clubhouseModeSettings.saveSettings(settings);
+
+    const nowEnabled = projectPath
+      ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
+      : settings.enabled;
+
+    // On first enable: create default templates and enable git excludes
+    if (!previousEnabled && nowEnabled && projectPath) {
+      ensureDefaultTemplates(projectPath);
+      try {
+        const provider = resolveOrchestrator(projectPath);
+        enableExclusions(projectPath, provider);
+      } catch {
+        // Orchestrator not available
+      }
+    }
+
+    // On disable: remove git excludes
+    if (previousEnabled && !nowEnabled && projectPath) {
+      disableExclusions(projectPath);
+    }
   });
 }

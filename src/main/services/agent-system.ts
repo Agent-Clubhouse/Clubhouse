@@ -7,7 +7,10 @@ import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
 import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
+import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
+import { getDurableConfig } from './agent-config';
+import { materializeAgent } from './materialization-service';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -99,6 +102,20 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   agentProjectMap.set(params.agentId, params.projectPath);
   if (params.orchestrator) {
     agentOrchestratorMap.set(params.agentId, params.orchestrator);
+  }
+
+  // Clubhouse Mode: materialize project defaults into worktree before spawn
+  if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
+    try {
+      const config = getDurableConfig(params.projectPath, params.agentId);
+      if (config && !config.clubhouseModeOverride && config.worktreePath) {
+        materializeAgent({ projectPath: params.projectPath, agent: config, provider });
+      }
+    } catch (err) {
+      appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
+        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
   }
 
   const allowedTools = params.allowedTools

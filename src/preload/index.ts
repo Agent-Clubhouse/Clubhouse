@@ -233,6 +233,16 @@ const api = {
       localSettingsFile: string;
     } | null> =>
       ipcRenderer.invoke(IPC.AGENT.GET_CONVENTIONS, projectPath),
+    materializeAgent: (projectPath: string, agentId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.MATERIALIZE_AGENT, projectPath, agentId),
+    previewMaterialization: (projectPath: string, agentId: string): Promise<{
+      instructions: string;
+      permissions: { allow?: string[]; deny?: string[] };
+      mcpJson: string | null;
+      skills: string[];
+      agentTemplates: string[];
+    } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.PREVIEW_MATERIALIZATION, projectPath, agentId),
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),
@@ -380,6 +390,10 @@ const api = {
       ipcRenderer.invoke(IPC.APP.CLEAR_PENDING_RELEASE_NOTES),
     getVersionHistory: () =>
       ipcRenderer.invoke(IPC.APP.GET_VERSION_HISTORY),
+    getClubhouseModeSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS),
+    saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean> }, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, settings, projectPath),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
       availableVersion: string | null;

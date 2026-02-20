@@ -96,6 +96,8 @@ vi.stubGlobal('clubhouse', {
     readProjectAgentDefaults: async () => ({}),
     writeProjectAgentDefaults: asyncNoop,
     getConventions: async () => null,
+    materializeAgent: asyncNoop,
+    previewMaterialization: async () => null,
   },
   log: {
     write: noop,

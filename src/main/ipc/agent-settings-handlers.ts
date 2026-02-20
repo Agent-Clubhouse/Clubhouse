@@ -3,6 +3,8 @@ import { IPC } from '../../shared/ipc-channels';
 import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
+import { getDurableConfig } from '../services/agent-config';
+import { materializeAgent, previewMaterialization } from '../services/materialization-service';
 
 /**
  * Resolve orchestrator conventions for a project path.
@@ -132,5 +134,21 @@ export function registerAgentSettingsHandlers(): void {
     } catch {
       return null;
     }
+  });
+
+  // --- Materialization ---
+
+  ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, (_event, projectPath: string, agentId: string) => {
+    const agent = getDurableConfig(projectPath, agentId);
+    if (!agent) return;
+    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    materializeAgent({ projectPath, agent, provider });
+  });
+
+  ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, (_event, projectPath: string, agentId: string) => {
+    const agent = getDurableConfig(projectPath, agentId);
+    if (!agent) return null;
+    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    return previewMaterialization({ projectPath, agent, provider });
   });
 }
