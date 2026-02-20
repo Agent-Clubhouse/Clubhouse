@@ -123,7 +123,19 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
   proc.onData((data: string) => {
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
-    if (current.pendingCommand) return; // suppress shell startup output
+    // Shell emitted data while a command is pending — it's ready for input.
+    // Fire the command immediately so agents start without waiting for a
+    // terminal UI resize (which only happens when the hub pane is visible).
+    if (current.pendingCommand) {
+      const cmd = current.pendingCommand;
+      current.pendingCommand = undefined;
+      if (process.platform === 'win32') {
+        current.process.write(`${cmd} & exit\r\n`);
+      } else {
+        current.process.write(`exec ${cmd}\n`);
+      }
+      return; // suppress shell startup output
+    }
 
     session.lastActivity = Date.now();
     appendToBuffer(session, data);
