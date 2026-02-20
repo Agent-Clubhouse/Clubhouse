@@ -85,7 +85,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
       `}
     >
       {/* Avatar with status ring */}
-      <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''} ${agent.headless && agent.status === 'running' ? 'animate-headless-orbit' : ''}`}>
+      <div className={`relative flex-shrink-0 ${isWorking ? 'animate-pulse-ring' : ''}`}>
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{ border: `2px solid ${ringColor}` }}

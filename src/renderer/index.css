@@ -149,7 +149,7 @@
   transform: translateX(16px);
 }
 
-/* Hub: pulsing status ring for working agents */
+/* Hub: pulsing status ring for working agents with rotating highlight */
 @keyframes pulse-ring {
   0%, 100% {
     opacity: 1;
@@ -161,8 +161,35 @@
   }
 }
 
+@keyframes ring-highlight-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .animate-pulse-ring {
   animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 70%,
+    rgba(137, 180, 250, 0.3) 82%,
+    rgba(137, 180, 250, 0.7) 90%,
+    rgba(205, 214, 244, 0.8) 95%,
+    rgba(137, 180, 250, 0.7) 98%,
+    transparent 100%
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 3px));
+  animation: ring-highlight-rotate 1.5s linear infinite;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* Hub: attention border for agents needing action */
@@ -296,43 +323,7 @@
   animation: stuck-pulse 2s ease-in-out infinite;
 }
 
-/* Headless agent orbit animation for list item avatar */
-@keyframes headless-orbit {
-  0% {
-    box-shadow: 0 -12px 0 -5px rgba(137, 180, 250, 0.6),
-                12px 0 0 -5px rgba(137, 180, 250, 0.2),
-                0 12px 0 -5px rgba(137, 180, 250, 0.0),
-                -12px 0 0 -5px rgba(137, 180, 250, 0.2);
-  }
-  25% {
-    box-shadow: 0 -12px 0 -5px rgba(137, 180, 250, 0.2),
-                12px 0 0 -5px rgba(137, 180, 250, 0.6),
-                0 12px 0 -5px rgba(137, 180, 250, 0.2),
-                -12px 0 0 -5px rgba(137, 180, 250, 0.0);
-  }
-  50% {
-    box-shadow: 0 -12px 0 -5px rgba(137, 180, 250, 0.0),
-                12px 0 0 -5px rgba(137, 180, 250, 0.2),
-                0 12px 0 -5px rgba(137, 180, 250, 0.6),
-                -12px 0 0 -5px rgba(137, 180, 250, 0.2);
-  }
-  75% {
-    box-shadow: 0 -12px 0 -5px rgba(137, 180, 250, 0.2),
-                12px 0 0 -5px rgba(137, 180, 250, 0.0),
-                0 12px 0 -5px rgba(137, 180, 250, 0.2),
-                -12px 0 0 -5px rgba(137, 180, 250, 0.6);
-  }
-  100% {
-    box-shadow: 0 -12px 0 -5px rgba(137, 180, 250, 0.6),
-                12px 0 0 -5px rgba(137, 180, 250, 0.2),
-                0 12px 0 -5px rgba(137, 180, 250, 0.0),
-                -12px 0 0 -5px rgba(137, 180, 250, 0.2);
-  }
-}
-
-.animate-headless-orbit {
-  animation: headless-orbit 1.5s linear infinite;
-}
+/* headless-orbit removed — replaced by pulse-ring with rotating highlight */
 
 /* Help content markdown styles */
 .help-content h1 {

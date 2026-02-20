@@ -305,10 +305,7 @@ export function HeadlessAgentView({ agent }: Props) {
         <div className="w-full bg-ctp-mantle border border-surface-0 rounded-lg overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-surface-0">
             <span className="text-[10px] text-ctp-subtext0 uppercase tracking-wider">Live Activity</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] text-ctp-subtext0">{feedItems.length} events</span>
-            </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
           </div>
           <div
             ref={feedRef}
