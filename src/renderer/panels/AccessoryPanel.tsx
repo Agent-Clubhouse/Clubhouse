@@ -37,6 +37,7 @@ function SettingsCategoryNav() {
         {isApp ? (
           <>
             {navButton('About', 'about')}
+            {navButton('Getting Started', 'getting-started')}
             {navButton('Agents', 'orchestrators')}
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}

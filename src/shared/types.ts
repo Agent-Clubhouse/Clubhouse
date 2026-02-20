@@ -141,7 +141,7 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started';
 
 // --- Auto-update types ---
 

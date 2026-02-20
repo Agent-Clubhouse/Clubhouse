@@ -18,6 +18,7 @@ import { AboutSettingsView } from '../features/settings/AboutSettingsView';
 import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
+import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -90,6 +91,7 @@ export function MainContentView() {
     if (settingsSubPage === 'plugins') return <PluginListSettings />;
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
+    if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }
