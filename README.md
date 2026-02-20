@@ -53,7 +53,7 @@ Clubhouse is designed around the idea that opinionated workflows belong in plugi
 
 3. **Explicit support, no silent regression.** Supported plugin API versions are fully tested and guaranteed. Unsupported versions are rejected at load time. No quiet breakage.
 
-The test for any feature: *would a reasonable user want to turn this off?* If yes, it's a plugin. See the [full principles](https://github.com/masra91/Clubhouse/wiki/Extensibility-Principles) in the wiki.
+The test for any feature: *would a reasonable user want to turn this off?* If yes, it's a plugin. See the [full principles](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Extensibility-Principles) in the wiki.
 
 ## Architecture
 
@@ -69,13 +69,13 @@ src/
 
 The **orchestrator system** abstracts CLI-specific logic behind a provider interface, so adding support for a new coding agent CLI requires implementing a single `OrchestratorProvider`. The **plugin system** exposes a rich API for building custom tabs, commands, and integrations.
 
-See the [Wiki](https://github.com/masra91/Clubhouse/wiki) for detailed developer documentation:
+See the [Wiki](https://github.com/Agent-Clubhouse/Clubhouse/wiki) for detailed developer documentation:
 
-- [Architecture](https://github.com/masra91/Clubhouse/wiki/Architecture) — Process model, IPC, services, and data flow
-- [Orchestrator System](https://github.com/masra91/Clubhouse/wiki/Orchestrator-System) — Provider interface, registry, and built-in providers
-- [Plugin System](https://github.com/masra91/Clubhouse/wiki/Plugin-System) — API reference, manifest format, permissions, and built-in plugins
-- [Agent Lifecycle](https://github.com/masra91/Clubhouse/wiki/Agent-Lifecycle) — Durable vs quick agents, spawn modes, hooks, and deletion
-- [Development Guide](https://github.com/masra91/Clubhouse/wiki/Development-Guide) — Setup, build, test, and project conventions
+- [Architecture](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Architecture) — Process model, IPC, services, and data flow
+- [Orchestrator System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Orchestrator-System) — Provider interface, registry, and built-in providers
+- [Plugin System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Plugin-System) — API reference, manifest format, permissions, and built-in plugins
+- [Agent Lifecycle](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Agent-Lifecycle) — Durable vs quick agents, spawn modes, hooks, and deletion
+- [Development Guide](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Development-Guide) — Setup, build, test, and project conventions
 
 ## Tech Stack
 

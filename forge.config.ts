@@ -79,7 +79,7 @@ const config: ForgeConfig = {
       icon: path.resolve(__dirname, 'assets', 'icon.icns'),
     }, ['darwin']),
     new MakerSquirrel({
-      iconUrl: 'https://raw.githubusercontent.com/masonallen/Clubhouse/main/assets/icon.ico',
+      iconUrl: 'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse/main/assets/icon.ico',
       ...(fs.existsSync(path.resolve(__dirname, 'assets', 'icon.ico'))
         ? { setupIcon: path.resolve(__dirname, 'assets', 'icon.ico') }
         : {}),
