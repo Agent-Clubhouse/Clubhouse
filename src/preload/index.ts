@@ -53,8 +53,8 @@ const api = {
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>
@@ -101,6 +101,7 @@ const api = {
       systemPrompt?: string;
       allowedTools?: string[];
       orchestrator?: string;
+      freeAgentMode?: boolean;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string, orchestrator?: string) =>

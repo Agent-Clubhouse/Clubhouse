@@ -28,7 +28,7 @@ interface AgentState {
   openDeleteDialog: (agentId: string) => void;
   closeDeleteDialog: () => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
-  spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string, orchestrator?: string) => Promise<string>;
+  spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string, orchestrator?: string, freeAgentMode?: boolean) => Promise<string>;
   spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean, mission?: string) => Promise<string>;
   loadDurableAgents: (projectId: string, projectPath: string) => Promise<void>;
   killAgent: (id: string, projectPath?: string) => Promise<void>;
@@ -150,7 +150,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return result;
   },
 
-  spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator) => {
+  spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
     quickCounter++;
     const agentId = `quick_${Date.now()}_${quickCounter}`;
     const name = generateQuickName();
@@ -186,6 +186,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     const isHeadless = useHeadlessStore.getState().getProjectMode(projectPath) === 'headless';
 
+    // Resolve free agent mode: explicit param > parent's quickDefaults
+    const resolvedFreeAgentMode = freeAgentMode ?? quickDefaults?.freeAgentMode;
+
     const agent: Agent = {
       id: agentId,
       projectId,
@@ -198,6 +201,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       parentAgentId,
       orchestrator: resolvedOrchestrator,
       headless: isHeadless || undefined,
+      freeAgentMode: resolvedFreeAgentMode || undefined,
     };
 
     set((s) => ({
@@ -237,6 +241,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         systemPrompt,
         allowedTools: quickDefaults?.allowedTools,
         orchestrator: resolvedOrchestrator,
+        freeAgentMode: resolvedFreeAgentMode,
       });
     } catch (err) {
       set((s) => ({
@@ -263,6 +268,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       exitCode: undefined,
       mission,
       orchestrator: config.orchestrator,
+      freeAgentMode: config.freeAgentMode || undefined,
     };
 
     set((s) => ({
@@ -284,6 +290,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         model: config.model,
         mission,
         orchestrator: config.orchestrator,
+        freeAgentMode: config.freeAgentMode,
       });
     } catch (err) {
       set((s) => ({
@@ -313,6 +320,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           branch: config.branch,
           model: config.model,
           orchestrator: config.orchestrator,
+          freeAgentMode: config.freeAgentMode,
         };
       } else {
         // Always update projectId — the same agents.json may be loaded

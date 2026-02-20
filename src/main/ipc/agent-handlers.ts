@@ -14,8 +14,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.CREATE_DURABLE,
-    (_event, projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string) => {
-      return agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator);
+    (_event, projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean) => {
+      return agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode);
     }
   );
 
