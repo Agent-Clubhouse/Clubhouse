@@ -69,7 +69,7 @@ describe('headlessStore', () => {
 
       await getState().loadSettings();
 
-      expect(getState().enabled).toBe(false);
+      expect(getState().enabled).toBe(true);
       expect(getState().projectOverrides).toEqual({});
     });
 
@@ -78,7 +78,7 @@ describe('headlessStore', () => {
 
       await getState().loadSettings();
 
-      // Should keep defaults
+      // Should keep current state (set to false in beforeEach)
       expect(getState().enabled).toBe(false);
       expect(getState().projectOverrides).toEqual({});
     });

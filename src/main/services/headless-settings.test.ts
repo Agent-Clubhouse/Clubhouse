@@ -75,9 +75,9 @@ describe('headless-settings', () => {
       expect(getSpawnMode('/project')).toBe('interactive');
     });
 
-    it('returns interactive when settings file does not exist', () => {
+    it('returns headless when settings file does not exist (default)', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(getSpawnMode('/project')).toBe('interactive');
+      expect(getSpawnMode('/project')).toBe('headless');
     });
 
     it('handles multiple project overrides independently', () => {
@@ -92,7 +92,7 @@ describe('headless-settings', () => {
       expect(getSpawnMode('/project-a')).toBe('headless');
       expect(getSpawnMode('/project-b')).toBe('interactive');
       expect(getSpawnMode('/project-c')).toBe('headless');
-      expect(getSpawnMode('/project-d')).toBe('interactive'); // no override → global
+      expect(getSpawnMode('/project-d')).toBe('interactive'); // no override → global (enabled: false)
     });
   });
 
@@ -163,14 +163,14 @@ describe('headless-settings', () => {
     it('returns defaults when file does not exist', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const settings = getSettings();
-      expect(settings.enabled).toBe(false);
+      expect(settings.enabled).toBe(true);
     });
 
     it('returns defaults when file contains invalid JSON', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readFileSync).mockReturnValue('not json');
       const settings = getSettings();
-      expect(settings.enabled).toBe(false);
+      expect(settings.enabled).toBe(true);
     });
   });
 
