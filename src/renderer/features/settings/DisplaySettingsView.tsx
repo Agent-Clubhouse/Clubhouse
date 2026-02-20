@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { THEMES, THEME_IDS } from '../../themes';
 
 const VIEW_TOGGLES = [
@@ -21,9 +23,14 @@ export function DisplaySettingsView() {
   const setTheme = useThemeStore((s) => s.setTheme);
   const showHome = useUIStore((s) => s.showHome);
   const setShowHome = useUIStore((s) => s.setShowHome);
+  const clipboardCompat = useClipboardSettingsStore((s) => s.clipboardCompat);
+  const loadClipboard = useClipboardSettingsStore((s) => s.loadSettings);
+  const saveClipboard = useClipboardSettingsStore((s) => s.saveSettings);
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
   };
+
+  useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
@@ -55,6 +62,26 @@ export function DisplaySettingsView() {
               </div>
             );
           })}
+        </div>
+
+        {/* Compatibility */}
+        <div className="space-y-3 mb-6">
+          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Compatibility</h3>
+          <div className="flex items-center justify-between py-1.5">
+            <div>
+              <div className="text-sm text-ctp-text">Enable Clipboard Compatibility</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">
+                Use explicit clipboard handling for terminal paste. Enable this if paste does not work on your platform.
+              </div>
+            </div>
+            <button
+              onClick={() => saveClipboard(!clipboardCompat)}
+              className="toggle-track"
+              data-on={String(clipboardCompat)}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </div>
         </div>
 
         {/* Color theme */}
