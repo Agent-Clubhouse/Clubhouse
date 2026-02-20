@@ -18,7 +18,7 @@ const EXCLUDE_TAG = 'clubhouse-mode';
 
 export function buildWildcardContext(agent: DurableAgentConfig, projectPath: string): WildcardContext {
   const agentPath = agent.worktreePath
-    ? path.relative(projectPath, agent.worktreePath) + '/'
+    ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
     : `.clubhouse/agents/${agent.name}/`;
   return {
     agentName: agent.name,
