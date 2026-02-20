@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
+import { attachClipboardHandlers } from './clipboard';
 
 interface Props {
   sessionId: string;
@@ -49,6 +50,12 @@ export function ShellTerminal({ sessionId, focused }: Props) {
       window.clubhouse.pty.write(sessionId, data);
     });
 
+    const removeClipboardHandlers = attachClipboardHandlers(
+      term,
+      containerRef.current,
+      (data) => window.clubhouse.pty.write(sessionId, data)
+    );
+
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
         if (id === sessionId) {
@@ -74,6 +81,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      removeClipboardHandlers();
       inputDisposable.dispose();
       removeDataListener();
       resizeObserver.disconnect();
