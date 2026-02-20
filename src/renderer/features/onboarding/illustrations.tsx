@@ -51,15 +51,15 @@ export function ClubhouseStructureIllustration({ className }: { className?: stri
       <rect x="30" y="105" width="50" height="8" rx="4" fill="rgb(var(--ctp-surface2))" />
 
       <rect x="115" y="30" width="90" height="70" rx="12" fill="rgb(var(--ctp-surface0))" />
-      <text x="160" y="55" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Quick Agents</text>
-      <circle cx="140" cy="78" r="6" fill="rgb(var(--ctp-accent))" opacity="0.5" />
-      <circle cx="160" cy="78" r="6" fill="rgb(var(--ctp-accent))" opacity="0.7" />
-      <circle cx="180" cy="78" r="6" fill="rgb(var(--ctp-accent))" opacity="0.9" />
+      <text x="160" y="55" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Durable Agents</text>
+      <rect x="130" y="70" width="60" height="6" rx="3" fill="rgb(var(--ctp-accent))" opacity="0.4" />
+      <rect x="130" y="80" width="40" height="6" rx="3" fill="rgb(var(--ctp-accent))" opacity="0.6" />
 
       <rect x="115" y="115" width="90" height="70" rx="12" fill="rgb(var(--ctp-surface0))" />
-      <text x="160" y="142" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Durable Agents</text>
-      <rect x="130" y="155" width="60" height="6" rx="3" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="130" y="165" width="40" height="6" rx="3" fill="rgb(var(--ctp-accent))" opacity="0.6" />
+      <text x="160" y="142" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Quick Agents</text>
+      <circle cx="140" cy="163" r="6" fill="rgb(var(--ctp-accent))" opacity="0.5" />
+      <circle cx="160" cy="163" r="6" fill="rgb(var(--ctp-accent))" opacity="0.7" />
+      <circle cx="180" cy="163" r="6" fill="rgb(var(--ctp-accent))" opacity="0.9" />
 
       <rect x="220" y="10" width="90" height="180" rx="12" fill="rgb(var(--ctp-surface0))" />
       <text x="265" y="40" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-subtext0))">Terminal</text>

@@ -26,6 +26,18 @@ vi.mock('../../stores/projectStore', () => ({
   }),
 }));
 
+// Mock uiStore
+const mockSetExplorerTab = vi.fn();
+const mockSetSettingsSubPage = vi.fn();
+const mockSetSettingsContext = vi.fn();
+vi.mock('../../stores/uiStore', () => ({
+  useUIStore: (selector: (s: any) => any) => selector({
+    setExplorerTab: mockSetExplorerTab,
+    setSettingsSubPage: mockSetSettingsSubPage,
+    setSettingsContext: mockSetSettingsContext,
+  }),
+}));
+
 function resetStore() {
   useOnboardingStore.setState({
     showOnboarding: false,
@@ -34,6 +46,9 @@ function resetStore() {
     step: 'cohort-select',
     highlightIndex: 0,
   });
+  mockSetExplorerTab.mockClear();
+  mockSetSettingsSubPage.mockClear();
+  mockSetSettingsContext.mockClear();
 }
 
 describe('OnboardingModal', () => {
@@ -167,19 +182,25 @@ describe('OnboardingModal', () => {
     expect(dot2.className).toContain('bg-surface-2');
   });
 
-  it('help button opens external URL', () => {
+  it('help button dismisses modal and opens in-app help view', () => {
     useOnboardingStore.setState({ showOnboarding: true, step: 'get-started' });
     render(<OnboardingModal />);
 
     fireEvent.click(screen.getByTestId('onboarding-help-btn'));
-    expect(window.open).toHaveBeenCalledWith('https://docs.clubhouse.dev/getting-started', '_blank');
+    expect(useOnboardingStore.getState().showOnboarding).toBe(false);
+    expect(useOnboardingStore.getState().completed).toBe(true);
+    expect(mockSetExplorerTab).toHaveBeenCalledWith('help');
   });
 
-  it('extensibility button opens external URL', () => {
+  it('extensibility button dismisses modal and opens plugins settings', () => {
     useOnboardingStore.setState({ showOnboarding: true, step: 'get-started' });
     render(<OnboardingModal />);
 
     fireEvent.click(screen.getByTestId('onboarding-extensibility-btn'));
-    expect(window.open).toHaveBeenCalledWith('https://docs.clubhouse.dev/plugins', '_blank');
+    expect(useOnboardingStore.getState().showOnboarding).toBe(false);
+    expect(useOnboardingStore.getState().completed).toBe(true);
+    expect(mockSetExplorerTab).toHaveBeenCalledWith('settings');
+    expect(mockSetSettingsContext).toHaveBeenCalledWith('app');
+    expect(mockSetSettingsSubPage).toHaveBeenCalledWith('plugins');
   });
 });

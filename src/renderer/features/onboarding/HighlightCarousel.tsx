@@ -18,9 +18,9 @@ interface HighlightSlide {
 function getSlidesForCohort(cohort: Cohort): HighlightSlide[] {
   const slide1: HighlightSlide = {
     illustration: <ClubhouseStructureIllustration className="w-full h-full" />,
-    title: 'Projects, Quick Agents & Durable Agents',
+    title: 'Projects, Durable Agents & Quick Agents',
     description:
-      'Clubhouse organizes your work into projects. Use quick agents for fast tasks and durable agents for long-running missions that persist across sessions.',
+      'Clubhouse organizes your work into projects. Use durable agents for long-running missions that persist across sessions and quick agents for fast, one-off tasks.',
   };
 
   if (cohort === 'new-dev') {
@@ -28,9 +28,9 @@ function getSlidesForCohort(cohort: Cohort): HighlightSlide[] {
       slide1,
       {
         illustration: <AgentBranchesIllustration className="w-full h-full" />,
-        title: 'How Agents Work Under the Hood',
+        title: 'Agents Use Git Under the Hood',
         description:
-          'When an agent works on your code it creates a branch — a separate copy that won\'t affect your main project. When you\'re happy with the result, it gets merged back in. Your code is always safe.',
+          'Agents use Git under the hood to keep your code safe. Tell an agent to branch off, make changes, and merge back when you\'re happy with the result. Your main project is never touched until you say so.',
       },
       {
         illustration: <AgentsHandleTasksIllustration className="w-full h-full" />,
@@ -54,7 +54,7 @@ function getSlidesForCohort(cohort: Cohort): HighlightSlide[] {
         illustration: <ProjectToolsIllustration className="w-full h-full" />,
         title: 'Built-in Project Tools',
         description:
-          'Track work with Issues, document knowledge in the Wiki, and set up Automations — all without leaving Clubhouse. Your whole workflow lives in one place.',
+          'Track work with Issues, document knowledge in the Wiki, and set up Automations — all without leaving Clubhouse. Enable and configure project tools in the Plugins settings page.',
       },
     ];
   }

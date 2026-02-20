@@ -1,12 +1,10 @@
 import { useEffect, useCallback } from 'react';
 import { useOnboardingStore } from '../../stores/onboardingStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useUIStore } from '../../stores/uiStore';
 import { CohortSelection } from './CohortSelection';
 import { HighlightCarousel } from './HighlightCarousel';
 import { GetStartedScreen } from './GetStartedScreen';
-
-const HELP_URL = 'https://docs.clubhouse.dev/getting-started';
-const EXTENSIBILITY_URL = 'https://docs.clubhouse.dev/plugins';
 
 export function OnboardingModal() {
   const showOnboarding = useOnboardingStore((s) => s.showOnboarding);
@@ -18,6 +16,9 @@ export function OnboardingModal() {
   const prevHighlight = useOnboardingStore((s) => s.prevHighlight);
   const dismissOnboarding = useOnboardingStore((s) => s.dismissOnboarding);
   const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
+  const setExplorerTab = useUIStore((s) => s.setExplorerTab);
+  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const setSettingsContext = useUIStore((s) => s.setSettingsContext);
 
   const handleDismiss = useCallback(() => {
     dismissOnboarding();
@@ -29,12 +30,16 @@ export function OnboardingModal() {
   }, [dismissOnboarding, pickAndAddProject]);
 
   const handleOpenHelp = useCallback(() => {
-    window.open(HELP_URL, '_blank');
-  }, []);
+    dismissOnboarding();
+    setExplorerTab('help');
+  }, [dismissOnboarding, setExplorerTab]);
 
   const handleOpenExtensibility = useCallback(() => {
-    window.open(EXTENSIBILITY_URL, '_blank');
-  }, []);
+    dismissOnboarding();
+    setExplorerTab('settings');
+    setSettingsContext('app');
+    setSettingsSubPage('plugins');
+  }, [dismissOnboarding, setExplorerTab, setSettingsContext, setSettingsSubPage]);
 
   // Escape key to dismiss
   useEffect(() => {

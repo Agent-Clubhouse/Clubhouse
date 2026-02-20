@@ -355,11 +355,25 @@ export function PluginListSettings() {
         <h2 className="text-lg font-semibold text-ctp-text mb-1">
           {isAppContext ? 'Plugins' : 'Project Plugins'}
         </h2>
-        <p className="text-xs text-ctp-subtext0 mb-6">
+        <p className="text-xs text-ctp-subtext0 mb-4">
           {isAppContext
             ? 'Enable plugins to make them available. Project-scoped plugins also need to be enabled per project.'
             : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
         </p>
+        {isAppContext && (
+          <p className="text-xs text-ctp-subtext0 mb-6">
+            Discover and share plugins at the{' '}
+            <a
+              href="https://github.com/Agent-Clubhouse/Clubhouse-Workshop"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-ctp-accent hover:underline"
+              data-testid="workshop-link"
+            >
+              Clubhouse Workshop
+            </a>.
+          </p>
+        )}
 
         {/* Built-in section */}
         {builtinPlugins.length > 0 && (
