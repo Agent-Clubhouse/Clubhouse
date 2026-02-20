@@ -226,13 +226,13 @@ export function AgentSettingsView({ agent }: Props) {
     })();
   }, [worktreePath, projectPath, refreshKey]);
 
-  // Load permissions from .claude/settings.local.json
+  // Load permissions from settings file (convention-aware)
   useEffect(() => {
     const readPath = worktreePath || projectPath;
     if (!readPath) return;
     (async () => {
       try {
-        const perms = await window.clubhouse.agentSettings.readPermissions(readPath);
+        const perms = await window.clubhouse.agentSettings.readPermissions(readPath, projectPath);
         setPermAllow((perms.allow || []).join('\n'));
         setPermDeny((perms.deny || []).join('\n'));
         setPermLoaded(true);
@@ -261,7 +261,7 @@ export function AgentSettingsView({ agent }: Props) {
     await window.clubhouse.agentSettings.savePermissions(writePath, {
       allow: allow.length > 0 ? allow : undefined,
       deny: deny.length > 0 ? deny : undefined,
-    });
+    }, projectPath);
     setPermDirty(false);
     setPermSaving(false);
   };
@@ -273,14 +273,19 @@ export function AgentSettingsView({ agent }: Props) {
     }
   };
 
-  // Resolve instructions file label from orchestrator conventions
+  // Resolve file/dir labels from orchestrator conventions
+  const conventions = orchestratorInfo?.conventions;
   const instructionsFileLabel = (() => {
-    if (!orchestratorInfo?.conventions) return 'instructions';
-    const { configDir, localInstructionsFile } = orchestratorInfo.conventions;
+    if (!conventions) return 'instructions';
+    const { configDir, localInstructionsFile } = conventions;
     // Claude Code: CLAUDE.md lives at project root, not under configDir
     if (localInstructionsFile === 'CLAUDE.md') return 'CLAUDE.md';
     return `${configDir}/${localInstructionsFile}`;
   })();
+  const skillsPathLabel = conventions ? `${conventions.configDir}/${conventions.skillsDir}/` : '.claude/skills/';
+  const agentTemplatesPathLabel = conventions ? `${conventions.configDir}/${conventions.agentTemplatesDir}/` : '.claude/agents/';
+  const mcpPathLabel = conventions?.mcpConfigFile || '.mcp.json';
+  const permissionsPathLabel = conventions ? `${conventions.configDir}/${conventions.localSettingsFile}` : '.claude/settings.local.json';
 
   const handleSaveQad = async () => {
     if (!projectPath) return;
@@ -586,22 +591,28 @@ export function AgentSettingsView({ agent }: Props) {
             {/* Skills Section */}
             <SkillsSection
               worktreePath={worktreePath}
+              projectPath={projectPath}
               disabled={isRunning}
               refreshKey={refreshKey}
+              pathLabel={skillsPathLabel}
             />
 
             {/* Agent Definitions Section */}
             <AgentTemplatesSection
               worktreePath={worktreePath}
+              projectPath={projectPath}
               disabled={isRunning}
               refreshKey={refreshKey}
+              pathLabel={agentTemplatesPathLabel}
             />
 
             {/* MCP JSON Section */}
             <McpJsonSection
               worktreePath={worktreePath}
+              projectPath={projectPath}
               disabled={isRunning}
               refreshKey={refreshKey}
+              pathLabel={mcpPathLabel}
             />
 
             {/* Free Agent Mode Section */}
@@ -648,7 +659,7 @@ export function AgentSettingsView({ agent }: Props) {
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Permissions</h3>
-                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">.claude/settings.local.json</span>
+                    <span className="text-[10px] text-ctp-subtext0/60 font-mono">{permissionsPathLabel}</span>
                   </div>
                   <button
                     onClick={handleSavePermissions}

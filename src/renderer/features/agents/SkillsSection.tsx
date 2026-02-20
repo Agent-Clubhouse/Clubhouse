@@ -4,13 +4,15 @@ import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 
 interface Props {
   worktreePath: string;
+  projectPath?: string;
   disabled: boolean;
   refreshKey: number;
+  pathLabel?: string;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
+export function SkillsSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingSkill, setEditingSkill] = useState<string | null>(null);
@@ -22,12 +24,12 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
   const loadSkills = useCallback(async () => {
     if (!worktreePath) return;
     try {
-      const list = await window.clubhouse.agentSettings.listSkills(worktreePath);
+      const list = await window.clubhouse.agentSettings.listSkills(worktreePath, projectPath);
       setSkills(list);
     } catch {
       setSkills([]);
     }
-  }, [worktreePath]);
+  }, [worktreePath, projectPath]);
 
   useEffect(() => {
     loadSkills();
@@ -40,7 +42,7 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
   };
 
   const handleEdit = async (name: string) => {
-    const content = await window.clubhouse.agentSettings.readSkillContent(worktreePath, name);
+    const content = await window.clubhouse.agentSettings.readSkillContent(worktreePath, name, projectPath);
     setEditingSkill(name);
     setEditorContent(content);
     setView('edit');
@@ -50,7 +52,7 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
     const name = skillName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!name) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, name, editorContent);
+    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, name, editorContent, projectPath);
     setSaving(false);
     setView('list');
     await loadSkills();
@@ -59,7 +61,7 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
   const handleSaveEdit = async () => {
     if (!editingSkill) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, editingSkill, editorContent);
+    await window.clubhouse.agentSettings.writeSkillContent(worktreePath, editingSkill, editorContent, projectPath);
     setSaving(false);
     setView('list');
     setEditingSkill(null);
@@ -67,7 +69,7 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
   };
 
   const handleDelete = async (name: string) => {
-    await window.clubhouse.agentSettings.deleteSkill(worktreePath, name);
+    await window.clubhouse.agentSettings.deleteSkill(worktreePath, name, projectPath);
     setDeleteTarget(null);
     await loadSkills();
   };
@@ -131,7 +133,7 @@ export function SkillsSection({ worktreePath, disabled, refreshKey }: Props) {
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">.claude/skills/</span>
+          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/skills/'}</span>
         </div>
         <button
           onClick={handleCreate}

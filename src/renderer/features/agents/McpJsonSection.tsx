@@ -3,11 +3,13 @@ import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 
 interface Props {
   worktreePath: string;
+  projectPath?: string;
   disabled: boolean;
   refreshKey: number;
+  pathLabel?: string;
 }
 
-export function McpJsonSection({ worktreePath, disabled, refreshKey }: Props) {
+export function McpJsonSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -17,7 +19,7 @@ export function McpJsonSection({ worktreePath, disabled, refreshKey }: Props) {
   const loadContent = useCallback(async () => {
     if (!worktreePath) return;
     try {
-      const raw = await window.clubhouse.agentSettings.readMcpRawJson(worktreePath);
+      const raw = await window.clubhouse.agentSettings.readMcpRawJson(worktreePath, projectPath);
       setContent(raw);
       setLoaded(true);
       setDirty(false);
@@ -26,7 +28,7 @@ export function McpJsonSection({ worktreePath, disabled, refreshKey }: Props) {
       setContent('{\n  "mcpServers": {}\n}');
       setLoaded(true);
     }
-  }, [worktreePath]);
+  }, [worktreePath, projectPath]);
 
   useEffect(() => {
     loadContent();
@@ -47,7 +49,7 @@ export function McpJsonSection({ worktreePath, disabled, refreshKey }: Props) {
   const handleSave = async () => {
     if (!worktreePath || !dirty) return;
     setSaving(true);
-    const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content);
+    const result = await window.clubhouse.agentSettings.writeMcpRawJson(worktreePath, content, projectPath);
     if (result.ok) {
       setDirty(false);
       setError(null);
@@ -64,7 +66,7 @@ export function McpJsonSection({ worktreePath, disabled, refreshKey }: Props) {
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">MCP Servers</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">.mcp.json</span>
+          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.mcp.json'}</span>
         </div>
         <button
           onClick={handleSave}

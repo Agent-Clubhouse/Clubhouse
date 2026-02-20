@@ -77,6 +77,7 @@ export const IPC = {
     WRITE_MCP_RAW_JSON: 'agent:write-mcp-raw-json',
     READ_PROJECT_AGENT_DEFAULTS: 'agent:read-project-agent-defaults',
     WRITE_PROJECT_AGENT_DEFAULTS: 'agent:write-project-agent-defaults',
+    GET_CONVENTIONS: 'agent:get-conventions',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

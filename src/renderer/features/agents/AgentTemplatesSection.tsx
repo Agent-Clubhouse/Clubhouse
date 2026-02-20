@@ -4,13 +4,15 @@ import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 
 interface Props {
   worktreePath: string;
+  projectPath?: string;
   disabled: boolean;
   refreshKey: number;
+  pathLabel?: string;
 }
 
 type View = 'list' | 'create' | 'edit';
 
-export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Props) {
+export function AgentTemplatesSection({ worktreePath, projectPath, disabled, refreshKey, pathLabel }: Props) {
   const [templates, setTemplates] = useState<AgentTemplateEntry[]>([]);
   const [view, setView] = useState<View>('list');
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
@@ -22,12 +24,12 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
   const loadTemplates = useCallback(async () => {
     if (!worktreePath) return;
     try {
-      const list = await window.clubhouse.agentSettings.listAgentTemplateFiles(worktreePath);
+      const list = await window.clubhouse.agentSettings.listAgentTemplateFiles(worktreePath, projectPath);
       setTemplates(list);
     } catch {
       setTemplates([]);
     }
-  }, [worktreePath]);
+  }, [worktreePath, projectPath]);
 
   useEffect(() => {
     loadTemplates();
@@ -40,7 +42,7 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
   };
 
   const handleEdit = async (name: string) => {
-    const content = await window.clubhouse.agentSettings.readAgentTemplateContent(worktreePath, name);
+    const content = await window.clubhouse.agentSettings.readAgentTemplateContent(worktreePath, name, projectPath);
     setEditingTemplate(name);
     setEditorContent(content);
     setView('edit');
@@ -50,7 +52,7 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
     const name = templateName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!name) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, name, editorContent);
+    await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, name, editorContent, projectPath);
     setSaving(false);
     setView('list');
     await loadTemplates();
@@ -59,7 +61,7 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
   const handleSaveEdit = async () => {
     if (!editingTemplate) return;
     setSaving(true);
-    await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, editingTemplate, editorContent);
+    await window.clubhouse.agentSettings.writeAgentTemplateContent(worktreePath, editingTemplate, editorContent, projectPath);
     setSaving(false);
     setView('list');
     setEditingTemplate(null);
@@ -67,7 +69,7 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
   };
 
   const handleDelete = async (name: string) => {
-    await window.clubhouse.agentSettings.deleteAgentTemplate(worktreePath, name);
+    await window.clubhouse.agentSettings.deleteAgentTemplate(worktreePath, name, projectPath);
     setDeleteTarget(null);
     await loadTemplates();
   };
@@ -131,7 +133,7 @@ export function AgentTemplatesSection({ worktreePath, disabled, refreshKey }: Pr
       <div className="flex items-center justify-between mb-2">
         <div>
           <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-          <span className="text-[10px] text-ctp-subtext0/60 font-mono">.claude/agents/</span>
+          <span className="text-[10px] text-ctp-subtext0/60 font-mono">{pathLabel || '.claude/agents/'}</span>
         </div>
         <button
           onClick={handleCreate}

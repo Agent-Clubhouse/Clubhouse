@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
-// Mock child_process
+// Mock child_process (include execFile used by orchestrator providers)
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 // Mock fs

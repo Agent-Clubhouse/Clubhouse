@@ -23,6 +23,11 @@ export interface OrchestratorInfo {
   conventions?: {
     configDir: string;
     localInstructionsFile: string;
+    legacyInstructionsFile: string;
+    mcpConfigFile: string;
+    skillsDir: string;
+    agentTemplatesDir: string;
+    localSettingsFile: string;
   };
 }
 

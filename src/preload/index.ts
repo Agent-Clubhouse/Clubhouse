@@ -173,42 +173,42 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.READ_INSTRUCTIONS, worktreePath, projectPath),
     saveInstructions: (worktreePath: string, content: string, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.SAVE_INSTRUCTIONS, worktreePath, content, projectPath),
-    readMcpConfig: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath),
-    listSkills: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath),
-    listAgentTemplates: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath),
+    readMcpConfig: (worktreePath: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.READ_MCP_CONFIG, worktreePath, projectPath),
+    listSkills: (worktreePath: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SKILLS, worktreePath, projectPath),
+    listAgentTemplates: (worktreePath: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATES, worktreePath, projectPath),
     listSourceSkills: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_SKILLS, projectPath),
     listSourceAgentTemplates: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, projectPath),
-    createSkill: (basePath: string, name: string, isSource: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource),
-    createAgentTemplate: (basePath: string, name: string, isSource: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource),
-    readPermissions: (worktreePath: string): Promise<{ allow?: string[]; deny?: string[] }> =>
-      ipcRenderer.invoke(IPC.AGENT.READ_PERMISSIONS, worktreePath),
-    savePermissions: (worktreePath: string, permissions: { allow?: string[]; deny?: string[] }) =>
-      ipcRenderer.invoke(IPC.AGENT.SAVE_PERMISSIONS, worktreePath, permissions),
-    readSkillContent: (worktreePath: string, skillName: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.AGENT.READ_SKILL_CONTENT, worktreePath, skillName),
-    writeSkillContent: (worktreePath: string, skillName: string, content: string) =>
-      ipcRenderer.invoke(IPC.AGENT.WRITE_SKILL_CONTENT, worktreePath, skillName, content),
-    deleteSkill: (worktreePath: string, skillName: string) =>
-      ipcRenderer.invoke(IPC.AGENT.DELETE_SKILL, worktreePath, skillName),
-    readAgentTemplateContent: (worktreePath: string, agentName: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, worktreePath, agentName),
-    writeAgentTemplateContent: (worktreePath: string, agentName: string, content: string) =>
-      ipcRenderer.invoke(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, worktreePath, agentName, content),
-    deleteAgentTemplate: (worktreePath: string, agentName: string) =>
-      ipcRenderer.invoke(IPC.AGENT.DELETE_AGENT_TEMPLATE, worktreePath, agentName),
-    listAgentTemplateFiles: (worktreePath: string) =>
-      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, worktreePath),
-    readMcpRawJson: (worktreePath: string): Promise<string> =>
-      ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath),
-    writeMcpRawJson: (worktreePath: string, content: string): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content),
+    createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
+    createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_AGENT_TEMPLATE, basePath, name, isSource, projectPath),
+    readPermissions: (worktreePath: string, projectPath?: string): Promise<{ allow?: string[]; deny?: string[] }> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_PERMISSIONS, worktreePath, projectPath),
+    savePermissions: (worktreePath: string, permissions: { allow?: string[]; deny?: string[] }, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SAVE_PERMISSIONS, worktreePath, permissions, projectPath),
+    readSkillContent: (worktreePath: string, skillName: string, projectPath?: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SKILL_CONTENT, worktreePath, skillName, projectPath),
+    writeSkillContent: (worktreePath: string, skillName: string, content: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SKILL_CONTENT, worktreePath, skillName, content, projectPath),
+    deleteSkill: (worktreePath: string, skillName: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SKILL, worktreePath, skillName, projectPath),
+    readAgentTemplateContent: (worktreePath: string, agentName: string, projectPath?: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, worktreePath, agentName, projectPath),
+    writeAgentTemplateContent: (worktreePath: string, agentName: string, content: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, worktreePath, agentName, content, projectPath),
+    deleteAgentTemplate: (worktreePath: string, agentName: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_AGENT_TEMPLATE, worktreePath, agentName, projectPath),
+    listAgentTemplateFiles: (worktreePath: string, projectPath?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, worktreePath, projectPath),
+    readMcpRawJson: (worktreePath: string, projectPath?: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_MCP_RAW_JSON, worktreePath, projectPath),
+    writeMcpRawJson: (worktreePath: string, content: string, projectPath?: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_MCP_RAW_JSON, worktreePath, content, projectPath),
     readProjectAgentDefaults: (projectPath: string): Promise<{
       instructions?: string;
       permissions?: { allow?: string[]; deny?: string[] };
@@ -223,6 +223,16 @@ const api = {
       freeAgentMode?: boolean;
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
+    getConventions: (projectPath: string): Promise<{
+      configDir: string;
+      localInstructionsFile: string;
+      legacyInstructionsFile: string;
+      mcpConfigFile: string;
+      skillsDir: string;
+      agentTemplatesDir: string;
+      localSettingsFile: string;
+    } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.GET_CONVENTIONS, projectPath),
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),

@@ -95,6 +95,7 @@ vi.stubGlobal('clubhouse', {
     writeMcpRawJson: async () => ({ ok: true }),
     readProjectAgentDefaults: async () => ({}),
     writeProjectAgentDefaults: asyncNoop,
+    getConventions: async () => null,
   },
   log: {
     write: noop,

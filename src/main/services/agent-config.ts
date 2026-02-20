@@ -5,6 +5,7 @@ import { app } from 'electron';
 import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
+import { resolveOrchestrator } from './agent-system';
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -220,7 +221,13 @@ export function createDurable(
   // Apply project-level defaults as snapshots into the new worktree
   if (worktreePath) {
     try {
-      applyAgentDefaults(worktreePath, projectPath);
+      const provider = resolveOrchestrator(projectPath, orchestrator);
+      applyAgentDefaults(
+        worktreePath,
+        projectPath,
+        (wt, content) => provider.writeInstructions(wt, content),
+        provider.conventions,
+      );
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Failed to apply project agent defaults', {
         meta: {

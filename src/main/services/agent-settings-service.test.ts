@@ -16,9 +16,10 @@ import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
   readSkillContent, writeSkillContent, deleteSkill,
   readAgentTemplateContent, writeAgentTemplateContent, deleteAgentTemplate,
-  listAgentTemplateFiles,
-  readMcpRawJson, writeMcpRawJson,
+  listAgentTemplateFiles, listSkills, listAgentTemplates,
+  readMcpRawJson, writeMcpRawJson, readMcpConfig,
   readProjectAgentDefaults, writeProjectAgentDefaults, applyAgentDefaults,
+  SettingsConventions,
 } from './agent-settings-service';
 
 const WORKTREE = '/test/worktree';
@@ -172,14 +173,14 @@ describe('writePermissions', () => {
     expect(written.hooks).toBeDefined();
   });
 
-  it('creates .claude directory if it does not exist', () => {
+  it('creates settings parent directory if it does not exist', () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
 
     writePermissions(WORKTREE, { allow: ['Read'] });
 
     expect(fs.mkdirSync).toHaveBeenCalledWith(
-      path.join(WORKTREE, '.claude'),
+      path.dirname(path.join(WORKTREE, '.claude', 'settings.local.json')),
       { recursive: true },
     );
   });
@@ -511,5 +512,232 @@ describe('applyAgentDefaults', () => {
 
     // Only the readFileSync call, no writes
     expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Architectural guard: all settings functions must respect orchestrator conventions
+// =============================================================================
+// These tests use non-default conventions (mimicking a non-Claude-Code orchestrator)
+// to ensure no function is hardcoded to Claude Code-specific paths.
+// If a test fails here, it means a function ignores the conv parameter.
+
+const COPILOT_CONVENTIONS: SettingsConventions = {
+  configDir: '.github',
+  skillsDir: 'skills',
+  agentTemplatesDir: 'agents',
+  mcpConfigFile: '.github/mcp.json',
+  localSettingsFile: 'hooks/hooks.json',
+};
+
+describe('orchestrator convention routing', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('listSkills uses convention configDir/skillsDir', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([
+      { name: 'my-skill', isDirectory: () => true, isFile: () => false },
+    ] as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const result = listSkills(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fs.readdirSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'skills'),
+      { withFileTypes: true },
+    );
+    expect(result[0].path).toContain('.github');
+  });
+
+  it('listAgentTemplates uses convention configDir/agentTemplatesDir', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([
+      { name: 'builder', isDirectory: () => true, isFile: () => false },
+    ] as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const result = listAgentTemplates(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fs.readdirSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents'),
+      { withFileTypes: true },
+    );
+    expect(result[0].path).toContain('.github');
+  });
+
+  it('readSkillContent uses convention paths', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('# Skill');
+    readSkillContent(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'skills', 'test-skill', 'SKILL.md'),
+      'utf-8',
+    );
+  });
+
+  it('writeSkillContent uses convention paths', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    writeSkillContent(WORKTREE, 'test-skill', '# Content', COPILOT_CONVENTIONS);
+    expect(fs.mkdirSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'skills', 'test-skill'),
+      { recursive: true },
+    );
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'skills', 'test-skill', 'SKILL.md'),
+      '# Content',
+      'utf-8',
+    );
+  });
+
+  it('deleteSkill uses convention paths', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    deleteSkill(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'skills', 'test-skill'),
+      { recursive: true, force: true },
+    );
+  });
+
+  it('readAgentTemplateContent uses convention paths', () => {
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('my-agent.md')) return '# Agent';
+      throw new Error('ENOENT');
+    });
+    readAgentTemplateContent(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
+      'utf-8',
+    );
+  });
+
+  it('writeAgentTemplateContent uses convention paths', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    writeAgentTemplateContent(WORKTREE, 'my-agent', '# Agent', COPILOT_CONVENTIONS);
+    expect(fs.mkdirSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents'),
+      { recursive: true },
+    );
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
+      '# Agent',
+      'utf-8',
+    );
+  });
+
+  it('deleteAgentTemplate uses convention paths', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    deleteAgentTemplate(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
+    expect(fs.unlinkSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
+    );
+    expect(fs.rmSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents', 'my-agent'),
+      { recursive: true, force: true },
+    );
+  });
+
+  it('listAgentTemplateFiles uses convention paths', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue([
+      { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
+    ] as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    listAgentTemplateFiles(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fs.readdirSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'agents'),
+      { withFileTypes: true },
+    );
+  });
+
+  it('readMcpRawJson uses convention mcpConfigFile', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('{"mcpServers": {}}');
+    readMcpRawJson(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'mcp.json'),
+      'utf-8',
+    );
+  });
+
+  it('writeMcpRawJson uses convention mcpConfigFile', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const content = '{"mcpServers": {}}';
+    writeMcpRawJson(WORKTREE, content, COPILOT_CONVENTIONS);
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'mcp.json'),
+      content,
+      'utf-8',
+    );
+  });
+
+  it('readMcpConfig uses convention mcpConfigFile for project servers', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('{"mcpServers": {"test": {"command": "npx"}}}');
+    readMcpConfig(WORKTREE, COPILOT_CONVENTIONS);
+    // First readFileSync call should use convention path
+    expect(vi.mocked(fs.readFileSync).mock.calls[0][0]).toBe(
+      path.join(WORKTREE, '.github', 'mcp.json'),
+    );
+  });
+
+  it('readPermissions uses convention configDir/localSettingsFile', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      permissions: { allow: ['Read'] },
+    }));
+    readPermissions(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
+      'utf-8',
+    );
+  });
+
+  it('writePermissions uses convention configDir/localSettingsFile', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('{}');
+    writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
+      expect.any(String),
+      'utf-8',
+    );
+  });
+
+  it('writePermissions creates parent directory of settings file if missing', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
+    // Should create the parent dir of hooks/hooks.json, which is .github/hooks
+    expect(fs.mkdirSync).toHaveBeenCalledWith(
+      path.dirname(path.join(WORKTREE, '.github', 'hooks', 'hooks.json')),
+      { recursive: true },
+    );
+  });
+
+  it('applyAgentDefaults uses convention for MCP and permissions', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const mcpContent = '{"mcpServers": {"test": {}}}';
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.includes('settings.json') && !s.includes('settings.local') && !s.includes('hooks')) {
+        return JSON.stringify({
+          defaults: {},
+          quickOverrides: {},
+          agentDefaults: {
+            mcpJson: mcpContent,
+            permissions: { allow: ['Read'] },
+          },
+        });
+      }
+      return '{}';
+    });
+
+    const writeInstructions = vi.fn();
+    applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, COPILOT_CONVENTIONS);
+
+    // MCP should be written to convention path
+    const mcpWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      (c) => String(c[0]).includes('mcp.json'),
+    );
+    expect(mcpWriteCall).toBeDefined();
+    expect(String(mcpWriteCall![0])).toBe(path.join(WORKTREE, '.github', 'mcp.json'));
+
+    // Permissions should use convention path
+    const permWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      (c) => String(c[0]).includes('hooks.json'),
+    );
+    expect(permWriteCall).toBeDefined();
   });
 });
