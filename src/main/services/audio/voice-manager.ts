@@ -80,8 +80,10 @@ export class VoiceManager {
       if (!fs.existsSync(filePath)) return;
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       for (const [agentId, voice] of Object.entries(data)) {
-        this.assignments.set(agentId, voice as VoiceConfig);
-        this.assignmentOrder.push(agentId);
+        if (voice && typeof voice === 'object' && 'voiceId' in voice && 'voiceName' in voice) {
+          this.assignments.set(agentId, voice as VoiceConfig);
+          this.assignmentOrder.push(agentId);
+        }
       }
     } catch (err) {
       appLog('audio:voice', 'warn', 'Failed to load voice assignments', {

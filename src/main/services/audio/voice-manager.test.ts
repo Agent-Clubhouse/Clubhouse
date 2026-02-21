@@ -50,7 +50,7 @@ describe('VoiceManager', () => {
     manager.assignVoice('a2', TEST_VOICES);
     manager.assignVoice('a3', TEST_VOICES);
     const v4 = manager.assignVoice('a4', TEST_VOICES);
-    expect(v4.voiceId).toBeDefined();
+    expect(v4.voiceId).toBe('voice-a');
   });
 
   it('getVoiceForAgent returns assigned voice', () => {
@@ -90,5 +90,22 @@ describe('VoiceManager', () => {
     const parsed = JSON.parse(data);
     expect(parsed['agent-1']).toBeDefined();
     expect(parsed['agent-1'].voiceId).toBe('voice-a');
+  });
+
+  it('loads persisted assignments on construction', () => {
+    const savedData = { 'agent-x': { voiceId: 'voice-b', voiceName: 'Bob', backend: 'piper-local' } };
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(savedData));
+    const m = new VoiceManager();
+    const voice = m.getVoiceForAgent('agent-x');
+    expect(voice).toBeDefined();
+    expect(voice!.voiceId).toBe('voice-b');
+  });
+
+  it('handles corrupt assignment file gracefully', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('{{not json');
+    const m = new VoiceManager();
+    expect(m.getVoiceForAgent('any')).toBeUndefined();
   });
 });
