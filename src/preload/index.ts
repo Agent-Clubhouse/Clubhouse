@@ -412,6 +412,44 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
     },
   },
+  audio: {
+    getSettings: () =>
+      ipcRenderer.invoke(IPC.AUDIO.GET_SETTINGS),
+    saveSettings: (settings: any) =>
+      ipcRenderer.invoke(IPC.AUDIO.SAVE_SETTINGS, settings),
+    startRecording: () =>
+      ipcRenderer.invoke(IPC.AUDIO.START_RECORDING),
+    stopRecording: (agents: any[], focusedAgentId: string | null) =>
+      ipcRenderer.invoke(IPC.AUDIO.STOP_RECORDING, agents, focusedAgentId),
+    sendRecordingData: (chunk: Buffer) =>
+      ipcRenderer.send(IPC.AUDIO.RECORDING_DATA, chunk),
+    speak: (agentId: string, text: string, kind: string) =>
+      ipcRenderer.invoke(IPC.AUDIO.SPEAK, agentId, text, kind),
+    cancelSpeech: () =>
+      ipcRenderer.send(IPC.AUDIO.CANCEL_SPEECH),
+    getVoices: () =>
+      ipcRenderer.invoke(IPC.AUDIO.GET_VOICES),
+    onSpeakAudio: (callback: (audio: Buffer) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, audio: Buffer) => callback(audio);
+      ipcRenderer.on(IPC.AUDIO.SPEAK_AUDIO, listener);
+      return () => { ipcRenderer.removeListener(IPC.AUDIO.SPEAK_AUDIO, listener); };
+    },
+    onSpeakDone: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.AUDIO.SPEAK_DONE, listener);
+      return () => { ipcRenderer.removeListener(IPC.AUDIO.SPEAK_DONE, listener); };
+    },
+    onTranscription: (callback: (result: { text: string; agentId: string }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, result: any) => callback(result);
+      ipcRenderer.on(IPC.AUDIO.TRANSCRIPTION, listener);
+      return () => { ipcRenderer.removeListener(IPC.AUDIO.TRANSCRIPTION, listener); };
+    },
+    onModelDownloadProgress: (callback: (pct: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, pct: number) => callback(pct);
+      ipcRenderer.on(IPC.AUDIO.MODEL_DOWNLOAD_PROGRESS, listener);
+      return () => { ipcRenderer.removeListener(IPC.AUDIO.MODEL_DOWNLOAD_PROGRESS, listener); };
+    },
+  },
 };
 
 export type ClubhouseAPI = typeof api;

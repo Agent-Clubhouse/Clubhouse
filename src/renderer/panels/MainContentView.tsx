@@ -19,6 +19,7 @@ import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
+import { AudioSettingsView } from '../features/audio/components/AudioSettingsView';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -85,6 +86,7 @@ export function MainContentView() {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
+    if (settingsSubPage === 'audio') return <AudioSettingsView />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;

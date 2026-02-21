@@ -174,4 +174,21 @@ export const IPC = {
   PROCESS: {
     EXEC: 'process:exec',
   },
+  AUDIO: {
+    GET_SETTINGS: 'audio:get-settings',
+    SAVE_SETTINGS: 'audio:save-settings',
+    START_RECORDING: 'audio:start-recording',
+    STOP_RECORDING: 'audio:stop-recording',
+    RECORDING_DATA: 'audio:recording-data',
+    TRANSCRIPTION: 'audio:transcription',
+    SPEAK: 'audio:speak',
+    SPEAK_AUDIO: 'audio:speak-audio',
+    SPEAK_DONE: 'audio:speak-done',
+    CANCEL_SPEECH: 'audio:cancel-speech',
+    GET_VOICES: 'audio:get-voices',
+    GET_MODELS: 'audio:get-models',
+    DOWNLOAD_MODEL: 'audio:download-model',
+    MODEL_DOWNLOAD_PROGRESS: 'audio:model-download-progress',
+    ROUTE_SPEECH: 'audio:route-speech',
+  },
 } as const;

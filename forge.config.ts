@@ -41,6 +41,7 @@ const config: ForgeConfig = {
     extendInfo: {
       CFBundleDisplayName: 'Clubhouse',
       NSUserNotificationAlertStyle: 'alert',
+      NSMicrophoneUsageDescription: 'Clubhouse needs microphone access for voice input and speech-to-text.',
     },
     osxSign: {
       identity: process.env.APPLE_SIGNING_IDENTITY || '-',

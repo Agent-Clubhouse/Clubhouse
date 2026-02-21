@@ -42,6 +42,7 @@ function SettingsCategoryNav() {
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
             {navButton('Logging', 'logging')}
+            {navButton('Audio & Voice', 'audio')}
             {navButton('Plugins', 'plugins')}
             {navButton('Updates', 'updates')}
             {navButton("What's New", 'whats-new')}
@@ -51,6 +52,7 @@ function SettingsCategoryNav() {
             {navButton('Project Settings', 'project')}
             {navButton('Agents', 'orchestrators')}
             {navButton('Notifications', 'notifications')}
+            {navButton('Audio & Voice', 'audio')}
             {navButton('Plugins', 'plugins')}
           </>
         )}

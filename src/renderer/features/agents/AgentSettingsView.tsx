@@ -1,11 +1,12 @@
-import { useEffect, useState, useRef } from 'react';
-import { Agent, QuickAgentDefaults, MaterializationPreview } from '../../../shared/types';
+import { useCallback, useEffect, useState, useRef } from 'react';
+import { Agent, QuickAgentDefaults, MaterializationPreview, VoiceInfo } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
+import { useAudioStore } from '../../stores/audioStore';
 import { UtilityTerminal } from './UtilityTerminal';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
 import { SkillsSection } from './SkillsSection';
@@ -29,6 +30,7 @@ export function AgentSettingsView({ agent }: Props) {
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+  const { settings: audioSettings, availableVoices, loadVoices } = useAudioStore();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>('main');
@@ -56,6 +58,26 @@ export function AgentSettingsView({ agent }: Props) {
       renameInputRef.current.select();
     }
   }, [isRenaming]);
+
+  useEffect(() => {
+    if (audioSettings?.enabled) {
+      loadVoices();
+    }
+  }, [audioSettings?.enabled, loadVoices]);
+
+  const handleVoiceChange = useCallback((voiceId: string) => {
+    if (voiceId === 'auto') {
+      // Clear voice override - will auto-assign
+      window.clubhouse.audio.speak(agent.id, '', 'status_change');
+    }
+  }, [agent.id]);
+
+  const handleVoicePreview = useCallback(() => {
+    const voiceId = agent.voiceConfig?.voiceId;
+    if (voiceId) {
+      window.clubhouse.audio.speak(agent.id, 'Hello, this is a voice preview.', 'response');
+    }
+  }, [agent.id, agent.voiceConfig?.voiceId]);
 
   const handleRenameConfirm = async () => {
     const trimmed = renameValue.trim();
@@ -569,6 +591,33 @@ export function AgentSettingsView({ agent }: Props) {
                   ))}
                 </select>
               </div>
+
+              {/* Voice */}
+              {audioSettings?.enabled && (
+                <div>
+                  <span className="text-xs text-ctp-subtext0 uppercase tracking-wider">Voice</span>
+                  <div className="flex gap-2 mt-1">
+                    <select
+                      value={agent.voiceConfig?.voiceId || 'auto'}
+                      onChange={(e) => handleVoiceChange(e.target.value)}
+                      disabled={agent.status === 'running'}
+                      className="flex-1 bg-surface-0 border border-surface-2 rounded px-2 py-1 text-sm text-ctp-text focus:outline-none focus:border-ctp-blue disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="auto">Auto-assign</option>
+                      {availableVoices.map((v) => (
+                        <option key={v.voiceId} value={v.voiceId}>{v.voiceName} ({v.language})</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleVoicePreview}
+                      className="px-2 py-1 text-xs rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+                      title="Preview voice"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Free Agent Mode */}
               <div>

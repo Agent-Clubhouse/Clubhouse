@@ -140,6 +140,10 @@ export function spawnHeadless(
       // Persist to disk
       logStream.write(JSON.stringify(event) + '\n');
 
+      // Audio: forward assistant text blocks to audio service for TTS
+      // import { getAudioService } from '../ipc/audio-handlers';
+      // getAudioService().onAgentOutput?.(agentId, text, 'response');
+
       // Emit hook events to renderer for status tracking
       const hookEvents = mapToHookEvent(event, activeToolBlocks);
       if (hookEvents.length > 0) {
