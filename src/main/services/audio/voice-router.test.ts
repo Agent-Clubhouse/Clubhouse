@@ -75,4 +75,11 @@ describe('VoiceRouter', () => {
     expect(result.agentId).toBe('a2');
     expect(result.confidence).toBeGreaterThan(0.8);
   });
+
+  it('does not match bare agent name without trailing instruction', async () => {
+    const result = await router.route('Hey Atlas', agents, 'a2');
+    // "Hey Atlas" has no comma/space+text after name, so name match fails
+    // Falls back to focused agent
+    expect(result.agentId).toBe('a2');
+  });
 });

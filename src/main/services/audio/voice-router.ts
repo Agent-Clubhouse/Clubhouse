@@ -6,9 +6,16 @@ export interface RouteResult {
   confidence: number;
 }
 
-const NAME_PREFIXES = /^(?:hey|ok|yo|hi)?\s*/i;
+// Strip optional greeting prefix so "Hey Atlas, ..." matches agent name "Atlas".
+// Bare "Atlas, ..." also works because namePattern matches the original cleaned text either way.
+const NAME_PREFIXES = /^(?:hey|okay|ok|yo|hi)\s+/i;
 
 export class VoiceRouter {
+  /**
+   * Routes transcription to the best-matching agent using a 4-tier strategy.
+   * Callers should check AudioSettings.routingMode — when 'focused', skip this
+   * and route directly to the focused agent instead.
+   */
   async route(
     transcription: string,
     agents: Agent[],
@@ -35,7 +42,7 @@ export class VoiceRouter {
       let bestScore = 0;
       for (const agent of agents) {
         if (!agent.mission) continue;
-        const missionWords = agent.mission.toLowerCase().split(/\s+/);
+        const missionWords = agent.mission.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
         const overlap = missionWords.filter((w) => words.has(w)).length;
         if (overlap > bestScore) {
           bestScore = overlap;
