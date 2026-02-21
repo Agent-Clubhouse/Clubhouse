@@ -55,6 +55,7 @@ export interface Agent {
   worktreePath?: string;
   branch?: string;
   exitCode?: number;
+  errorMessage?: string;
   mission?: string;
   model?: string;
   parentAgentId?: string;

@@ -41,7 +41,7 @@ interface AgentState {
   saveAgentIcon: (agentId: string, projectPath: string, dataUrl: string) => Promise<void>;
   removeAgentIcon: (agentId: string, projectPath: string) => Promise<void>;
   loadAgentIcon: (agent: Agent) => Promise<void>;
-  updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number) => void;
+  updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number, errorMessage?: string) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
   clearStaleStatuses: () => void;
   recordActivity: (id: string) => void;
@@ -244,8 +244,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         freeAgentMode: resolvedFreeAgentMode,
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
       set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
+        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
       }));
       throw err;
     }
@@ -293,8 +294,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         freeAgentMode: config.freeAgentMode,
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
       set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error' } },
+        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
       }));
       throw err;
     }
@@ -463,17 +465,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     get().removeAgent(id);
   },
 
-  updateAgentStatus: (id, status, exitCode) => {
+  updateAgentStatus: (id, status, exitCode, errorMessage) => {
     set((s) => {
       const agent = s.agents[id];
       if (!agent) return s;
 
       let finalStatus = status;
+      let resolvedErrorMessage = errorMessage;
       if (status === 'sleeping' && agent.kind === 'durable') {
         // If the agent exited within 3 seconds of spawning, treat as error (likely launch failure)
         const spawnedAt = s.agentSpawnedAt[id];
         if (spawnedAt && Date.now() - spawnedAt < 3000) {
           finalStatus = 'error';
+          if (!resolvedErrorMessage) {
+            resolvedErrorMessage = exitCode != null && exitCode !== 0
+              ? `Agent process exited immediately (code ${exitCode})`
+              : 'Agent process exited immediately after launch';
+          }
         }
       }
 
@@ -481,7 +489,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const { [id]: _, ...restStatus } = s.agentDetailedStatus;
 
       return {
-        agents: { ...s.agents, [id]: { ...agent, status: finalStatus, exitCode } },
+        agents: {
+          ...s.agents,
+          [id]: {
+            ...agent,
+            status: finalStatus,
+            exitCode,
+            errorMessage: finalStatus === 'error' ? resolvedErrorMessage : undefined,
+          },
+        },
         agentDetailedStatus: finalStatus !== 'running' ? restStatus : s.agentDetailedStatus,
       };
     });
