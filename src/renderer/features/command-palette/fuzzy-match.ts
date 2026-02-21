@@ -70,7 +70,7 @@ export function fuzzyFilter<T>(
   getLabel: (item: T) => string,
   getKeywords?: (item: T) => string[],
 ): FuzzyFilterItem<T>[] {
-  if (!query) return items.map((item) => ({ item, score: 0, matches: [] }));
+  if (!query) return items.map((item) => ({ item, score: 0, matches: [] as number[] }));
 
   const results: FuzzyFilterItem<T>[] = [];
 
