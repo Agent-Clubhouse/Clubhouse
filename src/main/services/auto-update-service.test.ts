@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isNewerVersion, verifySHA256 } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256 } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -45,6 +45,53 @@ describe('auto-update-service', () => {
 
     it('returns false for 0.0.1 vs 1.0.0', () => {
       expect(isNewerVersion('0.0.1', '1.0.0')).toBe(false);
+    });
+
+    // Preview (rc) version comparisons
+    it('rc version is newer than older stable', () => {
+      expect(isNewerVersion('0.32.0rc', '0.31.0')).toBe(true);
+    });
+
+    it('stable version is newer than same-base rc', () => {
+      expect(isNewerVersion('0.32.0', '0.32.0rc')).toBe(true);
+    });
+
+    it('rc version is not newer than same-base stable', () => {
+      expect(isNewerVersion('0.32.0rc', '0.32.0')).toBe(false);
+    });
+
+    it('two equal rc versions are not newer', () => {
+      expect(isNewerVersion('0.32.0rc', '0.32.0rc')).toBe(false);
+    });
+
+    it('higher-base rc is newer than lower stable', () => {
+      expect(isNewerVersion('1.0.0rc', '0.99.0')).toBe(true);
+    });
+
+    it('lower-base rc is not newer than higher stable', () => {
+      expect(isNewerVersion('0.31.0rc', '0.32.0')).toBe(false);
+    });
+  });
+
+  describe('parseVersion', () => {
+    it('parses stable version', () => {
+      const result = parseVersion('1.2.3');
+      expect(result).toEqual({ parts: [1, 2, 3], rc: false });
+    });
+
+    it('parses rc version', () => {
+      const result = parseVersion('1.2.3rc');
+      expect(result).toEqual({ parts: [1, 2, 3], rc: true });
+    });
+
+    it('parses two-part version', () => {
+      const result = parseVersion('1.0');
+      expect(result).toEqual({ parts: [1, 0], rc: false });
+    });
+
+    it('parses two-part rc version', () => {
+      const result = parseVersion('1.0rc');
+      expect(result).toEqual({ parts: [1, 0], rc: true });
     });
   });
 
