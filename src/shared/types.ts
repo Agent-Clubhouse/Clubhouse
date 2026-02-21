@@ -131,6 +131,7 @@ export interface DurableAgentConfig {
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
   clubhouseModeOverride?: boolean;
+  /** Reference to a voice in the voice registry; resolved to VoiceConfig at runtime. */
   voiceId?: string;
 }
 
@@ -453,12 +454,14 @@ export interface DeleteResult {
 
 export type STTBackendId = 'whisper-local' | 'parakeet-local' | 'openai-cloud' | (string & {});
 export type TTSBackendId = 'piper-local' | 'openai-cloud' | (string & {});
+/** Classifies agent output for TTS routing. Maps to TTSFilter fields. */
 export type OutputKind = 'response' | 'tool_summary' | 'error' | 'status_change';
 
 export interface VoiceConfig {
   voiceId: string;
   voiceName: string;
   backend: TTSBackendId;
+  /** Playback speed multiplier. 1.0 = normal. Typical range: 0.5 to 2.0. */
   speed?: number;
 }
 
@@ -484,6 +487,7 @@ export interface AudioSettings {
   inputDevice?: string;
   outputDevice?: string;
   activationMode: 'push-to-talk' | 'vad';
+  /** Voice Activity Detection sensitivity, 0.0 (least sensitive) to 1.0 (most sensitive). */
   vadSensitivity?: number;
   ttsFilter: TTSFilter;
   globalKeybind?: string;
