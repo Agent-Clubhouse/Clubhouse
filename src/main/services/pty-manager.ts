@@ -43,9 +43,12 @@ export function getBuffer(agentId: string): string {
   return session ? session.outputChunks.join('') : '';
 }
 
-function getMainWindow(): BrowserWindow | null {
-  const windows = BrowserWindow.getAllWindows();
-  return windows[0] || null;
+function broadcastToAllWindows(channel: string, ...args: unknown[]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(channel, ...args);
+    }
+  }
 }
 
 function cleanupSession(agentId: string): void {
@@ -139,10 +142,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
     session.lastActivity = Date.now();
     appendToBuffer(session, data);
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.DATA, agentId, data);
-    }
+    broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
   });
 
   proc.onExit(({ exitCode }) => {
@@ -157,10 +157,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
     cleanupSession(agentId);
     onExit?.(agentId, exitCode);
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.EXIT, agentId, exitCode);
-    }
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
   });
 }
 
@@ -207,10 +204,7 @@ export function spawnShell(id: string, projectPath: string): void {
 
     session.lastActivity = Date.now();
     appendToBuffer(session, data);
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.DATA, id, data);
-    }
+    broadcastToAllWindows(IPC.PTY.DATA, id, data);
   });
 
   proc.onExit(({ exitCode }) => {
@@ -218,10 +212,7 @@ export function spawnShell(id: string, projectPath: string): void {
     if (!current || current.process !== proc) return;
 
     cleanupSession(id);
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.EXIT, id, exitCode);
-    }
+    broadcastToAllWindows(IPC.PTY.EXIT, id, exitCode);
   });
 }
 

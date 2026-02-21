@@ -4,6 +4,7 @@ import * as jsxRuntime from 'react/jsx-runtime';
 import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
 import { App } from './App';
+import { PopoutWindow } from './features/popout/PopoutWindow';
 import './index.css';
 
 // Expose React on globalThis so community plugins loaded via native ESM
@@ -16,5 +17,6 @@ import './index.css';
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
-  root.render(createElement(App));
+  const isPopout = window.clubhouse.window?.isPopout();
+  root.render(createElement(isPopout ? PopoutWindow : App));
 }

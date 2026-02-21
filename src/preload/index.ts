@@ -414,6 +414,29 @@ const api = {
   },
 };
 
+  window: {
+    createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; projectId?: string; title?: string }) =>
+      ipcRenderer.invoke(IPC.WINDOW.CREATE_POPOUT, params),
+    closePopout: (windowId: number) =>
+      ipcRenderer.invoke(IPC.WINDOW.CLOSE_POPOUT, windowId),
+    listPopouts: () =>
+      ipcRenderer.invoke(IPC.WINDOW.LIST_POPOUTS),
+    isPopout: () => process.argv.some((a: string) => a.startsWith('--popout-type=')),
+    getPopoutParams: (): { type: string; agentId?: string; projectId?: string } | null => {
+      const typeArg = process.argv.find((a: string) => a.startsWith('--popout-type='));
+      if (!typeArg) return null;
+      const type = typeArg.split('=')[1];
+      const agentArg = process.argv.find((a: string) => a.startsWith('--popout-agent-id='));
+      const projectArg = process.argv.find((a: string) => a.startsWith('--popout-project-id='));
+      return {
+        type,
+        agentId: agentArg?.split('=')[1],
+        projectId: projectArg?.split('=')[1],
+      };
+    },
+  },
+};
+
 export type ClubhouseAPI = typeof api;
 
 contextBridge.exposeInMainWorld('clubhouse', api);

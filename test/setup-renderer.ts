@@ -110,4 +110,11 @@ vi.stubGlobal('clubhouse', {
   log: {
     write: noop,
   },
+  window: {
+    createPopout: asyncNoop,
+    closePopout: asyncNoop,
+    listPopouts: async () => [],
+    isPopout: () => false,
+    getPopoutParams: () => null,
+  },
 });

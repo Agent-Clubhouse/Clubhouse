@@ -8,9 +8,12 @@ let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;
 
-function getMainWindow(): BrowserWindow | null {
-  const windows = BrowserWindow.getAllWindows();
-  return windows[0] || null;
+function broadcastToAllWindows(channel: string, ...args: unknown[]): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(channel, ...args);
+    }
+  }
 }
 
 export function getPort(): number {
@@ -79,17 +82,14 @@ export function start(): Promise<number> {
                 ? (provider.toolVerb(normalized.toolName) || `Using ${normalized.toolName}`)
                 : undefined;
 
-              const win = getMainWindow();
-              if (win && !win.isDestroyed()) {
-                win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
-                  kind: normalized.kind,
-                  toolName: normalized.toolName,
-                  toolInput: normalized.toolInput,
-                  message: normalized.message,
-                  toolVerb,
-                  timestamp: Date.now(),
-                });
-              }
+              broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
+                kind: normalized.kind,
+                toolName: normalized.toolName,
+                toolInput: normalized.toolInput,
+                message: normalized.message,
+                toolVerb,
+                timestamp: Date.now(),
+              });
             }
           }
         } catch (err) {

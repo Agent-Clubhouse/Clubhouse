@@ -174,4 +174,9 @@ export const IPC = {
   PROCESS: {
     EXEC: 'process:exec',
   },
+  WINDOW: {
+    CREATE_POPOUT: 'window:create-popout',
+    CLOSE_POPOUT: 'window:close-popout',
+    LIST_POPOUTS: 'window:list-popouts',
+  },
 } as const;
