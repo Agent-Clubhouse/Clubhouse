@@ -14,6 +14,7 @@ import { appLog } from './log-service';
 // ---------------------------------------------------------------------------
 
 const UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/latest.json';
+const PREVIEW_UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/preview.json';
 const HISTORY_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/history.json';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MAX_HISTORY_VERSIONS = 5;
@@ -25,6 +26,7 @@ const MAX_HISTORY_MONTHS = 3;
 
 const settingsStore = createSettingsStore<UpdateSettings>('update-settings.json', {
   autoUpdate: true,
+  previewChannel: false,
   lastCheck: null,
   dismissedVersion: null,
   lastSeenVersion: null,
@@ -58,17 +60,35 @@ function platformKey(): string {
 }
 
 /**
- * Simple semver comparison. Returns true if a > b.
+ * Parse a version string, separating the numeric parts from an optional
+ * pre-release suffix (e.g. "rc").  "1.2.3rc" → { parts: [1,2,3], rc: true }
+ */
+export function parseVersion(v: string): { parts: number[]; rc: boolean } {
+  const rc = v.endsWith('rc');
+  const base = rc ? v.slice(0, -2) : v;
+  return { parts: base.split('.').map(Number), rc };
+}
+
+/**
+ * Semver comparison that understands the `rc` suffix.
+ * Returns true if a > b.
+ *
+ * Rules:
+ * - Numeric parts are compared left-to-right (major.minor.patch).
+ * - When the numeric parts are equal, the stable release (no suffix) is
+ *   considered newer than the rc pre-release: 1.0.0 > 1.0.0rc.
  */
 export function isNewerVersion(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const va = parseVersion(a);
+  const vb = parseVersion(b);
   for (let i = 0; i < 3; i++) {
-    const va = pa[i] || 0;
-    const vb = pb[i] || 0;
-    if (va > vb) return true;
-    if (va < vb) return false;
+    const na = va.parts[i] || 0;
+    const nb = vb.parts[i] || 0;
+    if (na > nb) return true;
+    if (na < nb) return false;
   }
+  // Base versions are equal — stable beats rc
+  if (!va.rc && vb.rc) return true;
   return false;
 }
 
@@ -179,6 +199,32 @@ export function verifySHA256(filePath: string, expectedHash: string): Promise<bo
 // Core update flow
 // ---------------------------------------------------------------------------
 
+/**
+ * Fetch the best available manifest.  When the preview channel is enabled we
+ * fetch both the stable and preview manifests and pick whichever reports the
+ * newer version (stable wins on a tie).
+ */
+async function fetchBestManifest(previewChannel: boolean): Promise<UpdateManifest> {
+  if (!previewChannel) {
+    return fetchJSON(UPDATE_URL);
+  }
+
+  // Fetch both in parallel; preview may not exist yet so we tolerate failure.
+  const [stable, preview] = await Promise.all([
+    fetchJSON(UPDATE_URL),
+    fetchJSON(PREVIEW_UPDATE_URL).catch(() => null as UpdateManifest | null),
+  ]);
+
+  if (!preview) return stable;
+
+  // Pick whichever is newer. isNewerVersion handles rc suffixes and
+  // considers a stable release newer than its rc counterpart.
+  if (isNewerVersion(preview.version, stable.version)) {
+    return preview;
+  }
+  return stable;
+}
+
 export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   if (status.state === 'downloading') {
     return status;
@@ -191,11 +237,11 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
 
   setState('checking');
   appLog('update:check', 'info', 'Checking for updates', {
-    meta: { manual, currentVersion: app.getVersion() },
+    meta: { manual, currentVersion: app.getVersion(), previewChannel: settings.previewChannel },
   });
 
   try {
-    const manifest = await fetchJSON(UPDATE_URL);
+    const manifest = await fetchBestManifest(settings.previewChannel);
     const currentVersion = app.getVersion();
 
     if (!isNewerVersion(manifest.version, currentVersion)) {

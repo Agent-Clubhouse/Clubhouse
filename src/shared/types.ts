@@ -210,6 +210,7 @@ export interface UpdateStatus {
 
 export interface UpdateSettings {
   autoUpdate: boolean;
+  previewChannel: boolean;
   lastCheck: string | null;
   dismissedVersion: string | null;
   lastSeenVersion: string | null;
