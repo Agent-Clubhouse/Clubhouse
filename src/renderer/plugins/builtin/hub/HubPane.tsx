@@ -102,6 +102,17 @@ export function HubPane({
     onAssign(pane.id, null);
   }, [pane.id, onAssign]);
 
+  const handlePopOut = useCallback(async () => {
+    if (pane.agentId) {
+      await window.clubhouse.window.createPopout({
+        type: 'agent',
+        agentId: pane.agentId,
+        projectId: pane.projectId,
+        title: agent?.name ? `Agent — ${agent.name}` : undefined,
+      });
+    }
+  }, [pane.agentId, pane.projectId, agent]);
+
   const handleViewInAgents = useCallback(() => {
     if (pane.agentId) {
       api.navigation.focusAgent(pane.agentId);
@@ -237,6 +248,14 @@ export function HubPane({
                       {isZoomed ? 'Restore' : 'Zoom'}
                     </button>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePopOut(); }}
+                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                    title="Pop out in new window"
+                    data-testid="popout-button"
+                  >
+                    Pop Out
+                  </button>
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}
