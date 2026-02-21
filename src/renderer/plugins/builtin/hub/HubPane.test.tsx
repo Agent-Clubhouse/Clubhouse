@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { HubPane } from './HubPane';
 import { createMockAPI } from '../../testing';
 import type { AgentInfo, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
@@ -114,5 +114,40 @@ describe('HubPane', () => {
     );
     expect(screen.getByTestId('ghost')).toBeInTheDocument();
     expect(screen.getByText('Ghost: Scout')).toBeInTheDocument();
+  });
+
+  it('renders pop-out button in expanded chip for assigned agent', () => {
+    render(
+      <HubPane
+        {...defaultProps}
+        api={createTestAPI()}
+        pane={{ ...BASE_PANE, agentId: 'agent-1', projectId: 'proj-1' }}
+        agents={[RUNNING_AGENT]}
+      />,
+    );
+    // The pop-out button appears in the expanded chip
+    expect(screen.getByTestId('popout-button')).toBeInTheDocument();
+  });
+
+  it('pop-out button calls createPopout with correct params', () => {
+    const createPopout = vi.fn().mockResolvedValue(1);
+    window.clubhouse.window.createPopout = createPopout;
+
+    render(
+      <HubPane
+        {...defaultProps}
+        api={createTestAPI()}
+        pane={{ ...BASE_PANE, agentId: 'agent-1', projectId: 'proj-1' }}
+        agents={[RUNNING_AGENT]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('popout-button'));
+    expect(createPopout).toHaveBeenCalledWith({
+      type: 'agent',
+      agentId: 'agent-1',
+      projectId: 'proj-1',
+      title: 'Agent — Builder',
+    });
   });
 });
