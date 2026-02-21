@@ -114,7 +114,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         {/* Free Agent Mode badge */}
         {agent.freeAgentMode && (
           <div
-            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-ctp-base"
+            className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 flex items-center justify-center ring-2 ring-ctp-base z-20"
             title="Free Agent Mode — all permissions bypassed"
           >
             <span className="text-[9px] font-bold text-white leading-none">!</span>
@@ -123,7 +123,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         {/* Headless indicator */}
         {agent.headless && agent.status === 'running' && (
           <div
-            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-ctp-blue flex items-center justify-center ring-2 ring-ctp-base"
+            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-ctp-blue flex items-center justify-center ring-2 ring-ctp-base z-20"
             title="Running headless"
           >
             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
