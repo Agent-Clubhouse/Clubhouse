@@ -25,27 +25,37 @@ export class ModelManager {
 
     if (kind === 'stt') {
       for (const file of files) {
-        if (!file.endsWith('.bin')) continue;
-        const id = file.replace('.bin', '');
-        const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
-        models.push({
-          id, name: id.replace('ggml-', ''), kind: 'stt',
-          sizeBytes: stat.size, language: id.includes('.en') ? 'en' : 'multi',
-          downloaded: true, localPath: filePath, remoteUrl: '', sha256: '',
-        });
+        try {
+          if (!file.endsWith('.bin')) continue;
+          const id = file.replace('.bin', '');
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          models.push({
+            id, name: id.replace('ggml-', ''), kind: 'stt',
+            sizeBytes: stat.size, language: id.includes('.en') ? 'en' : 'multi',
+            downloaded: true, localPath: filePath, remoteUrl: '', sha256: '',
+          });
+        } catch {
+          // Skip files that disappear between readdir and stat
+          continue;
+        }
       }
     } else {
       for (const file of files) {
-        if (!file.endsWith('.onnx') || file.endsWith('.onnx.json')) continue;
-        const id = file.replace('.onnx', '');
-        const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
-        models.push({
-          id, name: id, kind: 'tts',
-          sizeBytes: stat.size, language: id.split('-')[0] ?? 'en',
-          downloaded: true, localPath: filePath, remoteUrl: '', sha256: '',
-        });
+        try {
+          if (!file.endsWith('.onnx') || file.endsWith('.onnx.json')) continue;
+          const id = file.replace('.onnx', '');
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          models.push({
+            id, name: id, kind: 'tts',
+            sizeBytes: stat.size, language: id.split('-')[0] ?? 'en',
+            downloaded: true, localPath: filePath, remoteUrl: '', sha256: '',
+          });
+        } catch {
+          // Skip files that disappear between readdir and stat
+          continue;
+        }
       }
     }
     return models;
@@ -53,13 +63,18 @@ export class ModelManager {
 
   getModelPath(kind: 'stt' | 'tts', modelId: string): string {
     const ext = kind === 'stt' ? '.bin' : '.onnx';
-    return path.join(this.basePath, kind, `${modelId}${ext}`);
+    const resolved = path.resolve(this.basePath, kind, `${modelId}${ext}`);
+    const kindDir = path.join(this.basePath, kind);
+    if (!resolved.startsWith(kindDir)) {
+      throw new Error(`Invalid model ID: ${modelId}`);
+    }
+    return resolved;
   }
 
   async downloadModel(kind: 'stt' | 'tts', modelId: string, onProgress: (pct: number) => void): Promise<string> {
     const dir = path.join(this.basePath, kind);
     fs.mkdirSync(dir, { recursive: true });
-    appLog(`Downloading ${kind} model: ${modelId}`);
+    appLog('audio:model', 'info', `Downloading ${kind} model: ${modelId}`);
     onProgress(100);
     return this.getModelPath(kind, modelId);
   }
@@ -68,7 +83,7 @@ export class ModelManager {
     const modelPath = this.getModelPath(kind, modelId);
     if (fs.existsSync(modelPath)) {
       fs.unlinkSync(modelPath);
-      appLog(`Deleted ${kind} model: ${modelId}`);
+      appLog('audio:model', 'info', `Deleted ${kind} model: ${modelId}`);
     }
   }
 

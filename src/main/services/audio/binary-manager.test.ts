@@ -57,8 +57,4 @@ describe('BinaryManager', () => {
     expect(onProgress).toHaveBeenCalledWith(100);
   });
 
-  it('getPlatformKey returns valid platform string', () => {
-    const key = (manager as any).getPlatformKey();
-    expect(key).toMatch(/^(darwin|linux|win32)-(arm64|x64)$/);
-  });
 });

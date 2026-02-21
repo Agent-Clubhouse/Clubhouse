@@ -122,4 +122,20 @@ describe('ModelManager', () => {
     expect(defaults.tts.length).toBeGreaterThanOrEqual(1);
     expect(defaults.tts).toContain('en_US-lessac-medium');
   });
+
+  it('getModelPath rejects path traversal in modelId', () => {
+    expect(() => manager.getModelPath('stt', '../../etc/passwd')).toThrow('Invalid model ID');
+    expect(() => manager.getModelPath('tts', '../../../secret')).toThrow('Invalid model ID');
+  });
+
+  it('listLocalModels handles race condition when file disappears during iteration', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue(['ggml-base.en.bin', 'ggml-large.bin'] as any);
+    vi.mocked(fs.statSync)
+      .mockReturnValueOnce({ size: 148000000 } as any)
+      .mockImplementationOnce(() => { throw new Error('ENOENT: no such file or directory'); });
+
+    const models = manager.listLocalModels('stt');
+    expect(models.length).toBe(1);
+    expect(models[0].id).toBe('ggml-base.en');
+  });
 });

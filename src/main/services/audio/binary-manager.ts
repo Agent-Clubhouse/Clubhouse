@@ -2,9 +2,9 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
-type BinaryName = 'whisper-cpp' | 'piper' | 'parakeet';
+export type BinaryName = 'whisper-cpp' | 'piper' | 'parakeet';
 
-const BINARY_FILENAMES: Record<string, Record<BinaryName, string>> = {
+export const BINARY_FILENAMES: Record<string, Record<BinaryName, string>> = {
   darwin: { 'whisper-cpp': 'main', piper: 'piper', parakeet: 'parakeet' },
   linux: { 'whisper-cpp': 'main', piper: 'piper', parakeet: 'parakeet' },
   win32: { 'whisper-cpp': 'main.exe', piper: 'piper.exe', parakeet: 'parakeet.exe' },
@@ -31,9 +31,5 @@ export class BinaryManager {
     fs.mkdirSync(dir, { recursive: true });
     // Download logic will be implemented when integrating with real download URLs.
     onProgress(100);
-  }
-
-  private getPlatformKey(): string {
-    return `${process.platform}-${process.arch}`;
   }
 }
