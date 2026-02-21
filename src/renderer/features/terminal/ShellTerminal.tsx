@@ -63,6 +63,19 @@ export function ShellTerminal({ sessionId, focused }: Props) {
       }
     );
 
+    // Reset terminal state when the PTY process exits.
+    const removeExitListener = window.clubhouse.pty.onExit(
+      (id: string, _exitCode: number) => {
+        if (id === sessionId && terminalRef.current) {
+          terminalRef.current.write(
+            '\x1b[?1049l' + // exit alternate screen buffer
+            '\x1b[?25h' +   // show cursor
+            '\x1b[0m'       // reset text attributes
+          );
+        }
+      }
+    );
+
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
         if (fitAddonRef.current) {
@@ -82,6 +95,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     return () => {
       inputDisposable.dispose();
       removeDataListener();
+      removeExitListener();
       resizeObserver.disconnect();
       term.dispose();
       terminalRef.current = null;

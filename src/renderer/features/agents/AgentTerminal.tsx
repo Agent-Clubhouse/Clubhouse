@@ -67,6 +67,21 @@ export function AgentTerminal({ agentId, focused }: Props) {
       }
     );
 
+    // Reset terminal state when the PTY process exits.
+    // CLI tools (e.g. Copilot CLI) can leave the terminal in alternate screen
+    // buffer mode or with a hidden cursor if they crash or exit uncleanly.
+    const removeExitListener = window.clubhouse.pty.onExit(
+      (id: string, _exitCode: number) => {
+        if (id === agentId && terminalRef.current) {
+          terminalRef.current.write(
+            '\x1b[?1049l' + // exit alternate screen buffer
+            '\x1b[?25h' +   // show cursor
+            '\x1b[0m'       // reset text attributes
+          );
+        }
+      }
+    );
+
     // Resize observer
     const resizeObserver = new ResizeObserver(() => {
       requestAnimationFrame(() => {
@@ -87,6 +102,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     return () => {
       inputDisposable.dispose();
       removeDataListener();
+      removeExitListener();
       resizeObserver.disconnect();
       term.dispose();
       terminalRef.current = null;
