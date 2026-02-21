@@ -111,13 +111,23 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().setFocusedPane(paneId);
   }, [store]);
 
+  const zoomedPaneId = store((s) => s.zoomedPaneId);
+
+  const handleSplitResize = useCallback((splitId: string, ratio: number) => {
+    store.getState().setSplitRatio(splitId, ratio);
+  }, [store]);
+
+  const handleZoom = useCallback((paneId: string) => {
+    store.getState().toggleZoom(paneId);
+  }, [store]);
+
   // ── Stable PaneComponent identity ──────────────────────────────────────
   // Keep volatile data (agents, statuses) in a ref so the component callback
   // never changes identity. This prevents React from unmounting/remounting
   // all pane components on every agent tick, which caused race conditions
   // where pane assignments were lost during resume.
-  const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus });
-  dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus };
+  const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId });
+  dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const HubPaneComponent = useCallback(({ pane, focused, canClose }: PaneComponentProps) => {
@@ -144,6 +154,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onSwap: d.handleSwap,
       onAssign: d.handleAssign,
       onFocus: d.handleFocus,
+      onZoom: d.handleZoom,
+      isZoomed: d.zoomedPaneId === pane.id,
       agents: d.agents,
       detailedStatuses: d.detailedStatuses,
       completedAgents: d.completedAgents,
@@ -158,6 +170,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     tree: paneTree,
     focusedPaneId,
     PaneComponent: HubPaneComponent,
+    zoomedPaneId,
+    onSplitResize: handleSplitResize,
   });
 }
 

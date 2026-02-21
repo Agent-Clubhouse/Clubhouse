@@ -9,7 +9,9 @@ import {
   swapPanes as swapPanesOp,
   removePanesByAgent as removePanesByAgentOp,
   validateAgents as validateAgentsOp,
+  setSplitRatio as setSplitRatioOp,
   getFirstLeafId,
+  findLeaf,
   syncCounterToTree,
 } from './pane-tree';
 
@@ -19,6 +21,7 @@ export interface HubState {
   dragSourcePaneId: string | null;
   dragOverPaneId: string | null;
   loaded: boolean;
+  zoomedPaneId: string | null;
 
   loadHub: (storage: ScopedStorage, prefix: string) => Promise<void>;
   saveHub: (storage: ScopedStorage) => Promise<void>;
@@ -31,6 +34,8 @@ export interface HubState {
   setDragSource: (paneId: string | null) => void;
   setDragOver: (paneId: string | null) => void;
   validateAgents: (knownIds: Set<string>) => void;
+  setSplitRatio: (splitId: string, ratio: number) => void;
+  toggleZoom: (paneId: string) => void;
 }
 
 const STORAGE_KEY = 'hub-pane-tree';
@@ -44,6 +49,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
     dragSourcePaneId: null,
     dragOverPaneId: null,
     loaded: false,
+    zoomedPaneId: null,
 
     loadHub: async (storage, prefix) => {
       try {
@@ -72,12 +78,15 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
 
     closePane: (paneId, prefix) => {
       const result = closePaneOp(get().paneTree, paneId);
+      const clearZoom = get().zoomedPaneId === paneId ? null : get().zoomedPaneId;
       if (result === null) {
         const leaf = createLeaf(prefix);
-        set({ paneTree: leaf, focusedPaneId: leaf.id });
+        set({ paneTree: leaf, focusedPaneId: leaf.id, zoomedPaneId: null });
       } else {
         const focused = get().focusedPaneId === paneId ? getFirstLeafId(result) : get().focusedPaneId;
-        set({ paneTree: result, focusedPaneId: focused });
+        // Also clear zoom if zoomed pane no longer exists in the tree
+        const zoomedStillExists = clearZoom ? findLeaf(result, clearZoom) !== null : false;
+        set({ paneTree: result, focusedPaneId: focused, zoomedPaneId: zoomedStillExists ? clearZoom : null });
       }
     },
 
@@ -100,6 +109,15 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
 
     validateAgents: (knownIds) => {
       set({ paneTree: validateAgentsOp(get().paneTree, knownIds) });
+    },
+
+    setSplitRatio: (splitId, ratio) => {
+      set({ paneTree: setSplitRatioOp(get().paneTree, splitId, ratio) });
+    },
+
+    toggleZoom: (paneId) => {
+      const current = get().zoomedPaneId;
+      set({ zoomedPaneId: current === paneId ? null : paneId });
     },
   }));
 }

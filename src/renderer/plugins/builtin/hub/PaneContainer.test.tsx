@@ -30,13 +30,14 @@ describe('PaneContainer', () => {
       type: 'split',
       id: 's1',
       direction: 'horizontal',
+      ratio: 0.5,
       children: [
         { type: 'leaf', id: 'p1', agentId: null },
         { type: 'leaf', id: 'p2', agentId: null },
       ],
     };
 
-    const { container } = render(
+    render(
       <PaneContainer tree={split} focusedPaneId="p1" PaneComponent={TestPane} />,
     );
 
@@ -45,9 +46,8 @@ describe('PaneContainer', () => {
     expect(screen.getByTestId('focused-p1').textContent).toBe('true');
     expect(screen.getByTestId('focused-p2').textContent).toBe('false');
 
-    // Divider present (w-px element)
-    const divider = container.querySelector('.w-px');
-    expect(divider).not.toBeNull();
+    // Divider present
+    expect(screen.getByTestId('pane-divider-s1')).toBeInTheDocument();
   });
 
   it('canClose false for single pane, true for multi', () => {
@@ -64,6 +64,7 @@ describe('PaneContainer', () => {
       type: 'split',
       id: 's1',
       direction: 'horizontal',
+      ratio: 0.5,
       children: [
         { type: 'leaf', id: 'p1', agentId: null },
         { type: 'leaf', id: 'p2', agentId: null },
@@ -75,5 +76,99 @@ describe('PaneContainer', () => {
     );
     expect(screen.getByTestId('canclose-p1').textContent).toBe('true');
     expect(screen.getByTestId('canclose-p2').textContent).toBe('true');
+  });
+
+  it('renders ratio-based sizing', () => {
+    const split: SplitPane = {
+      type: 'split',
+      id: 's1',
+      direction: 'horizontal',
+      ratio: 0.3,
+      children: [
+        { type: 'leaf', id: 'p1', agentId: null },
+        { type: 'leaf', id: 'p2', agentId: null },
+      ],
+    };
+
+    const { container } = render(
+      <PaneContainer tree={split} focusedPaneId="p1" PaneComponent={TestPane} />,
+    );
+
+    // Find the pane wrappers
+    const paneWrappers = container.querySelectorAll('.min-w-0.min-h-0.overflow-hidden');
+    expect(paneWrappers.length).toBe(2);
+    expect((paneWrappers[0] as HTMLElement).style.width).toBe('calc(30% - 2px)');
+    expect((paneWrappers[1] as HTMLElement).style.width).toBe('calc(70% - 2px)');
+  });
+
+  it('defaults to 0.5 ratio when ratio is undefined', () => {
+    const split: SplitPane = {
+      type: 'split',
+      id: 's1',
+      direction: 'horizontal',
+      children: [
+        { type: 'leaf', id: 'p1', agentId: null },
+        { type: 'leaf', id: 'p2', agentId: null },
+      ],
+    };
+
+    const { container } = render(
+      <PaneContainer tree={split} focusedPaneId="p1" PaneComponent={TestPane} />,
+    );
+
+    const paneWrappers = container.querySelectorAll('.min-w-0.min-h-0.overflow-hidden');
+    expect((paneWrappers[0] as HTMLElement).style.width).toBe('calc(50% - 2px)');
+  });
+
+  it('zoom mode renders only the zoomed pane', () => {
+    const split: SplitPane = {
+      type: 'split',
+      id: 's1',
+      direction: 'horizontal',
+      ratio: 0.5,
+      children: [
+        { type: 'leaf', id: 'p1', agentId: null },
+        { type: 'leaf', id: 'p2', agentId: null },
+      ],
+    };
+
+    render(
+      <PaneContainer
+        tree={split}
+        focusedPaneId="p1"
+        PaneComponent={TestPane}
+        zoomedPaneId="p2"
+      />,
+    );
+
+    expect(screen.getByTestId('pane-p2')).toBeInTheDocument();
+    expect(screen.queryByTestId('pane-p1')).toBeNull();
+    expect(screen.getByTestId('focused-p2').textContent).toBe('true');
+  });
+
+  it('zoom mode falls back to normal when pane not found', () => {
+    const split: SplitPane = {
+      type: 'split',
+      id: 's1',
+      direction: 'horizontal',
+      ratio: 0.5,
+      children: [
+        { type: 'leaf', id: 'p1', agentId: null },
+        { type: 'leaf', id: 'p2', agentId: null },
+      ],
+    };
+
+    render(
+      <PaneContainer
+        tree={split}
+        focusedPaneId="p1"
+        PaneComponent={TestPane}
+        zoomedPaneId="nonexistent"
+      />,
+    );
+
+    // Falls through to normal rendering
+    expect(screen.getByTestId('pane-p1')).toBeInTheDocument();
+    expect(screen.getByTestId('pane-p2')).toBeInTheDocument();
   });
 });

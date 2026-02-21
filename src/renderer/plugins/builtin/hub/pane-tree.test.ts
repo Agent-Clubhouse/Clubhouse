@@ -10,10 +10,12 @@ import {
   removePanesByAgent,
   validateAgents,
   findLeaf,
+  findSplit,
   getFirstLeafId,
   mapLeaves,
   collectLeaves,
   syncCounterToTree,
+  setSplitRatio,
   type PaneNode,
   type LeafPane,
   type SplitPane,
@@ -563,6 +565,114 @@ describe('pane-tree', () => {
         children: [leaf1, inner],
       };
       expect(collectLeaves(outer)).toEqual([leaf1, leaf2, leaf3]);
+    });
+  });
+
+  // ── setSplitRatio ───────────────────────────────────────────────────
+
+  describe('setSplitRatio', () => {
+    it('sets ratio on a split node', () => {
+      const leaf = createLeaf('p');
+      const result = splitPane(leaf, leaf.id, 'horizontal', 'p') as SplitPane;
+      const updated = setSplitRatio(result, result.id, 0.7) as SplitPane;
+      expect(updated.ratio).toBeCloseTo(0.7);
+    });
+
+    it('clamps ratio below 0.15', () => {
+      const leaf = createLeaf('p');
+      const result = splitPane(leaf, leaf.id, 'horizontal', 'p') as SplitPane;
+      const updated = setSplitRatio(result, result.id, 0.05) as SplitPane;
+      expect(updated.ratio).toBeCloseTo(0.15);
+    });
+
+    it('clamps ratio above 0.85', () => {
+      const leaf = createLeaf('p');
+      const result = splitPane(leaf, leaf.id, 'horizontal', 'p') as SplitPane;
+      const updated = setSplitRatio(result, result.id, 0.95) as SplitPane;
+      expect(updated.ratio).toBeCloseTo(0.85);
+    });
+
+    it('returns same ref when splitId not found', () => {
+      const leaf = createLeaf('p');
+      const result = setSplitRatio(leaf, 'nonexistent', 0.6);
+      expect(result).toBe(leaf);
+    });
+
+    it('preserves structural sharing for unchanged branches', () => {
+      const leaf1 = createLeaf('p');
+      const leaf2 = createLeaf('p');
+      const leaf3 = createLeaf('p');
+      const inner: SplitPane = {
+        type: 'split', id: 's_inner', direction: 'vertical', ratio: 0.5,
+        children: [leaf2, leaf3],
+      };
+      const outer: SplitPane = {
+        type: 'split', id: 's_outer', direction: 'horizontal', ratio: 0.5,
+        children: [leaf1, inner],
+      };
+      const updated = setSplitRatio(outer, 's_inner', 0.7) as SplitPane;
+      expect(updated.children[0]).toBe(leaf1);
+      expect((updated.children[1] as SplitPane).ratio).toBeCloseTo(0.7);
+    });
+  });
+
+  // ── findSplit ─────────────────────────────────────────────────────────
+
+  describe('findSplit', () => {
+    it('finds a split by id', () => {
+      const leaf1 = createLeaf('p');
+      const leaf2 = createLeaf('p');
+      const tree: SplitPane = {
+        type: 'split', id: 's1', direction: 'horizontal',
+        children: [leaf1, leaf2],
+      };
+      expect(findSplit(tree, 's1')).toBe(tree);
+    });
+
+    it('returns null for leaf', () => {
+      const leaf = createLeaf('p');
+      expect(findSplit(leaf, 's1')).toBeNull();
+    });
+
+    it('finds nested split', () => {
+      const leaf1 = createLeaf('p');
+      const leaf2 = createLeaf('p');
+      const leaf3 = createLeaf('p');
+      const inner: SplitPane = {
+        type: 'split', id: 's_inner', direction: 'vertical',
+        children: [leaf2, leaf3],
+      };
+      const outer: SplitPane = {
+        type: 'split', id: 's_outer', direction: 'horizontal',
+        children: [leaf1, inner],
+      };
+      expect(findSplit(outer, 's_inner')).toBe(inner);
+    });
+  });
+
+  // ── splitPane ratio ───────────────────────────────────────────────────
+
+  describe('splitPane ratio', () => {
+    it('new splits have ratio 0.5', () => {
+      const leaf = createLeaf('p');
+      const result = splitPane(leaf, leaf.id, 'horizontal', 'p') as SplitPane;
+      expect(result.ratio).toBe(0.5);
+    });
+  });
+
+  // ── backward compatibility ────────────────────────────────────────────
+
+  describe('backward compat (missing ratio)', () => {
+    it('old tree without ratio defaults to 0.5 when read', () => {
+      const tree: SplitPane = {
+        type: 'split', id: 's1', direction: 'horizontal',
+        children: [
+          { type: 'leaf', id: 'p1', agentId: null },
+          { type: 'leaf', id: 'p2', agentId: null },
+        ],
+      };
+      // ratio is undefined, consuming code should use ?? 0.5
+      expect(tree.ratio ?? 0.5).toBe(0.5);
     });
   });
 

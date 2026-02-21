@@ -12,6 +12,8 @@ interface HubPaneProps {
   onSwap: (sourceId: string, targetId: string) => void;
   onAssign: (paneId: string, agentId: string | null, projectId?: string) => void;
   onFocus: (paneId: string) => void;
+  onZoom?: (paneId: string) => void;
+  isZoomed?: boolean;
   agents: AgentInfo[];
   detailedStatuses: Record<string, PluginAgentDetailedStatus | null>;
   completedAgents: CompletedQuickAgentInfo[];
@@ -34,6 +36,8 @@ export function HubPane({
   onSwap,
   onAssign,
   onFocus,
+  onZoom,
+  isZoomed,
   agents,
   detailedStatuses,
   completedAgents,
@@ -223,6 +227,16 @@ export function HubPane({
                   >
                     View
                   </button>
+                  {onZoom && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onZoom(pane.id); }}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text"
+                      title={isZoomed ? 'Restore pane' : 'Zoom pane'}
+                      data-testid="zoom-button"
+                    >
+                      {isZoomed ? 'Restore' : 'Zoom'}
+                    </button>
+                  )}
                   {agent.status === 'running' && (
                     <button
                       onClick={(e) => { e.stopPropagation(); handleKill(); }}

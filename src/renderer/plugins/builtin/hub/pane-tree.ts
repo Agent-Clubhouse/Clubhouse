@@ -12,6 +12,7 @@ export interface SplitPane {
   id: string;
   direction: 'horizontal' | 'vertical';
   children: [PaneNode, PaneNode];
+  ratio?: number; // 0.0–1.0, first child proportion (default 0.5)
 }
 
 export type PaneNode = LeafPane | SplitPane;
@@ -44,6 +45,7 @@ export function splitPane(
         type: 'split',
         id: generatePaneId(prefix),
         direction,
+        ratio: 0.5,
         children: position === 'before'
           ? [newLeaf, tree]
           : [tree, newLeaf],
@@ -165,4 +167,24 @@ export function syncCounterToTree(tree: PaneNode): void {
   if (max >= paneCounter) {
     paneCounter = max;
   }
+}
+
+/** Find a split node by its ID */
+export function findSplit(tree: PaneNode, splitId: string): SplitPane | null {
+  if (tree.type === 'leaf') return null;
+  if (tree.id === splitId) return tree;
+  return findSplit(tree.children[0], splitId) || findSplit(tree.children[1], splitId);
+}
+
+/** Immutably set the ratio on a split node, clamped to [0.15, 0.85] */
+export function setSplitRatio(tree: PaneNode, splitId: string, ratio: number): PaneNode {
+  const clamped = Math.min(0.85, Math.max(0.15, ratio));
+  if (tree.type === 'leaf') return tree;
+  if (tree.id === splitId) {
+    return { ...tree, ratio: clamped };
+  }
+  const newLeft = setSplitRatio(tree.children[0], splitId, ratio);
+  const newRight = setSplitRatio(tree.children[1], splitId, ratio);
+  if (newLeft === tree.children[0] && newRight === tree.children[1]) return tree;
+  return { ...tree, children: [newLeft, newRight] as [PaneNode, PaneNode] };
 }

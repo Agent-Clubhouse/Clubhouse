@@ -241,6 +241,60 @@ describe('useHubStore', () => {
     });
   });
 
+  // ── setSplitRatio ───────────────────────────────────────────────────
+
+  describe('setSplitRatio', () => {
+    it('updates the ratio on a split', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().splitPane(id, 'horizontal', 'hub');
+      const splitId = store.getState().paneTree.id;
+      store.getState().setSplitRatio(splitId, 0.7);
+      const tree = store.getState().paneTree as SplitPane;
+      expect(tree.ratio).toBeCloseTo(0.7);
+    });
+
+    it('clamps the ratio', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().splitPane(id, 'horizontal', 'hub');
+      const splitId = store.getState().paneTree.id;
+      store.getState().setSplitRatio(splitId, 0.01);
+      const tree = store.getState().paneTree as SplitPane;
+      expect(tree.ratio).toBeCloseTo(0.15);
+    });
+  });
+
+  // ── toggleZoom ─────────────────────────────────────────────────────
+
+  describe('toggleZoom', () => {
+    it('sets zoomedPaneId', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().toggleZoom(id);
+      expect(store.getState().zoomedPaneId).toBe(id);
+    });
+
+    it('unsets zoomedPaneId on second call', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().toggleZoom(id);
+      store.getState().toggleZoom(id);
+      expect(store.getState().zoomedPaneId).toBeNull();
+    });
+
+    it('cleared when zoomed pane is closed', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().splitPane(id, 'horizontal', 'hub');
+      const leaves = collectLeaves(store.getState().paneTree);
+      store.getState().toggleZoom(leaves[0].id);
+      expect(store.getState().zoomedPaneId).toBe(leaves[0].id);
+      store.getState().closePane(leaves[0].id, 'hub');
+      expect(store.getState().zoomedPaneId).toBeNull();
+    });
+  });
+
   // ── Round-trip persistence ────────────────────────────────────────────
 
   describe('round-trip', () => {
