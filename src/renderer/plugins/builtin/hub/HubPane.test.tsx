@@ -117,7 +117,7 @@ describe('HubPane', () => {
   });
 
   it('renders pop-out button in expanded chip for assigned agent', () => {
-    render(
+    const { container } = render(
       <HubPane
         {...defaultProps}
         api={createTestAPI()}
@@ -125,7 +125,8 @@ describe('HubPane', () => {
         agents={[RUNNING_AGENT]}
       />,
     );
-    // The pop-out button appears in the expanded chip
+    // Hover the pane to expand the floating chip
+    fireEvent.mouseEnter(container.firstChild as HTMLElement);
     expect(screen.getByTestId('popout-button')).toBeInTheDocument();
   });
 
@@ -133,7 +134,7 @@ describe('HubPane', () => {
     const createPopout = vi.fn().mockResolvedValue(1);
     window.clubhouse.window.createPopout = createPopout;
 
-    render(
+    const { container } = render(
       <HubPane
         {...defaultProps}
         api={createTestAPI()}
@@ -142,6 +143,8 @@ describe('HubPane', () => {
       />,
     );
 
+    // Hover the pane to expand the floating chip
+    fireEvent.mouseEnter(container.firstChild as HTMLElement);
     fireEvent.click(screen.getByTestId('popout-button'));
     expect(createPopout).toHaveBeenCalledWith({
       type: 'agent',

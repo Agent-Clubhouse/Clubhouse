@@ -285,14 +285,12 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
 
   useEffect(() => {
     const el = actionsRef.current;
-    if (!el) return;
+    if (!el || typeof ResizeObserver === 'undefined') return;
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const width = entry.contentRect.width;
-        // Reserve space for overflow button (~26px) when not all fit
-        const availableForButtons = width;
-        const fitCount = Math.floor(availableForButtons / ACTION_BUTTON_WIDTH);
+        const fitCount = Math.floor(width / ACTION_BUTTON_WIDTH);
         setMaxVisible(fitCount);
       }
     });

@@ -105,6 +105,7 @@ describe('AgentListItem activity animation', () => {
 describe('AgentListItem actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
   });
 
   it('renders pop-out action button for sleeping durable agent', () => {
@@ -167,6 +168,7 @@ describe('AgentListItem actions', () => {
 describe('AgentListItem context menu', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
   });
 
   it('opens context menu on right-click', () => {
