@@ -5,6 +5,8 @@ import { TTSBackendId, VoiceConfig, VoiceInfo } from '../../../../shared/types';
 import { appLog } from '../../log-service';
 import { TTSEngine } from './tts-engine';
 
+const SYNTHESIS_TIMEOUT_MS = 60_000;
+
 export class PiperBackend implements TTSEngine {
   readonly id: TTSBackendId = 'piper-local';
   readonly displayName = 'Piper (Local)';
@@ -24,13 +26,13 @@ export class PiperBackend implements TTSEngine {
 
   async listVoices(): Promise<VoiceInfo[]> {
     const voices: VoiceInfo[] = [];
+    if (!fs.existsSync(this.modelsDir)) return voices;
     const files = fs.readdirSync(this.modelsDir);
     for (const file of files) {
       if (!file.endsWith('.onnx') || file.endsWith('.onnx.json')) continue;
       const voiceId = file.replace('.onnx', '');
       const configPath = path.join(this.modelsDir, `${file}.json`);
       let language = 'en';
-      let gender: 'male' | 'female' | 'neutral' | undefined;
       if (fs.existsSync(configPath)) {
         try {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
@@ -45,7 +47,6 @@ export class PiperBackend implements TTSEngine {
         voiceId,
         voiceName: voiceId.split('-').slice(1, -1).join(' '),
         language,
-        gender,
       });
     }
     return voices;
@@ -66,19 +67,28 @@ export class PiperBackend implements TTSEngine {
       args.push('--length-scale', String(1.0 / voice.speed));
     }
 
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+
     const proc = spawn(this.binaryPath, args);
 
     const outputPromise = new Promise<Buffer[]>((resolve, reject) => {
       const outputChunks: Buffer[] = [];
       proc.stdout.on('data', (chunk: Buffer) => outputChunks.push(chunk));
       proc.on('error', (err) => {
+        clearTimeout(timeout);
+        if (settled) return;
+        settled = true;
         appLog('audio:tts', 'error', 'Piper process error', {
           meta: { error: err.message },
         });
         reject(err);
       });
       proc.on('close', (code) => {
-        if (code !== 0 && outputChunks.length === 0) {
+        clearTimeout(timeout);
+        if (settled) return;
+        settled = true;
+        if (code !== 0) {
           const msg = `Piper exited with code ${code}`;
           appLog('audio:tts', 'error', msg, { meta: { code } });
           reject(new Error(msg));
@@ -86,8 +96,17 @@ export class PiperBackend implements TTSEngine {
           resolve(outputChunks);
         }
       });
+
+      timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        proc.kill();
+        appLog('audio:tts', 'warn', 'Piper synthesis timed out', { meta: { binaryPath: this.binaryPath } });
+        reject(new Error('Piper synthesis timed out after 60s'));
+      }, SYNTHESIS_TIMEOUT_MS);
     });
 
+    proc.stdin.on('error', () => {}); // Errors handled by proc 'error' event
     proc.stdin.write(text);
     proc.stdin.end();
 
