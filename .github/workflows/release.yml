@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      is_preview: ${{ steps.meta.outputs.is_preview }}
       release_message: ${{ steps.meta.outputs.release_message }}
       release_notes: ${{ steps.meta.outputs.release_notes }}
     steps:
@@ -56,11 +57,22 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-          # Verify tag version matches package.json
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag version (${VERSION}) does not match package.json (${PKG_VERSION})"
-            exit 1
+          # Detect preview (rc) tags: v1.0.0rc → is_preview=true
+          if [[ "$VERSION" == *rc ]]; then
+            echo "is_preview=true" >> "$GITHUB_OUTPUT"
+            echo "Preview release detected: ${VERSION}"
+          else
+            echo "is_preview=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Verify tag version matches package.json (skip for preview tags
+          # since the rc suffix won't match the package version)
+          if [[ "$VERSION" != *rc ]]; then
+            PKG_VERSION=$(node -p "require('./package.json').version")
+            if [ "$VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Tag version (${VERSION}) does not match package.json (${PKG_VERSION})"
+              exit 1
+            fi
           fi
 
           # Find the merge commit the tag points to, then find its PR
@@ -278,9 +290,10 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Generate latest.json
+      - name: Generate update manifest
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
+          IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
           MESSAGE=$(cat <<'MESSAGE_EOF'
           ${{ needs.verify-tag.outputs.release_message }}
           MESSAGE_EOF
@@ -290,6 +303,13 @@ jobs:
           NOTES_EOF
           )
           BASE_URL="https://stclubhousereleases.blob.core.windows.net/releases/artifacts"
+
+          # Write to preview.json for rc tags, latest.json for stable
+          if [ "$IS_PREVIEW" = "true" ]; then
+            MANIFEST_NAME="preview.json"
+          else
+            MANIFEST_NAME="latest.json"
+          fi
 
           jq -n \
             --arg version "$VERSION" \
@@ -337,10 +357,10 @@ jobs:
                   size: $size_win_arm64
                 }
               }
-            }' > artifacts/latest.json
+            }' > "artifacts/${MANIFEST_NAME}"
 
-          echo "Generated latest.json:"
-          cat artifacts/latest.json
+          echo "Generated ${MANIFEST_NAME}:"
+          cat "artifacts/${MANIFEST_NAME}"
 
       - name: Authenticate to Azure
         uses: azure/login@v2
@@ -350,6 +370,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Update history.json
+        if: needs.verify-tag.outputs.is_preview != 'true'
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
           ACCOUNT="stclubhousereleases"
@@ -399,6 +420,7 @@ jobs:
       - name: Upload to Azure Blob Storage
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
+          IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
           ACCOUNT="stclubhousereleases"
           CONTAINER="releases"
 
@@ -415,54 +437,70 @@ jobs:
               --auth-mode login
           done
 
-          # Upload latest.json
-          az storage blob upload \
-            --account-name "$ACCOUNT" \
-            --container-name "$CONTAINER" \
-            --name "updates/latest.json" \
-            --file artifacts/latest.json \
-            --overwrite \
-            --content-type "application/json" \
-            --auth-mode login
+          if [ "$IS_PREVIEW" = "true" ]; then
+            # Preview release: upload preview.json manifest
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/preview.json" \
+              --file artifacts/preview.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
 
-          # Upload history.json
-          az storage blob upload \
-            --account-name "$ACCOUNT" \
-            --container-name "$CONTAINER" \
-            --name "updates/history.json" \
-            --file artifacts/history.json \
-            --overwrite \
-            --content-type "application/json" \
-            --auth-mode login
+            # Copy installers to the preview/ slot (constantly overwritten)
+            SLOT="preview"
+          else
+            # Stable release: upload latest.json and history.json
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/latest.json" \
+              --file artifacts/latest.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
 
-          # Copy DMGs to the latest slot
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/history.json" \
+              --file artifacts/history.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
+
+            SLOT="latest"
+          fi
+
+          # Copy DMGs to the appropriate slot (latest/ or preview/)
           for ARCH in arm64 x64; do
             az storage blob copy start \
               --account-name "$ACCOUNT" \
               --destination-container "$CONTAINER" \
-              --destination-blob "latest/Clubhouse-latest-darwin-${ARCH}.dmg" \
+              --destination-blob "${SLOT}/Clubhouse-${SLOT}-darwin-${ARCH}.dmg" \
               --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-darwin-${ARCH}.dmg" \
               --auth-mode login
           done
 
-          # Copy Windows installers to the latest slot
+          # Copy Windows installers to the appropriate slot
           for WIN_ARCH in x64 arm64; do
             az storage blob copy start \
               --account-name "$ACCOUNT" \
               --destination-container "$CONTAINER" \
-              --destination-blob "latest/Clubhouse-latest-win32-${WIN_ARCH}-Setup.exe" \
+              --destination-blob "${SLOT}/Clubhouse-${SLOT}-win32-${WIN_ARCH}-Setup.exe" \
               --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/artifacts/Clubhouse-${VERSION}-win32-${WIN_ARCH}-Setup.exe" \
               --auth-mode login
           done
 
           # Wait for copies to complete
-          LATEST_BLOBS=(
-            "latest/Clubhouse-latest-darwin-arm64.dmg"
-            "latest/Clubhouse-latest-darwin-x64.dmg"
-            "latest/Clubhouse-latest-win32-x64-Setup.exe"
-            "latest/Clubhouse-latest-win32-arm64-Setup.exe"
+          SLOT_BLOBS=(
+            "${SLOT}/Clubhouse-${SLOT}-darwin-arm64.dmg"
+            "${SLOT}/Clubhouse-${SLOT}-darwin-x64.dmg"
+            "${SLOT}/Clubhouse-${SLOT}-win32-x64-Setup.exe"
+            "${SLOT}/Clubhouse-${SLOT}-win32-arm64-Setup.exe"
           )
-          for BLOB in "${LATEST_BLOBS[@]}"; do
+          for BLOB in "${SLOT_BLOBS[@]}"; do
             while true; do
               STATUS=$(az storage blob show \
                 --account-name "$ACCOUNT" \
@@ -487,6 +525,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.verify-tag.outputs.version }}"
+          IS_PREVIEW="${{ needs.verify-tag.outputs.is_preview }}"
 
           RELEASE_TITLE="v${VERSION} — ${{ needs.verify-tag.outputs.release_message }}"
           RELEASE_BODY=$(cat <<'BODY_EOF'
@@ -494,11 +533,19 @@ jobs:
           BODY_EOF
           )
 
+          PRERELEASE_FLAG=""
+          MANIFEST_FILE="artifacts/latest.json"
+          if [ "$IS_PREVIEW" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+            MANIFEST_FILE="artifacts/preview.json"
+          fi
+
           gh release create "v${VERSION}" \
             --repo "${{ github.repository }}" \
             --title "${RELEASE_TITLE}" \
             --notes "${RELEASE_BODY}" \
+            $PRERELEASE_FLAG \
             artifacts/Clubhouse-*.zip \
             artifacts/Clubhouse-*.dmg \
             artifacts/Clubhouse-*.exe \
-            artifacts/latest.json
+            "${MANIFEST_FILE}"
