@@ -19,6 +19,7 @@ import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
+import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
@@ -92,6 +93,7 @@ export function MainContentView() {
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
+    if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }

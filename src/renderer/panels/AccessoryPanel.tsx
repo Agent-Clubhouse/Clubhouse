@@ -42,6 +42,7 @@ function SettingsCategoryNav() {
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
             {navButton('Logging', 'logging')}
+            {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Plugins', 'plugins')}
             {navButton('Updates', 'updates')}
             {navButton("What's New", 'whats-new')}

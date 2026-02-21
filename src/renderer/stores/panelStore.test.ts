@@ -22,8 +22,14 @@ describe('panelStore', () => {
     expect(usePanelStore.getState().explorerWidth).toBe(400);
   });
 
-  it('auto-collapses explorer when dragged below min', () => {
+  it('clamps explorer to min when dragged between snap and min', () => {
     usePanelStore.getState().resizeExplorer(-100);
+    expect(usePanelStore.getState().explorerCollapsed).toBe(false);
+    expect(usePanelStore.getState().explorerWidth).toBe(140);
+  });
+
+  it('auto-collapses explorer only when dragged below snap threshold', () => {
+    usePanelStore.getState().resizeExplorer(-200);
     expect(usePanelStore.getState().explorerCollapsed).toBe(true);
   });
 
@@ -51,8 +57,14 @@ describe('panelStore', () => {
     expect(usePanelStore.getState().accessoryWidth).toBe(500);
   });
 
-  it('auto-collapses accessory when dragged below min', () => {
+  it('clamps accessory to min when dragged between snap and min', () => {
     usePanelStore.getState().resizeAccessory(-100);
+    expect(usePanelStore.getState().accessoryCollapsed).toBe(false);
+    expect(usePanelStore.getState().accessoryWidth).toBe(200);
+  });
+
+  it('auto-collapses accessory only when dragged below snap threshold', () => {
+    usePanelStore.getState().resizeAccessory(-250);
     expect(usePanelStore.getState().accessoryCollapsed).toBe(true);
   });
 

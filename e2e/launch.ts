@@ -32,7 +32,6 @@ export async function launchApp() {
   const isVisible = await onboardingBackdrop.isVisible({ timeout: 3_000 }).catch(() => false);
   if (isVisible) {
     await rendererWindow.locator('[data-testid="onboarding-skip"]').click();
-    // Wait until the backdrop is actually gone before returning.
     await onboardingBackdrop.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
   }
 

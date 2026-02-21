@@ -5,10 +5,12 @@ const STORAGE_KEY = 'clubhouse_panel_sizes';
 const EXPLORER_MIN = 140;
 const EXPLORER_MAX = 400;
 const EXPLORER_DEFAULT = 200;
+const EXPLORER_SNAP = 60;
 
 const ACCESSORY_MIN = 200;
 const ACCESSORY_MAX = 500;
 const ACCESSORY_DEFAULT = 280;
+const ACCESSORY_SNAP = 80;
 
 interface PanelState {
   explorerWidth: number;
@@ -53,11 +55,11 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const { explorerWidth, explorerCollapsed } = get();
     if (explorerCollapsed) return;
     const newWidth = explorerWidth + delta;
-    if (newWidth < EXPLORER_MIN) {
+    if (newWidth < EXPLORER_SNAP) {
       set({ explorerCollapsed: true });
       persist({ ...get(), explorerCollapsed: true });
     } else {
-      const clamped = Math.min(newWidth, EXPLORER_MAX);
+      const clamped = Math.max(EXPLORER_MIN, Math.min(newWidth, EXPLORER_MAX));
       set({ explorerWidth: clamped });
       persist({ ...get(), explorerWidth: clamped });
     }
@@ -67,11 +69,11 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const { accessoryWidth, accessoryCollapsed } = get();
     if (accessoryCollapsed) return;
     const newWidth = accessoryWidth + delta;
-    if (newWidth < ACCESSORY_MIN) {
+    if (newWidth < ACCESSORY_SNAP) {
       set({ accessoryCollapsed: true });
       persist({ ...get(), accessoryCollapsed: true });
     } else {
-      const clamped = Math.min(newWidth, ACCESSORY_MAX);
+      const clamped = Math.max(ACCESSORY_MIN, Math.min(newWidth, ACCESSORY_MAX));
       set({ accessoryWidth: clamped });
       persist({ ...get(), accessoryWidth: clamped });
     }
