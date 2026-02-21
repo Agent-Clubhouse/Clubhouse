@@ -229,7 +229,7 @@ export function AgentList() {
             if (e.key === 'Enter' && mission.trim()) handleMissionSubmit();
             if (e.key === 'Escape') handleCancelMission();
           }}
-          placeholder="What should this agent do?"
+          placeholder="What should this quick agent do?"
           className="w-full px-2 py-1.5 text-xs rounded border border-surface-0
             bg-ctp-base text-ctp-text placeholder:text-ctp-overlay0
             focus:outline-none focus:border-indigo-500"
@@ -334,6 +334,17 @@ export function AgentList() {
                 className="fixed bg-ctp-mantle border border-surface-0 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
                 style={rect ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : undefined}
               >
+                <button
+                  onClick={() => { setShowDropdown(false); setShowDialog(true); }}
+                  className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
+                >
+                  <svg className="flex-shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </svg>
+                  Durable
+                </button>
                 <button
                   onClick={handleQuickAgent}
                   className="w-full px-3 py-1.5 text-xs text-left text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text cursor-pointer flex items-center gap-2 whitespace-nowrap"
