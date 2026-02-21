@@ -37,6 +37,7 @@ const DEFAULT_STATUS: UpdateStatus = {
 
 const DEFAULT_SETTINGS: UpdateSettings = {
   autoUpdate: true,
+  previewChannel: false,
   lastCheck: null,
   dismissedVersion: null,
   lastSeenVersion: null,

@@ -56,6 +56,20 @@ export function UpdateSettingsView() {
           />
         </div>
 
+        {/* Preview channel toggle */}
+        <div className="flex items-center justify-between py-3 border-b border-surface-0">
+          <div>
+            <div className="text-sm text-ctp-text font-medium">Preview versions</div>
+            <div className="text-xs text-ctp-subtext0 mt-0.5">
+              Get early access to upcoming features before they are officially released
+            </div>
+          </div>
+          <Toggle
+            checked={settings.previewChannel}
+            onChange={(v) => saveSettings({ ...settings, previewChannel: v })}
+          />
+        </div>
+
         {/* Status */}
         <div className="py-3 border-b border-surface-0">
           <div className="flex items-center justify-between">
