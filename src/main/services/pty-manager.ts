@@ -143,6 +143,10 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.PTY.DATA, agentId, data);
     }
+
+    // Audio: forward to audio service for potential TTS
+    // import { getAudioService } from '../ipc/audio-handlers';
+    // getAudioService().onAgentPtyData?.(agentId, data);
   });
 
   proc.onExit(({ exitCode }) => {
