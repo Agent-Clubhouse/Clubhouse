@@ -100,6 +100,16 @@ export function AgentList() {
     }
   }, [showMissionInput]);
 
+  // Listen for keyboard shortcut to open quick agent mission input
+  useEffect(() => {
+    const handler = () => {
+      setQuickTargetParentId(null);
+      setShowMissionInput(true);
+    };
+    window.addEventListener('clubhouse:open-quick-agent', handler);
+    return () => window.removeEventListener('clubhouse:open-quick-agent', handler);
+  }, []);
+
   const handleQuickAgent = () => {
     setShowDropdown(false);
     setQuickTargetParentId(null);

@@ -38,6 +38,45 @@ describe('keyboardShortcutsStore', () => {
     expect(shortcuts['command-palette'].currentBinding).toBe('Meta+K');
   });
 
+  it('has toggle-settings with comma binding (not Comma)', () => {
+    const { shortcuts } = useKeyboardShortcutsStore.getState();
+    expect(shortcuts['toggle-settings'].defaultBinding).toBe('Meta+,');
+  });
+
+  it('has switch-agent-1..9 defaults', () => {
+    const { shortcuts } = useKeyboardShortcutsStore.getState();
+    for (let i = 1; i <= 9; i++) {
+      expect(shortcuts[`switch-agent-${i}`]).toBeDefined();
+      expect(shortcuts[`switch-agent-${i}`].defaultBinding).toBe(`Meta+${i}`);
+      expect(shortcuts[`switch-agent-${i}`].category).toBe('Agents');
+    }
+  });
+
+  it('has switch-project-1..9 with Shift modifier', () => {
+    const { shortcuts } = useKeyboardShortcutsStore.getState();
+    for (let i = 1; i <= 9; i++) {
+      expect(shortcuts[`switch-project-${i}`]).toBeDefined();
+      expect(shortcuts[`switch-project-${i}`].defaultBinding).toBe(`Meta+Shift+${i}`);
+      expect(shortcuts[`switch-project-${i}`].category).toBe('Projects');
+    }
+  });
+
+  it('has all new shortcuts defined', () => {
+    const { shortcuts } = useKeyboardShortcutsStore.getState();
+    expect(shortcuts['toggle-help']).toBeDefined();
+    expect(shortcuts['toggle-help'].defaultBinding).toBe('Meta+Shift+/');
+    expect(shortcuts['go-home']).toBeDefined();
+    expect(shortcuts['go-home'].defaultBinding).toBe('Meta+Shift+H');
+    expect(shortcuts['toggle-sidebar']).toBeDefined();
+    expect(shortcuts['toggle-sidebar'].defaultBinding).toBe('Meta+B');
+    expect(shortcuts['toggle-accessory']).toBeDefined();
+    expect(shortcuts['toggle-accessory'].defaultBinding).toBe('Meta+Shift+B');
+    expect(shortcuts['new-quick-agent']).toBeDefined();
+    expect(shortcuts['new-quick-agent'].defaultBinding).toBe('Meta+Shift+N');
+    expect(shortcuts['add-project']).toBeDefined();
+    expect(shortcuts['add-project'].defaultBinding).toBe('Meta+Shift+O');
+  });
+
   it('sets a custom binding', () => {
     useKeyboardShortcutsStore.getState().setBinding('command-palette', 'Meta+P');
     const shortcut = useKeyboardShortcutsStore.getState().shortcuts['command-palette'];
@@ -63,7 +102,7 @@ describe('keyboardShortcutsStore', () => {
     useKeyboardShortcutsStore.getState().resetAll();
     const { shortcuts } = useKeyboardShortcutsStore.getState();
     expect(shortcuts['command-palette'].currentBinding).toBe('Meta+K');
-    expect(shortcuts['toggle-settings'].currentBinding).toBe('Meta+Comma');
+    expect(shortcuts['toggle-settings'].currentBinding).toBe('Meta+,');
   });
 
   it('manages editing state', () => {
@@ -132,5 +171,30 @@ describe('eventToBinding', () => {
 
   it('uppercases single letter keys', () => {
     expect(eventToBinding(makeEvent({ key: 'a', metaKey: true }))).toBe('Meta+A');
+  });
+
+  // Shifted-digit normalization tests
+  it('normalizes Cmd+Shift+! to Meta+Shift+1 (macOS shifted digit)', () => {
+    expect(eventToBinding(makeEvent({ key: '!', metaKey: true, shiftKey: true }))).toBe('Meta+Shift+1');
+  });
+
+  it('normalizes Cmd+Shift+@ to Meta+Shift+2', () => {
+    expect(eventToBinding(makeEvent({ key: '@', metaKey: true, shiftKey: true }))).toBe('Meta+Shift+2');
+  });
+
+  it('normalizes Cmd+Shift+# to Meta+Shift+3', () => {
+    expect(eventToBinding(makeEvent({ key: '#', metaKey: true, shiftKey: true }))).toBe('Meta+Shift+3');
+  });
+
+  it('normalizes all shifted digits', () => {
+    const map: Record<string, string> = { '!': '1', '@': '2', '#': '3', $: '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9' };
+    for (const [symbol, digit] of Object.entries(map)) {
+      expect(eventToBinding(makeEvent({ key: symbol, metaKey: true, shiftKey: true }))).toBe(`Meta+Shift+${digit}`);
+    }
+  });
+
+  it('does not normalize shifted symbols when Shift is not held', () => {
+    // Without shiftKey, '!' should become Meta+! (uppercased is same)
+    expect(eventToBinding(makeEvent({ key: '!', metaKey: true }))).toBe('Meta+!');
   });
 });

@@ -18,7 +18,6 @@ export function buildMenu(): void {
         { type: 'separator' },
         {
           label: 'Preferences…',
-          accelerator: 'CmdOrCtrl+,',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
             if (win) {

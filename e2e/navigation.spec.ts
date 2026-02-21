@@ -303,7 +303,7 @@ test.describe('Cross-Project Agent Guard', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Keyboard Shortcuts', () => {
-  test('Cmd+N switches between projects by ordinal position', async () => {
+  test('Cmd+Shift+N switches between projects by ordinal position', async () => {
     // Get the list of project buttons in the rail to determine order
     const projectBtns = window.locator('[data-testid^="project-"]');
     const count = await projectBtns.count();
@@ -324,15 +324,15 @@ test.describe('Keyboard Shortcuts', () => {
     let title = await getTitleBarText();
     expect(title).toContain(secondTitle!);
 
-    // Press Cmd+1 to switch to first project
-    await window.keyboard.press('Meta+1');
+    // Press Cmd+Shift+1 to switch to first project
+    await window.keyboard.press('Meta+Shift+1');
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();
     expect(title).toContain(firstTitle!);
 
-    // Press Cmd+2 to switch to second project
-    await window.keyboard.press('Meta+2');
+    // Press Cmd+Shift+2 to switch to second project
+    await window.keyboard.press('Meta+Shift+2');
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();

@@ -29,6 +29,8 @@ import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
+import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
+import { getCommandActions } from './features/command-palette/command-actions';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
@@ -125,10 +127,7 @@ export function App() {
 
   useEffect(() => {
     const remove = window.clubhouse.app.onOpenSettings(() => {
-      const state = useUIStore.getState();
-      if (state.explorerTab !== 'settings') {
-        state.toggleSettings();
-      }
+      useUIStore.getState().toggleSettings();
     });
     return () => remove();
   }, []);
@@ -162,30 +161,36 @@ export function App() {
     }
   }, [activeAgentId, activeProjectId, explorerTab, clearNotification]);
 
-  // Cmd+1-9: switch to Nth project
+  // Unified keyboard shortcut dispatcher
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      const digit = e.key >= '1' && e.key <= '9' ? parseInt(e.key, 10) : 0;
-      if (!digit) return;
-      const { projects: ps, setActiveProject } = useProjectStore.getState();
-      const target = ps[digit - 1];
-      if (target) {
-        e.preventDefault();
-        setActiveProject(target.id);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+      // Skip if recording a new binding in settings
+      if (useKeyboardShortcutsStore.getState().editingId) return;
 
-  // Cmd+K: toggle command palette
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        useCommandPaletteStore.getState().toggle();
-      }
+      const binding = eventToBinding(e);
+      if (!binding) return;
+
+      // Find matching shortcut
+      const { shortcuts } = useKeyboardShortcutsStore.getState();
+      const matched = Object.values(shortcuts).find((s) => s.currentBinding === binding);
+      if (!matched) return;
+
+      // Find matching action
+      const actions = getCommandActions();
+      const action = actions.find((a) => a.id === matched.id);
+      if (!action) return;
+
+      // Guard: skip non-global shortcuts when focus is in a text input
+      const target = e.target as HTMLElement | null;
+      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable || target?.closest?.('[contenteditable]') != null;
+      if (isTextInput && !action.global) return;
+
+      // Guard: skip non-palette shortcuts when palette is open
+      if (useCommandPaletteStore.getState().isOpen && matched.id !== 'command-palette') return;
+
+      e.preventDefault();
+      action.execute();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
