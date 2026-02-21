@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 
+function defaultClipboardCompat(): boolean {
+  return window.clubhouse.platform === 'win32';
+}
+
 interface ClipboardSettingsState {
   clipboardCompat: boolean;
   loaded: boolean;
@@ -14,7 +18,7 @@ export const useClipboardSettingsStore = create<ClipboardSettingsState>((set, ge
   loadSettings: async () => {
     try {
       const settings = await window.clubhouse.app.getClipboardSettings();
-      set({ clipboardCompat: settings?.clipboardCompat ?? false, loaded: true });
+      set({ clipboardCompat: settings?.clipboardCompat ?? defaultClipboardCompat(), loaded: true });
     } catch {
       set({ loaded: true });
     }

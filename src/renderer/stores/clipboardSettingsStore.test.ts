@@ -5,10 +5,12 @@ import { useClipboardSettingsStore } from './clipboardSettingsStore';
 const mockGetClipboardSettings = vi.fn(async () => ({ clipboardCompat: false }));
 const mockSaveClipboardSettings = vi.fn(async () => {});
 
+let mockPlatform = 'darwin';
+
 Object.defineProperty(window, 'clubhouse', {
   configurable: true,
   get: () => ({
-    platform: 'darwin',
+    platform: mockPlatform,
     app: {
       getClipboardSettings: mockGetClipboardSettings,
       saveClipboardSettings: mockSaveClipboardSettings,
@@ -19,6 +21,7 @@ Object.defineProperty(window, 'clubhouse', {
 
 describe('clipboardSettingsStore', () => {
   beforeEach(() => {
+    mockPlatform = 'darwin';
     mockGetClipboardSettings.mockReset().mockResolvedValue({ clipboardCompat: false });
     mockSaveClipboardSettings.mockReset();
     // Reset store state
@@ -38,11 +41,21 @@ describe('clipboardSettingsStore', () => {
     expect(useClipboardSettingsStore.getState().loaded).toBe(true);
   });
 
-  it('defaults to false when load returns null', async () => {
+  it('defaults to false on mac when load returns null', async () => {
+    mockPlatform = 'darwin';
     mockGetClipboardSettings.mockResolvedValue(null);
     await useClipboardSettingsStore.getState().loadSettings();
 
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(false);
+    expect(useClipboardSettingsStore.getState().loaded).toBe(true);
+  });
+
+  it('defaults to true on windows when load returns null', async () => {
+    mockPlatform = 'win32';
+    mockGetClipboardSettings.mockResolvedValue(null);
+    await useClipboardSettingsStore.getState().loadSettings();
+
+    expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(true);
     expect(useClipboardSettingsStore.getState().loaded).toBe(true);
   });
 
