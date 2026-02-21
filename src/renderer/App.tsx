@@ -27,6 +27,8 @@ import { PermissionViolationBanner } from './features/plugins/PermissionViolatio
 import { UpdateBanner } from './features/app/UpdateBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
+import { CommandPalette } from './features/command-palette/CommandPalette';
+import { useCommandPaletteStore } from './stores/commandPaletteStore';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
@@ -164,6 +166,18 @@ export function App() {
       if (target) {
         e.preventDefault();
         setActiveProject(target.id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Cmd+K: toggle command palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        useCommandPaletteStore.getState().toggle();
       }
     };
     window.addEventListener('keydown', handler);
@@ -460,6 +474,7 @@ export function App() {
           <ProjectRail />
           <Dashboard />
         </div>
+        <CommandPalette />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>
@@ -479,6 +494,7 @@ export function App() {
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
         </div>
+        <CommandPalette />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>
@@ -497,6 +513,7 @@ export function App() {
           <ProjectRail />
           <HelpView />
         </div>
+        <CommandPalette />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>
@@ -548,6 +565,7 @@ export function App() {
           </div>
         </div>
       </div>
+      <CommandPalette />
       <WhatsNewDialog />
       <OnboardingModal />
     </div>
