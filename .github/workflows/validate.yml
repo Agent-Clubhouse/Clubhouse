@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,28 +46,35 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test-results.xml
 
-  # E2E disabled for now — macOS runners are expensive.
-  # Run locally via: npm run validate
-  # Uncomment when ready to add macOS CI budget, or try ubuntu + xvfb.
-  #
-  # e2e:
-  #   name: E2E Tests
-  #   runs-on: macos-latest
-  #   needs: [typecheck, unit-and-component]
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         cache: npm
-  #     - run: npm ci
-  #     - run: npm run make
-  #     - run: npx playwright test
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: playwright-traces
-  #         path: test-results/
+  e2e:
+    name: E2E Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Linux is untested — allow it to fail without blocking the PR
+    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
+    needs: [typecheck, unit-and-component]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run make
+      - name: Run E2E tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test
+      - name: Run E2E tests
+        if: runner.os != 'Linux'
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-traces-${{ matrix.os }}
+          path: test-results/
 
   api-surface:
     name: API Surface Check
