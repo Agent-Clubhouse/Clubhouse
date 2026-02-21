@@ -8,6 +8,7 @@ import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit } from './services/auto-update-service';
+import * as annexServer from './services/annex-server';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -171,6 +172,7 @@ app.on('before-quit', () => {
     appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  annexServer.stop();
   restoreAll();
   killAll();
 });

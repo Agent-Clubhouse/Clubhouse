@@ -44,6 +44,7 @@ function SettingsCategoryNav() {
             {navButton('Logging', 'logging')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Plugins', 'plugins')}
+            {navButton('Annex', 'annex')}
             {navButton('Updates', 'updates')}
             {navButton("What's New", 'whats-new')}
           </>

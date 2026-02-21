@@ -177,7 +177,21 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
+
+// --- Annex (LAN monitoring) types ---
+
+export interface AnnexSettings {
+  enabled: boolean;
+  deviceName: string;
+}
+
+export interface AnnexStatus {
+  advertising: boolean;
+  port: number;
+  pin: string;
+  connectedCount: number;
+}
 
 // --- Auto-update types ---
 

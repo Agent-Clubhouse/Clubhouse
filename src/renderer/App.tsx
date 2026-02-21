@@ -32,6 +32,7 @@ import { useCommandPaletteStore } from './stores/commandPaletteStore';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
+import { initAnnexListener } from './stores/annexStore';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -95,6 +96,12 @@ export function App() {
   // Listen for update status changes from main process
   useEffect(() => {
     const remove = initUpdateListener();
+    return () => remove();
+  }, []);
+
+  // Listen for Annex status changes from main process
+  useEffect(() => {
+    const remove = initAnnexListener();
     return () => remove();
   }, []);
 

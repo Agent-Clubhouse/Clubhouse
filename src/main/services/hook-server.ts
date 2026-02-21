@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
+import * as annexEventBus from './annex-event-bus';
 
 let server: any = null;
 let serverPort = 0;
@@ -82,14 +83,16 @@ export function start(): Promise<number> {
                 ? (provider.toolVerb(normalized.toolName) || `Using ${normalized.toolName}`)
                 : undefined;
 
-              broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
+              const hookEvent = {
                 kind: normalized.kind,
                 toolName: normalized.toolName,
                 toolInput: normalized.toolInput,
                 message: normalized.message,
                 toolVerb,
                 timestamp: Date.now(),
-              });
+              };
+              broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+              annexEventBus.emitHookEvent(agentId, hookEvent as any);
             }
           }
         } catch (err) {

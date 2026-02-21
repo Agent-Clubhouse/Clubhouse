@@ -15,6 +15,7 @@ import * as logSettings from '../services/log-settings';
 import { ClipboardSettings, ClubhouseModeSettings, UpdateSettings } from '../../shared/types';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
+import * as annexServer from '../services/annex-server';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, (_event, url: string) => {
@@ -60,6 +61,7 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.SAVE_THEME, (_event, settings: { themeId: string }) => {
     themeService.saveSettings(settings as any);
+    annexServer.broadcastThemeChanged();
   });
 
   // Update the Windows title bar overlay colors when the theme changes

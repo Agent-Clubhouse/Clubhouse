@@ -8,6 +8,7 @@ import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
+import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as logService from '../services/log-service';
@@ -31,6 +32,7 @@ export function registerAllHandlers(): void {
   registerPluginHandlers();
   registerProcessHandlers();
   registerWindowHandlers();
+  registerAnnexHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {
@@ -38,4 +40,7 @@ export function registerAllHandlers(): void {
       meta: { error: err?.message ?? String(err), stack: err?.stack },
     });
   });
+
+  // Conditionally start Annex LAN server if enabled in settings
+  maybeStartAnnex();
 }

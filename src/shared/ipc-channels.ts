@@ -179,4 +179,11 @@ export const IPC = {
     CLOSE_POPOUT: 'window:close-popout',
     LIST_POPOUTS: 'window:list-popouts',
   },
+  ANNEX: {
+    GET_SETTINGS: 'annex:get-settings',
+    SAVE_SETTINGS: 'annex:save-settings',
+    GET_STATUS: 'annex:get-status',
+    REGENERATE_PIN: 'annex:regenerate-pin',
+    STATUS_CHANGED: 'annex:status-changed',
+  },
 } as const;

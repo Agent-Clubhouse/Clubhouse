@@ -3,6 +3,7 @@ import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment, getDefaultShell } from '../util/shell';
 import { appLog } from './log-service';
+import * as annexEventBus from './annex-event-bus';
 
 interface ManagedSession {
   process: pty.IPty;
@@ -143,6 +144,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     session.lastActivity = Date.now();
     appendToBuffer(session, data);
     broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
+    annexEventBus.emitPtyData(agentId, data);
   });
 
   proc.onExit(({ exitCode }) => {
@@ -158,6 +160,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     cleanupSession(agentId);
     onExit?.(agentId, exitCode);
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
+    annexEventBus.emitPtyExit(agentId, exitCode);
   });
 }
 

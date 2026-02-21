@@ -412,6 +412,26 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
     },
   },
+  annex: {
+    getSettings: () =>
+      ipcRenderer.invoke(IPC.ANNEX.GET_SETTINGS),
+    saveSettings: (settings: { enabled: boolean; deviceName: string }) =>
+      ipcRenderer.invoke(IPC.ANNEX.SAVE_SETTINGS, settings),
+    getStatus: () =>
+      ipcRenderer.invoke(IPC.ANNEX.GET_STATUS),
+    regeneratePin: () =>
+      ipcRenderer.invoke(IPC.ANNEX.REGENERATE_PIN),
+    onStatusChanged: (callback: (status: {
+      advertising: boolean;
+      port: number;
+      pin: string;
+      connectedCount: number;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+      ipcRenderer.on(IPC.ANNEX.STATUS_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX.STATUS_CHANGED, listener); };
+    },
+  },
   window: {
     createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; projectId?: string; title?: string }) =>
       ipcRenderer.invoke(IPC.WINDOW.CREATE_POPOUT, params),
