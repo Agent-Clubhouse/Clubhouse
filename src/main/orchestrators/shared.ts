@@ -33,10 +33,14 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
         if (result && fs.existsSync(result)) return result;
       } else {
         const shell = process.env.SHELL || '/bin/zsh';
-        const result = execSync(`${shell} -ilc 'which ${name}'`, {
+        const raw = execSync(`${shell} -ilc 'which ${name}'`, {
           encoding: 'utf-8',
           timeout: 5000,
         }).trim();
+        // Shell startup messages may appear before the `which` output.
+        // Take the last non-empty line which is the actual path.
+        const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const result = lines.length > 0 ? lines[lines.length - 1].trim() : '';
         if (result && fs.existsSync(result)) return result;
       }
     } catch {

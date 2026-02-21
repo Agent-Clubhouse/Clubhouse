@@ -39,13 +39,19 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
             )}
             <h2 className="text-lg font-semibold text-ctp-text">{agent.name}</h2>
           </div>
-          <p className="text-sm text-ctp-subtext0 mb-4">
+          <p className="text-sm text-ctp-subtext0 mb-1">
             {agent.status === 'error'
-              ? 'Failed to launch — Agent CLI may not be installed or accessible'
+              ? 'Failed to launch'
               : agent.kind === 'durable'
                 ? 'This agent is sleeping'
                 : 'Session ended'}
           </p>
+          {agent.status === 'error' && (
+            <p className="text-xs text-ctp-subtext0 mb-4 max-w-xs">
+              {agent.errorMessage || 'Agent CLI may not be installed or accessible'}
+            </p>
+          )}
+          {agent.status !== 'error' && <div className="mb-4" />}
 
           {agent.kind === 'durable' && (
             <button

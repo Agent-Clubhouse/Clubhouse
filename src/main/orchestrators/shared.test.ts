@@ -44,6 +44,18 @@ describe('shared orchestrator utilities', () => {
       expect(result).toBe(expected);
     });
 
+    it('handles multi-line shell output (startup messages before path)', () => {
+      if (process.platform === 'win32') return; // Unix-only test
+      // Simulates shell startup messages (e.g., nvm loading) appearing before `which` output
+      const shellOutput = 'Loading nvm...\nnvm loaded\n/home/user/.nvm/versions/node/v20/bin/codex\n';
+      vi.mocked(execSync).mockReturnValue(shellOutput);
+      vi.mocked(fs.existsSync).mockImplementation(
+        (p) => p === '/home/user/.nvm/versions/node/v20/bin/codex',
+      );
+      const result = findBinaryInPath(['codex'], []);
+      expect(result).toBe('/home/user/.nvm/versions/node/v20/bin/codex');
+    });
+
     it('falls back to PATH scan when where/which fails', () => {
       const expected = path.join('/usr/local/bin', 'claude');
       vi.mocked(fs.existsSync).mockImplementation((p) => p === expected);

@@ -66,7 +66,14 @@ function findCodexBinary(): string {
       homePath('AppData', 'Roaming', 'npm', 'codex'),
     );
   } else {
-    paths.push('/usr/local/bin/codex', '/opt/homebrew/bin/codex');
+    paths.push(
+      '/usr/local/bin/codex',
+      '/opt/homebrew/bin/codex',
+      // Node version manager locations — common when codex is installed via npm
+      homePath('.volta', 'bin', 'codex'),
+      homePath('.local', 'share', 'pnpm', 'codex'),
+      homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'codex'),
+    );
   }
   return findBinaryInPath(['codex'], paths);
 }

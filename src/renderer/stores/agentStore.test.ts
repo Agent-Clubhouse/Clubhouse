@@ -83,7 +83,7 @@ describe('agentStore', () => {
       expect(getState().agents).toEqual(before);
     });
 
-    it('durable sleeping <3s after spawn becomes error', () => {
+    it('durable sleeping <3s after spawn becomes error with message', () => {
       vi.useFakeTimers();
       const now = Date.now();
       vi.setSystemTime(now);
@@ -96,6 +96,39 @@ describe('agentStore', () => {
       vi.setSystemTime(now + 2000); // 2s later
       getState().updateAgentStatus('a_early', 'sleeping');
       expect(getState().agents['a_early'].status).toBe('error');
+      expect(getState().agents['a_early'].errorMessage).toContain('exited immediately');
+    });
+
+    it('durable sleeping <3s with non-zero exit includes exit code in message', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_code', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_code: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_code', 'sleeping', 1);
+      expect(getState().agents['a_code'].status).toBe('error');
+      expect(getState().agents['a_code'].errorMessage).toContain('code 1');
+    });
+
+    it('durable sleeping <3s with explicit errorMessage preserves it', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_msg', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_msg: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_msg', 'sleeping', 1, 'Custom error from binary lookup');
+      expect(getState().agents['a_msg'].status).toBe('error');
+      expect(getState().agents['a_msg'].errorMessage).toBe('Custom error from binary lookup');
     });
 
     it('durable sleeping >3s stays sleeping', () => {
@@ -111,6 +144,7 @@ describe('agentStore', () => {
       vi.setSystemTime(now + 5000); // 5s later
       getState().updateAgentStatus('a_late', 'sleeping');
       expect(getState().agents['a_late'].status).toBe('sleeping');
+      expect(getState().agents['a_late'].errorMessage).toBeUndefined();
     });
 
     it('quick agent sleeping <3s stays sleeping (not error)', () => {

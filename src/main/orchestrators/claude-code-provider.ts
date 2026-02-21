@@ -64,7 +64,13 @@ function findClaudeBinary(): string {
       homePath('.claude', 'local', 'claude.exe'),
     );
   } else {
-    paths.push('/usr/local/bin/claude', '/opt/homebrew/bin/claude');
+    paths.push(
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude',
+      homePath('.volta', 'bin', 'claude'),
+      homePath('.local', 'share', 'pnpm', 'claude'),
+      homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'claude'),
+    );
   }
   return findBinaryInPath(['claude'], paths);
 }
