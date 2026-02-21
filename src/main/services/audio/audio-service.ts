@@ -5,6 +5,7 @@ import { TTSEngine } from './tts/tts-engine';
 import { VoiceManager } from './voice-manager';
 import { VoiceRouter, RouteResult } from './voice-router';
 import { shouldSpeak } from './tts-filter';
+import { appLog } from '../log-service';
 
 export class AudioService {
   private sttEngines = new Map<STTBackendId, STTEngine>();
@@ -20,6 +21,7 @@ export class AudioService {
   }
 
   async initialize(): Promise<void> {
+    appLog('audio:service', 'info', 'AudioService initializing');
     this.settings = getSettings();
     for (const engine of this.sttEngines.values()) {
       await engine.initialize();
@@ -71,11 +73,27 @@ export class AudioService {
   }
 
   async onRecordingStop(agents: Agent[], focusedAgentId: string | null): Promise<RouteResult> {
+    if (this.recordingBuffer.length === 0) {
+      return { agentId: focusedAgentId ?? '', text: '', confidence: 0 };
+    }
+
     const audio = Buffer.concat(this.recordingBuffer);
     this.recordingBuffer = [];
 
     const stt = this.getActiveSTTEngine();
-    const result = await stt.transcribe(audio);
+    let result;
+    try {
+      result = await stt.transcribe(audio);
+    } catch (err) {
+      appLog('audio:service', 'error', 'Transcription failed', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+
+    appLog('audio:service', 'info', 'Transcription complete', {
+      meta: { text: result.text, durationMs: result.durationMs },
+    });
 
     if (this.settings.routingMode === 'focused' && focusedAgentId) {
       return { agentId: focusedAgentId, text: result.text, confidence: 1.0 };
@@ -89,17 +107,32 @@ export class AudioService {
     if (!shouldSpeak(text, kind, this.settings.ttsFilter)) return null;
 
     const tts = this.getActiveTTSEngine();
-    const voices = await tts.listVoices();
-    const voice = this.voiceManager.getVoiceForAgent(agentId) ?? this.voiceManager.assignVoice(agentId, voices);
+    let voice = this.voiceManager.getVoiceForAgent(agentId);
+    if (!voice) {
+      const voices = await tts.listVoices();
+      voice = this.voiceManager.assignVoice(agentId, voices);
+    }
 
     this.speakingAgentId = agentId;
-    const audio = await tts.synthesize(text, voice);
-    this.speakingAgentId = null;
-    return audio;
+    try {
+      const audio = await tts.synthesize(text, voice);
+      return audio;
+    } catch (err) {
+      appLog('audio:service', 'error', 'TTS synthesis failed', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    } finally {
+      this.speakingAgentId = null;
+    }
   }
 
   cancelSpeech(): void {
     this.speakingAgentId = null;
+  }
+
+  getSpeakingAgentId(): string | null {
+    return this.speakingAgentId;
   }
 
   getVoiceManager(): VoiceManager {
@@ -113,5 +146,6 @@ export class AudioService {
   dispose(): void {
     for (const engine of this.sttEngines.values()) engine.dispose();
     for (const engine of this.ttsEngines.values()) engine.dispose();
+    appLog('audio:service', 'info', 'AudioService disposed');
   }
 }
