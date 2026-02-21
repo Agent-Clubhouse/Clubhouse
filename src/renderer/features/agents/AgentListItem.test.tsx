@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentListItem } from './AgentListItem';
 import { useAgentStore } from '../../stores/agentStore';
@@ -43,11 +43,11 @@ function resetStores(agentOverrides: Partial<Agent> = {}) {
   });
 }
 
-function renderItem(agentOverrides: Partial<Agent> = {}) {
+function renderItem(agentOverrides: Partial<Agent> = {}, props: Partial<{ onSpawnQuickChild: () => void }> = {}) {
   const agent = { ...baseAgent, ...agentOverrides };
   resetStores(agentOverrides);
   return render(
-    <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} {...props} />,
   );
 }
 
@@ -99,5 +99,125 @@ describe('AgentListItem activity animation', () => {
     );
     const avatarWrapper = container.querySelector('[class*="flex-shrink-0"]');
     expect(avatarWrapper?.className).toContain('animate-pulse-ring');
+  });
+});
+
+describe('AgentListItem actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
+  });
+
+  it('renders pop-out action button for sleeping durable agent', () => {
+    renderItem({ status: 'sleeping' });
+    expect(screen.getByTestId('action-popout')).toBeInTheDocument();
+  });
+
+  it('renders pop-out action button for running agent', () => {
+    renderItem({ status: 'running' });
+    expect(screen.getByTestId('action-popout')).toBeInTheDocument();
+  });
+
+  it('renders pop-out action button for quick agent', () => {
+    renderItem({ status: 'running', kind: 'quick' });
+    expect(screen.getByTestId('action-popout')).toBeInTheDocument();
+  });
+
+  it('calls createPopout when pop-out button is clicked', () => {
+    renderItem({ status: 'sleeping' });
+    fireEvent.click(screen.getByTestId('action-popout'));
+    expect(window.clubhouse.window.createPopout).toHaveBeenCalledWith({
+      type: 'agent',
+      agentId: 'agent-1',
+      projectId: 'proj-1',
+      title: 'Agent — bold-falcon',
+    });
+  });
+
+  it('renders wake button for sleeping durable agent', () => {
+    renderItem({ status: 'sleeping' });
+    expect(screen.getByTestId('action-wake')).toBeInTheDocument();
+  });
+
+  it('renders stop button for running agent', () => {
+    renderItem({ status: 'running' });
+    expect(screen.getByTestId('action-stop')).toBeInTheDocument();
+  });
+
+  it('renders delete button for sleeping durable agent', () => {
+    renderItem({ status: 'sleeping' });
+    expect(screen.getByTestId('action-delete')).toBeInTheDocument();
+  });
+
+  it('renders settings button for durable agent', () => {
+    renderItem({ status: 'sleeping' });
+    expect(screen.getByTestId('action-settings')).toBeInTheDocument();
+  });
+
+  it('renders spawn button when onSpawnQuickChild is provided', () => {
+    renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    expect(screen.getByTestId('action-spawn')).toBeInTheDocument();
+  });
+
+  it('does not render spawn button when onSpawnQuickChild is not provided', () => {
+    renderItem({ status: 'sleeping' });
+    expect(screen.queryByTestId('action-spawn')).toBeNull();
+  });
+});
+
+describe('AgentListItem context menu', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
+  });
+
+  it('opens context menu on right-click', () => {
+    renderItem({ status: 'sleeping' });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+  });
+
+  it('context menu shows all available actions', () => {
+    renderItem({ status: 'sleeping' }, { onSpawnQuickChild: vi.fn() });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+
+    expect(screen.getByTestId('ctx-wake')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-popout')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-spawn')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-settings')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-delete')).toBeInTheDocument();
+  });
+
+  it('context menu calls createPopout when Pop Out is clicked', () => {
+    renderItem({ status: 'sleeping' });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+    fireEvent.click(screen.getByTestId('ctx-popout'));
+    expect(window.clubhouse.window.createPopout).toHaveBeenCalledWith({
+      type: 'agent',
+      agentId: 'agent-1',
+      projectId: 'proj-1',
+      title: 'Agent — bold-falcon',
+    });
+  });
+
+  it('context menu closes after clicking an action', () => {
+    renderItem({ status: 'sleeping' });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('ctx-popout'));
+    expect(screen.queryByTestId('agent-context-menu')).toBeNull();
+  });
+
+  it('context menu closes on escape', () => {
+    renderItem({ status: 'sleeping' });
+    const row = screen.getByTestId('agent-item-agent-1');
+    fireEvent.contextMenu(row);
+    expect(screen.getByTestId('agent-context-menu')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('agent-context-menu')).toBeNull();
   });
 });
