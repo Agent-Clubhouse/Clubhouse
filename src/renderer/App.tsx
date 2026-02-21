@@ -3,6 +3,8 @@ import { ProjectRail } from './panels/ProjectRail';
 import { ExplorerRail } from './panels/ExplorerRail';
 import { AccessoryPanel } from './panels/AccessoryPanel';
 import { MainContentView } from './panels/MainContentView';
+import { ResizeDivider } from './components/ResizeDivider';
+import { usePanelStore } from './stores/panelStore';
 import { Dashboard } from './features/projects/Dashboard';
 import { GitBanner } from './features/projects/GitBanner';
 import { useProjectStore } from './stores/projectStore';
@@ -63,6 +65,15 @@ export function App() {
   const checkWhatsNew = useUpdateStore((s) => s.checkWhatsNew);
   const onboardingCompleted = useOnboardingStore((s) => s.completed);
   const startOnboarding = useOnboardingStore((s) => s.startOnboarding);
+
+  const explorerWidth = usePanelStore((s) => s.explorerWidth);
+  const explorerCollapsed = usePanelStore((s) => s.explorerCollapsed);
+  const accessoryWidth = usePanelStore((s) => s.accessoryWidth);
+  const accessoryCollapsed = usePanelStore((s) => s.accessoryCollapsed);
+  const resizeExplorer = usePanelStore((s) => s.resizeExplorer);
+  const resizeAccessory = usePanelStore((s) => s.resizeAccessory);
+  const toggleExplorerCollapse = usePanelStore((s) => s.toggleExplorerCollapse);
+  const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
 
   useEffect(() => {
     loadProjects();
@@ -505,11 +516,37 @@ export function App() {
       {/* Git banner */}
       <GitBanner />
       {/* Main content grid */}
-      <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: isFullWidth ? 'var(--rail-width, 68px) 200px 1fr' : 'var(--rail-width, 68px) 200px 280px 1fr' }}>
+      <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
         <ProjectRail />
-        <ExplorerRail />
-        {!isFullWidth && <AccessoryPanel />}
-        <MainContentView />
+        <div className="flex flex-row min-h-0 min-w-0">
+          {!explorerCollapsed && (
+            <div style={{ width: explorerWidth }} className="flex-shrink-0 min-h-0">
+              <ExplorerRail />
+            </div>
+          )}
+          <ResizeDivider
+            onResize={resizeExplorer}
+            onToggleCollapse={toggleExplorerCollapse}
+            collapsed={explorerCollapsed}
+            collapseDirection="left"
+          />
+          {!isFullWidth && !accessoryCollapsed && (
+            <div style={{ width: accessoryWidth }} className="flex-shrink-0 min-h-0">
+              <AccessoryPanel />
+            </div>
+          )}
+          {!isFullWidth && (
+            <ResizeDivider
+              onResize={(delta) => resizeAccessory(-delta)}
+              onToggleCollapse={toggleAccessoryCollapse}
+              collapsed={accessoryCollapsed}
+              collapseDirection="left"
+            />
+          )}
+          <div className="flex-1 min-w-0 min-h-0">
+            <MainContentView />
+          </div>
+        </div>
       </div>
       <WhatsNewDialog />
       <OnboardingModal />
