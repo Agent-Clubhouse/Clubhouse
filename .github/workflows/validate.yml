@@ -63,7 +63,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run make
+      # macOS/Windows: full make validates packaging + provides webpack output for e2e
+      # Linux: package only — deb/rpm makers fail due to binary name casing
+      - name: Build app
+        run: ${{ runner.os == 'Linux' && 'npx electron-forge package' || 'npm run make' }}
       - name: Run E2E tests (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npx playwright test
