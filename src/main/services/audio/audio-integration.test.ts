@@ -32,7 +32,7 @@ import { AgentOutputParser } from './output-parser';
 import { shouldSpeak } from './tts-filter';
 import type { STTEngine } from './stt/stt-engine';
 import type { TTSEngine } from './tts/tts-engine';
-import type { Agent, VoiceInfo, AudioSettings, OutputKind } from '../../../shared/types';
+import type { Agent, VoiceInfo, AudioSettings } from '../../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers: mock engines & test data

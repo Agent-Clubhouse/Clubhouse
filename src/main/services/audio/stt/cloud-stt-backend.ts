@@ -18,7 +18,7 @@ export class CloudSTTBackend implements STTEngine {
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
 
     const formData = new FormData();
-    formData.append('file', new Blob([audio], { type: 'audio/wav' }), 'audio.wav');
+    formData.append('file', new Blob([audio as unknown as BlobPart], { type: 'audio/wav' }), 'audio.wav');
     formData.append('model', 'whisper-1');
     if (opts?.language) formData.append('language', opts.language);
 

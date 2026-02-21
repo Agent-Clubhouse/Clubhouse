@@ -68,7 +68,8 @@ export class WhisperBackend implements STTEngine {
 
       const stdout = await new Promise<string>((resolve, reject) => {
         let settled = false;
-        let timeout: ReturnType<typeof setTimeout>;
+        // eslint-disable-next-line prefer-const -- must be `let` to avoid TDZ error when callback fires synchronously
+        let timeout: ReturnType<typeof setTimeout> | undefined;
 
         const proc = execFile(this.binaryPath, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
           clearTimeout(timeout);

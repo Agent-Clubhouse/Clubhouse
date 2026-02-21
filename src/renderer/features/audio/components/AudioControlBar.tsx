@@ -3,7 +3,7 @@ import { useAudioStore } from '../../../stores/audioStore';
 import { useAgentStore } from '../../../stores/agentStore';
 
 export function AudioControlBar() {
-  const { settings, recording, transcribing, speaking, speakingAgentId, micPermission, setRecording, setTranscribing, setSpeaking, loadSettings, checkMicPermission } = useAudioStore();
+  const { settings, recording, transcribing, speaking, speakingAgentId, micPermission, setRecording, setTranscribing, loadSettings, checkMicPermission } = useAudioStore();
   const agents = useAgentStore((s) => Object.values(s.agents));
   const speakingAgent = agents.find((a) => a.id === speakingAgentId);
 
