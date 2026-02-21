@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { STTBackendId, STTOpts, STTResult } from '../../../../shared/types';
+import { appLog } from '../../log-service';
 import { STTEngine } from './stt-engine';
 
 /** Write a PCM Int16 buffer as a WAV file (16kHz mono 16-bit). */
@@ -30,6 +31,8 @@ function writeWav(filePath: string, pcm: Buffer, sampleRate = 16000): void {
 
   fs.writeFileSync(filePath, Buffer.concat([header, pcm]));
 }
+
+const TRANSCRIPTION_TIMEOUT_MS = 30_000;
 
 export class WhisperBackend implements STTEngine {
   readonly id: STTBackendId = 'whisper-local';
@@ -61,19 +64,31 @@ export class WhisperBackend implements STTEngine {
         '-f', wavPath,
         '--no-timestamps',
         '-l', opts?.language ?? 'en',
-        '--output-txt',
       ];
 
       const stdout = await new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Whisper transcription timed out after 30s'));
-        }, 30_000);
+        let settled = false;
+        let timeout: ReturnType<typeof setTimeout>;
 
-        execFile(this.binaryPath, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, _stderr) => {
+        const proc = execFile(this.binaryPath, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
           clearTimeout(timeout);
-          if (err) reject(err);
-          else resolve(stdout);
+          if (settled) return;
+          settled = true;
+          if (err) {
+            appLog('audio:stt', 'error', 'Whisper transcription failed', { meta: { error: err.message } });
+            reject(err);
+          } else {
+            resolve(stdout);
+          }
         });
+
+        timeout = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          proc.kill();
+          appLog('audio:stt', 'warn', 'Whisper transcription timed out', { meta: { binaryPath: this.binaryPath } });
+          reject(new Error('Whisper transcription timed out after 30s'));
+        }, TRANSCRIPTION_TIMEOUT_MS);
       });
 
       const text = stdout.trim();
