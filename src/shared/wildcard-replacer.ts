@@ -24,6 +24,37 @@ export function replaceWildcards(text: string, ctx: WildcardContext): string {
 }
 
 /**
+ * Reverse of replaceWildcards — replaces resolved agent-specific values back
+ * to wildcard tokens. Processes longest values first to avoid partial matches
+ * (e.g. agentPath before agentName when agentPath contains agentName).
+ *
+ * Cannot reverse @@If/@@EndIf blocks (lossy), but this is acceptable since
+ * the primary use case is permissions and simple string values.
+ */
+export function unreplaceWildcards(text: string, ctx: WildcardContext): string {
+  // Build replacement pairs sorted by value length (longest first)
+  const pairs: Array<{ value: string; token: string }> = [
+    { value: ctx.standbyBranch, token: '@@StandbyBranch' },
+    { value: ctx.agentPath, token: '@@Path' },
+    { value: ctx.agentName, token: '@@AgentName' },
+  ];
+  if (ctx.sourceControlProvider) {
+    pairs.push({ value: ctx.sourceControlProvider, token: '@@SourceControlProvider' });
+  }
+
+  // Sort longest-value-first to avoid partial matches
+  pairs.sort((a, b) => b.value.length - a.value.length);
+
+  let result = text;
+  for (const { value, token } of pairs) {
+    if (value) {
+      result = result.split(value).join(token);
+    }
+  }
+  return result;
+}
+
+/**
  * Process @@If(value)...@@EndIf conditional blocks.
  * Keeps content when sourceControlProvider matches value, strips it otherwise.
  * Handles multiple blocks in the same text.

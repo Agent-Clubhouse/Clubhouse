@@ -5,6 +5,7 @@ import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig } from '../services/agent-config';
 import { materializeAgent, previewMaterialization } from '../services/materialization-service';
+import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 
 /**
  * Resolve orchestrator conventions for a project path.
@@ -176,5 +177,21 @@ export function registerAgentSettingsHandlers(): void {
     if (!agent) return null;
     const provider = resolveOrchestrator(projectPath, agent.orchestrator);
     return previewMaterialization({ projectPath, agent, provider });
+  });
+
+  // --- Config diff detection ---
+
+  ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, (_event, projectPath: string, agentId: string) => {
+    const agent = getDurableConfig(projectPath, agentId);
+    if (!agent) return { agentId, agentName: '', hasDiffs: false, items: [] };
+    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    return computeConfigDiff({ projectPath, agentId, provider });
+  });
+
+  ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, (_event, projectPath: string, agentId: string, selectedItemIds: string[]) => {
+    const agent = getDurableConfig(projectPath, agentId);
+    if (!agent) return { ok: false, message: 'Agent not found', propagatedCount: 0 };
+    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    return propagateChanges({ projectPath, agentId, selectedItemIds, provider });
   });
 }

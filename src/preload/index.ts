@@ -257,6 +257,27 @@ const api = {
       agentTemplates: string[];
     } | null> =>
       ipcRenderer.invoke(IPC.AGENT.PREVIEW_MATERIALIZATION, projectPath, agentId),
+    computeConfigDiff: (projectPath: string, agentId: string): Promise<{
+      agentId: string;
+      agentName: string;
+      hasDiffs: boolean;
+      items: Array<{
+        id: string;
+        category: string;
+        action: string;
+        label: string;
+        agentValue?: string;
+        defaultValue?: string;
+        rawAgentValue?: string;
+      }>;
+    }> =>
+      ipcRenderer.invoke(IPC.AGENT.COMPUTE_CONFIG_DIFF, projectPath, agentId),
+    propagateConfigChanges: (projectPath: string, agentId: string, selectedItemIds: string[]): Promise<{
+      ok: boolean;
+      message: string;
+      propagatedCount: number;
+    }> =>
+      ipcRenderer.invoke(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, projectPath, agentId, selectedItemIds),
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),

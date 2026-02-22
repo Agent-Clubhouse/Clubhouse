@@ -86,6 +86,8 @@ export const IPC = {
     READ_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:read-source-agent-template-content',
     WRITE_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:write-source-agent-template-content',
     DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
+    COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
+    PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

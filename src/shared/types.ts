@@ -142,6 +142,26 @@ export interface ClubhouseModeSettings {
   sourceControlProvider?: SourceControlProvider;
 }
 
+export type ConfigDiffCategory = 'instructions' | 'permissions-allow' | 'permissions-deny' | 'mcp' | 'skills' | 'agent-templates';
+export type ConfigDiffAction = 'added' | 'removed' | 'modified';
+
+export interface ConfigDiffItem {
+  id: string;                    // e.g. "permissions-allow:Read(.clubhouse/agents/x/**)"
+  category: ConfigDiffCategory;
+  action: ConfigDiffAction;
+  label: string;                 // Human-readable
+  agentValue?: string;           // Current agent value (resolved)
+  defaultValue?: string;         // Project default value (resolved)
+  rawAgentValue?: string;        // Agent value with wildcards re-applied (for propagation)
+}
+
+export interface ConfigDiffResult {
+  agentId: string;
+  agentName: string;
+  hasDiffs: boolean;
+  items: ConfigDiffItem[];
+}
+
 export interface MaterializationPreview {
   instructions: string;
   permissions: PermissionsConfig;

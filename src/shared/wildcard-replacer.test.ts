@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { replaceWildcards, WildcardContext } from './wildcard-replacer';
+import { replaceWildcards, unreplaceWildcards, WildcardContext } from './wildcard-replacer';
 
 const ctx: WildcardContext = {
   agentName: 'bold-falcon',
@@ -129,5 +129,57 @@ describe('@@If(value)...@@EndIf conditional blocks', () => {
     expect(replaceWildcards(input, ctxWithScp)).toBe(
       'Agent: bold-falcon\nPR for bold-falcon\n',
     );
+  });
+});
+
+describe('unreplaceWildcards', () => {
+  it('reverses agentName back to @@AgentName', () => {
+    expect(unreplaceWildcards('Hello bold-falcon!', ctx)).toBe('Hello @@AgentName!');
+  });
+
+  it('reverses agentPath back to @@Path', () => {
+    expect(unreplaceWildcards('Read(.clubhouse/agents/bold-falcon/**)', ctx)).toBe(
+      'Read(@@Path**)',
+    );
+  });
+
+  it('reverses standbyBranch back to @@StandbyBranch', () => {
+    expect(unreplaceWildcards('Branch: bold-falcon/standby', ctx)).toBe(
+      'Branch: @@StandbyBranch',
+    );
+  });
+
+  it('uses longest-match-first to avoid partial replacements', () => {
+    // agentPath contains agentName, so agentPath should be replaced first
+    const input = 'Scope to .clubhouse/agents/bold-falcon/ and name bold-falcon';
+    const result = unreplaceWildcards(input, ctx);
+    expect(result).toBe('Scope to @@Path and name @@AgentName');
+  });
+
+  it('reverses sourceControlProvider', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    expect(unreplaceWildcards('Provider: github', ctxWithScp)).toBe(
+      'Provider: @@SourceControlProvider',
+    );
+  });
+
+  it('returns text unchanged when no agent values are present', () => {
+    const input = 'No agent-specific values here';
+    expect(unreplaceWildcards(input, ctx)).toBe(input);
+  });
+
+  it('handles multiple occurrences', () => {
+    const input = 'bold-falcon and bold-falcon again';
+    expect(unreplaceWildcards(input, ctx)).toBe('@@AgentName and @@AgentName again');
+  });
+
+  it('handles empty string', () => {
+    expect(unreplaceWildcards('', ctx)).toBe('');
+  });
+
+  it('round-trips with replaceWildcards for simple values', () => {
+    const template = 'Read(@@Path**)';
+    const resolved = replaceWildcards(template, ctx);
+    expect(unreplaceWildcards(resolved, ctx)).toBe(template);
   });
 });

@@ -17,6 +17,8 @@ interface AgentState {
   activeAgentId: string | null;
   agentSettingsOpenFor: string | null;
   deleteDialogAgent: string | null;
+  configChangesDialogAgent: string | null;
+  configChangesProjectPath: string | null;
   agentActivity: Record<string, number>; // agentId -> last data timestamp
   agentSpawnedAt: Record<string, number>; // agentId -> spawn timestamp
   agentDetailedStatus: Record<string, AgentDetailedStatus>;
@@ -27,6 +29,8 @@ interface AgentState {
   closeAgentSettings: () => void;
   openDeleteDialog: (agentId: string) => void;
   closeDeleteDialog: () => void;
+  openConfigChangesDialog: (agentId: string, projectPath: string) => void;
+  closeConfigChangesDialog: () => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
   spawnQuickAgent: (projectId: string, projectPath: string, mission: string, model?: string, parentAgentId?: string, orchestrator?: string, freeAgentMode?: boolean) => Promise<string>;
   spawnDurableAgent: (projectId: string, projectPath: string, config: DurableAgentConfig, resume: boolean, mission?: string) => Promise<string>;
@@ -56,6 +60,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   activeAgentId: null,
   agentSettingsOpenFor: null,
   deleteDialogAgent: null,
+  configChangesDialogAgent: null,
+  configChangesProjectPath: null,
   agentActivity: {},
   agentSpawnedAt: {},
   agentDetailedStatus: {},
@@ -94,6 +100,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   openDeleteDialog: (agentId) => set({ deleteDialogAgent: agentId }),
 
   closeDeleteDialog: () => set({ deleteDialogAgent: null }),
+
+  openConfigChangesDialog: (agentId, projectPath) => set({
+    configChangesDialogAgent: agentId,
+    configChangesProjectPath: projectPath,
+  }),
+
+  closeConfigChangesDialog: () => set({
+    configChangesDialogAgent: null,
+    configChangesProjectPath: null,
+  }),
 
   executeDelete: async (mode, projectPath) => {
     const agentId = get().deleteDialogAgent;

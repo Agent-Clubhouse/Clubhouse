@@ -37,6 +37,8 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
+import { useClubhouseModeStore } from './stores/clubhouseModeStore';
+import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -404,6 +406,22 @@ export function App() {
         } catch {
           // Plugin listener error — don't break the app
         }
+
+        // Config changes detection for durable agents in clubhouse mode
+        if (agent?.kind === 'durable' && agent.worktreePath) {
+          const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+          if (project) {
+            const cmEnabled = useClubhouseModeStore.getState().isEnabledForProject(project.path);
+            if (cmEnabled) {
+              try {
+                const diff = await window.clubhouse.agentSettings.computeConfigDiff(project.path, agentId);
+                if (diff.hasDiffs) {
+                  useAgentStore.getState().openConfigChangesDialog(agentId, project.path);
+                }
+              } catch { /* silent */ }
+            }
+          }
+        }
       }
     );
     return () => removeExitListener();
@@ -596,6 +614,7 @@ export function App() {
       <CommandPalette />
       <WhatsNewDialog />
       <OnboardingModal />
+      <ConfigChangesDialog />
     </div>
   );
 }
