@@ -21,54 +21,50 @@ describe('ProjectAgentDefaultsSection', () => {
       freeAgentMode: false,
     });
     window.clubhouse.agentSettings.writeProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
+    window.clubhouse.agentSettings.listSourceSkills = vi.fn().mockResolvedValue([]);
+    window.clubhouse.agentSettings.listSourceAgentTemplates = vi.fn().mockResolvedValue([]);
   });
 
-  describe('collapsed state', () => {
+  describe('always-visible state', () => {
     it('renders the Default Agent Settings header', async () => {
       renderSection();
       expect(await screen.findByText('Default Agent Settings')).toBeInTheDocument();
     });
 
-    it('does not show form fields when collapsed', async () => {
+    it('shows form fields without needing to expand', async () => {
       renderSection();
-      await screen.findByText('Default Agent Settings');
-      expect(screen.queryByText('Default Instructions')).not.toBeInTheDocument();
-    });
-
-    it('does not show Save button when collapsed', async () => {
-      renderSection();
-      await screen.findByText('Default Agent Settings');
-      expect(screen.queryByText('Save Defaults')).not.toBeInTheDocument();
-    });
-  });
-
-  describe('expanded state', () => {
-    it('shows form fields when expanded', async () => {
-      renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       expect(await screen.findByText('Default Instructions')).toBeInTheDocument();
       expect(screen.getByText('Default Permissions')).toBeInTheDocument();
       expect(screen.getByText('Default .mcp.json')).toBeInTheDocument();
       expect(screen.getByText('Free Agent Mode by default')).toBeInTheDocument();
     });
 
+    it('shows Save button always', async () => {
+      renderSection();
+      expect(await screen.findByText('Save Defaults')).toBeInTheDocument();
+    });
+
+    it('shows Skills section', async () => {
+      renderSection();
+      expect(await screen.findByText('Skills')).toBeInTheDocument();
+    });
+
+    it('shows Agent Definitions section', async () => {
+      renderSection();
+      expect(await screen.findByText('Agent Definitions')).toBeInTheDocument();
+    });
+  });
+
+  describe('form fields', () => {
     it('loads and displays existing defaults', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       await waitFor(() => {
         expect(screen.getByDisplayValue('Default instructions')).toBeInTheDocument();
       });
     });
 
-    it('shows Save Defaults button when expanded', async () => {
-      renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
-      expect(await screen.findByText('Save Defaults')).toBeInTheDocument();
-    });
-
     it('Save Defaults is disabled when not dirty', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       const btn = await screen.findByText('Save Defaults');
       expect(btn).toBeDisabled();
     });
@@ -77,7 +73,6 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('editing and saving', () => {
     it('enables Save when instructions change', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       await screen.findByText('Default Instructions');
 
       const textarea = screen.getByDisplayValue('Default instructions');
@@ -88,7 +83,6 @@ describe('ProjectAgentDefaultsSection', () => {
 
     it('saves all fields on Save click', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       await screen.findByText('Default Instructions');
 
       // Modify instructions to enable save
@@ -111,7 +105,6 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('free agent mode', () => {
     it('shows warning when free agent mode is enabled', async () => {
       renderSection();
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       await screen.findByText('Free Agent Mode by default');
 
       const checkbox = screen.getByRole('checkbox');
@@ -124,13 +117,11 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('clubhouse mode banner', () => {
     it('shows snapshot note when clubhouse mode is off', async () => {
       renderSection({ clubhouseMode: false });
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       expect(await screen.findByText(/snapshots when new durable agents/)).toBeInTheDocument();
     });
 
     it('shows clubhouse mode active banner when on', async () => {
       renderSection({ clubhouseMode: true });
-      fireEvent.click(await screen.findByText('Default Agent Settings'));
       expect(await screen.findByText(/Clubhouse Mode active/)).toBeInTheDocument();
       expect(screen.getByText('@@AgentName')).toBeInTheDocument();
       expect(screen.getByText('@@StandbyBranch')).toBeInTheDocument();
