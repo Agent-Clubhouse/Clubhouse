@@ -25,18 +25,21 @@ Object.defineProperty(globalThis, 'window', {
   writable: true,
 });
 
-// Mock Audio
+// Mock Audio - each instance must have its own pause/play so module-level references work
 const mockPlay = vi.fn().mockResolvedValue(undefined);
 const mockPause = vi.fn();
-let audioVolume = 1;
 
-vi.stubGlobal('Audio', vi.fn().mockImplementation(() => ({
-  play: mockPlay,
-  pause: mockPause,
-  get volume() { return audioVolume; },
-  set volume(v: number) { audioVolume = v; },
-  set src(_v: string) {},
-})));
+class MockAudio {
+  volume = 1;
+  src = '';
+  play = mockPlay;
+  pause = mockPause;
+  constructor(_src?: string) {
+    if (_src) this.src = _src;
+  }
+}
+
+vi.stubGlobal('Audio', MockAudio);
 
 const DEFAULT_SETTINGS = {
   activePack: null,
@@ -52,7 +55,6 @@ describe('soundStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useSoundStore.setState({ settings: null, packs: [], soundCache: {} });
-    audioVolume = 1;
   });
 
   describe('loadSettings', () => {
