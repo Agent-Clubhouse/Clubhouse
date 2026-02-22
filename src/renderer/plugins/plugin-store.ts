@@ -74,7 +74,7 @@ export const usePluginStore = create<PluginState>((set) => ({
       return {
         plugins: {
           ...s.plugins,
-          [pluginId]: { ...entry, status, error: error ?? entry.error },
+          [pluginId]: { ...entry, status, error: error !== undefined ? error : undefined },
         },
       };
     }),
