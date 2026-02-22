@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { PopoutHubView } from './PopoutHubView';
 
 const noop = () => {};
@@ -67,6 +67,11 @@ vi.mock('../../plugins/builtin/hub/pane-tree', () => ({
     if (tree.children) {
       for (const child of tree.children) {
         if (child.type === 'leaf') result.push(child);
+        else if (child.children) {
+          for (const gc of child.children) {
+            if (gc.type === 'leaf') result.push(gc);
+          }
+        }
       }
     }
     return result;
@@ -75,8 +80,12 @@ vi.mock('../../plugins/builtin/hub/pane-tree', () => ({
     if (tree.type === 'leaf') return tree.id === paneId ? tree : null;
     if (tree.children) {
       for (const child of tree.children) {
-        const found = child.type === 'leaf' && child.id === paneId ? child : null;
-        if (found) return found;
+        if (child.type === 'leaf' && child.id === paneId) return child;
+        if (child.children) {
+          for (const gc of child.children) {
+            if (gc.type === 'leaf' && gc.id === paneId) return gc;
+          }
+        }
       }
     }
     return null;
@@ -85,23 +94,34 @@ vi.mock('../../plugins/builtin/hub/pane-tree', () => ({
     if (tree.type === 'leaf') return tree.id;
     return tree.children?.[0]?.id || '';
   },
-  splitPane: vi.fn((tree: any) => tree),
-  closePane: vi.fn((tree: any) => tree),
-  swapPanes: vi.fn((tree: any) => tree),
-  assignAgent: vi.fn((tree: any) => tree),
-  setSplitRatio: vi.fn((tree: any) => tree),
-  createLeaf: vi.fn(() => ({ type: 'leaf', id: 'new-pane', agentId: null })),
 }));
 
+let getHubStateMock: ReturnType<typeof vi.fn>;
+let hubStateListeners: Array<(state: any) => void>;
+let hubMutationSpy: ReturnType<typeof vi.fn>;
+
 function setupHubMocks(paneTree: any) {
-  window.clubhouse.plugin = {
-    ...window.clubhouse.plugin,
-    storageRead: vi.fn().mockResolvedValue([{ id: 'hub-1', paneTree }]),
-  };
-  window.clubhouse.project = {
-    ...window.clubhouse.project,
-    list: vi.fn().mockResolvedValue([{ id: 'proj-1', name: 'Test', path: '/test' }]),
-  };
+  getHubStateMock = vi.fn().mockResolvedValue(
+    paneTree ? {
+      hubId: 'hub-1',
+      paneTree,
+      focusedPaneId: paneTree.type === 'leaf' ? paneTree.id : paneTree.children?.[0]?.id || '',
+      zoomedPaneId: null,
+    } : null,
+  );
+
+  hubStateListeners = [];
+  hubMutationSpy = vi.fn();
+
+  window.clubhouse.window.getHubState = getHubStateMock;
+  window.clubhouse.window.onHubStateChanged = vi.fn().mockImplementation((cb: any) => {
+    hubStateListeners.push(cb);
+    return () => {
+      const idx = hubStateListeners.indexOf(cb);
+      if (idx >= 0) hubStateListeners.splice(idx, 1);
+    };
+  });
+  window.clubhouse.window.sendHubMutation = hubMutationSpy;
 }
 
 describe('PopoutHubView', () => {
@@ -120,14 +140,13 @@ describe('PopoutHubView', () => {
   });
 
   it('shows error when no hubId', async () => {
+    setupHubMocks(null);
     render(<PopoutHubView />);
     expect(await screen.findByText('No hub ID specified')).toBeInTheDocument();
   });
 
   it('shows error when hub not found', async () => {
     setupHubMocks(null);
-    window.clubhouse.plugin.storageRead = vi.fn().mockResolvedValue([]);
-
     render(<PopoutHubView hubId="nonexistent" projectId="proj-1" />);
     expect(await screen.findByText('Hub "nonexistent" not found')).toBeInTheDocument();
   });
@@ -206,7 +225,6 @@ describe('PopoutHubView', () => {
     setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
 
     render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
-    // Agent picker should render with "Assign an agent" text
     expect(await screen.findByText('Assign an agent')).toBeInTheDocument();
   });
 
@@ -223,7 +241,6 @@ describe('PopoutHubView', () => {
     render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
     await screen.findByTestId('agent-terminal-agent-1');
 
-    // Hover to expand the chip
     const paneContainer = screen.getByTestId('agent-terminal-agent-1').closest('[class*="rounded-sm"]');
     fireEvent.mouseEnter(paneContainer!);
 
@@ -267,5 +284,109 @@ describe('PopoutHubView', () => {
     await screen.findByText('Assign an agent');
 
     expect(mockLoadProjects).toHaveBeenCalledTimes(1);
+  });
+
+  // ── IPC sync tests ────────────────────────────────────────────────
+
+  it('requests hub state via IPC instead of plugin storage', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByText('Assign an agent');
+
+    expect(getHubStateMock).toHaveBeenCalledWith('hub-1', 'project-local', 'proj-1');
+  });
+
+  it('subscribes to hub state changes from main window', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByText('Assign an agent');
+
+    expect(window.clubhouse.window.onHubStateChanged).toHaveBeenCalled();
+    expect(hubStateListeners.length).toBe(1);
+  });
+
+  it('updates pane tree when hub state changes arrive via IPC', async () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'new-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByText('Assign an agent');
+
+    // Simulate hub state change from main window
+    act(() => {
+      for (const listener of hubStateListeners) {
+        listener({
+          hubId: 'hub-1',
+          paneTree: { type: 'leaf', id: 'pane-1', agentId: 'agent-1', projectId: 'proj-1' },
+          focusedPaneId: 'pane-1',
+          zoomedPaneId: null,
+        });
+      }
+    });
+
+    expect(await screen.findByTestId('agent-terminal-agent-1')).toBeInTheDocument();
+  });
+
+  it('ignores hub state changes for different hub IDs', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByText('Assign an agent');
+
+    // Simulate state change for a different hub
+    act(() => {
+      for (const listener of hubStateListeners) {
+        listener({
+          hubId: 'hub-OTHER',
+          paneTree: { type: 'leaf', id: 'pane-99', agentId: null },
+          focusedPaneId: 'pane-99',
+          zoomedPaneId: null,
+        });
+      }
+    });
+
+    // Should still show original pane
+    expect(screen.getByText('Assign an agent')).toBeInTheDocument();
+  });
+
+  it('forwards mutations to main window via IPC', async () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'mut-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: 'agent-1', projectId: 'proj-1' });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByTestId('agent-terminal-agent-1');
+
+    // Hover to show action buttons
+    const paneContainer = screen.getByTestId('agent-terminal-agent-1').closest('[class*="rounded-sm"]');
+    fireEvent.mouseEnter(paneContainer!);
+
+    // Click zoom button — should send mutation via IPC
+    const zoomBtn = screen.getByTestId('zoom-button');
+    fireEvent.click(zoomBtn);
+
+    expect(hubMutationSpy).toHaveBeenCalledWith(
+      'hub-1', 'project-local',
+      { type: 'zoom', paneId: 'pane-1' },
+      'proj-1',
+    );
+  });
+
+  it('uses global scope when no projectId is provided', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" />);
+    await screen.findByText('Assign an agent');
+
+    expect(getHubStateMock).toHaveBeenCalledWith('hub-1', 'global', undefined);
   });
 });
