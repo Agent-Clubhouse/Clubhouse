@@ -124,13 +124,17 @@ export function HeadlessAgentView({ agent }: Props) {
   const feedRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
   const killAgent = useAgentStore((s) => s.killAgent);
+  const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
 
-  // Elapsed time counter
+  // Elapsed time counter — use the store's spawn timestamp so remounts
+  // don't reset the timer (fixes #185).
   useEffect(() => {
-    const start = Date.now();
+    const start = spawnedAt || Date.now();
+    setElapsed(Date.now() - start);
+    if (agent.status !== 'running') return;
     const tick = setInterval(() => setElapsed(Date.now() - start), 1000);
     return () => clearInterval(tick);
-  }, [agent.id]);
+  }, [agent.id, spawnedAt, agent.status]);
 
   // Real-time feed from hook events (primary source — instant, no polling delay)
   const appendItem = useCallback((item: FeedItem) => {

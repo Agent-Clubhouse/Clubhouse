@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HeadlessAgentView } from './HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
@@ -15,20 +15,26 @@ const headlessAgent: Agent = {
   mission: 'Fix all the bugs',
 };
 
-function resetStore() {
+function resetStore(spawnedAt?: number) {
   useAgentStore.setState({
     agents: { [headlessAgent.id]: headlessAgent },
+    agentSpawnedAt: spawnedAt != null ? { [headlessAgent.id]: spawnedAt } : {},
     killAgent: vi.fn(),
   });
 }
 
 describe('HeadlessAgentView', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
     resetStore();
     // Mock IPC calls
     window.clubhouse.agent.onHookEvent = vi.fn(() => vi.fn());
     window.clubhouse.agent.readTranscript = vi.fn().mockResolvedValue('');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the live activity header without event count', () => {
@@ -65,5 +71,51 @@ describe('HeadlessAgentView', () => {
     render(<HeadlessAgentView agent={headlessAgent} />);
 
     expect(screen.getByText('Stop Agent')).toBeInTheDocument();
+  });
+
+  it('uses agentSpawnedAt as the timer baseline so remounts preserve elapsed time', () => {
+    // Agent was spawned 90 seconds ago
+    const now = Date.now();
+    resetStore(now - 90_000);
+
+    const { unmount } = render(<HeadlessAgentView agent={headlessAgent} />);
+
+    // Should show ~90s elapsed (1m 30s)
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+
+    // Unmount and remount — timer should NOT reset
+    unmount();
+    render(<HeadlessAgentView agent={headlessAgent} />);
+
+    expect(screen.getByText('1m 30s')).toBeInTheDocument();
+  });
+
+  it('continues ticking while agent is running', () => {
+    const now = Date.now();
+    resetStore(now - 10_000);
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    expect(screen.getByText('10s')).toBeInTheDocument();
+
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(screen.getByText('15s')).toBeInTheDocument();
+  });
+
+  it('freezes the timer when the agent is no longer running', () => {
+    const now = Date.now();
+    resetStore(now - 60_000);
+
+    const stoppedAgent: Agent = { ...headlessAgent, status: 'sleeping' };
+    useAgentStore.setState({
+      agents: { [stoppedAgent.id]: stoppedAgent },
+    });
+
+    render(<HeadlessAgentView agent={stoppedAgent} />);
+    const displayed = screen.getByText('1m 0s');
+    expect(displayed).toBeInTheDocument();
+
+    // Advance time — should NOT change because agent is stopped
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(screen.getByText('1m 0s')).toBeInTheDocument();
   });
 });
