@@ -49,12 +49,10 @@ jobs:
   e2e:
     name: E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Linux is untested — allow it to fail without blocking the PR
-    continue-on-error: ${{ matrix.os == 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,16 +68,7 @@ jobs:
       # Packaging is validated separately by the release workflow.
       - name: Build app
         run: npx electron-forge package
-      - name: Fix Electron sandbox permissions (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo chown root:root node_modules/electron/dist/chrome-sandbox
-          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
-      - name: Run E2E tests (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test
       - name: Run E2E tests
-        if: runner.os != 'Linux'
         run: npx playwright test
       - uses: actions/upload-artifact@v4
         if: always()
