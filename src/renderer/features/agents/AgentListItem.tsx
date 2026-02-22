@@ -370,17 +370,6 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
               <span className="text-[9px] font-bold text-white leading-none">!</span>
             </div>
           )}
-          {/* Headless indicator */}
-          {agent.headless && agent.status === 'running' && (
-            <div
-              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-ctp-blue flex items-center justify-center ring-2 ring-ctp-base z-20"
-              title="Running headless"
-            >
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round">
-                <circle cx="12" cy="12" r="4" />
-              </svg>
-            </div>
-          )}
         </div>
 
         {/* Info */}
