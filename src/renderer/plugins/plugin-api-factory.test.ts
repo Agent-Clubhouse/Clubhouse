@@ -2897,7 +2897,7 @@ describe('plugin-api-factory', () => {
         scope: 'project',
         contributes: { help: {} },
         permissions: ['files', 'files.external'],
-        externalRoots: roots || [{ settingKey: 'wiki-path', root: 'wiki' }],
+        externalRoots: roots || [{ settingKey: 'ext-path', root: 'external' }],
         ...overrides,
       };
       const ctx = makeCtx();
@@ -2918,18 +2918,18 @@ describe('plugin-api-factory', () => {
         permissions: ['files'],
       };
       const api = createPluginAPI(makeCtx(), undefined, manifest);
-      expect(() => api.files.forRoot('wiki')).toThrow("requires 'files.external' permission");
+      expect(() => api.files.forRoot('external')).toThrow("requires 'files.external' permission");
     });
 
     it('plugin without externalRoots throws on forRoot()', () => {
       const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-      expect(() => api.files.forRoot('wiki')).toThrow('no externalRoots declared');
+      expect(() => api.files.forRoot('external')).toThrow('no externalRoots declared');
     });
 
     // ── Root resolution ───────────────────────────────────────────────
 
     it('forRoot() with unknown root name → throws', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/wiki' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '/data' });
       const api = createPluginAPI(ctx, undefined, manifest);
       expect(() => api.files.forRoot('unknown')).toThrow('Unknown external root "unknown"');
     });
@@ -2937,47 +2937,47 @@ describe('plugin-api-factory', () => {
     it('forRoot() with unconfigured setting → throws', () => {
       const { manifest, ctx } = v05ManifestWithExternal({});
       const api = createPluginAPI(ctx, undefined, manifest);
-      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+      expect(() => api.files.forRoot('external')).toThrow('not configured');
     });
 
     it('forRoot() with null setting value → throws', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': null });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': null });
       const api = createPluginAPI(ctx, undefined, manifest);
-      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+      expect(() => api.files.forRoot('external')).toThrow('not configured');
     });
 
     it('forRoot() with numeric setting value → throws', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': 42 });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': 42 });
       const api = createPluginAPI(ctx, undefined, manifest);
-      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+      expect(() => api.files.forRoot('external')).toThrow('not configured');
     });
 
     it('forRoot() with empty string setting value → throws', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '' });
       const api = createPluginAPI(ctx, undefined, manifest);
-      expect(() => api.files.forRoot('wiki')).toThrow('not configured');
+      expect(() => api.files.forRoot('external')).toThrow('not configured');
     });
 
     // ── Multiple external roots ───────────────────────────────────────
 
     it('selects correct root when multiple roots are declared', () => {
       const roots = [
-        { settingKey: 'wiki-path', root: 'wiki' },
+        { settingKey: 'data-path', root: 'data' },
         { settingKey: 'docs-path', root: 'docs' },
       ];
       const { manifest, ctx } = v05ManifestWithExternal(
-        { 'wiki-path': '/external/wiki', 'docs-path': '/external/docs' },
+        { 'data-path': '/external/data', 'docs-path': '/external/docs' },
         roots,
       );
       const api = createPluginAPI(ctx, undefined, manifest);
 
-      const wikiFiles = api.files.forRoot('wiki');
+      const dataFiles = api.files.forRoot('data');
       const docsFiles = api.files.forRoot('docs');
 
       // Verify they resolve to different paths
       mockFile.read.mockResolvedValue('content');
-      wikiFiles.readFile('page.md');
-      expect(mockFile.read).toHaveBeenCalledWith('/external/wiki/page.md');
+      dataFiles.readFile('page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/external/data/page.md');
       mockFile.read.mockClear();
       docsFiles.readFile('readme.md');
       expect(mockFile.read).toHaveBeenCalledWith('/external/docs/readme.md');
@@ -2985,11 +2985,11 @@ describe('plugin-api-factory', () => {
 
     it('unknown root with multiple roots still throws', () => {
       const roots = [
-        { settingKey: 'wiki-path', root: 'wiki' },
+        { settingKey: 'data-path', root: 'data' },
         { settingKey: 'docs-path', root: 'docs' },
       ];
       const { manifest, ctx } = v05ManifestWithExternal(
-        { 'wiki-path': '/w', 'docs-path': '/d' },
+        { 'data-path': '/w', 'docs-path': '/d' },
         roots,
       );
       const api = createPluginAPI(ctx, undefined, manifest);
@@ -3002,79 +3002,79 @@ describe('plugin-api-factory', () => {
       let extFiles: ReturnType<typeof createPluginAPI>['files'];
 
       beforeEach(() => {
-        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+        const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '/ext/data' });
         const api = createPluginAPI(ctx, undefined, manifest);
-        extFiles = api.files.forRoot('wiki');
+        extFiles = api.files.forRoot('external');
       });
 
       it('readFile resolves against external root', async () => {
         mockFile.read.mockResolvedValue('content');
         const result = await extFiles.readFile('page.md');
-        expect(mockFile.read).toHaveBeenCalledWith('/ext/wiki/page.md');
+        expect(mockFile.read).toHaveBeenCalledWith('/ext/data/page.md');
         expect(result).toBe('content');
       });
 
       it('readTree resolves against external root', async () => {
-        mockFile.readTree.mockResolvedValue([{ name: 'a.md', path: '/ext/wiki/a.md', isDirectory: false }]);
+        mockFile.readTree.mockResolvedValue([{ name: 'a.md', path: '/ext/data/a.md', isDirectory: false }]);
         const result = await extFiles.readTree('subdir');
-        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/subdir', undefined);
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/data/subdir', undefined);
         expect(result).toHaveLength(1);
       });
 
       it('readTree default path resolves to root', async () => {
         mockFile.readTree.mockResolvedValue([]);
         await extFiles.readTree();
-        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/.', undefined);
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/data/.', undefined);
       });
 
       it('readTree passes options through', async () => {
         mockFile.readTree.mockResolvedValue([]);
         await extFiles.readTree('.', { includeHidden: true, depth: 2 });
-        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/wiki/.', { includeHidden: true, depth: 2 });
+        expect(mockFile.readTree).toHaveBeenCalledWith('/ext/data/.', { includeHidden: true, depth: 2 });
       });
 
       it('readBinary resolves against external root', async () => {
         mockFile.readBinary.mockResolvedValue('base64data');
         const result = await extFiles.readBinary('image.png');
-        expect(mockFile.readBinary).toHaveBeenCalledWith('/ext/wiki/image.png');
+        expect(mockFile.readBinary).toHaveBeenCalledWith('/ext/data/image.png');
         expect(result).toBe('base64data');
       });
 
       it('writeFile resolves against external root', async () => {
         await extFiles.writeFile('new.md', '# New Page');
-        expect(mockFile.write).toHaveBeenCalledWith('/ext/wiki/new.md', '# New Page');
+        expect(mockFile.write).toHaveBeenCalledWith('/ext/data/new.md', '# New Page');
       });
 
       it('stat resolves against external root', async () => {
         mockFile.stat.mockResolvedValue({ size: 256, isDirectory: false, isFile: true, modifiedAt: 1000 });
         const result = await extFiles.stat('page.md');
-        expect(mockFile.stat).toHaveBeenCalledWith('/ext/wiki/page.md');
+        expect(mockFile.stat).toHaveBeenCalledWith('/ext/data/page.md');
         expect(result.size).toBe(256);
       });
 
       it('rename resolves both paths against external root', async () => {
         await extFiles.rename('old.md', 'new.md');
-        expect(mockFile.rename).toHaveBeenCalledWith('/ext/wiki/old.md', '/ext/wiki/new.md');
+        expect(mockFile.rename).toHaveBeenCalledWith('/ext/data/old.md', '/ext/data/new.md');
       });
 
       it('copy resolves both paths against external root', async () => {
         await extFiles.copy('src.md', 'dest.md');
-        expect(mockFile.copy).toHaveBeenCalledWith('/ext/wiki/src.md', '/ext/wiki/dest.md');
+        expect(mockFile.copy).toHaveBeenCalledWith('/ext/data/src.md', '/ext/data/dest.md');
       });
 
       it('mkdir resolves against external root', async () => {
         await extFiles.mkdir('subdir');
-        expect(mockFile.mkdir).toHaveBeenCalledWith('/ext/wiki/subdir');
+        expect(mockFile.mkdir).toHaveBeenCalledWith('/ext/data/subdir');
       });
 
       it('delete resolves against external root', async () => {
         await extFiles.delete('old.md');
-        expect(mockFile.delete).toHaveBeenCalledWith('/ext/wiki/old.md');
+        expect(mockFile.delete).toHaveBeenCalledWith('/ext/data/old.md');
       });
 
       it('showInFolder resolves against external root', async () => {
         await extFiles.showInFolder('page.md');
-        expect(mockFile.showInFolder).toHaveBeenCalledWith('/ext/wiki/page.md');
+        expect(mockFile.showInFolder).toHaveBeenCalledWith('/ext/data/page.md');
       });
     });
 
@@ -3084,9 +3084,9 @@ describe('plugin-api-factory', () => {
       let extFiles: ReturnType<typeof createPluginAPI>['files'];
 
       beforeEach(() => {
-        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+        const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '/ext/data' });
         const api = createPluginAPI(ctx, undefined, manifest);
-        extFiles = api.files.forRoot('wiki');
+        extFiles = api.files.forRoot('external');
       });
 
       it('readFile prevents traversal via ../', async () => {
@@ -3141,10 +3141,10 @@ describe('plugin-api-factory', () => {
     // ── No nesting ────────────────────────────────────────────────────
 
     it('forRoot() on external root FilesAPI → throws (no nesting)', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/ext/wiki' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '/ext/data' });
       const api = createPluginAPI(ctx, undefined, manifest);
-      const extFiles = api.files.forRoot('wiki');
-      expect(() => extFiles.forRoot('wiki')).toThrow('no nesting');
+      const extFiles = api.files.forRoot('external');
+      expect(() => extFiles.forRoot('external')).toThrow('no nesting');
       expect(() => extFiles.forRoot('other')).toThrow('no nesting');
     });
 
@@ -3179,12 +3179,12 @@ describe('plugin-api-factory', () => {
       const originalHome = process.env.HOME;
       process.env.HOME = '/home/testuser';
       try {
-        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '~/my-wiki' });
+        const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '~/my-data' });
         const api = createPluginAPI(ctx, undefined, manifest);
-        const extFiles = api.files.forRoot('wiki');
+        const extFiles = api.files.forRoot('external');
         mockFile.read.mockResolvedValue('ok');
         extFiles.readFile('page.md');
-        expect(mockFile.read).toHaveBeenCalledWith('/home/testuser/my-wiki/page.md');
+        expect(mockFile.read).toHaveBeenCalledWith('/home/testuser/my-data/page.md');
       } finally {
         process.env.HOME = originalHome;
       }
@@ -3194,9 +3194,9 @@ describe('plugin-api-factory', () => {
       const originalHome = process.env.HOME;
       process.env.HOME = '/home/testuser';
       try {
-        const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '~' });
+        const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '~' });
         const api = createPluginAPI(ctx, undefined, manifest);
-        const extFiles = api.files.forRoot('wiki');
+        const extFiles = api.files.forRoot('external');
         mockFile.read.mockResolvedValue('ok');
         extFiles.readFile('page.md');
         expect(mockFile.read).toHaveBeenCalledWith('/home/testuser/page.md');
@@ -3206,30 +3206,30 @@ describe('plugin-api-factory', () => {
     });
 
     it('forRoot() resolves relative path against projectPath', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': 'wiki' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': 'data' });
       const api = createPluginAPI(ctx, undefined, manifest);
-      const extFiles = api.files.forRoot('wiki');
+      const extFiles = api.files.forRoot('external');
       mockFile.read.mockResolvedValue('ok');
       extFiles.readFile('page.md');
-      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/wiki/page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/data/page.md');
     });
 
     it('forRoot() resolves ./relative path against projectPath', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': './docs/wiki' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': './docs/data' });
       const api = createPluginAPI(ctx, undefined, manifest);
-      const extFiles = api.files.forRoot('wiki');
+      const extFiles = api.files.forRoot('external');
       mockFile.read.mockResolvedValue('ok');
       extFiles.readFile('page.md');
-      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/./docs/wiki/page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/projects/my-project/./docs/data/page.md');
     });
 
     it('forRoot() leaves absolute paths unchanged', () => {
-      const { manifest, ctx } = v05ManifestWithExternal({ 'wiki-path': '/absolute/wiki' });
+      const { manifest, ctx } = v05ManifestWithExternal({ 'ext-path': '/absolute/data' });
       const api = createPluginAPI(ctx, undefined, manifest);
-      const extFiles = api.files.forRoot('wiki');
+      const extFiles = api.files.forRoot('external');
       mockFile.read.mockResolvedValue('ok');
       extFiles.readFile('page.md');
-      expect(mockFile.read).toHaveBeenCalledWith('/absolute/wiki/page.md');
+      expect(mockFile.read).toHaveBeenCalledWith('/absolute/data/page.md');
     });
   });
 

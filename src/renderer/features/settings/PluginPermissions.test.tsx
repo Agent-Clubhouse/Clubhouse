@@ -19,15 +19,15 @@ function makeEntry(manifest: PluginManifest, overrides?: Partial<PluginRegistryE
 }
 
 const v05Manifest: PluginManifest = {
-  id: 'wiki-plugin',
-  name: 'Wiki Plugin',
+  id: 'ext-plugin',
+  name: 'Ext Plugin',
   version: '1.0.0',
   engine: { api: 0.5 },
   scope: 'project',
   contributes: { help: {} },
   permissions: ['files', 'files.external', 'storage', 'notifications'],
   externalRoots: [
-    { settingKey: 'wiki-root', root: 'wiki' },
+    { settingKey: 'data-root', root: 'data' },
     { settingKey: 'docs-root', root: 'docs' },
   ],
 };
@@ -35,10 +35,10 @@ const v05Manifest: PluginManifest = {
 function resetStores() {
   usePluginStore.setState({
     plugins: {
-      'wiki-plugin': makeEntry(v05Manifest),
+      'ext-plugin': makeEntry(v05Manifest),
     },
     projectEnabled: {},
-    appEnabled: ['wiki-plugin'],
+    appEnabled: ['ext-plugin'],
     modules: {},
     safeModeActive: false,
     pluginSettings: {},
@@ -136,7 +136,7 @@ describe('PluginDetailSettings — permissions section', () => {
   beforeEach(() => {
     resetStores();
     useUIStore.setState({
-      pluginSettingsId: 'wiki-plugin',
+      pluginSettingsId: 'ext-plugin',
       settingsSubPage: 'plugin-detail',
       settingsContext: 'app',
     });
@@ -163,13 +163,13 @@ describe('PluginDetailSettings — permissions section', () => {
   it('renders external roots section when externalRoots declared', () => {
     render(<PluginDetailSettings />);
     expect(screen.getByText('External Roots')).toBeInTheDocument();
-    expect(screen.getByText('wiki')).toBeInTheDocument();
+    expect(screen.getByText('data')).toBeInTheDocument();
     expect(screen.getByText('docs')).toBeInTheDocument();
   });
 
   it('shows settingKey for each external root', () => {
     render(<PluginDetailSettings />);
-    expect(screen.getByText('wiki-root')).toBeInTheDocument();
+    expect(screen.getByText('data-root')).toBeInTheDocument();
     expect(screen.getByText('docs-root')).toBeInTheDocument();
   });
 
@@ -194,7 +194,7 @@ describe('PluginDetailSettings — permissions section', () => {
 
   it('shows plugin name and version', () => {
     render(<PluginDetailSettings />);
-    expect(screen.getByText('Wiki Plugin Settings')).toBeInTheDocument();
+    expect(screen.getByText('Ext Plugin Settings')).toBeInTheDocument();
     expect(screen.getByText('v1.0.0')).toBeInTheDocument();
   });
 

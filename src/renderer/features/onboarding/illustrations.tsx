@@ -200,17 +200,6 @@ export function ProjectToolsIllustration({ className }: { className?: string }) 
       <rect x="32" y="132" width="60" height="6" rx="3" fill="rgb(var(--ctp-surface2))" />
       <rect x="32" y="148" width="45" height="6" rx="3" fill="rgb(var(--ctp-surface2))" />
 
-      {/* Wiki */}
-      <rect x="118" y="30" width="85" height="140" rx="10" fill="rgb(var(--ctp-surface0))" />
-      <text x="160" y="58" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-text))">Wiki</text>
-      <rect x="130" y="72" width="62" height="5" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="130" y="83" width="55" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="93" width="60" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="103" width="48" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="118" width="62" height="5" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="130" y="129" width="52" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="139" width="58" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-
     </svg>
   );
 }

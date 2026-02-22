@@ -54,7 +54,7 @@ For durable agents, you can also configure a name, accent color, and a dedicated
 | **Durable Agent** | A long-lived agent with its own name, color, Git worktree, and branch. It persists across app restarts and can be paused (sleeping) or resumed. |
 | **Quick Agent** | A one-shot agent that runs a single task, produces a summary of its work, and exits. |
 | **Orchestrator** | The CLI backend that powers agents (for example, Claude Code). The orchestrator handles communication between Clubhouse and the AI model. |
-| **Plugin** | An extension that adds functionality to Clubhouse, such as file browsing, wiki pages, or kanban boards. Plugins can be app-scoped or project-scoped. |
+| **Plugin** | An extension that adds functionality to Clubhouse, such as file browsing, issue tracking, or kanban boards. Plugins can be app-scoped or project-scoped. |
 | **Worktree** | A separate Git working directory linked to the same repository. Durable agents can use their own worktree so they work in isolation without affecting your main checkout. |
 
 ## Next Steps

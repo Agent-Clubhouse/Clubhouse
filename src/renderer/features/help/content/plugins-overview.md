@@ -23,8 +23,6 @@ Clubhouse ships with several built-in plugins. Three of them (Hub, Terminal, and
 | **Hub** | Dual | Split-pane agent monitoring dashboard. Per-project view shows agents for a single project; cross-project view spans all projects. |
 | **Terminal** | Project | Interactive terminal emulator scoped to each project's root directory. |
 | **Files** | Project | File browser with a built-in Monaco editor, markdown preview, and image display. |
-| **Wiki** | Project | Browse and edit markdown wikis stored in external directories. Supports GitHub and Azure DevOps wiki formats. |
-| **Automations** | Project | Schedule recurring quick-agent tasks using cron expressions. |
 
 ## Plugin Trust Levels
 
@@ -120,8 +118,8 @@ Plugins can define settings in their manifest, and Clubhouse will automatically 
 | **boolean** | A toggle switch for on/off options | "Show hidden files" |
 | **string** | A text input field | "API endpoint URL" |
 | **number** | A numeric input field | "Refresh interval (seconds)" |
-| **select** | A dropdown menu with predefined choices | "Wiki format: GitHub / ADO" |
-| **directory** | A folder picker with browse button and path input | "Wiki path" |
+| **select** | A dropdown menu with predefined choices | "Output format: JSON / CSV" |
+| **directory** | A folder picker with browse button and path input | "Data directory" |
 
 Plugins with declarative settings display the `settingsPanel: 'declarative'` indicator in their manifest. Their settings appear automatically in the plugin's settings section.
 

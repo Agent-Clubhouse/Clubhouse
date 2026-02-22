@@ -40,7 +40,7 @@ You can dismiss the violation banner by clicking the close button. If you believ
 
 ## External File Roots
 
-By default, plugins with the `files` permission can only access files within the project directory. Some plugins need to work with files outside the project -- for example, the Wiki plugin reads markdown files from an external wiki directory.
+By default, plugins with the `files` permission can only access files within the project directory. Some plugins need to work with files outside the project -- for example, a documentation plugin might read markdown files from an external directory.
 
 To enable this, a plugin must:
 
@@ -53,12 +53,12 @@ Each external root maps a settings key to a named root:
 {
   "permissions": ["files", "files.external"],
   "externalRoots": [
-    { "settingKey": "wikiPath", "root": "wiki" }
+    { "settingKey": "docsPath", "root": "docs" }
   ]
 }
 ```
 
-In this example, the plugin reads the directory path from its `wikiPath` setting and exposes it as the `wiki` root. In code, the plugin accesses files in that directory via `api.files.forRoot('wiki')`, which returns a scoped `FilesAPI` instance limited to the configured path.
+In this example, the plugin reads the directory path from its `docsPath` setting and exposes it as the `docs` root. In code, the plugin accesses files in that directory via `api.files.forRoot('docs')`, which returns a scoped `FilesAPI` instance limited to the configured path.
 
 The user controls which directories are exposed by configuring the setting value. The plugin cannot access arbitrary paths outside the project -- only the directories explicitly configured through its declared external roots.
 
