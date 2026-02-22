@@ -4,6 +4,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
+import type { SourceControlProvider } from '../../../shared/types';
 
 interface Props {
   projectId?: string;
@@ -19,6 +20,8 @@ function AppAgentSettings() {
   const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);
   const setClubhouseEnabled = useClubhouseModeStore((s) => s.setEnabled);
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
+  const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
+  const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
@@ -71,6 +74,23 @@ function AppAgentSettings() {
         {clubhouseEnabled && (
           <div className="px-3 py-2 rounded-lg bg-ctp-yellow/10 border border-ctp-yellow/20 text-xs text-ctp-yellow">
             Wildcards <code className="bg-ctp-yellow/10 px-1 rounded">@@AgentName</code>, <code className="bg-ctp-yellow/10 px-1 rounded">@@StandbyBranch</code>, and <code className="bg-ctp-yellow/10 px-1 rounded">@@Path</code> in project defaults are resolved per-agent on each wake.
+          </div>
+        )}
+        {clubhouseEnabled && (
+          <div className="space-y-1 pl-3">
+            <label className="block text-xs text-ctp-subtext0">Default Source Control Provider</label>
+            <select
+              value={clubhouseScp}
+              onChange={(e) => setClubhouseScp(e.target.value as SourceControlProvider)}
+              className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+                text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+            >
+              <option value="github">GitHub (gh CLI)</option>
+              <option value="azure-devops">Azure DevOps (az CLI)</option>
+            </select>
+            <p className="text-[10px] text-ctp-subtext0/60">
+              App-wide default. Projects can override in their own settings.
+            </p>
           </div>
         )}
       </div>

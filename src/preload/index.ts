@@ -214,6 +214,7 @@ const api = {
       permissions?: { allow?: string[]; deny?: string[] };
       mcpJson?: string;
       freeAgentMode?: boolean;
+      sourceControlProvider?: 'github' | 'azure-devops';
     }> =>
       ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
     writeProjectAgentDefaults: (projectPath: string, defaults: {
@@ -221,6 +222,7 @@ const api = {
       permissions?: { allow?: string[]; deny?: string[] };
       mcpJson?: string;
       freeAgentMode?: boolean;
+      sourceControlProvider?: 'github' | 'azure-devops';
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
     getConventions: (projectPath: string): Promise<{
@@ -396,7 +398,7 @@ const api = {
       ipcRenderer.invoke(IPC.APP.SAVE_CLIPBOARD_SETTINGS, settings),
     getClubhouseModeSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS),
-    saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean> }, projectPath?: string) =>
+    saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean>; sourceControlProvider?: 'github' | 'azure-devops' }, projectPath?: string) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, settings, projectPath),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
