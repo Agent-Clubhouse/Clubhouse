@@ -78,12 +78,12 @@ describe('sound-service', () => {
 
     it('discovers packs with valid sound files', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds') || s.endsWith('/my-pack')) return true;
         return false;
       });
       vi.mocked(fs.readdirSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'my-pack', isDirectory: () => true } as unknown as fs.Dirent,
@@ -106,12 +106,12 @@ describe('sound-service', () => {
 
     it('reads name from manifest.json if available', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds') || s.endsWith('/custom') || s.includes('manifest.json')) return true;
         return false;
       });
       vi.mocked(fs.readdirSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'custom', isDirectory: () => true } as unknown as fs.Dirent,
@@ -123,7 +123,7 @@ describe('sound-service', () => {
         return [];
       });
       vi.mocked(fs.readFileSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.includes('manifest.json')) return JSON.stringify({ name: 'Custom Pack', author: 'Test' });
         throw new Error('ENOENT');
       });
@@ -135,11 +135,11 @@ describe('sound-service', () => {
 
     it('skips directories with no valid sound files', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         return s.endsWith('/sounds') || s.endsWith('/empty-dir');
       });
       vi.mocked(fs.readdirSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'empty-dir', isDirectory: () => true } as unknown as fs.Dirent,
@@ -158,7 +158,7 @@ describe('sound-service', () => {
   describe('registerPluginSounds / unregisterPluginSounds', () => {
     it('registers and unregisters plugin sounds', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        return String(p).endsWith('/sounds');
+        return String(p).replace(/\\/g, '/').endsWith('/sounds');
       });
       vi.mocked(fs.readdirSync).mockImplementation(() => {
         return ['agent-done.mp3', 'error.mp3'] as unknown as string[];
