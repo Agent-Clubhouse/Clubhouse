@@ -69,6 +69,9 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     commands: {
       register: () => ({ dispose: noop }),
       execute: asyncNoop,
+      registerWithHotkey: () => ({ dispose: noop }),
+      getBinding: () => null,
+      clearBinding: noop,
     },
     events: {
       on: () => ({ dispose: noop }),
@@ -96,6 +99,9 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     navigation: {
       focusAgent: noop,
       setExplorerTab: noop,
+      popOutAgent: asyncNoop,
+      toggleSidebar: noop,
+      toggleAccessoryPanel: noop,
     },
     widgets: {
       AgentTerminal: noop as unknown as PluginAPI['widgets']['AgentTerminal'],
@@ -140,6 +146,24 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       set: noop,
       clear: noop,
       clearAll: noop,
+    },
+    agentConfig: {
+      injectSkill: asyncNoop,
+      removeSkill: asyncNoop,
+      listInjectedSkills: async () => [],
+      injectAgentTemplate: asyncNoop,
+      removeAgentTemplate: asyncNoop,
+      listInjectedAgentTemplates: async () => [],
+      appendInstructions: asyncNoop,
+      removeInstructionAppend: asyncNoop,
+      getInstructionAppend: asyncNull,
+      addPermissionAllowRules: asyncNoop,
+      addPermissionDenyRules: asyncNoop,
+      removePermissionRules: asyncNoop,
+      getPermissionRules: async () => ({ allow: [], deny: [] }),
+      injectMcpServers: asyncNoop,
+      removeMcpServers: asyncNoop,
+      getInjectedMcpServers: async () => ({}),
     },
     context: {
       mode: 'project',

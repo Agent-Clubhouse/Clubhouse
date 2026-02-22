@@ -9,6 +9,10 @@ export interface Disposable {
 export interface PluginCommandDeclaration {
   id: string;
   title: string;
+  /** Default keyboard binding (e.g. "Meta+Shift+L"). Only available in API >= 0.6. */
+  defaultBinding?: string;
+  /** When true, the hotkey fires even in text inputs. */
+  global?: boolean;
 }
 
 export interface PluginSettingDeclaration {
@@ -40,7 +44,10 @@ export type PluginPermission =
   | 'widgets'
   | 'logging'
   | 'process'
-  | 'badges';
+  | 'badges'
+  | 'agent-config'
+  | 'agent-config.permissions'
+  | 'agent-config.mcp';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -58,6 +65,9 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'logging',
   'process',
   'badges',
+  'agent-config',
+  'agent-config.permissions',
+  'agent-config.mcp',
 ] as const;
 
 export interface PluginExternalRoot {
@@ -81,6 +91,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   logging: 'Write to the application log',
   process: 'Execute allowed CLI commands',
   badges: 'Display badge indicators on tabs and rail items',
+  'agent-config': 'Inject skills, agent templates, and instruction content into project agents',
+  'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
+  'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
 };
 
 export interface PluginHelpTopic {
@@ -291,6 +304,23 @@ export interface UIAPI {
 export interface CommandsAPI {
   register(commandId: string, handler: (...args: unknown[]) => void | Promise<void>): Disposable;
   execute(commandId: string, ...args: unknown[]): Promise<void>;
+  /**
+   * Register a command with a keyboard binding.
+   * The binding follows the format "Meta+Shift+K".
+   * On collision, the first claimer keeps the binding; later claims are unbound.
+   * Returns a Disposable that unregisters both the command and its hotkey.
+   */
+  registerWithHotkey(
+    commandId: string,
+    title: string,
+    handler: (...args: unknown[]) => void | Promise<void>,
+    defaultBinding: string,
+    options?: { global?: boolean },
+  ): Disposable;
+  /** Get the current keyboard binding for a plugin command (null if unbound). */
+  getBinding(commandId: string): string | null;
+  /** Clear the keyboard binding for a plugin command. */
+  clearBinding(commandId: string): void;
 }
 
 export interface EventsAPI {
@@ -330,6 +360,12 @@ export interface HubAPI {
 export interface NavigationAPI {
   focusAgent(agentId: string): void;
   setExplorerTab(tabId: string): void;
+  /** Open an agent in a pop-out window. */
+  popOutAgent(agentId: string): Promise<void>;
+  /** Toggle the sidebar panel visibility. */
+  toggleSidebar(): void;
+  /** Toggle the accessory panel visibility. */
+  toggleAccessoryPanel(): void;
 }
 
 export interface WidgetsAPI {
@@ -402,6 +438,66 @@ export interface FilesAPI {
   forRoot(rootName: string): FilesAPI;
 }
 
+// ── Agent Config API (v0.6+) ──────────────────────────────────────────
+export interface AgentConfigAPI {
+  /**
+   * Inject a skill definition for project agents.
+   * When clubhouse mode is on, integrates with materialization.
+   * When off, writes directly to the orchestrator's skills directory.
+   */
+  injectSkill(name: string, content: string): Promise<void>;
+  /** Remove a previously injected skill. */
+  removeSkill(name: string): Promise<void>;
+  /** List skills injected by this plugin. */
+  listInjectedSkills(): Promise<string[]>;
+  /**
+   * Inject an agent template definition for project agents.
+   * When clubhouse mode is on, integrates with materialization.
+   * When off, writes directly to the orchestrator's agent templates directory.
+   */
+  injectAgentTemplate(name: string, content: string): Promise<void>;
+  /** Remove a previously injected agent template. */
+  removeAgentTemplate(name: string): Promise<void>;
+  /** List agent templates injected by this plugin. */
+  listInjectedAgentTemplates(): Promise<string[]>;
+  /**
+   * Append content to the project instruction file.
+   * Content is added at the end with a plugin attribution comment.
+   * When clubhouse mode is on, integrates with materialization pipeline.
+   * When off, appends directly to the instruction file.
+   */
+  appendInstructions(content: string): Promise<void>;
+  /** Remove previously appended instruction content from this plugin. */
+  removeInstructionAppend(): Promise<void>;
+  /** Get the content currently appended by this plugin (null if none). */
+  getInstructionAppend(): Promise<string | null>;
+  /**
+   * Add permission allow rules for project agents.
+   * Requires the elevated 'agent-config.permissions' permission.
+   * Rules are namespaced per plugin and merged during materialization.
+   */
+  addPermissionAllowRules(rules: string[]): Promise<void>;
+  /**
+   * Add permission deny rules for project agents.
+   * Requires the elevated 'agent-config.permissions' permission.
+   */
+  addPermissionDenyRules(rules: string[]): Promise<void>;
+  /** Remove all permission rules injected by this plugin. */
+  removePermissionRules(): Promise<void>;
+  /** Get the permission rules currently injected by this plugin. */
+  getPermissionRules(): Promise<{ allow: string[]; deny: string[] }>;
+  /**
+   * Inject MCP server configuration for project agents.
+   * Requires the elevated 'agent-config.mcp' permission.
+   * Configuration is merged into the agent's .mcp.json during materialization.
+   */
+  injectMcpServers(servers: Record<string, unknown>): Promise<void>;
+  /** Remove MCP server configurations injected by this plugin. */
+  removeMcpServers(): Promise<void>;
+  /** Get the MCP server configurations currently injected by this plugin. */
+  getInjectedMcpServers(): Promise<Record<string, unknown>>;
+}
+
 // ── Badges API ────────────────────────────────────────────────────────
 export interface BadgesAPI {
   /** Set or update a badge. Key is unique within this plugin + target combo. */
@@ -455,6 +551,7 @@ export interface PluginAPI {
   files: FilesAPI;
   process: ProcessAPI;
   badges: BadgesAPI;
+  agentConfig: AgentConfigAPI;
   context: PluginContextInfo;
 }
 

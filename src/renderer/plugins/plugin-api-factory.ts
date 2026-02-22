@@ -20,6 +20,7 @@ import type {
   FilesAPI,
   ProcessAPI,
   BadgesAPI,
+  AgentConfigAPI,
   PluginContextInfo,
   PluginRenderMode,
   PluginManifest,
@@ -37,6 +38,7 @@ import type {
 import { rendererLog } from './renderer-logger';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
+import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { usePluginStore } from './plugin-store';
 import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
@@ -357,6 +359,36 @@ function createCommandsAPI(ctx: PluginContext): CommandsAPI {
         await pluginCommandRegistry.execute(commandId, ...args);
       }
     },
+    registerWithHotkey(
+      commandId: string,
+      title: string,
+      handler: (...args: unknown[]) => void | Promise<void>,
+      defaultBinding: string,
+      options?: { global?: boolean },
+    ): Disposable {
+      const fullId = `${ctx.pluginId}:${commandId}`;
+      const cmdDisposable = pluginCommandRegistry.register(fullId, handler);
+      const hotkeyDisposable = pluginHotkeyRegistry.register(
+        ctx.pluginId,
+        commandId,
+        title,
+        handler,
+        defaultBinding,
+        options,
+      );
+      return {
+        dispose: () => {
+          cmdDisposable.dispose();
+          hotkeyDisposable.dispose();
+        },
+      };
+    },
+    getBinding(commandId: string): string | null {
+      return pluginHotkeyRegistry.getBinding(ctx.pluginId, commandId);
+    },
+    clearBinding(commandId: string): void {
+      pluginHotkeyRegistry.clearBinding(ctx.pluginId, commandId);
+    },
   };
 }
 
@@ -560,6 +592,27 @@ function createNavigationAPI(): NavigationAPI {
     setExplorerTab(tabId: string): void {
       const projectId = useProjectStore.getState().activeProjectId || undefined;
       useUIStore.getState().setExplorerTab(tabId, projectId);
+    },
+    async popOutAgent(agentId: string): Promise<void> {
+      const agent = useAgentStore.getState().agents[agentId];
+      await window.clubhouse.window.createPopout({
+        type: 'agent',
+        agentId,
+        projectId: agent?.projectId,
+        title: agent?.name,
+      });
+    },
+    toggleSidebar(): void {
+      try {
+        const { usePanelStore } = require('../stores/panelStore');
+        usePanelStore.getState().toggleExplorerCollapse();
+      } catch { /* ignore in test */ }
+    },
+    toggleAccessoryPanel(): void {
+      try {
+        const { usePanelStore } = require('../stores/panelStore');
+        usePanelStore.getState().toggleAccessoryCollapse();
+      } catch { /* ignore in test */ }
     },
   };
 }
@@ -939,6 +992,252 @@ function createBadgesAPI(ctx: PluginContext): BadgesAPI {
   };
 }
 
+// ── Plugin instruction markers ──────────────────────────────────────────
+const PLUGIN_INSTRUCTION_START = (pluginId: string) => `\n\n<!-- plugin:${pluginId}:start -->`;
+const PLUGIN_INSTRUCTION_END = (pluginId: string) => `<!-- plugin:${pluginId}:end -->`;
+
+function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): AgentConfigAPI {
+  const { projectPath, pluginId } = ctx;
+  if (!projectPath) {
+    throw new Error('AgentConfigAPI requires projectPath');
+  }
+
+  const pluginSkillPrefix = `plugin-${pluginId}-`;
+  const pluginTemplatePrefix = `plugin-${pluginId}-`;
+  const storageScope = 'project' as const;
+
+  /** Helper to read/write plugin tracking data from plugin storage. */
+  const storage = {
+    async read(key: string): Promise<unknown> {
+      return window.clubhouse.plugin.storageRead({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath });
+    },
+    async write(key: string, value: unknown): Promise<void> {
+      await window.clubhouse.plugin.storageWrite({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, value, projectPath });
+    },
+    async delete(key: string): Promise<void> {
+      await window.clubhouse.plugin.storageDelete({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath });
+    },
+    async list(): Promise<string[]> {
+      return window.clubhouse.plugin.storageList({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, projectPath });
+    },
+  };
+
+  /** Check if plugin has elevated permission for sub-scope */
+  function requirePermission(perm: PluginPermission): void {
+    if (!hasPermission(manifest, perm)) {
+      handlePermissionViolation(pluginId, perm, `agentConfig (requires '${perm}')`);
+      throw new Error(`Plugin '${pluginId}' requires '${perm}' permission`);
+    }
+  }
+
+  return {
+    // ── Skills ──────────────────────────────────────────────────────
+    async injectSkill(name: string, content: string): Promise<void> {
+      const safeName = `${pluginSkillPrefix}${name}`;
+      await window.clubhouse.agentSettings.writeSourceSkillContent(projectPath, safeName, content);
+      const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
+      if (!skills.includes(safeName)) {
+        skills.push(safeName);
+        await storage.write('injected-skills', skills);
+      }
+    },
+
+    async removeSkill(name: string): Promise<void> {
+      const safeName = `${pluginSkillPrefix}${name}`;
+      await window.clubhouse.agentSettings.deleteSourceSkill(projectPath, safeName);
+      const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
+      await storage.write('injected-skills', skills.filter((s) => s !== safeName));
+    },
+
+    async listInjectedSkills(): Promise<string[]> {
+      const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
+      return skills.map((s) => s.replace(pluginSkillPrefix, ''));
+    },
+
+    // ── Agent Templates ──────────────────────────────────────────────
+    async injectAgentTemplate(name: string, content: string): Promise<void> {
+      const safeName = `${pluginTemplatePrefix}${name}`;
+      await window.clubhouse.agentSettings.writeSourceAgentTemplateContent(projectPath, safeName, content);
+      const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
+      if (!templates.includes(safeName)) {
+        templates.push(safeName);
+        await storage.write('injected-templates', templates);
+      }
+    },
+
+    async removeAgentTemplate(name: string): Promise<void> {
+      const safeName = `${pluginTemplatePrefix}${name}`;
+      await window.clubhouse.agentSettings.deleteSourceAgentTemplate(projectPath, safeName);
+      const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
+      await storage.write('injected-templates', templates.filter((t) => t !== safeName));
+    },
+
+    async listInjectedAgentTemplates(): Promise<string[]> {
+      const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
+      return templates.map((t) => t.replace(pluginTemplatePrefix, ''));
+    },
+
+    // ── Instructions ──────────────────────────────────────────────────
+    async appendInstructions(content: string): Promise<void> {
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.instructions || '';
+      const startMarker = PLUGIN_INSTRUCTION_START(pluginId);
+      const endMarker = PLUGIN_INSTRUCTION_END(pluginId);
+
+      // Remove any existing block from this plugin
+      const regex = new RegExp(
+        `\\n?\\n?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start -->[\\s\\S]*?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end -->`,
+      );
+      const cleaned = existing.replace(regex, '');
+
+      // Append new block
+      const updated = cleaned + startMarker + '\n' + content + '\n' + endMarker;
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        instructions: updated,
+      });
+    },
+
+    async removeInstructionAppend(): Promise<void> {
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.instructions || '';
+      const regex = new RegExp(
+        `\\n?\\n?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start -->[\\s\\S]*?<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end -->`,
+      );
+      const cleaned = existing.replace(regex, '');
+      if (cleaned !== existing) {
+        await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+          ...defaults,
+          instructions: cleaned,
+        });
+      }
+    },
+
+    async getInstructionAppend(): Promise<string | null> {
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.instructions || '';
+      const regex = new RegExp(
+        `<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start -->\\n([\\s\\S]*?)\\n<!-- plugin:${pluginId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end -->`,
+      );
+      const match = existing.match(regex);
+      return match ? match[1] : null;
+    },
+
+    // ── Permissions (elevated) ────────────────────────────────────────
+    async addPermissionAllowRules(rules: string[]): Promise<void> {
+      requirePermission('agent-config.permissions');
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.permissions || {};
+      const allow = existing.allow || [];
+      // Tag rules for tracking
+      const taggedRules = rules.map((r) => `${r} /* plugin:${pluginId} */`);
+      const merged = [...allow.filter((r) => !r.includes(`/* plugin:${pluginId} */`)), ...taggedRules];
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        permissions: { ...existing, allow: merged },
+      });
+    },
+
+    async addPermissionDenyRules(rules: string[]): Promise<void> {
+      requirePermission('agent-config.permissions');
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.permissions || {};
+      const deny = existing.deny || [];
+      const taggedRules = rules.map((r) => `${r} /* plugin:${pluginId} */`);
+      const merged = [...deny.filter((r) => !r.includes(`/* plugin:${pluginId} */`)), ...taggedRules];
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        permissions: { ...existing, deny: merged },
+      });
+    },
+
+    async removePermissionRules(): Promise<void> {
+      requirePermission('agent-config.permissions');
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.permissions || {};
+      const tag = `/* plugin:${pluginId} */`;
+      const allow = (existing.allow || []).filter((r) => !r.includes(tag));
+      const deny = (existing.deny || []).filter((r) => !r.includes(tag));
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        permissions: { allow, deny },
+      });
+    },
+
+    async getPermissionRules(): Promise<{ allow: string[]; deny: string[] }> {
+      requirePermission('agent-config.permissions');
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      const existing = defaults.permissions || {};
+      const tag = `/* plugin:${pluginId} */`;
+      return {
+        allow: (existing.allow || []).filter((r) => r.includes(tag)).map((r) => r.replace(` ${tag}`, '')),
+        deny: (existing.deny || []).filter((r) => r.includes(tag)).map((r) => r.replace(` ${tag}`, '')),
+      };
+    },
+
+    // ── MCP (elevated) ────────────────────────────────────────────────
+    async injectMcpServers(servers: Record<string, unknown>): Promise<void> {
+      requirePermission('agent-config.mcp');
+      // Store plugin's MCP config separately for tracking
+      await storage.write('injected-mcp', servers);
+
+      // Merge into project agent defaults mcpJson
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      let mcpConfig: Record<string, unknown> = {};
+      if (defaults.mcpJson) {
+        try { mcpConfig = JSON.parse(defaults.mcpJson); } catch { /* ignore */ }
+      }
+      const mcpServers = (mcpConfig.mcpServers as Record<string, unknown>) || {};
+
+      // Tag server entries for this plugin
+      const taggedServers: Record<string, unknown> = {};
+      for (const [name, config] of Object.entries(servers)) {
+        taggedServers[`plugin-${pluginId}-${name}`] = config;
+      }
+
+      const mergedServers = {
+        ...Object.fromEntries(
+          Object.entries(mcpServers).filter(([k]) => !k.startsWith(`plugin-${pluginId}-`)),
+        ),
+        ...taggedServers,
+      };
+
+      const updatedConfig = { ...mcpConfig, mcpServers: mergedServers };
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        mcpJson: JSON.stringify(updatedConfig, null, 2),
+      });
+    },
+
+    async removeMcpServers(): Promise<void> {
+      requirePermission('agent-config.mcp');
+      await storage.delete('injected-mcp');
+
+      const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
+      let mcpConfig: Record<string, unknown> = {};
+      if (defaults.mcpJson) {
+        try { mcpConfig = JSON.parse(defaults.mcpJson); } catch { /* ignore */ }
+      }
+      const mcpServers = (mcpConfig.mcpServers as Record<string, unknown>) || {};
+      const cleaned = Object.fromEntries(
+        Object.entries(mcpServers).filter(([k]) => !k.startsWith(`plugin-${pluginId}-`)),
+      );
+
+      const updatedConfig = { ...mcpConfig, mcpServers: cleaned };
+      await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, {
+        ...defaults,
+        mcpJson: JSON.stringify(updatedConfig, null, 2),
+      });
+    },
+
+    async getInjectedMcpServers(): Promise<Record<string, unknown>> {
+      requirePermission('agent-config.mcp');
+      const data = await storage.read('injected-mcp');
+      return (data as Record<string, unknown>) || {};
+    },
+  };
+}
+
 function createProcessAPI(ctx: PluginContext, manifest?: PluginManifest): ProcessAPI {
   const { projectPath, pluginId } = ctx;
   if (!projectPath) {
@@ -1037,6 +1336,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     badges: gated(
       true, scopeLabel, 'badges', 'badges',
       ctx.pluginId, manifest, () => createBadgesAPI(ctx),
+    ),
+    agentConfig: gated(
+      projectAvailable && !!ctx.projectPath, scopeLabel, 'agentConfig', 'agent-config',
+      ctx.pluginId, manifest, () => createAgentConfigAPI(ctx, manifest),
     ),
     context: contextInfo, // always available
   };

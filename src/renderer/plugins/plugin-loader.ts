@@ -2,6 +2,7 @@ import type { PluginContext, PluginModule, PluginManifest } from '../../shared/p
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI } from './plugin-api-factory';
+import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { injectStyles, removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { rendererLog } from './renderer-logger';
@@ -237,6 +238,29 @@ export async function activatePlugin(
       await mod.activate(ctx, api);
     }
 
+    // Auto-register manifest-declared command hotkeys (v0.6+)
+    const commands = entry.manifest.contributes?.commands;
+    if (commands) {
+      for (const cmd of commands) {
+        if (cmd.defaultBinding) {
+          const fullCmdId = `${pluginId}:${cmd.id}`;
+          // Only register if the plugin didn't already register via registerWithHotkey()
+          if (!pluginHotkeyRegistry.getBinding(pluginId, cmd.id)) {
+            const existing = (await import('./plugin-commands')).pluginCommandRegistry;
+            if (existing.has(fullCmdId)) {
+              // Command handler was registered but no hotkey yet — add the hotkey
+              pluginHotkeyRegistry.register(
+                pluginId, cmd.id, cmd.title,
+                (...args: unknown[]) => existing.execute(fullCmdId, ...args),
+                cmd.defaultBinding,
+                { global: cmd.global },
+              );
+            }
+          }
+        }
+      }
+    }
+
     // Update status
     store.setPluginStatus(pluginId, 'activated');
     activeContexts.set(contextKey, ctx);
@@ -292,7 +316,8 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
       }
     }
 
-    // Clean up styles and global status
+    // Clean up hotkeys and styles
+    pluginHotkeyRegistry.clearPlugin(pluginId);
     removeStyles(pluginId);
     const entry = store.plugins[pluginId];
     if (entry?.source !== 'builtin') {

@@ -5,6 +5,8 @@ import { useUIStore } from '../../stores/uiStore';
 import { usePanelStore } from '../../stores/panelStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
+import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
+import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
 
 /** Helper to get formatted shortcut string for a given shortcut ID */
@@ -196,6 +198,22 @@ export function useCommandSource(): CommandItem[] {
         useProjectStore.getState().pickAndAddProject();
       },
     });
+
+    // Plugin commands (registered via commands.registerWithHotkey)
+    for (const shortcut of pluginHotkeyRegistry.getAll()) {
+      const pluginEntry = pluginsMap[shortcut.pluginId];
+      const pluginName = pluginEntry?.manifest.name ?? shortcut.pluginId;
+      items.push({
+        id: `plugin-cmd:${shortcut.fullCommandId}`,
+        label: shortcut.title,
+        category: `Plugin: ${pluginName}`,
+        keywords: [shortcut.pluginId, shortcut.commandId],
+        shortcut: shortcut.currentBinding ? formatBinding(shortcut.currentBinding) : undefined,
+        execute: () => {
+          pluginCommandRegistry.execute(shortcut.fullCommandId).catch(() => {});
+        },
+      });
+    }
 
     return items;
   }, [

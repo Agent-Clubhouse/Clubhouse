@@ -1,7 +1,7 @@
 import type { PluginManifest } from '../../shared/plugin-types';
 import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
 
-export const SUPPORTED_API_VERSIONS = [0.5];
+export const SUPPORTED_API_VERSIONS = [0.5, 0.6];
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -165,6 +165,41 @@ export function validateManifest(raw: unknown): ValidationResult {
             errors.push(`allowedCommands[${i}] must be a non-empty string`);
           } else if (cmd.includes('/') || cmd.includes('\\') || cmd.includes('..')) {
             errors.push(`allowedCommands[${i}]: "${cmd}" must not contain path separators`);
+          }
+        }
+      }
+    }
+  }
+
+  // v0.6 specific validation
+  if (apiVersion >= 0.5 && Array.isArray(m.permissions)) {
+    const permissions = m.permissions as string[];
+
+    // agent-config.permissions and agent-config.mcp require base agent-config permission
+    if (permissions.includes('agent-config.permissions') && !permissions.includes('agent-config')) {
+      errors.push('"agent-config.permissions" requires the base "agent-config" permission');
+    }
+    if (permissions.includes('agent-config.mcp') && !permissions.includes('agent-config')) {
+      errors.push('"agent-config.mcp" requires the base "agent-config" permission');
+    }
+  }
+
+  // Validate command declarations with defaultBinding (v0.6+ feature)
+  if (m.contributes && typeof m.contributes === 'object') {
+    const contrib = m.contributes as Record<string, unknown>;
+    if (Array.isArray(contrib.commands)) {
+      for (let i = 0; i < contrib.commands.length; i++) {
+        const cmd = contrib.commands[i] as Record<string, unknown>;
+        if (cmd && typeof cmd === 'object') {
+          if (cmd.defaultBinding !== undefined) {
+            if (apiVersion < 0.6) {
+              errors.push(`contributes.commands[${i}].defaultBinding requires API >= 0.6`);
+            } else if (typeof cmd.defaultBinding !== 'string') {
+              errors.push(`contributes.commands[${i}].defaultBinding must be a string`);
+            }
+          }
+          if (cmd.global !== undefined && typeof cmd.global !== 'boolean') {
+            errors.push(`contributes.commands[${i}].global must be a boolean`);
           }
         }
       }

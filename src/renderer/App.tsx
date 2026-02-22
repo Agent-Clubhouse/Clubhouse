@@ -32,6 +32,7 @@ import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
 import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
 import { getCommandActions } from './features/command-palette/command-actions';
+import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
@@ -171,27 +172,38 @@ export function App() {
       const binding = eventToBinding(e);
       if (!binding) return;
 
-      // Find matching shortcut
-      const { shortcuts } = useKeyboardShortcutsStore.getState();
-      const matched = Object.values(shortcuts).find((s) => s.currentBinding === binding);
-      if (!matched) return;
-
-      // Find matching action
-      const actions = getCommandActions();
-      const action = actions.find((a) => a.id === matched.id);
-      if (!action) return;
-
-      // Guard: skip non-global shortcuts when focus is in a text input
       const target = e.target as HTMLElement | null;
       const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' ||
         target?.isContentEditable || target?.closest?.('[contenteditable]') != null;
-      if (isTextInput && !action.global) return;
 
-      // Guard: skip non-palette shortcuts when palette is open
-      if (useCommandPaletteStore.getState().isOpen && matched.id !== 'command-palette') return;
+      // Find matching system shortcut
+      const { shortcuts } = useKeyboardShortcutsStore.getState();
+      const matched = Object.values(shortcuts).find((s) => s.currentBinding === binding);
 
-      e.preventDefault();
-      action.execute();
+      if (matched) {
+        const actions = getCommandActions();
+        const action = actions.find((a) => a.id === matched.id);
+        if (!action) return;
+
+        // Guard: skip non-global shortcuts when focus is in a text input
+        if (isTextInput && !action.global) return;
+        // Guard: skip non-palette shortcuts when palette is open
+        if (useCommandPaletteStore.getState().isOpen && matched.id !== 'command-palette') return;
+
+        e.preventDefault();
+        action.execute();
+        return;
+      }
+
+      // Check plugin hotkeys (system shortcuts take priority — first claimer wins)
+      const pluginShortcut = pluginHotkeyRegistry.findByBinding(binding);
+      if (pluginShortcut) {
+        if (isTextInput && !pluginShortcut.global) return;
+        if (useCommandPaletteStore.getState().isOpen) return;
+
+        e.preventDefault();
+        pluginShortcut.handler();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
