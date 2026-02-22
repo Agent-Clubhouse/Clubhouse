@@ -4,6 +4,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
 import * as annexEventBus from './annex-event-bus';
+import * as permissionQueue from './annex-permission-queue';
 
 let server: any = null;
 let serverPort = 0;
@@ -51,9 +52,6 @@ export function start(): Promise<number> {
       let body = '';
       req.on('data', (chunk: Buffer) => { body += chunk; });
       req.on('end', () => {
-        res.writeHead(200);
-        res.end();
-
         try {
           const raw = JSON.parse(body);
           // Inject event type hint from URL when not present in payload
@@ -72,6 +70,8 @@ export function start(): Promise<number> {
               appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
                 meta: { agentId },
               });
+              res.writeHead(200);
+              res.end();
               return;
             }
 
@@ -93,6 +93,43 @@ export function start(): Promise<number> {
               };
               broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
               annexEventBus.emitHookEvent(agentId, hookEvent as any);
+
+              // For permission requests, hold the response and wait for a decision
+              // from the Annex client. The hook script (curl) blocks until we respond.
+              if (normalized.kind === 'permission_request') {
+                const toolName = normalized.toolName || 'unknown';
+                const { requestId, decision } = permissionQueue.createPermission(
+                  agentId,
+                  toolName,
+                  normalized.toolInput,
+                  normalized.message,
+                  120_000, // 120 second timeout
+                );
+
+                decision.then((result) => {
+                  if (result === 'timeout') {
+                    // Timeout — return "ask" so Claude Code falls back to its own prompt
+                    const responseBody = JSON.stringify({
+                      hookSpecificOutput: { permissionDecision: 'ask' },
+                    });
+                    res.writeHead(200, {
+                      'Content-Type': 'application/json',
+                      'Content-Length': Buffer.byteLength(responseBody),
+                    });
+                    res.end(responseBody);
+                  } else {
+                    const responseBody = JSON.stringify({
+                      hookSpecificOutput: { permissionDecision: result },
+                    });
+                    res.writeHead(200, {
+                      'Content-Type': 'application/json',
+                      'Content-Length': Buffer.byteLength(responseBody),
+                    });
+                    res.end(responseBody);
+                  }
+                });
+                return; // Don't respond yet — the promise will handle it
+              }
             }
           }
         } catch (err) {
@@ -100,6 +137,10 @@ export function start(): Promise<number> {
             meta: { agentId, error: err instanceof Error ? err.message : String(err) },
           });
         }
+
+        // For non-permission events, respond immediately
+        res.writeHead(200);
+        res.end();
       });
     });
 
