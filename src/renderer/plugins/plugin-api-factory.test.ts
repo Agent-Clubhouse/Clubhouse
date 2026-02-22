@@ -1042,14 +1042,208 @@ describe('plugin-api-factory', () => {
     });
 
     describe('scope gating', () => {
-      it('agentConfig unavailable for app-scoped plugins', () => {
-        const manifest = makeAllPermsManifest({ scope: 'app' });
+      it('agentConfig unavailable for app-scoped plugins without cross-project', () => {
+        const manifest = makeAllPermsManifest({
+          scope: 'app',
+          permissions: ['agent-config'], // no cross-project
+        });
         const api = createPluginAPI(
           makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }),
           undefined,
           manifest,
         );
         expect(() => api.agentConfig.injectSkill('x', 'y')).toThrow(/not available/);
+      });
+    });
+
+    describe('cross-project (agent-config.cross-project)', () => {
+      const crossProjectManifest = makeAllPermsManifest({
+        permissions: [...ALL_PLUGIN_PERMISSIONS],
+      });
+
+      beforeEach(async () => {
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({
+          projects: [
+            { id: 'proj-1', name: 'Project A', path: '/projects/project-a' },
+            { id: 'proj-2', name: 'Project B', path: '/projects/project-b' },
+          ] as any,
+        });
+        // Set up bilateral consent: plugin enabled in both projects
+        usePluginStore.setState({
+          plugins: {},
+          projectEnabled: {
+            'proj-1': ['test-plugin'],
+            'proj-2': ['test-plugin'],
+          },
+          appEnabled: ['test-plugin'],
+          modules: {},
+          safeModeActive: false,
+          pluginSettings: {},
+        });
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
+        mockAgentSettings.writeProjectAgentDefaults.mockResolvedValue(undefined);
+        mockAgentSettings.writeSourceSkillContent.mockResolvedValue(undefined);
+        mockAgentSettings.deleteSourceSkill.mockResolvedValue(undefined);
+        mockPlugin.storageRead.mockResolvedValue(null);
+        mockPlugin.storageWrite.mockResolvedValue(undefined);
+      });
+
+      it('injectSkill targets another project when opts.projectId is provided', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.injectSkill('buddy-check', '# Check inbox', { projectId: 'proj-2' });
+
+        expect(mockAgentSettings.writeSourceSkillContent).toHaveBeenCalledWith(
+          '/projects/project-b',
+          'plugin-test-plugin-buddy-check',
+          '# Check inbox',
+        );
+      });
+
+      it('injectSkill defaults to current project when no opts', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.injectSkill('local-skill', '# Local');
+
+        expect(mockAgentSettings.writeSourceSkillContent).toHaveBeenCalledWith(
+          '/projects/my-project',
+          'plugin-test-plugin-local-skill',
+          '# Local',
+        );
+      });
+
+      it('appendInstructions targets another project', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.appendInstructions('Cross-project content', { projectId: 'proj-2' });
+
+        expect(mockAgentSettings.readProjectAgentDefaults).toHaveBeenCalledWith('/projects/project-b');
+        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+          '/projects/project-b',
+          expect.objectContaining({
+            instructions: expect.stringContaining('Cross-project content'),
+          }),
+        );
+      });
+
+      it('removeSkill targets another project', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.removeSkill('buddy-check', { projectId: 'proj-2' });
+
+        expect(mockAgentSettings.deleteSourceSkill).toHaveBeenCalledWith(
+          '/projects/project-b',
+          'plugin-test-plugin-buddy-check',
+        );
+      });
+
+      it('addPermissionAllowRules targets another project', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.addPermissionAllowRules(
+          ['Read(~/.clubhouse/buddy-system/**)'],
+          { projectId: 'proj-2' },
+        );
+
+        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+          '/projects/project-b',
+          expect.objectContaining({
+            permissions: expect.objectContaining({
+              allow: expect.arrayContaining([
+                'Read(~/.clubhouse/buddy-system/**) /* plugin:test-plugin */',
+              ]),
+            }),
+          }),
+        );
+      });
+
+      it('rejects cross-project without agent-config.cross-project permission', async () => {
+        const manifest = makeAllPermsManifest({
+          permissions: ['agent-config'], // no cross-project
+        });
+        const api = createPluginAPI(makeCtx(), undefined, manifest);
+        _resetEnforcedViolations();
+
+        await expect(
+          api.agentConfig.injectSkill('x', 'y', { projectId: 'proj-2' }),
+        ).rejects.toThrow(/agent-config.cross-project/);
+      });
+
+      it('rejects when target project does not have the plugin enabled (bilateral consent)', async () => {
+        // proj-3 is not in projectEnabled
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({
+          projects: [
+            { id: 'proj-1', name: 'Project A', path: '/projects/project-a' },
+            { id: 'proj-3', name: 'Project C', path: '/projects/project-c' },
+          ] as any,
+        });
+        usePluginStore.setState({
+          plugins: {},
+          projectEnabled: { 'proj-1': ['test-plugin'] },
+          appEnabled: ['test-plugin'],
+          modules: {},
+          safeModeActive: false,
+          pluginSettings: {},
+        });
+
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+
+        await expect(
+          api.agentConfig.injectSkill('x', 'y', { projectId: 'proj-3' }),
+        ).rejects.toThrow(/not enabled in target project/);
+      });
+
+      it('rejects when target project does not exist', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+
+        await expect(
+          api.agentConfig.injectSkill('x', 'y', { projectId: 'nonexistent' }),
+        ).rejects.toThrow(/Target project not found/);
+      });
+
+      it('works from app-mode dual-scope plugin with cross-project permission', async () => {
+        const manifest = makeAllPermsManifest({
+          scope: 'dual',
+          permissions: [...ALL_PLUGIN_PERMISSIONS],
+        });
+        const api = createPluginAPI(
+          makeCtx({ scope: 'dual', projectId: undefined, projectPath: undefined }),
+          'app',
+          manifest,
+        );
+
+        await api.agentConfig.injectSkill('buddy-check', '# Check', { projectId: 'proj-2' });
+
+        expect(mockAgentSettings.writeSourceSkillContent).toHaveBeenCalledWith(
+          '/projects/project-b',
+          'plugin-test-plugin-buddy-check',
+          '# Check',
+        );
+      });
+
+      it('app-mode without projectId throws helpful error', async () => {
+        const manifest = makeAllPermsManifest({
+          scope: 'dual',
+          permissions: [...ALL_PLUGIN_PERMISSIONS],
+        });
+        const api = createPluginAPI(
+          makeCtx({ scope: 'dual', projectId: undefined, projectPath: undefined }),
+          'app',
+          manifest,
+        );
+
+        await expect(
+          api.agentConfig.injectSkill('x', 'y'),
+        ).rejects.toThrow(/pass opts\.projectId/);
+      });
+
+      it('storage operations use the target project path', async () => {
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+        await api.agentConfig.injectSkill('buddy', '# Buddy', { projectId: 'proj-2' });
+
+        // Storage write should be scoped to target project
+        expect(mockPlugin.storageWrite).toHaveBeenCalledWith(
+          expect.objectContaining({
+            projectPath: '/projects/project-b',
+          }),
+        );
       });
     });
   });

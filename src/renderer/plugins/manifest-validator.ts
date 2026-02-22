@@ -175,7 +175,10 @@ export function validateManifest(raw: unknown): ValidationResult {
   if (apiVersion >= 0.5 && Array.isArray(m.permissions)) {
     const permissions = m.permissions as string[];
 
-    // agent-config.permissions and agent-config.mcp require base agent-config permission
+    // agent-config.* sub-permissions require base agent-config permission
+    if (permissions.includes('agent-config.cross-project') && !permissions.includes('agent-config')) {
+      errors.push('"agent-config.cross-project" requires the base "agent-config" permission');
+    }
     if (permissions.includes('agent-config.permissions') && !permissions.includes('agent-config')) {
       errors.push('"agent-config.permissions" requires the base "agent-config" permission');
     }

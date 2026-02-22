@@ -688,12 +688,29 @@ describe('manifest-validator', () => {
       expect(result.errors[0]).toContain('requires the base "agent-config" permission');
     });
 
-    it('accepts all three agent-config permissions together', () => {
+    it('accepts all agent-config permissions together', () => {
       const result = validateManifest({
         ...v06Base,
-        permissions: ['agent-config', 'agent-config.permissions', 'agent-config.mcp'],
+        permissions: ['agent-config', 'agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp'],
       });
       expect(result.valid).toBe(true);
+    });
+
+    it('accepts agent-config with agent-config.cross-project', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config', 'agent-config.cross-project'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects agent-config.cross-project without base agent-config', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config.cross-project'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires the base "agent-config" permission');
     });
   });
 });

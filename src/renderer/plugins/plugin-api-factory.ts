@@ -21,6 +21,7 @@ import type {
   ProcessAPI,
   BadgesAPI,
   AgentConfigAPI,
+  AgentConfigTargetOptions,
   PluginContextInfo,
   PluginRenderMode,
   PluginManifest,
@@ -996,9 +997,62 @@ function createBadgesAPI(ctx: PluginContext): BadgesAPI {
 const PLUGIN_INSTRUCTION_START = (pluginId: string) => `\n\n<!-- plugin:${pluginId}:start -->`;
 const PLUGIN_INSTRUCTION_END = (pluginId: string) => `<!-- plugin:${pluginId}:end -->`;
 
+/**
+ * Resolves the target project path for a cross-project agentConfig operation.
+ * When `opts.projectId` is provided, validates:
+ *   1. The plugin has the 'agent-config.cross-project' permission
+ *   2. The target project exists
+ *   3. The target project has this plugin enabled (bilateral consent)
+ * Returns the resolved project path.
+ */
+function resolveAgentConfigTarget(
+  opts: AgentConfigTargetOptions | undefined,
+  defaultProjectPath: string | undefined,
+  pluginId: string,
+  manifest: PluginManifest | undefined,
+): string {
+  if (!opts?.projectId) {
+    if (!defaultProjectPath) {
+      throw new Error(
+        'No project context — pass opts.projectId to target a specific project',
+      );
+    }
+    return defaultProjectPath;
+  }
+
+  // 1. Permission check
+  if (!hasPermission(manifest, 'agent-config.cross-project')) {
+    handlePermissionViolation(pluginId, 'agent-config.cross-project', 'agentConfig (cross-project)');
+    throw new Error(
+      `Plugin '${pluginId}' requires 'agent-config.cross-project' permission to target other projects`,
+    );
+  }
+
+  // 2. Resolve target project
+  const project = useProjectStore.getState().projects.find((p) => p.id === opts.projectId);
+  if (!project) {
+    throw new Error(`Target project not found: ${opts.projectId}`);
+  }
+
+  // 3. Bilateral consent: target project must have this plugin enabled
+  const { projectEnabled } = usePluginStore.getState();
+  const enabledInTarget = projectEnabled[opts.projectId] || [];
+  if (!enabledInTarget.includes(pluginId)) {
+    throw new Error(
+      `Plugin '${pluginId}' is not enabled in target project '${project.name}'. ` +
+      'Cross-project agent config requires the plugin to be enabled in both projects.',
+    );
+  }
+
+  return project.path;
+}
+
 function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): AgentConfigAPI {
-  const { projectPath, pluginId } = ctx;
-  if (!projectPath) {
+  const { projectPath: defaultProjectPath, pluginId } = ctx;
+
+  // In app mode with cross-project permission, defaultProjectPath may be undefined.
+  // All methods must then use opts.projectId to resolve the target.
+  if (!defaultProjectPath && !hasPermission(manifest, 'agent-config.cross-project')) {
     throw new Error('AgentConfigAPI requires projectPath');
   }
 
@@ -1006,21 +1060,23 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
   const pluginTemplatePrefix = `plugin-${pluginId}-`;
   const storageScope = 'project' as const;
 
-  /** Helper to read/write plugin tracking data from plugin storage. */
-  const storage = {
-    async read(key: string): Promise<unknown> {
-      return window.clubhouse.plugin.storageRead({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath });
-    },
-    async write(key: string, value: unknown): Promise<void> {
-      await window.clubhouse.plugin.storageWrite({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, value, projectPath });
-    },
-    async delete(key: string): Promise<void> {
-      await window.clubhouse.plugin.storageDelete({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath });
-    },
-    async list(): Promise<string[]> {
-      return window.clubhouse.plugin.storageList({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, projectPath });
-    },
-  };
+  /** Helper to create scoped storage for a given project path. */
+  function storageFor(targetProjectPath: string) {
+    return {
+      async read(key: string): Promise<unknown> {
+        return window.clubhouse.plugin.storageRead({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath: targetProjectPath });
+      },
+      async write(key: string, value: unknown): Promise<void> {
+        await window.clubhouse.plugin.storageWrite({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, value, projectPath: targetProjectPath });
+      },
+      async delete(key: string): Promise<void> {
+        await window.clubhouse.plugin.storageDelete({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, key, projectPath: targetProjectPath });
+      },
+      async list(): Promise<string[]> {
+        return window.clubhouse.plugin.storageList({ pluginId: `_agentconfig:${pluginId}`, scope: storageScope, projectPath: targetProjectPath });
+      },
+    };
+  }
 
   /** Check if plugin has elevated permission for sub-scope */
   function requirePermission(perm: PluginPermission): void {
@@ -1032,7 +1088,9 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
 
   return {
     // ── Skills ──────────────────────────────────────────────────────
-    async injectSkill(name: string, content: string): Promise<void> {
+    async injectSkill(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const safeName = `${pluginSkillPrefix}${name}`;
       await window.clubhouse.agentSettings.writeSourceSkillContent(projectPath, safeName, content);
       const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
@@ -1042,20 +1100,26 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       }
     },
 
-    async removeSkill(name: string): Promise<void> {
+    async removeSkill(name: string, opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const safeName = `${pluginSkillPrefix}${name}`;
       await window.clubhouse.agentSettings.deleteSourceSkill(projectPath, safeName);
       const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
       await storage.write('injected-skills', skills.filter((s) => s !== safeName));
     },
 
-    async listInjectedSkills(): Promise<string[]> {
+    async listInjectedSkills(opts?: AgentConfigTargetOptions): Promise<string[]> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const skills = ((await storage.read('injected-skills')) as string[] | null) ?? [];
       return skills.map((s) => s.replace(pluginSkillPrefix, ''));
     },
 
     // ── Agent Templates ──────────────────────────────────────────────
-    async injectAgentTemplate(name: string, content: string): Promise<void> {
+    async injectAgentTemplate(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const safeName = `${pluginTemplatePrefix}${name}`;
       await window.clubhouse.agentSettings.writeSourceAgentTemplateContent(projectPath, safeName, content);
       const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
@@ -1065,20 +1129,25 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       }
     },
 
-    async removeAgentTemplate(name: string): Promise<void> {
+    async removeAgentTemplate(name: string, opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const safeName = `${pluginTemplatePrefix}${name}`;
       await window.clubhouse.agentSettings.deleteSourceAgentTemplate(projectPath, safeName);
       const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
       await storage.write('injected-templates', templates.filter((t) => t !== safeName));
     },
 
-    async listInjectedAgentTemplates(): Promise<string[]> {
+    async listInjectedAgentTemplates(opts?: AgentConfigTargetOptions): Promise<string[]> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const templates = ((await storage.read('injected-templates')) as string[] | null) ?? [];
       return templates.map((t) => t.replace(pluginTemplatePrefix, ''));
     },
 
     // ── Instructions ──────────────────────────────────────────────────
-    async appendInstructions(content: string): Promise<void> {
+    async appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.instructions || '';
       const startMarker = PLUGIN_INSTRUCTION_START(pluginId);
@@ -1098,7 +1167,8 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async removeInstructionAppend(): Promise<void> {
+    async removeInstructionAppend(opts?: AgentConfigTargetOptions): Promise<void> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.instructions || '';
       const regex = new RegExp(
@@ -1113,7 +1183,8 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       }
     },
 
-    async getInstructionAppend(): Promise<string | null> {
+    async getInstructionAppend(opts?: AgentConfigTargetOptions): Promise<string | null> {
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.instructions || '';
       const regex = new RegExp(
@@ -1124,8 +1195,9 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
     },
 
     // ── Permissions (elevated) ────────────────────────────────────────
-    async addPermissionAllowRules(rules: string[]): Promise<void> {
+    async addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.permissions || {};
       const allow = existing.allow || [];
@@ -1138,8 +1210,9 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async addPermissionDenyRules(rules: string[]): Promise<void> {
+    async addPermissionDenyRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.permissions || {};
       const deny = existing.deny || [];
@@ -1151,8 +1224,9 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async removePermissionRules(): Promise<void> {
+    async removePermissionRules(opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.permissions');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.permissions || {};
       const tag = `/* plugin:${pluginId} */`;
@@ -1164,8 +1238,9 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async getPermissionRules(): Promise<{ allow: string[]; deny: string[] }> {
+    async getPermissionRules(opts?: AgentConfigTargetOptions): Promise<{ allow: string[]; deny: string[] }> {
       requirePermission('agent-config.permissions');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
       const existing = defaults.permissions || {};
       const tag = `/* plugin:${pluginId} */`;
@@ -1176,8 +1251,10 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
     },
 
     // ── MCP (elevated) ────────────────────────────────────────────────
-    async injectMcpServers(servers: Record<string, unknown>): Promise<void> {
+    async injectMcpServers(servers: Record<string, unknown>, opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.mcp');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       // Store plugin's MCP config separately for tracking
       await storage.write('injected-mcp', servers);
 
@@ -1209,8 +1286,10 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async removeMcpServers(): Promise<void> {
+    async removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void> {
       requirePermission('agent-config.mcp');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       await storage.delete('injected-mcp');
 
       const defaults = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
@@ -1230,8 +1309,10 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       });
     },
 
-    async getInjectedMcpServers(): Promise<Record<string, unknown>> {
+    async getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>> {
       requirePermission('agent-config.mcp');
+      const projectPath = resolveAgentConfigTarget(opts, defaultProjectPath, pluginId, manifest);
+      const storage = storageFor(projectPath);
       const data = await storage.read('injected-mcp');
       return (data as Record<string, unknown>) || {};
     },
@@ -1338,7 +1419,9 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => createBadgesAPI(ctx),
     ),
     agentConfig: gated(
-      projectAvailable && !!ctx.projectPath, scopeLabel, 'agentConfig', 'agent-config',
+      // Available in project mode (as before), OR in app/dual-app mode when plugin has cross-project permission
+      (projectAvailable && !!ctx.projectPath) || hasPermission(manifest, 'agent-config.cross-project'),
+      scopeLabel, 'agentConfig', 'agent-config',
       ctx.pluginId, manifest, () => createAgentConfigAPI(ctx, manifest),
     ),
     context: contextInfo, // always available
