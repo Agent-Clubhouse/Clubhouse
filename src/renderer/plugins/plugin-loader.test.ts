@@ -5,6 +5,7 @@ import type { PluginManifest, PluginModule } from '../../shared/plugin-types';
 // We need to mock window.clubhouse before importing plugin-loader
 const mockPlugin = {
   startupMarkerRead: vi.fn(),
+  startupMarkerWrite: vi.fn(),
   startupMarkerClear: vi.fn(),
   discoverCommunity: vi.fn(),
   storageRead: vi.fn(),
@@ -96,6 +97,7 @@ describe('plugin-loader', () => {
     resetPluginStore();
     _resetActiveContexts();
     mockPlugin.startupMarkerRead.mockResolvedValue(null);
+    mockPlugin.startupMarkerWrite.mockResolvedValue(undefined);
     mockPlugin.startupMarkerClear.mockResolvedValue(undefined);
     mockPlugin.discoverCommunity.mockResolvedValue([]);
     mockPlugin.storageRead.mockResolvedValue(undefined);
@@ -195,6 +197,42 @@ describe('plugin-loader', () => {
       await initializePluginSystem();
 
       expect(mockPlugin.startupMarkerClear).not.toHaveBeenCalled();
+    });
+
+    it('writes startup marker before plugin activation', async () => {
+      const appManifest = makeManifest({ id: 'app-plug', scope: 'app' });
+      const mod: PluginModule = { activate: vi.fn() };
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest: appManifest, module: mod }]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(new Set(['app-plug']));
+
+      await initializePluginSystem();
+
+      expect(mockPlugin.startupMarkerWrite).toHaveBeenCalled();
+      // Marker should include the enabled plugin list
+      const writeArgs = mockPlugin.startupMarkerWrite.mock.calls[0][0];
+      expect(writeArgs).toContain('app-plug');
+    });
+
+    it('writes startup marker before activation, clears after', async () => {
+      const callOrder: string[] = [];
+      mockPlugin.startupMarkerWrite.mockImplementation(async () => {
+        callOrder.push('write');
+      });
+      mockPlugin.startupMarkerClear.mockImplementation(async () => {
+        callOrder.push('clear');
+      });
+
+      await initializePluginSystem();
+
+      expect(callOrder).toEqual(['write', 'clear']);
+    });
+
+    it('does not write startup marker in safe mode', async () => {
+      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 2, lastEnabledPlugins: [] });
+
+      await initializePluginSystem();
+
+      expect(mockPlugin.startupMarkerWrite).not.toHaveBeenCalled();
     });
 
     // ── Built-in plugin registration ────────────────────────────────
