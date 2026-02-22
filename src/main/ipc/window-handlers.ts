@@ -155,4 +155,61 @@ export function registerWindowHandlers(): void {
     // Re-emit on the keyed channel so the handle() above resolves
     ipcMain.emit(`${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`, _event, state);
   });
+
+  // ── Hub state sync (leader/follower) ─────────────────────────────────
+  //
+  // Same relay pattern as agent state: pop-out → main process → main
+  // renderer → main process → pop-out. The main window's hub store is
+  // the single authority; pop-outs are followers.
+
+  // Pop-out requests current hub state snapshot
+  ipcMain.handle(IPC.WINDOW.GET_HUB_STATE, (_event, hubId: string, scope: string, projectId?: string) => {
+    return new Promise((resolve) => {
+      const mainWindow = BrowserWindow.getAllWindows().find(
+        (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
+      );
+      if (!mainWindow) {
+        resolve(null);
+        return;
+      }
+
+      const requestId = `hub_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+
+      const timeout = setTimeout(() => {
+        ipcMain.removeAllListeners(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`);
+        resolve(null);
+      }, 5000);
+
+      ipcMain.once(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}` as any, (_e: any, state: any) => {
+        clearTimeout(timeout);
+        resolve(state);
+      });
+
+      mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_STATE, requestId, hubId, scope, projectId);
+    });
+  });
+
+  // Forward hub state responses from the main renderer
+  ipcMain.on(IPC.WINDOW.HUB_STATE_RESPONSE, (_event, requestId: string, state: any) => {
+    ipcMain.emit(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`, _event, state);
+  });
+
+  // Main renderer broadcasts hub state changes → forward to all pop-outs
+  ipcMain.on(IPC.WINDOW.HUB_STATE_CHANGED, (_event, state: any) => {
+    for (const [, entry] of popoutWindows) {
+      if (!entry.window.isDestroyed()) {
+        entry.window.webContents.send(IPC.WINDOW.HUB_STATE_CHANGED, state);
+      }
+    }
+  });
+
+  // Pop-out sends a hub mutation → forward to main renderer
+  ipcMain.on(IPC.WINDOW.HUB_MUTATION, (_event, hubId: string, scope: string, mutation: any, projectId?: string) => {
+    const mainWindow = BrowserWindow.getAllWindows().find(
+      (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
+    );
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_MUTATION, hubId, scope, mutation, projectId);
+    }
+  });
 }

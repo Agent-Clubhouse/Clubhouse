@@ -39,6 +39,9 @@ import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
+import { useProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
+import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
+import type { HubMutation } from '../shared/types';
 
 export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
@@ -169,6 +172,39 @@ export function App() {
         agentIcons: state.agentIcons,
       });
     });
+    return () => remove();
+  }, []);
+
+  // Respond to hub state requests from pop-out windows
+  useEffect(() => {
+    const remove = window.clubhouse.window.onRequestHubState(
+      (requestId: string, hubId: string, scope: string) => {
+        const store = scope === 'global' ? useAppHubStore : useProjectHubStore;
+        const state = store.getState();
+        const hub = state.hubs.find((h) => h.id === hubId);
+        if (hub) {
+          window.clubhouse.window.respondHubState(requestId, {
+            hubId: hub.id,
+            paneTree: hub.paneTree,
+            focusedPaneId: hub.focusedPaneId,
+            zoomedPaneId: hub.zoomedPaneId,
+          });
+        } else {
+          window.clubhouse.window.respondHubState(requestId, null);
+        }
+      },
+    );
+    return () => remove();
+  }, []);
+
+  // Apply hub mutations forwarded from pop-out windows
+  useEffect(() => {
+    const remove = window.clubhouse.window.onHubMutation(
+      (hubId: string, scope: string, mutation: unknown) => {
+        const store = scope === 'global' ? useAppHubStore : useProjectHubStore;
+        applyHubMutation(store, hubId, mutation as HubMutation);
+      },
+    );
     return () => remove();
   }, []);
 
