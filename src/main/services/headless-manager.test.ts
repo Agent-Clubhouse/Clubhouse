@@ -464,6 +464,47 @@ describe('headless-manager', () => {
       expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 1);
       expect(isHeadless('test-agent')).toBe(false);
     });
+
+    it('error handler calls onExit callback', () => {
+      const onExit = vi.fn();
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      mockProcess.emit('error', new Error('spawn failed'));
+
+      expect(onExit).toHaveBeenCalledWith('test-agent', 1);
+    });
+
+    it('does not double-cleanup when both error and close fire', () => {
+      const onExit = vi.fn();
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      // Both events fire (race condition)
+      mockProcess.emit('error', new Error('spawn failed'));
+      mockProcess.emit('close', 1);
+
+      // onExit and logStream.end should each be called exactly once
+      expect(onExit).toHaveBeenCalledTimes(1);
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not double-cleanup when close fires before error', () => {
+      const onExit = vi.fn();
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      // close fires first, then error
+      mockProcess.emit('close', 0);
+      mockProcess.emit('error', new Error('late error'));
+
+      expect(onExit).toHaveBeenCalledTimes(1);
+      expect(onExit).toHaveBeenCalledWith('test-agent', 0);
+      expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
+
+      // PTY.EXIT should only be broadcast once
+      const exitCalls = mockSend.mock.calls.filter(
+        (call) => call[0] === IPC.PTY.EXIT
+      );
+      expect(exitCalls).toHaveLength(1);
+    });
   });
 
   // ============================================================
