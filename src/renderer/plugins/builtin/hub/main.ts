@@ -4,6 +4,7 @@ import { createHubStore } from './useHubStore';
 import { PaneContainer } from './PaneContainer';
 import type { PaneComponentProps } from './PaneContainer';
 import { HubPane } from './HubPane';
+import { HubTabBar } from './HubTabBar';
 import { AgentPicker } from './AgentPicker';
 import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
 
@@ -31,6 +32,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const store = isAppMode ? useAppHubStore : useProjectHubStore;
   const storage = isAppMode ? api.storage.global : api.storage.projectLocal;
 
+  const hubs = store((s) => s.hubs);
+  const activeHubId = store((s) => s.activeHubId);
   const paneTree = store((s) => s.paneTree);
   const focusedPaneId = store((s) => s.focusedPaneId);
   const loaded = store((s) => s.loaded);
@@ -52,7 +55,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
-  }, [paneTree, loaded, scheduleSave]);
+  }, [hubs, paneTree, loaded, scheduleSave]);
 
   // Force re-render when agents change so the list stays fresh
   const [agentTick, setAgentTick] = useState(0);
@@ -121,11 +124,34 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().toggleZoom(paneId);
   }, [store]);
 
-  // ── Stable PaneComponent identity ──────────────────────────────────────
-  // Keep volatile data (agents, statuses) in a ref so the component callback
-  // never changes identity. This prevents React from unmounting/remounting
-  // all pane components on every agent tick, which caused race conditions
-  // where pane assignments were lost during resume.
+  // ── Hub tab bar callbacks ──────────────────────────────────────────
+
+  const handleSelectHub = useCallback((hubId: string) => {
+    store.getState().setActiveHub(hubId);
+  }, [store]);
+
+  const handleAddHub = useCallback(() => {
+    store.getState().addHub(PANE_PREFIX);
+  }, [store]);
+
+  const handleRemoveHub = useCallback((hubId: string) => {
+    store.getState().removeHub(hubId, PANE_PREFIX);
+  }, [store]);
+
+  const handleRenameHub = useCallback((hubId: string, name: string) => {
+    store.getState().renameHub(hubId, name);
+  }, [store]);
+
+  const handlePopOutHub = useCallback(async (hubId: string, hubName: string) => {
+    await window.clubhouse.window.createPopout({
+      type: 'hub',
+      hubId,
+      projectId: isAppMode ? undefined : api.context.projectId,
+      title: `Hub — ${hubName}`,
+    });
+  }, [isAppMode, api]);
+
+  // ── Stable PaneComponent identity ──────────────────────────────────
   const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId });
   dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId };
 
@@ -166,13 +192,26 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return React.createElement('div', { className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs' }, 'Loading hub...');
   }
 
-  return React.createElement(PaneContainer, {
-    tree: paneTree,
-    focusedPaneId,
-    PaneComponent: HubPaneComponent,
-    zoomedPaneId,
-    onSplitResize: handleSplitResize,
-  });
+  return React.createElement('div', { className: 'flex flex-col h-full w-full' },
+    React.createElement(HubTabBar, {
+      hubs,
+      activeHubId,
+      onSelectHub: handleSelectHub,
+      onAddHub: handleAddHub,
+      onRemoveHub: handleRemoveHub,
+      onRenameHub: handleRenameHub,
+      onPopOutHub: handlePopOutHub,
+    }),
+    React.createElement('div', { className: 'flex-1 min-h-0' },
+      React.createElement(PaneContainer, {
+        tree: paneTree,
+        focusedPaneId,
+        PaneComponent: HubPaneComponent,
+        zoomedPaneId,
+        onSplitResize: handleSplitResize,
+      }),
+    ),
+  );
 }
 
 // Compile-time type assertion
