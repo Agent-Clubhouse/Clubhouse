@@ -20,6 +20,11 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 let registryCache: { data: MarketplaceFetchResult; fetchedAt: number } | null = null;
 
+/** @internal Reset cache — exported for tests only. */
+export function _resetCache(): void {
+  registryCache = null;
+}
+
 function getCommunityPluginsDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
 }

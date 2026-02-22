@@ -18,7 +18,7 @@ vi.mock('child_process', () => ({
 }));
 
 import * as fs from 'fs';
-import { fetchRegistry, installPlugin } from './marketplace-service';
+import { fetchRegistry, installPlugin, _resetCache } from './marketplace-service';
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -60,6 +60,7 @@ const sampleFeatured = {
 describe('marketplace-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetCache();
   });
 
   describe('fetchRegistry', () => {

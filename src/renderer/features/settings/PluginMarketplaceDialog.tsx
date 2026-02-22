@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type {
   MarketplacePlugin,
   MarketplaceFeaturedEntry,
@@ -124,7 +124,8 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
   const [registryVersionWarning, setRegistryVersionWarning] = useState(false);
 
-  const installedPluginIds = usePluginStore((s) => Object.keys(s.plugins));
+  const plugins = usePluginStore((s) => s.plugins);
+  const installedPluginIds = useMemo(() => Object.keys(plugins), [plugins]);
 
   useEffect(() => {
     let cancelled = false;
