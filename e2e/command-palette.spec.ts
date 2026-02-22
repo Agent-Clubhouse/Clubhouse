@@ -214,10 +214,13 @@ test.describe('Command Palette – Filtering', () => {
 test.describe('Command Palette – Mode Prefixes', () => {
   test('> prefix shows commands mode badge', async () => {
     await openPalette();
-    await window.keyboard.type('>');
-    await window.waitForTimeout(200);
+    const input = paletteInput();
+    await input.fill('>');
+    await window.waitForTimeout(300);
 
-    const badge = window.locator('[data-testid="command-palette-overlay"]').locator('text=Commands');
+    // Target the badge in the input row (border-b) to avoid matching category headers
+    const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
+    const badge = inputRow.locator('text=Commands');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
@@ -225,10 +228,12 @@ test.describe('Command Palette – Mode Prefixes', () => {
 
   test('@ prefix shows agents mode badge', async () => {
     await openPalette();
-    await window.keyboard.type('@');
-    await window.waitForTimeout(200);
+    const input = paletteInput();
+    await input.fill('@');
+    await window.waitForTimeout(300);
 
-    const badge = window.locator('[data-testid="command-palette-overlay"]').locator('text=Agents');
+    const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
+    const badge = inputRow.locator('text=Agents');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
