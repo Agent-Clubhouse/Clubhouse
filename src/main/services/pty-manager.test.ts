@@ -321,6 +321,34 @@ describe('pty-manager', () => {
 
       vi.useRealTimers();
     });
+
+    it('clears all three timers when session exits early via cleanupSession', () => {
+      vi.useFakeTimers();
+      spawn('agent_gk_timers', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      gracefulKill('agent_gk_timers');
+
+      // Simulate early exit — kill() calls cleanupSession which should clear all timers
+      kill('agent_gk_timers');
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // Advance past EOF timer (3s) — should NOT write EOF since session was cleaned up
+      vi.advanceTimersByTime(3000);
+      expect(mockProcess.write).not.toHaveBeenCalledWith('\x04');
+
+      // Advance past SIGTERM timer (6s) — should NOT send SIGTERM
+      vi.advanceTimersByTime(3000);
+      expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGTERM');
+
+      // Advance past hard kill timer (9s) — should NOT send hard kill
+      vi.advanceTimersByTime(3000);
+      expect(mockProcess.kill).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
   });
 
   describe('kill', () => {
@@ -354,14 +382,18 @@ describe('pty-manager', () => {
       expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
     });
 
-    it('clears all sessions', () => {
+    it('clears all sessions after kill timeout', async () => {
+      vi.useFakeTimers();
       spawnAndActivate('agent_ka_3');
       const cb = mockProcess.onData.mock.calls[0][0];
       cb('data');
       expect(getBuffer('agent_ka_3')).toBe('data');
 
-      killAll();
+      const promise = killAll();
+      vi.advanceTimersByTime(2000);
+      await promise;
       expect(getBuffer('agent_ka_3')).toBe('');
+      vi.useRealTimers();
     });
 
     it('uses custom exit command', () => {
@@ -371,6 +403,52 @@ describe('pty-manager', () => {
       killAll('/quit\r');
 
       expect(mockProcess.write).toHaveBeenCalledWith('/quit\r');
+    });
+
+    it('returns a promise that resolves after cleanup', async () => {
+      vi.useFakeTimers();
+      spawn('agent_ka_5', '/test', '/usr/local/bin/claude', []);
+
+      const promise = killAll();
+      expect(promise).toBeInstanceOf(Promise);
+
+      vi.advanceTimersByTime(2000);
+      await promise;
+      // Session should be fully cleaned up
+      expect(getBuffer('agent_ka_5')).toBe('');
+      vi.useRealTimers();
+    });
+
+    it('resolves immediately when no sessions exist', async () => {
+      const promise = killAll();
+      await promise; // should resolve without timeout
+    });
+
+    it('clears active gracefulKill timers via cleanupSession', async () => {
+      vi.useFakeTimers();
+      spawn('agent_ka_gk', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // Start a graceful kill with pending escalation timers
+      gracefulKill('agent_ka_gk');
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // killAll should clean up via cleanupSession, clearing gracefulKill timers
+      const promise = killAll();
+      vi.advanceTimersByTime(2000);
+      await promise;
+
+      // Advance past gracefulKill's EOF timer (3s) — should NOT fire
+      vi.advanceTimersByTime(1000);
+      expect(mockProcess.write).not.toHaveBeenCalledWith('\x04');
+
+      // Advance past gracefulKill's SIGTERM timer (6s) — should NOT fire
+      vi.advanceTimersByTime(3000);
+      expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGTERM');
+
+      vi.useRealTimers();
     });
   });
 

@@ -13,6 +13,8 @@ interface ManagedSession {
   outputChunks: string[];
   outputSize: number;
   pendingCommand?: string;
+  eofTimer?: ReturnType<typeof setTimeout>;
+  termTimer?: ReturnType<typeof setTimeout>;
   killTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -51,7 +53,11 @@ export function isRunning(agentId: string): boolean {
 
 function cleanupSession(agentId: string): void {
   const session = sessions.get(agentId);
-  if (session?.killTimer) clearTimeout(session.killTimer);
+  if (session) {
+    if (session.eofTimer) clearTimeout(session.eofTimer);
+    if (session.termTimer) clearTimeout(session.termTimer);
+    if (session.killTimer) clearTimeout(session.killTimer);
+  }
   sessions.delete(agentId);
 }
 
@@ -138,8 +144,8 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
       return; // suppress shell startup output
     }
 
-    session.lastActivity = Date.now();
-    appendToBuffer(session, data);
+    current.lastActivity = Date.now();
+    appendToBuffer(current, data);
     broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
     annexEventBus.emitPtyData(agentId, data);
   });
@@ -202,8 +208,8 @@ export function spawnShell(id: string, projectPath: string): void {
     const current = sessions.get(id);
     if (!current || current.process !== proc) return;
 
-    session.lastActivity = Date.now();
-    appendToBuffer(session, data);
+    current.lastActivity = Date.now();
+    appendToBuffer(current, data);
     broadcastToAllWindows(IPC.PTY.DATA, id, data);
   });
 
@@ -255,12 +261,12 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     // already dead
   }
 
-  const eofTimer = setTimeout(() => {
+  session.eofTimer = setTimeout(() => {
     if (!sessions.has(agentId)) return;
     try { session.process.write('\x04'); } catch { /* dead */ }
   }, 3000);
 
-  const termTimer = setTimeout(() => {
+  session.termTimer = setTimeout(() => {
     if (!sessions.has(agentId)) return;
     try { session.process.kill('SIGTERM'); } catch { /* dead */ }
   }, 6000);
@@ -269,8 +275,6 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     if (sessions.has(agentId)) {
       try { session.process.kill(); } catch { /* dead */ }
     }
-    clearTimeout(eofTimer);
-    clearTimeout(termTimer);
     cleanupSession(agentId);
   }, 9000);
 }
@@ -283,16 +287,30 @@ export function kill(agentId: string): void {
   }
 }
 
-export function killAll(exitCommand: string = '/exit\r'): void {
-  for (const [id, session] of sessions) {
+export function killAll(exitCommand: string = '/exit\r'): Promise<void> {
+  const ids = [...sessions.keys()];
+  if (ids.length === 0) return Promise.resolve();
+
+  for (const id of ids) {
+    const session = sessions.get(id);
+    if (!session) continue;
     try {
       session.process.write(exitCommand);
     } catch {
       // ignore
     }
-    setTimeout(() => {
-      try { session.process.kill(); } catch { /* dead */ }
-    }, 2000);
-    sessions.delete(id);
   }
+
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      for (const id of ids) {
+        const session = sessions.get(id);
+        if (session) {
+          try { session.process.kill(); } catch { /* dead */ }
+        }
+        cleanupSession(id);
+      }
+      resolve();
+    }, 2000);
+  });
 }
