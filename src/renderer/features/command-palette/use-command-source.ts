@@ -182,10 +182,7 @@ export function useCommandSource(): CommandItem[] {
       shortcut: getShortcut(shortcuts, 'new-quick-agent'),
       keywords: ['agent', 'mission', 'quick'],
       execute: () => {
-        if (activeProjectId) {
-          setExplorerTab('agents', activeProjectId);
-          window.dispatchEvent(new CustomEvent('clubhouse:open-quick-agent'));
-        }
+        useUIStore.getState().openQuickAgentDialog();
       },
     });
 

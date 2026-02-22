@@ -41,12 +41,7 @@ export function getCommandActions(): CommandAction[] {
     {
       id: 'new-quick-agent',
       execute: () => {
-        const { activeProjectId } = useProjectStore.getState();
-        if (activeProjectId) {
-          useUIStore.getState().setExplorerTab('agents', activeProjectId);
-          // Dispatch custom event for AgentList to open the mission input
-          window.dispatchEvent(new CustomEvent('clubhouse:open-quick-agent'));
-        }
+        useUIStore.getState().openQuickAgentDialog();
       },
     },
     {

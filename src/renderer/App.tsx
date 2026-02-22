@@ -28,6 +28,7 @@ import { UpdateBanner } from './features/app/UpdateBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
+import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
 import { useCommandPaletteStore } from './stores/commandPaletteStore';
 import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
 import { getCommandActions } from './features/command-palette/command-actions';
@@ -487,6 +488,7 @@ export function App() {
           <Dashboard />
         </div>
         <CommandPalette />
+        <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>
@@ -507,6 +509,7 @@ export function App() {
           <PluginContentView pluginId={appPluginId} mode="app" />
         </div>
         <CommandPalette />
+        <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>
@@ -526,6 +529,7 @@ export function App() {
           <HelpView />
         </div>
         <CommandPalette />
+        <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
       </div>

@@ -43,6 +43,9 @@ interface UIState {
   openAbout: () => void;
   openPluginSettings: (pluginId: string) => void;
   closePluginSettings: () => void;
+  quickAgentDialogOpen: boolean;
+  openQuickAgentDialog: () => void;
+  closeQuickAgentDialog: () => void;
 }
 
 const initialPrefs = loadViewPrefs();
@@ -106,4 +109,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   closePluginSettings: () => {
     set({ pluginSettingsId: null, settingsSubPage: 'plugins' });
   },
+  quickAgentDialogOpen: false,
+  openQuickAgentDialog: () => set({ quickAgentDialogOpen: true }),
+  closeQuickAgentDialog: () => set({ quickAgentDialogOpen: false }),
 }));
