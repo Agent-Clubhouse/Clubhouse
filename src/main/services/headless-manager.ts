@@ -182,7 +182,12 @@ export function spawnHeadless(
     });
   });
 
+  let exited = false;
+
   proc.on('close', (code) => {
+    if (exited) return;
+    exited = true;
+
     if (parser) {
       parser.flush();
     }
@@ -218,9 +223,14 @@ export function spawnHeadless(
   });
 
   proc.on('error', (err) => {
+    if (exited) return;
+    exited = true;
+
     appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
     logStream.end();
     sessions.delete(agentId);
+
+    onExit?.(agentId, 1);
 
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
   });
