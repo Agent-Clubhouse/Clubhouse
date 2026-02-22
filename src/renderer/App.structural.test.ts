@@ -8,7 +8,8 @@ import { join } from 'path';
  * present in Home/Help/AppPlugin views but missing from the main project view.
  */
 describe('App.tsx – QuickAgentDialog presence', () => {
-  const source = readFileSync(join(__dirname, 'App.tsx'), 'utf-8');
+  // Normalize line endings so the test works on Windows (CRLF) and Unix (LF)
+  const source = readFileSync(join(__dirname, 'App.tsx'), 'utf-8').replace(/\r\n/g, '\n');
 
   it('should include <QuickAgentDialog /> in every JSX return block', () => {
     // Match only JSX return statements (indented `return (` followed by `<div`)

@@ -280,6 +280,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       kind: 'durable',
       status: 'running',
       color: config.color,
+      icon: config.icon,
       worktreePath: config.worktreePath,
       branch: config.branch,
       exitCode: undefined,

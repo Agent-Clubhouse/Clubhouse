@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { usePanelStore } from '../../stores/panelStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
+import { useAnnexStore } from '../../stores/annexStore';
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
@@ -32,6 +33,8 @@ export function useCommandSource(): CommandItem[] {
   const shortcuts = useKeyboardShortcutsStore((s) => s.shortcuts);
   const toggleExplorerCollapse = usePanelStore((s) => s.toggleExplorerCollapse);
   const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
+  const annexSettings = useAnnexStore((s) => s.settings);
+  const annexStatus = useAnnexStore((s) => s.status);
 
   return useMemo(() => {
     const items: CommandItem[] = [];
@@ -199,6 +202,49 @@ export function useCommandSource(): CommandItem[] {
       },
     });
 
+    // Annex actions
+    items.push({
+      id: 'action:toggle-annex',
+      label: annexSettings.enabled ? 'Disable Annex' : 'Enable Annex',
+      category: 'Actions',
+      keywords: ['annex', 'companion', 'ios', 'network'],
+      execute: () => {
+        useAnnexStore.getState().saveSettings({ ...annexSettings, enabled: !annexSettings.enabled });
+      },
+    });
+
+    items.push({
+      id: 'action:annex-show-pin',
+      label: 'Show Annex PIN',
+      category: 'Actions',
+      keywords: ['annex', 'pairing', 'pin', 'companion'],
+      detail: annexSettings.enabled && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
+      execute: () => {
+        const uiState = useUIStore.getState();
+        if (uiState.explorerTab !== 'settings') {
+          toggleSettings();
+        }
+        setSettingsContext('app');
+        setSettingsSubPage('annex');
+      },
+    });
+
+    // Clubhouse Mode / Agent Config shortcut
+    items.push({
+      id: 'action:agent-config',
+      label: 'Agent Config',
+      category: 'Actions',
+      keywords: ['clubhouse', 'mode', 'durable', 'agents', 'orchestrator', 'config'],
+      execute: () => {
+        const uiState = useUIStore.getState();
+        if (uiState.explorerTab !== 'settings') {
+          toggleSettings();
+        }
+        setSettingsContext('app');
+        setSettingsSubPage('orchestrators');
+      },
+    });
+
     // Plugin commands (registered via commands.registerWithHotkey)
     for (const shortcut of pluginHotkeyRegistry.getAll()) {
       const pluginEntry = pluginsMap[shortcut.pluginId];
@@ -218,6 +264,7 @@ export function useCommandSource(): CommandItem[] {
     return items;
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
+    annexSettings, annexStatus,
     setActiveProject, setActiveAgent, setExplorerTab, toggleSettings,
     setSettingsSubPage, setSettingsContext, toggleHelp, openAbout,
     toggleExplorerCollapse, toggleAccessoryCollapse,

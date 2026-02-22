@@ -21,4 +21,5 @@ export const SETTINGS_PAGES: { label: string; page: SettingsSubPage }[] = [
   { label: 'Updates', page: 'updates' },
   { label: "What's New", page: 'whats-new' },
   { label: 'Keyboard Shortcuts', page: 'keyboard-shortcuts' },
+  { label: 'Annex', page: 'annex' },
 ];

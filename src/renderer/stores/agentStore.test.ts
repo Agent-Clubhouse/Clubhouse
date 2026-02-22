@@ -564,6 +564,49 @@ describe('agentStore', () => {
     });
   });
 
+  describe('spawnDurableAgent', () => {
+    const mockAgent = window.clubhouse.agent as any;
+
+    beforeEach(() => {
+      mockAgent.spawnAgent.mockResolvedValue(undefined);
+    });
+
+    it('preserves icon from config so avatar does not reset to initials', async () => {
+      const config = {
+        id: 'durable_icon',
+        name: 'icon-agent',
+        color: 'indigo',
+        icon: 'durable_icon.png',
+        worktreePath: '/wt/icon-agent',
+        branch: 'icon-agent/standby',
+        createdAt: '2024-01-01',
+        model: 'sonnet',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const agent = getState().agents['durable_icon'];
+      expect(agent).toBeDefined();
+      expect(agent.icon).toBe('durable_icon.png');
+      expect(agent.status).toBe('running');
+    });
+
+    it('works without icon in config', async () => {
+      const config = {
+        id: 'durable_noicon',
+        name: 'no-icon-agent',
+        color: 'emerald',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const agent = getState().agents['durable_noicon'];
+      expect(agent).toBeDefined();
+      expect(agent.icon).toBeUndefined();
+    });
+  });
+
   describe('loadDurableAgents', () => {
     it('loads model from durable config', async () => {
       const mockAgent = window.clubhouse.agent as any;

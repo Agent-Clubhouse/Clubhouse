@@ -79,6 +79,7 @@ const STATUS_RING_COLOR: Record<string, string> = {
 
 function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' }) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
   const detailed = detailedStatus[agent.id];
   const isWorking = agent.status === 'running' && detailed?.state === 'working';
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
@@ -92,6 +93,15 @@ function AgentAvatar({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'md' 
 
   const inner = agent.kind === 'durable' ? (
     (() => {
+      // Image icon avatar
+      if (agent.icon && iconDataUrl) {
+        return (
+          <div className={`${innerDim} rounded-full overflow-hidden flex-shrink-0`}>
+            <img src={iconDataUrl} alt={agent.name} className="w-full h-full object-cover" />
+          </div>
+        );
+      }
+      // Default initials
       const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
       return (
         <div
