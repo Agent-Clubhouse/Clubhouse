@@ -42,21 +42,28 @@ export function CommandPalette() {
       (item) => item.keywords || [],
     );
 
-    // Promote recent commands when no query
-    if (!searchQuery) {
-      const recents: FuzzyFilterItem<CommandItem>[] = [];
-      const rest: FuzzyFilterItem<CommandItem>[] = [];
-      for (const item of filtered) {
-        if (isRecent(item.item.id)) {
+    // Promote recent commands: show in "Recently Used" group when no query,
+    // boost score when query is active so recents rank higher among matches
+    const recents: FuzzyFilterItem<CommandItem>[] = [];
+    const rest: FuzzyFilterItem<CommandItem>[] = [];
+    for (const item of filtered) {
+      if (isRecent(item.item.id)) {
+        if (!searchQuery) {
           recents.push({ ...item, item: { ...item.item, category: 'Recently Used' } });
         } else {
-          rest.push(item);
+          recents.push({ ...item, score: item.score + 20 });
         }
+      } else {
+        rest.push(item);
       }
+    }
+
+    if (!searchQuery) {
       return [...recents, ...rest];
     }
 
-    return filtered;
+    // Re-sort with boosted scores
+    return [...recents, ...rest].sort((a, b) => b.score - a.score);
   }, [modeFiltered, query, isRecent]);
 
   const executeItem = useCallback((item: CommandItem) => {

@@ -6,6 +6,8 @@ interface Props {
   shortcut?: string;
   matchIndices: number[];
   isSelected: boolean;
+  /** Only auto-scroll this item into view when true (keyboard navigation). */
+  scrollOnSelect?: boolean;
   onSelect: () => void;
   onHover: () => void;
 }
@@ -43,14 +45,14 @@ function HighlightedLabel({ text, matchIndices }: { text: string; matchIndices: 
   );
 }
 
-export function CommandPaletteItem({ label, detail, shortcut, matchIndices, isSelected, onSelect, onHover }: Props) {
+export function CommandPaletteItem({ label, detail, shortcut, matchIndices, isSelected, scrollOnSelect = true, onSelect, onHover }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isSelected) {
+    if (isSelected && scrollOnSelect) {
       ref.current?.scrollIntoView?.({ block: 'nearest' });
     }
-  }, [isSelected]);
+  }, [isSelected, scrollOnSelect]);
 
   return (
     <div
