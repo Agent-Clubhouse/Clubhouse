@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
@@ -25,10 +26,20 @@ import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShor
 export function MainContentView() {
   const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
   const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
-  const selectedCompleted = useQuickAgentStore((s) => s.getSelectedCompleted());
+  const selectedCompletedId = useQuickAgentStore((s) => s.selectedCompletedId);
+  const completedAgentsMap = useQuickAgentStore((s) => s.completedAgents);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+
+  const selectedCompleted = useMemo(() => {
+    if (!selectedCompletedId) return null;
+    for (const records of Object.values(completedAgentsMap)) {
+      const found = records.find((r) => r.id === selectedCompletedId);
+      if (found) return found;
+    }
+    return null;
+  }, [selectedCompletedId, completedAgentsMap]);
 
   if (explorerTab === 'agents') {
     const rawAgent = activeAgentId ? agents[activeAgentId] : null;

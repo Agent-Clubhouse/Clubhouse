@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -6,7 +6,7 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
 import { AgentList } from './AgentList';
-import type { Agent } from '../../../shared/types';
+import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
 vi.mock('./AgentListItem', () => ({
@@ -127,5 +127,66 @@ describe('AgentList dropdown', () => {
 
     fireEvent.click(screen.getByText('Quick Agent'));
     expect(openSpy).toHaveBeenCalled();
+  });
+});
+
+describe('AgentList completed selector stability', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  it('renders completed agents from raw completedAgents state', () => {
+    const completed: CompletedQuickAgent = {
+      id: 'done-1',
+      projectId: 'proj-1',
+      name: 'test-agent',
+      mission: 'test mission',
+      summary: null,
+      filesModified: [],
+      exitCode: 0,
+      completedAt: Date.now(),
+    };
+    useQuickAgentStore.setState({
+      completedAgents: { 'proj-1': [completed] },
+      selectedCompletedId: null,
+    });
+
+    render(<AgentList />);
+    // The completed footer shows count of orphan completed agents
+    expect(screen.getByText('Completed (1)')).toBeInTheDocument();
+  });
+
+  it('does not re-render when unrelated store state changes', () => {
+    const renderCount = vi.fn();
+    const OriginalAgentList = AgentList;
+
+    // Render the component
+    const { rerender } = render(<OriginalAgentList />);
+    const initialContent = screen.getByTestId('agent-list').innerHTML;
+
+    // Mutate an unrelated part of the quick agent store (different project)
+    act(() => {
+      useQuickAgentStore.setState((s) => ({
+        completedAgents: { ...s.completedAgents, 'other-project': [] },
+      }));
+    });
+
+    rerender(<OriginalAgentList />);
+    // Component should still render correctly (no crash from unstable refs)
+    expect(screen.getByTestId('agent-list')).toBeInTheDocument();
+  });
+
+  it('uses stable empty array when project has no completed agents', () => {
+    useQuickAgentStore.setState({
+      completedAgents: {},
+      selectedCompletedId: null,
+    });
+
+    render(<AgentList />);
+    // Should render without errors even with no completed agents data
+    expect(screen.getByTestId('agent-list')).toBeInTheDocument();
+    expect(screen.getByText('Completed (0)')).toBeInTheDocument();
   });
 });

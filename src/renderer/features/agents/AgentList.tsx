@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
@@ -9,6 +9,9 @@ import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import type { CompletedQuickAgent } from '../../../shared/types';
+
+const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 
 export function AgentList() {
   const {
@@ -24,8 +27,10 @@ export function AgentList() {
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const completedAgents = useQuickAgentStore((s) =>
-    activeProjectId ? s.getCompleted(activeProjectId) : []
+  const allCompleted = useQuickAgentStore((s) => s.completedAgents);
+  const completedAgents = useMemo(
+    () => (activeProjectId ? allCompleted[activeProjectId] ?? EMPTY_COMPLETED : EMPTY_COMPLETED),
+    [allCompleted, activeProjectId]
   );
   const getCompletedByParent = useQuickAgentStore((s) => s.getCompletedByParent);
   const getCompletedOrphans = useQuickAgentStore((s) => s.getCompletedOrphans);
