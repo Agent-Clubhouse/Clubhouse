@@ -25,7 +25,6 @@ Clubhouse ships with several built-in plugins. Three of them (Hub, Terminal, and
 | **Files** | Project | File browser with a built-in Monaco editor, markdown preview, and image display. |
 | **Wiki** | Project | Browse and edit markdown wikis stored in external directories. Supports GitHub and Azure DevOps wiki formats. |
 | **Issues** | Project | Browse, view, and file GitHub issues for the current project using the `gh` CLI. |
-| **KanBoss** | Project | Kanban boards with AI-powered automation. Cards can trigger quick agents when they enter automatic states. |
 | **Automations** | Project | Schedule recurring quick-agent tasks using cron expressions. |
 
 ## Plugin Trust Levels

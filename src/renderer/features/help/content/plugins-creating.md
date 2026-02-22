@@ -249,7 +249,7 @@ Clubhouse provides internal gitignore management for plugins. When a plugin uses
 
 ## Best Practices
 
-- **Study the built-in plugins.** The Hub, Terminal, Files, Wiki, Issues, KanBoss, and Automations plugins demonstrate all major plugin patterns: dual-scope rendering, external file access, process execution, declarative settings, custom help topics, badge indicators, and agent integration.
+- **Study the built-in plugins.** The Hub, Terminal, Files, Wiki, Issues, and Automations plugins demonstrate all major plugin patterns: dual-scope rendering, external file access, process execution, declarative settings, custom help topics, badge indicators, and agent integration.
 - **Request only the permissions you need.** Each permission grants access to a specific API namespace. Requesting unnecessary permissions may cause users to hesitate before enabling your plugin.
 - **Declare allowed commands explicitly.** If your plugin uses the `process` permission, list every command it will run in the `allowedCommands` array. This gives users confidence in what the plugin will execute on their machine.
 - **Use declarative settings when possible.** Clubhouse generates a consistent settings UI automatically from your setting declarations. Use a custom settings panel only when you need UI that goes beyond simple toggles, text fields, and dropdowns.

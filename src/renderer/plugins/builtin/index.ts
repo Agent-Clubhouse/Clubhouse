@@ -11,8 +11,6 @@ import { manifest as issuesManifest } from './issues/manifest';
 import * as issuesModule from './issues/main';
 import { manifest as wikiManifest } from './wiki/manifest';
 import * as wikiModule from './wiki/main';
-import { manifest as kanbossManifest } from './kanboss/manifest';
-import * as kanbossModule from './kanboss/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -34,7 +32,6 @@ export function getBuiltinPlugins(): BuiltinPlugin[] {
     { manifest: filesManifest, module: filesModule },
     { manifest: issuesManifest, module: issuesModule },
     { manifest: wikiManifest, module: wikiModule },
-    { manifest: kanbossManifest, module: kanbossModule },
   ];
 }
 
