@@ -48,7 +48,8 @@ export type PluginPermission =
   | 'agent-config'
   | 'agent-config.cross-project'
   | 'agent-config.permissions'
-  | 'agent-config.mcp';
+  | 'agent-config.mcp'
+  | 'sounds';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -70,6 +71,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config.cross-project',
   'agent-config.permissions',
   'agent-config.mcp',
+  'sounds',
 ] as const;
 
 export interface PluginExternalRoot {
@@ -97,6 +99,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config.cross-project': 'Inject agent configuration into other projects where the plugin is also enabled (elevated)',
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
+  sounds: 'Register and manage custom notification sound packs',
 };
 
 export interface PluginHelpTopic {
@@ -107,6 +110,16 @@ export interface PluginHelpTopic {
 
 export interface PluginHelpContribution {
   topics?: PluginHelpTopic[];
+}
+
+export interface PluginSoundPackDeclaration {
+  /** Display name for the sound pack. */
+  name: string;
+  /**
+   * Mapping of sound event names to audio file paths relative to the plugin directory.
+   * e.g., { "agent-done": "sounds/done.mp3", "error": "sounds/error.wav" }
+   */
+  sounds: Record<string, string>;
 }
 
 export interface PluginContributes {
@@ -124,6 +137,8 @@ export interface PluginContributes {
   settings?: PluginSettingDeclaration[];
   storage?: PluginStorageDeclaration;
   help?: PluginHelpContribution;
+  /** Declare a sound pack that ships with this plugin. */
+  sounds?: PluginSoundPackDeclaration;
 }
 
 export interface PluginManifest {
@@ -552,6 +567,16 @@ export interface ProcessAPI {
   exec(command: string, args: string[], options?: ProcessExecOptions): Promise<ProcessExecResult>;
 }
 
+// ── Sounds API ────────────────────────────────────────────────────────
+export interface SoundsAPI {
+  /** Register a sound pack from this plugin. Uses the plugin's sounds/ directory. */
+  registerPack(name?: string): Promise<void>;
+  /** Unregister the sound pack from this plugin. */
+  unregisterPack(): Promise<void>;
+  /** List all available sound packs (user + plugin). */
+  listPacks(): Promise<Array<{ id: string; name: string; source: 'user' | 'plugin' }>>;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -572,6 +597,7 @@ export interface PluginAPI {
   process: ProcessAPI;
   badges: BadgesAPI;
   agentConfig: AgentConfigAPI;
+  sounds: SoundsAPI;
   context: PluginContextInfo;
 }
 

@@ -165,6 +165,11 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       removeMcpServers: asyncNoop,
       getInjectedMcpServers: async () => ({}),
     },
+    sounds: {
+      registerPack: asyncNoop,
+      unregisterPack: asyncNoop,
+      listPacks: async () => [],
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

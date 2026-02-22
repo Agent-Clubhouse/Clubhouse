@@ -10,6 +10,7 @@ import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
+import { SoundSettingsView } from '../features/settings/SoundSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
 import { PluginContentView } from './PluginContentView';
@@ -98,6 +99,7 @@ export function MainContentView() {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
+    if (settingsSubPage === 'sounds') return <SoundSettingsView projectId={projectId} />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
