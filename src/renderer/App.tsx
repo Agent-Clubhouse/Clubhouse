@@ -158,6 +158,19 @@ export function App() {
     return () => remove();
   }, []);
 
+  // Navigate to agent when requested from a pop-out window
+  useEffect(() => {
+    const remove = window.clubhouse.window.onNavigateToAgent((agentId: string) => {
+      const agent = useAgentStore.getState().agents[agentId];
+      if (agent) {
+        useProjectStore.getState().setActiveProject(agent.projectId);
+        useUIStore.getState().setExplorerTab('agents', agent.projectId);
+        useAgentStore.getState().setActiveAgent(agentId, agent.projectId);
+      }
+    });
+    return () => remove();
+  }, []);
+
   // Clear any active OS notification when the user navigates to the agent's view
   useEffect(() => {
     if (activeAgentId && activeProjectId && explorerTab === 'agents') {

@@ -15,8 +15,11 @@ vi.mock('electron', () => {
     loadURLCalled = '';
     shown = false;
     closed = false;
+    focused = false;
+    minimized = false;
     options: any;
     _readyCallback: (() => void) | null = null;
+    webContents = { send: vi.fn() };
 
     constructor(options: any) {
       this.id = nextId++;
@@ -28,6 +31,9 @@ vi.mock('electron', () => {
     show() { this.shown = true; }
     isDestroyed() { return this.destroyed; }
     close() { this.closed = true; }
+    focus() { this.focused = true; }
+    isMinimized() { return this.minimized; }
+    restore() { this.minimized = false; }
     once(event: string, cb: () => void) {
       if (event === 'ready-to-show') this._readyCallback = cb;
     }
@@ -78,6 +84,7 @@ describe('window-handlers', () => {
     expect(handlers.has(IPC.WINDOW.CREATE_POPOUT)).toBe(true);
     expect(handlers.has(IPC.WINDOW.CLOSE_POPOUT)).toBe(true);
     expect(handlers.has(IPC.WINDOW.LIST_POPOUTS)).toBe(true);
+    expect(handlers.has(IPC.WINDOW.FOCUS_MAIN)).toBe(true);
   });
 
   it('CREATE_POPOUT creates a new window and returns its ID', async () => {
@@ -107,5 +114,34 @@ describe('window-handlers', () => {
     const windows = BrowserWindow.getAllWindows();
     const win = windows.find((w: any) => w.id === windowId);
     expect(win?.closed).toBe(true);
+  });
+
+  it('FOCUS_MAIN focuses the main window (non-popout)', async () => {
+    // Create a popout first, so we have both a main window-like entry and a popout
+    // The main window is any window NOT in the popout map
+    // We need a window that exists before popout creation
+    // Add a "main" window manually
+    const mainWin = new (BrowserWindow as any)({});
+    // Now create a popout
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'agent', agentId: 'a1' });
+
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_MAIN)!;
+    await focusHandler({});
+
+    expect(mainWin.focused).toBe(true);
+  });
+
+  it('FOCUS_MAIN sends navigate-to-agent when agentId is provided', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_MAIN)!;
+    await focusHandler({}, 'agent-123');
+
+    expect(mainWin.focused).toBe(true);
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(
+      IPC.WINDOW.NAVIGATE_TO_AGENT,
+      'agent-123',
+    );
   });
 });

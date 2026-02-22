@@ -107,4 +107,16 @@ export function registerWindowHandlers(): void {
     }
     return list;
   });
+
+  ipcMain.handle(IPC.WINDOW.FOCUS_MAIN, (_event, agentId?: string) => {
+    const allWindows = BrowserWindow.getAllWindows();
+    const mainWindow = allWindows.find(w => !popoutWindows.has(w.id) && !w.isDestroyed());
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      if (agentId) {
+        mainWindow.webContents.send(IPC.WINDOW.NAVIGATE_TO_AGENT, agentId);
+      }
+    }
+  });
 }
