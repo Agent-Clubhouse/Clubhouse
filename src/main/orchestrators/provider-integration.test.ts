@@ -463,22 +463,26 @@ describe('Provider integration tests', () => {
       expect(perms).toContain('Grep');
     });
 
-    it('CopilotCli quick agents get PascalCase file tools', () => {
+    it('CopilotCli quick agents get lowercase Copilot CLI tool names', () => {
       const provider = new CopilotCliProvider();
       const perms = provider.getDefaultPermissions('quick');
-      expect(perms).toContain('Read');
-      expect(perms).toContain('Write');
-      expect(perms).toContain('Edit');
-      expect(perms).toContain('Glob');
-      expect(perms).toContain('Grep');
+      expect(perms).toContain('read');
+      expect(perms).toContain('edit');
+      expect(perms).toContain('search');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).not.toContain('Read');
+      expect(perms).not.toContain('Write');
+      expect(perms).not.toContain('Glob');
+      expect(perms).not.toContain('Grep');
     });
 
-    it('CopilotCli durable agents get PascalCase Bash permissions', () => {
+    it('CopilotCli durable agents get shell-scoped permissions', () => {
       const provider = new CopilotCliProvider();
       const perms = provider.getDefaultPermissions('durable');
-      expect(perms).toContain('Bash(git:*)');
-      expect(perms).toContain('Bash(npm:*)');
-      expect(perms).toContain('Bash(npx:*)');
+      expect(perms).toContain('shell(git:*)');
+      expect(perms).toContain('shell(npm:*)');
+      expect(perms).toContain('shell(npx:*)');
+      expect(perms).not.toContain('Bash(git:*)');
     });
 
     it('CodexCli durable agents get shell-scoped permissions', () => {
