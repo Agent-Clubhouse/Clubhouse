@@ -186,6 +186,8 @@ export const IPC = {
     CREATE_POPOUT: 'window:create-popout',
     CLOSE_POPOUT: 'window:close-popout',
     LIST_POPOUTS: 'window:list-popouts',
+    FOCUS_MAIN: 'window:focus-main',
+    NAVIGATE_TO_AGENT: 'window:navigate-to-agent',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',
