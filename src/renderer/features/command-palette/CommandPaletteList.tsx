@@ -50,6 +50,7 @@ export function CommandPaletteList({ items, onExecute }: Props) {
               label={filterItem.item.label}
               detail={filterItem.item.detail}
               shortcut={filterItem.item.shortcut}
+              typeIndicator={filterItem.item.typeIndicator}
               matchIndices={filterItem.matches}
               isSelected={gi === selectedIndex}
               scrollOnSelect={lastInteraction === 'keyboard'}

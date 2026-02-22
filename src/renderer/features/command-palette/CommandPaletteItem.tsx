@@ -4,6 +4,7 @@ interface Props {
   label: string;
   detail?: string;
   shortcut?: string;
+  typeIndicator?: string;
   matchIndices: number[];
   isSelected: boolean;
   /** Only auto-scroll this item into view when true (keyboard navigation). */
@@ -45,7 +46,7 @@ function HighlightedLabel({ text, matchIndices }: { text: string; matchIndices: 
   );
 }
 
-export function CommandPaletteItem({ label, detail, shortcut, matchIndices, isSelected, scrollOnSelect = true, onSelect, onHover }: Props) {
+export function CommandPaletteItem({ label, detail, shortcut, typeIndicator, matchIndices, isSelected, scrollOnSelect = true, onSelect, onHover }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,6 +67,9 @@ export function CommandPaletteItem({ label, detail, shortcut, matchIndices, isSe
       }`}
     >
       <div className="flex items-center gap-2 min-w-0">
+        {typeIndicator && (
+          <span className="text-xs font-mono text-ctp-subtext0 flex-shrink-0">{typeIndicator}</span>
+        )}
         <span className="truncate">
           <HighlightedLabel text={label} matchIndices={matchIndices} />
         </span>
