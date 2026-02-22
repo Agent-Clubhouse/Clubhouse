@@ -41,6 +41,35 @@ function AppAgentSettings() {
 
   return (
     <>
+      {/* Headless Quick Agents toggle */}
+      <div className="space-y-3 mb-6">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agents</h3>
+        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
+          <div className="flex items-center gap-2.5">
+            <span className="text-ctp-subtext1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </span>
+            <div>
+              <div className="text-sm text-ctp-text">Headless Mode</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">
+                Quick agents run headless by default for faster completion, richer summaries, and no permission prompts
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => setHeadlessEnabled(!headlessEnabled)}
+            className="toggle-track"
+            data-on={String(headlessEnabled)}
+          >
+            <span className="toggle-knob" />
+          </button>
+        </div>
+      </div>
+
       {/* Clubhouse Mode toggle */}
       <div className="space-y-3 mb-6">
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Durable Agents</h3>
@@ -104,35 +133,6 @@ function AppAgentSettings() {
           </div>
         </div>
       )}
-
-      {/* Headless Quick Agents toggle */}
-      <div className="space-y-3 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agents</h3>
-        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-ctp-subtext1">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </span>
-            <div>
-              <div className="text-sm text-ctp-text">Headless Mode</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Quick agents run headless by default for faster completion, richer summaries, and no permission prompts
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setHeadlessEnabled(!headlessEnabled)}
-            className="toggle-track"
-            data-on={String(headlessEnabled)}
-          >
-            <span className="toggle-knob" />
-          </button>
-        </div>
-      </div>
 
       {/* Orchestrators */}
       <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Orchestrators</h3>

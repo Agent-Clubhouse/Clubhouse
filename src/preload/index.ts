@@ -183,6 +183,18 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_SKILLS, projectPath),
     listSourceAgentTemplates: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, projectPath),
+    readSourceSkillContent: (projectPath: string, skillName: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, projectPath, skillName),
+    writeSourceSkillContent: (projectPath: string, skillName: string, content: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, projectPath, skillName, content),
+    deleteSourceSkill: (projectPath: string, skillName: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_SKILL, projectPath, skillName),
+    readSourceAgentTemplateContent: (projectPath: string, agentName: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName),
+    writeSourceAgentTemplateContent: (projectPath: string, agentName: string, content: string) =>
+      ipcRenderer.invoke(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, projectPath, agentName, content),
+    deleteSourceAgentTemplate: (projectPath: string, agentName: string) =>
+      ipcRenderer.invoke(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, projectPath, agentName),
     createSkill: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>
       ipcRenderer.invoke(IPC.AGENT.CREATE_SKILL, basePath, name, isSource, projectPath),
     createAgentTemplate: (basePath: string, name: string, isSource: boolean, projectPath?: string) =>

@@ -69,6 +69,14 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText('Headless Mode')).toBeInTheDocument();
     });
 
+    it('renders Headless Mode before Clubhouse Mode', () => {
+      render(<OrchestratorSettingsView />);
+      const headless = screen.getByText('Headless Mode');
+      const clubhouse = screen.getByText('Clubhouse Mode');
+      // Headless should appear before Clubhouse in the DOM
+      expect(headless.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it('renders Orchestrators section', () => {
       render(<OrchestratorSettingsView />);
       expect(screen.getByText('Orchestrators')).toBeInTheDocument();
@@ -121,10 +129,10 @@ describe('OrchestratorSettingsView', () => {
         useClubhouseModeStore.setState({ enabled: true, setEnabled });
 
         render(<OrchestratorSettingsView />);
-        const toggleButtons = screen.getAllByRole('button');
-        const clubhouseToggle = toggleButtons.find((btn) =>
-          btn.className.includes('toggle-track') && btn.getAttribute('data-on') === 'true'
-        );
+        // Find the Clubhouse Mode toggle by traversing from the "Clubhouse Mode" text
+        const clubhouseLabel = screen.getByText('Clubhouse Mode');
+        const clubhouseSection = clubhouseLabel.closest('.flex.items-center.justify-between');
+        const clubhouseToggle = clubhouseSection?.querySelector('.toggle-track');
         if (clubhouseToggle) fireEvent.click(clubhouseToggle);
 
         expect(setEnabled).toHaveBeenCalledWith(false);

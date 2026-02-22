@@ -163,6 +163,80 @@ export function listSourceAgentTemplates(projectPath: string): AgentTemplateEntr
   }
 }
 
+/**
+ * Read the content of a source skill's SKILL.md file (project-level .clubhouse/skills/).
+ */
+export function readSourceSkillContent(projectPath: string, skillName: string): string {
+  const settings = readSettings(projectPath);
+  const skillsSubdir = settings.defaultSkillsPath || 'skills';
+  const filePath = path.join(projectPath, '.clubhouse', skillsSubdir, skillName, 'SKILL.md');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Write the content of a source skill's SKILL.md file.
+ */
+export function writeSourceSkillContent(projectPath: string, skillName: string, content: string): void {
+  const settings = readSettings(projectPath);
+  const skillsSubdir = settings.defaultSkillsPath || 'skills';
+  const dir = path.join(projectPath, '.clubhouse', skillsSubdir, skillName);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf-8');
+}
+
+/**
+ * Delete a source skill directory.
+ */
+export function deleteSourceSkill(projectPath: string, skillName: string): void {
+  const settings = readSettings(projectPath);
+  const skillsSubdir = settings.defaultSkillsPath || 'skills';
+  const dir = path.join(projectPath, '.clubhouse', skillsSubdir, skillName);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Read the content of a source agent template's README.md file (project-level .clubhouse/agent-templates/).
+ */
+export function readSourceAgentTemplateContent(projectPath: string, agentName: string): string {
+  const settings = readSettings(projectPath);
+  const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
+  const filePath = path.join(projectPath, '.clubhouse', agentsSubdir, agentName, 'README.md');
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Write the content of a source agent template's README.md file.
+ */
+export function writeSourceAgentTemplateContent(projectPath: string, agentName: string, content: string): void {
+  const settings = readSettings(projectPath);
+  const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
+  const dir = path.join(projectPath, '.clubhouse', agentsSubdir, agentName);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'README.md'), content, 'utf-8');
+}
+
+/**
+ * Delete a source agent template directory.
+ */
+export function deleteSourceAgentTemplate(projectPath: string, agentName: string): void {
+  const settings = readSettings(projectPath);
+  const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
+  const dir = path.join(projectPath, '.clubhouse', agentsSubdir, agentName);
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function makeTemplateReadme(kind: 'skill' | 'agent', name: string): string {
   const label = kind === 'skill' ? 'Skill' : 'Agent';
   return `---\n# ${label}: ${name}\n---\n\n# ${name}\n\nDescribe what this ${kind} does.\n`;

@@ -80,6 +80,12 @@ export const IPC = {
     GET_CONVENTIONS: 'agent:get-conventions',
     MATERIALIZE_AGENT: 'agent:materialize-agent',
     PREVIEW_MATERIALIZATION: 'agent:preview-materialization',
+    READ_SOURCE_SKILL_CONTENT: 'agent:read-source-skill-content',
+    WRITE_SOURCE_SKILL_CONTENT: 'agent:write-source-skill-content',
+    DELETE_SOURCE_SKILL: 'agent:delete-source-skill',
+    READ_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:read-source-agent-template-content',
+    WRITE_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:write-source-agent-template-content',
+    DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
   },
   FILE: {
     READ_TREE: 'file:read-tree',

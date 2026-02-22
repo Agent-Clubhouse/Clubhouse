@@ -136,6 +136,32 @@ export function registerAgentSettingsHandlers(): void {
     }
   });
 
+  // --- Source skill/template content CRUD ---
+
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, (_event, projectPath: string, skillName: string) => {
+    return agentSettings.readSourceSkillContent(projectPath, skillName);
+  });
+
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, (_event, projectPath: string, skillName: string, content: string) => {
+    agentSettings.writeSourceSkillContent(projectPath, skillName, content);
+  });
+
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_SKILL, (_event, projectPath: string, skillName: string) => {
+    agentSettings.deleteSourceSkill(projectPath, skillName);
+  });
+
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, (_event, projectPath: string, agentName: string) => {
+    return agentSettings.readSourceAgentTemplateContent(projectPath, agentName);
+  });
+
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, (_event, projectPath: string, agentName: string, content: string) => {
+    agentSettings.writeSourceAgentTemplateContent(projectPath, agentName, content);
+  });
+
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, (_event, projectPath: string, agentName: string) => {
+    agentSettings.deleteSourceAgentTemplate(projectPath, agentName);
+  });
+
   // --- Materialization ---
 
   ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, (_event, projectPath: string, agentId: string) => {
