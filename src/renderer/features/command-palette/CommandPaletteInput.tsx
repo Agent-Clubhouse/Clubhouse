@@ -6,6 +6,7 @@ const MODE_LABELS: Record<PaletteMode, string | null> = {
   commands: 'Commands',
   agents: 'Agents',
   projects: 'Projects',
+  hubs: 'Hubs',
 };
 
 export function CommandPaletteInput() {

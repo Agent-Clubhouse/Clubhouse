@@ -7,7 +7,7 @@ import { fuzzyFilter, FuzzyFilterItem } from './fuzzy-match';
 import { CommandItem } from './command-registry';
 
 function stripPrefix(query: string): string {
-  if (query.startsWith('>') || query.startsWith('@') || query.startsWith('#')) {
+  if (query.startsWith('>') || query.startsWith('@') || query.startsWith('#') || query.startsWith('/')) {
     return query.slice(1);
   }
   return query;
@@ -29,6 +29,7 @@ export function CommandPalette() {
     if (mode === 'commands') return allCommands.filter((c) => c.category === 'Actions' || c.category === 'Settings' || c.category === 'Navigation');
     if (mode === 'agents') return allCommands.filter((c) => c.category === 'Agents');
     if (mode === 'projects') return allCommands.filter((c) => c.category === 'Projects');
+    if (mode === 'hubs') return allCommands.filter((c) => c.category === 'Hubs');
     return allCommands;
   }, [allCommands, mode]);
 

@@ -3,7 +3,7 @@ import { create } from 'zustand';
 const RECENTS_KEY = 'clubhouse_command_palette_recents';
 const MAX_RECENTS = 20;
 
-export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects';
+export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects' | 'hubs';
 
 interface RecentCommand {
   id: string;
@@ -28,6 +28,7 @@ function deriveMode(query: string): PaletteMode {
   if (query.startsWith('>')) return 'commands';
   if (query.startsWith('@')) return 'agents';
   if (query.startsWith('#')) return 'projects';
+  if (query.startsWith('/')) return 'hubs';
   return 'all';
 }
 
