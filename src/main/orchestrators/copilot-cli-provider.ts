@@ -53,8 +53,8 @@ function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label:
   ];
 }
 
-const DEFAULT_DURABLE_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)'];
-const DEFAULT_QUICK_PERMISSIONS = ['Bash(git:*)', 'Bash(npm:*)', 'Bash(npx:*)', 'Read', 'Write', 'Edit', 'Glob', 'Grep'];
+const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
+const DEFAULT_QUICK_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)', 'read', 'edit', 'search'];
 
 const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   preToolUse: 'pre_tool',
