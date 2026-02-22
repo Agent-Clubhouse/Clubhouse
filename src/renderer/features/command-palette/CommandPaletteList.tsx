@@ -11,7 +11,8 @@ interface Props {
 export function CommandPaletteList({ items, onExecute }: Props) {
   const query = useCommandPaletteStore((s) => s.query);
   const selectedIndex = useCommandPaletteStore((s) => s.selectedIndex);
-  const setSelectedIndex = useCommandPaletteStore((s) => s.moveSelection);
+  const lastInteraction = useCommandPaletteStore((s) => s.lastInteraction);
+  const setSelectedIndex = useCommandPaletteStore((s) => s.setSelectedIndex);
 
   if (items.length === 0 && query) {
     return (
@@ -51,11 +52,10 @@ export function CommandPaletteList({ items, onExecute }: Props) {
               shortcut={filterItem.item.shortcut}
               matchIndices={filterItem.matches}
               isSelected={gi === selectedIndex}
+              scrollOnSelect={lastInteraction === 'keyboard'}
               onSelect={() => onExecute(filterItem.item)}
               onHover={() => {
-                // Set absolute index by computing delta
-                const delta = gi - selectedIndex;
-                if (delta !== 0) setSelectedIndex(delta, items.length - 1);
+                if (gi !== selectedIndex) setSelectedIndex(gi);
               }}
             />
           ))}

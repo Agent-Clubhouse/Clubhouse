@@ -31,17 +31,21 @@ function deriveMode(query: string): PaletteMode {
   return 'all';
 }
 
+export type InteractionSource = 'keyboard' | 'pointer';
+
 interface CommandPaletteState {
   isOpen: boolean;
   query: string;
   mode: PaletteMode;
   selectedIndex: number;
+  lastInteraction: InteractionSource;
   recentCommands: RecentCommand[];
   open: () => void;
   close: () => void;
   toggle: () => void;
   setQuery: (query: string) => void;
   moveSelection: (delta: number, maxIndex: number) => void;
+  setSelectedIndex: (index: number) => void;
   recordRecent: (commandId: string) => void;
   isRecent: (commandId: string) => boolean;
 }
@@ -51,10 +55,11 @@ export const useCommandPaletteStore = create<CommandPaletteState>((set, get) => 
   query: '',
   mode: 'all',
   selectedIndex: 0,
+  lastInteraction: 'keyboard' as InteractionSource,
   recentCommands: loadRecents(),
 
-  open: () => set({ isOpen: true, query: '', mode: 'all', selectedIndex: 0 }),
-  close: () => set({ isOpen: false, query: '', mode: 'all', selectedIndex: 0 }),
+  open: () => set({ isOpen: true, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
+  close: () => set({ isOpen: false, query: '', mode: 'all', selectedIndex: 0, lastInteraction: 'keyboard' }),
   toggle: () => {
     const { isOpen } = get();
     if (isOpen) {
@@ -71,10 +76,14 @@ export const useCommandPaletteStore = create<CommandPaletteState>((set, get) => 
   moveSelection: (delta, maxIndex) => {
     set((s) => {
       const next = s.selectedIndex + delta;
-      if (next < 0) return { selectedIndex: maxIndex };
-      if (next > maxIndex) return { selectedIndex: 0 };
-      return { selectedIndex: next };
+      if (next < 0) return { selectedIndex: maxIndex, lastInteraction: 'keyboard' };
+      if (next > maxIndex) return { selectedIndex: 0, lastInteraction: 'keyboard' };
+      return { selectedIndex: next, lastInteraction: 'keyboard' };
     });
+  },
+
+  setSelectedIndex: (index) => {
+    set({ selectedIndex: index, lastInteraction: 'pointer' });
   },
 
   recordRecent: (commandId) => {
