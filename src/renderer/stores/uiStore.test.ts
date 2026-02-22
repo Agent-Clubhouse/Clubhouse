@@ -150,6 +150,23 @@ describe('uiStore', () => {
     });
   });
 
+  describe('quickAgentDialog', () => {
+    it('starts closed', () => {
+      expect(getState().quickAgentDialogOpen).toBe(false);
+    });
+
+    it('openQuickAgentDialog sets dialog open', () => {
+      getState().openQuickAgentDialog();
+      expect(getState().quickAgentDialogOpen).toBe(true);
+    });
+
+    it('closeQuickAgentDialog sets dialog closed', () => {
+      getState().openQuickAgentDialog();
+      getState().closeQuickAgentDialog();
+      expect(getState().quickAgentDialogOpen).toBe(false);
+    });
+  });
+
   describe('settingsContext', () => {
     it('defaults to app', () => {
       expect(getState().settingsContext).toBe('app');

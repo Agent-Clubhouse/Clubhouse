@@ -10,13 +10,14 @@ const mockToggleAccessoryCollapse = vi.fn();
 const mockSetExplorerTab = vi.fn();
 const mockPickAndAddProject = vi.fn();
 const mockSetActiveAgent = vi.fn();
+const mockOpenQuickAgentDialog = vi.fn();
 
 vi.mock('../../stores/commandPaletteStore', () => ({
   useCommandPaletteStore: { getState: () => ({ toggle: mockToggle }) },
 }));
 
 vi.mock('../../stores/uiStore', () => ({
-  useUIStore: { getState: () => ({ toggleSettings: mockToggleSettings, toggleHelp: mockToggleHelp, setExplorerTab: mockSetExplorerTab }) },
+  useUIStore: { getState: () => ({ toggleSettings: mockToggleSettings, toggleHelp: mockToggleHelp, setExplorerTab: mockSetExplorerTab, openQuickAgentDialog: mockOpenQuickAgentDialog }) },
 }));
 
 vi.mock('../../stores/projectStore', () => ({
@@ -128,5 +129,10 @@ describe('command-actions', () => {
   it('switch-agent-2 sets active agent to second durable agent', () => {
     findAction('switch-agent-2')?.execute();
     expect(mockSetActiveAgent).toHaveBeenCalledWith('a2', 'proj-1');
+  });
+
+  it('new-quick-agent opens the global quick agent dialog', () => {
+    findAction('new-quick-agent')?.execute();
+    expect(mockOpenQuickAgentDialog).toHaveBeenCalled();
   });
 });

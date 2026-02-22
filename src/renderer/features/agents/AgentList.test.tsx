@@ -4,6 +4,7 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
+import { useUIStore } from '../../stores/uiStore';
 import { AgentList } from './AgentList';
 import type { Agent } from '../../../shared/types';
 
@@ -115,13 +116,16 @@ describe('AgentList dropdown', () => {
     expect(screen.getByTestId('add-agent-dialog')).toBeInTheDocument();
   });
 
-  it('shows mission input with correct placeholder when Quick Agent is selected', () => {
+  it('opens global quick agent dialog when Quick Agent is selected from dropdown', () => {
+    const openSpy = vi.fn();
+    useUIStore.setState({ openQuickAgentDialog: openSpy });
+
     render(<AgentList />);
     const buttons = screen.getAllByRole('button');
     const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
     fireEvent.click(dropdownBtn!);
 
     fireEvent.click(screen.getByText('Quick Agent'));
-    expect(screen.getByPlaceholderText('What should this quick agent do?')).toBeInTheDocument();
+    expect(openSpy).toHaveBeenCalled();
   });
 });
