@@ -434,7 +434,7 @@ describe('plugin-loader', () => {
     it('loads settings from storage when not in memory store', async () => {
       // Settings are NOT in the Zustand store but ARE persisted on disk
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
-        if (req.key === 'settings-proj-1-storage-p') return { wikiPath: '/wiki', wikiStyle: 'ado' };
+        if (req.key === 'settings-proj-1-storage-p') return { dataPath: '/data', dataFormat: 'json' };
         return undefined;
       });
 
@@ -446,9 +446,9 @@ describe('plugin-loader', () => {
 
       // Settings should have been loaded from storage and passed to context
       const call = (mod.activate as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(call[0].settings).toEqual({ wikiPath: '/wiki', wikiStyle: 'ado' });
+      expect(call[0].settings).toEqual({ dataPath: '/data', dataFormat: 'json' });
       // Settings should also be in the store now
-      expect(usePluginStore.getState().pluginSettings['proj-1:storage-p']).toEqual({ wikiPath: '/wiki', wikiStyle: 'ado' });
+      expect(usePluginStore.getState().pluginSettings['proj-1:storage-p']).toEqual({ dataPath: '/data', dataFormat: 'json' });
     });
 
     it('falls back gracefully when storage read fails', async () => {

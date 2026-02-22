@@ -399,7 +399,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...v05Base,
         permissions: ['files'],
-        externalRoots: [{ settingKey: 'wiki-root', root: 'wiki' }],
+        externalRoots: [{ settingKey: 'data-root', root: 'data' }],
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('requires the "files.external" permission');
@@ -418,7 +418,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...v05Base,
         permissions: ['files', 'files.external'],
-        externalRoots: [{ settingKey: 'wiki-root', root: 'wiki' }],
+        externalRoots: [{ settingKey: 'data-root', root: 'data' }],
       });
       expect(result.valid).toBe(true);
     });
@@ -427,7 +427,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...v05Base,
         permissions: ['files', 'files.external'],
-        externalRoots: [{ root: 'wiki' }],
+        externalRoots: [{ root: 'data' }],
       });
       expect(result.valid).toBe(false);
       expect(result.errors.some((e: string) => e.includes('settingKey'))).toBe(true);
@@ -437,7 +437,7 @@ describe('manifest-validator', () => {
       const result = validateManifest({
         ...v05Base,
         permissions: ['files', 'files.external'],
-        externalRoots: [{ settingKey: 'wiki-root' }],
+        externalRoots: [{ settingKey: 'data-root' }],
       });
       expect(result.valid).toBe(false);
       expect(result.errors.some((e: string) => e.includes('root'))).toBe(true);

@@ -165,7 +165,7 @@ describe('Plugin API v0.5.0 canary tests', () => {
 
   it('api.files.forRoot throws in stub (no real external root)', () => {
     const api = createMockAPI();
-    expect(() => api.files.forRoot('wiki')).toThrow();
+    expect(() => api.files.forRoot('external')).toThrow();
   });
 
   it('api.files.forRoot can be overridden in mock', () => {
@@ -176,8 +176,8 @@ describe('Plugin API v0.5.0 canary tests', () => {
         forRoot: mockForRoot,
       },
     });
-    const extFiles = api.files.forRoot('wiki');
-    expect(mockForRoot).toHaveBeenCalledWith('wiki');
+    const extFiles = api.files.forRoot('external');
+    expect(mockForRoot).toHaveBeenCalledWith('external');
     expect(typeof extFiles.readFile).toBe('function');
   });
 
