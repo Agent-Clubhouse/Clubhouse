@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('electron', () => ({
   app: {
     getVersion: vi.fn(() => '1.0.0'),
+    getPath: vi.fn(() => '/tmp/clubhouse-test'),
     dock: { setBadge: vi.fn() },
     setBadgeCount: vi.fn(),
   },
