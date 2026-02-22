@@ -625,6 +625,7 @@ export function App() {
         </div>
       </div>
       <CommandPalette />
+      <QuickAgentDialog />
       <WhatsNewDialog />
       <OnboardingModal />
       <ConfigChangesDialog />
