@@ -59,6 +59,37 @@ function useAgentStateSync() {
     const removeExitListener = window.clubhouse.pty.onExit(
       (agentId: string, exitCode: number) => {
         useAgentStore.getState().updateAgentStatus(agentId, 'sleeping', exitCode);
+        // Allow re-detection on next wake
+        awokenAgents.delete(agentId);
+      },
+    );
+
+    // 4. Detect sleeping → running transitions via PTY data.
+    //    When an agent is woken from the main window, the pop-out's store still
+    //    shows 'sleeping'. Hook events may not arrive promptly (the agent might
+    //    be idle at a prompt). PTY data is a reliable signal that the process is
+    //    alive, so we use the first data event to transition the status.
+    const awokenAgents = new Set<string>();
+    const removeDataListener = window.clubhouse.pty.onData(
+      (agentId: string) => {
+        if (awokenAgents.has(agentId)) return;
+        const agent = useAgentStore.getState().agents[agentId];
+        if (!agent || agent.status === 'running') {
+          awokenAgents.add(agentId);
+          return;
+        }
+        awokenAgents.add(agentId);
+        useAgentStore.setState((s) => {
+          const a = s.agents[agentId];
+          if (!a || a.status === 'running') return s;
+          return {
+            agents: {
+              ...s.agents,
+              [agentId]: { ...a, status: 'running', exitCode: undefined, errorMessage: undefined },
+            },
+            agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+          };
+        });
       },
     );
 
@@ -66,6 +97,7 @@ function useAgentStateSync() {
       cancelled = true;
       removeHookListener();
       removeExitListener();
+      removeDataListener();
     };
   }, []);
 

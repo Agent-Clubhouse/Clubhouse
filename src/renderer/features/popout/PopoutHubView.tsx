@@ -4,6 +4,7 @@ import { SleepingAgent } from '../agents/SleepingAgent';
 import { AgentAvatarWithRing } from '../agents/AgentAvatar';
 import { QuickAgentGhost } from '../agents/QuickAgentGhost';
 import { useAgentStore } from '../../stores/agentStore';
+import { useProjectStore } from '../../stores/projectStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import type { AgentDetailedStatus } from '../../../shared/types';
 import type { PaneNode, LeafPane, SplitPane } from '../../plugins/builtin/hub/pane-tree';
@@ -61,6 +62,7 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
   const [error, setError] = useState<string | null>(null);
   const agentDetailedStatus = useAgentStore((s) => s.agentDetailedStatus);
   const agents = useAgentStore((s) => s.agents);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
   const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
   const completedAgents = useQuickAgentStore((s) => projectId ? (s.completedAgents[projectId] ?? EMPTY_COMPLETED) : EMPTY_COMPLETED);
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
@@ -87,6 +89,10 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
           projectPath = project.path;
         }
       }
+
+      // Populate the project store so SleepingAgent can resolve project paths
+      // (required for the wake-up button to work in pop-out windows).
+      await loadProjects();
 
       // Agent state is now synced from the main window by PopoutWindow.
       // We only need to load completed quick agents (localStorage-backed).
