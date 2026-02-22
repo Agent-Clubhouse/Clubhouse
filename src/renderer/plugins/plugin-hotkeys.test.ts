@@ -174,6 +174,45 @@ describe('pluginHotkeyRegistry', () => {
     });
   });
 
+  describe('snapshot stability (useSyncExternalStore)', () => {
+    it('returns the same reference from getAll() when no changes occur', () => {
+      pluginHotkeyRegistry.register('p', 'cmd', 'T', vi.fn(), 'Meta+X');
+
+      const snapshot1 = pluginHotkeyRegistry.getAll();
+      const snapshot2 = pluginHotkeyRegistry.getAll();
+
+      expect(snapshot1).toBe(snapshot2); // same reference, not just deep equal
+    });
+
+    it('returns a new reference from getAll() after a mutation', () => {
+      pluginHotkeyRegistry.register('p', 'cmd', 'T', vi.fn(), 'Meta+X');
+
+      const before = pluginHotkeyRegistry.getAll();
+      pluginHotkeyRegistry.setBinding('p:cmd', 'Meta+Y');
+      const after = pluginHotkeyRegistry.getAll();
+
+      expect(before).not.toBe(after);
+      expect(after[0].currentBinding).toBe('Meta+Y');
+    });
+
+    it('returns a new reference after register()', () => {
+      const snap1 = pluginHotkeyRegistry.getAll();
+      pluginHotkeyRegistry.register('p', 'cmd', 'T', vi.fn(), 'Meta+X');
+      const snap2 = pluginHotkeyRegistry.getAll();
+
+      expect(snap1).not.toBe(snap2);
+    });
+
+    it('returns a new reference after dispose()', () => {
+      const disposable = pluginHotkeyRegistry.register('p', 'cmd', 'T', vi.fn(), 'Meta+X');
+      const before = pluginHotkeyRegistry.getAll();
+      disposable.dispose();
+      const after = pluginHotkeyRegistry.getAll();
+
+      expect(before).not.toBe(after);
+    });
+  });
+
   describe('persistence', () => {
     it('saves overrides to localStorage', () => {
       pluginHotkeyRegistry.register('p', 'cmd', 'T', vi.fn(), 'Meta+X');

@@ -34,6 +34,8 @@ class PluginHotkeyRegistry {
   private shortcuts = new Map<string, PluginShortcut>();
   private overrides: PluginOverrides;
   private listeners = new Set<() => void>();
+  /** Cached snapshot for useSyncExternalStore — must return the same reference until data changes. */
+  private cachedSnapshot: PluginShortcut[] = [];
 
   constructor() {
     this.overrides = loadPluginOverrides();
@@ -145,9 +147,9 @@ class PluginHotkeyRegistry {
     return undefined;
   }
 
-  /** Get all registered plugin shortcuts. */
+  /** Get all registered plugin shortcuts (returns cached snapshot for useSyncExternalStore). */
   getAll(): PluginShortcut[] {
-    return Array.from(this.shortcuts.values());
+    return this.cachedSnapshot;
   }
 
   /** Get all shortcuts for a specific plugin. */
@@ -202,6 +204,7 @@ class PluginHotkeyRegistry {
   }
 
   private notifyListeners(): void {
+    this.cachedSnapshot = Array.from(this.shortcuts.values());
     for (const listener of this.listeners) {
       try { listener(); } catch { /* ignore */ }
     }
