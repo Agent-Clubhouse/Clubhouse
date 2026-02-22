@@ -461,6 +461,30 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS),
     saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean>; sourceControlProvider?: 'github' | 'azure-devops' }, projectPath?: string) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, settings, projectPath),
+    getSoundSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_SOUND_SETTINGS),
+    saveSoundSettings: (settings: {
+      activePack: string | null;
+      eventSettings: Record<string, { enabled: boolean; volume: number }>;
+      projectOverrides?: Record<string, { activePack?: string | null }>;
+    }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_SOUND_SETTINGS, settings),
+    listSoundPacks: (): Promise<Array<{
+      id: string;
+      name: string;
+      description?: string;
+      author?: string;
+      sounds: Record<string, string>;
+      source: 'user' | 'plugin';
+      pluginId?: string;
+    }>> =>
+      ipcRenderer.invoke(IPC.APP.LIST_SOUND_PACKS),
+    importSoundPack: () =>
+      ipcRenderer.invoke(IPC.APP.IMPORT_SOUND_PACK),
+    deleteSoundPack: (packId: string) =>
+      ipcRenderer.invoke(IPC.APP.DELETE_SOUND_PACK, packId),
+    getSoundData: (packId: string, event: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.APP.GET_SOUND_DATA, packId, event),
     onUpdateStatusChanged: (callback: (status: {
       state: string;
       availableVersion: string | null;

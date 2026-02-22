@@ -10,9 +10,10 @@ import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
 import * as clipboardSettings from '../services/clipboard-settings';
 import * as autoUpdateService from '../services/auto-update-service';
+import * as soundService from '../services/sound-service';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
-import { ClipboardSettings, ClubhouseModeSettings, UpdateSettings } from '../../shared/types';
+import { ClipboardSettings, ClubhouseModeSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
@@ -173,6 +174,31 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.LOG.GET_LOG_PATH, () => {
     return logService.getLogPath();
+  });
+
+  // --- Sound Packs ---
+  ipcMain.handle(IPC.APP.GET_SOUND_SETTINGS, () => {
+    return soundService.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_SOUND_SETTINGS, (_event, settings: SoundSettings) => {
+    soundService.saveSettings(settings);
+  });
+
+  ipcMain.handle(IPC.APP.LIST_SOUND_PACKS, () => {
+    return soundService.getAllSoundPacks();
+  });
+
+  ipcMain.handle(IPC.APP.IMPORT_SOUND_PACK, () => {
+    return soundService.importSoundPack();
+  });
+
+  ipcMain.handle(IPC.APP.DELETE_SOUND_PACK, (_event, packId: string) => {
+    return soundService.deleteSoundPack(packId);
+  });
+
+  ipcMain.handle(IPC.APP.GET_SOUND_DATA, (_event, packId: string, event: SoundEvent) => {
+    return soundService.getSoundData(packId, event);
   });
 
   // --- Clubhouse Mode ---

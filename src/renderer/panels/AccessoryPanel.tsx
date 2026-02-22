@@ -41,6 +41,7 @@ function SettingsCategoryNav() {
             {navButton('Agents', 'orchestrators')}
             {navButton('Display & UI', 'display')}
             {navButton('Notifications', 'notifications')}
+            {navButton('Sounds', 'sounds')}
             {navButton('Logging', 'logging')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Plugins', 'plugins')}
@@ -53,6 +54,7 @@ function SettingsCategoryNav() {
             {navButton('Project Settings', 'project')}
             {navButton('Agents', 'orchestrators')}
             {navButton('Notifications', 'notifications')}
+            {navButton('Sounds', 'sounds')}
             {navButton('Plugins', 'plugins')}
           </>
         )}

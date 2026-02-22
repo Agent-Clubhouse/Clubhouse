@@ -202,7 +202,48 @@ export interface NotificationSettings {
   playSound: boolean;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
+// ── Sound pack types ──────────────────────────────────────────────────
+
+export type SoundEvent = 'agent-done' | 'error' | 'permission' | 'notification';
+
+export const ALL_SOUND_EVENTS: readonly SoundEvent[] = [
+  'agent-done',
+  'error',
+  'permission',
+  'notification',
+] as const;
+
+export const SOUND_EVENT_LABELS: Record<SoundEvent, string> = {
+  'agent-done': 'Agent Finished',
+  'error': 'Error',
+  'permission': 'Permission Request',
+  'notification': 'General Notification',
+};
+
+export const SUPPORTED_SOUND_EXTENSIONS = ['.mp3', '.wav', '.ogg'] as const;
+
+export interface SoundPackInfo {
+  id: string;           // directory name
+  name: string;         // display name from manifest or directory name
+  description?: string;
+  author?: string;
+  sounds: Partial<Record<SoundEvent, string>>; // event → filename
+  source: 'user' | 'plugin';
+  pluginId?: string;    // set when source === 'plugin'
+}
+
+export interface SoundEventSettings {
+  enabled: boolean;
+  volume: number; // 0-100
+}
+
+export interface SoundSettings {
+  activePack: string | null; // pack id, null = built-in (OS default)
+  eventSettings: Record<SoundEvent, SoundEventSettings>;
+  projectOverrides?: Record<string, { activePack?: string | null }>;
+}
+
+export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
 
 // --- Annex (LAN monitoring) types ---
 

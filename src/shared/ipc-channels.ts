@@ -151,6 +151,12 @@ export const IPC = {
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
+    GET_SOUND_SETTINGS: 'app:get-sound-settings',
+    SAVE_SOUND_SETTINGS: 'app:save-sound-settings',
+    LIST_SOUND_PACKS: 'app:list-sound-packs',
+    IMPORT_SOUND_PACK: 'app:import-sound-pack',
+    DELETE_SOUND_PACK: 'app:delete-sound-pack',
+    GET_SOUND_DATA: 'app:get-sound-data',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
