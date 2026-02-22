@@ -175,7 +175,10 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
       Stop: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
       Notification: [{ matcher: '', hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
-      PermissionRequest: [{ hooks: [{ type: 'command', command: curlBase, async: true, timeout: 5 }] }],
+      // PermissionRequest uses a longer timeout (120s) so that the hook server
+      // can hold the response while waiting for a remote approval decision
+      // from the Annex iOS client.
+      PermissionRequest: [{ hooks: [{ type: 'command', command: curlBase, timeout: 120 }] }],
     };
 
     const claudeDir = path.join(cwd, '.claude');

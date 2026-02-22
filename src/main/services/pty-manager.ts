@@ -44,6 +44,11 @@ export function getBuffer(agentId: string): string {
   return session ? session.outputChunks.join('') : '';
 }
 
+/** Check whether an agent has an active PTY session. */
+export function isRunning(agentId: string): boolean {
+  return sessions.has(agentId);
+}
+
 function broadcastToAllWindows(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
