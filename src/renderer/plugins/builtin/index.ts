@@ -5,8 +5,6 @@ import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
 import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
-import { manifest as issuesManifest } from './issues/manifest';
-import * as issuesModule from './issues/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -25,7 +23,6 @@ export function getBuiltinPlugins(): BuiltinPlugin[] {
     { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
-    { manifest: issuesManifest, module: issuesModule },
   ];
 }
 

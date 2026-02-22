@@ -77,4 +77,4 @@ The allowed commands are declared in the manifest's `allowedCommands` array:
 
 In this example, the plugin can only execute the `gh` (GitHub CLI) command. Any attempt to run a command not in the `allowedCommands` list will be blocked.
 
-This is a safety mechanism: even if you trust a plugin enough to grant it the `process` permission, you can see at a glance which specific programs it will run. The Issues plugin, for instance, declares `["gh"]` because it needs the GitHub CLI to fetch and create issues, but it cannot run any other command.
+This is a safety mechanism: even if you trust a plugin enough to grant it the `process` permission, you can see at a glance which specific programs it will run.

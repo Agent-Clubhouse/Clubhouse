@@ -23,7 +23,6 @@ Clubhouse ships with several built-in plugins. Three of them (Hub, Terminal, and
 | **Hub** | Dual | Split-pane agent monitoring dashboard. Per-project view shows agents for a single project; cross-project view spans all projects. |
 | **Terminal** | Project | Interactive terminal emulator scoped to each project's root directory. |
 | **Files** | Project | File browser with a built-in Monaco editor, markdown preview, and image display. |
-| **Issues** | Project | Browse, view, and file GitHub issues for the current project using the `gh` CLI. |
 
 ## Plugin Trust Levels
 
