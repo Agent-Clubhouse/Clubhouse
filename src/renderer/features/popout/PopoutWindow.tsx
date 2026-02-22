@@ -32,7 +32,7 @@ export function PopoutWindow() {
         {params.type === 'agent' ? (
           <PopoutAgentView agentId={params.agentId} projectId={params.projectId} />
         ) : (
-          <PopoutHubView projectId={params.projectId} />
+          <PopoutHubView hubId={params.hubId} projectId={params.projectId} />
         )}
       </div>
     </div>

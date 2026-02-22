@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
-import { createHubStore } from './useHubStore';
+import { createHubStore, resetHubIdCounter, type HubInstanceData } from './useHubStore';
 import { resetPaneCounter, collectLeaves, type PaneNode, type LeafPane, type SplitPane } from './pane-tree';
 
 function createMockStorage(): ScopedStorage & { data: Map<string, unknown> } {
@@ -17,21 +17,26 @@ function createMockStorage(): ScopedStorage & { data: Map<string, unknown> } {
 describe('useHubStore', () => {
   beforeEach(() => {
     resetPaneCounter(0);
+    resetHubIdCounter(0);
   });
 
   // ── Initial state ─────────────────────────────────────────────────────
 
   describe('initial state', () => {
-    it('starts with a single leaf', () => {
+    it('starts with a single hub containing a single leaf', () => {
       const store = createHubStore('hub');
-      const { paneTree } = store.getState();
-      expect(paneTree.type).toBe('leaf');
+      expect(store.getState().hubs).toHaveLength(1);
+      expect(store.getState().hubs[0].paneTree.type).toBe('leaf');
     });
 
-    it('focusedPaneId matches the initial leaf', () => {
+    it('activeHubId matches the initial hub', () => {
       const store = createHubStore('hub');
-      const { paneTree, focusedPaneId } = store.getState();
-      expect(focusedPaneId).toBe(paneTree.id);
+      expect(store.getState().activeHubId).toBe(store.getState().hubs[0].id);
+    });
+
+    it('paneTree is synced from active hub', () => {
+      const store = createHubStore('hub');
+      expect(store.getState().paneTree).toBe(store.getState().hubs[0].paneTree);
     });
 
     it('loaded is false initially', () => {
@@ -49,7 +54,25 @@ describe('useHubStore', () => {
   // ── loadHub ───────────────────────────────────────────────────────────
 
   describe('loadHub', () => {
-    it('loads a valid tree from storage', async () => {
+    it('loads multi-hub instances from storage', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      const instances: HubInstanceData[] = [
+        { id: 'hub_inst_10', name: 'test-hub-1', paneTree: { type: 'leaf', id: 'hub_42', agentId: 'a1' } },
+        { id: 'hub_inst_11', name: 'test-hub-2', paneTree: { type: 'leaf', id: 'hub_43', agentId: 'a2' } },
+      ];
+      storage.data.set('hub-instances', instances);
+      storage.data.set('hub-active-id', 'hub_inst_11');
+
+      await store.getState().loadHub(storage, 'hub');
+
+      expect(store.getState().loaded).toBe(true);
+      expect(store.getState().hubs).toHaveLength(2);
+      expect(store.getState().activeHubId).toBe('hub_inst_11');
+      expect(store.getState().paneTree).toEqual({ type: 'leaf', id: 'hub_43', agentId: 'a2' });
+    });
+
+    it('migrates legacy single-tree format', async () => {
       const store = createHubStore('hub');
       const storage = createMockStorage();
       const savedTree: LeafPane = { type: 'leaf', id: 'hub_42', agentId: 'a1' };
@@ -58,32 +81,33 @@ describe('useHubStore', () => {
       await store.getState().loadHub(storage, 'hub');
 
       expect(store.getState().loaded).toBe(true);
-      expect(store.getState().paneTree).toEqual(savedTree);
-      expect(store.getState().focusedPaneId).toBe('hub_42');
+      expect(store.getState().hubs).toHaveLength(1);
+      expect(store.getState().hubs[0].paneTree).toEqual(savedTree);
     });
 
-    it('falls back to fresh leaf on null', async () => {
+    it('falls back to fresh hub on null', async () => {
       const store = createHubStore('hub');
       const storage = createMockStorage();
 
       await store.getState().loadHub(storage, 'hub');
 
       expect(store.getState().loaded).toBe(true);
-      expect(store.getState().paneTree.type).toBe('leaf');
+      expect(store.getState().hubs).toHaveLength(1);
+      expect(store.getState().hubs[0].paneTree.type).toBe('leaf');
     });
 
-    it('falls back to fresh leaf on invalid data', async () => {
+    it('falls back to fresh hub on invalid data', async () => {
       const store = createHubStore('hub');
       const storage = createMockStorage();
-      storage.data.set('hub-pane-tree', { type: 'bogus' });
+      storage.data.set('hub-instances', { type: 'bogus' });
 
       await store.getState().loadHub(storage, 'hub');
 
       expect(store.getState().loaded).toBe(true);
-      expect(store.getState().paneTree.type).toBe('leaf');
+      expect(store.getState().hubs).toHaveLength(1);
     });
 
-    it('falls back to fresh leaf on error', async () => {
+    it('falls back to fresh hub on error', async () => {
       const store = createHubStore('hub');
       const storage: ScopedStorage = {
         read: async () => { throw new Error('disk error'); },
@@ -95,21 +119,23 @@ describe('useHubStore', () => {
       await store.getState().loadHub(storage, 'hub');
 
       expect(store.getState().loaded).toBe(true);
-      expect(store.getState().paneTree.type).toBe('leaf');
+      expect(store.getState().hubs).toHaveLength(1);
     });
 
-    it('syncs counter to loaded tree', async () => {
+    it('syncs pane counter to loaded tree', async () => {
       resetPaneCounter(0);
       const store = createHubStore('hub');
       const storage = createMockStorage();
-      const savedTree: SplitPane = {
-        type: 'split', id: 'hub_20', direction: 'horizontal',
-        children: [
-          { type: 'leaf', id: 'hub_18', agentId: null },
-          { type: 'leaf', id: 'hub_19', agentId: null },
-        ],
-      };
-      storage.data.set('hub-pane-tree', savedTree);
+      const instances: HubInstanceData[] = [{
+        id: 'hub_inst_1', name: 'test', paneTree: {
+          type: 'split', id: 'hub_20', direction: 'horizontal',
+          children: [
+            { type: 'leaf', id: 'hub_18', agentId: null },
+            { type: 'leaf', id: 'hub_19', agentId: null },
+          ],
+        },
+      }];
+      storage.data.set('hub-instances', instances);
 
       await store.getState().loadHub(storage, 'hub');
 
@@ -119,30 +145,152 @@ describe('useHubStore', () => {
       const ids = leaves.map((l) => parseInt(l.id.split('_')[1], 10));
       expect(Math.max(...ids)).toBeGreaterThan(20);
     });
+
+    it('restores saved active hub id', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      const instances: HubInstanceData[] = [
+        { id: 'hub_inst_1', name: 'first', paneTree: { type: 'leaf', id: 'hub_1', agentId: null } },
+        { id: 'hub_inst_2', name: 'second', paneTree: { type: 'leaf', id: 'hub_2', agentId: null } },
+      ];
+      storage.data.set('hub-instances', instances);
+      storage.data.set('hub-active-id', 'hub_inst_2');
+
+      await store.getState().loadHub(storage, 'hub');
+
+      expect(store.getState().activeHubId).toBe('hub_inst_2');
+    });
+
+    it('falls back to first hub when saved active id is invalid', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      const instances: HubInstanceData[] = [
+        { id: 'hub_inst_1', name: 'first', paneTree: { type: 'leaf', id: 'hub_1', agentId: null } },
+      ];
+      storage.data.set('hub-instances', instances);
+      storage.data.set('hub-active-id', 'nonexistent');
+
+      await store.getState().loadHub(storage, 'hub');
+
+      expect(store.getState().activeHubId).toBe('hub_inst_1');
+    });
   });
 
   // ── saveHub ───────────────────────────────────────────────────────────
 
   describe('saveHub', () => {
-    it('writes to hub-pane-tree key', async () => {
+    it('writes hub instances and active id', async () => {
       const store = createHubStore('hub');
       const storage = createMockStorage();
 
       await store.getState().saveHub(storage);
 
-      expect(storage.data.has('hub-pane-tree')).toBe(true);
-      expect(storage.data.get('hub-pane-tree')).toEqual(store.getState().paneTree);
+      expect(storage.data.has('hub-instances')).toBe(true);
+      expect(storage.data.has('hub-active-id')).toBe(true);
+      const saved = storage.data.get('hub-instances') as HubInstanceData[];
+      expect(saved).toHaveLength(1);
+      expect(saved[0].paneTree).toEqual(store.getState().paneTree);
     });
   });
 
-  // ── Store actions ─────────────────────────────────────────────────────
+  // ── Hub management ─────────────────────────────────────────────────
+
+  describe('addHub', () => {
+    it('adds a new hub and activates it', () => {
+      const store = createHubStore('hub');
+      const firstId = store.getState().activeHubId;
+      const newId = store.getState().addHub('hub');
+      expect(store.getState().hubs).toHaveLength(2);
+      expect(store.getState().activeHubId).toBe(newId);
+      expect(newId).not.toBe(firstId);
+    });
+
+    it('new hub has a generated name', () => {
+      const store = createHubStore('hub');
+      store.getState().addHub('hub');
+      const newHub = store.getState().hubs[1];
+      expect(newHub.name).toMatch(/^[a-z]+-[a-z]+$/);
+    });
+  });
+
+  describe('removeHub', () => {
+    it('removes a hub and switches active', () => {
+      const store = createHubStore('hub');
+      store.getState().addHub('hub');
+      const first = store.getState().hubs[0];
+      const second = store.getState().hubs[1];
+      store.getState().removeHub(second.id, 'hub');
+      expect(store.getState().hubs).toHaveLength(1);
+      expect(store.getState().activeHubId).toBe(first.id);
+    });
+
+    it('resets when removing the last hub', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().hubs[0].id;
+      store.getState().removeHub(id, 'hub');
+      expect(store.getState().hubs).toHaveLength(1);
+      expect(store.getState().hubs[0].id).not.toBe(id);
+    });
+
+    it('keeps active if a different hub is removed', () => {
+      const store = createHubStore('hub');
+      const firstId = store.getState().hubs[0].id;
+      store.getState().addHub('hub');
+      store.getState().setActiveHub(firstId);
+      const secondId = store.getState().hubs[1].id;
+      store.getState().removeHub(secondId, 'hub');
+      expect(store.getState().activeHubId).toBe(firstId);
+    });
+  });
+
+  describe('renameHub', () => {
+    it('renames a hub', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().hubs[0].id;
+      store.getState().renameHub(id, 'my-custom-hub');
+      expect(store.getState().hubs[0].name).toBe('my-custom-hub');
+    });
+  });
+
+  describe('setActiveHub', () => {
+    it('switches the active hub', () => {
+      const store = createHubStore('hub');
+      store.getState().addHub('hub');
+      const first = store.getState().hubs[0];
+      store.getState().setActiveHub(first.id);
+      expect(store.getState().activeHubId).toBe(first.id);
+      expect(store.getState().paneTree).toBe(first.paneTree);
+    });
+
+    it('ignores invalid hub id', () => {
+      const store = createHubStore('hub');
+      const activeId = store.getState().activeHubId;
+      store.getState().setActiveHub('nonexistent');
+      expect(store.getState().activeHubId).toBe(activeId);
+    });
+  });
+
+  // ── Pane operations (scoped to active hub) ─────────────────────────
 
   describe('splitPane', () => {
-    it('splits a pane and increases leaf count', () => {
+    it('splits a pane in the active hub', () => {
       const store = createHubStore('hub');
       const id = store.getState().paneTree.id;
       store.getState().splitPane(id, 'horizontal', 'hub');
       expect(collectLeaves(store.getState().paneTree)).toHaveLength(2);
+    });
+
+    it('does not affect other hubs', () => {
+      const store = createHubStore('hub');
+      const firstHubId = store.getState().hubs[0].id;
+      store.getState().addHub('hub');
+      // Active is now the second hub
+      const paneId = store.getState().paneTree.id;
+      store.getState().splitPane(paneId, 'horizontal', 'hub');
+
+      // Switch back to first hub
+      store.getState().setActiveHub(firstHubId);
+      expect(collectLeaves(store.getState().paneTree)).toHaveLength(1);
     });
   });
 
@@ -160,7 +308,6 @@ describe('useHubStore', () => {
       const id = store.getState().paneTree.id;
       store.getState().splitPane(id, 'horizontal', 'hub');
       const leaves = collectLeaves(store.getState().paneTree);
-      // Focus the first leaf, then close it
       store.getState().setFocusedPane(leaves[0].id);
       store.getState().closePane(leaves[0].id, 'hub');
       expect(store.getState().focusedPaneId).toBe(leaves[1].id);
@@ -205,22 +352,39 @@ describe('useHubStore', () => {
   });
 
   describe('validateAgents', () => {
-    it('clears unknown agents from tree', () => {
+    it('clears unknown agents from all hubs', () => {
       const store = createHubStore('hub');
-      const id = store.getState().paneTree.id;
-      store.getState().assignAgent(id, 'agent-1');
+      const id1 = store.getState().paneTree.id;
+      store.getState().assignAgent(id1, 'agent-1');
+
+      store.getState().addHub('hub');
+      const id2 = store.getState().paneTree.id;
+      store.getState().assignAgent(id2, 'agent-1');
+
       store.getState().validateAgents(new Set(['agent-2']));
-      expect((store.getState().paneTree as LeafPane).agentId).toBeNull();
+
+      // Both hubs should have agent cleared
+      for (const hub of store.getState().hubs) {
+        expect((hub.paneTree as LeafPane).agentId).toBeNull();
+      }
     });
   });
 
   describe('removePanesByAgent', () => {
-    it('clears matching agent from all panes', () => {
+    it('clears matching agent from all hubs', () => {
       const store = createHubStore('hub');
-      const id = store.getState().paneTree.id;
-      store.getState().assignAgent(id, 'agent-1');
+      const id1 = store.getState().paneTree.id;
+      store.getState().assignAgent(id1, 'agent-1');
+
+      store.getState().addHub('hub');
+      const id2 = store.getState().paneTree.id;
+      store.getState().assignAgent(id2, 'agent-1');
+
       store.getState().removePanesByAgent('agent-1');
-      expect((store.getState().paneTree as LeafPane).agentId).toBeNull();
+
+      for (const hub of store.getState().hubs) {
+        expect((hub.paneTree as LeafPane).agentId).toBeNull();
+      }
     });
   });
 
@@ -298,25 +462,34 @@ describe('useHubStore', () => {
   // ── Round-trip persistence ────────────────────────────────────────────
 
   describe('round-trip', () => {
-    it('load → split → assign → save → new store load → verify', async () => {
+    it('load → add hub → split → assign → save → new store load → verify', async () => {
       const storage = createMockStorage();
       const store1 = createHubStore('hub');
 
-      // Load fresh, split, assign
       await store1.getState().loadHub(storage, 'hub');
+
+      // Add a second hub
+      store1.getState().addHub('hub');
+      const hub2Id = store1.getState().activeHubId;
+
+      // Split and assign in second hub
       const rootId = store1.getState().paneTree.id;
       store1.getState().splitPane(rootId, 'horizontal', 'hub');
-      const leaves1 = collectLeaves(store1.getState().paneTree);
-      store1.getState().assignAgent(leaves1[0].id, 'agent-1', 'proj-1');
-      store1.getState().assignAgent(leaves1[1].id, 'agent-2', 'proj-2');
+      const leaves = collectLeaves(store1.getState().paneTree);
+      store1.getState().assignAgent(leaves[0].id, 'agent-1', 'proj-1');
+      store1.getState().assignAgent(leaves[1].id, 'agent-2', 'proj-2');
 
       // Save
       await store1.getState().saveHub(storage);
 
       // Load into a new store
       resetPaneCounter(0);
+      resetHubIdCounter(0);
       const store2 = createHubStore('hub');
       await store2.getState().loadHub(storage, 'hub');
+
+      expect(store2.getState().hubs).toHaveLength(2);
+      expect(store2.getState().activeHubId).toBe(hub2Id);
 
       const leaves2 = collectLeaves(store2.getState().paneTree);
       expect(leaves2).toHaveLength(2);
@@ -324,6 +497,24 @@ describe('useHubStore', () => {
       expect(leaves2[0].projectId).toBe('proj-1');
       expect(leaves2[1].agentId).toBe('agent-2');
       expect(leaves2[1].projectId).toBe('proj-2');
+    });
+  });
+
+  // ── Agents in multiple hubs ─────────────────────────────────────────
+
+  describe('agents across hubs', () => {
+    it('same agent can appear in multiple hubs', () => {
+      const store = createHubStore('hub');
+      const firstPaneId = store.getState().paneTree.id;
+      store.getState().assignAgent(firstPaneId, 'agent-1');
+
+      store.getState().addHub('hub');
+      const secondPaneId = store.getState().paneTree.id;
+      store.getState().assignAgent(secondPaneId, 'agent-1');
+
+      // Both hubs should have agent-1
+      expect((store.getState().hubs[0].paneTree as LeafPane).agentId).toBe('agent-1');
+      expect((store.getState().hubs[1].paneTree as LeafPane).agentId).toBe('agent-1');
     });
   });
 });

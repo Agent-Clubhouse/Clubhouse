@@ -24,6 +24,21 @@ const ANIMALS = [
   'pika', 'slug', 'snail', 'squid', 'stork', 'trout', 'boar', 'camel', 'egret', 'llama',
 ];
 
+// Hub names — evocative places / spaces
+const HUB_ADJECTIVES = [
+  'peaceful', 'busy', 'bustling', 'ancient', 'astral', 'quiet', 'hidden', 'sunlit', 'moonlit', 'starlit',
+  'misty', 'golden', 'silver', 'crystal', 'mossy', 'coral', 'amber', 'cobalt', 'ivory', 'jade',
+  'dusty', 'lofty', 'cozy', 'rustic', 'coastal', 'alpine', 'twilight', 'velvet', 'copper', 'frozen',
+  'verdant', 'marble', 'hollow', 'winding', 'shadowy', 'radiant', 'serene', 'vibrant', 'timeless', 'drifting',
+];
+
+const HUB_PLACES = [
+  'meadow', 'market', 'depot', 'orchard', 'studio', 'harbor', 'garden', 'plaza', 'tower', 'grove',
+  'canyon', 'summit', 'lagoon', 'terrace', 'chapel', 'bastion', 'citadel', 'forge', 'haven', 'oasis',
+  'arcade', 'atrium', 'bridge', 'canopy', 'cellar', 'docks', 'gallery', 'gatehouse', 'landing', 'loft',
+  'outpost', 'parlor', 'quarry', 'rampart', 'reef', 'sanctum', 'tavern', 'vault', 'wharf', 'workshop',
+];
+
 // Quick agent names — ephemeral / fleeting nature
 const QUICK_ADJECTIVES = [
   'flash', 'spark', 'drift', 'wisp', 'flick', 'blink', 'glint', 'ghost', 'shadow', 'vapor',
@@ -43,6 +58,10 @@ function pick<T>(arr: T[]): T {
 
 export function generateDurableName(): string {
   return `${pick(ADJECTIVES)}-${pick(ANIMALS)}`;
+}
+
+export function generateHubName(): string {
+  return `${pick(HUB_ADJECTIVES)}-${pick(HUB_PLACES)}`;
 }
 
 export function generateQuickName(): string {

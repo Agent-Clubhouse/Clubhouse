@@ -10,6 +10,7 @@ declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
 export interface PopoutParams {
   type: 'agent' | 'hub';
   agentId?: string;
+  hubId?: string;
   projectId?: string;
   title?: string;
 }
@@ -39,6 +40,7 @@ export function registerWindowHandlers(): void {
       `--popout-type=${params.type}`,
     ];
     if (params.agentId) additionalArguments.push(`--popout-agent-id=${params.agentId}`);
+    if (params.hubId) additionalArguments.push(`--popout-hub-id=${params.hubId}`);
     if (params.projectId) additionalArguments.push(`--popout-project-id=${params.projectId}`);
 
     const win = new BrowserWindow({
