@@ -154,7 +154,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         // Try new multi-hub format first
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as HubInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
-          const hubs: HubInstance[] = savedInstances.map((s) => {
+          const hubs: HubInstance[] = savedInstances.map((s): HubInstance => {
             syncCounterToTree(s.paneTree);
             return {
               id: s.id,
