@@ -1,17 +1,14 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import { appLog } from '../services/log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(IPC.ANNEX.STATUS_CHANGED, status);
-    }
-  }
+  broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, status);
 }
 
 export function registerAnnexHandlers(): void {

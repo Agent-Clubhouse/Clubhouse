@@ -1,12 +1,13 @@
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
 import { parseTranscript, TranscriptSummary } from './transcript-parser';
 import { getShellEnvironment } from '../util/shell';
 import { appLog } from './log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 
 /**
@@ -39,11 +40,6 @@ function ensureLogsDir(): void {
   if (!fs.existsSync(LOGS_DIR)) {
     fs.mkdirSync(LOGS_DIR, { recursive: true });
   }
-}
-
-function getMainWindow(): BrowserWindow | null {
-  const windows = BrowserWindow.getAllWindows();
-  return windows[0] || null;
 }
 
 export function isHeadless(agentId: string): boolean {
@@ -142,27 +138,19 @@ export function spawnHeadless(
 
       // Emit hook events to renderer for status tracking
       const hookEvents = mapToHookEvent(event, activeToolBlocks);
-      if (hookEvents.length > 0) {
-        const win = getMainWindow();
-        if (win && !win.isDestroyed()) {
-          for (const hookEvent of hookEvents) {
-            win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-          }
-        }
+      for (const hookEvent of hookEvents) {
+        broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
       }
     });
   }
 
   // Emit initial notification for text mode so HeadlessAgentView shows activity
   if (outputKind === 'text') {
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
-        kind: 'notification',
-        message: 'Agent running (text output — live events unavailable)',
-        timestamp: Date.now(),
-      });
-    }
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
+      kind: 'notification',
+      message: 'Agent running (text output — live events unavailable)',
+      timestamp: Date.now(),
+    });
   }
 
   proc.stdout?.on('data', (chunk: Buffer) => {
@@ -187,14 +175,11 @@ export function spawnHeadless(
     appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
 
     // Forward stderr to renderer so headless view can show errors
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
-        kind: 'notification',
-        message: msg,
-        timestamp: Date.now(),
-      });
-    }
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
+      kind: 'notification',
+      message: msg,
+      timestamp: Date.now(),
+    });
   });
 
   proc.on('close', (code) => {
@@ -213,14 +198,11 @@ export function spawnHeadless(
       transcript.push(resultEvent);
       logStream.write(JSON.stringify(resultEvent) + '\n');
 
-      const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send(IPC.AGENT.HOOK_EVENT, agentId, {
-          kind: 'stop',
-          message: session.textBuffer.trim().slice(0, 500),
-          timestamp: Date.now(),
-        });
-      }
+      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
+        kind: 'stop',
+        message: session.textBuffer.trim().slice(0, 500),
+        timestamp: Date.now(),
+      });
     }
 
     logStream.end();
@@ -232,10 +214,7 @@ export function spawnHeadless(
 
     onExit?.(agentId, code ?? 0);
 
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.EXIT, agentId, code ?? 0);
-    }
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, code ?? 0);
   });
 
   proc.on('error', (err) => {
@@ -243,10 +222,7 @@ export function spawnHeadless(
     logStream.end();
     sessions.delete(agentId);
 
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC.PTY.EXIT, agentId, 1);
-    }
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
   });
 }
 

@@ -1,22 +1,14 @@
 import * as http from 'http';
-import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
 import { appLog } from './log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as permissionQueue from './annex-permission-queue';
 
 let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;
-
-function broadcastToAllWindows(channel: string, ...args: unknown[]): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(channel, ...args);
-    }
-  }
-}
 
 export function getPort(): number {
   return serverPort;

@@ -1,8 +1,8 @@
 import * as pty from 'node-pty';
-import { BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment, getDefaultShell } from '../util/shell';
 import { appLog } from './log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 
 interface ManagedSession {
@@ -47,14 +47,6 @@ export function getBuffer(agentId: string): string {
 /** Check whether an agent has an active PTY session. */
 export function isRunning(agentId: string): boolean {
   return sessions.has(agentId);
-}
-
-function broadcastToAllWindows(channel: string, ...args: unknown[]): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send(channel, ...args);
-    }
-  }
 }
 
 function cleanupSession(agentId: string): void {
