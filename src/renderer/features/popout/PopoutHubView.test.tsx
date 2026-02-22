@@ -50,12 +50,14 @@ vi.mock('../../stores/projectStore', () => ({
 }));
 
 let mockCompletedAgents: Record<string, any[]> = {};
+const mockLoadCompleted = vi.fn();
+const mockDismissCompleted = vi.fn();
 
 vi.mock('../../stores/quickAgentStore', () => ({
   useQuickAgentStore: (selector: (s: any) => any) => selector({
-    loadCompleted: vi.fn(),
+    loadCompleted: mockLoadCompleted,
     completedAgents: mockCompletedAgents,
-    dismissCompleted: vi.fn(),
+    dismissCompleted: mockDismissCompleted,
   }),
 }));
 
@@ -130,6 +132,8 @@ describe('PopoutHubView', () => {
     mockDetailedStatuses = {};
     mockCompletedAgents = {};
     mockLoadProjects.mockClear();
+    mockLoadCompleted.mockClear();
+    mockDismissCompleted.mockClear();
 
     window.clubhouse.pty.onExit = vi.fn().mockReturnValue(noop);
     window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(noop);
@@ -319,7 +323,7 @@ describe('PopoutHubView', () => {
     await screen.findByText('Assign an agent');
 
     // Simulate hub state change from main window
-    act(() => {
+    await act(async () => {
       for (const listener of hubStateListeners) {
         listener({
           hubId: 'hub-1',
@@ -330,7 +334,9 @@ describe('PopoutHubView', () => {
       }
     });
 
-    expect(await screen.findByTestId('agent-terminal-agent-1')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-terminal-agent-1')).toBeInTheDocument();
+    });
   });
 
   it('ignores hub state changes for different hub IDs', async () => {
