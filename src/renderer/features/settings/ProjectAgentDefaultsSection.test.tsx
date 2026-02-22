@@ -138,6 +138,81 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
+  describe('source control provider', () => {
+    it('renders the source control provider dropdown when expanded', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      expect(await screen.findByText('Source Control Provider')).toBeInTheDocument();
+    });
+
+    it('defaults to GitHub', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      await screen.findByText('Source Control Provider');
+
+      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      expect(select).toBeInTheDocument();
+    });
+
+    it('loads azure-devops from saved defaults', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
+        instructions: 'test',
+        sourceControlProvider: 'azure-devops',
+      });
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Azure DevOps (az CLI)')).toBeInTheDocument();
+      });
+    });
+
+    it('marks dirty when provider changes', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      await screen.findByText('Source Control Provider');
+
+      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      fireEvent.change(select, { target: { value: 'azure-devops' } });
+
+      expect(screen.getByText('Save Defaults')).not.toBeDisabled();
+    });
+
+    it('saves sourceControlProvider when non-default', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      await screen.findByText('Source Control Provider');
+
+      const select = screen.getByDisplayValue('GitHub (gh CLI)');
+      fireEvent.change(select, { target: { value: 'azure-devops' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+          '/project',
+          expect.objectContaining({
+            sourceControlProvider: 'azure-devops',
+          }),
+        );
+      });
+    });
+
+    it('omits sourceControlProvider when set to github (default)', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Default Agent Settings'));
+      await screen.findByText('Default Instructions');
+
+      // Change instructions to enable save
+      const textarea = screen.getByDisplayValue('Default instructions');
+      fireEvent.change(textarea, { target: { value: 'Changed' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(call[1].sourceControlProvider).toBeUndefined();
+      });
+    });
+  });
+
   describe('loading states', () => {
     it('returns null before loading completes', () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockReturnValue(new Promise(() => {}));
