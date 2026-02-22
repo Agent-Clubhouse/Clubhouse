@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPluginAPI, _resetEnforcedViolations } from './plugin-api-factory';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
+import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { usePluginStore } from './plugin-store';
 import { useAgentStore } from '../stores/agentStore';
 import { useUIStore } from '../stores/uiStore';
@@ -57,6 +58,23 @@ const mockProcess = {
   exec: vi.fn(),
 };
 
+const mockWindow = {
+  createPopout: vi.fn(),
+};
+
+const mockAgentSettings = {
+  readProjectAgentDefaults: vi.fn().mockResolvedValue({}),
+  writeProjectAgentDefaults: vi.fn().mockResolvedValue(undefined),
+  writeSourceSkillContent: vi.fn().mockResolvedValue(undefined),
+  deleteSourceSkill: vi.fn().mockResolvedValue(undefined),
+  writeSourceAgentTemplateContent: vi.fn().mockResolvedValue(undefined),
+  deleteSourceAgentTemplate: vi.fn().mockResolvedValue(undefined),
+};
+
+const mockApp = {
+  openExternalUrl: vi.fn(),
+};
+
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
@@ -67,6 +85,9 @@ Object.defineProperty(globalThis, 'window', {
       pty: mockPty,
       log: mockLog,
       process: mockProcess,
+      window: mockWindow,
+      agentSettings: mockAgentSettings,
+      app: mockApp,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -106,6 +127,7 @@ describe('plugin-api-factory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     pluginCommandRegistry.clear();
+    pluginHotkeyRegistry.clear();
     pluginEventBus.clear();
     usePluginStore.setState({
       plugins: {},
@@ -702,6 +724,333 @@ describe('plugin-api-factory', () => {
       expect(useAgentStore.getState().activeAgentId).toBe('a1');
       api.navigation.focusAgent('a2');
       expect(useAgentStore.getState().activeAgentId).toBe('a2');
+    });
+
+    it('popOutAgent calls window.createPopout with correct params', async () => {
+      useAgentStore.setState({
+        agents: {
+          'agent-1': { id: 'agent-1', name: 'TestAgent', projectId: 'proj-1', kind: 'durable', status: 'running', color: 'blue' },
+        } as Record<string, import('../../shared/types').Agent>,
+      });
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      await api.navigation.popOutAgent('agent-1');
+      expect(mockWindow.createPopout).toHaveBeenCalledWith({
+        type: 'agent',
+        agentId: 'agent-1',
+        projectId: 'proj-1',
+        title: 'TestAgent',
+      });
+    });
+
+    it('toggleSidebar does not throw', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      expect(() => api.navigation.toggleSidebar()).not.toThrow();
+    });
+
+    it('toggleAccessoryPanel does not throw', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      expect(() => api.navigation.toggleAccessoryPanel()).not.toThrow();
+    });
+  });
+
+  // ── Commands with Hotkeys (v0.6) ────────────────────────────────────
+
+  describe('commands.registerWithHotkey (v0.6)', () => {
+    let api: PluginAPI;
+
+    beforeEach(() => {
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+    });
+
+    it('registers both command and hotkey', () => {
+      const handler = vi.fn();
+      api.commands.registerWithHotkey('my-cmd', 'My Command', handler, 'Meta+Shift+M');
+
+      expect(pluginCommandRegistry.has('test-plugin:my-cmd')).toBe(true);
+      expect(pluginHotkeyRegistry.getBinding('test-plugin', 'my-cmd')).toBe('Meta+Shift+M');
+    });
+
+    it('dispose removes both command and hotkey', () => {
+      const handler = vi.fn();
+      const d = api.commands.registerWithHotkey('my-cmd', 'My Command', handler, 'Meta+Shift+M');
+
+      d.dispose();
+
+      expect(pluginCommandRegistry.has('test-plugin:my-cmd')).toBe(false);
+      expect(pluginHotkeyRegistry.getBinding('test-plugin', 'my-cmd')).toBeNull();
+    });
+
+    it('getBinding returns the current binding', () => {
+      api.commands.registerWithHotkey('cmd', 'T', vi.fn(), 'Meta+L');
+      expect(api.commands.getBinding('cmd')).toBe('Meta+L');
+    });
+
+    it('getBinding returns null for unknown command', () => {
+      expect(api.commands.getBinding('nonexistent')).toBeNull();
+    });
+
+    it('clearBinding removes the binding', () => {
+      api.commands.registerWithHotkey('cmd', 'T', vi.fn(), 'Meta+L');
+      api.commands.clearBinding('cmd');
+      expect(api.commands.getBinding('cmd')).toBeNull();
+    });
+  });
+
+  // ── AgentConfigAPI (v0.6) ──────────────────────────────────────────
+
+  describe('agentConfig API (v0.6)', () => {
+    let api: PluginAPI;
+
+    beforeEach(() => {
+      api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({});
+      mockAgentSettings.writeProjectAgentDefaults.mockResolvedValue(undefined);
+      mockAgentSettings.writeSourceSkillContent.mockResolvedValue(undefined);
+      mockAgentSettings.deleteSourceSkill.mockResolvedValue(undefined);
+      mockPlugin.storageRead.mockResolvedValue(null);
+      mockPlugin.storageWrite.mockResolvedValue(undefined);
+      mockPlugin.storageList.mockResolvedValue([]);
+    });
+
+    describe('skills', () => {
+      it('injectSkill writes to source skills with plugin prefix', async () => {
+        await api.agentConfig.injectSkill('lint', '# Lint\nRun linting');
+        expect(mockAgentSettings.writeSourceSkillContent).toHaveBeenCalledWith(
+          '/projects/my-project',
+          'plugin-test-plugin-lint',
+          '# Lint\nRun linting',
+        );
+      });
+
+      it('injectSkill tracks injected skills in storage', async () => {
+        await api.agentConfig.injectSkill('lint', '# Lint');
+        expect(mockPlugin.storageWrite).toHaveBeenCalledWith(
+          expect.objectContaining({
+            key: 'injected-skills',
+            value: ['plugin-test-plugin-lint'],
+          }),
+        );
+      });
+
+      it('removeSkill deletes the source skill', async () => {
+        await api.agentConfig.removeSkill('lint');
+        expect(mockAgentSettings.deleteSourceSkill).toHaveBeenCalledWith(
+          '/projects/my-project',
+          'plugin-test-plugin-lint',
+        );
+      });
+
+      it('listInjectedSkills returns names without prefix', async () => {
+        mockPlugin.storageRead.mockResolvedValue(['plugin-test-plugin-lint', 'plugin-test-plugin-test']);
+        const skills = await api.agentConfig.listInjectedSkills();
+        expect(skills).toEqual(['lint', 'test']);
+      });
+    });
+
+    describe('agent templates', () => {
+      it('injectAgentTemplate writes to source agent templates', async () => {
+        await api.agentConfig.injectAgentTemplate('reviewer', '# Reviewer agent');
+        expect(mockAgentSettings.writeSourceAgentTemplateContent).toHaveBeenCalledWith(
+          '/projects/my-project',
+          'plugin-test-plugin-reviewer',
+          '# Reviewer agent',
+        );
+      });
+
+      it('removeAgentTemplate deletes the source agent template', async () => {
+        await api.agentConfig.removeAgentTemplate('reviewer');
+        expect(mockAgentSettings.deleteSourceAgentTemplate).toHaveBeenCalledWith(
+          '/projects/my-project',
+          'plugin-test-plugin-reviewer',
+        );
+      });
+    });
+
+    describe('instructions', () => {
+      it('appendInstructions adds plugin block with markers', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base instructions',
+        });
+
+        await api.agentConfig.appendInstructions('Plugin extra content');
+
+        expect(mockAgentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+          '/projects/my-project',
+          expect.objectContaining({
+            instructions: expect.stringContaining('Plugin extra content'),
+          }),
+        );
+        // Check markers
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const instructions = call[1].instructions;
+        expect(instructions).toContain('<!-- plugin:test-plugin:start -->');
+        expect(instructions).toContain('<!-- plugin:test-plugin:end -->');
+        expect(instructions).toContain('Base instructions');
+      });
+
+      it('appendInstructions replaces existing plugin block', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nOld content\n<!-- plugin:test-plugin:end -->',
+        });
+
+        await api.agentConfig.appendInstructions('New content');
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const instructions = call[1].instructions;
+        expect(instructions).not.toContain('Old content');
+        expect(instructions).toContain('New content');
+      });
+
+      it('removeInstructionAppend removes the plugin block', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nContent\n<!-- plugin:test-plugin:end -->',
+        });
+
+        await api.agentConfig.removeInstructionAppend();
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const instructions = call[1].instructions;
+        expect(instructions).not.toContain('<!-- plugin:test-plugin:start -->');
+        expect(instructions).toBe('Base');
+      });
+
+      it('getInstructionAppend returns the appended content', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base\n\n<!-- plugin:test-plugin:start -->\nExtra\n<!-- plugin:test-plugin:end -->',
+        });
+
+        const result = await api.agentConfig.getInstructionAppend();
+        expect(result).toBe('Extra');
+      });
+
+      it('getInstructionAppend returns null when no block exists', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          instructions: 'Base only',
+        });
+
+        const result = await api.agentConfig.getInstructionAppend();
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('permissions (elevated)', () => {
+      it('addPermissionAllowRules tags rules with plugin id', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          permissions: { allow: ['Read(**)'], deny: [] },
+        });
+
+        await api.agentConfig.addPermissionAllowRules(['Write(**)', 'Edit(**)']);
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const perms = call[1].permissions;
+        expect(perms.allow).toContain('Read(**)');
+        expect(perms.allow).toContain('Write(**) /* plugin:test-plugin */');
+        expect(perms.allow).toContain('Edit(**) /* plugin:test-plugin */');
+      });
+
+      it('addPermissionDenyRules tags rules with plugin id', async () => {
+        await api.agentConfig.addPermissionDenyRules(['Bash(rm:*)']);
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const perms = call[1].permissions;
+        expect(perms.deny).toContain('Bash(rm:*) /* plugin:test-plugin */');
+      });
+
+      it('removePermissionRules removes only tagged rules', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          permissions: {
+            allow: ['Read(**)', 'Write(**) /* plugin:test-plugin */'],
+            deny: ['Bash(rm:*) /* plugin:test-plugin */'],
+          },
+        });
+
+        await api.agentConfig.removePermissionRules();
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const perms = call[1].permissions;
+        expect(perms.allow).toEqual(['Read(**)']);
+        expect(perms.deny).toEqual([]);
+      });
+
+      it('getPermissionRules returns only tagged rules', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          permissions: {
+            allow: ['Read(**)', 'Write(**) /* plugin:test-plugin */'],
+            deny: ['Bash(rm:*) /* plugin:test-plugin */'],
+          },
+        });
+
+        const result = await api.agentConfig.getPermissionRules();
+        expect(result.allow).toEqual(['Write(**)']);
+        expect(result.deny).toEqual(['Bash(rm:*)']);
+      });
+
+      it('permission methods denied without agent-config.permissions', () => {
+        const manifest = makeAllPermsManifest({
+          permissions: ['agent-config'], // no agent-config.permissions
+        });
+        const limited = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(() => limited.agentConfig.addPermissionAllowRules(['x'])).toThrow();
+      });
+    });
+
+    describe('MCP (elevated)', () => {
+      it('injectMcpServers merges into project defaults mcpJson', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          mcpJson: '{"mcpServers":{"existing":{"command":"node"}}}',
+        });
+
+        await api.agentConfig.injectMcpServers({
+          'my-server': { command: 'python', args: ['server.py'] },
+        });
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const mcpConfig = JSON.parse(call[1].mcpJson);
+        expect(mcpConfig.mcpServers['existing']).toBeDefined();
+        expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toEqual({
+          command: 'python',
+          args: ['server.py'],
+        });
+      });
+
+      it('removeMcpServers removes only plugin-prefixed servers', async () => {
+        mockAgentSettings.readProjectAgentDefaults.mockResolvedValue({
+          mcpJson: '{"mcpServers":{"existing":{"command":"node"},"plugin-test-plugin-my-server":{"command":"python"}}}',
+        });
+
+        await api.agentConfig.removeMcpServers();
+
+        const call = mockAgentSettings.writeProjectAgentDefaults.mock.calls[0];
+        const mcpConfig = JSON.parse(call[1].mcpJson);
+        expect(mcpConfig.mcpServers['existing']).toBeDefined();
+        expect(mcpConfig.mcpServers['plugin-test-plugin-my-server']).toBeUndefined();
+      });
+
+      it('getInjectedMcpServers returns stored data', async () => {
+        mockPlugin.storageRead.mockResolvedValue({ 'my-server': { command: 'python' } });
+        const result = await api.agentConfig.getInjectedMcpServers();
+        expect(result).toEqual({ 'my-server': { command: 'python' } });
+      });
+
+      it('MCP methods denied without agent-config.mcp', () => {
+        const manifest = makeAllPermsManifest({
+          permissions: ['agent-config'], // no agent-config.mcp
+        });
+        const limited = createPluginAPI(makeCtx(), undefined, manifest);
+        expect(() => limited.agentConfig.injectMcpServers({})).toThrow();
+      });
+    });
+
+    describe('scope gating', () => {
+      it('agentConfig unavailable for app-scoped plugins', () => {
+        const manifest = makeAllPermsManifest({ scope: 'app' });
+        const api = createPluginAPI(
+          makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }),
+          undefined,
+          manifest,
+        );
+        expect(() => api.agentConfig.injectSkill('x', 'y')).toThrow(/not available/);
+      });
     });
   });
 

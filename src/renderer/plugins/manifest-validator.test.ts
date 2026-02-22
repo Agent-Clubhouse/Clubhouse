@@ -532,4 +532,168 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
   });
+
+  // --- v0.6 validation ---
+
+  describe('v0.6 API version', () => {
+    const v06Base = {
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.6 },
+      scope: 'project' as const,
+      permissions: ['commands'],
+      contributes: { help: {} },
+    };
+
+    it('0.6 is in SUPPORTED_API_VERSIONS', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.6);
+    });
+
+    it('accepts v0.6 manifest', () => {
+      const result = validateManifest(v06Base);
+      expect(result.valid).toBe(true);
+    });
+
+    it('v0.5 manifests still work', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.5 },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts commands with defaultBinding on v0.6', () => {
+      const result = validateManifest({
+        ...v06Base,
+        contributes: {
+          help: {},
+          commands: [
+            { id: 'run', title: 'Run', defaultBinding: 'Meta+Shift+R' },
+          ],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects defaultBinding on v0.5', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.5 },
+        permissions: ['commands'],
+        contributes: {
+          help: {},
+          commands: [
+            { id: 'run', title: 'Run', defaultBinding: 'Meta+Shift+R' },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires API >= 0.6');
+    });
+
+    it('rejects non-string defaultBinding', () => {
+      const result = validateManifest({
+        ...v06Base,
+        contributes: {
+          help: {},
+          commands: [
+            { id: 'run', title: 'Run', defaultBinding: 42 },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('defaultBinding must be a string');
+    });
+
+    it('rejects non-boolean global flag', () => {
+      const result = validateManifest({
+        ...v06Base,
+        contributes: {
+          help: {},
+          commands: [
+            { id: 'run', title: 'Run', global: 'yes' },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('global must be a boolean');
+    });
+
+    it('accepts boolean global flag', () => {
+      const result = validateManifest({
+        ...v06Base,
+        contributes: {
+          help: {},
+          commands: [
+            { id: 'run', title: 'Run', global: true },
+          ],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  // --- v0.6 agent-config permission validation ---
+
+  describe('v0.6 agent-config permissions', () => {
+    const v06Base = {
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.6 },
+      scope: 'project' as const,
+      contributes: { help: {} },
+    };
+
+    it('accepts agent-config permission', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts agent-config with agent-config.permissions', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config', 'agent-config.permissions'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts agent-config with agent-config.mcp', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config', 'agent-config.mcp'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects agent-config.permissions without base agent-config', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config.permissions'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires the base "agent-config" permission');
+    });
+
+    it('rejects agent-config.mcp without base agent-config', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config.mcp'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]).toContain('requires the base "agent-config" permission');
+    });
+
+    it('accepts all three agent-config permissions together', () => {
+      const result = validateManifest({
+        ...v06Base,
+        permissions: ['agent-config', 'agent-config.permissions', 'agent-config.mcp'],
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
 });
