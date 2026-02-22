@@ -487,4 +487,21 @@ export interface DeleteResult {
   message: string;
 }
 
+// ── Hub state sync (main window ↔ pop-out windows) ────────────────────
+
+export type HubMutation =
+  | { type: 'split'; paneId: string; direction: 'horizontal' | 'vertical'; position: 'before' | 'after' }
+  | { type: 'close'; paneId: string }
+  | { type: 'assign'; paneId: string; agentId: string | null; projectId?: string }
+  | { type: 'swap'; id1: string; id2: string }
+  | { type: 'resize'; splitId: string; ratio: number }
+  | { type: 'zoom'; paneId: string }
+  | { type: 'focus'; paneId: string };
+
+export interface HubStateSnapshot {
+  hubId: string;
+  paneTree: unknown; // PaneNode — kept as unknown to avoid circular dependency
+  focusedPaneId: string;
+  zoomedPaneId: string | null;
+}
 
