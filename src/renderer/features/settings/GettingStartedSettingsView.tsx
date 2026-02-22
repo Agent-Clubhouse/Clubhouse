@@ -34,7 +34,7 @@ function getTopicsForCohort(cohort: Cohort): TopicSection[] {
       },
       {
         title: 'Built-in Project Tools',
-        body: 'Clubhouse includes a suite of project tools so your workflow stays in one place. Issues lets you track bugs, features, and tasks directly inside the app — create them manually or let agents file them as they discover problems. The Wiki gives you a place to document architecture decisions, onboarding guides, API references, and anything else your team needs to know. Automations let you set up triggers and actions that run automatically — for example, kick off an agent whenever a new issue is created, or run a test suite after every commit. All three integrate with your agents, so your project management and your coding environment are the same thing.',
+        body: 'Clubhouse includes a suite of project tools so your workflow stays in one place. Issues lets you track bugs, features, and tasks directly inside the app — create them manually or let agents file them as they discover problems. Automations let you set up triggers and actions that run automatically — for example, kick off an agent whenever a new issue is created, or run a test suite after every commit. Both integrate with your agents, so your project management and your coding environment are the same thing.',
       },
     ];
   }

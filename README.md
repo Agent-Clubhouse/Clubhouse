@@ -10,7 +10,7 @@ Clubhouse wraps CLI-based coding agents (Claude Code, GitHub Copilot CLI, OpenCo
 - **Orchestrator abstraction** — Swap between Claude Code, GitHub Copilot CLI, and OpenCode with a unified provider interface
 - **Headless mode** — Run quick agents without a terminal, parsing structured JSON output for cost, duration, and transcript data
 - **Live agent status** — Hook events from running agents surface real-time tool usage, permission requests, and errors
-- **Built-in plugins** — Hub (split-pane workspace), Files (Monaco editor + file browser), Terminal (project shell), Automations (cron scheduling), Issues (GitHub integration), Wiki (markdown docs)
+- **Built-in plugins** — Hub (split-pane workspace), Files (Monaco editor + file browser), Terminal (project shell), Automations (cron scheduling), Issues (GitHub integration)
 - **Plugin API (v0.5)** — Build community plugins with access to files, git, agents, terminals, storage, and UI widgets
 - **Git integration** — Branch management, staging, diffs, and per-agent git worktrees for isolated development
 - **Theming** — 8 built-in themes (Catppuccin Mocha, Nord, Dracula, Tokyo Night, and more)

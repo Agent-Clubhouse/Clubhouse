@@ -32,7 +32,7 @@ App-scoped plugins that contribute a rail item also appear in the Project Rail.
 The Explorer Rail is the second column (200px wide). Its contents change depending on the active project and selected tab:
 
 - **Agents tab** -- Lists all durable agents and the quick agent launcher for the active project. This is the default tab when you select a project.
-- **Plugin tabs** -- Project-scoped plugins that contribute a tab appear here. For example, a file browser plugin or a wiki plugin each get their own tab in the Explorer Rail.
+- **Plugin tabs** -- Project-scoped plugins that contribute a tab appear here. For example, a file browser plugin gets its own tab in the Explorer Rail.
 
 The Explorer Rail does not appear on the Home dashboard or when viewing app-scoped plugin content.
 

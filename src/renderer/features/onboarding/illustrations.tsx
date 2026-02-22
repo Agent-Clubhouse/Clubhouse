@@ -200,30 +200,19 @@ export function ProjectToolsIllustration({ className }: { className?: string }) 
       <rect x="32" y="132" width="60" height="6" rx="3" fill="rgb(var(--ctp-surface2))" />
       <rect x="32" y="148" width="45" height="6" rx="3" fill="rgb(var(--ctp-surface2))" />
 
-      {/* Wiki */}
-      <rect x="118" y="30" width="85" height="140" rx="10" fill="rgb(var(--ctp-surface0))" />
-      <text x="160" y="58" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-text))">Wiki</text>
-      <rect x="130" y="72" width="62" height="5" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="130" y="83" width="55" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="93" width="60" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="103" width="48" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="118" width="62" height="5" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="130" y="129" width="52" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-      <rect x="130" y="139" width="58" height="4" rx="2" fill="rgb(var(--ctp-accent))" opacity="0.2" />
-
       {/* Automations */}
-      <rect x="216" y="30" width="85" height="140" rx="10" fill="rgb(var(--ctp-surface0))" />
-      <text x="258" y="58" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-text))">Automations</text>
-      <rect x="230" y="72" width="52" height="22" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.15" stroke="rgb(var(--ctp-accent))" strokeWidth="1" />
-      <text x="256" y="87" textAnchor="middle" fontSize="8" fill="rgb(var(--ctp-subtext0))">Trigger</text>
-      <line x1="256" y1="94" x2="256" y2="108" stroke="rgb(var(--ctp-accent))" strokeWidth="1.5" opacity="0.4" />
-      <polygon points="252,106 260,106 256,112" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="230" y="112" width="52" height="22" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.15" stroke="rgb(var(--ctp-accent))" strokeWidth="1" />
-      <text x="256" y="127" textAnchor="middle" fontSize="8" fill="rgb(var(--ctp-subtext0))">Action</text>
-      <line x1="256" y1="134" x2="256" y2="148" stroke="rgb(var(--ctp-accent))" strokeWidth="1.5" opacity="0.4" />
-      <polygon points="252,146 260,146 256,152" fill="rgb(var(--ctp-accent))" opacity="0.4" />
-      <rect x="230" y="152" width="52" height="14" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.1" />
-      <text x="256" y="162" textAnchor="middle" fontSize="7" fill="rgb(var(--ctp-subtext0))">...</text>
+      <rect x="118" y="30" width="85" height="140" rx="10" fill="rgb(var(--ctp-surface0))" />
+      <text x="160" y="58" textAnchor="middle" fontSize="10" fill="rgb(var(--ctp-text))">Automations</text>
+      <rect x="130" y="72" width="52" height="22" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.15" stroke="rgb(var(--ctp-accent))" strokeWidth="1" />
+      <text x="156" y="87" textAnchor="middle" fontSize="8" fill="rgb(var(--ctp-subtext0))">Trigger</text>
+      <line x1="156" y1="94" x2="156" y2="108" stroke="rgb(var(--ctp-accent))" strokeWidth="1.5" opacity="0.4" />
+      <polygon points="152,106 160,106 156,112" fill="rgb(var(--ctp-accent))" opacity="0.4" />
+      <rect x="130" y="112" width="52" height="22" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.15" stroke="rgb(var(--ctp-accent))" strokeWidth="1" />
+      <text x="156" y="127" textAnchor="middle" fontSize="8" fill="rgb(var(--ctp-subtext0))">Action</text>
+      <line x1="156" y1="134" x2="156" y2="148" stroke="rgb(var(--ctp-accent))" strokeWidth="1.5" opacity="0.4" />
+      <polygon points="152,146 160,146 156,152" fill="rgb(var(--ctp-accent))" opacity="0.4" />
+      <rect x="130" y="152" width="52" height="14" rx="6" fill="rgb(var(--ctp-accent))" opacity="0.1" />
+      <text x="156" y="162" textAnchor="middle" fontSize="7" fill="rgb(var(--ctp-subtext0))">...</text>
     </svg>
   );
 }

@@ -43,7 +43,7 @@ export function PluginDetailSettings() {
   const mod = modules[pluginSettingsId];
   // For project-scoped plugins, always use the active project as the settings scope,
   // even when accessed from the app-level settings view. This prevents project-scoped
-  // settings (like wikiPath) from being incorrectly stored under 'app' scope.
+  // settings from being incorrectly stored under 'app' scope.
   const projectId = (() => {
     if (settingsContext !== 'app') return settingsContext;
     if (entry.manifest.scope === 'project' && activeProjectId) return activeProjectId;
