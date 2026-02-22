@@ -46,6 +46,7 @@ export type PluginPermission =
   | 'process'
   | 'badges'
   | 'agent-config'
+  | 'agent-config.cross-project'
   | 'agent-config.permissions'
   | 'agent-config.mcp';
 
@@ -66,6 +67,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'process',
   'badges',
   'agent-config',
+  'agent-config.cross-project',
   'agent-config.permissions',
   'agent-config.mcp',
 ] as const;
@@ -92,6 +94,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   process: 'Execute allowed CLI commands',
   badges: 'Display badge indicators on tabs and rail items',
   'agent-config': 'Inject skills, agent templates, and instruction content into project agents',
+  'agent-config.cross-project': 'Inject agent configuration into other projects where the plugin is also enabled (elevated)',
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
 };
@@ -439,63 +442,80 @@ export interface FilesAPI {
 }
 
 // ── Agent Config API (v0.6+) ──────────────────────────────────────────
+
+/**
+ * Options for cross-project agent config operations.
+ * When `projectId` is specified, the operation targets that project instead of
+ * the current project. Requires the 'agent-config.cross-project' permission,
+ * and the target project must also have this plugin enabled (bilateral consent).
+ */
+export interface AgentConfigTargetOptions {
+  projectId?: string;
+}
+
 export interface AgentConfigAPI {
   /**
    * Inject a skill definition for project agents.
    * When clubhouse mode is on, integrates with materialization.
    * When off, writes directly to the orchestrator's skills directory.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  injectSkill(name: string, content: string): Promise<void>;
+  injectSkill(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
   /** Remove a previously injected skill. */
-  removeSkill(name: string): Promise<void>;
+  removeSkill(name: string, opts?: AgentConfigTargetOptions): Promise<void>;
   /** List skills injected by this plugin. */
-  listInjectedSkills(): Promise<string[]>;
+  listInjectedSkills(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
    * Inject an agent template definition for project agents.
    * When clubhouse mode is on, integrates with materialization.
    * When off, writes directly to the orchestrator's agent templates directory.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  injectAgentTemplate(name: string, content: string): Promise<void>;
+  injectAgentTemplate(name: string, content: string, opts?: AgentConfigTargetOptions): Promise<void>;
   /** Remove a previously injected agent template. */
-  removeAgentTemplate(name: string): Promise<void>;
+  removeAgentTemplate(name: string, opts?: AgentConfigTargetOptions): Promise<void>;
   /** List agent templates injected by this plugin. */
-  listInjectedAgentTemplates(): Promise<string[]>;
+  listInjectedAgentTemplates(opts?: AgentConfigTargetOptions): Promise<string[]>;
   /**
    * Append content to the project instruction file.
    * Content is added at the end with a plugin attribution comment.
    * When clubhouse mode is on, integrates with materialization pipeline.
    * When off, appends directly to the instruction file.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  appendInstructions(content: string): Promise<void>;
+  appendInstructions(content: string, opts?: AgentConfigTargetOptions): Promise<void>;
   /** Remove previously appended instruction content from this plugin. */
-  removeInstructionAppend(): Promise<void>;
+  removeInstructionAppend(opts?: AgentConfigTargetOptions): Promise<void>;
   /** Get the content currently appended by this plugin (null if none). */
-  getInstructionAppend(): Promise<string | null>;
+  getInstructionAppend(opts?: AgentConfigTargetOptions): Promise<string | null>;
   /**
    * Add permission allow rules for project agents.
    * Requires the elevated 'agent-config.permissions' permission.
    * Rules are namespaced per plugin and merged during materialization.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  addPermissionAllowRules(rules: string[]): Promise<void>;
+  addPermissionAllowRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
   /**
    * Add permission deny rules for project agents.
    * Requires the elevated 'agent-config.permissions' permission.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  addPermissionDenyRules(rules: string[]): Promise<void>;
+  addPermissionDenyRules(rules: string[], opts?: AgentConfigTargetOptions): Promise<void>;
   /** Remove all permission rules injected by this plugin. */
-  removePermissionRules(): Promise<void>;
+  removePermissionRules(opts?: AgentConfigTargetOptions): Promise<void>;
   /** Get the permission rules currently injected by this plugin. */
-  getPermissionRules(): Promise<{ allow: string[]; deny: string[] }>;
+  getPermissionRules(opts?: AgentConfigTargetOptions): Promise<{ allow: string[]; deny: string[] }>;
   /**
    * Inject MCP server configuration for project agents.
    * Requires the elevated 'agent-config.mcp' permission.
    * Configuration is merged into the agent's .mcp.json during materialization.
+   * Pass `opts.projectId` to target a different project (requires 'agent-config.cross-project').
    */
-  injectMcpServers(servers: Record<string, unknown>): Promise<void>;
+  injectMcpServers(servers: Record<string, unknown>, opts?: AgentConfigTargetOptions): Promise<void>;
   /** Remove MCP server configurations injected by this plugin. */
-  removeMcpServers(): Promise<void>;
+  removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void>;
   /** Get the MCP server configurations currently injected by this plugin. */
-  getInjectedMcpServers(): Promise<Record<string, unknown>>;
+  getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;
 }
 
 // ── Badges API ────────────────────────────────────────────────────────
