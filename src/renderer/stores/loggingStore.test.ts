@@ -1,24 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useLoggingStore } from './loggingStore';
 
-const mockGetSettings = vi.fn();
-const mockSaveSettings = vi.fn();
-const mockGetNamespaces = vi.fn();
-const mockGetPath = vi.fn();
-
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    clubhouse: {
-      log: {
-        getSettings: mockGetSettings,
-        saveSettings: mockSaveSettings,
-        getNamespaces: mockGetNamespaces,
-        getPath: mockGetPath,
-      },
-    },
-  },
-  writable: true,
-});
+// Uses the centralized window.clubhouse mock from test/setup-renderer.ts.
+// Override log methods with spies for assertion.
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -31,13 +15,18 @@ describe('loggingStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useLoggingStore.setState({ settings: null, namespaces: [], logPath: '' });
+    // Set up spies on the centralized mock
+    (window as any).clubhouse.log.getSettings = vi.fn();
+    (window as any).clubhouse.log.saveSettings = vi.fn();
+    (window as any).clubhouse.log.getNamespaces = vi.fn();
+    (window as any).clubhouse.log.getPath = vi.fn();
   });
 
   describe('loadSettings', () => {
     it('loads settings, namespaces, and log path from IPC', async () => {
-      mockGetSettings.mockResolvedValue(DEFAULT_SETTINGS);
-      mockGetNamespaces.mockResolvedValue(['app:ipc', 'plugin:terminal']);
-      mockGetPath.mockResolvedValue('/home/user/.clubhouse/logs');
+      (window as any).clubhouse.log.getSettings.mockResolvedValue(DEFAULT_SETTINGS);
+      (window as any).clubhouse.log.getNamespaces.mockResolvedValue(['app:ipc', 'plugin:terminal']);
+      (window as any).clubhouse.log.getPath.mockResolvedValue('/home/user/.clubhouse/logs');
 
       await useLoggingStore.getState().loadSettings();
 
@@ -48,29 +37,29 @@ describe('loggingStore', () => {
     });
 
     it('calls all three IPC methods in parallel', async () => {
-      mockGetSettings.mockResolvedValue(DEFAULT_SETTINGS);
-      mockGetNamespaces.mockResolvedValue([]);
-      mockGetPath.mockResolvedValue('');
+      (window as any).clubhouse.log.getSettings.mockResolvedValue(DEFAULT_SETTINGS);
+      (window as any).clubhouse.log.getNamespaces.mockResolvedValue([]);
+      (window as any).clubhouse.log.getPath.mockResolvedValue('');
 
       await useLoggingStore.getState().loadSettings();
 
-      expect(mockGetSettings).toHaveBeenCalledTimes(1);
-      expect(mockGetNamespaces).toHaveBeenCalledTimes(1);
-      expect(mockGetPath).toHaveBeenCalledTimes(1);
+      expect((window as any).clubhouse.log.getSettings).toHaveBeenCalledTimes(1);
+      expect((window as any).clubhouse.log.getNamespaces).toHaveBeenCalledTimes(1);
+      expect((window as any).clubhouse.log.getPath).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('saveSettings', () => {
     it('merges partial settings and persists', async () => {
       useLoggingStore.setState({ settings: DEFAULT_SETTINGS });
-      mockSaveSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.log.saveSettings.mockResolvedValue(undefined);
 
       await useLoggingStore.getState().saveSettings({ enabled: false });
 
       const { settings } = useLoggingStore.getState();
       expect(settings?.enabled).toBe(false);
       expect(settings?.namespaces).toEqual({});
-      expect(mockSaveSettings).toHaveBeenCalledWith(
+      expect((window as any).clubhouse.log.saveSettings).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: false, namespaces: {}, retention: 'medium' }),
       );
     });
@@ -79,7 +68,7 @@ describe('loggingStore', () => {
       useLoggingStore.setState({
         settings: { enabled: true, namespaces: { 'app:ipc': true } },
       });
-      mockSaveSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.log.saveSettings.mockResolvedValue(undefined);
 
       await useLoggingStore.getState().saveSettings({
         namespaces: { 'app:ipc': true, 'app:plugins': false },
@@ -91,41 +80,41 @@ describe('loggingStore', () => {
 
     it('merges retention updates', async () => {
       useLoggingStore.setState({ settings: DEFAULT_SETTINGS as any });
-      mockSaveSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.log.saveSettings.mockResolvedValue(undefined);
 
       await useLoggingStore.getState().saveSettings({ retention: 'high' } as any);
 
       const { settings } = useLoggingStore.getState();
       expect(settings?.retention).toBe('high');
       expect(settings?.enabled).toBe(true);
-      expect(mockSaveSettings).toHaveBeenCalledWith(
+      expect((window as any).clubhouse.log.saveSettings).toHaveBeenCalledWith(
         expect.objectContaining({ retention: 'high' }),
       );
     });
 
     it('merges minLogLevel updates', async () => {
       useLoggingStore.setState({ settings: DEFAULT_SETTINGS as any });
-      mockSaveSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.log.saveSettings.mockResolvedValue(undefined);
 
       await useLoggingStore.getState().saveSettings({ minLogLevel: 'warn' } as any);
 
       const { settings } = useLoggingStore.getState();
       expect(settings?.minLogLevel).toBe('warn');
       expect(settings?.enabled).toBe(true);
-      expect(mockSaveSettings).toHaveBeenCalledWith(
+      expect((window as any).clubhouse.log.saveSettings).toHaveBeenCalledWith(
         expect.objectContaining({ minLogLevel: 'warn' }),
       );
     });
 
     it('does nothing when settings not loaded', async () => {
       await useLoggingStore.getState().saveSettings({ enabled: false });
-      expect(mockSaveSettings).not.toHaveBeenCalled();
+      expect((window as any).clubhouse.log.saveSettings).not.toHaveBeenCalled();
     });
   });
 
   describe('loadNamespaces', () => {
     it('refreshes namespaces from IPC', async () => {
-      mockGetNamespaces.mockResolvedValue(['app:git', 'plugin:hub']);
+      (window as any).clubhouse.log.getNamespaces.mockResolvedValue(['app:git', 'plugin:hub']);
 
       await useLoggingStore.getState().loadNamespaces();
 

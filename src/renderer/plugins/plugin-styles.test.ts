@@ -1,54 +1,17 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-// Minimal DOM mock for testing style injection
-const elements = new Map<string, { id: string; tagName: string; textContent: string; remove: () => void }>();
-
-function createElement(tag: string) {
-  const el = {
-    id: '',
-    tagName: tag.toUpperCase(),
-    textContent: '',
-    remove: () => { elements.delete(el.id); },
-  };
-  return el;
-}
-
-const mockHead = {
-  appendChild: (el: any) => { elements.set(el.id, el); },
-};
-
-Object.defineProperty(globalThis, 'document', {
-  value: {
-    createElement,
-    head: mockHead,
-    getElementById: (id: string) => elements.get(id) ?? null,
-    querySelectorAll: (selector: string) => {
-      if (selector.startsWith('#')) {
-        const id = selector.slice(1);
-        const el = elements.get(id);
-        return el ? [el] : [];
-      }
-      // For the prefix selector style[id^="plugin-styles-"]
-      const results: any[] = [];
-      for (const [id, el] of elements) {
-        if (id.startsWith('plugin-styles-')) results.push(el);
-      }
-      return results;
-    },
-  },
-  writable: true,
-  configurable: true,
-});
+// Uses jsdom environment from vitest config — no need for manual DOM mocking.
 
 import { injectStyles, removeStyles } from './plugin-styles';
 
 describe('plugin-styles', () => {
   beforeEach(() => {
-    elements.clear();
+    // Clean up any leftover style elements from previous tests
+    document.querySelectorAll('style[id^="plugin-styles-"]').forEach(el => el.remove());
   });
 
   afterEach(() => {
-    elements.clear();
+    document.querySelectorAll('style[id^="plugin-styles-"]').forEach(el => el.remove());
   });
 
   describe('injectStyles', () => {
