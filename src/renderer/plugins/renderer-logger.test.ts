@@ -1,28 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockWrite = vi.fn();
-
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    clubhouse: {
-      log: {
-        write: mockWrite,
-      },
-    },
-  },
-  writable: true,
-});
-
 import { rendererLog } from './renderer-logger';
+
+// Uses the centralized window.clubhouse mock from test/setup-renderer.ts.
+// Override log.write with a spy for assertion.
 
 describe('renderer-logger', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Replace the noop with a spy so we can assert calls
+    (window as any).clubhouse.log.write = vi.fn();
   });
 
   it('sends a log entry over IPC with correct fields', () => {
     rendererLog('app:plugins', 'info', 'Plugin loaded');
 
+    const mockWrite = (window as any).clubhouse.log.write;
     expect(mockWrite).toHaveBeenCalledTimes(1);
     const entry = mockWrite.mock.calls[0][0];
     expect(entry.ns).toBe('app:plugins');
@@ -39,7 +31,7 @@ describe('renderer-logger', () => {
       meta: { exitCode: 137 },
     });
 
-    const entry = mockWrite.mock.calls[0][0];
+    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
     expect(entry.projectId).toBe('proj-1');
     expect(entry.meta).toEqual({ exitCode: 137 });
   });
@@ -47,7 +39,7 @@ describe('renderer-logger', () => {
   it('generates an ISO timestamp', () => {
     rendererLog('app:test', 'debug', 'test');
 
-    const entry = mockWrite.mock.calls[0][0];
+    const entry = (window as any).clubhouse.log.write.mock.calls[0][0];
     // Should be a valid ISO string
     expect(new Date(entry.ts).toISOString()).toBe(entry.ts);
   });
@@ -56,8 +48,9 @@ describe('renderer-logger', () => {
     const levels = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
     for (const level of levels) {
       vi.clearAllMocks();
+      (window as any).clubhouse.log.write = vi.fn();
       rendererLog('app:test', level, `msg-${level}`);
-      expect(mockWrite.mock.calls[0][0].level).toBe(level);
+      expect((window as any).clubhouse.log.write.mock.calls[0][0].level).toBe(level);
     }
   });
 

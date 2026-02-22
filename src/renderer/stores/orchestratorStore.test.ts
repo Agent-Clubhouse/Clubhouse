@@ -1,27 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useOrchestratorStore } from './orchestratorStore';
 
-// Mock window.clubhouse API
-const mockGetOrchestratorSettings = vi.fn();
-const mockSaveOrchestratorSettings = vi.fn();
-const mockGetOrchestrators = vi.fn();
-const mockCheckOrchestrator = vi.fn();
-
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    clubhouse: {
-      app: {
-        getOrchestratorSettings: mockGetOrchestratorSettings,
-        saveOrchestratorSettings: mockSaveOrchestratorSettings,
-      },
-      agent: {
-        getOrchestrators: mockGetOrchestrators,
-        checkOrchestrator: mockCheckOrchestrator,
-      },
-    },
-  },
-  writable: true,
-});
+// Uses the centralized window.clubhouse mock from test/setup-renderer.ts.
+// Override specific methods with spies for assertion.
 
 describe('orchestratorStore', () => {
   beforeEach(() => {
@@ -32,6 +13,11 @@ describe('orchestratorStore', () => {
       allOrchestrators: [],
       availability: {},
     });
+    // Set up spies on the centralized mock
+    (window as any).clubhouse.app.getOrchestratorSettings = vi.fn();
+    (window as any).clubhouse.app.saveOrchestratorSettings = vi.fn();
+    (window as any).clubhouse.agent.getOrchestrators = vi.fn();
+    (window as any).clubhouse.agent.checkOrchestrator = vi.fn();
   });
 
   describe('initial state', () => {
@@ -48,8 +34,8 @@ describe('orchestratorStore', () => {
 
   describe('loadSettings', () => {
     it('loads enabled list and orchestrators', async () => {
-      mockGetOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code', 'opencode'] });
-      mockGetOrchestrators.mockResolvedValue([
+      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code', 'opencode'] });
+      (window as any).clubhouse.agent.getOrchestrators.mockResolvedValue([
         { id: 'claude-code', displayName: 'Claude Code' },
         { id: 'opencode', displayName: 'OpenCode', badge: 'Beta' },
       ]);
@@ -62,8 +48,8 @@ describe('orchestratorStore', () => {
     });
 
     it('falls back to claude-code when settings are null', async () => {
-      mockGetOrchestratorSettings.mockResolvedValue(null);
-      mockGetOrchestrators.mockResolvedValue([]);
+      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue(null);
+      (window as any).clubhouse.agent.getOrchestrators.mockResolvedValue([]);
 
       await useOrchestratorStore.getState().loadSettings();
 
@@ -71,8 +57,8 @@ describe('orchestratorStore', () => {
     });
 
     it('handles API errors gracefully', async () => {
-      mockGetOrchestratorSettings.mockRejectedValue(new Error('IPC failed'));
-      mockGetOrchestrators.mockRejectedValue(new Error('IPC failed'));
+      (window as any).clubhouse.app.getOrchestratorSettings.mockRejectedValue(new Error('IPC failed'));
+      (window as any).clubhouse.agent.getOrchestrators.mockRejectedValue(new Error('IPC failed'));
 
       await useOrchestratorStore.getState().loadSettings();
 
@@ -81,8 +67,8 @@ describe('orchestratorStore', () => {
     });
 
     it('handles non-array orchestrators response', async () => {
-      mockGetOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code'] });
-      mockGetOrchestrators.mockResolvedValue('not an array');
+      (window as any).clubhouse.app.getOrchestratorSettings.mockResolvedValue({ enabled: ['claude-code'] });
+      (window as any).clubhouse.agent.getOrchestrators.mockResolvedValue('not an array');
 
       await useOrchestratorStore.getState().loadSettings();
 
@@ -92,7 +78,7 @@ describe('orchestratorStore', () => {
 
   describe('setEnabled', () => {
     it('enables an orchestrator', async () => {
-      mockSaveOrchestratorSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
       await useOrchestratorStore.getState().setEnabled('opencode', true);
 
@@ -100,7 +86,7 @@ describe('orchestratorStore', () => {
     });
 
     it('does not duplicate already enabled orchestrator', async () => {
-      mockSaveOrchestratorSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
       await useOrchestratorStore.getState().setEnabled('claude-code', true);
 
@@ -109,7 +95,7 @@ describe('orchestratorStore', () => {
 
     it('disables an orchestrator', async () => {
       useOrchestratorStore.setState({ enabled: ['claude-code', 'opencode'] });
-      mockSaveOrchestratorSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
       await useOrchestratorStore.getState().setEnabled('opencode', false);
 
@@ -123,12 +109,12 @@ describe('orchestratorStore', () => {
 
       // Should still have claude-code
       expect(useOrchestratorStore.getState().enabled).toEqual(['claude-code']);
-      expect(mockSaveOrchestratorSettings).not.toHaveBeenCalled();
+      expect((window as any).clubhouse.app.saveOrchestratorSettings).not.toHaveBeenCalled();
     });
 
     it('reverts on save error', async () => {
       useOrchestratorStore.setState({ enabled: ['claude-code'] });
-      mockSaveOrchestratorSettings.mockRejectedValue(new Error('save failed'));
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockRejectedValue(new Error('save failed'));
 
       await useOrchestratorStore.getState().setEnabled('opencode', true);
 
@@ -137,11 +123,11 @@ describe('orchestratorStore', () => {
     });
 
     it('persists new enabled list', async () => {
-      mockSaveOrchestratorSettings.mockResolvedValue(undefined);
+      (window as any).clubhouse.app.saveOrchestratorSettings.mockResolvedValue(undefined);
 
       await useOrchestratorStore.getState().setEnabled('opencode', true);
 
-      expect(mockSaveOrchestratorSettings).toHaveBeenCalledWith({
+      expect((window as any).clubhouse.app.saveOrchestratorSettings).toHaveBeenCalledWith({
         enabled: ['claude-code', 'opencode'],
       });
     });
@@ -179,7 +165,7 @@ describe('orchestratorStore', () => {
         ],
       });
 
-      mockCheckOrchestrator.mockImplementation((_path: string, id: string) => {
+      (window as any).clubhouse.agent.checkOrchestrator.mockImplementation((_path: string, id: string) => {
         if (id === 'claude-code') return Promise.resolve({ available: true });
         return Promise.resolve({ available: false, error: 'Not installed' });
       });
@@ -196,7 +182,7 @@ describe('orchestratorStore', () => {
         allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' } as any],
       });
 
-      mockCheckOrchestrator.mockRejectedValue(new Error('Check failed'));
+      (window as any).clubhouse.agent.checkOrchestrator.mockRejectedValue(new Error('Check failed'));
 
       await useOrchestratorStore.getState().checkAllAvailability();
 
