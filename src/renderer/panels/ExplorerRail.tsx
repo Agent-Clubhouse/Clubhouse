@@ -5,6 +5,7 @@ import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
+import { AGENT_COLORS } from '../../shared/name-generator';
 
 interface TabEntry { id: string; label: string; icon: ReactNode }
 
@@ -42,9 +43,15 @@ const CORE_TABS: TabEntry[] = [
   },
 ];
 
+function getSettingsColorHex(colorId?: string): string {
+  if (!colorId) return '#6366f1'; // indigo default
+  return AGENT_COLORS.find((c) => c.id === colorId)?.hex || '#6366f1';
+}
+
 function SettingsContextPicker() {
   const { settingsContext, setSettingsContext } = useUIStore();
   const { projects } = useProjectStore();
+  const projectIcons = useProjectStore((s) => s.projectIcons);
 
   return (
     <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
@@ -87,8 +94,15 @@ function SettingsContextPicker() {
               }
             `}
           >
-            <span className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold bg-surface-2 flex-shrink-0">
-              {(p.displayName || p.name).charAt(0).toUpperCase()}
+            <span
+              className="w-[18px] h-[18px] rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0 overflow-hidden"
+              style={p.icon && projectIcons[p.id] ? undefined : { backgroundColor: `${getSettingsColorHex(p.color)}20`, color: getSettingsColorHex(p.color) }}
+            >
+              {p.icon && projectIcons[p.id] ? (
+                <img src={projectIcons[p.id]} alt={(p.displayName || p.name)} className="w-full h-full object-cover" />
+              ) : (
+                (p.displayName || p.name).charAt(0).toUpperCase()
+              )}
             </span>
             <span className="truncate">{p.displayName || p.name}</span>
           </button>
