@@ -178,11 +178,30 @@ describe('agentStore', () => {
   });
 
   describe('handleHookEvent', () => {
-    it('ignores non-running agents', () => {
+    it('ignores stop events for non-running agents', () => {
       seedAgent({ id: 'a_sleep', status: 'sleeping' });
-      const event: AgentHookEvent = { kind: 'pre_tool', toolName: 'Read', toolVerb: 'Reading file', timestamp: Date.now() };
-      getState().handleHookEvent('a_sleep', event);
+      getState().handleHookEvent('a_sleep', { kind: 'stop', timestamp: Date.now() });
+      expect(getState().agents['a_sleep'].status).toBe('sleeping');
       expect(getState().agentDetailedStatus['a_sleep']).toBeUndefined();
+    });
+
+    it('transitions sleeping agent to running on non-stop hook event (annex wake)', () => {
+      seedAgent({ id: 'a_wake', status: 'sleeping', kind: 'durable', exitCode: 0 });
+      const event: AgentHookEvent = { kind: 'pre_tool', toolName: 'Read', toolVerb: 'Reading file', timestamp: Date.now() };
+      getState().handleHookEvent('a_wake', event);
+      expect(getState().agents['a_wake'].status).toBe('running');
+      expect(getState().agents['a_wake'].exitCode).toBeUndefined();
+      expect(getState().agentSpawnedAt['a_wake']).toBeDefined();
+      // Should also process the hook event
+      expect(getState().agentDetailedStatus['a_wake']).toBeDefined();
+      expect(getState().agentDetailedStatus['a_wake'].state).toBe('working');
+    });
+
+    it('transitions error agent to running on hook event', () => {
+      seedAgent({ id: 'a_err', status: 'error', kind: 'durable', errorMessage: 'launch failed' });
+      getState().handleHookEvent('a_err', { kind: 'post_tool', timestamp: 100 });
+      expect(getState().agents['a_err'].status).toBe('running');
+      expect(getState().agents['a_err'].errorMessage).toBeUndefined();
     });
 
     it('pre_tool sets state:working with tool verb', () => {

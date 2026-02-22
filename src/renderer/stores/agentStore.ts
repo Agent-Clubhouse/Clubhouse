@@ -521,7 +521,25 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   handleHookEvent: (agentId, event) => {
     const agent = get().agents[agentId];
-    if (!agent || agent.status !== 'running') return;
+    if (!agent) return;
+
+    // If a sleeping/error agent sends a non-stop hook event, it was woken
+    // externally (e.g. via annex). Transition to 'running' so the store
+    // reflects the actual PTY state.
+    if (agent.status !== 'running') {
+      if (event.kind === 'stop') return;
+      set((s) => {
+        const a = s.agents[agentId];
+        if (!a) return s;
+        return {
+          agents: {
+            ...s.agents,
+            [agentId]: { ...a, status: 'running', exitCode: undefined, errorMessage: undefined },
+          },
+          agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+        };
+      });
+    }
 
     let detailed: AgentDetailedStatus;
 
