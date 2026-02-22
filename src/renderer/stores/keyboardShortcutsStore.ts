@@ -27,6 +27,21 @@ const SHIFTED_DIGIT_MAP: Record<string, string> = {
   '(': '9',
 };
 
+/**
+ * Map from Option-modified digit (macOS Option+1 fires '¡') to the underlying digit.
+ */
+const ALT_DIGIT_MAP: Record<string, string> = {
+  '¡': '1',
+  '™': '2',
+  '£': '3',
+  '¢': '4',
+  '∞': '5',
+  '§': '6',
+  '¶': '7',
+  '•': '8',
+  'ª': '9',
+};
+
 function loadOverrides(): ShortcutOverrides {
   try {
     const raw = localStorage.getItem(OVERRIDES_KEY);
@@ -83,7 +98,7 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
     id: `switch-project-${i + 1}`,
     label: `Switch to Project ${i + 1}`,
     category: 'Projects',
-    defaultBinding: `Meta+Shift+${i + 1}`,
+    defaultBinding: `Meta+Alt+${i + 1}`,
   })),
 ];
 
@@ -174,6 +189,11 @@ export function eventToBinding(e: KeyboardEvent): string | null {
   // On macOS, Cmd+Shift+1 fires key='!' instead of '1'. Map shifted symbols back to digits.
   if (e.shiftKey && SHIFTED_DIGIT_MAP[key]) {
     key = SHIFTED_DIGIT_MAP[key];
+  }
+
+  // On macOS, Option+1 fires key='¡' instead of '1'. Map alt-modified symbols back to digits.
+  if (e.altKey && ALT_DIGIT_MAP[key]) {
+    key = ALT_DIGIT_MAP[key];
   }
 
   if (key === ' ') key = 'Space';

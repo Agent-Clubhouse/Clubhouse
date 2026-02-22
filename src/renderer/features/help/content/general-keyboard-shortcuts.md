@@ -38,7 +38,7 @@ All shortcuts can be customized in **Settings > Keyboard Shortcuts**.
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+Shift+1` through `Cmd+Shift+9` | Switch to Project 1–9 |
+| `Cmd+Option+1` through `Cmd+Option+9` | Switch to Project 1–9 |
 | `Cmd+Shift+O` | Add Project |
 
 ## Edit Menu Shortcuts
