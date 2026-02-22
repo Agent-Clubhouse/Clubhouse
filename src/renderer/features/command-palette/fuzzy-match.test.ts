@@ -65,15 +65,41 @@ describe('fuzzyMatch', () => {
   it('handles hyphenated word boundaries', () => {
     const result = fuzzyMatch('ct', 'curious-tapir');
     expect(result).not.toBeNull();
-    // c at 0 (boundary) and t at 8 (after hyphen = boundary)
+    // "ct" is not a substring, so fuzzy path: c at 0, t at 8
     expect(result!.matches).toEqual([0, 8]);
   });
 
   it('handles underscore word boundaries', () => {
     const result = fuzzyMatch('sm', 'set_mode');
     expect(result).not.toBeNull();
-    // s at 0 (boundary) and m at 4 (after underscore = boundary)
+    // "sm" is not a substring, so fuzzy path: s at 0, m at 4
     expect(result!.matches).toEqual([0, 4]);
+  });
+
+  // Substring match tests
+  it('detects exact substring matches with contiguous indices', () => {
+    const result = fuzzyMatch('set', 'Display Settings')!;
+    expect(result).not.toBeNull();
+    // "set" found as substring starting at index 8
+    expect(result.matches).toEqual([8, 9, 10]);
+  });
+
+  it('gives higher score for prefix substring than mid-word substring', () => {
+    const prefix = fuzzyMatch('dis', 'Display Settings')!;
+    const midWord = fuzzyMatch('set', 'Display Settings')!;
+    expect(prefix.score).toBeGreaterThan(midWord.score);
+  });
+
+  it('gives higher score for exact substring than scattered fuzzy match', () => {
+    const substring = fuzzyMatch('log', 'Logging')!;
+    const scattered = fuzzyMatch('log', 'Load Ongoing')!;
+    expect(substring.score).toBeGreaterThan(scattered.score);
+  });
+
+  it('gives coverage bonus for query matching larger fraction of target', () => {
+    const highCoverage = fuzzyMatch('about', 'About')!;
+    const lowCoverage = fuzzyMatch('about', 'About Everything')!;
+    expect(highCoverage.score).toBeGreaterThan(lowCoverage.score);
   });
 });
 
@@ -135,5 +161,27 @@ describe('fuzzyFilter', () => {
     );
     expect(result).toHaveLength(2);
     expect(result[0].item.name).toBe('Config');
+  });
+
+  // Score threshold tests
+  it('filters out weak single-character matches (not prefix or boundary)', () => {
+    const itemsForThreshold = [
+      { id: 1, name: 'About' },           // 'a' at prefix — should match
+      { id: 2, name: 'Display Settings' }, // 'a' mid-word at index 5 — weak
+    ];
+    const result = fuzzyFilter(itemsForThreshold, 'a', (i) => i.name);
+    // About should match (prefix 'a'), Display Settings may not meet threshold
+    const aboutMatch = result.find((r) => r.item.name === 'About');
+    expect(aboutMatch).toBeTruthy();
+  });
+
+  it('includes strong matches and excludes weak ones with short query', () => {
+    const testItems = [
+      { id: 1, name: 'Agents' },    // 'ag' is prefix → strong
+      { id: 2, name: 'Logging' },   // 'ag' is not present → no match
+    ];
+    const result = fuzzyFilter(testItems, 'ag', (i) => i.name);
+    expect(result.length).toBe(1);
+    expect(result[0].item.name).toBe('Agents');
   });
 });

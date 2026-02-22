@@ -27,6 +27,7 @@ describe('commandPaletteStore', () => {
       query: '',
       mode: 'all',
       selectedIndex: 0,
+      lastInteraction: 'keyboard',
       recentCommands: [],
     });
     for (const key of Object.keys(storage)) delete storage[key];
@@ -105,6 +106,23 @@ describe('commandPaletteStore', () => {
       useCommandPaletteStore.setState({ selectedIndex: 0 });
       useCommandPaletteStore.getState().moveSelection(-1, 5);
       expect(useCommandPaletteStore.getState().selectedIndex).toBe(5);
+    });
+
+    it('sets lastInteraction to keyboard', () => {
+      useCommandPaletteStore.getState().moveSelection(1, 5);
+      expect(useCommandPaletteStore.getState().lastInteraction).toBe('keyboard');
+    });
+  });
+
+  describe('setSelectedIndex', () => {
+    it('sets the selected index directly', () => {
+      useCommandPaletteStore.getState().setSelectedIndex(3);
+      expect(useCommandPaletteStore.getState().selectedIndex).toBe(3);
+    });
+
+    it('sets lastInteraction to pointer', () => {
+      useCommandPaletteStore.getState().setSelectedIndex(2);
+      expect(useCommandPaletteStore.getState().lastInteraction).toBe('pointer');
     });
   });
 
