@@ -16,6 +16,7 @@ import {
   collectLeaves,
   syncCounterToTree,
   setSplitRatio,
+  createPaneCounter,
   type PaneNode,
   type LeafPane,
   type SplitPane,
@@ -706,6 +707,71 @@ describe('pane-tree', () => {
       syncCounterToTree(tree);
       // Max suffix is 10, counter should be 10, next is 11
       expect(generatePaneId('p')).toBe('p_11');
+    });
+  });
+
+  // ── Scoped counters ─────────────────────────────────────────────────
+
+  describe('createPaneCounter (scoped)', () => {
+    it('creates independent counters', () => {
+      const counterA = createPaneCounter();
+      const counterB = createPaneCounter();
+
+      expect(generatePaneId('a', counterA)).toBe('a_1');
+      expect(generatePaneId('a', counterA)).toBe('a_2');
+      expect(generatePaneId('b', counterB)).toBe('b_1');
+      // counterA is at 2, counterB is at 1 — independent
+      expect(generatePaneId('a', counterA)).toBe('a_3');
+    });
+
+    it('scoped counter does not affect default counter', () => {
+      resetPaneCounter(0);
+      const scoped = createPaneCounter();
+      generatePaneId('s', scoped); // s_1
+      generatePaneId('s', scoped); // s_2
+      // Default counter should still be at 0
+      expect(generatePaneId('d')).toBe('d_1');
+    });
+
+    it('createLeaf uses scoped counter', () => {
+      const counter = createPaneCounter();
+      const leaf1 = createLeaf('p', null, undefined, counter);
+      const leaf2 = createLeaf('p', null, undefined, counter);
+      expect(leaf1.id).toBe('p_1');
+      expect(leaf2.id).toBe('p_2');
+    });
+
+    it('splitPane uses scoped counter', () => {
+      const counter = createPaneCounter();
+      const leaf = createLeaf('p', null, undefined, counter); // p_1
+      const result = splitPane(leaf, leaf.id, 'horizontal', 'p', 'after', counter) as SplitPane;
+      // Should create new leaf (p_2) and split node (p_3)
+      expect(result.children[1].id).toBe('p_2');
+      expect(result.id).toBe('p_3');
+    });
+
+    it('syncCounterToTree syncs scoped counter', () => {
+      const counter = createPaneCounter();
+      const tree: LeafPane = { type: 'leaf', id: 'p_50', agentId: null };
+      syncCounterToTree(tree, counter);
+      expect(generatePaneId('p', counter)).toBe('p_51');
+    });
+
+    it('two stores with scoped counters produce non-colliding IDs', () => {
+      const counterA = createPaneCounter();
+      const counterB = createPaneCounter();
+
+      const leafA1 = createLeaf('hub', null, undefined, counterA);
+      const leafA2 = createLeaf('hub', null, undefined, counterA);
+      const leafB1 = createLeaf('hub', null, undefined, counterB);
+      const leafB2 = createLeaf('hub', null, undefined, counterB);
+
+      // Each counter produces its own sequence independently
+      expect(leafA1.id).toBe('hub_1');
+      expect(leafA2.id).toBe('hub_2');
+      expect(leafB1.id).toBe('hub_1');
+      expect(leafB2.id).toBe('hub_2');
+      // Note: same prefix+number is fine because they belong to different store instances
     });
   });
 });

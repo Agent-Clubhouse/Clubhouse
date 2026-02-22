@@ -516,6 +516,25 @@ describe('plugin-api-factory', () => {
       const promise = api.ui.showInput('Enter name:', 'default');
       expect(promise).toBeInstanceOf(Promise);
     });
+
+    it('showInput registers cleanup disposable on context subscriptions', async () => {
+      const ctx = makeCtx();
+      const localApi = createPluginAPI(ctx, undefined, allPermsManifest);
+
+      // Before calling showInput, subscriptions should be empty
+      const subsBefore = ctx.subscriptions.length;
+
+      const promise = localApi.ui.showInput('Test prompt', 'val');
+      expect(promise).toBeInstanceOf(Promise);
+
+      // After calling showInput, a cleanup disposable should have been added
+      expect(ctx.subscriptions.length).toBe(subsBefore + 1);
+
+      // Disposing should clean up and resolve the promise with null
+      ctx.subscriptions[ctx.subscriptions.length - 1].dispose();
+      const result = await promise;
+      expect(result).toBeNull();
+    });
   });
 
   // ── HubAPI ────────────────────────────────────────────────────────────

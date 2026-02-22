@@ -517,4 +517,48 @@ describe('useHubStore', () => {
       expect((store.getState().hubs[1].paneTree as LeafPane).agentId).toBe('agent-1');
     });
   });
+
+  // ── Scoped counters (no cross-store ID collisions) ─────────────────
+
+  describe('per-store scoped counters', () => {
+    it('two stores have independent pane counters', () => {
+      const storeA = createHubStore('hub');
+      const storeB = createHubStore('hub');
+
+      // Both start with hub_1 as their initial leaf (independent counters)
+      const leafA = storeA.getState().paneTree as LeafPane;
+      const leafB = storeB.getState().paneTree as LeafPane;
+
+      // The initial pane IDs are generated independently per store
+      expect(leafA.id).toBe(leafB.id); // both hub_1 from their own counter
+
+      // Splitting in storeA doesn't affect storeB's counter
+      storeA.getState().splitPane(leafA.id, 'horizontal', 'hub');
+      const leavesA = collectLeaves(storeA.getState().paneTree);
+
+      storeB.getState().splitPane(leafB.id, 'horizontal', 'hub');
+      const leavesB = collectLeaves(storeB.getState().paneTree);
+
+      // Both stores should have the same ID pattern (independent counters)
+      expect(leavesA.map((l) => l.id)).toEqual(leavesB.map((l) => l.id));
+    });
+
+    it('two stores have independent hub ID counters', () => {
+      const storeA = createHubStore('hub');
+      const storeB = createHubStore('hub');
+
+      // Both initial hubs should have hub_inst_1
+      expect(storeA.getState().hubs[0].id).toBe('hub_inst_1');
+      expect(storeB.getState().hubs[0].id).toBe('hub_inst_1');
+
+      // Adding a hub in storeA doesn't affect storeB
+      storeA.getState().addHub('hub');
+      expect(storeA.getState().hubs).toHaveLength(2);
+      expect(storeA.getState().hubs[1].id).toBe('hub_inst_2');
+
+      // storeB's next hub should also be hub_inst_2 (independent counter)
+      storeB.getState().addHub('hub');
+      expect(storeB.getState().hubs[1].id).toBe('hub_inst_2');
+    });
+  });
 });

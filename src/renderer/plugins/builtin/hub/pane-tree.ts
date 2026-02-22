@@ -17,18 +17,29 @@ export interface SplitPane {
 
 export type PaneNode = LeafPane | SplitPane;
 
-let paneCounter = 0;
-
-export function generatePaneId(prefix: string): string {
-  return `${prefix}_${++paneCounter}`;
+/** Mutable counter object that can be scoped per store instance. */
+export interface PaneCounter {
+  value: number;
 }
 
-export function resetPaneCounter(value = 0): void {
-  paneCounter = value;
+/** Create a new scoped counter for use by a single store instance. */
+export function createPaneCounter(initial = 0): PaneCounter {
+  return { value: initial };
 }
 
-export function createLeaf(prefix: string, agentId: string | null = null, projectId?: string): LeafPane {
-  return { type: 'leaf', id: generatePaneId(prefix), agentId, projectId };
+/** Default module-level counter (backward compat for tests & standalone usage). */
+const defaultCounter: PaneCounter = { value: 0 };
+
+export function generatePaneId(prefix: string, counter: PaneCounter = defaultCounter): string {
+  return `${prefix}_${++counter.value}`;
+}
+
+export function resetPaneCounter(value = 0, counter: PaneCounter = defaultCounter): void {
+  counter.value = value;
+}
+
+export function createLeaf(prefix: string, agentId: string | null = null, projectId?: string, counter: PaneCounter = defaultCounter): LeafPane {
+  return { type: 'leaf', id: generatePaneId(prefix, counter), agentId, projectId };
 }
 
 export function splitPane(
@@ -37,13 +48,14 @@ export function splitPane(
   direction: 'horizontal' | 'vertical',
   prefix: string,
   position: 'before' | 'after' = 'after',
+  counter: PaneCounter = defaultCounter,
 ): PaneNode {
   if (tree.type === 'leaf') {
     if (tree.id === paneId) {
-      const newLeaf = createLeaf(prefix);
+      const newLeaf = createLeaf(prefix, null, undefined, counter);
       return {
         type: 'split',
-        id: generatePaneId(prefix),
+        id: generatePaneId(prefix, counter),
         direction,
         ratio: 0.5,
         children: position === 'before'
@@ -56,8 +68,8 @@ export function splitPane(
   return {
     ...tree,
     children: [
-      splitPane(tree.children[0], paneId, direction, prefix, position),
-      splitPane(tree.children[1], paneId, direction, prefix, position),
+      splitPane(tree.children[0], paneId, direction, prefix, position, counter),
+      splitPane(tree.children[1], paneId, direction, prefix, position, counter),
     ] as [PaneNode, PaneNode],
   };
 }
@@ -162,10 +174,10 @@ function maxIdSuffix(tree: PaneNode): number {
 }
 
 /** Ensure paneCounter is above any existing ID in the tree to prevent collisions */
-export function syncCounterToTree(tree: PaneNode): void {
+export function syncCounterToTree(tree: PaneNode, counter: PaneCounter = defaultCounter): void {
   const max = maxIdSuffix(tree);
-  if (max >= paneCounter) {
-    paneCounter = max;
+  if (max >= counter.value) {
+    counter.value = max;
   }
 }
 

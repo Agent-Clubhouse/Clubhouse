@@ -106,6 +106,11 @@ export async function initializePluginSystem(): Promise<void> {
 
   // Activate app-scoped and dual-scoped plugins that are in appEnabled
   const appEnabled = usePluginStore.getState().appEnabled;
+
+  // Write startup marker *before* activation so a crash during init
+  // will trigger safe mode on the next launch.
+  await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
+
   for (const pluginId of appEnabled) {
     const entry = store.plugins[pluginId];
     if (entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {

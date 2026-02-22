@@ -76,6 +76,23 @@ describe('pluginStore', () => {
       getState().setPluginStatus('test-plugin', 'errored', 'Something broke');
       expect(getState().plugins['test-plugin'].error).toBe('Something broke');
     });
+
+    it('clears stale error when transitioning to activated without explicit error', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().setPluginStatus('test-plugin', 'errored', 'Old error');
+      expect(getState().plugins['test-plugin'].error).toBe('Old error');
+
+      getState().setPluginStatus('test-plugin', 'activated');
+      expect(getState().plugins['test-plugin'].status).toBe('activated');
+      expect(getState().plugins['test-plugin'].error).toBeUndefined();
+    });
+
+    it('preserves error when explicitly passed during status change', () => {
+      getState().registerPlugin(testManifest, 'community', '/path');
+      getState().setPluginStatus('test-plugin', 'errored', 'First error');
+      getState().setPluginStatus('test-plugin', 'errored', 'Updated error');
+      expect(getState().plugins['test-plugin'].error).toBe('Updated error');
+    });
   });
 
   describe('setPluginModule / removePluginModule', () => {
