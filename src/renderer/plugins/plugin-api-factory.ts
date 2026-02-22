@@ -282,7 +282,7 @@ function createStorageAPI(ctx: PluginContext): StorageAPI {
   };
 }
 
-function createUIAPI(): UIAPI {
+function createUIAPI(ctx: PluginContext): UIAPI {
   return {
     showNotice(message: string): void {
       // Simple notification using existing notification system
@@ -296,6 +296,7 @@ function createUIAPI(): UIAPI {
     },
     async showInput(prompt: string, defaultValue = ''): Promise<string | null> {
       return new Promise((resolve) => {
+        let resolved = false;
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
 
@@ -330,7 +331,15 @@ function createUIAPI(): UIAPI {
         input.focus();
         input.select();
 
-        const cleanup = () => { overlay.remove(); };
+        const cleanup = () => {
+          if (resolved) return;
+          resolved = true;
+          overlay.remove();
+        };
+
+        // Register cleanup as a disposable so deactivation removes orphaned dialogs
+        ctx.subscriptions.push({ dispose: () => { cleanup(); resolve(null); } });
+
         cancelBtn.onclick = () => { cleanup(); resolve(null); };
         okBtn.onclick = () => { cleanup(); resolve(input.value); };
         overlay.onclick = (e) => { if (e.target === overlay) { cleanup(); resolve(null); } };
@@ -1393,7 +1402,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     ui: gated(
       true, scopeLabel, 'ui', 'notifications',
-      ctx.pluginId, manifest, () => createUIAPI(),
+      ctx.pluginId, manifest, () => createUIAPI(ctx),
     ),
     commands: gated(
       true, scopeLabel, 'commands', 'commands',

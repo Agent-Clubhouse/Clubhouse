@@ -14,6 +14,8 @@ import {
   getFirstLeafId,
   findLeaf,
   syncCounterToTree,
+  createPaneCounter,
+  type PaneCounter,
 } from './pane-tree';
 
 // ── Hub instance — one per tab ───────────────────────────────────────
@@ -83,20 +85,21 @@ const LEGACY_STORAGE_KEY = 'hub-pane-tree';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-let hubIdCounter = 0;
+/** Default module-level hub counter (backward compat for tests). */
+const defaultHubCounter = { value: 0 };
 
-export function generateHubId(): string {
-  return `hub_inst_${++hubIdCounter}`;
+export function generateHubId(counter = defaultHubCounter): string {
+  return `hub_inst_${++counter.value}`;
 }
 
-export function resetHubIdCounter(value = 0): void {
-  hubIdCounter = value;
+export function resetHubIdCounter(value = 0, counter = defaultHubCounter): void {
+  counter.value = value;
 }
 
-function createHubInstance(prefix: string): HubInstance {
-  const leaf = createLeaf(prefix);
+function createHubInstance(prefix: string, paneCounter: PaneCounter, hubCounter: { value: number }): HubInstance {
+  const leaf = createLeaf(prefix, null, undefined, paneCounter);
   return {
-    id: generateHubId(),
+    id: generateHubId(hubCounter),
     name: generateHubName(),
     paneTree: leaf,
     focusedPaneId: leaf.id,
@@ -130,7 +133,10 @@ function syncDerivedState(hubs: HubInstance[], activeHubId: string): Pick<HubSta
 // ── Store factory ────────────────────────────────────────────────────
 
 export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubState>> {
-  const initialHub = createHubInstance(panePrefix);
+  // Per-store-instance counters to prevent ID collisions between stores
+  const paneCounter = createPaneCounter();
+  const hubCounter = { value: 0 };
+  const initialHub = createHubInstance(panePrefix, paneCounter, hubCounter);
 
   return create<HubState>((set, get) => ({
     hubs: [initialHub],
@@ -155,7 +161,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as HubInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const hubs: HubInstance[] = savedInstances.map((s): HubInstance => {
-            syncCounterToTree(s.paneTree);
+            syncCounterToTree(s.paneTree, paneCounter);
             return {
               id: s.id,
               name: s.name,
@@ -169,7 +175,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
             const m = h.id.match(/_(\d+)$/);
             return m ? Math.max(max, parseInt(m[1], 10)) : max;
           }, 0);
-          if (maxSuffix >= hubIdCounter) hubIdCounter = maxSuffix;
+          if (maxSuffix >= hubCounter.value) hubCounter.value = maxSuffix;
 
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
           const activeHubId = (savedActive && hubs.find((h) => h.id === savedActive))
@@ -183,9 +189,9 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         // Migrate from legacy single-tree format
         const legacyTree = await storage.read(LEGACY_STORAGE_KEY) as PaneNode | null;
         if (legacyTree && (legacyTree.type === 'leaf' || legacyTree.type === 'split')) {
-          syncCounterToTree(legacyTree);
+          syncCounterToTree(legacyTree, paneCounter);
           const hub: HubInstance = {
-            id: generateHubId(),
+            id: generateHubId(hubCounter),
             name: generateHubName(),
             paneTree: legacyTree,
             focusedPaneId: getFirstLeafId(legacyTree),
@@ -196,10 +202,10 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         }
 
         // Fresh start
-        const hub = createHubInstance(prefix);
+        const hub = createHubInstance(prefix, paneCounter, hubCounter);
         set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });
       } catch {
-        const hub = createHubInstance(prefix);
+        const hub = createHubInstance(prefix, paneCounter, hubCounter);
         set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });
       }
     },
@@ -218,7 +224,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
     // ── Hub management ─────────────────────────────────────────────
 
     addHub: (prefix) => {
-      const hub = createHubInstance(prefix);
+      const hub = createHubInstance(prefix, paneCounter, hubCounter);
       const hubs = [...get().hubs, hub];
       set({ hubs, activeHubId: hub.id, ...syncDerivedState(hubs, hub.id) });
       return hub.id;
@@ -228,7 +234,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
       const { hubs, activeHubId } = get();
       if (hubs.length <= 1) {
         // Can't remove the last hub — reset it instead
-        const fresh = createHubInstance(prefix);
+        const fresh = createHubInstance(prefix, paneCounter, hubCounter);
         set({ hubs: [fresh], activeHubId: fresh.id, ...syncDerivedState([fresh], fresh.id) });
         return;
       }
@@ -253,7 +259,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
 
     splitPane: (paneId, direction, prefix, position) => {
       set(updateActiveHub(get(), (hub) => ({
-        paneTree: splitPaneOp(hub.paneTree, paneId, direction, prefix, position),
+        paneTree: splitPaneOp(hub.paneTree, paneId, direction, prefix, position, paneCounter),
       })));
     },
 
@@ -262,7 +268,7 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         const result = closePaneOp(hub.paneTree, paneId);
         const clearZoom = hub.zoomedPaneId === paneId ? null : hub.zoomedPaneId;
         if (result === null) {
-          const leaf = createLeaf(prefix);
+          const leaf = createLeaf(prefix, null, undefined, paneCounter);
           return { paneTree: leaf, focusedPaneId: leaf.id, zoomedPaneId: null };
         }
         const focused = hub.focusedPaneId === paneId ? getFirstLeafId(result) : hub.focusedPaneId;
