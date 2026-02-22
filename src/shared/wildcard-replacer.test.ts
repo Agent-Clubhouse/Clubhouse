@@ -56,3 +56,78 @@ describe('replaceWildcards', () => {
     );
   });
 });
+
+describe('@@SourceControlProvider replacement', () => {
+  it('replaces @@SourceControlProvider with value', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    expect(replaceWildcards('Provider: @@SourceControlProvider', ctxWithScp)).toBe(
+      'Provider: github',
+    );
+  });
+
+  it('replaces @@SourceControlProvider with empty string when not set', () => {
+    expect(replaceWildcards('Provider: @@SourceControlProvider', ctx)).toBe('Provider: ');
+  });
+
+  it('replaces multiple occurrences of @@SourceControlProvider', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'azure-devops' };
+    expect(replaceWildcards('@@SourceControlProvider/@@SourceControlProvider', ctxWithScp)).toBe(
+      'azure-devops/azure-devops',
+    );
+  });
+});
+
+describe('@@If(value)...@@EndIf conditional blocks', () => {
+  it('keeps block content when sourceControlProvider matches', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
+    expect(replaceWildcards(input, ctxWithScp)).toBe('Use gh CLI\n');
+  });
+
+  it('strips block when sourceControlProvider does not match', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'azure-devops' };
+    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
+    expect(replaceWildcards(input, ctxWithScp)).toBe('');
+  });
+
+  it('strips block when sourceControlProvider is not set', () => {
+    const input = '@@If(github)\nUse gh CLI\n@@EndIf';
+    expect(replaceWildcards(input, ctx)).toBe('');
+  });
+
+  it('handles multiple conditional blocks', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    const input = [
+      '@@If(github)',
+      'GitHub section',
+      '@@EndIf',
+      '@@If(azure-devops)',
+      'Azure section',
+      '@@EndIf',
+    ].join('\n');
+    expect(replaceWildcards(input, ctxWithScp)).toBe('GitHub section\n');
+  });
+
+  it('preserves text outside conditional blocks', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    const input = 'Before\n@@If(github)\nInside\n@@EndIf\nAfter';
+    expect(replaceWildcards(input, ctxWithScp)).toBe('Before\nInside\nAfter');
+  });
+
+  it('handles multiline content in conditional blocks', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    const input = '@@If(github)\nLine 1\nLine 2\nLine 3\n@@EndIf';
+    expect(replaceWildcards(input, ctxWithScp)).toBe('Line 1\nLine 2\nLine 3\n');
+  });
+
+  it('replaces wildcards inside conditional blocks', () => {
+    const ctxWithScp = { ...ctx, sourceControlProvider: 'github' };
+    // Note: wildcards are replaced before conditional blocks are processed,
+    // so @@AgentName is already replaced
+    const input = 'Agent: @@AgentName\n@@If(github)\nPR for @@AgentName\n@@EndIf';
+    // @@AgentName is replaced first, then conditionals are processed
+    expect(replaceWildcards(input, ctxWithScp)).toBe(
+      'Agent: bold-falcon\nPR for bold-falcon\n',
+    );
+  });
+});

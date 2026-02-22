@@ -110,12 +110,15 @@ export interface QuickAgentDefaults {
   freeAgentMode?: boolean;
 }
 
+export type SourceControlProvider = 'github' | 'azure-devops';
+
 /** Project-level default settings applied as snapshots when creating new agents. */
 export interface ProjectAgentDefaults {
   instructions?: string;
   permissions?: PermissionsConfig;
   mcpJson?: string;
   freeAgentMode?: boolean;
+  sourceControlProvider?: SourceControlProvider;
 }
 
 export interface DurableAgentConfig {
@@ -136,6 +139,7 @@ export interface DurableAgentConfig {
 export interface ClubhouseModeSettings {
   enabled: boolean;
   projectOverrides?: Record<string, boolean>;
+  sourceControlProvider?: SourceControlProvider;
 }
 
 export interface MaterializationPreview {

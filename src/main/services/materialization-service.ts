@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults } from '../../shared/types';
+import { DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
 import { WildcardContext, replaceWildcards } from '../../shared/wildcard-replacer';
 import { OrchestratorProvider } from '../orchestrators/types';
 import {
@@ -11,12 +11,129 @@ import {
   writeProjectAgentDefaults,
 } from './agent-settings-service';
 import { SettingsConventions } from './agent-settings-service';
+import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
-export function buildWildcardContext(agent: DurableAgentConfig, projectPath: string): WildcardContext {
+// ── Skill content constants ──────────────────────────────────────────────
+
+export const MISSION_SKILL_CONTENT = `---
+name: mission
+description: Perform a coding task such as implementing a feature or fixing a bug following a defined series of steps and best practices
+---
+
+# Mission Skill
+
+## Critical Rules
+1. **Stay in your work tree** - you can look at your \`cwd\` to know your current root; you should not need to read or modify files outside your current root
+2. **Work in a branch** - you should perform your work in a branch. The correct naming convention is <agent-name>/<mission-name>. You should create a short name for your mission
+3. **Write new tests** - if you implement new functionality you must write tests to prevent future regressions
+
+## Workflow
+The mission begins when a prompt provides detail on what needs to be accomplished.
+
+1. Create your working branch, based off origin/main
+2. Ask clarifying questions of the user to ensure the outcome is fully captured
+3. Create a test plan with test cases and acceptance criteria
+4. Proceed to implement the work, committing regularly with descriptive messages
+5. Validate your work by running \`npm run validate\` to perform full E2E tests on the product
+6. Fix any test failures and run again; repeat until all tests pass
+7. Commit any remaining work and push your branch to remote
+8. Create a PR by invoking the \`/create-pr\` skill
+9. Return to standby by invoking the \`/go-standby\` skill
+
+**Clean State** - your standby state should be clean from untracked or uncommitted changes; if this is not the case let the user know before starting next work
+`;
+
+export const CREATE_PR_SKILL_CONTENT = `---
+name: create-pr
+description: Create a pull request for the current branch using the project's configured source control provider
+---
+
+# Create Pull Request
+
+Create a pull request for the current branch targeting main. Include a rich description covering the changes, test cases, and any manual validation needed.
+
+@@If(github)
+## Creating a Pull Request (GitHub)
+
+Use the GitHub CLI to create a PR:
+
+\`\`\`bash
+gh pr create --title "<title>" --body "$(cat <<'EOF'
+## Summary
+<1-3 bullet points summarizing the change>
+
+## Changes
+<detailed list of changes>
+
+## Test Plan
+- [ ] <test cases and acceptance criteria>
+
+## Manual Validation
+<any manual steps needed to verify>
+EOF
+)"
+\`\`\`
+@@EndIf
+@@If(azure-devops)
+## Creating a Pull Request (Azure DevOps)
+
+Use the Azure CLI to create a PR:
+
+\`\`\`bash
+az repos pr create \\
+  --title "<title>" \\
+  --description "## Summary
+<1-3 bullet points summarizing the change>
+
+## Changes
+<detailed list of changes>
+
+## Test Plan
+- [ ] <test cases and acceptance criteria>
+
+## Manual Validation
+<any manual steps needed to verify>" \\
+  --source-branch <current-branch> \\
+  --target-branch main
+\`\`\`
+@@EndIf
+`;
+
+export const GO_STANDBY_SKILL_CONTENT = `---
+name: go-standby
+description: Return to the standby branch and prepare for the next task
+---
+
+# Go Standby
+
+Return to your standby branch and prepare for the next task.
+
+## Steps
+
+1. Check for uncommitted changes — if any exist, warn the user before proceeding
+2. Switch to your standby branch:
+   \`\`\`bash
+   git checkout @@StandbyBranch
+   \`\`\`
+3. Pull latest from main:
+   \`\`\`bash
+   git pull origin main
+   \`\`\`
+4. Verify your working tree is clean
+5. Await further instructions
+`;
+
+// ── Wildcard context ─────────────────────────────────────────────────────
+
+export function buildWildcardContext(
+  agent: DurableAgentConfig,
+  projectPath: string,
+  sourceControlProvider?: SourceControlProvider,
+): WildcardContext {
   const agentPath = agent.worktreePath
     ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
     : `.clubhouse/agents/${agent.name}/`;
@@ -24,8 +141,30 @@ export function buildWildcardContext(agent: DurableAgentConfig, projectPath: str
     agentName: agent.name,
     standbyBranch: agent.branch || `${agent.name}/standby`,
     agentPath,
+    sourceControlProvider,
   };
 }
+
+// ── Source control provider resolution ───────────────────────────────────
+
+/**
+ * Resolve the effective source control provider for a project.
+ * Priority: project-level agentDefaults → app-level clubhouse mode settings → 'github'.
+ */
+export function resolveSourceControlProvider(projectPath: string): SourceControlProvider {
+  // 1. Project-level
+  const defaults = readProjectAgentDefaults(projectPath);
+  if (defaults.sourceControlProvider) return defaults.sourceControlProvider;
+
+  // 2. App-level clubhouse mode settings
+  const appSettings = clubhouseModeSettings.getSettings();
+  if (appSettings.sourceControlProvider) return appSettings.sourceControlProvider;
+
+  // 3. Default
+  return 'github';
+}
+
+// ── Materialization ──────────────────────────────────────────────────────
 
 /**
  * Materialize project defaults into an agent's worktree with wildcard replacement.
@@ -48,7 +187,8 @@ export function materializeAgent(params: {
     if (sourceSkills.length === 0 && sourceTemplates.length === 0) return;
   }
 
-  const ctx = buildWildcardContext(agent, projectPath);
+  const scp = resolveSourceControlProvider(projectPath);
+  const ctx = buildWildcardContext(agent, projectPath, scp);
   const conv = provider.conventions;
 
   // 1. Instructions
@@ -103,7 +243,8 @@ export function previewMaterialization(params: {
 }): MaterializationPreview {
   const { projectPath, agent, provider } = params;
   const defaults = readProjectAgentDefaults(projectPath);
-  const ctx = buildWildcardContext(agent, projectPath);
+  const scp = resolveSourceControlProvider(projectPath);
+  const ctx = buildWildcardContext(agent, projectPath, scp);
   const conv = provider.conventions;
 
   const instructions = defaults.instructions
@@ -139,6 +280,8 @@ export function previewMaterialization(params: {
     agentTemplates: sourceTemplates.map((t) => t.name),
   };
 }
+
+// ── Source dir copy ──────────────────────────────────────────────────────
 
 /**
  * Copy source skills or agent templates from .clubhouse to worktree,
@@ -194,15 +337,18 @@ function copyDirRecursive(src: string, dest: string, ctx: WildcardContext): void
   }
 }
 
+// ── Default templates & skills ───────────────────────────────────────────
+
 /**
  * Create default template content when clubhouse mode is first enabled
  * and no agentDefaults exist yet.
  */
 export function ensureDefaultTemplates(projectPath: string): void {
   const existing = readProjectAgentDefaults(projectPath);
-  if (existing.instructions || existing.permissions || existing.mcpJson) return;
+  const hasDefaults = !!(existing.instructions || existing.permissions || existing.mcpJson);
 
-  const defaultInstructions = `You are an agent named *@@AgentName*. Your standby branch is @@StandbyBranch.
+  if (!hasDefaults) {
+    const defaultInstructions = `You are an agent named *@@AgentName*. Your standby branch is @@StandbyBranch.
 Avoid pushing to remote from your standby branch.
 
 You are working in a Git Worktree at \`@@Path\`. You have a full copy of the
@@ -217,74 +363,47 @@ When given a mission:
 5. Push changes and open a PR to main with descriptive details
 6. Return to your standby branch and pull latest from main`;
 
-  const defaultPermissions = {
-    allow: [
-      'Read(@@Path**)',
-      'Edit(@@Path**)',
-      'Write(@@Path**)',
-      'Bash(cd @@Path**)',
-    ],
-    deny: [
-      'Read(../**)',
-      'Edit(../**)',
-      'Write(../**)',
-    ],
-  };
+    const defaultPermissions = {
+      allow: [
+        'Read(@@Path**)',
+        'Edit(@@Path**)',
+        'Write(@@Path**)',
+        'Bash(cd @@Path**)',
+        'Bash(gh pr:*)',
+        'Bash(gh issue:*)',
+        'Bash(az repos:*)',
+        'Bash(az devops:*)',
+      ],
+      deny: [
+        'Read(../**)',
+        'Edit(../**)',
+        'Write(../**)',
+      ],
+    };
 
-  const defaults: ProjectAgentDefaults = {
-    instructions: defaultInstructions,
-    permissions: defaultPermissions,
-  };
+    const defaults: ProjectAgentDefaults = {
+      instructions: defaultInstructions,
+      permissions: defaultPermissions,
+    };
 
-  writeProjectAgentDefaults(projectPath, defaults);
+    writeProjectAgentDefaults(projectPath, defaults);
+  }
 
-  // Also create the default mission skill as a source skill
-  ensureDefaultMissionSkill(projectPath);
+  // Always ensure default skills exist (even when defaults already exist)
+  ensureDefaultSkills(projectPath);
 }
 
 /**
- * Create the default mission skill in the project's source skills directory.
+ * Ensure all default skills exist in the project's source skills directory.
+ * Creates any missing skill files without overwriting existing ones.
  */
-function ensureDefaultMissionSkill(projectPath: string): void {
+export function ensureDefaultSkills(projectPath: string): void {
   const clubhouseDir = path.join(projectPath, '.clubhouse');
   const skillsDir = path.join(clubhouseDir, 'skills');
-  const missionDir = path.join(skillsDir, 'mission');
 
-  if (fs.existsSync(path.join(missionDir, 'SKILL.md'))) return;
-
-  if (!fs.existsSync(missionDir)) {
-    fs.mkdirSync(missionDir, { recursive: true });
-  }
-
-  const missionSkillContent = `---
-name: mission
-description: Perform a coding task such as implementing a feature or fixing a bug following a defined series of steps and best practices
----
-
-# Mission Skill
-
-## Critical Rules
-1. **Stay in your work tree** - you can look at your \`cwd\` to know your current root; you should not need to read or modify files outside your current root
-2. **Work in a branch** - you should perform your work in a branch. The correct naming convention is <agent-name>/<mission-name>. You should create a short name for your mission
-3. **Write new tests** - if you implement new functionality you must write tests to prevent future regressions
-
-## Workflow
-The mission begins when a prompt provides detail on what needs to be accomplished.
-
-1. Create your working branch, based off origin/main
-2. Ask clarifying questions of the user to ensure the outcome is fully captured
-3. Create a test plan with test cases and acceptance criteria
-4. Proceed to implement the work, committing regularly with descriptive messages
-5. Validate your work by running \`npm run validate\` to perform full E2E tests on the product
-6. Fix any test failures and run again; repeat until all tests pass
-7. Commit any remaining work and push your branch to remote
-8. Create a PR using the gh CLI; provide rich description about the changes made and test cases as well as any manual validation needed for this work.
-9. Once the PR is created, return to your standby branch and pull the latest from origin/main; await further instructions
-
-**Clean State** - your standby state should be clean from untracked or uncommitted changes; if this is not the case let the user know before starting next work
-`;
-
-  fs.writeFileSync(path.join(missionDir, 'SKILL.md'), missionSkillContent, 'utf-8');
+  ensureSkillFile(skillsDir, 'mission', MISSION_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'create-pr', CREATE_PR_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'go-standby', GO_STANDBY_SKILL_CONTENT);
 
   // Ensure the source skills path is set in project settings
   const settingsPath = path.join(clubhouseDir, 'settings.json');
@@ -304,6 +423,24 @@ The mission begins when a prompt provides detail on what needs to be accomplishe
     // Best effort
   }
 }
+
+/**
+ * Create a single skill file if it doesn't already exist.
+ */
+function ensureSkillFile(skillsDir: string, name: string, content: string): void {
+  const dir = path.join(skillsDir, name);
+  const filePath = path.join(dir, 'SKILL.md');
+
+  if (fs.existsSync(filePath)) return;
+
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(filePath, content, 'utf-8');
+}
+
+// ── Git exclusions ───────────────────────────────────────────────────────
 
 /**
  * Enable git exclude entries for clubhouse-mode-managed files.

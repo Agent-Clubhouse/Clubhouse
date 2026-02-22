@@ -61,7 +61,7 @@ describe('clubhouseModeStore', () => {
 
       expect(useClubhouseModeStore.getState().enabled).toBe(true);
       expect(window.clubhouse.app.saveClubhouseModeSettings).toHaveBeenCalledWith(
-        { enabled: true, projectOverrides: {} },
+        { enabled: true, projectOverrides: {}, sourceControlProvider: 'github' },
         undefined,
       );
     });

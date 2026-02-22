@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+import type { SourceControlProvider } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
 import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 
@@ -8,6 +9,7 @@ interface ProjectAgentDefaults {
   permissions?: { allow?: string[]; deny?: string[] };
   mcpJson?: string;
   freeAgentMode?: boolean;
+  sourceControlProvider?: SourceControlProvider;
 }
 
 interface Props {
@@ -22,6 +24,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [permDeny, setPermDeny] = useState('');
   const [mcpJson, setMcpJson] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
+  const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider>('github');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -35,6 +38,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setPermDeny((d.permissions?.deny || []).join('\n'));
       setMcpJson(d.mcpJson || '');
       setFreeAgentMode(d.freeAgentMode ?? false);
+      setSourceControlProvider(d.sourceControlProvider ?? 'github');
       setLoaded(true);
       setDirty(false);
     } catch {
@@ -60,6 +64,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     }
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
+    if (sourceControlProvider !== 'github') newDefaults.sourceControlProvider = sourceControlProvider;
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
@@ -107,6 +112,23 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
               : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'
             }
           </span>
+        </div>
+
+        {/* Source Control Provider */}
+        <div>
+          <label className="block text-xs text-ctp-subtext0 mb-1">Source Control Provider</label>
+          <select
+            value={sourceControlProvider}
+            onChange={(e) => { setSourceControlProvider(e.target.value as SourceControlProvider); setDirty(true); }}
+            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+          >
+            <option value="github">GitHub (gh CLI)</option>
+            <option value="azure-devops">Azure DevOps (az CLI)</option>
+          </select>
+          <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+            Replaces <code className="bg-surface-0 px-0.5 rounded">@@SourceControlProvider</code> in skill templates and controls conditional blocks.
+          </p>
         </div>
 
         {/* Default Free Agent Mode */}
