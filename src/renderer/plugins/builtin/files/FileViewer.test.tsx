@@ -4,10 +4,15 @@ import { FileViewer } from './FileViewer';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';
 
+// Track the last onSave callback passed to MonacoEditor so tests can trigger saves
+let lastOnSave: ((content: string) => void) | null = null;
+
 // Mock MonacoEditor and MarkdownPreview to avoid themes/require issues in jsdom
 vi.mock('./MonacoEditor', () => ({
-  MonacoEditor: ({ value, language }: { value: string; language: string }) =>
-    React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`),
+  MonacoEditor: ({ value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void }) => {
+    lastOnSave = onSave || null;
+    return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
+  },
 }));
 
 vi.mock('./MarkdownPreview', () => ({
@@ -51,6 +56,7 @@ function selectFile(path: string) {
 describe('FileViewer', () => {
   beforeEach(() => {
     fileState.reset();
+    lastOnSave = null;
   });
 
   it('shows empty state when no file selected', () => {
@@ -107,6 +113,18 @@ describe('FileViewer', () => {
     await waitFor(() => {
       expect(api.files.readFile).toHaveBeenCalledWith('hello.ts');
     });
+
+    // Wait for the MonacoEditor to render and capture the onSave callback
+    await waitFor(() => {
+      expect(lastOnSave).not.toBeNull();
+    });
+
+    // Trigger save via the onSave callback (simulates Cmd+S in Monaco)
+    await act(async () => {
+      lastOnSave!('console.log("updated")');
+    });
+
+    expect(api.files.writeFile).toHaveBeenCalledWith('hello.ts', 'console.log("updated")');
   });
 
   it('shows "Open in Finder" button that calls api.files.showInFolder()', async () => {
