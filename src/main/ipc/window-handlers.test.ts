@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('electron', () => {
   const mockWindows: any[] = [];
   let nextId = 1;
+  const onceListeners = new Map<string, ((...args: any[]) => void)[]>();
 
   class MockBrowserWindow {
     id: number;
@@ -48,6 +49,20 @@ vi.mock('electron', () => {
     ipcMain: {
       handle: vi.fn(),
       on: vi.fn(),
+      once: vi.fn((channel: string, cb: (...args: any[]) => void) => {
+        const list = onceListeners.get(channel) || [];
+        list.push(cb);
+        onceListeners.set(channel, list);
+      }),
+      emit: vi.fn((channel: string, ...args: any[]) => {
+        const list = onceListeners.get(channel) || [];
+        for (const cb of list) cb(...args);
+        onceListeners.delete(channel);
+      }),
+      removeAllListeners: vi.fn((channel: string) => {
+        onceListeners.delete(channel);
+      }),
+      _resetOnceListeners: () => onceListeners.clear(),
     },
   };
 });
@@ -85,6 +100,7 @@ describe('window-handlers', () => {
     expect(handlers.has(IPC.WINDOW.CLOSE_POPOUT)).toBe(true);
     expect(handlers.has(IPC.WINDOW.LIST_POPOUTS)).toBe(true);
     expect(handlers.has(IPC.WINDOW.FOCUS_MAIN)).toBe(true);
+    expect(handlers.has(IPC.WINDOW.GET_AGENT_STATE)).toBe(true);
   });
 
   it('CREATE_POPOUT creates a new window and returns its ID', async () => {
@@ -143,5 +159,46 @@ describe('window-handlers', () => {
       IPC.WINDOW.NAVIGATE_TO_AGENT,
       'agent-123',
     );
+  });
+
+  it('GET_AGENT_STATE sends REQUEST_AGENT_STATE to the main window', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    const statePromise = handler({});
+
+    // The handler should have sent REQUEST_AGENT_STATE to the main window
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(
+      IPC.WINDOW.REQUEST_AGENT_STATE,
+      expect.any(String),
+    );
+
+    // Simulate the main renderer responding via the on(AGENT_STATE_RESPONSE) handler
+    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    const mockState = {
+      agents: { 'a1': { id: 'a1', name: 'test' } },
+      agentDetailedStatus: {},
+      agentIcons: {},
+    };
+
+    // Find the on() handler registered for AGENT_STATE_RESPONSE
+    const onCalls = (ipcMain.on as any).mock.calls;
+    const responseHandler = onCalls.find(
+      (call: any[]) => call[0] === IPC.WINDOW.AGENT_STATE_RESPONSE,
+    )?.[1];
+    expect(responseHandler).toBeDefined();
+
+    // Call the on() handler which triggers the once() listener via emit
+    responseHandler({}, requestId, mockState);
+
+    const result = await statePromise;
+    expect(result).toEqual(mockState);
+  });
+
+  it('GET_AGENT_STATE returns empty state when no main window exists', async () => {
+    // No main window created
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+    const result = await handler({});
+    expect(result).toEqual({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
   });
 });
