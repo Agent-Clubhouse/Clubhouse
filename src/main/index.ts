@@ -8,6 +8,7 @@ import { getThemeColorsForTitleBar } from './title-bar-colors';
 import * as safeMode from './services/safe-mode';
 import { appLog } from './services/log-service';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit } from './services/auto-update-service';
+import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
@@ -143,6 +144,9 @@ app.on('ready', () => {
   // Start periodic update checks (respects user's autoUpdate setting)
   startUpdateChecks();
 
+  // Start periodic plugin update checks
+  startPeriodicPluginUpdateChecks();
+
   // macOS notification permission is triggered on-demand when the user
   // sends their first test notification or an agent event fires.
   // The app must be codesigned (even ad-hoc) for macOS to show the prompt.
@@ -163,6 +167,7 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
   stopUpdateChecks();
+  stopPeriodicPluginUpdateChecks();
 
   // Silently apply any downloaded update before quitting so the next launch
   // gets the new version without user action.

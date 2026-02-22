@@ -362,6 +362,94 @@ export function getActiveContext(pluginId: string, projectId?: string): PluginCo
   return activeContexts.get(contextKey);
 }
 
+/**
+ * Hot-reload a community plugin after its files have been updated on disk.
+ * This tears down the running plugin instance (all contexts), re-reads the
+ * manifest, clears the cached module, and re-activates the plugin in all
+ * scopes where it was previously active.
+ *
+ * Built-in plugins cannot be hot-reloaded.
+ */
+export async function hotReloadPlugin(pluginId: string): Promise<void> {
+  const store = usePluginStore.getState();
+  const entry = store.plugins[pluginId];
+
+  if (!entry) {
+    rendererLog('core:plugins', 'error', `Cannot hot-reload unknown plugin: ${pluginId}`);
+    return;
+  }
+
+  if (entry.source === 'builtin') {
+    rendererLog('core:plugins', 'warn', `Cannot hot-reload built-in plugin: ${pluginId}`);
+    return;
+  }
+
+  rendererLog('core:plugins', 'info', `Hot-reloading plugin: ${pluginId}`);
+
+  // 1. Collect all active contexts for this plugin so we can re-activate them
+  const contextsToRestore: Array<{ projectId?: string; projectPath?: string }> = [];
+  for (const [key, ctx] of activeContexts.entries()) {
+    if (key === pluginId || key.startsWith(`${pluginId}:`)) {
+      contextsToRestore.push({
+        projectId: ctx.projectId,
+        projectPath: ctx.projectPath,
+      });
+    }
+  }
+
+  // 2. Deactivate all contexts for this plugin
+  for (const ctx of contextsToRestore) {
+    await deactivatePlugin(pluginId, ctx.projectId);
+  }
+
+  // If the plugin had no active contexts, ensure full deactivation and module cleanup
+  if (contextsToRestore.length === 0) {
+    store.removePluginModule(pluginId);
+  }
+
+  // 3. Re-read manifest from disk
+  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+  const discovered = communityPlugins.find(
+    (p: { pluginPath: string }) => p.pluginPath === entry.pluginPath
+  );
+
+  if (!discovered) {
+    rendererLog('core:plugins', 'error', `Plugin ${pluginId} no longer found at ${entry.pluginPath}`);
+    store.setPluginStatus(pluginId, 'errored', 'Plugin files not found after update');
+    return;
+  }
+
+  const validation = validateManifest(discovered.manifest);
+  if (!validation.valid || !validation.manifest) {
+    rendererLog('core:plugins', 'error', `Updated plugin ${pluginId} has invalid manifest`, {
+      meta: { errors: validation.errors },
+    });
+    store.setPluginStatus(pluginId, 'incompatible', validation.errors.join('; '));
+    return;
+  }
+
+  // 4. Re-register with updated manifest
+  store.registerPlugin(validation.manifest, 'community', entry.pluginPath, 'registered');
+
+  // 5. Re-activate in all contexts where it was previously active
+  for (const ctx of contextsToRestore) {
+    await activatePlugin(pluginId, ctx.projectId, ctx.projectPath);
+  }
+
+  // If the plugin had no project contexts but was app-enabled, re-activate at app level
+  if (contextsToRestore.length === 0 && store.appEnabled.includes(pluginId)) {
+    const updatedEntry = usePluginStore.getState().plugins[pluginId];
+    if (updatedEntry && (updatedEntry.manifest.scope === 'app' || updatedEntry.manifest.scope === 'dual')) {
+      await activatePlugin(pluginId);
+    }
+  }
+
+  const finalEntry = usePluginStore.getState().plugins[pluginId];
+  rendererLog('core:plugins', 'info', `Plugin ${pluginId} hot-reloaded successfully`, {
+    meta: { newVersion: finalEntry?.manifest.version, status: finalEntry?.status },
+  });
+}
+
 /** @internal — only for tests */
 export function _resetActiveContexts(): void {
   activeContexts.clear();

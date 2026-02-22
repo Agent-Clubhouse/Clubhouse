@@ -37,6 +37,8 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
+import { initPluginUpdateListener } from './stores/pluginUpdateStore';
+import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { useProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
@@ -111,6 +113,12 @@ export function App() {
   // Listen for Annex status changes from main process
   useEffect(() => {
     const remove = initAnnexListener();
+    return () => remove();
+  }, []);
+
+  // Listen for plugin update status changes from main process
+  useEffect(() => {
+    const remove = initPluginUpdateListener();
     return () => remove();
   }, []);
 
@@ -576,6 +584,7 @@ export function App() {
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
+        <PluginUpdateBanner />
         <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <Dashboard />
@@ -597,6 +606,7 @@ export function App() {
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
+        <PluginUpdateBanner />
         <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <PluginContentView pluginId={appPluginId} mode="app" />
@@ -617,6 +627,7 @@ export function App() {
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
+        <PluginUpdateBanner />
         <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
           <HelpView />

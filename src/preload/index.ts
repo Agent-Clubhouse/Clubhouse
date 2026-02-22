@@ -341,6 +341,28 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.FETCH_REGISTRY),
     installPlugin: (req: { pluginId: string; version: string; assetUrl: string; sha256: string }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.INSTALL_PLUGIN, req),
+    checkPluginUpdates: () =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.CHECK_PLUGIN_UPDATES),
+    updatePlugin: (req: { pluginId: string }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.UPDATE_PLUGIN, req),
+    getPluginUpdatesStatus: (): { updates: any[]; checking: boolean; lastCheck: string | null; updating: Record<string, string>; error: string | null } => ({
+      updates: [],
+      checking: false,
+      lastCheck: null,
+      updating: {},
+      error: null,
+    }),
+    onPluginUpdatesChanged: (callback: (status: {
+      updates: any[];
+      checking: boolean;
+      lastCheck: string | null;
+      updating: Record<string, string>;
+      error: string | null;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
+      ipcRenderer.on(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener); };
+    },
   },
   log: {
     write: (entry: { ts: string; ns: string; level: string; msg: string; projectId?: string; meta?: Record<string, unknown> }) =>

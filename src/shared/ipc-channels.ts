@@ -201,6 +201,9 @@ export const IPC = {
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',
     INSTALL_PLUGIN: 'marketplace:install-plugin',
+    CHECK_PLUGIN_UPDATES: 'marketplace:check-plugin-updates',
+    UPDATE_PLUGIN: 'marketplace:update-plugin',
+    PLUGIN_UPDATES_CHANGED: 'marketplace:plugin-updates-changed',
   },
   ANNEX: {
     GET_SETTINGS: 'annex:get-settings',

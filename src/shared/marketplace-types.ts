@@ -58,5 +58,42 @@ export interface MarketplaceInstallResult {
   error?: string;
 }
 
+// ── Plugin update types ─────────────────────────────────────────────
+
+export interface PluginUpdateInfo {
+  pluginId: string;
+  pluginName: string;
+  currentVersion: string;
+  latestVersion: string;
+  assetUrl: string;
+  sha256: string;
+  size: number;
+}
+
+export interface PluginUpdateCheckResult {
+  updates: PluginUpdateInfo[];
+  checkedAt: string;
+}
+
+export interface PluginUpdateRequest {
+  pluginId: string;
+}
+
+export interface PluginUpdateResult {
+  success: boolean;
+  pluginId: string;
+  newVersion?: string;
+  error?: string;
+}
+
+export interface PluginUpdatesStatus {
+  updates: PluginUpdateInfo[];
+  checking: boolean;
+  lastCheck: string | null;
+  /** pluginId -> 'downloading' | 'installing' | 'reloading' */
+  updating: Record<string, string>;
+  error: string | null;
+}
+
 /** The registry schema version the client understands. */
 export const SUPPORTED_REGISTRY_VERSION = 1;
