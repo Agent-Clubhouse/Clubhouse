@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('fs', () => ({
@@ -144,7 +145,7 @@ describe('OpenCodeProvider', () => {
     it('reads from .opencode/instructions.md', () => {
       const result = provider.readInstructions('/project');
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        '/project/.opencode/instructions.md',
+        path.join('/project', '.opencode', 'instructions.md'),
         'utf-8',
       );
       expect(result).toBe('# OpenCode Instructions');

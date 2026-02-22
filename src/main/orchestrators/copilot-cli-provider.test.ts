@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('fs', () => ({
@@ -191,7 +192,7 @@ describe('CopilotCliProvider', () => {
     it('reads from .github/copilot-instructions.md', () => {
       const result = provider.readInstructions('/project');
       expect(fs.readFileSync).toHaveBeenCalledWith(
-        '/project/.github/copilot-instructions.md',
+        path.join('/project', '.github', 'copilot-instructions.md'),
         'utf-8',
       );
       expect(result).toBe('# Instructions');
@@ -212,7 +213,7 @@ describe('CopilotCliProvider', () => {
       provider.writeInstructions('/project', 'New instructions');
       expect(fs.mkdirSync).toHaveBeenCalled();
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/project/.github/copilot-instructions.md',
+        path.join('/project', '.github', 'copilot-instructions.md'),
         'New instructions',
         'utf-8',
       );
