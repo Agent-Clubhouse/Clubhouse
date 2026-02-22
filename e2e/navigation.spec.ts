@@ -324,15 +324,15 @@ test.describe('Keyboard Shortcuts', () => {
     let title = await getTitleBarText();
     expect(title).toContain(secondTitle!);
 
-    // Press Cmd+Shift+1 to switch to first project
-    await window.keyboard.press('Meta+Shift+1');
+    // Press Cmd+Option+1 to switch to first project
+    await window.keyboard.press('Meta+Alt+1');
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();
     expect(title).toContain(firstTitle!);
 
-    // Press Cmd+Shift+2 to switch to second project
-    await window.keyboard.press('Meta+Shift+2');
+    // Press Cmd+Option+2 to switch to second project
+    await window.keyboard.press('Meta+Alt+2');
     await window.waitForTimeout(500);
 
     title = await getTitleBarText();

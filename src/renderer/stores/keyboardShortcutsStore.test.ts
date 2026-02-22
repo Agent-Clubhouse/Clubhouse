@@ -52,11 +52,11 @@ describe('keyboardShortcutsStore', () => {
     }
   });
 
-  it('has switch-project-1..9 with Shift modifier', () => {
+  it('has switch-project-1..9 with Alt modifier (avoids macOS screenshot collision)', () => {
     const { shortcuts } = useKeyboardShortcutsStore.getState();
     for (let i = 1; i <= 9; i++) {
       expect(shortcuts[`switch-project-${i}`]).toBeDefined();
-      expect(shortcuts[`switch-project-${i}`].defaultBinding).toBe(`Meta+Shift+${i}`);
+      expect(shortcuts[`switch-project-${i}`].defaultBinding).toBe(`Meta+Alt+${i}`);
       expect(shortcuts[`switch-project-${i}`].category).toBe('Projects');
     }
   });
@@ -196,5 +196,25 @@ describe('eventToBinding', () => {
   it('does not normalize shifted symbols when Shift is not held', () => {
     // Without shiftKey, '!' should become Meta+! (uppercased is same)
     expect(eventToBinding(makeEvent({ key: '!', metaKey: true }))).toBe('Meta+!');
+  });
+
+  // Alt-digit normalization tests
+  it('normalizes Cmd+Alt+¡ to Meta+Alt+1 (macOS Option digit)', () => {
+    expect(eventToBinding(makeEvent({ key: '¡', metaKey: true, altKey: true }))).toBe('Meta+Alt+1');
+  });
+
+  it('normalizes Cmd+Alt+™ to Meta+Alt+2', () => {
+    expect(eventToBinding(makeEvent({ key: '™', metaKey: true, altKey: true }))).toBe('Meta+Alt+2');
+  });
+
+  it('normalizes all Option-modified digits', () => {
+    const map: Record<string, string> = { '¡': '1', '™': '2', '£': '3', '¢': '4', '∞': '5', '§': '6', '¶': '7', '•': '8', 'ª': '9' };
+    for (const [symbol, digit] of Object.entries(map)) {
+      expect(eventToBinding(makeEvent({ key: symbol, metaKey: true, altKey: true }))).toBe(`Meta+Alt+${digit}`);
+    }
+  });
+
+  it('does not normalize alt-modified symbols when Alt is not held', () => {
+    expect(eventToBinding(makeEvent({ key: '¡', metaKey: true }))).toBe('Meta+¡');
   });
 });
