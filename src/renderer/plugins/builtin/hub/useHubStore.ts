@@ -1,5 +1,6 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
+import { generateHubName } from '../../../../shared/name-generator';
 import {
   PaneNode,
   createLeaf,
@@ -15,16 +16,43 @@ import {
   syncCounterToTree,
 } from './pane-tree';
 
-export interface HubState {
+// ── Hub instance — one per tab ───────────────────────────────────────
+
+export interface HubInstance {
+  id: string;
+  name: string;
   paneTree: PaneNode;
   focusedPaneId: string;
+  zoomedPaneId: string | null;
+}
+
+/** Serialisable snapshot persisted to storage */
+export interface HubInstanceData {
+  id: string;
+  name: string;
+  paneTree: PaneNode;
+}
+
+// ── Store state ──────────────────────────────────────────────────────
+
+export interface HubState {
+  hubs: HubInstance[];
+  activeHubId: string;
   dragSourcePaneId: string | null;
   dragOverPaneId: string | null;
   loaded: boolean;
-  zoomedPaneId: string | null;
 
+  // Lifecycle
   loadHub: (storage: ScopedStorage, prefix: string) => Promise<void>;
   saveHub: (storage: ScopedStorage) => Promise<void>;
+
+  // Hub management
+  addHub: (prefix: string) => string;
+  removeHub: (hubId: string, prefix: string) => void;
+  renameHub: (hubId: string, name: string) => void;
+  setActiveHub: (hubId: string) => void;
+
+  // Pane operations (scoped to active hub)
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical', prefix: string, position?: 'before' | 'after') => void;
   closePane: (paneId: string, prefix: string) => void;
   assignAgent: (paneId: string, agentId: string | null, projectId?: string) => void;
@@ -36,88 +64,262 @@ export interface HubState {
   validateAgents: (knownIds: Set<string>) => void;
   setSplitRatio: (splitId: string, ratio: number) => void;
   toggleZoom: (paneId: string) => void;
+
+  // Convenience selectors
+  activeHub: () => HubInstance;
+  /** @deprecated — use activeHub().paneTree */
+  paneTree: PaneNode;
+  /** @deprecated — use activeHub().focusedPaneId */
+  focusedPaneId: string;
+  /** @deprecated — use activeHub().zoomedPaneId */
+  zoomedPaneId: string | null;
 }
 
-const STORAGE_KEY = 'hub-pane-tree';
+// ── Storage keys ─────────────────────────────────────────────────────
+
+const STORAGE_KEY_INSTANCES = 'hub-instances';
+const STORAGE_KEY_ACTIVE = 'hub-active-id';
+const LEGACY_STORAGE_KEY = 'hub-pane-tree';
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+let hubIdCounter = 0;
+
+export function generateHubId(): string {
+  return `hub_inst_${++hubIdCounter}`;
+}
+
+export function resetHubIdCounter(value = 0): void {
+  hubIdCounter = value;
+}
+
+function createHubInstance(prefix: string): HubInstance {
+  const leaf = createLeaf(prefix);
+  return {
+    id: generateHubId(),
+    name: generateHubName(),
+    paneTree: leaf,
+    focusedPaneId: leaf.id,
+    zoomedPaneId: null,
+  };
+}
+
+function updateActiveHub(state: HubState, updater: (hub: HubInstance) => Partial<HubInstance>): Partial<HubState> {
+  const hubs = state.hubs.map((h) => {
+    if (h.id !== state.activeHubId) return h;
+    return { ...h, ...updater(h) };
+  });
+  const active = hubs.find((h) => h.id === state.activeHubId)!;
+  return {
+    hubs,
+    paneTree: active.paneTree,
+    focusedPaneId: active.focusedPaneId,
+    zoomedPaneId: active.zoomedPaneId,
+  };
+}
+
+function syncDerivedState(hubs: HubInstance[], activeHubId: string): Pick<HubState, 'paneTree' | 'focusedPaneId' | 'zoomedPaneId'> {
+  const active = hubs.find((h) => h.id === activeHubId) ?? hubs[0];
+  return {
+    paneTree: active.paneTree,
+    focusedPaneId: active.focusedPaneId,
+    zoomedPaneId: active.zoomedPaneId,
+  };
+}
+
+// ── Store factory ────────────────────────────────────────────────────
 
 export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubState>> {
-  const initialLeaf = createLeaf(panePrefix);
+  const initialHub = createHubInstance(panePrefix);
 
   return create<HubState>((set, get) => ({
-    paneTree: initialLeaf,
-    focusedPaneId: initialLeaf.id,
+    hubs: [initialHub],
+    activeHubId: initialHub.id,
+    paneTree: initialHub.paneTree,
+    focusedPaneId: initialHub.focusedPaneId,
+    zoomedPaneId: null,
     dragSourcePaneId: null,
     dragOverPaneId: null,
     loaded: false,
-    zoomedPaneId: null,
+
+    activeHub: () => {
+      const state = get();
+      return state.hubs.find((h) => h.id === state.activeHubId) ?? state.hubs[0];
+    },
+
+    // ── Lifecycle ──────────────────────────────────────────────────
 
     loadHub: async (storage, prefix) => {
       try {
-        const saved = await storage.read(STORAGE_KEY) as PaneNode | null;
-        if (saved && (saved.type === 'leaf' || saved.type === 'split')) {
-          syncCounterToTree(saved);
-          set({ paneTree: saved, focusedPaneId: getFirstLeafId(saved), loaded: true });
-        } else {
-          const leaf = createLeaf(prefix);
-          set({ paneTree: leaf, focusedPaneId: leaf.id, loaded: true });
+        // Try new multi-hub format first
+        const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as HubInstanceData[] | null;
+        if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
+          const hubs: HubInstance[] = savedInstances.map((s) => {
+            syncCounterToTree(s.paneTree);
+            return {
+              id: s.id,
+              name: s.name,
+              paneTree: s.paneTree,
+              focusedPaneId: getFirstLeafId(s.paneTree),
+              zoomedPaneId: null,
+            };
+          });
+          // Sync hub ID counter
+          const maxSuffix = hubs.reduce((max, h) => {
+            const m = h.id.match(/_(\d+)$/);
+            return m ? Math.max(max, parseInt(m[1], 10)) : max;
+          }, 0);
+          if (maxSuffix >= hubIdCounter) hubIdCounter = maxSuffix;
+
+          const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
+          const activeHubId = (savedActive && hubs.find((h) => h.id === savedActive))
+            ? savedActive
+            : hubs[0].id;
+
+          set({ hubs, activeHubId, loaded: true, ...syncDerivedState(hubs, activeHubId) });
+          return;
         }
+
+        // Migrate from legacy single-tree format
+        const legacyTree = await storage.read(LEGACY_STORAGE_KEY) as PaneNode | null;
+        if (legacyTree && (legacyTree.type === 'leaf' || legacyTree.type === 'split')) {
+          syncCounterToTree(legacyTree);
+          const hub: HubInstance = {
+            id: generateHubId(),
+            name: generateHubName(),
+            paneTree: legacyTree,
+            focusedPaneId: getFirstLeafId(legacyTree),
+            zoomedPaneId: null,
+          };
+          set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });
+          return;
+        }
+
+        // Fresh start
+        const hub = createHubInstance(prefix);
+        set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });
       } catch {
-        const leaf = createLeaf(prefix);
-        set({ paneTree: leaf, focusedPaneId: leaf.id, loaded: true });
+        const hub = createHubInstance(prefix);
+        set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });
       }
     },
 
     saveHub: async (storage) => {
-      await storage.write(STORAGE_KEY, get().paneTree);
+      const { hubs, activeHubId } = get();
+      const data: HubInstanceData[] = hubs.map((h) => ({
+        id: h.id,
+        name: h.name,
+        paneTree: h.paneTree,
+      }));
+      await storage.write(STORAGE_KEY_INSTANCES, data);
+      await storage.write(STORAGE_KEY_ACTIVE, activeHubId);
     },
 
-    splitPane: (paneId, direction, prefix, position) => {
-      const newTree = splitPaneOp(get().paneTree, paneId, direction, prefix, position);
-      set({ paneTree: newTree });
+    // ── Hub management ─────────────────────────────────────────────
+
+    addHub: (prefix) => {
+      const hub = createHubInstance(prefix);
+      const hubs = [...get().hubs, hub];
+      set({ hubs, activeHubId: hub.id, ...syncDerivedState(hubs, hub.id) });
+      return hub.id;
     },
 
-    closePane: (paneId, prefix) => {
-      const result = closePaneOp(get().paneTree, paneId);
-      const clearZoom = get().zoomedPaneId === paneId ? null : get().zoomedPaneId;
-      if (result === null) {
-        const leaf = createLeaf(prefix);
-        set({ paneTree: leaf, focusedPaneId: leaf.id, zoomedPaneId: null });
-      } else {
-        const focused = get().focusedPaneId === paneId ? getFirstLeafId(result) : get().focusedPaneId;
-        // Also clear zoom if zoomed pane no longer exists in the tree
-        const zoomedStillExists = clearZoom ? findLeaf(result, clearZoom) !== null : false;
-        set({ paneTree: result, focusedPaneId: focused, zoomedPaneId: zoomedStillExists ? clearZoom : null });
+    removeHub: (hubId, prefix) => {
+      const { hubs, activeHubId } = get();
+      if (hubs.length <= 1) {
+        // Can't remove the last hub — reset it instead
+        const fresh = createHubInstance(prefix);
+        set({ hubs: [fresh], activeHubId: fresh.id, ...syncDerivedState([fresh], fresh.id) });
+        return;
+      }
+      const filtered = hubs.filter((h) => h.id !== hubId);
+      const newActive = activeHubId === hubId ? filtered[0].id : activeHubId;
+      set({ hubs: filtered, activeHubId: newActive, ...syncDerivedState(filtered, newActive) });
+    },
+
+    renameHub: (hubId, name) => {
+      const hubs = get().hubs.map((h) => h.id === hubId ? { ...h, name } : h);
+      set({ hubs });
+    },
+
+    setActiveHub: (hubId) => {
+      const { hubs } = get();
+      if (hubs.find((h) => h.id === hubId)) {
+        set({ activeHubId: hubId, ...syncDerivedState(hubs, hubId) });
       }
     },
 
-    assignAgent: (paneId, agentId, projectId) => {
-      set({ paneTree: assignAgentOp(get().paneTree, paneId, agentId, projectId) });
+    // ── Pane operations (active hub) ───────────────────────────────
+
+    splitPane: (paneId, direction, prefix, position) => {
+      set(updateActiveHub(get(), (hub) => ({
+        paneTree: splitPaneOp(hub.paneTree, paneId, direction, prefix, position),
+      })));
     },
 
-    setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
+    closePane: (paneId, prefix) => {
+      set(updateActiveHub(get(), (hub) => {
+        const result = closePaneOp(hub.paneTree, paneId);
+        const clearZoom = hub.zoomedPaneId === paneId ? null : hub.zoomedPaneId;
+        if (result === null) {
+          const leaf = createLeaf(prefix);
+          return { paneTree: leaf, focusedPaneId: leaf.id, zoomedPaneId: null };
+        }
+        const focused = hub.focusedPaneId === paneId ? getFirstLeafId(result) : hub.focusedPaneId;
+        const zoomedStillExists = clearZoom ? findLeaf(result, clearZoom) !== null : false;
+        return { paneTree: result, focusedPaneId: focused, zoomedPaneId: zoomedStillExists ? clearZoom : null };
+      }));
+    },
+
+    assignAgent: (paneId, agentId, projectId) => {
+      set(updateActiveHub(get(), (hub) => ({
+        paneTree: assignAgentOp(hub.paneTree, paneId, agentId, projectId),
+      })));
+    },
+
+    setFocusedPane: (paneId) => {
+      set(updateActiveHub(get(), () => ({ focusedPaneId: paneId })));
+    },
 
     removePanesByAgent: (agentId) => {
-      set({ paneTree: removePanesByAgentOp(get().paneTree, agentId) });
+      // Remove from ALL hubs, not just active
+      const hubs = get().hubs.map((h) => ({
+        ...h,
+        paneTree: removePanesByAgentOp(h.paneTree, agentId),
+      }));
+      const active = hubs.find((h) => h.id === get().activeHubId) ?? hubs[0];
+      set({ hubs, paneTree: active.paneTree, focusedPaneId: active.focusedPaneId, zoomedPaneId: active.zoomedPaneId });
     },
 
     swapPanes: (id1, id2) => {
-      set({ paneTree: swapPanesOp(get().paneTree, id1, id2) });
+      set(updateActiveHub(get(), (hub) => ({
+        paneTree: swapPanesOp(hub.paneTree, id1, id2),
+      })));
     },
 
     setDragSource: (paneId) => set({ dragSourcePaneId: paneId }),
     setDragOver: (paneId) => set({ dragOverPaneId: paneId }),
 
     validateAgents: (knownIds) => {
-      set({ paneTree: validateAgentsOp(get().paneTree, knownIds) });
+      // Validate across ALL hubs
+      const hubs = get().hubs.map((h) => ({
+        ...h,
+        paneTree: validateAgentsOp(h.paneTree, knownIds),
+      }));
+      const active = hubs.find((h) => h.id === get().activeHubId) ?? hubs[0];
+      set({ hubs, paneTree: active.paneTree, focusedPaneId: active.focusedPaneId, zoomedPaneId: active.zoomedPaneId });
     },
 
     setSplitRatio: (splitId, ratio) => {
-      set({ paneTree: setSplitRatioOp(get().paneTree, splitId, ratio) });
+      set(updateActiveHub(get(), (hub) => ({
+        paneTree: setSplitRatioOp(hub.paneTree, splitId, ratio),
+      })));
     },
 
     toggleZoom: (paneId) => {
-      const current = get().zoomedPaneId;
-      set({ zoomedPaneId: current === paneId ? null : paneId });
+      set(updateActiveHub(get(), (hub) => ({
+        zoomedPaneId: hub.zoomedPaneId === paneId ? null : paneId,
+      })));
     },
   }));
 }
