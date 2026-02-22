@@ -351,6 +351,72 @@ describe('Dashboard', () => {
     });
   });
 
+  describe('agent avatar profile pics', () => {
+    beforeEach(() => {
+      useProjectStore.setState({
+        projects: [makeProject()],
+        pickAndAddProject: vi.fn(),
+      });
+    });
+
+    it('renders profile image when agent has icon and iconDataUrl', () => {
+      useAgentStore.setState({
+        agents: {
+          'a1': makeAgent({ id: 'a1', name: 'pic-agent', icon: 'avatar.png' }),
+        },
+        agentIcons: { 'a1': 'data:image/png;base64,abc123' },
+        agentDetailedStatus: {},
+      });
+      render(<Dashboard />);
+      const img = screen.getByAltText('pic-agent');
+      expect(img).toBeInTheDocument();
+      expect(img).toHaveAttribute('src', 'data:image/png;base64,abc123');
+    });
+
+    it('renders initials when agent has no icon set', () => {
+      useAgentStore.setState({
+        agents: {
+          'a1': makeAgent({ id: 'a1', name: 'brave-falcon' }),
+        },
+        agentIcons: {},
+        agentDetailedStatus: {},
+      });
+      render(<Dashboard />);
+      expect(screen.queryByAltText('brave-falcon')).toBeNull();
+      expect(screen.getByText('BF')).toBeInTheDocument();
+    });
+
+    it('renders initials when agent has icon flag but no loaded data URL', () => {
+      useAgentStore.setState({
+        agents: {
+          'a1': makeAgent({ id: 'a1', name: 'brave-falcon', icon: 'avatar.png' }),
+        },
+        agentIcons: {},
+        agentDetailedStatus: {},
+      });
+      render(<Dashboard />);
+      expect(screen.queryByAltText('brave-falcon')).toBeNull();
+      expect(screen.getByText('BF')).toBeInTheDocument();
+    });
+
+    it('renders profile image in needs-attention section', () => {
+      useAgentStore.setState({
+        agents: {
+          'a1': makeAgent({ id: 'a1', name: 'alert-agent', status: 'error', icon: 'avatar.png' }),
+        },
+        agentIcons: { 'a1': 'data:image/png;base64,alertpic' },
+        agentDetailedStatus: {},
+      });
+      render(<Dashboard />);
+      const imgs = screen.getAllByAltText('alert-agent');
+      // Should appear in both needs-attention box and project card agent row
+      expect(imgs.length).toBeGreaterThanOrEqual(2);
+      imgs.forEach((img) => {
+        expect(img).toHaveAttribute('src', 'data:image/png;base64,alertpic');
+      });
+    });
+  });
+
   describe('agent display', () => {
     beforeEach(() => {
       useProjectStore.setState({
