@@ -7,6 +7,8 @@ export interface CommandItem {
   keywords?: string[];
   shortcut?: string;
   detail?: string;
+  /** Type indicator symbol displayed before the label (e.g. '@' for agents, '#' for projects) */
+  typeIndicator?: string;
   execute: () => void;
 }
 

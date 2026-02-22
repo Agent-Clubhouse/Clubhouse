@@ -6,6 +6,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
 import { useAnnexStore } from '../../stores/annexStore';
+import { useProjectHubStore, useAppHubStore } from '../../plugins/builtin/hub/main';
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
@@ -35,6 +36,10 @@ export function useCommandSource(): CommandItem[] {
   const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
   const annexSettings = useAnnexStore((s) => s.settings);
   const annexStatus = useAnnexStore((s) => s.status);
+  const projectHubs = useProjectHubStore((s) => s.hubs);
+  const projectActiveHubId = useProjectHubStore((s) => s.activeHubId);
+  const appHubs = useAppHubStore((s) => s.hubs);
+  const appActiveHubId = useAppHubStore((s) => s.activeHubId);
 
   return useMemo(() => {
     const items: CommandItem[] = [];
@@ -46,6 +51,7 @@ export function useCommandSource(): CommandItem[] {
         id: `project:${p.id}`,
         label: p.displayName || p.name,
         category: 'Projects',
+        typeIndicator: '#',
         keywords: [p.name, p.path],
         detail: p.path,
         shortcut: getShortcut(shortcuts, `switch-project-${i + 1}`),
@@ -72,6 +78,7 @@ export function useCommandSource(): CommandItem[] {
         id: `agent:${agentId}`,
         label: agent.name,
         category: 'Agents',
+        typeIndicator: '@',
         keywords: [project?.displayName || project?.name || ''],
         detail: project?.displayName || project?.name,
         shortcut: agentShortcut,
@@ -80,6 +87,23 @@ export function useCommandSource(): CommandItem[] {
           setExplorerTab('agents', agent.projectId);
           setActiveAgent(agentId, agent.projectId);
         },
+      });
+    }
+
+    // Hubs — show hubs for the current context (project or app)
+    const hubs = activeProjectId ? projectHubs : appHubs;
+    const activeHubId = activeProjectId ? projectActiveHubId : appActiveHubId;
+    const hubStore = activeProjectId ? useProjectHubStore : useAppHubStore;
+
+    for (const hub of hubs) {
+      items.push({
+        id: `hub:${hub.id}`,
+        label: hub.name,
+        category: 'Hubs',
+        typeIndicator: '/',
+        keywords: ['hub', 'tab', 'workspace'],
+        detail: hub.id === activeHubId ? 'Active' : undefined,
+        execute: () => hubStore.getState().setActiveHub(hub.id),
       });
     }
 
@@ -265,6 +289,7 @@ export function useCommandSource(): CommandItem[] {
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
     annexSettings, annexStatus,
+    projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     setActiveProject, setActiveAgent, setExplorerTab, toggleSettings,
     setSettingsSubPage, setSettingsContext, toggleHelp, openAbout,
     toggleExplorerCollapse, toggleAccessoryCollapse,

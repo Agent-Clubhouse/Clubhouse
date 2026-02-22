@@ -84,6 +84,11 @@ describe('commandPaletteStore', () => {
       expect(useCommandPaletteStore.getState().mode).toBe('projects');
     });
 
+    it('derives mode "hubs" from / prefix', () => {
+      useCommandPaletteStore.getState().setQuery('/myhub');
+      expect(useCommandPaletteStore.getState().mode).toBe('hubs');
+    });
+
     it('derives mode "all" for no prefix', () => {
       useCommandPaletteStore.getState().setQuery('search');
       expect(useCommandPaletteStore.getState().mode).toBe('all');
