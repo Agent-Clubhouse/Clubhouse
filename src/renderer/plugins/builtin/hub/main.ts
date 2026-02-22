@@ -7,6 +7,7 @@ import { HubPane } from './HubPane';
 import { HubTabBar } from './HubTabBar';
 import { AgentPicker } from './AgentPicker';
 import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
+import { broadcastHubState } from './hub-sync';
 
 const PANE_PREFIX = 'hub';
 
@@ -56,6 +57,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (!loaded) return;
     scheduleSave();
   }, [hubs, paneTree, loaded, scheduleSave]);
+
+  // Broadcast hub state changes to pop-out windows (immediate, not debounced)
+  const isPopout = window.clubhouse.window.isPopout();
+  useEffect(() => {
+    if (!loaded || isPopout) return;
+    broadcastHubState(store, activeHubId);
+  }, [hubs, paneTree, loaded, store, activeHubId, isPopout]);
 
   // Force re-render when agents change so the list stays fresh
   const [agentTick, setAgentTick] = useState(0);

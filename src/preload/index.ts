@@ -519,6 +519,53 @@ const api = {
       agentIcons: Record<string, string>;
     }) =>
       ipcRenderer.send(IPC.WINDOW.AGENT_STATE_RESPONSE, requestId, state),
+
+    // Hub state sync — leader/follower protocol
+    getHubState: (hubId: string, scope: string, projectId?: string): Promise<{
+      hubId: string;
+      paneTree: unknown;
+      focusedPaneId: string;
+      zoomedPaneId: string | null;
+    } | null> =>
+      ipcRenderer.invoke(IPC.WINDOW.GET_HUB_STATE, hubId, scope, projectId),
+    onRequestHubState: (callback: (requestId: string, hubId: string, scope: string, projectId?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, requestId: string, hubId: string, scope: string, projectId?: string) =>
+        callback(requestId, hubId, scope, projectId);
+      ipcRenderer.on(IPC.WINDOW.REQUEST_HUB_STATE, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_HUB_STATE, listener); };
+    },
+    respondHubState: (requestId: string, state: {
+      hubId: string;
+      paneTree: unknown;
+      focusedPaneId: string;
+      zoomedPaneId: string | null;
+    } | null) =>
+      ipcRenderer.send(IPC.WINDOW.HUB_STATE_RESPONSE, requestId, state),
+    onHubStateChanged: (callback: (state: {
+      hubId: string;
+      paneTree: unknown;
+      focusedPaneId: string;
+      zoomedPaneId: string | null;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      ipcRenderer.on(IPC.WINDOW.HUB_STATE_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.HUB_STATE_CHANGED, listener); };
+    },
+    broadcastHubState: (state: {
+      hubId: string;
+      paneTree: unknown;
+      focusedPaneId: string;
+      zoomedPaneId: string | null;
+    }) =>
+      ipcRenderer.send(IPC.WINDOW.HUB_STATE_CHANGED, state),
+    sendHubMutation: (hubId: string, scope: string, mutation: unknown, projectId?: string) =>
+      ipcRenderer.send(IPC.WINDOW.HUB_MUTATION, hubId, scope, mutation, projectId),
+    onHubMutation: (callback: (hubId: string, scope: string, mutation: unknown, projectId?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, hubId: string, scope: string, mutation: unknown, projectId?: string) =>
+        callback(hubId, scope, mutation, projectId);
+      ipcRenderer.on(IPC.WINDOW.REQUEST_HUB_MUTATION, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_HUB_MUTATION, listener); };
+    },
   },
 };
 

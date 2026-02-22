@@ -24,7 +24,6 @@ Clubhouse ships with several built-in plugins. Three of them (Hub, Terminal, and
 | **Terminal** | Project | Interactive terminal emulator scoped to each project's root directory. |
 | **Files** | Project | File browser with a built-in Monaco editor, markdown preview, and image display. |
 | **Issues** | Project | Browse, view, and file GitHub issues for the current project using the `gh` CLI. |
-| **Automations** | Project | Schedule recurring quick-agent tasks using cron expressions. |
 
 ## Plugin Trust Levels
 

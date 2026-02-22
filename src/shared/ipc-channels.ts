@@ -191,6 +191,12 @@ export const IPC = {
     GET_AGENT_STATE: 'window:get-agent-state',
     REQUEST_AGENT_STATE: 'window:request-agent-state',
     AGENT_STATE_RESPONSE: 'window:agent-state-response',
+    GET_HUB_STATE: 'window:get-hub-state',
+    REQUEST_HUB_STATE: 'window:request-hub-state',
+    HUB_STATE_RESPONSE: 'window:hub-state-response',
+    HUB_STATE_CHANGED: 'window:hub-state-changed',
+    HUB_MUTATION: 'window:hub-mutation',
+    REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',

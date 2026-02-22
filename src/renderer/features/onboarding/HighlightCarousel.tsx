@@ -54,7 +54,7 @@ function getSlidesForCohort(cohort: Cohort): HighlightSlide[] {
         illustration: <ProjectToolsIllustration className="w-full h-full" />,
         title: 'Built-in Project Tools',
         description:
-          'Track work with Issues and set up Automations — all without leaving Clubhouse. Enable and configure project tools in the Plugins settings page.',
+          'Track work with Issues — all without leaving Clubhouse. Enable and configure project tools in the Plugins settings page.',
       },
     ];
   }
