@@ -313,6 +313,12 @@ const api = {
     uninstall: (pluginId: string) =>
       ipcRenderer.invoke(IPC.PLUGIN.UNINSTALL, pluginId),
   },
+  marketplace: {
+    fetchRegistry: () =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.FETCH_REGISTRY),
+    installPlugin: (req: { pluginId: string; version: string; assetUrl: string; sha256: string }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.INSTALL_PLUGIN, req),
+  },
   log: {
     write: (entry: { ts: string; ns: string; level: string; msg: string; projectId?: string; meta?: Record<string, unknown> }) =>
       ipcRenderer.send(IPC.LOG.LOG_WRITE, entry),

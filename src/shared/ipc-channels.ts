@@ -185,6 +185,10 @@ export const IPC = {
     CLOSE_POPOUT: 'window:close-popout',
     LIST_POPOUTS: 'window:list-popouts',
   },
+  MARKETPLACE: {
+    FETCH_REGISTRY: 'marketplace:fetch-registry',
+    INSTALL_PLUGIN: 'marketplace:install-plugin',
+  },
   ANNEX: {
     GET_SETTINGS: 'annex:get-settings',
     SAVE_SETTINGS: 'annex:save-settings',

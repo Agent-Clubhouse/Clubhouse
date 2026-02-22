@@ -5,6 +5,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { activatePlugin, deactivatePlugin } from '../../plugins/plugin-loader';
 import type { PluginPermission, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
+import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 
 function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const [open, setOpen] = useState(false);
@@ -193,6 +194,7 @@ export function PluginListSettings() {
   const projects = useProjectStore((s) => s.projects);
 
   const [restartHint, setRestartHint] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   const isAppContext = settingsContext === 'app';
   const projectId = isAppContext ? undefined : settingsContext;
@@ -361,18 +363,27 @@ export function PluginListSettings() {
             : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
         </p>
         {isAppContext && (
-          <p className="text-xs text-ctp-subtext0 mb-6">
-            Discover and share plugins at the{' '}
-            <a
-              href="https://github.com/Agent-Clubhouse/Clubhouse-Workshop"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-ctp-accent hover:underline"
-              data-testid="workshop-link"
+          <div className="mb-6">
+            <p className="text-xs text-ctp-subtext0 mb-3">
+              Discover and share plugins at the{' '}
+              <a
+                href="https://github.com/Agent-Clubhouse/Clubhouse-Workshop"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ctp-accent hover:underline"
+                data-testid="workshop-link"
+              >
+                Clubhouse Workshop
+              </a>.
+            </p>
+            <button
+              onClick={() => setMarketplaceOpen(true)}
+              className="px-3 py-1.5 rounded bg-ctp-accent text-white text-xs font-medium hover:bg-ctp-accent/90 cursor-pointer"
+              data-testid="marketplace-button"
             >
-              Clubhouse Workshop
-            </a>.
-          </p>
+              View Plugin Marketplace
+            </button>
+          </div>
         )}
 
         {/* Built-in section */}
@@ -455,6 +466,10 @@ export function PluginListSettings() {
           </p>
         )}
       </div>
+
+      {marketplaceOpen && (
+        <PluginMarketplaceDialog onClose={() => setMarketplaceOpen(false)} />
+      )}
     </div>
   );
 }

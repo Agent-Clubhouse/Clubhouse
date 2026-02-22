@@ -9,6 +9,7 @@ import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
+import { registerMarketplaceHandlers } from './marketplace-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as logService from '../services/log-service';
@@ -33,6 +34,7 @@ export function registerAllHandlers(): void {
   registerProcessHandlers();
   registerWindowHandlers();
   registerAnnexHandlers();
+  registerMarketplaceHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {

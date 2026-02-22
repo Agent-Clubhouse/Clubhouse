@@ -116,6 +116,10 @@ vi.stubGlobal('clubhouse', {
   log: {
     write: noop,
   },
+  marketplace: {
+    fetchRegistry: async () => ({ registry: { version: 1, updated: '', plugins: [] }, featured: null }),
+    installPlugin: async () => ({ success: true }),
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,
