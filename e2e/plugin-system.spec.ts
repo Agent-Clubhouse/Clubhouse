@@ -80,9 +80,10 @@ async function getTitleBarText(): Promise<string> {
 async function openSettings() {
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
   await settingsBtn.click();
-  await window.waitForTimeout(500);
-  const title = await getTitleBarText();
-  expect(title).toContain('Settings');
+  // Use a retry-capable assertion instead of a fixed wait — CI machines can be slow
+  await expect(window.locator('[data-testid="title-bar"]').first()).toContainText('Settings', {
+    timeout: 5_000,
+  });
 }
 
 /** Navigate to the Plugins settings sub-page (within settings view). */
@@ -108,7 +109,10 @@ async function ensureProjectView() {
 async function closeSettings() {
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
   await settingsBtn.click();
-  await window.waitForTimeout(500);
+  // Wait until Settings is no longer in the title bar — ensures close is complete before proceeding
+  await expect(window.locator('[data-testid="title-bar"]').first()).not.toContainText('Settings', {
+    timeout: 5_000,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -333,7 +337,8 @@ test.describe('Plugin Settings', () => {
 
   test('External plugins section shows toggle switch', async () => {
     // The external plugins master switch should be visible
-    const externalLabel = window.locator('text=Enable External Plugins');
+    // Use exact match to avoid hitting the paragraph "Enable external plugins above to discover..."
+    const externalLabel = window.getByText('Enable External Plugins', { exact: true });
     await expect(externalLabel).toBeVisible({ timeout: 3_000 });
   });
 
