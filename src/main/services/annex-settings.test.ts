@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
+import * as path from 'path';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/test-app' },
@@ -64,7 +65,7 @@ describe('annex-settings', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       getSettings();
       expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
-        '/tmp/test-app/annex-settings.json',
+        path.join('/tmp/test-app', 'annex-settings.json'),
         'utf-8',
       );
     });

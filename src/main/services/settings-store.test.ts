@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/test-app' },
@@ -122,7 +123,7 @@ describe('settings-store', () => {
       const store = createSettingsStore<TestSettings>('my-settings.json', DEFAULTS);
       store.get();
       expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
-        '/tmp/test-app/my-settings.json',
+        path.join('/tmp/test-app', 'my-settings.json'),
         'utf-8',
       );
     });
@@ -134,7 +135,7 @@ describe('settings-store', () => {
       const settings: TestSettings = { name: 'saved', count: 10, nested: { flag: true } };
       store.save(settings);
       expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
-        '/tmp/test-app/test.json',
+        path.join('/tmp/test-app', 'test.json'),
         expect.any(String),
         'utf-8',
       );

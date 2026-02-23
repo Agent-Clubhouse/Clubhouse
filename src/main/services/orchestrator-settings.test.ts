@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as path from 'path';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/test-app' },
@@ -56,7 +57,7 @@ describe('orchestrator-settings', () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       getSettings();
       expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
-        '/tmp/test-app/orchestrator-settings.json',
+        path.join('/tmp/test-app', 'orchestrator-settings.json'),
         'utf-8',
       );
     });
