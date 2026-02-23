@@ -24,6 +24,7 @@ const sharedTestConfig = {
 const aliases = {
   electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
   'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
+  ws: path.resolve(__dirname, 'src/__mocks__/ws.ts'),
 };
 
 export default defineConfig({
