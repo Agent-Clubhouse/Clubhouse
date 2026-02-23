@@ -2,6 +2,7 @@ import { BrowserWindow, Notification } from 'electron';
 import { NotificationSettings } from '../../shared/types';
 import { IPC } from '../../shared/ipc-channels';
 import { createSettingsStore } from './settings-store';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
 const store = createSettingsStore<NotificationSettings>('notification-settings.json', {
   enabled: true,
@@ -54,15 +55,15 @@ export function sendNotification(
 
   const n = new Notification({ title, body, silent });
   n.on('click', () => {
-    // Focus the app window
-    const win = BrowserWindow.getAllWindows()[0];
+    // Focus the first available window to bring the app to the foreground
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
-      // Tell renderer to navigate to the agent
-      if (agentId && projectId) {
-        win.webContents.send(IPC.APP.NOTIFICATION_CLICKED, agentId, projectId);
-      }
+    }
+    // Broadcast navigation event to ALL windows so pop-outs stay in sync
+    if (agentId && projectId) {
+      broadcastToAllWindows(IPC.APP.NOTIFICATION_CLICKED, agentId, projectId);
     }
     // Clean up tracking on click
     if (agentId && projectId) {

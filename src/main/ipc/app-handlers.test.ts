@@ -240,16 +240,37 @@ describe('app-handlers', () => {
     expect(annexServer.broadcastThemeChanged).toHaveBeenCalled();
   });
 
-  it('UPDATE_TITLE_BAR_OVERLAY sets overlay on focused window on win32', async () => {
+  it('UPDATE_TITLE_BAR_OVERLAY sets overlay on ALL windows on win32', async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    const mockSetOverlay1 = vi.fn();
+    const mockSetOverlay2 = vi.fn();
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { isDestroyed: () => false, setTitleBarOverlay: mockSetOverlay1 } as any,
+      { isDestroyed: () => false, setTitleBarOverlay: mockSetOverlay2 } as any,
+    ]);
+
+    const handler = handleHandlers.get(IPC.APP.UPDATE_TITLE_BAR_OVERLAY)!;
+    await handler({}, { color: '#000', symbolColor: '#fff' });
+    expect(mockSetOverlay1).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
+    expect(mockSetOverlay2).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
+
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('UPDATE_TITLE_BAR_OVERLAY skips destroyed windows', async () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const mockSetOverlay = vi.fn();
-    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValueOnce({ setTitleBarOverlay: mockSetOverlay } as any);
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      { isDestroyed: () => true, setTitleBarOverlay: mockSetOverlay } as any,
+    ]);
 
     const handler = handleHandlers.get(IPC.APP.UPDATE_TITLE_BAR_OVERLAY)!;
     await handler({}, { color: '#000', symbolColor: '#fff' });
-    expect(mockSetOverlay).toHaveBeenCalledWith({ color: '#000', symbolColor: '#fff' });
+    expect(mockSetOverlay).not.toHaveBeenCalled();
 
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
