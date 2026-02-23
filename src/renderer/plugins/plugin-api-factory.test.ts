@@ -479,6 +479,102 @@ describe('plugin-api-factory', () => {
       expect(typeof d.dispose).toBe('function');
       d.dispose(); // Should not throw
     });
+
+    it('onChange fires when a setting changes via store', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const cb = vi.fn();
+      api.settings.onChange(cb);
+
+      // Simulate a setting change through the store
+      usePluginStore.getState().setPluginSetting('proj-1', 'test-plugin', 'theme', 'light');
+
+      expect(cb).toHaveBeenCalledWith('theme', 'light');
+    });
+
+    it('onChange fires for each changed key', () => {
+      usePluginStore.setState({
+        pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
+      });
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const cb = vi.fn();
+      api.settings.onChange(cb);
+
+      // Update both keys at once via loadPluginSettings
+      usePluginStore.getState().loadPluginSettings('proj-1:test-plugin', { a: 10, b: 20 });
+
+      expect(cb).toHaveBeenCalledTimes(2);
+      expect(cb).toHaveBeenCalledWith('a', 10);
+      expect(cb).toHaveBeenCalledWith('b', 20);
+    });
+
+    it('onChange does not fire for unchanged keys', () => {
+      usePluginStore.setState({
+        pluginSettings: { 'proj-1:test-plugin': { a: 1, b: 2 } },
+      });
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const cb = vi.fn();
+      api.settings.onChange(cb);
+
+      // Only change 'a', keep 'b' the same
+      usePluginStore.getState().setPluginSetting('proj-1', 'test-plugin', 'a', 99);
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      expect(cb).toHaveBeenCalledWith('a', 99);
+    });
+
+    it('onChange multiple handlers all fire', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const cb1 = vi.fn();
+      const cb2 = vi.fn();
+      api.settings.onChange(cb1);
+      api.settings.onChange(cb2);
+
+      usePluginStore.getState().setPluginSetting('proj-1', 'test-plugin', 'x', 42);
+
+      expect(cb1).toHaveBeenCalledWith('x', 42);
+      expect(cb2).toHaveBeenCalledWith('x', 42);
+    });
+
+    it('onChange stops firing after dispose', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      const cb = vi.fn();
+      const d = api.settings.onChange(cb);
+      d.dispose();
+
+      usePluginStore.getState().setPluginSetting('proj-1', 'test-plugin', 'key', 'val');
+
+      expect(cb).not.toHaveBeenCalled();
+    });
+
+    it('store subscription is cleaned up via ctx.subscriptions', () => {
+      const ctx = makeCtx();
+      const api = createPluginAPI(ctx, undefined, allPermsManifest);
+      const cb = vi.fn();
+      api.settings.onChange(cb);
+
+      // Dispose all subscriptions (simulates plugin deactivation)
+      ctx.subscriptions.forEach(s => s.dispose());
+
+      usePluginStore.getState().setPluginSetting('proj-1', 'test-plugin', 'key', 'val');
+
+      // Handler registered before disposal should still be in the set,
+      // but the store subscription is gone so it won't fire
+      expect(cb).not.toHaveBeenCalled();
+    });
+
+    it('onChange fires for app-scoped plugins', () => {
+      const api = createPluginAPI(
+        makeCtx({ scope: 'app', projectId: undefined }),
+        undefined,
+        allPermsManifest,
+      );
+      const cb = vi.fn();
+      api.settings.onChange(cb);
+
+      usePluginStore.getState().setPluginSetting('app', 'test-plugin', 'color', 'red');
+
+      expect(cb).toHaveBeenCalledWith('color', 'red');
+    });
   });
 
   // ── UIAPI ─────────────────────────────────────────────────────────────

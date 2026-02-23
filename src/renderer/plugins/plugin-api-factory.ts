@@ -417,6 +417,23 @@ function createSettingsAPI(ctx: PluginContext): SettingsAPI {
     : `app:${ctx.pluginId}`;
   const changeHandlers = new Set<(key: string, value: unknown) => void>();
 
+  // Subscribe to store changes and dispatch to changeHandlers
+  let prevSettings = usePluginStore.getState().pluginSettings[settingsKey] || {};
+  const unsub = usePluginStore.subscribe((state) => {
+    const newSettings = state.pluginSettings[settingsKey] || {};
+    if (newSettings !== prevSettings) {
+      // Find changed keys by comparing old and new
+      const allKeys = new Set([...Object.keys(prevSettings), ...Object.keys(newSettings)]);
+      for (const key of allKeys) {
+        if (newSettings[key] !== prevSettings[key]) {
+          changeHandlers.forEach(handler => handler(key, newSettings[key]));
+        }
+      }
+      prevSettings = newSettings;
+    }
+  });
+  ctx.subscriptions.push({ dispose: unsub });
+
   return {
     get<T = unknown>(key: string): T | undefined {
       const allSettings = usePluginStore.getState().pluginSettings[settingsKey];
