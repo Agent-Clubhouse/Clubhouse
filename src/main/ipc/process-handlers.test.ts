@@ -33,7 +33,7 @@ describe('process-handlers', () => {
     expect(handlers.has(IPC.PROCESS.EXEC)).toBe(true);
   });
 
-  it('rejects commands with path separators', async () => {
+  it('rejects commands with forward slash path separators', async () => {
     const handler = handlers.get(IPC.PROCESS.EXEC)!;
     const result = await handler({}, {
       pluginId: 'p1',
@@ -45,6 +45,22 @@ describe('process-handlers', () => {
     expect(result).toEqual({
       stdout: '',
       stderr: 'Invalid command: "/usr/bin/ls"',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects commands with backslash path separators', async () => {
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    const result = await handler({}, {
+      pluginId: 'p1',
+      command: 'dir\\evil',
+      args: [],
+      allowedCommands: ['dir\\evil'],
+      projectPath: '/project',
+    });
+    expect(result).toEqual({
+      stdout: '',
+      stderr: 'Invalid command: "dir\\evil"',
       exitCode: 1,
     });
   });
@@ -93,6 +109,22 @@ describe('process-handlers', () => {
     expect(result).toEqual({
       stdout: '',
       stderr: 'Command "rm" is not in allowedCommands',
+      exitCode: 1,
+    });
+  });
+
+  it('rejects when allowedCommands is not an array', async () => {
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    const result = await handler({}, {
+      pluginId: 'p1',
+      command: 'ls',
+      args: [],
+      allowedCommands: null,
+      projectPath: '/project',
+    });
+    expect(result).toEqual({
+      stdout: '',
+      stderr: 'Command "ls" is not in allowedCommands',
       exitCode: 1,
     });
   });
@@ -159,10 +191,9 @@ describe('process-handlers', () => {
     expect(result.exitCode).toBe(2);
   });
 
-  it('clamps timeout to valid range', async () => {
+  it('clamps timeout below MIN_TIMEOUT (100) to 100', async () => {
     vi.mocked(execFile).mockImplementation(
       (_cmd: any, _args: any, opts: any, callback: any) => {
-        // Verify timeout was clamped to MIN_TIMEOUT (100)
         expect(opts.timeout).toBe(100);
         callback(null, '', '');
         return {} as any;
@@ -178,5 +209,66 @@ describe('process-handlers', () => {
       projectPath: '/project',
       options: { timeout: 1 },
     });
+  });
+
+  it('clamps timeout above MAX_TIMEOUT (60000) to 60000', async () => {
+    vi.mocked(execFile).mockImplementation(
+      (_cmd: any, _args: any, opts: any, callback: any) => {
+        expect(opts.timeout).toBe(60000);
+        callback(null, '', '');
+        return {} as any;
+      },
+    );
+
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    await handler({}, {
+      pluginId: 'p1',
+      command: 'echo',
+      args: [],
+      allowedCommands: ['echo'],
+      projectPath: '/project',
+      options: { timeout: 999999 },
+    });
+  });
+
+  it('uses DEFAULT_TIMEOUT (15000) when no timeout option provided', async () => {
+    vi.mocked(execFile).mockImplementation(
+      (_cmd: any, _args: any, opts: any, callback: any) => {
+        expect(opts.timeout).toBe(15000);
+        callback(null, '', '');
+        return {} as any;
+      },
+    );
+
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    await handler({}, {
+      pluginId: 'p1',
+      command: 'echo',
+      args: [],
+      allowedCommands: ['echo'],
+      projectPath: '/project',
+    });
+  });
+
+  it('falls back to error.message when stderr is empty', async () => {
+    vi.mocked(execFile).mockImplementation(
+      (_cmd: any, _args: any, _opts: any, callback: any) => {
+        const err = new Error('command not found') as any;
+        err.status = 127;
+        callback(err, '', '');
+        return {} as any;
+      },
+    );
+
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    const result = await handler({}, {
+      pluginId: 'p1',
+      command: 'nonexistent',
+      args: [],
+      allowedCommands: ['nonexistent'],
+      projectPath: '/project',
+    });
+    expect(result.exitCode).toBe(127);
+    expect(result.stderr).toBe('command not found');
   });
 });
