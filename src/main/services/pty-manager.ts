@@ -253,13 +253,15 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   const session = sessions.get(agentId);
   if (!session) return;
 
-  session.killing = true;
-
-  // Clear any existing escalation timers from a prior gracefulKill call
-  // to prevent leaked timers if gracefulKill is invoked twice.
+  // Clear any existing escalation timers to prevent leaks on double-call.
+  // Without this, calling gracefulKill twice overwrites the timer references
+  // on the session object, leaking the first set of timers which then fire
+  // on stale session references and can destroy replacement sessions.
   if (session.eofTimer) clearTimeout(session.eofTimer);
   if (session.termTimer) clearTimeout(session.termTimer);
   if (session.killTimer) clearTimeout(session.killTimer);
+
+  session.killing = true;
 
   try {
     session.process.write(exitCommand);
