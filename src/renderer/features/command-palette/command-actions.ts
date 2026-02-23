@@ -40,6 +40,7 @@ export function getCommandActions(): CommandAction[] {
     },
     {
       id: 'new-quick-agent',
+      global: true,
       execute: () => {
         useUIStore.getState().openQuickAgentDialog();
       },
