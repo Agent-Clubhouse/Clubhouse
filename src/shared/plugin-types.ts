@@ -49,7 +49,8 @@ export type PluginPermission =
   | 'agent-config.cross-project'
   | 'agent-config.permissions'
   | 'agent-config.mcp'
-  | 'sounds';
+  | 'sounds'
+  | 'theme';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -72,6 +73,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config.permissions',
   'agent-config.mcp',
   'sounds',
+  'theme',
 ] as const;
 
 export interface PluginExternalRoot {
@@ -100,6 +102,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
   sounds: 'Register and manage custom notification sound packs',
+  theme: 'Read the current theme and subscribe to theme changes',
 };
 
 export interface PluginHelpTopic {
@@ -577,6 +580,25 @@ export interface SoundsAPI {
   listPacks(): Promise<Array<{ id: string; name: string; source: 'user' | 'plugin' }>>;
 }
 
+// ── Theme API ─────────────────────────────────────────────────────────
+export interface ThemeInfo {
+  id: string;
+  name: string;
+  type: 'dark' | 'light';
+  colors: Record<string, string>;
+  hljs: Record<string, string>;
+  terminal: Record<string, string>;
+}
+
+export interface ThemeAPI {
+  /** Get the current theme ID and full color definition. */
+  getCurrent(): ThemeInfo;
+  /** Subscribe to theme changes (fires on user theme switch). Returns a Disposable. */
+  onDidChange(callback: (theme: ThemeInfo) => void): Disposable;
+  /** Get a single resolved CSS color value by token name (e.g. 'base', 'accent', 'hljs.keyword'). */
+  getColor(token: string): string | null;
+}
+
 // ── Composite PluginAPI ────────────────────────────────────────────────
 export interface PluginAPI {
   project: ProjectAPI;
@@ -598,6 +620,7 @@ export interface PluginAPI {
   badges: BadgesAPI;
   agentConfig: AgentConfigAPI;
   sounds: SoundsAPI;
+  theme: ThemeAPI;
   context: PluginContextInfo;
 }
 

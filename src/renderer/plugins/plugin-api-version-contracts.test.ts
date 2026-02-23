@@ -34,6 +34,7 @@ import type {
   BadgesAPI,
   AgentConfigAPI,
   SoundsAPI,
+  ThemeAPI,
   PluginContextInfo,
   PluginManifest,
   PluginPermission,
@@ -110,13 +111,15 @@ const AGENT_CONFIG_API_METHODS: (keyof AgentConfigAPI)[] = [
 
 const SOUNDS_API_METHODS: (keyof SoundsAPI)[] = ['registerPack', 'unregisterPack', 'listPacks'];
 
+const THEME_API_METHODS: (keyof ThemeAPI)[] = ['getCurrent', 'onDidChange', 'getColor'];
+
 const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'projectPath'];
 
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -163,7 +166,7 @@ function fullV05Manifest(): Record<string, unknown> {
       'notifications', 'storage', 'navigation', 'projects', 'commands',
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
-      'agent-config.mcp', 'sounds',
+      'agent-config.mcp', 'sounds', 'theme',
     ],
     externalRoots: [{ settingKey: 'ext-data', root: 'data' }],
     allowedCommands: ['node', 'npm'],
@@ -793,6 +796,14 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
     }
   });
 
+  describe('api.theme surface', () => {
+    for (const method of THEME_API_METHODS) {
+      it(`api.theme.${method} exists and is callable`, () => {
+        expect(typeof api.theme[method]).toBe('function');
+      });
+    }
+  });
+
   describe('api.context surface', () => {
     for (const prop of CONTEXT_PROPERTIES) {
       it(`api.context.${prop} exists`, () => {
@@ -922,6 +933,25 @@ describe('§4 Mock API safe return values', () => {
 
   it('api.sounds.listPacks() returns empty array', async () => {
     expect(await api.sounds.listPacks()).toEqual([]);
+  });
+
+  it('api.theme.getCurrent() returns a ThemeInfo object', () => {
+    const theme = api.theme.getCurrent();
+    expect(theme).toHaveProperty('id');
+    expect(theme).toHaveProperty('name');
+    expect(theme).toHaveProperty('type');
+    expect(theme).toHaveProperty('colors');
+    expect(theme).toHaveProperty('hljs');
+    expect(theme).toHaveProperty('terminal');
+  });
+
+  it('api.theme.onDidChange() returns disposable', () => {
+    const d = api.theme.onDidChange(() => {});
+    expect(typeof d.dispose).toBe('function');
+  });
+
+  it('api.theme.getColor() returns null for unknown token', () => {
+    expect(api.theme.getColor('nonexistent')).toBeNull();
   });
 
   it('api.context has expected default values', () => {
@@ -1061,6 +1091,13 @@ describe('§6 Regression guards — API surface removal detection', () => {
     }
   });
 
+  it('removing any ThemeAPI method would be detected', () => {
+    const api = createMockAPI();
+    for (const method of THEME_API_METHODS) {
+      expect(method in api.theme).toBe(true);
+    }
+  });
+
   it('removing any WidgetsAPI component would be detected', () => {
     const api = createMockAPI();
     for (const c of WIDGETS_API_COMPONENTS) {
@@ -1081,7 +1118,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'notifications', 'storage', 'navigation', 'projects', 'commands',
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
-      'agent-config.mcp', 'sounds',
+      'agent-config.mcp', 'sounds', 'theme',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });
