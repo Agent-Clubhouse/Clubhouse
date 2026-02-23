@@ -65,15 +65,16 @@ export function registerAppHandlers(): void {
     annexServer.broadcastThemeChanged();
   });
 
-  // Update the Windows title bar overlay colors when the theme changes
+  // Update the Windows title bar overlay colors on ALL windows when the theme changes
   ipcMain.handle(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, (_event, colors: { color: string; symbolColor: string }) => {
     if (process.platform !== 'win32') return;
-    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-    if (win) {
-      win.setTitleBarOverlay({
-        color: colors.color,
-        symbolColor: colors.symbolColor,
-      });
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.setTitleBarOverlay({
+          color: colors.color,
+          symbolColor: colors.symbolColor,
+        });
+      }
     }
   });
 
