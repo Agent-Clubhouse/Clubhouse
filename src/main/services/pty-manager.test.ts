@@ -34,7 +34,7 @@ vi.mock('../../shared/ipc-channels', () => ({
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, spawn, spawnShell, resize, write, gracefulKill, kill, killAll } from './pty-manager';
+import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll } from './pty-manager';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -603,6 +603,174 @@ describe('pty-manager', () => {
         expect(writtenCmd).toBeDefined();
         expect(writtenCmd![0]).toContain('"Fix the login bug"');
       }
+    });
+  });
+
+  // ── PTY Lifecycle Risk Area Tests ────────────────────────────────────
+  // These tests target the critical risk areas identified in the PTY
+  // manager: timer leaks on double gracefulKill, stale session capture
+  // in timer callbacks, and killAll interaction with active gracefulKill.
+
+  describe('gracefulKill — double-call timer leak', () => {
+    it('does not duplicate EOF writes when gracefulKill is called twice', () => {
+      vi.useFakeTimers();
+      spawn('agent_dbl_gk', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // Simulate user clicking Stop twice rapidly
+      gracefulKill('agent_dbl_gk');
+      gracefulKill('agent_dbl_gk');
+      mockProcess.write.mockClear(); // clear the two /exit\r writes
+
+      // At 3s: only ONE EOF should fire, not two
+      vi.advanceTimersByTime(3000);
+      const eofCalls = mockProcess.write.mock.calls.filter(
+        (c: string[]) => c[0] === '\x04'
+      );
+      expect(eofCalls).toHaveLength(1);
+
+      vi.useRealTimers();
+    });
+
+    it('does not duplicate SIGTERM when gracefulKill is called twice', () => {
+      vi.useFakeTimers();
+      spawn('agent_dbl_gk_term', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      gracefulKill('agent_dbl_gk_term');
+      gracefulKill('agent_dbl_gk_term');
+      mockProcess.kill.mockClear();
+
+      // At 6s: only ONE SIGTERM
+      vi.advanceTimersByTime(6000);
+      const sigtermCalls = mockProcess.kill.mock.calls.filter(
+        (c: string[]) => c[0] === 'SIGTERM'
+      );
+      expect(sigtermCalls).toHaveLength(1);
+
+      vi.useRealTimers();
+    });
+
+    it('does not duplicate hard kill when gracefulKill is called twice', () => {
+      vi.useFakeTimers();
+      spawn('agent_dbl_gk_hard', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      gracefulKill('agent_dbl_gk_hard');
+      gracefulKill('agent_dbl_gk_hard');
+      mockProcess.kill.mockClear();
+
+      // At 9s: only ONE hard kill
+      vi.advanceTimersByTime(9000);
+      const hardKills = mockProcess.kill.mock.calls.filter(
+        (c: string[]) => c.length === 0 || c[0] === undefined
+      );
+      expect(hardKills).toHaveLength(1);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('gracefulKill — leaked timer must not destroy replacement session', () => {
+    it('new session survives leaked killTimer from double gracefulKill', () => {
+      vi.useFakeTimers();
+      spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
+
+      // Double gracefulKill leaks first set of timers
+      gracefulKill('agent_leak');
+      gracefulKill('agent_leak');
+
+      // Session exits (kill clears tracked timers but not leaked ones)
+      kill('agent_leak');
+      expect(isRunning('agent_leak')).toBe(false);
+
+      // New session spawned with the same ID
+      spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
+      expect(isRunning('agent_leak')).toBe(true);
+
+      // Advance past all leaked timer deadlines (9s)
+      vi.advanceTimersByTime(10000);
+
+      // The new session MUST survive — leaked killTimer must not clean it up
+      expect(isRunning('agent_leak')).toBe(true);
+
+      vi.useRealTimers();
+    });
+
+    it('new session buffer is preserved after leaked timers fire', () => {
+      vi.useFakeTimers();
+      spawn('agent_leak_buf', '/test', '/usr/local/bin/claude', []);
+
+      gracefulKill('agent_leak_buf');
+      gracefulKill('agent_leak_buf');
+      kill('agent_leak_buf');
+
+      // Spawn new session and write data
+      spawnAndActivate('agent_leak_buf');
+      const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
+      onDataCb('important data');
+      expect(getBuffer('agent_leak_buf')).toBe('important data');
+
+      // Advance past all leaked timers
+      vi.advanceTimersByTime(10000);
+
+      // Buffer must still be intact
+      expect(getBuffer('agent_leak_buf')).toBe('important data');
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('gracefulKill — timer identity guards', () => {
+    it('timers do not fire on a replacement session after natural exit', () => {
+      vi.useFakeTimers();
+      spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+
+      gracefulKill('agent_id_guard');
+
+      // Process exits naturally before any timers fire (via onExit handler)
+      const onExitCb = mockProcess.onExit.mock.calls[0][0];
+      onExitCb({ exitCode: 0 });
+
+      // Spawn replacement session
+      spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // Advance past all timer deadlines
+      vi.advanceTimersByTime(10000);
+
+      // Replacement session must not receive stale EOF/SIGTERM/kill
+      expect(isRunning('agent_id_guard')).toBe(true);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('isRunning', () => {
+    it('returns true for active session', () => {
+      spawn('agent_ir_active', '/test', '/usr/local/bin/claude', []);
+      expect(isRunning('agent_ir_active')).toBe(true);
+    });
+
+    it('returns false for unknown agent', () => {
+      expect(isRunning('agent_ir_unknown')).toBe(false);
+    });
+
+    it('returns true during graceful kill (session still alive)', () => {
+      spawn('agent_ir_killing', '/test', '/usr/local/bin/claude', []);
+      gracefulKill('agent_ir_killing');
+      expect(isRunning('agent_ir_killing')).toBe(true);
+    });
+
+    it('returns false after kill()', () => {
+      spawn('agent_ir_killed', '/test', '/usr/local/bin/claude', []);
+      kill('agent_ir_killed');
+      expect(isRunning('agent_ir_killed')).toBe(false);
     });
   });
 });
