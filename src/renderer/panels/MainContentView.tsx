@@ -25,8 +25,12 @@ import { GettingStartedSettingsView } from '../features/settings/GettingStartedS
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 
 export function MainContentView() {
-  const { explorerTab, settingsSubPage, settingsContext } = useUIStore();
-  const { activeAgentId, agents, agentSettingsOpenFor } = useAgentStore();
+  const explorerTab = useUIStore((s) => s.explorerTab);
+  const settingsSubPage = useUIStore((s) => s.settingsSubPage);
+  const settingsContext = useUIStore((s) => s.settingsContext);
+  const activeAgentId = useAgentStore((s) => s.activeAgentId);
+  const agents = useAgentStore((s) => s.agents);
+  const agentSettingsOpenFor = useAgentStore((s) => s.agentSettingsOpenFor);
   const selectedCompletedId = useQuickAgentStore((s) => s.selectedCompletedId);
   const completedAgentsMap = useQuickAgentStore((s) => s.completedAgents);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);

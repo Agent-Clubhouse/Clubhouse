@@ -29,11 +29,7 @@ interface QuickAgentState {
   addCompleted: (record: CompletedQuickAgent) => void;
   dismissCompleted: (projectId: string, agentId: string) => void;
   clearCompleted: (projectId: string) => void;
-  getCompleted: (projectId: string) => CompletedQuickAgent[];
-  getCompletedByParent: (projectId: string, parentAgentId: string) => CompletedQuickAgent[];
-  getCompletedOrphans: (projectId: string) => CompletedQuickAgent[];
   selectCompleted: (id: string | null) => void;
-  getSelectedCompleted: () => CompletedQuickAgent | null;
 }
 
 export const useQuickAgentStore = create<QuickAgentState>((set, get) => ({
@@ -72,31 +68,5 @@ export const useQuickAgentStore = create<QuickAgentState>((set, get) => ({
     }));
   },
 
-  getCompleted: (projectId) => {
-    return get().completedAgents[projectId] || [];
-  },
-
-  getCompletedByParent: (projectId, parentAgentId) => {
-    return (get().completedAgents[projectId] || []).filter(
-      (r) => r.parentAgentId === parentAgentId
-    );
-  },
-
-  getCompletedOrphans: (projectId) => {
-    return (get().completedAgents[projectId] || []).filter(
-      (r) => !r.parentAgentId
-    );
-  },
-
   selectCompleted: (id) => set({ selectedCompletedId: id }),
-
-  getSelectedCompleted: () => {
-    const id = get().selectedCompletedId;
-    if (!id) return null;
-    for (const records of Object.values(get().completedAgents)) {
-      const found = records.find((r) => r.id === id);
-      if (found) return found;
-    }
-    return null;
-  },
 }));

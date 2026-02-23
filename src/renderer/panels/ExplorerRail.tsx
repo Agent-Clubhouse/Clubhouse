@@ -49,8 +49,9 @@ function getSettingsColorHex(colorId?: string): string {
 }
 
 function SettingsContextPicker() {
-  const { settingsContext, setSettingsContext } = useUIStore();
-  const { projects } = useProjectStore();
+  const settingsContext = useUIStore((s) => s.settingsContext);
+  const setSettingsContext = useUIStore((s) => s.setSettingsContext);
+  const projects = useProjectStore((s) => s.projects);
   const projectIcons = useProjectStore((s) => s.projectIcons);
 
   return (
@@ -120,9 +121,10 @@ const PLUGIN_FALLBACK_ICON = (
 
 function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
   const badges = useBadgeStore((s) => s.badges);
+  const badgeSettings = useBadgeSettingsStore();
   const tabBadge = useMemo(() => {
     if (!projectId) return null;
-    const settings = useBadgeSettingsStore.getState().getProjectSettings(projectId);
+    const settings = badgeSettings.getProjectSettings(projectId);
     if (!settings.enabled) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId && b.target.tabId === tab.id,
@@ -131,7 +133,7 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, projectId, tab.id]);
+  }, [badges, projectId, tab.id, badgeSettings]);
 
   return (
     <button
@@ -155,8 +157,10 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
 }
 
 export function ExplorerRail() {
-  const { explorerTab, setExplorerTab } = useUIStore();
-  const { projects, activeProjectId } = useProjectStore();
+  const explorerTab = useUIStore((s) => s.explorerTab);
+  const setExplorerTab = useUIStore((s) => s.setExplorerTab);
+  const projects = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const plugins = usePluginStore((s) => s.plugins);
   const projectEnabled = usePluginStore((s) => s.projectEnabled);

@@ -27,8 +27,9 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
   const badges = useBadgeStore((s) => s.badges);
+  const badgeSettings = useBadgeSettingsStore();
   const projectBadge = useMemo(() => {
-    const settings = useBadgeSettingsStore.getState().getProjectSettings(project.id);
+    const settings = badgeSettings.getProjectSettings(project.id);
     if (!settings.enabled || !settings.projectRailBadges) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === project.id,
@@ -37,7 +38,7 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, project.id]);
+  }, [badges, project.id, badgeSettings]);
 
   return (
     <button
@@ -98,14 +99,14 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
   const pluginBadges = useBadgeStore((s) => s.badges);
+  const pluginBadgeSettings = useBadgeSettingsStore();
   const pluginBadge = useMemo(() => {
-    const { enabled, pluginBadges: pluginBadgesEnabled } = useBadgeSettingsStore.getState();
-    if (!enabled || !pluginBadgesEnabled) return null;
+    if (!pluginBadgeSettings.enabled || !pluginBadgeSettings.pluginBadges) return null;
     const filtered = Object.values(pluginBadges).filter(
       (b) => b.target.kind === 'app-plugin' && b.target.pluginId === entry.manifest.id,
     );
     return aggregateBadges(filtered);
-  }, [pluginBadges, entry.manifest.id]);
+  }, [pluginBadges, entry.manifest.id, pluginBadgeSettings]);
 
   return (
     <button

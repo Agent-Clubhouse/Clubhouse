@@ -51,7 +51,6 @@ export function App() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const updateAgentStatus = useAgentStore((s) => s.updateAgentStatus);
   const handleHookEvent = useAgentStore((s) => s.handleHookEvent);
-  const _agents = useAgentStore((s) => s.agents);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const pluginsMap = usePluginStore((s) => s.plugins);

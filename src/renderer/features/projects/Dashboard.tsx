@@ -612,7 +612,8 @@ function EmptyState({ onAddProject }: { onAddProject: () => void }) {
 /* ─── Dashboard ─── */
 
 export function Dashboard() {
-  const { projects, pickAndAddProject } = useProjectStore();
+  const projects = useProjectStore((s) => s.projects);
+  const pickAndAddProject = useProjectStore((s) => s.pickAndAddProject);
 
   if (projects.length === 0) {
     return (
