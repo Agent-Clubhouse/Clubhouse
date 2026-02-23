@@ -30,7 +30,7 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-blue-500/10 border-b border-blue-500/20 text-blue-200 text-sm"
+      className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-info/10 border-b border-ctp-info/20 text-ctp-info text-sm"
       data-testid="update-banner"
     >
       {/* Info icon */}
@@ -48,7 +48,7 @@ export function UpdateBanner() {
         <span className="flex-1">
           Update v{status.availableVersion} is ready
           {status.releaseMessage ? (
-            <span className="text-blue-300/60 ml-1" data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
+            <span className="text-ctp-info/60 ml-1" data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
           ) : '.'}
         </span>
       )}
@@ -57,7 +57,7 @@ export function UpdateBanner() {
         <>
           <button
             onClick={handleRestart}
-            className="px-3 py-1 text-xs rounded bg-blue-500/20 hover:bg-blue-500/30
+            className="px-3 py-1 text-xs rounded bg-ctp-info/20 hover:bg-ctp-info/30
               transition-colors cursor-pointer"
             data-testid="update-confirm-restart"
           >
@@ -65,7 +65,7 @@ export function UpdateBanner() {
           </button>
           <button
             onClick={handleCancel}
-            className="text-blue-200/50 hover:text-blue-200 transition-colors cursor-pointer px-2 text-xs"
+            className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-2 text-xs"
           >
             Cancel
           </button>
@@ -74,7 +74,7 @@ export function UpdateBanner() {
         <>
           <button
             onClick={handleRestart}
-            className="px-3 py-1 text-xs rounded bg-blue-500/20 hover:bg-blue-500/30
+            className="px-3 py-1 text-xs rounded bg-ctp-info/20 hover:bg-ctp-info/30
               transition-colors cursor-pointer"
             data-testid="update-restart-btn"
           >
@@ -82,7 +82,7 @@ export function UpdateBanner() {
           </button>
           <button
             onClick={dismiss}
-            className="text-blue-200/50 hover:text-blue-200 transition-colors cursor-pointer px-1"
+            className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-1"
             data-testid="update-dismiss-btn"
           >
             x

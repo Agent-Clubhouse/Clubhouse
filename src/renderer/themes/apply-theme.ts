@@ -25,6 +25,10 @@ export function applyTheme(theme: ThemeDefinition): void {
     '--ctp-surface2': theme.colors.surface2,
     '--ctp-accent': theme.colors.accent,
     '--ctp-link': theme.colors.link,
+    '--ctp-warning': theme.colors.warning,
+    '--ctp-error': theme.colors.error,
+    '--ctp-info': theme.colors.info,
+    '--ctp-success': theme.colors.success,
   };
 
   for (const [varName, hex] of Object.entries(colorMap)) {

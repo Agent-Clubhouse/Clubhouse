@@ -105,8 +105,8 @@ function AppAgentSettings() {
           </button>
         </div>
         {clubhouseEnabled && (
-          <div className="px-3 py-2 rounded-lg bg-ctp-yellow/10 border border-ctp-yellow/20 text-xs text-ctp-yellow">
-            Wildcards <code className="bg-ctp-yellow/10 px-1 rounded">@@AgentName</code>, <code className="bg-ctp-yellow/10 px-1 rounded">@@StandbyBranch</code>, and <code className="bg-ctp-yellow/10 px-1 rounded">@@Path</code> in project defaults are resolved per-agent on each wake.
+          <div className="px-3 py-2 rounded-lg bg-ctp-warning/10 border border-ctp-warning/20 text-xs text-ctp-warning">
+            Wildcards <code className="bg-ctp-warning/10 px-1 rounded">@@AgentName</code>, <code className="bg-ctp-warning/10 px-1 rounded">@@StandbyBranch</code>, and <code className="bg-ctp-warning/10 px-1 rounded">@@Path</code> in project defaults are resolved per-agent on each wake.
           </div>
         )}
         {clubhouseEnabled && (

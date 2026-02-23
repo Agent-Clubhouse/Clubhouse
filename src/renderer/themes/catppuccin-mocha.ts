@@ -16,6 +16,10 @@ export const catppuccinMocha: ThemeDefinition = {
     surface2: '#585b70',
     accent: '#89b4fa',
     link: '#89b4fa',
+    warning: '#f9e2af',
+    error: '#f38ba8',
+    info: '#89b4fa',
+    success: '#a6e3a1',
   },
   hljs: {
     keyword: '#cba6f7',

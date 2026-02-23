@@ -16,6 +16,10 @@ export const catppuccinLatte: ThemeDefinition = {
     surface2: '#acb0be',
     accent: '#1e66f5',
     link: '#1e66f5',
+    warning: '#7e5700',
+    error: '#c4122f',
+    info: '#1659d1',
+    success: '#347d22',
   },
   hljs: {
     keyword: '#8839ef',

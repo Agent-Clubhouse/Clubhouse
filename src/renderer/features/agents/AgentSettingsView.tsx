@@ -400,7 +400,7 @@ export function AgentSettingsView({ agent }: Props) {
 
       {/* Running banner */}
       {isRunning && (
-        <div className="px-4 py-2 bg-ctp-yellow/10 border-b border-ctp-yellow/20 text-xs text-ctp-yellow flex-shrink-0">
+        <div className="px-4 py-2 bg-ctp-warning/10 border-b border-ctp-warning/20 text-xs text-ctp-warning flex-shrink-0">
           Settings are read-only while this agent is running.
         </div>
       )}
@@ -409,11 +409,11 @@ export function AgentSettingsView({ agent }: Props) {
       {clubhouseActive && (
         <div className={`px-4 py-2 border-b flex-shrink-0 ${
           isManagedByClubhouse
-            ? 'bg-ctp-green/10 border-ctp-green/20'
-            : 'bg-ctp-yellow/10 border-ctp-yellow/20'
+            ? 'bg-ctp-success/10 border-ctp-success/20'
+            : 'bg-ctp-warning/10 border-ctp-warning/20'
         }`}>
           <div className="flex items-center justify-between">
-            <span className={`text-xs ${isManagedByClubhouse ? 'text-ctp-green' : 'text-ctp-yellow'}`}>
+            <span className={`text-xs ${isManagedByClubhouse ? 'text-ctp-success' : 'text-ctp-warning'}`}>
               {isManagedByClubhouse
                 ? 'Clubhouse Mode is active. Settings are managed from project defaults and refreshed on agent wake.'
                 : 'Clubhouse Mode is active but local overrides are enabled for this agent.'}

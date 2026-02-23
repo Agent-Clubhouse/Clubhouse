@@ -2,6 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { THEMES, THEME_IDS } from './index';
 import { ThemeId } from '../../shared/types';
 
+/**
+ * Convert a hex color (#rrggbb) to its WCAG relative luminance.
+ * See https://www.w3.org/TR/WCAG20/#relativeluminancedef
+ */
+function relativeLuminance(hex: string): number {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16) / 255;
+  const g = parseInt(h.substring(2, 4), 16) / 255;
+  const b = parseInt(h.substring(4, 6), 16) / 255;
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+/**
+ * WCAG 2.0 contrast ratio between two colors.
+ * Returns a value >= 1 (identical colors = 1).
+ */
+function contrastRatio(hex1: string, hex2: string): number {
+  const l1 = relativeLuminance(hex1);
+  const l2 = relativeLuminance(hex2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 describe('theme registry', () => {
   it('exports all 8 themes', () => {
     expect(THEME_IDS).toHaveLength(8);
@@ -53,6 +78,7 @@ describe('theme registry', () => {
     const requiredColorKeys = [
       'base', 'mantle', 'crust', 'text', 'subtext0', 'subtext1',
       'surface0', 'surface1', 'surface2', 'accent', 'link',
+      'warning', 'error', 'info', 'success',
     ];
 
     for (const id of ['catppuccin-mocha', 'catppuccin-latte', 'solarized-dark', 'terminal', 'nord', 'dracula', 'tokyo-night', 'gruvbox-dark'] as ThemeId[]) {
@@ -101,6 +127,34 @@ describe('theme registry', () => {
           // Terminal colors can include alpha (e.g. selectionBackground: '#585b7066')
           expect((terminal as any)[key]).toMatch(/^#[0-9a-fA-F]{6,8}$/);
         }
+      });
+    }
+  });
+
+  describe('WCAG AA contrast compliance', () => {
+    // WCAG AA requires 4.5:1 for normal text, 3:1 for large text.
+    // Notification text in banners and badges is normal-size, so we require 4.5:1.
+    const WCAG_AA_NORMAL = 4.5;
+
+    const notificationColorKeys = ['warning', 'error', 'info', 'success'] as const;
+
+    for (const id of THEME_IDS) {
+      describe(`${id}`, () => {
+        const theme = THEMES[id];
+
+        for (const key of notificationColorKeys) {
+          it(`${key} text meets WCAG AA contrast (>= ${WCAG_AA_NORMAL}:1) against base`, () => {
+            const fg = theme.colors[key];
+            const bg = theme.colors.base;
+            const ratio = contrastRatio(fg, bg);
+            expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+          });
+        }
+
+        it('primary text meets WCAG AA contrast against base', () => {
+          const ratio = contrastRatio(theme.colors.text, theme.colors.base);
+          expect(ratio).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+        });
       });
     }
   });

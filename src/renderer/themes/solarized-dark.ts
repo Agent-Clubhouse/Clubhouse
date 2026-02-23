@@ -16,6 +16,10 @@ export const solarizedDark: ThemeDefinition = {
     surface2: '#1a5060',
     accent: '#268bd2',
     link: '#268bd2',
+    warning: '#b58900',
+    error: '#ec6b63',
+    info: '#4ea0db',
+    success: '#859900',
   },
   hljs: {
     keyword: '#859900',
