@@ -35,6 +35,11 @@ test.beforeAll(async () => {
 
   // Add smoke project (agents.json was pre-written above)
   await addProject(electronApp, window, FIXTURE_SMOKE);
+
+  // Wait for durable agents to load asynchronously via IPC
+  await expect(
+    window.locator('[data-testid^="durable-drag-"]').first(),
+  ).toBeVisible({ timeout: 30_000 });
 });
 
 test.afterAll(async () => {

@@ -73,12 +73,13 @@ test.describe('Rail Hover Flyout', () => {
     // Hover over the rail to trigger expansion
     await railOuter.hover();
 
-    // Wait for the 600ms hover delay + 200ms animation
-    await window.waitForTimeout(900);
+    // Poll until the rail has expanded (600ms hover delay + 200ms animation)
+    await expect(async () => {
+      const w = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
+      expect(w).toBeGreaterThanOrEqual(190);
+    }).toPass({ timeout: 5_000 });
 
-    // Measure expanded width — should be 200px
     const expandedWidth = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
-    expect(expandedWidth).toBeGreaterThanOrEqual(190); // ~200px, allow small rounding
 
     // Move mouse away to collapse
     await window.locator('[data-testid="title-bar"]').hover();
@@ -93,9 +94,13 @@ test.describe('Rail Hover Flyout', () => {
     // The project label spans should be visible when expanded
     const railOuter = window.locator('[data-testid="nav-home"]').locator('..').locator('..');
 
-    // Hover to expand
+    // Hover to expand — poll until expansion completes
     await railOuter.hover();
-    await window.waitForTimeout(900);
+    const innerRail = railOuter.locator('> div').first();
+    await expect(async () => {
+      const w = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
+      expect(w).toBeGreaterThanOrEqual(190);
+    }).toPass({ timeout: 5_000 });
 
     // The label text for project-a should be visible (not clipped)
     const label = window.locator('text=project-a').first();

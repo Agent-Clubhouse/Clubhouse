@@ -41,13 +41,37 @@ export async function launchApp() {
 async function findRendererWindow(
   electronApp: Awaited<ReturnType<typeof electron.launch>>,
 ) {
-  // Check windows already open
+  // Fast path: pick the first non-devtools window already open.
+  // DevTools may briefly have a non-devtools:// URL on startup, so after
+  // the URL check we verify the page has our renderer's <div id="root">.
+  // If verification fails, we wait for the next window.
+  const seen = new Set<Awaited<ReturnType<typeof electronApp.firstWindow>>>();
+
   for (const page of electronApp.windows()) {
-    if (!page.url().startsWith('devtools://')) return page;
+    if (page.url().startsWith('devtools://')) { seen.add(page); continue; }
+    // Validate: wait for load so evaluate() has a JS context, then check #root.
+    try {
+      await page.waitForLoadState('load');
+      if (await page.evaluate(() => !!document.getElementById('root'))) return page;
+    } catch { /* not ready */ }
+    seen.add(page);
   }
 
-  // Wait for the renderer window to appear
-  return electronApp.waitForEvent('window', {
-    predicate: (page) => !page.url().startsWith('devtools://'),
-  });
+  // Wait for new windows — the renderer hasn't appeared yet or was
+  // mis-identified above.
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const page = await electronApp.waitForEvent('window', {
+      timeout: Math.max(1_000, deadline - Date.now()),
+    });
+    if (seen.has(page)) continue;
+    seen.add(page);
+    if (page.url().startsWith('devtools://')) continue;
+    try {
+      await page.waitForLoadState('load');
+      if (await page.evaluate(() => !!document.getElementById('root'))) return page;
+    } catch { /* not ready */ }
+  }
+
+  throw new Error('Timed out waiting for renderer window (30 s)');
 }
