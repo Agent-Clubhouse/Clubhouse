@@ -40,13 +40,18 @@ async function addProject(dirPath: string) {
   });
 }
 
-/** Click an explorer tab, using force to bypass project rail overlap. */
+/**
+ * Click an explorer tab by dispatching a JS click event directly.
+ * The project rail can overlay explorer tabs and intercept pointer events,
+ * so we bypass the Playwright pointer event system entirely.
+ */
 async function clickExplorerTab(testId: string) {
-  const tab = window.locator(`[data-testid="${testId}"]`);
-  await expect(tab).toBeVisible({ timeout: 10_000 });
-  // The project rail can overlay explorer tabs; use force to bypass.
-  await tab.click({ force: true });
-  await window.waitForTimeout(300);
+  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
+  await window.evaluate((tid) => {
+    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
+    if (el) el.click();
+  }, testId);
+  await window.waitForTimeout(500);
 }
 
 // ---------------------------------------------------------------------------
@@ -74,10 +79,10 @@ test.describe('Terminal Plugin E2E', () => {
     const projBtn = window.locator('[title="project-a"]').first();
     if (await projBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await projBtn.click();
-      await window.waitForTimeout(500);
+      await window.waitForTimeout(1_000);
     }
 
-    // Navigate to the terminal tab
+    // Navigate to the terminal tab via JS click (bypasses pointer event interception)
     await clickExplorerTab('explorer-tab-plugin:terminal');
 
     // Verify the terminal tab is now active
@@ -101,7 +106,8 @@ test.describe('Terminal Plugin E2E', () => {
     await expect(xtermElement).toBeVisible({ timeout: 5_000 });
 
     // Click to focus the terminal
-    await xtermElement.click();
+    await xtermElement.click({ force: true });
+    await window.waitForTimeout(300);
 
     // Type a command — echo is available on all platforms
     await window.keyboard.type('echo __e2e_terminal_test__', { delay: 50 });
@@ -158,7 +164,7 @@ test.describe('Terminal Plugin E2E', () => {
   });
 
   test('navigating away from terminal cleans up xterm', async () => {
-    // Navigate to the Agents tab
+    // Navigate to the Agents tab via JS click
     await clickExplorerTab('explorer-tab-agents');
 
     // The terminal tab should no longer be active
