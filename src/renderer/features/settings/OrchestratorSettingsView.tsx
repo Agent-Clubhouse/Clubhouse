@@ -13,8 +13,12 @@ interface Props {
 // ── App-level: global headless toggle + orchestrator enable/disable ──────
 
 function AppAgentSettings() {
-  const { enabled, allOrchestrators, availability, loadSettings, setEnabled, checkAllAvailability } =
-    useOrchestratorStore();
+  const enabled = useOrchestratorStore((s) => s.enabled);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
+  const availability = useOrchestratorStore((s) => s.availability);
+  const loadSettings = useOrchestratorStore((s) => s.loadSettings);
+  const setEnabled = useOrchestratorStore((s) => s.setEnabled);
+  const checkAllAvailability = useOrchestratorStore((s) => s.checkAllAvailability);
   const headlessEnabled = useHeadlessStore((s) => s.enabled);
   const setHeadlessEnabled = useHeadlessStore((s) => s.setEnabled);
   const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);

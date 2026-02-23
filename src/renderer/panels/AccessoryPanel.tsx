@@ -9,7 +9,9 @@ import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
 function SettingsCategoryNav() {
-  const { settingsContext, settingsSubPage, setSettingsSubPage } = useUIStore();
+  const settingsContext = useUIStore((s) => s.settingsContext);
+  const settingsSubPage = useUIStore((s) => s.settingsSubPage);
+  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
 
   const navButton = (label: string, page: SettingsSubPage) => (
     <button
@@ -89,7 +91,8 @@ function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
 }
 
 export function AccessoryPanel() {
-  const { explorerTab } = useUIStore();
+  const explorerTab = useUIStore((s) => s.explorerTab);
+  const plugins = usePluginStore((s) => s.plugins);
 
   if (explorerTab === 'agents') {
     return (
@@ -106,7 +109,7 @@ export function AccessoryPanel() {
   // Plugin tabs with sidebar layout
   if (explorerTab.startsWith('plugin:')) {
     const pluginId = explorerTab.slice('plugin:'.length);
-    const entry = usePluginStore.getState().plugins[pluginId];
+    const entry = plugins[pluginId];
     const layout = entry?.manifest.contributes?.tab?.layout ?? 'sidebar-content';
 
     if (layout === 'sidebar-content') {

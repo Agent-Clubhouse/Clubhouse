@@ -191,8 +191,8 @@ describe('orchestratorStore', () => {
     });
   });
 
-  describe('getEnabledOrchestrators', () => {
-    it('filters allOrchestrators by enabled list', () => {
+  describe('enabled orchestrators (computed inline by consumers)', () => {
+    it('can be computed by filtering allOrchestrators by enabled list', () => {
       useOrchestratorStore.setState({
         enabled: ['claude-code'],
         allOrchestrators: [
@@ -201,7 +201,8 @@ describe('orchestratorStore', () => {
         ],
       });
 
-      const result = useOrchestratorStore.getState().getEnabledOrchestrators();
+      const { enabled, allOrchestrators } = useOrchestratorStore.getState();
+      const result = allOrchestrators.filter((o) => enabled.includes(o.id));
       expect(result).toEqual([{ id: 'claude-code', displayName: 'Claude Code' }]);
     });
 
@@ -211,7 +212,8 @@ describe('orchestratorStore', () => {
         allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code' } as any],
       });
 
-      const result = useOrchestratorStore.getState().getEnabledOrchestrators();
+      const { enabled, allOrchestrators } = useOrchestratorStore.getState();
+      const result = allOrchestrators.filter((o) => enabled.includes(o.id));
       expect(result).toEqual([]);
     });
   });

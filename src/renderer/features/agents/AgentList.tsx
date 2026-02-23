@@ -14,13 +14,18 @@ import type { CompletedQuickAgent } from '../../../shared/types';
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 
 export function AgentList() {
-  const {
-    agents, activeAgentId, setActiveAgent,
-    spawnQuickAgent, spawnDurableAgent,
-    loadDurableAgents, agentActivity, recordActivity,
-    deleteDialogAgent, reorderAgents,
-  } = useAgentStore();
-  const { activeProjectId, projects } = useProjectStore();
+  const agents = useAgentStore((s) => s.agents);
+  const activeAgentId = useAgentStore((s) => s.activeAgentId);
+  const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
+  const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
+  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
+  const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
+  const agentActivity = useAgentStore((s) => s.agentActivity);
+  const recordActivity = useAgentStore((s) => s.recordActivity);
+  const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
+  const reorderAgents = useAgentStore((s) => s.reorderAgents);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const projects = useProjectStore((s) => s.projects);
   const { options: MODEL_OPTIONS } = useModelOptions();
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
@@ -32,8 +37,6 @@ export function AgentList() {
     () => (activeProjectId ? allCompleted[activeProjectId] ?? EMPTY_COMPLETED : EMPTY_COMPLETED),
     [allCompleted, activeProjectId]
   );
-  const getCompletedByParent = useQuickAgentStore((s) => s.getCompletedByParent);
-  const getCompletedOrphans = useQuickAgentStore((s) => s.getCompletedOrphans);
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const clearCompleted = useQuickAgentStore((s) => s.clearCompleted);
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
@@ -98,7 +101,10 @@ export function AgentList() {
   const durableAgents = projectAgents.filter((a) => a.kind === 'durable');
   const quickAgents = projectAgents.filter((a) => a.kind === 'quick');
   const orphanQuickAgents = quickAgents.filter((a) => !a.parentAgentId);
-  const orphanCompleted = activeProjectId ? getCompletedOrphans(activeProjectId) : [];
+  const orphanCompleted = useMemo(
+    () => completedAgents.filter((r) => !r.parentAgentId),
+    [completedAgents]
+  );
 
   useEffect(() => {
     if (showMissionInput && missionInputRef.current) {
@@ -381,7 +387,7 @@ export function AgentList() {
             </div>
             {durableAgents.map((durable, i) => {
               const childQuick = quickAgents.filter((a) => a.parentAgentId === durable.id);
-              const childCompleted = activeProjectId ? getCompletedByParent(activeProjectId, durable.id) : [];
+              const childCompleted = completedAgents.filter((r) => r.parentAgentId === durable.id);
               const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
 
               return (

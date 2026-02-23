@@ -8,7 +8,6 @@ interface OrchestratorState {
   loadSettings: () => Promise<void>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
   checkAllAvailability: () => Promise<void>;
-  getEnabledOrchestrators: () => OrchestratorInfo[];
   getCapabilities: (orchestratorId: string) => ProviderCapabilities | undefined;
 }
 
@@ -65,11 +64,6 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       })
     );
     set({ availability: results });
-  },
-
-  getEnabledOrchestrators: () => {
-    const { enabled, allOrchestrators } = get();
-    return allOrchestrators.filter((o) => enabled.includes(o.id));
   },
 
   getCapabilities: (orchestratorId: string) => {
