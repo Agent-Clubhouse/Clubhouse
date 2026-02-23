@@ -4,11 +4,11 @@ import { useProjectStore } from '../../stores/projectStore';
 import { WorktreeStatus } from '../../../shared/types';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  M: { label: 'M', cls: 'bg-yellow-500/20 text-yellow-300' },
-  A: { label: 'A', cls: 'bg-green-500/20 text-green-300' },
-  D: { label: 'D', cls: 'bg-red-500/20 text-red-300' },
-  '??': { label: '??', cls: 'bg-blue-500/20 text-blue-300' },
-  R: { label: 'R', cls: 'bg-purple-500/20 text-purple-300' },
+  M: { label: 'M', cls: 'bg-ctp-warning/20 text-ctp-warning' },
+  A: { label: 'A', cls: 'bg-ctp-success/20 text-ctp-success' },
+  D: { label: 'D', cls: 'bg-ctp-error/20 text-ctp-error' },
+  '??': { label: '??', cls: 'bg-ctp-info/20 text-ctp-info' },
+  R: { label: 'R', cls: 'bg-ctp-accent/20 text-ctp-accent' },
 };
 
 interface OptionCard {
@@ -120,7 +120,7 @@ export function DeleteAgentDialog() {
             This agent has no worktree. It will be removed from the sidebar.
           </p>
           {error && (
-            <div className="mb-3 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+            <div className="mb-3 px-3 py-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-ctp-error text-xs">
               {error}
             </div>
           )}
@@ -177,7 +177,7 @@ export function DeleteAgentDialog() {
             </p>
 
             {error && (
-              <div className="mb-3 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+              <div className="mb-3 px-3 py-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-ctp-error text-xs">
                 {error}
               </div>
             )}
@@ -221,7 +221,7 @@ export function DeleteAgentDialog() {
             </p>
 
             {error && (
-              <div className="mb-3 px-3 py-2 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+              <div className="mb-3 px-3 py-2 rounded bg-ctp-error/10 border border-ctp-error/30 text-ctp-error text-xs">
                 {error}
               </div>
             )}

@@ -16,6 +16,10 @@ export const nord: ThemeDefinition = {
     surface2: '#4c566a',
     accent: '#88c0d0',
     link: '#88c0d0',
+    warning: '#ebcb8b',
+    error: '#d98a90',
+    info: '#81a1c1',
+    success: '#a3be8c',
   },
   hljs: {
     keyword: '#81a1c1',

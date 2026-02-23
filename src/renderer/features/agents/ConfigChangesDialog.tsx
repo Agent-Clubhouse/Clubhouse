@@ -22,9 +22,9 @@ const CATEGORY_LABELS: Record<ConfigDiffCategory, string> = {
 };
 
 const ACTION_BADGE: Record<ConfigDiffAction, { label: string; cls: string }> = {
-  added: { label: '+', cls: 'bg-green-500/20 text-green-300' },
-  removed: { label: '\u2212', cls: 'bg-red-500/20 text-red-300' },
-  modified: { label: '~', cls: 'bg-yellow-500/20 text-yellow-300' },
+  added: { label: '+', cls: 'bg-ctp-success/20 text-ctp-success' },
+  removed: { label: '\u2212', cls: 'bg-ctp-error/20 text-ctp-error' },
+  modified: { label: '~', cls: 'bg-ctp-warning/20 text-ctp-warning' },
 };
 
 export function ConfigChangesDialog() {
@@ -314,9 +314,9 @@ function DiffView({ agentValue, defaultValue }: { agentValue: string; defaultVal
           key={i}
           className={`px-1.5 ${
             line.type === 'added'
-              ? 'bg-green-500/10 text-green-300'
+              ? 'bg-ctp-success/10 text-ctp-success'
               : line.type === 'removed'
-                ? 'bg-red-500/10 text-red-300'
+                ? 'bg-ctp-error/10 text-ctp-error'
                 : 'text-ctp-subtext0'
           }`}
         >

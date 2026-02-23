@@ -16,6 +16,10 @@ export const gruvboxDark: ThemeDefinition = {
     surface2: '#665c54',
     accent: '#83a598',
     link: '#83a598',
+    warning: '#fabd2f',
+    error: '#fb6c5c',
+    info: '#83a598',
+    success: '#b8bb26',
   },
   hljs: {
     keyword: '#fb4934',

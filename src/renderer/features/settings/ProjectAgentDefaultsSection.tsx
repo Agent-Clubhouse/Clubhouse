@@ -96,7 +96,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         {/* Mode note */}
         <div className={`text-[10px] flex items-start gap-1.5 rounded-lg px-3 py-2 ${
           clubhouseMode
-            ? 'text-ctp-green bg-ctp-green/10 border border-ctp-green/20'
+            ? 'text-ctp-success bg-ctp-success/10 border border-ctp-success/20'
             : 'text-ctp-subtext0/60 bg-ctp-mantle border border-surface-0'
         }`}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
@@ -107,7 +107,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           <span>
             {clubhouseMode
               ? <>
-                  <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Use wildcards: <code className="bg-ctp-green/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-green/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-green/10 px-0.5 rounded">@@Path</code>.
+                  <strong>Clubhouse Mode active.</strong> These settings are live-managed and pushed to agent worktrees on each wake. Use wildcards: <code className="bg-ctp-success/10 px-0.5 rounded">@@AgentName</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@StandbyBranch</code>, <code className="bg-ctp-success/10 px-0.5 rounded">@@Path</code>.
                 </>
               : 'These settings are applied as snapshots when new durable agents are created. Changes here do not affect existing agents.'
             }

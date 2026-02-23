@@ -17,6 +17,10 @@ export const terminalTheme: ThemeDefinition = {
     surface2: '#333333',
     accent: '#00ff00',
     link: '#00ff00',
+    warning: '#ffff00',
+    error: '#ff3333',
+    info: '#00aaff',
+    success: '#00ff00',
   },
   hljs: {
     keyword: '#00ff00',

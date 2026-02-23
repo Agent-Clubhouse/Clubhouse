@@ -372,6 +372,11 @@ export interface ThemeColors {
   surface2: string;
   accent: string;
   link: string;
+  /** Semantic notification colors — WCAG AA compliant against base */
+  warning: string;
+  error: string;
+  info: string;
+  success: string;
 }
 
 export interface HljsColors {

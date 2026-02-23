@@ -16,6 +16,10 @@ export const dracula: ThemeDefinition = {
     surface2: '#565970',
     accent: '#bd93f9',
     link: '#8be9fd',
+    warning: '#f1fa8c',
+    error: '#ff6e6e',
+    info: '#8be9fd',
+    success: '#50fa7b',
   },
   hljs: {
     keyword: '#ff79c6',

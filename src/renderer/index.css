@@ -13,6 +13,10 @@
   --color-surface-1: rgb(var(--ctp-surface1));
   --color-surface-2: rgb(var(--ctp-surface2));
   --color-ctp-accent: rgb(var(--ctp-accent));
+  --color-ctp-warning: rgb(var(--ctp-warning));
+  --color-ctp-error: rgb(var(--ctp-error));
+  --color-ctp-info: rgb(var(--ctp-info));
+  --color-ctp-success: rgb(var(--ctp-success));
 }
 
 @import '@xterm/xterm/css/xterm.css';
@@ -30,6 +34,10 @@
   --ctp-surface2: 88 91 112;
   --ctp-accent: 137 180 250;
   --ctp-link: 137 180 250;
+  --ctp-warning: 249 226 175;
+  --ctp-error: 243 139 168;
+  --ctp-info: 137 180 250;
+  --ctp-success: 166 227 161;
 
   /* highlight.js token colors */
   --hljs-keyword: #cba6f7;

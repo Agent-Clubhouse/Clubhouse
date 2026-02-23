@@ -16,6 +16,10 @@ export const tokyoNight: ThemeDefinition = {
     surface2: '#3b4261',
     accent: '#7aa2f7',
     link: '#7aa2f7',
+    warning: '#e0af68',
+    error: '#f7768e',
+    info: '#7aa2f7',
+    success: '#9ece6a',
   },
   hljs: {
     keyword: '#bb9af7',
