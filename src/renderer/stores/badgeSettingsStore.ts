@@ -28,6 +28,10 @@ function persist(state: BadgeSettingsState): void {
   });
 }
 
+// Memoization cache for getProjectSettings — avoids creating new object refs
+// on every call, which would cause infinite re-renders if used as a Zustand selector.
+const _projectSettingsCache = new Map<string, { result: ResolvedBadgeSettings; enabled: boolean; pluginBadges: boolean; projectRailBadges: boolean; override: Partial<ResolvedBadgeSettings> | undefined }>();
+
 export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
   enabled: false,
   pluginBadges: true,
@@ -61,11 +65,27 @@ export const useBadgeSettingsStore = create<BadgeSettingsState>((set, get) => ({
   getProjectSettings: (projectId) => {
     const { enabled, pluginBadges, projectRailBadges, projectOverrides } = get();
     const overrides = projectOverrides[projectId];
-    return {
+
+    // Return cached result if inputs haven't changed (prevents new object refs
+    // that cause infinite re-renders when used as a Zustand selector).
+    const cached = _projectSettingsCache.get(projectId);
+    if (
+      cached &&
+      cached.enabled === enabled &&
+      cached.pluginBadges === pluginBadges &&
+      cached.projectRailBadges === projectRailBadges &&
+      cached.override === overrides
+    ) {
+      return cached.result;
+    }
+
+    const result: ResolvedBadgeSettings = {
       enabled: overrides?.enabled ?? enabled,
       pluginBadges: overrides?.pluginBadges ?? pluginBadges,
       projectRailBadges: overrides?.projectRailBadges ?? projectRailBadges,
     };
+    _projectSettingsCache.set(projectId, { result, enabled, pluginBadges, projectRailBadges, override: overrides });
+    return result;
   },
 
   setProjectOverride: async (projectId, partial) => {
