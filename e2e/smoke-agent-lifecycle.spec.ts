@@ -15,6 +15,7 @@ let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
 const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
+const AGENT_NAME = 'e2e-test-agent';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,13 +104,9 @@ test.describe('Agent Lifecycle', () => {
     const defaultName = await nameInput.inputValue();
     expect(defaultName.length).toBeGreaterThan(0);
 
-    // Color selector — at least one color button
-    const colorButtons = window.locator('button[title]').filter({
-      has: window.locator('[style*="backgroundColor"]'),
-    });
-    // Fallback: check for the round color selector buttons by structure
+    // Color selector — round color buttons
     const roundButtons = window.locator('.rounded-full.cursor-pointer');
-    const colorCount = await colorButtons.count() || await roundButtons.count();
+    const colorCount = await roundButtons.count();
     expect(colorCount).toBeGreaterThan(0);
 
     // Model selector
@@ -138,8 +135,6 @@ test.describe('Agent Lifecycle', () => {
   // 3. Create Agent — Submit Form
   // ---------------------------------------------------------------------------
 
-  let createdAgentName = '';
-
   test('creating a durable agent adds it to the agent list', async () => {
     // Open the dialog again
     const addAgentBtn = window.locator('button:has-text("+ Agent")').first();
@@ -148,11 +143,10 @@ test.describe('Agent Lifecycle', () => {
     const dialog = window.locator('h2:has-text("New Agent")');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-    // Set a known name
+    // Set the known test name
     const nameInput = window.locator('input[type="text"]').first();
     await nameInput.fill('');
-    await nameInput.fill('e2e-test-agent');
-    createdAgentName = 'e2e-test-agent';
+    await nameInput.fill(AGENT_NAME);
 
     // Submit the form
     const createBtn = window.locator('button:has-text("Create Agent")');
@@ -162,8 +156,7 @@ test.describe('Agent Lifecycle', () => {
     await expect(dialog).not.toBeVisible({ timeout: 10_000 });
 
     // Wait for agent to appear in the list
-    // The agent name should appear in an agent list item
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
     await expect(agentItem).toBeVisible({ timeout: 15_000 });
   });
 
@@ -172,7 +165,7 @@ test.describe('Agent Lifecycle', () => {
   // ---------------------------------------------------------------------------
 
   test('created agent shows correct status', async () => {
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
     await expect(agentItem).toBeVisible({ timeout: 5_000 });
 
     // The agent should display a status text (Running or Sleeping)
@@ -185,9 +178,9 @@ test.describe('Agent Lifecycle', () => {
   });
 
   test('created agent shows name correctly', async () => {
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
     const text = await agentItem.textContent();
-    expect(text).toContain(createdAgentName);
+    expect(text).toContain(AGENT_NAME);
   });
 
   test('agent appears in the "All" section for durable agents', async () => {
@@ -199,7 +192,7 @@ test.describe('Agent Lifecycle', () => {
     const listContent = window.locator('[data-testid="agent-list-content"]');
     await expect(listContent).toBeVisible();
     const contentText = await listContent.textContent();
-    expect(contentText).toContain(createdAgentName);
+    expect(contentText).toContain(AGENT_NAME);
   });
 
   // ---------------------------------------------------------------------------
@@ -207,7 +200,7 @@ test.describe('Agent Lifecycle', () => {
   // ---------------------------------------------------------------------------
 
   test('clicking the agent selects it (active state)', async () => {
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
     await agentItem.click();
     await window.waitForTimeout(300);
 
@@ -217,50 +210,78 @@ test.describe('Agent Lifecycle', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 6. Agent Deletion
+  // 6. Agent Deletion — via action button
   // ---------------------------------------------------------------------------
 
-  test('right-click on agent shows context menu with delete option', async () => {
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+  test('ensure agent is sleeping before deletion', async () => {
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
 
-    // Stop the agent first if it's running (can't delete running agents)
+    // Check if the agent is running; if so, stop it
     const agentText = await agentItem.textContent();
     if (agentText!.includes('Running')) {
-      // Try to stop via the action button
+      // Stop via the visible action button (data-testid="action-stop")
       const stopBtn = agentItem.locator('[data-testid="action-stop"]');
       const stopVisible = await stopBtn.isVisible({ timeout: 2_000 }).catch(() => false);
       if (stopVisible) {
         await stopBtn.click();
-        // Wait for status to change
-        await window.waitForTimeout(3_000);
+      } else {
+        // Try via context menu
+        await agentItem.click({ button: 'right' });
+        await window.waitForTimeout(300);
+        const ctxStop = window.locator('[data-testid="ctx-stop"]');
+        const ctxStopVisible = await ctxStop.isVisible({ timeout: 2_000 }).catch(() => false);
+        if (ctxStopVisible) {
+          await ctxStop.click();
+        }
+      }
+
+      // Wait for the agent to transition to sleeping
+      await expect(agentItem.locator('text=Sleeping')).toBeVisible({ timeout: 15_000 });
+    }
+  });
+
+  test('delete action opens delete confirmation dialog', async () => {
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
+
+    // Try to find the delete action button directly
+    const deleteBtn = agentItem.locator('[data-testid="action-delete"]');
+    const deleteBtnVisible = await deleteBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+
+    if (deleteBtnVisible) {
+      await deleteBtn.click();
+    } else {
+      // Check overflow menu or context menu
+      const overflowBtn = agentItem.locator('[data-testid="action-overflow"]');
+      const overflowVisible = await overflowBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+
+      if (overflowVisible) {
+        await overflowBtn.click();
+        await window.waitForTimeout(300);
+
+        const ctxDelete = window.locator('[data-testid="ctx-delete"]');
+        await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
+        await ctxDelete.click();
+      } else {
+        // Fall back to right-click context menu
+        await agentItem.click({ button: 'right' });
+        await window.waitForTimeout(300);
+
+        const ctxDelete = window.locator('[data-testid="ctx-delete"]');
+        await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
+        await ctxDelete.click();
       }
     }
 
-    // Right-click to get context menu
-    await agentItem.click({ button: 'right' });
-    await window.waitForTimeout(300);
-
-    // Context menu should appear
-    const contextMenu = window.locator('[data-testid="agent-context-menu"]');
-    await expect(contextMenu).toBeVisible({ timeout: 3_000 });
-
-    // Delete option should be present
-    const deleteOption = window.locator('[data-testid="ctx-delete"]');
-    await expect(deleteOption).toBeVisible({ timeout: 3_000 });
-  });
-
-  test('clicking delete opens the delete confirmation dialog', async () => {
-    const deleteOption = window.locator('[data-testid="ctx-delete"]');
-    await deleteOption.click();
     await window.waitForTimeout(500);
 
     // The delete dialog should appear with the agent name
-    // It should contain "Remove" or "Delete" in the header
-    const removeHeader = window.locator(`text=Remove ${createdAgentName}`).first();
-    const deleteHeader = window.locator(`text=Delete ${createdAgentName}`).first();
+    const removeHeader = window.locator(`text=Remove ${AGENT_NAME}`).first();
+    const deleteHeader = window.locator(`text=Delete ${AGENT_NAME}`).first();
 
-    const removeVisible = await removeHeader.isVisible({ timeout: 3_000 }).catch(() => false);
-    const deleteVisible = await deleteHeader.isVisible({ timeout: 3_000 }).catch(() => false);
+    const removeVisible = await removeHeader.isVisible({ timeout: 5_000 }).catch(() => false);
+    const deleteVisible = await deleteHeader.isVisible({ timeout: 1_000 }).catch(() => false);
     expect(removeVisible || deleteVisible).toBe(true);
   });
 
@@ -269,16 +290,20 @@ test.describe('Agent Lifecycle', () => {
     // Non-worktree agents show a simple "Remove" button
     const removeBtn = window.locator('button:has-text("Remove")').last();
     const deleteBtn = window.locator('button:has-text("Delete")').last();
-    const forceBtn = window.locator('button:has-text("Force")');
+    const leaveBtn = window.locator('button:has-text("Leave files")');
 
     const removeVisible = await removeBtn.isVisible({ timeout: 2_000 }).catch(() => false);
     const deleteVisible = await deleteBtn.isVisible({ timeout: 1_000 }).catch(() => false);
-    const forceVisible = await forceBtn.isVisible({ timeout: 1_000 }).catch(() => false);
+    const leaveVisible = await leaveBtn.isVisible({ timeout: 1_000 }).catch(() => false);
 
+    // For non-worktree agents: click "Remove"
+    // For clean worktree agents: click "Delete"
+    // For dirty worktree agents: click "Leave files" (safest choice)
     if (removeVisible) {
       await removeBtn.click();
-    } else if (forceVisible) {
-      await forceBtn.click();
+    } else if (leaveVisible && deleteVisible) {
+      // Dirty worktree — use "Leave files" for safety
+      await leaveBtn.click();
     } else if (deleteVisible) {
       await deleteBtn.click();
     }
@@ -287,7 +312,7 @@ test.describe('Agent Lifecycle', () => {
     await window.waitForTimeout(2_000);
 
     // The agent should no longer be in the list
-    const agentItem = window.locator(`[data-agent-name="${createdAgentName}"]`);
+    const agentItem = window.locator(`[data-agent-name="${AGENT_NAME}"]`);
     await expect(agentItem).not.toBeVisible({ timeout: 10_000 });
   });
 
@@ -296,11 +321,10 @@ test.describe('Agent Lifecycle', () => {
     const agentList = window.locator('[data-testid="agent-list"]');
     await expect(agentList).toBeVisible({ timeout: 3_000 });
 
-    // The "All" section may or may not be visible depending on other agents
-    // But the deleted agent should definitely be gone
+    // The deleted agent should definitely be gone
     const listContent = window.locator('[data-testid="agent-list-content"]');
     const contentText = await listContent.textContent();
-    expect(contentText).not.toContain(createdAgentName);
+    expect(contentText).not.toContain(AGENT_NAME);
   });
 });
 

@@ -58,6 +58,19 @@ async function openSettings() {
   await expect(titleBar).toContainText('Settings', { timeout: 5_000 });
 }
 
+/** Navigate to the "Display & UI" sub-page in app settings. */
+async function navigateToDisplaySettings() {
+  // Click the "Display & UI" button in the AccessoryPanel settings category nav
+  const displayBtn = window.locator('button:has-text("Display & UI")');
+  await expect(displayBtn).toBeVisible({ timeout: 5_000 });
+  await displayBtn.click();
+  await window.waitForTimeout(500);
+
+  // Verify the Color Theme heading is now visible in the main content
+  const colorThemeHeading = window.locator('text=Color Theme').first();
+  await expect(colorThemeHeading).toBeVisible({ timeout: 5_000 });
+}
+
 /** Navigate away from settings by clicking on the project. */
 async function navigateToProject() {
   const projA = window.locator('[title="project-a"]').first();
@@ -67,16 +80,6 @@ async function navigateToProject() {
   // Verify we left settings
   const titleBar = window.locator('[data-testid="title-bar"]');
   await expect(titleBar).toContainText('project-a', { timeout: 5_000 });
-}
-
-/** Click the "Clubhouse" app settings context in the settings left panel. */
-async function selectAppSettings() {
-  const clubhouseBtn = window.locator('button:has-text("Clubhouse")').first();
-  const visible = await clubhouseBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-  if (visible) {
-    await clubhouseBtn.click();
-    await window.waitForTimeout(300);
-  }
 }
 
 /** Read the current CSS variable for --ctp-base (background color). */
@@ -122,27 +125,21 @@ test.describe('Settings Persistence — Theme', () => {
   test('open settings and navigate to display page', async () => {
     await openSettings();
 
-    // The settings context picker should be visible with "Clubhouse" option
-    await selectAppSettings();
-
-    // The Display & UI settings should be the default view
-    // Look for "Color Theme" heading
-    const colorThemeHeading = window.locator('text=Color Theme').first();
-    await expect(colorThemeHeading).toBeVisible({ timeout: 5_000 });
+    // Settings opens with settingsSubPage='orchestrators' (the Agents page).
+    // We need to click "Display & UI" in the category nav.
+    await navigateToDisplaySettings();
   });
 
   test('changing theme updates CSS variables immediately', async () => {
     // Record the current base color
     const beforeColor = await getBaseColorVar();
 
-    // Find theme buttons — they are styled with backgroundColor
-    // The themes are in a grid, each is a <button> with a theme name span
+    // Find theme buttons — they are in a grid within the Display settings
     const themeButtons = window.locator('.grid button');
     const buttonCount = await themeButtons.count();
     expect(buttonCount).toBeGreaterThan(1);
 
-    // Find a theme button that is NOT currently selected (no ring-1 class)
-    // Click a different theme — look for a non-selected one
+    // Click a theme button that is NOT currently selected (no ring-ctp-accent class)
     let clickedTheme = false;
     for (let i = 0; i < buttonCount; i++) {
       const btn = themeButtons.nth(i);
@@ -181,7 +178,9 @@ test.describe('Settings Persistence — Theme', () => {
 
     // Navigate back to settings
     await openSettings();
-    await selectAppSettings();
+
+    // After re-entering settings, navigate back to Display & UI
+    await navigateToDisplaySettings();
 
     // Verify theme is still the changed one
     const colorAfterReturn = await getBaseColorVar();
@@ -189,7 +188,7 @@ test.describe('Settings Persistence — Theme', () => {
   });
 
   test('selected theme button has visual indicator after returning', async () => {
-    // Wait for color theme section to load
+    // Color Theme heading should still be visible from the previous test
     const colorThemeHeading = window.locator('text=Color Theme').first();
     await expect(colorThemeHeading).toBeVisible({ timeout: 5_000 });
 
@@ -208,10 +207,23 @@ test.describe('Settings Persistence — Theme', () => {
   });
 
   test('restore original theme (cleanup)', async () => {
-    // Find the Catppuccin Mocha button (default theme) by its text
+    // Ensure we're on Display & UI page
+    const colorThemeHeading = window.locator('text=Color Theme').first();
+    const visible = await colorThemeHeading.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!visible) {
+      // Navigate back to settings and display page
+      const titleBar = window.locator('[data-testid="title-bar"]');
+      const titleText = await titleBar.textContent();
+      if (!titleText?.includes('Settings')) {
+        await openSettings();
+      }
+      await navigateToDisplaySettings();
+    }
+
+    // Find the Catppuccin Mocha button (default theme)
     const mochaBtn = window.locator('button:has-text("Catppuccin Mocha")').first();
-    const visible = await mochaBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (visible) {
+    const mochaVisible = await mochaBtn.isVisible({ timeout: 3_000 }).catch(() => false);
+    if (mochaVisible) {
       await mochaBtn.click();
       await window.waitForTimeout(500);
     }
@@ -230,9 +242,11 @@ test.describe('Settings Persistence — Show Home Toggle', () => {
     if (!inSettings?.includes('Settings')) {
       await openSettings();
     }
-    await selectAppSettings();
 
-    // Verify "Views" section is visible
+    // Navigate to Display & UI sub-page
+    await navigateToDisplaySettings();
+
+    // Verify "Views" section is visible (it's part of the Display settings)
     const viewsHeader = window.locator('text=Views').first();
     await expect(viewsHeader).toBeVisible({ timeout: 5_000 });
   });
@@ -266,7 +280,9 @@ test.describe('Settings Persistence — Show Home Toggle', () => {
 
     // Navigate back to settings
     await openSettings();
-    await selectAppSettings();
+
+    // Navigate to Display & UI sub-page again
+    await navigateToDisplaySettings();
 
     // Verify state persisted
     const stateAfterReturn = await window.locator('button.toggle-track').first().getAttribute('data-on');
@@ -277,6 +293,7 @@ test.describe('Settings Persistence — Show Home Toggle', () => {
     // Toggle back if needed to reset to original state
     const toggles = window.locator('button.toggle-track');
     const homeToggle = toggles.first();
+    await expect(homeToggle).toBeVisible({ timeout: 3_000 });
     const currentState = await homeToggle.getAttribute('data-on');
 
     // Default is "true", so restore if changed
@@ -300,26 +317,29 @@ test.describe('Settings Persistence — Sub-Page Navigation', () => {
       await openSettings();
     }
 
-    // The settings context picker should show "Clubhouse" and project entries
+    // The settings context picker (ExplorerRail) should show "Clubhouse"
     const clubhouseBtn = window.locator('button:has-text("Clubhouse")').first();
     await expect(clubhouseBtn).toBeVisible({ timeout: 3_000 });
 
-    // Click project-a context
+    // Click project-a context in the left panel
     const projBtn = window.locator('button:has-text("project-a")').first();
     const projVisible = await projBtn.isVisible({ timeout: 3_000 }).catch(() => false);
     if (projVisible) {
       await projBtn.click();
-      await window.waitForTimeout(300);
+      await window.waitForTimeout(500);
 
-      // Verify project settings content loaded
-      // (Should show project-specific settings)
-      const root = window.locator('#root');
-      const childCount = await root.evaluate((el) => el.children.length);
-      expect(childCount).toBeGreaterThan(0);
+      // Verify the AccessoryPanel now shows project settings nav
+      const projSettingsLabel = window.locator('text=Project Settings').first();
+      await expect(projSettingsLabel).toBeVisible({ timeout: 5_000 });
 
       // Switch back to Clubhouse context
-      await clubhouseBtn.click();
-      await window.waitForTimeout(300);
+      const clubhouseBtnAgain = window.locator('button:has-text("Clubhouse")').first();
+      await clubhouseBtnAgain.click();
+      await window.waitForTimeout(500);
+
+      // Verify the AccessoryPanel now shows app settings nav
+      const appSettingsLabel = window.locator('text=App Settings').first();
+      await expect(appSettingsLabel).toBeVisible({ timeout: 5_000 });
     }
   });
 
@@ -340,13 +360,13 @@ test.describe('Settings Persistence — Sub-Page Navigation', () => {
 
 test.describe('Settings Persistence — Roundtrip Stability', () => {
   test('settings survive multiple navigation roundtrips', async () => {
-    // Open settings and change theme to something distinct
+    // Open settings and navigate to Display page
     const titleBar = window.locator('[data-testid="title-bar"]');
     const titleText = await titleBar.textContent();
     if (!titleText?.includes('Settings')) {
       await openSettings();
     }
-    await selectAppSettings();
+    await navigateToDisplaySettings();
 
     // Pick Dracula theme (visually distinct)
     const draculaBtn = window.locator('button:has-text("Dracula")').first();
@@ -370,7 +390,7 @@ test.describe('Settings Persistence — Roundtrip Stability', () => {
     }
 
     // Restore default theme
-    await selectAppSettings();
+    await navigateToDisplaySettings();
     const mochaBtn = window.locator('button:has-text("Catppuccin Mocha")').first();
     const visible = await mochaBtn.isVisible({ timeout: 3_000 }).catch(() => false);
     if (visible) {
