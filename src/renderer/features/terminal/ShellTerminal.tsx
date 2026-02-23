@@ -129,6 +129,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
   return (
     <div
       ref={containerRef}
+      data-testid="shell-terminal"
       className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
     />

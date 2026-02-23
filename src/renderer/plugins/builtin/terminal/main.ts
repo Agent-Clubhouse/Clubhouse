@@ -77,7 +77,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     terminalState.setActiveTarget(target);
   }, []);
 
-  return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle' },
+  return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle', 'data-testid': 'terminal-sidebar-panel' },
     // Header
     React.createElement('div', {
       className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0',
@@ -215,19 +215,20 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     status === 'exited' ? 'text-ctp-red' :
     'text-ctp-subtext0';
 
-  return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-base' },
+  return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-base', 'data-testid': 'terminal-main-panel' },
     // Header bar
     React.createElement('div', {
       className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
     },
       React.createElement('div', { className: 'flex items-center gap-2' },
         React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, contextLabel),
-        React.createElement('span', { className: `text-xs ${statusColor}` }, statusLabel),
+        React.createElement('span', { className: `text-xs ${statusColor}`, 'data-testid': 'terminal-status' }, statusLabel),
       ),
       React.createElement('button', {
         className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
         onClick: handleRestart,
         title: 'Restart terminal',
+        'data-testid': 'terminal-restart-btn',
       },
         // Restart icon (circular arrow)
         React.createElement('svg', {

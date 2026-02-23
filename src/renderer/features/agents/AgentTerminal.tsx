@@ -137,6 +137,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
   return (
     <div
       ref={containerRef}
+      data-testid="agent-terminal"
       className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
     />

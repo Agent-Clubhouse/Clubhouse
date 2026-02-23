@@ -349,6 +349,63 @@ describe('pty-manager', () => {
 
       vi.useRealTimers();
     });
+
+    it('double gracefulKill clears previous timers to prevent leaked escalation', () => {
+      vi.useFakeTimers();
+      spawn('agent_gk_double', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // First gracefulKill — sets timers at 3s/6s/9s
+      gracefulKill('agent_gk_double');
+
+      // Advance 1s, then call gracefulKill again — should clear old timers
+      vi.advanceTimersByTime(1000);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+      gracefulKill('agent_gk_double');
+
+      // Advance to where the FIRST call's EOF timer (3s total from start = 2s from now)
+      // would have fired. Since the second call cleared it, only the second call's
+      // EOF timer should fire at 3s from the second call (4s total from start).
+      vi.advanceTimersByTime(1000); // 2s total — first call's 3s mark
+      // First call's EOF should NOT fire (was cleared)
+      // Second call's EOF hasn't fired yet (only 1s into second call's 3s timer)
+      expect(mockProcess.write).not.toHaveBeenCalledWith('\x04');
+
+      // Advance to second call's EOF timer (3s from second call = 2s more)
+      vi.advanceTimersByTime(2000); // 4s total
+      expect(mockProcess.write).toHaveBeenCalledWith('\x04');
+
+      vi.useRealTimers();
+    });
+
+    it('does not act on stale session if agent is re-spawned during gracefulKill', () => {
+      vi.useFakeTimers();
+      spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      gracefulKill('agent_gk_stale');
+
+      // Re-spawn the same agentId (simulates user restarting agent)
+      // This creates a new session for the same agentId
+      spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      mockProcess.kill.mockClear();
+
+      // Advance past all timers — the old gracefulKill timers should
+      // not write EOF or kill the NEW process because the process identity check
+      // prevents stale closure from acting on the replacement session.
+      vi.advanceTimersByTime(10000);
+
+      // The new session's process should not have received EOF or SIGTERM
+      // from the old gracefulKill timers
+      expect(mockProcess.write).not.toHaveBeenCalledWith('\x04');
+      expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGTERM');
+
+      vi.useRealTimers();
+    });
   });
 
   describe('kill', () => {
