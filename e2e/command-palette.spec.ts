@@ -239,7 +239,7 @@ test.describe('Command Palette – Mode Prefixes', () => {
     await window.keyboard.press('Escape');
   });
 
-  test('# prefix shows projects mode badge', async () => {
+  test('# prefix shows hubs mode badge', async () => {
     await openPalette();
 
     // Type '#' via fill to avoid keyboard interpretation issues
@@ -250,7 +250,7 @@ test.describe('Command Palette – Mode Prefixes', () => {
     // The mode badge is a <span> with specific styling classes, distinct from
     // the category header. Use the badge's parent (the input row with border-b).
     const inputRow = window.locator('[data-testid="command-palette-overlay"]').locator('.border-b');
-    const badge = inputRow.locator('text=Projects');
+    const badge = inputRow.locator('text=Hubs');
     await expect(badge).toBeVisible({ timeout: 3_000 });
 
     await window.keyboard.press('Escape');
