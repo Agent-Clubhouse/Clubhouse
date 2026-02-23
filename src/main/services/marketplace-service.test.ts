@@ -15,9 +15,9 @@ vi.mock('fs', () => ({
 
 const mockExtractAllTo = vi.fn();
 vi.mock('adm-zip', () => ({
-  default: vi.fn(() => ({
-    extractAllTo: mockExtractAllTo,
-  })),
+  default: vi.fn(function () {
+    return { extractAllTo: mockExtractAllTo };
+  }),
 }));
 
 import * as fs from 'fs';
