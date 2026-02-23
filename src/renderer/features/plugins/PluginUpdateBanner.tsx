@@ -27,7 +27,7 @@ export function PluginUpdateBanner() {
 
   return (
     <div
-      className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-green-500/10 border-b border-green-500/20 text-green-200 text-sm"
+      className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-success/10 border-b border-ctp-success/20 text-ctp-success text-sm"
       data-testid="plugin-update-banner"
     >
       {/* Package icon */}
@@ -45,7 +45,7 @@ export function PluginUpdateBanner() {
       <button
         onClick={handleUpdate}
         disabled={isUpdating}
-        className="px-3 py-1 text-xs rounded bg-green-500/20 hover:bg-green-500/30
+        className="px-3 py-1 text-xs rounded bg-ctp-success/20 hover:bg-ctp-success/30
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         data-testid="plugin-update-btn"
       >
@@ -54,7 +54,7 @@ export function PluginUpdateBanner() {
 
       <button
         onClick={dismiss}
-        className="text-green-200/50 hover:text-green-200 transition-colors cursor-pointer px-1"
+        className="text-ctp-success/50 hover:text-ctp-success transition-colors cursor-pointer px-1"
         data-testid="plugin-update-dismiss-btn"
       >
         x

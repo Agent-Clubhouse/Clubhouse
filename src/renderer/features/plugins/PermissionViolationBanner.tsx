@@ -15,7 +15,7 @@ export function PermissionViolationBanner() {
         <div
           key={v.pluginId}
           data-testid="permission-violation-banner"
-          className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-red-200 text-sm"
+          className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-error/10 border-b border-ctp-error/20 text-ctp-error text-sm"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
             <circle cx="12" cy="12" r="10" />
@@ -24,9 +24,9 @@ export function PermissionViolationBanner() {
           </svg>
           <span className="flex-1">
             Plugin <strong>{v.pluginName}</strong> was disabled: it tried to use{' '}
-            <code className="text-xs font-mono bg-red-500/20 px-1 py-0.5 rounded">api.{v.apiName}</code>{' '}
+            <code className="text-xs font-mono bg-ctp-error/20 px-1 py-0.5 rounded">api.{v.apiName}</code>{' '}
             without the required{' '}
-            <code className="text-xs font-mono bg-red-500/20 px-1 py-0.5 rounded">{v.permission}</code>{' '}
+            <code className="text-xs font-mono bg-ctp-error/20 px-1 py-0.5 rounded">{v.permission}</code>{' '}
             permission.
           </span>
           <button
@@ -34,7 +34,7 @@ export function PermissionViolationBanner() {
               setDismissed((prev) => new Set(prev).add(v.pluginId));
               clearPermissionViolation(v.pluginId);
             }}
-            className="text-red-200/50 hover:text-red-200 transition-colors cursor-pointer px-1"
+            className="text-ctp-error/50 hover:text-ctp-error transition-colors cursor-pointer px-1"
           >
             x
           </button>
