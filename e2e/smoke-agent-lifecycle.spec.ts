@@ -226,32 +226,16 @@ test.describe('Agent Lifecycle', () => {
   test('delete action opens delete confirmation dialog', async () => {
     await expect(agentItem()).toBeVisible({ timeout: 5_000 });
 
-    // Try direct delete action button
-    const deleteBtn = agentItem().locator('[data-testid="action-delete"]');
-    const deleteBtnVisible = await deleteBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    // Use right-click context menu which always shows ALL actions including delete
+    await agentItem().click({ button: 'right' });
+    await window.waitForTimeout(500);
 
-    if (deleteBtnVisible) {
-      await deleteBtn.click();
-    } else {
-      // Check overflow menu
-      const overflowBtn = agentItem().locator('[data-testid="action-overflow"]');
-      const overflowVisible = await overflowBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    const contextMenu = window.locator('[data-testid="agent-context-menu"]');
+    await expect(contextMenu).toBeVisible({ timeout: 5_000 });
 
-      if (overflowVisible) {
-        await overflowBtn.click();
-        await window.waitForTimeout(300);
-        const ctxDelete = window.locator('[data-testid="ctx-delete"]');
-        await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
-        await ctxDelete.click();
-      } else {
-        // Fall back to right-click context menu
-        await agentItem().click({ button: 'right' });
-        await window.waitForTimeout(300);
-        const ctxDelete = window.locator('[data-testid="ctx-delete"]');
-        await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
-        await ctxDelete.click();
-      }
-    }
+    const ctxDelete = window.locator('[data-testid="ctx-delete"]');
+    await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
+    await ctxDelete.click();
 
     await window.waitForTimeout(500);
 
