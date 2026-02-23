@@ -592,6 +592,7 @@ export function App() {
         <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
+        <ConfigChangesDialog />
       </div>
     );
   }
@@ -614,6 +615,7 @@ export function App() {
         <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
+        <ConfigChangesDialog />
       </div>
     );
   }
@@ -635,6 +637,7 @@ export function App() {
         <QuickAgentDialog />
         <WhatsNewDialog />
         <OnboardingModal />
+        <ConfigChangesDialog />
       </div>
     );
   }
@@ -649,6 +652,8 @@ export function App() {
       <PermissionViolationBanner />
       {/* Update banner */}
       <UpdateBanner />
+      {/* Plugin update banner */}
+      <PluginUpdateBanner />
       {/* Git banner */}
       <GitBanner />
       {/* Main content grid */}
