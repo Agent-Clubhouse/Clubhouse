@@ -33,8 +33,14 @@ test.beforeAll(async () => {
 
   ({ electronApp, window } = await launchApp());
 
-  // Add both projects
+  // Add smoke project and wait for durable agents to load
   await addProject(electronApp, window, FIXTURE_SMOKE);
+  await navigateToSmokeProject(window);
+
+  // Wait for durable agents to finish loading (they load asynchronously)
+  await expect(
+    window.locator('[data-testid^="durable-drag-"]').first(),
+  ).toBeVisible({ timeout: 30_000 });
 });
 
 test.afterAll(async () => {
@@ -312,11 +318,10 @@ test.describe('Agent Lifecycle — Cross-Project', () => {
 
     // Switch back — agents should reappear
     await navigateToSmokeProject(window);
-    await window.waitForTimeout(500);
 
     await expect(
       window.locator('[data-testid^="durable-drag-"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
 
     const order = await window.evaluate(() => {
       const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
