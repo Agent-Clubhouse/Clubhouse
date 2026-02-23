@@ -44,6 +44,12 @@ async function addProject(dirPath: string) {
 
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
+
+  // Wait for the app shell to be ready before running tests
+  await window.waitForLoadState('load');
+  await expect(window.locator('[data-testid="nav-add-project"]')).toBeVisible({
+    timeout: 30_000,
+  });
 });
 
 test.afterAll(async () => {
