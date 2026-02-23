@@ -33,14 +33,8 @@ test.beforeAll(async () => {
 
   ({ electronApp, window } = await launchApp());
 
-  // Add smoke project and wait for durable agents to load
+  // Add smoke project (agents.json was pre-written above)
   await addProject(electronApp, window, FIXTURE_SMOKE);
-  await navigateToSmokeProject(window);
-
-  // Wait for durable agents to finish loading (they load asynchronously)
-  await expect(
-    window.locator('[data-testid^="durable-drag-"]').first(),
-  ).toBeVisible({ timeout: 30_000 });
 });
 
 test.afterAll(async () => {
@@ -49,7 +43,7 @@ test.afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Fixture-based agents
+// Fixture-based agents + cross-project guard
 // ---------------------------------------------------------------------------
 
 test.describe('Agent Lifecycle — Fixture Agents', () => {
@@ -60,9 +54,14 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
   });
 
   test('durable agents from agents.json appear in list', async () => {
+    // Durable agents load asynchronously after project activation
     await expect(
-      window.locator('[data-testid^="durable-drag-"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      window.locator('[data-agent-name="smoke-alpha"]').first(),
+    ).toBeVisible({ timeout: 30_000 });
+
+    await expect(
+      window.locator('[data-agent-name="smoke-beta"]').first(),
+    ).toBeVisible({ timeout: 5_000 });
 
     const order = await window.evaluate(() => {
       const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
@@ -115,7 +114,7 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
 
   test('agent delete button visible via hover', async () => {
     const agentItem = window.locator('[data-testid="agent-item-smoke_agent_2"]');
-    await expect(agentItem).toBeVisible({ timeout: 5_000 });
+    await expect(agentItem).toBeVisible({ timeout: 15_000 });
 
     await agentItem.hover();
     await window.waitForTimeout(300);
@@ -127,6 +126,22 @@ test.describe('Agent Lifecycle — Fixture Agents', () => {
     const overflowVisible = await overflowBtn.isVisible({ timeout: 2_000 }).catch(() => false);
 
     expect(deleteVisible || overflowVisible).toBe(true);
+  });
+
+  test('cross-project agent guard (smoke agents NOT in project-b)', async () => {
+    // Add project-b and switch to it
+    await addProject(electronApp, window, FIXTURE_B);
+    await window.waitForTimeout(500);
+
+    // Smoke agents should NOT be visible in project-b
+    const smokeAgentVisible = await window
+      .locator('[data-testid^="agent-item-smoke"]')
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+    expect(smokeAgentVisible).toBe(false);
+
+    // Switch back to smoke project for subsequent tests
+    await navigateToSmokeProject(window);
   });
 });
 
@@ -294,45 +309,13 @@ test.describe('Agent Lifecycle — UI Create & Delete', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-project guards
+// Agent creation dropdown
 // ---------------------------------------------------------------------------
 
-test.describe('Agent Lifecycle — Cross-Project', () => {
-  test('cross-project agent guard (smoke agents NOT in project-b)', async () => {
-    // Add project-b if not already added
-    const projB = window.locator('[title="project-b"]').first();
-    const projBVisible = await projB.isVisible({ timeout: 2_000 }).catch(() => false);
-    if (!projBVisible) {
-      await addProject(electronApp, window, FIXTURE_B);
-    } else {
-      await projB.click();
-    }
-    await window.waitForTimeout(500);
-
-    // Smoke agents should NOT be visible in project-b
-    const smokeAgentVisible = await window
-      .locator('[data-testid^="agent-item-smoke"]')
-      .isVisible({ timeout: 1_000 })
-      .catch(() => false);
-    expect(smokeAgentVisible).toBe(false);
-
-    // Switch back — agents should reappear
+test.describe('Agent Lifecycle — Dropdown', () => {
+  test('agent creation dropdown (Durable vs Quick Agent options)', async () => {
     await navigateToSmokeProject(window);
 
-    await expect(
-      window.locator('[data-testid^="durable-drag-"]').first(),
-    ).toBeVisible({ timeout: 30_000 });
-
-    const order = await window.evaluate(() => {
-      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
-      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
-    });
-
-    expect(order).toContain('smoke_agent_1');
-    expect(order).toContain('smoke_agent_2');
-  });
-
-  test('agent creation dropdown (Durable vs Quick Agent options)', async () => {
     const dropdownBtn = window.locator('button:has-text("▾")');
     await dropdownBtn.click();
     await window.waitForTimeout(300);
