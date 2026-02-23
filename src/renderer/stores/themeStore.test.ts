@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ThemeId, ThemeDefinition } from '../../shared/types';
+import type { ThemeId } from '../../shared/types';
 
 // ---------- mock applyTheme before importing store ----------
 vi.mock('../themes/apply-theme', () => ({
@@ -13,19 +13,8 @@ const mockApp = {
   updateTitleBarOverlay: vi.fn().mockResolvedValue(undefined),
 };
 
-Object.defineProperty(globalThis, 'window', {
-  value: { clubhouse: { app: mockApp } },
-  writable: true,
-});
-
-// Need localStorage for applyTheme internals (not called since mocked, but just in case)
-Object.defineProperty(globalThis, 'localStorage', {
-  value: {
-    getItem: vi.fn(() => null),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-  },
-  writable: true,
+vi.stubGlobal('window', {
+  clubhouse: { app: mockApp },
 });
 
 import { useThemeStore } from './themeStore';
@@ -41,6 +30,7 @@ function getState() {
 describe('themeStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockApp.updateTitleBarOverlay.mockResolvedValue(undefined);
     useThemeStore.setState({
       themeId: 'catppuccin-mocha',
       theme: THEMES['catppuccin-mocha'],
@@ -86,6 +76,11 @@ describe('themeStore', () => {
 
       await getState().loadTheme();
 
+      // The `||` fallback means both themeId and theme fall back to default
+      // because THEMES['nonexistent-theme'] is undefined (falsy)
+      // Code: const id = (settings?.themeId || 'catppuccin-mocha') — id stays as raw string
+      // Code: const theme = THEMES[id] || THEMES['catppuccin-mocha'] — theme falls back
+      // The raw id IS stored even if invalid; the theme object is the fallback
       expect(getState().themeId).toBe('nonexistent-theme');
       expect(getState().theme).toBe(THEMES['catppuccin-mocha']);
     });
