@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { usePluginStore } from './plugin-store';
+import { usePluginStore, MAX_PERMISSION_VIOLATIONS } from './plugin-store';
 import type { PluginManifest } from '../../shared/plugin-types';
 
 function getState() {
@@ -234,6 +234,33 @@ describe('pluginStore', () => {
       getState().recordPermissionViolation(violation);
       getState().clearPermissionViolation('nonexistent');
       expect(getState().permissionViolations).toHaveLength(1);
+    });
+
+    it('caps violations at MAX_PERMISSION_VIOLATIONS, dropping oldest', () => {
+      for (let i = 0; i < MAX_PERMISSION_VIOLATIONS + 20; i++) {
+        getState().recordPermissionViolation({
+          ...violation,
+          pluginId: `plugin-${i}`,
+          timestamp: i,
+        });
+      }
+      const violations = getState().permissionViolations;
+      expect(violations).toHaveLength(MAX_PERMISSION_VIOLATIONS);
+      // Oldest entries (0..19) should have been dropped
+      expect(violations[0].pluginId).toBe('plugin-20');
+      expect(violations[violations.length - 1].pluginId).toBe(`plugin-${MAX_PERMISSION_VIOLATIONS + 19}`);
+    });
+
+    it('does not trim when at exactly the limit', () => {
+      for (let i = 0; i < MAX_PERMISSION_VIOLATIONS; i++) {
+        getState().recordPermissionViolation({
+          ...violation,
+          pluginId: `plugin-${i}`,
+          timestamp: i,
+        });
+      }
+      expect(getState().permissionViolations).toHaveLength(MAX_PERMISSION_VIOLATIONS);
+      expect(getState().permissionViolations[0].pluginId).toBe('plugin-0');
     });
   });
 

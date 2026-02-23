@@ -1,6 +1,6 @@
 import { render, screen, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HeadlessAgentView } from './HeadlessAgentView';
+import { HeadlessAgentView, MAX_FEED_ITEMS } from './HeadlessAgentView';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
 
@@ -99,6 +99,31 @@ describe('HeadlessAgentView', () => {
 
     act(() => { vi.advanceTimersByTime(5000); });
     expect(screen.getByText('15s')).toBeInTheDocument();
+  });
+
+  it('caps feedItems from hook events at MAX_FEED_ITEMS', () => {
+    let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
+    window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
+      hookCallback = cb;
+      return vi.fn();
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+
+    // Push more than MAX_FEED_ITEMS events
+    act(() => {
+      for (let i = 0; i < MAX_FEED_ITEMS + 50; i++) {
+        hookCallback(headlessAgent.id, {
+          kind: 'pre_tool',
+          toolName: `tool-${i}`,
+          timestamp: Date.now(),
+        });
+      }
+    });
+
+    // Only MAX_FEED_ITEMS tool items should be rendered
+    const toolItems = screen.getAllByText(/^tool-/);
+    expect(toolItems.length).toBeLessThanOrEqual(MAX_FEED_ITEMS);
   });
 
   it('freezes the timer when the agent is no longer running', () => {

@@ -8,6 +8,8 @@ import type {
   PluginPermission,
 } from '../../shared/plugin-types';
 
+export const MAX_PERMISSION_VIOLATIONS = 100;
+
 export interface PermissionViolation {
   pluginId: string;
   pluginName: string;
@@ -173,9 +175,15 @@ export const usePluginStore = create<PluginState>((set) => ({
     }),
 
   recordPermissionViolation: (violation) =>
-    set((s) => ({
-      permissionViolations: [...s.permissionViolations, violation],
-    })),
+    set((s) => {
+      const updated = [...s.permissionViolations, violation];
+      return {
+        permissionViolations:
+          updated.length > MAX_PERMISSION_VIOLATIONS
+            ? updated.slice(updated.length - MAX_PERMISSION_VIOLATIONS)
+            : updated,
+      };
+    }),
 
   clearPermissionViolation: (pluginId) =>
     set((s) => ({

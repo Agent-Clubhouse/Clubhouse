@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Agent, AgentHookEvent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 
+export const MAX_FEED_ITEMS = 200;
+
 interface Props {
   agent: Agent;
 }
@@ -138,7 +140,12 @@ export function HeadlessAgentView({ agent }: Props) {
 
   // Real-time feed from hook events (primary source — instant, no polling delay)
   const appendItem = useCallback((item: FeedItem) => {
-    setFeedItems((prev) => [...prev, item]);
+    setFeedItems((prev) => {
+      const updated = [...prev, item];
+      return updated.length > MAX_FEED_ITEMS
+        ? updated.slice(updated.length - MAX_FEED_ITEMS)
+        : updated;
+    });
   }, []);
 
   useEffect(() => {
@@ -252,7 +259,10 @@ export function HeadlessAgentView({ agent }: Props) {
 
         // Only update if we have more items than the current feed
         if (items.length > 0) {
-          setFeedItems((prev) => items.length > prev.length ? items : prev);
+          const capped = items.length > MAX_FEED_ITEMS
+            ? items.slice(items.length - MAX_FEED_ITEMS)
+            : items;
+          setFeedItems((prev) => capped.length > prev.length ? capped : prev);
         }
       } catch {
         // transcript not ready yet
