@@ -23,12 +23,12 @@ import { useBadgeStore } from '../badgeStore';
 import { useOrchestratorStore } from '../orchestratorStore';
 import { useQuickAgentStore } from '../quickAgentStore';
 import { useAgentStore } from '../agentStore';
-import { useUIStore } from '../uiStore';
+
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /** Assert that calling a getter twice without mutations returns the same ref */
-function expectStableRef<T>(getter: () => T, label: string): void {
+function expectStableRef<T>(getter: () => T, _label: string): void {
   const ref1 = getter();
   const ref2 = getter();
   expect(ref1).toBe(ref2); // Object.is equality — same as Zustand's default
