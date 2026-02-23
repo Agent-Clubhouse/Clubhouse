@@ -40,6 +40,44 @@ async function addProject(dirPath: string) {
   });
 }
 
+/** Get the title bar text. */
+async function getTitleBarText(): Promise<string> {
+  return window.locator('[data-testid="title-bar"]').first().textContent() as Promise<string>;
+}
+
+/** Dismiss any notification banners that may block clicks. */
+async function dismissNotifications() {
+  // Dismiss "No git repository" or other notifications that overlay the UI
+  const closeButtons = window.locator('button:has-text("x")');
+  const count = await closeButtons.count();
+  for (let i = 0; i < count; i++) {
+    const btn = closeButtons.nth(i);
+    const isVisible = await btn.isVisible().catch(() => false);
+    if (isVisible) {
+      // Check if it's near a notification (not a normal UI close button)
+      const parent = btn.locator('..');
+      const text = await parent.textContent().catch(() => '');
+      if (text?.includes('git repository') || text?.includes('not available')) {
+        await btn.click().catch(() => {});
+        await window.waitForTimeout(200);
+      }
+    }
+  }
+}
+
+/** Navigate to the terminal tab and verify it's active. */
+async function navigateToTerminal() {
+  const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
+  await terminalTab.scrollIntoViewIfNeeded();
+  await terminalTab.click({ force: true });
+
+  // Verify tab activation via title bar (proven pattern from other E2E tests)
+  await expect(window.locator('[data-testid="title-bar"]')).toContainText(
+    'Terminal',
+    { timeout: 10_000 },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
@@ -49,11 +87,18 @@ test.beforeAll(async () => {
 
   // Add a project so plugin tabs become available
   await addProject(FIXTURE_A);
+
   // Ensure the project is active
   await expect(window.locator('[data-testid="title-bar"]')).toContainText(
     'project-a',
     { timeout: 5_000 },
   );
+
+  // Wait for plugins to fully load
+  await window.waitForTimeout(1_000);
+
+  // Dismiss notification banners that might block clicks
+  await dismissNotifications();
 });
 
 test.afterAll(async () => {
@@ -70,15 +115,10 @@ test.describe('Terminal Plugin Tab', () => {
     await expect(terminalTab).toBeVisible({ timeout: 10_000 });
   });
 
-  test('clicking terminal tab activates it', async () => {
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
-
-    // The tab should now be active
-    await expect(terminalTab).toHaveAttribute('data-active', 'true', {
-      timeout: 5_000,
-    });
+  test('clicking terminal tab switches view to Terminal', async () => {
+    await navigateToTerminal();
+    const title = await getTitleBarText();
+    expect(title).toContain('Terminal');
   });
 });
 
@@ -87,33 +127,39 @@ test.describe('Terminal Plugin Tab', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Terminal Widget Rendering', () => {
-  test('terminal main panel is visible', async () => {
-    // Ensure terminal tab is selected
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+  test('terminal main panel and sidebar render after tab click', async () => {
+    await navigateToTerminal();
 
     const mainPanel = window.locator('[data-testid="terminal-main-panel"]');
-    await expect(mainPanel).toBeVisible({ timeout: 10_000 });
-  });
+    await expect(mainPanel).toBeVisible({ timeout: 15_000 });
 
-  test('terminal sidebar panel shows Targets header', async () => {
     const sidebar = window.locator('[data-testid="terminal-sidebar-panel"]');
     await expect(sidebar).toBeVisible({ timeout: 5_000 });
-    await expect(sidebar.locator('text=Targets')).toBeVisible();
   });
 
-  test('terminal sidebar shows Project target', async () => {
+  test('terminal sidebar shows Targets header and Project target', async () => {
+    await navigateToTerminal();
+
     const sidebar = window.locator('[data-testid="terminal-sidebar-panel"]');
+    await expect(sidebar).toBeVisible({ timeout: 10_000 });
+    await expect(sidebar.locator('text=Targets')).toBeVisible({ timeout: 5_000 });
     await expect(sidebar.locator('text=Project')).toBeVisible({ timeout: 5_000 });
   });
 
-  test('terminal status shows Running after spawn', async () => {
+  test('terminal spawns and shows Running status', async () => {
+    await navigateToTerminal();
+
     const status = window.locator('[data-testid="terminal-status"]');
     await expect(status).toContainText('Running', { timeout: 15_000 });
   });
 
-  test('shell terminal widget is rendered', async () => {
+  test('shell terminal xterm widget is rendered', async () => {
+    await navigateToTerminal();
+
+    // Wait for the terminal to be in Running state first
+    const status = window.locator('[data-testid="terminal-status"]');
+    await expect(status).toContainText('Running', { timeout: 15_000 });
+
     // xterm.js creates elements with class "xterm" inside the shell-terminal container
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
     await expect(shellTerminal).toBeVisible({ timeout: 10_000 });
@@ -130,18 +176,17 @@ test.describe('Terminal Widget Rendering', () => {
 
 test.describe('Terminal Command Execution', () => {
   test('typing a command produces output in terminal', async () => {
-    // Ensure terminal tab is active and shell is running
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+    await navigateToTerminal();
 
+    // Wait for terminal to be running
     const status = window.locator('[data-testid="terminal-status"]');
     await expect(status).toContainText('Running', { timeout: 15_000 });
 
     // Focus the terminal
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
+    await expect(shellTerminal).toBeVisible({ timeout: 10_000 });
     await shellTerminal.click();
-    await window.waitForTimeout(300);
+    await window.waitForTimeout(500);
 
     // Type a simple command — echo with a unique marker so we can find it
     const marker = `E2E_MARKER_${Date.now()}`;
@@ -160,7 +205,11 @@ test.describe('Terminal Command Execution', () => {
 
 test.describe('Terminal Resize', () => {
   test('resizing the window does not crash the terminal', async () => {
-    // Ensure terminal is visible
+    await navigateToTerminal();
+
+    const status = window.locator('[data-testid="terminal-status"]');
+    await expect(status).toContainText('Running', { timeout: 15_000 });
+
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
     await expect(shellTerminal).toBeVisible({ timeout: 5_000 });
 
@@ -173,11 +222,8 @@ test.describe('Terminal Resize', () => {
     await window.setViewportSize({ width: 800, height: 400 });
     await window.waitForTimeout(500);
 
-    // Verify terminal is still visible after resize
+    // Verify terminal is still visible and Running after resize
     await expect(shellTerminal).toBeVisible();
-
-    // Verify terminal status is still Running (didn't crash)
-    const status = window.locator('[data-testid="terminal-status"]');
     await expect(status).toContainText('Running', { timeout: 5_000 });
 
     // Resize larger
@@ -193,7 +239,13 @@ test.describe('Terminal Resize', () => {
   });
 
   test('command execution works after resize', async () => {
+    await navigateToTerminal();
+
+    const status = window.locator('[data-testid="terminal-status"]');
+    await expect(status).toContainText('Running', { timeout: 15_000 });
+
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
+    await expect(shellTerminal).toBeVisible({ timeout: 5_000 });
 
     // Resize window
     await window.setViewportSize({ width: 900, height: 500 });
@@ -201,7 +253,7 @@ test.describe('Terminal Resize', () => {
 
     // Focus and type a command
     await shellTerminal.click();
-    await window.waitForTimeout(200);
+    await window.waitForTimeout(300);
 
     const marker = `RESIZE_CHECK_${Date.now()}`;
     await window.keyboard.type(`echo ${marker}`, { delay: 30 });
@@ -221,10 +273,7 @@ test.describe('Terminal Resize', () => {
 
 test.describe('Terminal Restart and Cleanup', () => {
   test('restart button restarts the terminal session', async () => {
-    // Ensure terminal tab is active
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+    await navigateToTerminal();
 
     // Wait for terminal to be running
     const status = window.locator('[data-testid="terminal-status"]');
@@ -235,8 +284,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(restartBtn).toBeVisible({ timeout: 5_000 });
     await restartBtn.click();
 
-    // Terminal should briefly show a non-running state or return to Running
-    // after restart completes
+    // Terminal should return to Running after restart completes
     await expect(status).toContainText('Running', { timeout: 15_000 });
 
     // Verify the terminal is functional after restart
@@ -244,7 +292,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(shellTerminal).toBeVisible({ timeout: 5_000 });
 
     await shellTerminal.click();
-    await window.waitForTimeout(300);
+    await window.waitForTimeout(500);
 
     const marker = `RESTART_CHECK_${Date.now()}`;
     await window.keyboard.type(`echo ${marker}`, { delay: 30 });
@@ -254,14 +302,15 @@ test.describe('Terminal Restart and Cleanup', () => {
   });
 
   test('switching away from terminal tab and back restores session', async () => {
-    // Type a unique marker in terminal
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+    await navigateToTerminal();
 
+    const status = window.locator('[data-testid="terminal-status"]');
+    await expect(status).toContainText('Running', { timeout: 15_000 });
+
+    // Type a unique marker in terminal
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
     await shellTerminal.click();
-    await window.waitForTimeout(200);
+    await window.waitForTimeout(300);
 
     const marker = `PERSIST_CHECK_${Date.now()}`;
     await window.keyboard.type(`echo ${marker}`, { delay: 30 });
@@ -270,47 +319,42 @@ test.describe('Terminal Restart and Cleanup', () => {
 
     // Switch to agents tab
     const agentsTab = window.locator('[data-testid="explorer-tab-agents"]');
-    await agentsTab.click();
-    await window.waitForTimeout(500);
+    await agentsTab.scrollIntoViewIfNeeded();
+    await agentsTab.click({ force: true });
+    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
+      'Agents',
+      { timeout: 5_000 },
+    );
 
     // Switch back to terminal tab
-    await terminalTab.click();
-    await window.waitForTimeout(1_000);
+    await navigateToTerminal();
 
-    // The terminal should still show our marker (buffer replay)
+    // The terminal should still be running (session persists)
+    await expect(status).toContainText('Running', { timeout: 10_000 });
+
+    // Shell terminal should be visible after reconnect
     const shellTerminalAfter = window.locator('[data-testid="shell-terminal"]');
     await expect(shellTerminalAfter).toBeVisible({ timeout: 10_000 });
-
-    // Verify the terminal is still running
-    const status = window.locator('[data-testid="terminal-status"]');
-    await expect(status).toContainText('Running', { timeout: 10_000 });
   });
 
-  test('terminal xterm element is properly cleaned up when switching tabs', async () => {
-    // Navigate to terminal tab
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+  test('terminal main panel is hidden when switching to agents tab', async () => {
+    await navigateToTerminal();
 
-    // Verify xterm is present
-    const xtermCount = await window.locator('.xterm').count();
-    expect(xtermCount).toBeGreaterThan(0);
+    // Verify terminal is visible
+    const mainPanel = window.locator('[data-testid="terminal-main-panel"]');
+    await expect(mainPanel).toBeVisible({ timeout: 10_000 });
 
     // Switch to agents tab
     const agentsTab = window.locator('[data-testid="explorer-tab-agents"]');
-    await agentsTab.click();
-    await window.waitForTimeout(500);
+    await agentsTab.scrollIntoViewIfNeeded();
+    await agentsTab.click({ force: true });
+    await expect(window.locator('[data-testid="title-bar"]')).toContainText(
+      'Agents',
+      { timeout: 5_000 },
+    );
 
-    // Terminal main panel should no longer be visible (content switched)
-    const mainPanel = window.locator('[data-testid="terminal-main-panel"]');
-    const isVisible = await mainPanel.isVisible().catch(() => false);
-    // In sidebar-content layout, the main panel may or may not be unmounted
-    // depending on implementation — but it should at least not be actively
-    // rendered in the agents view
-    if (!isVisible) {
-      // Good — panel was unmounted/hidden
-      expect(isVisible).toBe(false);
-    }
+    // Terminal main panel should no longer be visible
+    await expect(mainPanel).not.toBeVisible({ timeout: 5_000 });
   });
 });
 
@@ -320,9 +364,7 @@ test.describe('Terminal Restart and Cleanup', () => {
 
 test.describe('Terminal Exit Handling', () => {
   test('terminal shows exited status when shell process exits', async () => {
-    const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-    await terminalTab.click();
-    await window.waitForTimeout(500);
+    await navigateToTerminal();
 
     const status = window.locator('[data-testid="terminal-status"]');
     await expect(status).toContainText('Running', { timeout: 15_000 });
@@ -330,7 +372,7 @@ test.describe('Terminal Exit Handling', () => {
     // Send "exit" to the shell to terminate it
     const shellTerminal = window.locator('[data-testid="shell-terminal"]');
     await shellTerminal.click();
-    await window.waitForTimeout(200);
+    await window.waitForTimeout(300);
 
     await window.keyboard.type('exit', { delay: 30 });
     await window.keyboard.press('Enter');
@@ -340,29 +382,38 @@ test.describe('Terminal Exit Handling', () => {
   });
 
   test('restart after exit re-spawns the terminal', async () => {
+    // The previous test should have left the terminal in exited state
     const status = window.locator('[data-testid="terminal-status"]');
+    const currentStatus = await status.textContent().catch(() => '');
 
-    // Terminal should be in exited state from previous test
-    // (or we need to handle both cases)
-    const currentStatus = await status.textContent();
-
-    if (currentStatus?.includes('Exited')) {
-      // Click restart to re-spawn
-      const restartBtn = window.locator('[data-testid="terminal-restart-btn"]');
-      await restartBtn.click();
-
+    if (!currentStatus?.includes('Exited')) {
+      // Navigate to terminal and exit it first
+      await navigateToTerminal();
       await expect(status).toContainText('Running', { timeout: 15_000 });
 
-      // Verify terminal is functional
       const shellTerminal = window.locator('[data-testid="shell-terminal"]');
       await shellTerminal.click();
       await window.waitForTimeout(300);
-
-      const marker = `EXIT_RESTART_${Date.now()}`;
-      await window.keyboard.type(`echo ${marker}`, { delay: 30 });
+      await window.keyboard.type('exit', { delay: 30 });
       await window.keyboard.press('Enter');
-
-      await expect(shellTerminal).toContainText(marker, { timeout: 10_000 });
+      await expect(status).toContainText('Exited', { timeout: 15_000 });
     }
+
+    // Click restart to re-spawn
+    const restartBtn = window.locator('[data-testid="terminal-restart-btn"]');
+    await restartBtn.click();
+
+    await expect(status).toContainText('Running', { timeout: 15_000 });
+
+    // Verify terminal is functional after restart
+    const shellTerminal = window.locator('[data-testid="shell-terminal"]');
+    await shellTerminal.click();
+    await window.waitForTimeout(500);
+
+    const marker = `EXIT_RESTART_${Date.now()}`;
+    await window.keyboard.type(`echo ${marker}`, { delay: 30 });
+    await window.keyboard.press('Enter');
+
+    await expect(shellTerminal).toContainText(marker, { timeout: 10_000 });
   });
 });
