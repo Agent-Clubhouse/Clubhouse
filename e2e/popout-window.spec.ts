@@ -78,6 +78,13 @@ function writeAgentsJson(
  *
  * Starts listening for the 'window' event BEFORE triggering creation to
  * avoid a race where the window opens before we're listening.
+ *
+ * DevTools windows auto-open in unpackaged Electron builds, so when a
+ * popout BrowserWindow is created, two windows appear: the renderer and
+ * its DevTools.  The DevTools URL is initially empty (not `devtools://`)
+ * and only navigates later, so the URL-based predicate in waitForEvent
+ * can match the wrong window.  We handle this by waiting for load and
+ * then falling back to the next window if we accidentally captured DevTools.
  */
 async function createPopout(params: {
   type: 'agent' | 'hub';
@@ -89,8 +96,7 @@ async function createPopout(params: {
   const existingPages = new Set(electronApp.windows());
 
   const popoutPromise = electronApp.waitForEvent('window', {
-    predicate: (page: Page) =>
-      !page.url().startsWith('devtools://') && !existingPages.has(page),
+    predicate: (page: Page) => !existingPages.has(page),
     timeout: 15_000,
   });
 
@@ -99,8 +105,20 @@ async function createPopout(params: {
     params,
   );
 
-  const page = await popoutPromise;
+  let page = await popoutPromise;
   await page.waitForLoadState('load');
+
+  // If we caught the DevTools window (URL is devtools:// after load),
+  // mark it as existing and wait for the actual popout renderer.
+  if (page.url().startsWith('devtools://')) {
+    existingPages.add(page);
+    page = await electronApp.waitForEvent('window', {
+      predicate: (p: Page) => !existingPages.has(p),
+      timeout: 10_000,
+    });
+    await page.waitForLoadState('load');
+  }
+
   return { page, windowId };
 }
 
