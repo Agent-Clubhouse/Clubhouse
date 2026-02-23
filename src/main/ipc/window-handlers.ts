@@ -134,16 +134,19 @@ export function registerWindowHandlers(): void {
       }
 
       const requestId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+      const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
+
+      const handler = (_e: any, state: any) => {
+        clearTimeout(timeout);
+        resolve(state);
+      };
 
       const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(`${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`);
+        ipcMain.removeListener(channel, handler);
         resolve({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
       }, 5000);
 
-      ipcMain.once(`${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}` as any, (_e: any, state: any) => {
-        clearTimeout(timeout);
-        resolve(state);
-      });
+      ipcMain.once(channel as any, handler);
 
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_AGENT_STATE, requestId);
     });
@@ -174,16 +177,19 @@ export function registerWindowHandlers(): void {
       }
 
       const requestId = `hub_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+      const channel = `${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`;
+
+      const handler = (_e: any, state: any) => {
+        clearTimeout(timeout);
+        resolve(state);
+      };
 
       const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`);
+        ipcMain.removeListener(channel, handler);
         resolve(null);
       }, 5000);
 
-      ipcMain.once(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}` as any, (_e: any, state: any) => {
-        clearTimeout(timeout);
-        resolve(state);
-      });
+      ipcMain.once(channel as any, handler);
 
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_STATE, requestId, hubId, scope, projectId);
     });

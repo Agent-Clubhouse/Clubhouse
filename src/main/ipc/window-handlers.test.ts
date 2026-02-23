@@ -62,6 +62,14 @@ vi.mock('electron', () => {
       removeAllListeners: vi.fn((channel: string) => {
         onceListeners.delete(channel);
       }),
+      removeListener: vi.fn((channel: string, handler: (...args: any[]) => void) => {
+        const list = onceListeners.get(channel);
+        if (list) {
+          const idx = list.indexOf(handler);
+          if (idx !== -1) list.splice(idx, 1);
+          if (list.length === 0) onceListeners.delete(channel);
+        }
+      }),
       _resetOnceListeners: () => onceListeners.clear(),
     },
   };
@@ -200,5 +208,102 @@ describe('window-handlers', () => {
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
     const result = await handler({});
     expect(result).toEqual({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
+  });
+
+  it('GET_AGENT_STATE cleans up once listener on timeout using removeListener', async () => {
+    vi.useFakeTimers();
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    const statePromise = handler({});
+
+    // Extract the requestId from the send call
+    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
+
+    // Verify the once listener was registered
+    expect(ipcMain.once).toHaveBeenCalledWith(channel, expect.any(Function));
+
+    // Advance past the 5s timeout
+    vi.advanceTimersByTime(5000);
+
+    const result = await statePromise;
+    expect(result).toEqual({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
+
+    // Verify removeListener was called with the specific handler (not removeAllListeners)
+    expect(ipcMain.removeListener).toHaveBeenCalledWith(channel, expect.any(Function));
+
+    // Verify the handler passed to removeListener is the same one passed to once
+    const onceHandler = (ipcMain.once as any).mock.calls.find(
+      (call: any[]) => call[0] === channel,
+    )?.[1];
+    const removedHandler = (ipcMain.removeListener as any).mock.calls.find(
+      (call: any[]) => call[0] === channel,
+    )?.[1];
+    expect(removedHandler).toBe(onceHandler);
+
+    vi.useRealTimers();
+  });
+
+  it('GET_HUB_STATE cleans up once listener on timeout using removeListener', async () => {
+    vi.useFakeTimers();
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
+
+    const statePromise = handler({}, 'hub-1', 'messages');
+
+    // Extract the requestId from the send call
+    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    const channel = `${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`;
+
+    // Verify the once listener was registered
+    expect(ipcMain.once).toHaveBeenCalledWith(channel, expect.any(Function));
+
+    // Advance past the 5s timeout
+    vi.advanceTimersByTime(5000);
+
+    const result = await statePromise;
+    expect(result).toBeNull();
+
+    // Verify removeListener was called with the specific handler
+    expect(ipcMain.removeListener).toHaveBeenCalledWith(channel, expect.any(Function));
+
+    // Verify the handler passed to removeListener is the same one passed to once
+    const onceHandler = (ipcMain.once as any).mock.calls.find(
+      (call: any[]) => call[0] === channel,
+    )?.[1];
+    const removedHandler = (ipcMain.removeListener as any).mock.calls.find(
+      (call: any[]) => call[0] === channel,
+    )?.[1];
+    expect(removedHandler).toBe(onceHandler);
+
+    vi.useRealTimers();
+  });
+
+  it('GET_AGENT_STATE does not call removeListener when response arrives before timeout', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    const statePromise = handler({});
+
+    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    const mockState = { agents: { a1: { id: 'a1' } }, agentDetailedStatus: {}, agentIcons: {} };
+
+    // Simulate the response arriving before timeout
+    const onCalls = (ipcMain.on as any).mock.calls;
+    const responseHandler = onCalls.find(
+      (call: any[]) => call[0] === IPC.WINDOW.AGENT_STATE_RESPONSE,
+    )?.[1];
+    responseHandler({}, requestId, mockState);
+
+    const result = await statePromise;
+    expect(result).toEqual(mockState);
+
+    // removeListener should NOT have been called (timeout was cleared)
+    const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
+    const removeListenerCalls = (ipcMain.removeListener as any).mock.calls.filter(
+      (call: any[]) => call[0] === channel,
+    );
+    expect(removeListenerCalls.length).toBe(0);
   });
 });
