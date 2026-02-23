@@ -19,8 +19,10 @@ import { launchApp } from './launch';
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let mainWindow: Page;
 
-const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
-const AGENTS_JSON = path.join(FIXTURE_A, '.clubhouse', 'agents.json');
+// Use project-b to avoid sharing agents.json with agent-list-ui.spec.ts
+// (both suites run in parallel and would conflict on the same fixture).
+const FIXTURE_DIR = path.resolve(__dirname, 'fixtures/project-b');
+const AGENTS_JSON = path.join(FIXTURE_DIR, '.clubhouse', 'agents.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,7 +58,7 @@ async function addProject(dirPath: string) {
 function writeAgentsJson(
   agents: Array<{ id: string; name: string; color: string }>,
 ) {
-  const dir = path.join(FIXTURE_A, '.clubhouse');
+  const dir = path.join(FIXTURE_DIR, '.clubhouse');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const configs = agents.map((a) => ({
     id: a.id,
@@ -113,7 +115,7 @@ async function getProjectId(): Promise<string> {
     return (window as any).clubhouse.project.list();
   }).then((projects: Array<{ id: string; path: string }>) => {
     const fixture = projects.find((p: any) =>
-      p.path.endsWith('project-a'),
+      p.path.endsWith('project-b'),
     );
     return fixture?.id ?? '';
   });
@@ -149,7 +151,7 @@ test.beforeAll(async () => {
   ]);
 
   ({ electronApp, window: mainWindow } = await launchApp());
-  await addProject(FIXTURE_A);
+  await addProject(FIXTURE_DIR);
   await waitForDurableAgents();
 });
 
@@ -674,8 +676,13 @@ test.describe('Main Window Independence', () => {
     expect(countAfter).toBe(countBefore);
   });
 
-  test('main window navigation still works after pop-out closes', async () => {
+  test('main window UI remains interactive after pop-out closes', async () => {
     const projectId = await getProjectId();
+
+    // Verify agents are visible before pop-out
+    await expect(
+      mainWindow.locator('[data-agent-name="alpha-popout"]').first(),
+    ).toBeVisible({ timeout: 5_000 });
 
     const { page, windowId } = await createPopout({
       type: 'agent',
@@ -693,21 +700,19 @@ test.describe('Main Window Independence', () => {
     );
     await mainWindow.waitForTimeout(500);
 
-    // Navigate to home and back to verify main window is functional
-    const homeBtn = mainWindow.locator('[data-testid="nav-home"]');
-    if (await homeBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await homeBtn.click();
-      await mainWindow.waitForTimeout(300);
+    // Agent list should still be visible and interactable
+    const agentList = mainWindow.locator('[data-testid="agent-list"]');
+    await expect(agentList).toBeVisible({ timeout: 5_000 });
 
-      // Navigate back to the project
-      const projectLink = mainWindow.locator(`text=project-a`).first();
-      if (await projectLink.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await projectLink.click();
-        await mainWindow.waitForTimeout(300);
-      }
+    // Clicking on an agent should still work (sets it active)
+    const agentItem = mainWindow.locator('[data-testid="agent-item-popout_agent_1"]');
+    if (await agentItem.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await agentItem.click();
+      // Agent should still be responsive — no error or crash
+      await expect(agentItem).toBeVisible();
     }
 
-    // Agents should still be visible
+    // Agent data should remain intact
     await expect(
       mainWindow.locator('[data-agent-name="alpha-popout"]').first(),
     ).toBeVisible({ timeout: 5_000 });
