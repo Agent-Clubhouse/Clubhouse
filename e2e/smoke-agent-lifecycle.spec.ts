@@ -1,0 +1,345 @@
+/**
+ * E2E Smoke Test: Agent Lifecycle Basics
+ *
+ * Verifies durable agent display (from agents.json), UI-driven creation,
+ * deletion via context menu, and cross-project agent isolation.
+ *
+ * Issue #233 — Consolidated from smoke.spec.ts + PR #257
+ */
+import { test, expect, _electron as electron, Page } from '@playwright/test';
+import { launchApp } from './launch';
+import {
+  FIXTURE_SMOKE,
+  FIXTURE_B,
+  addProject,
+  assertNotBlankScreen,
+  navigateToSmokeProject,
+  writeAgentsJson,
+  cleanupAgentsJson,
+} from './smoke-helpers';
+
+let electronApp: Awaited<ReturnType<typeof electron.launch>>;
+let window: Page;
+
+// Unique agent name per test run to avoid collisions from retries
+const AGENT_NAME = `e2e-agent-${Date.now()}`;
+
+test.beforeAll(async () => {
+  // Pre-populate durable agents so the agent list has content to render
+  writeAgentsJson([
+    { id: 'smoke_agent_1', name: 'smoke-alpha', color: 'indigo' },
+    { id: 'smoke_agent_2', name: 'smoke-beta', color: 'green' },
+  ]);
+
+  ({ electronApp, window } = await launchApp());
+
+  // Add both projects
+  await addProject(electronApp, window, FIXTURE_SMOKE);
+});
+
+test.afterAll(async () => {
+  cleanupAgentsJson();
+  await electronApp?.close();
+});
+
+// ---------------------------------------------------------------------------
+// Fixture-based agents
+// ---------------------------------------------------------------------------
+
+test.describe('Agent Lifecycle — Fixture Agents', () => {
+  test('agent list is visible when project is active', async () => {
+    await navigateToSmokeProject(window);
+    const agentList = window.locator('[data-testid="agent-list"]');
+    await expect(agentList).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('durable agents from agents.json appear in list', async () => {
+    await expect(
+      window.locator('[data-testid^="durable-drag-"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const order = await window.evaluate(() => {
+      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
+      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
+    });
+
+    expect(order).toContain('smoke_agent_1');
+    expect(order).toContain('smoke_agent_2');
+  });
+
+  test('agent names are visible in the list', async () => {
+    await expect(
+      window.locator('[data-agent-name="smoke-alpha"]').first(),
+    ).toBeVisible({ timeout: 5_000 });
+
+    await expect(
+      window.locator('[data-agent-name="smoke-beta"]').first(),
+    ).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('agent status displays correctly (sleeping for unstarted)', async () => {
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
+
+    const itemText = await agentItem.textContent();
+    expect(itemText?.toLowerCase()).toContain('sleeping');
+  });
+
+  test('clicking an agent selects it (active state)', async () => {
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
+    await agentItem.click();
+    await window.waitForTimeout(500);
+
+    await assertNotBlankScreen(window);
+    const isActive = await agentItem.getAttribute('data-active');
+    expect(isActive).toBe('true');
+  });
+
+  test('completed footer section is present (with regex pattern check)', async () => {
+    await navigateToSmokeProject(window);
+    await window.waitForTimeout(500);
+
+    const footer = window.locator('[data-testid="completed-footer"]');
+    await expect(footer).toBeVisible({ timeout: 5_000 });
+
+    const toggle = window.locator('[data-testid="completed-toggle"]');
+    const text = await toggle.textContent();
+    expect(text).toMatch(/Completed \(\d+\)/);
+  });
+
+  test('agent delete button visible via hover', async () => {
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_2"]');
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
+
+    await agentItem.hover();
+    await window.waitForTimeout(300);
+
+    const deleteBtn = agentItem.locator('[data-testid="action-delete"]');
+    const overflowBtn = agentItem.locator('[data-testid="action-overflow"]');
+
+    const deleteVisible = await deleteBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    const overflowVisible = await overflowBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+
+    expect(deleteVisible || overflowVisible).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI-driven lifecycle (unique agent name via Date.now())
+// ---------------------------------------------------------------------------
+
+test.describe('Agent Lifecycle — UI Create & Delete', () => {
+  test('clicking "+ Agent" opens the add agent dialog', async () => {
+    await navigateToSmokeProject(window);
+
+    const addAgentBtn = window.locator('button:has-text("+ Agent")').first();
+    await expect(addAgentBtn).toBeVisible({ timeout: 5_000 });
+    await addAgentBtn.click();
+
+    const dialog = window.locator('h2:has-text("New Agent")');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('add agent dialog has all required fields', async () => {
+    const nameInput = window.locator('input[type="text"]').first();
+    await expect(nameInput).toBeVisible();
+    const defaultName = await nameInput.inputValue();
+    expect(defaultName.length).toBeGreaterThan(0);
+
+    const createBtn = window.locator('button:has-text("Create Agent")');
+    await expect(createBtn).toBeVisible();
+    const cancelBtn = window.locator('button:has-text("Cancel")');
+    await expect(cancelBtn).toBeVisible();
+  });
+
+  test('cancel closes dialog without creating', async () => {
+    const cancelBtn = window.locator('button:has-text("Cancel")');
+    await cancelBtn.click();
+
+    const dialog = window.locator('h2:has-text("New Agent")');
+    await expect(dialog).not.toBeVisible({ timeout: 3_000 });
+  });
+
+  test('creating a durable agent adds it to the list', async () => {
+    const addAgentBtn = window.locator('button:has-text("+ Agent")').first();
+    await addAgentBtn.click();
+
+    const dialog = window.locator('h2:has-text("New Agent")');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    const nameInput = window.locator('input[type="text"]').first();
+    await nameInput.fill('');
+    await nameInput.fill(AGENT_NAME);
+
+    const createBtn = window.locator('button:has-text("Create Agent")');
+    await createBtn.click();
+
+    await expect(dialog).not.toBeVisible({ timeout: 10_000 });
+    await expect(
+      window.locator(`[data-agent-name="${AGENT_NAME}"]`).first(),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('created agent shows correct status', async () => {
+    const item = window.locator(`[data-agent-name="${AGENT_NAME}"]`).first();
+    await expect(item).toBeVisible({ timeout: 5_000 });
+
+    const statusText = await item.textContent();
+    const hasValidStatus =
+      statusText!.includes('Running') ||
+      statusText!.includes('Sleeping') ||
+      statusText!.includes('Thinking');
+    expect(hasValidStatus).toBe(true);
+  });
+
+  test('created agent shows name correctly', async () => {
+    const item = window.locator(`[data-agent-name="${AGENT_NAME}"]`).first();
+    const text = await item.textContent();
+    expect(text).toContain(AGENT_NAME);
+  });
+
+  test('agent appears in the "All" section', async () => {
+    const allHeader = window.locator('text=All').first();
+    await expect(allHeader).toBeVisible({ timeout: 3_000 });
+
+    const listContent = window.locator('[data-testid="agent-list-content"]');
+    await expect(listContent).toBeVisible();
+    const contentText = await listContent.textContent();
+    expect(contentText).toContain(AGENT_NAME);
+  });
+
+  test('ensure agent sleeping before deletion', async () => {
+    const item = window.locator(`[data-agent-name="${AGENT_NAME}"]`).first();
+    await expect(item).toBeVisible({ timeout: 5_000 });
+
+    // Use context menu to detect actual state
+    await item.click({ button: 'right' });
+    await window.waitForTimeout(500);
+
+    const ctxStop = window.locator('[data-testid="ctx-stop"]');
+    const stopVisible = await ctxStop.isVisible({ timeout: 2_000 }).catch(() => false);
+
+    if (stopVisible) {
+      await ctxStop.click();
+      await window.waitForTimeout(1_000);
+
+      // Poll for sleeping state via context menu
+      await expect(async () => {
+        await item.click({ button: 'right' });
+        await window.waitForTimeout(300);
+        const wake = window.locator('[data-testid="ctx-wake"]');
+        await expect(wake).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 20_000 });
+
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    } else {
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    }
+  });
+
+  test('delete via right-click context menu → confirmation dialog', async () => {
+    const item = window.locator(`[data-agent-name="${AGENT_NAME}"]`).first();
+    await expect(item).toBeVisible({ timeout: 5_000 });
+
+    await item.click({ button: 'right' });
+    await window.waitForTimeout(500);
+
+    const contextMenu = window.locator('[data-testid="agent-context-menu"]');
+    await expect(contextMenu).toBeVisible({ timeout: 5_000 });
+
+    const ctxDelete = window.locator('[data-testid="ctx-delete"]');
+    await expect(ctxDelete).toBeVisible({ timeout: 3_000 });
+    await ctxDelete.click();
+    await window.waitForTimeout(500);
+
+    // The delete dialog should appear with the agent name
+    const removeHeader = window.locator(`text=Remove ${AGENT_NAME}`).first();
+    const deleteHeader = window.locator(`text=Delete ${AGENT_NAME}`).first();
+
+    const removeVisible = await removeHeader.isVisible({ timeout: 5_000 }).catch(() => false);
+    const deleteVisible = await deleteHeader.isVisible({ timeout: 1_000 }).catch(() => false);
+    expect(removeVisible || deleteVisible).toBe(true);
+  });
+
+  test('confirming deletion removes agent from list', async () => {
+    const removeBtn = window.locator('button:has-text("Remove")').last();
+    const deleteBtn = window.locator('button:has-text("Delete")').last();
+    const leaveBtn = window.locator('button:has-text("Leave files")');
+
+    const removeVisible = await removeBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    const leaveVisible = await leaveBtn.isVisible({ timeout: 1_000 }).catch(() => false);
+    const deleteVisible = await deleteBtn.isVisible({ timeout: 1_000 }).catch(() => false);
+
+    if (removeVisible) {
+      await removeBtn.click();
+    } else if (leaveVisible) {
+      await leaveBtn.click();
+    } else if (deleteVisible) {
+      await deleteBtn.click();
+    }
+
+    await window.waitForTimeout(2_000);
+
+    const count = await window.locator(`[data-agent-name="${AGENT_NAME}"]`).count();
+    expect(count).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cross-project guards
+// ---------------------------------------------------------------------------
+
+test.describe('Agent Lifecycle — Cross-Project', () => {
+  test('cross-project agent guard (smoke agents NOT in project-b)', async () => {
+    // Add project-b if not already added
+    const projB = window.locator('[title="project-b"]').first();
+    const projBVisible = await projB.isVisible({ timeout: 2_000 }).catch(() => false);
+    if (!projBVisible) {
+      await addProject(electronApp, window, FIXTURE_B);
+    } else {
+      await projB.click();
+    }
+    await window.waitForTimeout(500);
+
+    // Smoke agents should NOT be visible in project-b
+    const smokeAgentVisible = await window
+      .locator('[data-testid^="agent-item-smoke"]')
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false);
+    expect(smokeAgentVisible).toBe(false);
+
+    // Switch back — agents should reappear
+    await navigateToSmokeProject(window);
+    await window.waitForTimeout(500);
+
+    await expect(
+      window.locator('[data-testid^="durable-drag-"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const order = await window.evaluate(() => {
+      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
+      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
+    });
+
+    expect(order).toContain('smoke_agent_1');
+    expect(order).toContain('smoke_agent_2');
+  });
+
+  test('agent creation dropdown (Durable vs Quick Agent options)', async () => {
+    const dropdownBtn = window.locator('button:has-text("▾")');
+    await dropdownBtn.click();
+    await window.waitForTimeout(300);
+
+    const durableOption = window.locator('button:has-text("Durable")');
+    const quickOption = window.locator('button:has-text("Quick Agent")');
+
+    await expect(durableOption).toBeVisible({ timeout: 3_000 });
+    await expect(quickOption).toBeVisible({ timeout: 3_000 });
+
+    // Dismiss by clicking elsewhere
+    await window.locator('.fixed.inset-0').click();
+    await window.waitForTimeout(200);
+  });
+});
