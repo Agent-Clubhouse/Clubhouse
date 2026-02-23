@@ -255,25 +255,38 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
 
   session.killing = true;
 
+  // Clear any existing escalation timers from a prior gracefulKill call
+  // to prevent leaked timers if gracefulKill is invoked twice.
+  if (session.eofTimer) clearTimeout(session.eofTimer);
+  if (session.termTimer) clearTimeout(session.termTimer);
+  if (session.killTimer) clearTimeout(session.killTimer);
+
   try {
     session.process.write(exitCommand);
   } catch {
     // already dead
   }
 
+  // Capture the process reference so timer callbacks target the correct
+  // instance even if the session is replaced by a new spawn.
+  const proc = session.process;
+
   session.eofTimer = setTimeout(() => {
-    if (!sessions.has(agentId)) return;
-    try { session.process.write('\x04'); } catch { /* dead */ }
+    const current = sessions.get(agentId);
+    if (!current || current.process !== proc) return;
+    try { proc.write('\x04'); } catch { /* dead */ }
   }, 3000);
 
   session.termTimer = setTimeout(() => {
-    if (!sessions.has(agentId)) return;
-    try { session.process.kill('SIGTERM'); } catch { /* dead */ }
+    const current = sessions.get(agentId);
+    if (!current || current.process !== proc) return;
+    try { proc.kill('SIGTERM'); } catch { /* dead */ }
   }, 6000);
 
   session.killTimer = setTimeout(() => {
-    if (sessions.has(agentId)) {
-      try { session.process.kill(); } catch { /* dead */ }
+    const current = sessions.get(agentId);
+    if (current && current.process === proc) {
+      try { proc.kill(); } catch { /* dead */ }
     }
     cleanupSession(agentId);
   }, 9000);
