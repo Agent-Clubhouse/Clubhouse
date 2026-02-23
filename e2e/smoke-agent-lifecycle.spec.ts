@@ -199,27 +199,35 @@ test.describe('Agent Lifecycle', () => {
   test('ensure agent is sleeping before deletion', async () => {
     await expect(agentItem()).toBeVisible({ timeout: 5_000 });
 
-    // Check if the agent is running; if so, stop it
-    const agentText = await agentItem().textContent();
-    if (agentText!.includes('Running')) {
-      // Stop via the visible action button
-      const stopBtn = agentItem().locator('[data-testid="action-stop"]');
-      const stopVisible = await stopBtn.isVisible({ timeout: 2_000 }).catch(() => false);
-      if (stopVisible) {
-        await stopBtn.click();
-      } else {
-        // Try via context menu
+    // Use context menu to detect actual state — text may show "Thinking..." while
+    // agent.status is still 'running', which hides the delete action.
+    await agentItem().click({ button: 'right' });
+    await window.waitForTimeout(500);
+
+    const ctxStop = window.locator('[data-testid="ctx-stop"]');
+    const stopVisible = await ctxStop.isVisible({ timeout: 2_000 }).catch(() => false);
+
+    if (stopVisible) {
+      // Agent is running — stop it
+      await ctxStop.click();
+      await window.waitForTimeout(1_000);
+
+      // Wait for the wake action to appear (indicates sleeping)
+      // Poll via context menu since status text is unreliable
+      await expect(async () => {
         await agentItem().click({ button: 'right' });
         await window.waitForTimeout(300);
-        const ctxStop = window.locator('[data-testid="ctx-stop"]');
-        const ctxStopVisible = await ctxStop.isVisible({ timeout: 2_000 }).catch(() => false);
-        if (ctxStopVisible) {
-          await ctxStop.click();
-        }
-      }
+        const wake = window.locator('[data-testid="ctx-wake"]');
+        await expect(wake).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 20_000 });
 
-      // Wait for the agent to transition to sleeping
-      await expect(agentItem().locator('text=Sleeping')).toBeVisible({ timeout: 15_000 });
+      // Dismiss context menu
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    } else {
+      // Already sleeping — dismiss context menu
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
     }
   });
 
