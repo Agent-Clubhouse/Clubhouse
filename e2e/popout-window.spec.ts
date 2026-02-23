@@ -108,9 +108,11 @@ async function createPopout(params: {
   let page = await popoutPromise;
   await page.waitForLoadState('load');
 
-  // If we caught the DevTools window (URL is devtools:// after load),
-  // mark it as existing and wait for the actual popout renderer.
-  if (page.url().startsWith('devtools://')) {
+  // DevTools may not have a devtools:// URL initially — verify the popout
+  // by checking for its test id. If we caught DevTools, wait for the real one.
+  const isPopout = await page.locator('[data-testid="popout-window"]')
+    .isVisible({ timeout: 5_000 }).catch(() => false);
+  if (!isPopout) {
     existingPages.add(page);
     page = await electronApp.waitForEvent('window', {
       predicate: (p: Page) => !existingPages.has(p),

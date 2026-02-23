@@ -18,18 +18,35 @@ async function launchFresh() {
     cwd: APP_PATH,
   });
 
-  // Find renderer window
+  // Find renderer window — DevTools may briefly have a non-devtools:// URL,
+  // so after the URL check we verify the page has <div id="root">.
+  type PageType = Awaited<ReturnType<typeof electronApp.firstWindow>>;
+  const seen = new Set<PageType>();
+
   for (const page of electronApp.windows()) {
-    if (!page.url().startsWith('devtools://')) {
-      window = page;
-      break;
+    if (page.url().startsWith('devtools://')) { seen.add(page); continue; }
+    try {
+      await page.waitForLoadState('load');
+      if (await page.evaluate(() => !!document.getElementById('root'))) { window = page; break; }
+    } catch { /* not ready */ }
+    seen.add(page);
+  }
+
+  if (!window) {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const page: PageType = await electronApp.waitForEvent('window', {
+        timeout: Math.max(1_000, deadline - Date.now()),
+      });
+      if (seen.has(page) || page.url().startsWith('devtools://')) { seen.add(page); continue; }
+      seen.add(page);
+      try {
+        await page.waitForLoadState('load');
+        if (await page.evaluate(() => !!document.getElementById('root'))) { window = page; break; }
+      } catch { /* not ready */ }
     }
   }
-  if (!window) {
-    window = await electronApp.waitForEvent('window', {
-      predicate: (page) => !page.url().startsWith('devtools://'),
-    });
-  }
+  if (!window) throw new Error('Timed out waiting for renderer window (30 s)');
 
   await window.waitForLoadState('load');
 
