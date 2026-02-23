@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { useBadgeSettingsStore } from './badgeSettingsStore';
+import { useBadgeSettingsStore, ResolvedBadgeSettings } from './badgeSettingsStore';
 
 // ── Badge types ────────────────────────────────────────────────────────
 
@@ -76,6 +76,27 @@ export function aggregateBadges(badges: Badge[]): BadgeAggregate | null {
   return { type: 'dot', value: 1 };
 }
 
+// ── Memoization caches for badge getters ────────────────────────────────
+// These prevent new object refs on every call, which would cause infinite
+// re-renders if the getters were used as Zustand selectors.
+
+interface BadgeCacheEntry {
+  badges: Record<string, Badge>;
+  settings: ResolvedBadgeSettings;
+  result: BadgeAggregate | null;
+}
+
+interface AppPluginBadgeCacheEntry {
+  badges: Record<string, Badge>;
+  enabled: boolean;
+  pluginBadges: boolean;
+  result: BadgeAggregate | null;
+}
+
+const _tabBadgeCache = new Map<string, BadgeCacheEntry>();
+const _projectBadgeCache = new Map<string, BadgeCacheEntry>();
+const _appPluginBadgeCache = new Map<string, AppPluginBadgeCacheEntry>();
+
 // ── Store ──────────────────────────────────────────────────────────────
 
 export const useBadgeStore = create<BadgeState>((set, get) => ({
@@ -132,36 +153,61 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
   getTabBadge(projectId, tabId) {
     const settings = useBadgeSettingsStore.getState().getProjectSettings(projectId);
     if (!settings.enabled) return null;
-    let badges = Object.values(get().badges).filter(
+    const currentBadges = get().badges;
+    const cacheKey = `${projectId}:${tabId}`;
+    const cached = _tabBadgeCache.get(cacheKey);
+    if (cached && cached.badges === currentBadges && cached.settings === settings) {
+      return cached.result;
+    }
+
+    let badges = Object.values(currentBadges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId && b.target.tabId === tabId,
     );
     if (!settings.pluginBadges) {
       badges = badges.filter((b) => !b.source.startsWith('plugin:'));
     }
-    return aggregateBadges(badges);
+    const result = aggregateBadges(badges);
+    _tabBadgeCache.set(cacheKey, { badges: currentBadges, settings, result });
+    return result;
   },
 
   getProjectBadge(projectId) {
     const settings = useBadgeSettingsStore.getState().getProjectSettings(projectId);
     if (!settings.enabled) return null;
     if (!settings.projectRailBadges) return null;
-    let badges = Object.values(get().badges).filter(
+    const currentBadges = get().badges;
+    const cached = _projectBadgeCache.get(projectId);
+    if (cached && cached.badges === currentBadges && cached.settings === settings) {
+      return cached.result;
+    }
+
+    let badges = Object.values(currentBadges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId,
     );
     if (!settings.pluginBadges) {
       badges = badges.filter((b) => !b.source.startsWith('plugin:'));
     }
-    return aggregateBadges(badges);
+    const result = aggregateBadges(badges);
+    _projectBadgeCache.set(projectId, { badges: currentBadges, settings, result });
+    return result;
   },
 
   getAppPluginBadge(pluginId) {
     const { enabled, pluginBadges } = useBadgeSettingsStore.getState();
     if (!enabled) return null;
     if (!pluginBadges) return null;
-    const badges = Object.values(get().badges).filter(
+    const currentBadges = get().badges;
+    const cached = _appPluginBadgeCache.get(pluginId);
+    if (cached && cached.badges === currentBadges && cached.enabled === enabled && cached.pluginBadges === pluginBadges) {
+      return cached.result;
+    }
+
+    const badges = Object.values(currentBadges).filter(
       (b) => b.target.kind === 'app-plugin' && b.target.pluginId === pluginId,
     );
-    return aggregateBadges(badges);
+    const result = aggregateBadges(badges);
+    _appPluginBadgeCache.set(pluginId, { badges: currentBadges, enabled, pluginBadges, result });
+    return result;
   },
 
   getDockCount() {
