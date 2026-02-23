@@ -30,6 +30,7 @@ vi.mock('../agents/QuickAgentGhost', () => ({
 
 const mockAgents: Record<string, any> = {};
 let mockDetailedStatuses: Record<string, any> = {};
+const mockLoadDurableAgents = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../../stores/agentStore', () => ({
   useAgentStore: (selector: (s: any) => any) => selector({
@@ -37,17 +38,19 @@ vi.mock('../../stores/agentStore', () => ({
     agentDetailedStatus: mockDetailedStatuses,
     killAgent: vi.fn(),
     spawnDurableAgent: vi.fn(),
-    loadDurableAgents: vi.fn().mockResolvedValue(undefined),
+    loadDurableAgents: mockLoadDurableAgents,
   }),
 }));
 
 const mockLoadProjects = vi.fn().mockResolvedValue(undefined);
+let mockProjects: any[] = [];
 
-vi.mock('../../stores/projectStore', () => ({
-  useProjectStore: (selector: (s: any) => any) => selector({
-    loadProjects: mockLoadProjects,
-  }),
-}));
+vi.mock('../../stores/projectStore', () => {
+  const getMockState = () => ({ loadProjects: mockLoadProjects, projects: mockProjects });
+  const hook: any = (selector: (s: any) => any) => selector(getMockState());
+  hook.getState = getMockState;
+  return { useProjectStore: hook };
+});
 
 let mockCompletedAgents: Record<string, any[]> = {};
 const mockLoadCompleted = vi.fn();
@@ -131,9 +134,11 @@ describe('PopoutHubView', () => {
     for (const key of Object.keys(mockAgents)) delete mockAgents[key];
     mockDetailedStatuses = {};
     mockCompletedAgents = {};
+    mockProjects = [{ id: 'proj-1', path: '/projects/proj-1', name: 'Test Project' }];
     mockLoadProjects.mockClear();
     mockLoadCompleted.mockClear();
     mockDismissCompleted.mockClear();
+    mockLoadDurableAgents.mockClear();
 
     window.clubhouse.pty.onExit = vi.fn().mockReturnValue(noop);
     window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(noop);
@@ -279,7 +284,46 @@ describe('PopoutHubView', () => {
     expect(await screen.findByText('No agents available')).toBeInTheDocument();
   });
 
-  // ── Project store loading (wake button fix) ─────────────────────────
+  // ── Store initialization checklist (issue #232) ─────────────────────
+  //
+  // Pop-out windows run in a separate renderer with empty Zustand stores.
+  // Every store that the view depends on MUST be explicitly initialized.
+  // This test serves as a living checklist — if a new store dependency is
+  // added to PopoutHubView, a corresponding assertion must be added here.
+  //
+  // Missing an init call causes **silent failures**: features appear to
+  // work in the main window but break in pop-outs (root cause of #165).
+
+  it('initializes all required stores on mount', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" projectId="proj-1" />);
+    await screen.findByText('Assign an agent');
+
+    // 1. Project store — required for SleepingAgent wake button
+    expect(mockLoadProjects).toHaveBeenCalled();
+
+    // 2. Completed quick agents — localStorage-backed, not synced via IPC
+    expect(mockLoadCompleted).toHaveBeenCalledWith('proj-1');
+
+    // 3. Durable agents — populates agent metadata (name, status, color)
+    //    so panes can render terminals instead of "Assign an agent"
+    expect(mockLoadDurableAgents).toHaveBeenCalledWith('proj-1', '/projects/proj-1');
+  });
+
+  it('skips project-scoped init calls when no projectId', async () => {
+    setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });
+
+    render(<PopoutHubView hubId="hub-1" />);
+    await screen.findByText('Assign an agent');
+
+    // loadProjects is always called (project data is global)
+    expect(mockLoadProjects).toHaveBeenCalled();
+
+    // Project-scoped stores should NOT be initialized without a projectId
+    expect(mockLoadCompleted).not.toHaveBeenCalled();
+    expect(mockLoadDurableAgents).not.toHaveBeenCalled();
+  });
 
   it('loads the project store during initialization', async () => {
     setupHubMocks({ type: 'leaf', id: 'pane-1', agentId: null });

@@ -37,6 +37,7 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
 
   const agents = useAgentStore((s) => s.agents);
   const agentDetailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
   const completedAgents = useQuickAgentStore((s) => projectId ? (s.completedAgents[projectId] ?? EMPTY_COMPLETED) : EMPTY_COMPLETED);
@@ -58,6 +59,16 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
     (async () => {
       // Populate project store (required for SleepingAgent wake button)
       await loadProjects();
+
+      // Load durable agents so panes can render terminals instead of
+      // "Assign an agent" (pop-out has its own empty Zustand store).
+      // Access project path imperatively — loadProjects() just populated it.
+      if (projectId) {
+        const project = useProjectStore.getState().projects.find((p) => p.id === projectId);
+        if (project) {
+          await loadDurableAgents(projectId, project.path);
+        }
+      }
 
       // Load completed quick agents (localStorage-backed, not synced via IPC)
       if (projectId) loadCompleted(projectId);
@@ -83,7 +94,7 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
     });
 
     return () => { cancelled = true; };
-  }, [hubId, projectId, scope, loadProjects, loadCompleted]);
+  }, [hubId, projectId, scope, loadProjects, loadCompleted, loadDurableAgents]);
 
   // ── Subscribe to hub state changes from main window ───────────────
 
