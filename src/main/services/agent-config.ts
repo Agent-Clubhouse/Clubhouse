@@ -641,7 +641,7 @@ export function saveAgentIcon(projectPath: string, agentId: string, dataUrl: str
   const dest = path.join(getAgentIconsDir(), filename);
 
   // Strip data URL prefix and write binary
-  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const base64 = dataUrl.replace(/^data:image\/[\w+.-]+;base64,/, '');
   fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
 
   // Update agents.json
