@@ -69,7 +69,7 @@ describe('IPC broadcast audit', () => {
     const violations: { file: string; line: number; text: string }[] = [];
 
     for (const filePath of files) {
-      const relative = path.relative(MAIN_SRC_DIR, filePath);
+      const relative = path.relative(MAIN_SRC_DIR, filePath).split(path.sep).join('/');
       if (ALLOWED_FILES[relative]) continue;
 
       const content = fs.readFileSync(filePath, 'utf-8');
