@@ -146,10 +146,11 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk; });
     req.on('end', () => resolve(body));
+    req.on('error', (err) => reject(err));
   });
 }
 
@@ -692,6 +693,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         return;
       }
       handleSpawnQuickAgent(res, projectId, null, body);
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
     });
     return;
   }
@@ -712,6 +717,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         return;
       }
       handleSpawnQuickAgent(res, parentInfo.project.id, parentAgentId, body);
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
     });
     return;
   }
@@ -727,6 +736,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         return;
       }
       handleWakeAgent(res, agentId, body);
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
     });
     return;
   }
@@ -742,6 +755,10 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         return;
       }
       handlePermissionResponse(res, agentId, body);
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
     });
     return;
   }

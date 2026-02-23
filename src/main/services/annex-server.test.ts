@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
+import net from 'net';
 
 const mockBonjourService = { stop: vi.fn() };
 const mockBonjour = {
@@ -62,6 +63,7 @@ import * as agentSystem from './agent-system';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import { generateQuickName } from '../../shared/name-generator';
+import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
 
 function request(port: number, method: string, path: string, body?: object, headers?: Record<string, string>): Promise<{ status: number; body: string }> {
@@ -554,6 +556,117 @@ describe('annex-server', () => {
       );
       expect(res.status).toBe(404);
       expect(JSON.parse(res.body)).toEqual({ error: 'request_not_found' });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // readBody rejection handling (Issue #189)
+  // -------------------------------------------------------------------------
+
+  describe('readBody error handling', () => {
+    /**
+     * Helper: opens a raw TCP socket, sends headers for a POST with a
+     * declared Content-Length, then destroys the socket before sending
+     * the full body. This triggers an 'error'/'close' event on the
+     * server-side IncomingMessage stream, exercising the .catch() handlers.
+     */
+    function abortedPost(
+      port: number,
+      path: string,
+      token: string,
+    ): Promise<{ status: number | null }> {
+      return new Promise((resolve) => {
+        const socket = net.createConnection({ host: '127.0.0.1', port }, () => {
+          // Declare a large Content-Length but send nothing
+          const headers = [
+            `POST ${path} HTTP/1.1`,
+            'Host: 127.0.0.1',
+            'Content-Type: application/json',
+            `Authorization: Bearer ${token}`,
+            'Content-Length: 9999',
+            '',
+            '',
+          ].join('\r\n');
+          socket.write(headers);
+          // Destroy the socket after a short delay to trigger the error
+          setTimeout(() => socket.destroy(), 50);
+        });
+
+        // The server may or may not respond before we destroy the socket.
+        // We wait a bit after destruction to let the server-side .catch()
+        // handler run, then resolve. The key assertion is that no unhandled
+        // rejection occurs.
+        let responseStatus: number | null = null;
+        let responseData = '';
+        socket.on('data', (chunk) => {
+          responseData += chunk.toString();
+          const match = responseData.match(/^HTTP\/1\.1 (\d+)/);
+          if (match) responseStatus = parseInt(match[1], 10);
+        });
+        socket.on('close', () => {
+          setTimeout(() => resolve({ status: responseStatus }), 100);
+        });
+        socket.on('error', () => {
+          setTimeout(() => resolve({ status: responseStatus }), 100);
+        });
+      });
+    }
+
+    it('handles aborted request to quick agent spawn (project)', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj1', name: 'Test Project', path: '/tmp/test', agents: [] },
+      ] as any);
+
+      await abortedPost(port, '/api/v1/projects/proj1/agents/quick', token);
+
+      // The key assertion: no unhandled promise rejection, and appLog was called
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex', 'error', 'readBody failed',
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+      );
+    });
+
+    it('handles aborted request to quick agent spawn (agent)', async () => {
+      const { port, token } = await startAndPair();
+      vi.mocked(projectStore.list).mockReturnValue([
+        {
+          id: 'proj1', name: 'Test', path: '/tmp/test',
+          agents: [{ id: 'agent1', name: 'Agent 1', model: 'opus', orchestrator: 'claude-code' }],
+        },
+      ] as any);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'agent1', name: 'Agent 1', model: 'opus', orchestrator: 'claude-code' },
+      ] as any);
+
+      await abortedPost(port, '/api/v1/agents/agent1/agents/quick', token);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex', 'error', 'readBody failed',
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+      );
+    });
+
+    it('handles aborted request to wake agent', async () => {
+      const { port, token } = await startAndPair();
+
+      await abortedPost(port, '/api/v1/agents/some-agent/wake', token);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex', 'error', 'readBody failed',
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+      );
+    });
+
+    it('handles aborted request to permission response', async () => {
+      const { port, token } = await startAndPair();
+
+      await abortedPost(port, '/api/v1/agents/some-agent/permission-response', token);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex', 'error', 'readBody failed',
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+      );
     });
   });
 });
