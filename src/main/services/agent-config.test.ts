@@ -35,6 +35,7 @@ import {
   getDurableConfig,
   updateDurableConfig,
   ensureGitignore,
+  saveAgentIcon,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
@@ -878,5 +879,81 @@ describe('ensureGitignore edge cases', () => {
     const gitignoreWrite = writeCalls.find((c) => String(c[0]).endsWith('.gitignore'));
     expect(gitignoreWrite).toBeDefined();
     expect(String(gitignoreWrite![1])).toContain('.clubhouse/agents/');
+  });
+});
+
+describe('saveAgentIcon', () => {
+  const AGENT_ID = 'test-agent-123';
+
+  beforeEach(() => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json'))
+        return JSON.stringify([{ id: AGENT_ID, name: 'Test Agent' }]);
+      return '';
+    });
+  });
+
+  it('strips standard png data URL prefix', () => {
+    const base64Content = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAB';
+    const dataUrl = `data:image/png;base64,${base64Content}`;
+
+    saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const iconWrite = writeCalls.find((c) => String(c[0]).endsWith(`${AGENT_ID}.png`));
+    expect(iconWrite).toBeDefined();
+    // The written buffer should be the decoded base64, not still contain the prefix
+    expect(Buffer.isBuffer(iconWrite![1])).toBe(true);
+    expect(iconWrite![1]).toEqual(Buffer.from(base64Content, 'base64'));
+  });
+
+  it('strips svg+xml data URL prefix (issue #190)', () => {
+    const base64Content = 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==';
+    const dataUrl = `data:image/svg+xml;base64,${base64Content}`;
+
+    saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const iconWrite = writeCalls.find((c) => String(c[0]).endsWith(`${AGENT_ID}.png`));
+    expect(iconWrite).toBeDefined();
+    expect(iconWrite![1]).toEqual(Buffer.from(base64Content, 'base64'));
+  });
+
+  it('strips jpeg data URL prefix', () => {
+    const base64Content = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQ==';
+    const dataUrl = `data:image/jpeg;base64,${base64Content}`;
+
+    saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const iconWrite = writeCalls.find((c) => String(c[0]).endsWith(`${AGENT_ID}.png`));
+    expect(iconWrite).toBeDefined();
+    expect(iconWrite![1]).toEqual(Buffer.from(base64Content, 'base64'));
+  });
+
+  it('strips webp data URL prefix', () => {
+    const base64Content = 'UklGRlYAAABXRUJQVlA4IEoAAADQAQCdASoBAAEAAkA=';
+    const dataUrl = `data:image/webp;base64,${base64Content}`;
+
+    saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const iconWrite = writeCalls.find((c) => String(c[0]).endsWith(`${AGENT_ID}.png`));
+    expect(iconWrite).toBeDefined();
+    expect(iconWrite![1]).toEqual(Buffer.from(base64Content, 'base64'));
+  });
+
+  it('updates agent icon field in agents.json', () => {
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+
+    saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+
+    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const agentsWrite = writeCalls.find((c) => String(c[0]).endsWith('agents.json'));
+    expect(agentsWrite).toBeDefined();
+    const agents = JSON.parse(String(agentsWrite![1]));
+    expect(agents[0].icon).toBe(`${AGENT_ID}.png`);
   });
 });
