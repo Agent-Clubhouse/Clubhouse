@@ -131,6 +131,11 @@ describe('command-actions', () => {
     expect(mockSetActiveAgent).toHaveBeenCalledWith('a2', 'proj-1');
   });
 
+  it('new-quick-agent is marked global so it fires from text inputs', () => {
+    const action = findAction('new-quick-agent');
+    expect(action?.global).toBe(true);
+  });
+
   it('new-quick-agent opens the global quick agent dialog', () => {
     findAction('new-quick-agent')?.execute();
     expect(mockOpenQuickAgentDialog).toHaveBeenCalled();
