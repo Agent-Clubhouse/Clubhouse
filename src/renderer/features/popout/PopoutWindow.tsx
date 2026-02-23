@@ -122,17 +122,17 @@ export function PopoutWindow() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
       {/* Title bar drag region */}
-      <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center">
-        <span className="text-xs text-ctp-subtext0 select-none">
+      <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
+        <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">
           {params.type === 'agent' ? 'Agent' : 'Hub'} — Pop-out
         </span>
       </div>
       {/* Content */}
       <div className="flex-1 min-h-0">
         {!ready ? (
-          <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
+          <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs" data-testid="popout-syncing">
             Syncing agent state...
           </div>
         ) : params.type === 'agent' ? (

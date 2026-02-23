@@ -101,7 +101,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
   }
 
   return (
-    <div className="relative w-full h-full flex flex-col">
+    <div className="relative w-full h-full flex flex-col" data-testid="popout-agent-view">
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {status === 'running' ? (
@@ -120,7 +120,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
         <div className="absolute top-2 left-2 right-2 z-20">
           <div className="flex items-center gap-1.5 rounded-lg backdrop-blur-md bg-ctp-mantle/95 shadow-lg px-2.5 py-1.5">
             <AgentAvatarWithRing agent={agent} />
-            <span className="text-[11px] font-medium text-ctp-text truncate">
+            <span className="text-[11px] font-medium text-ctp-text truncate" data-testid="popout-agent-name">
               {agent.name}
             </span>
             <div className="flex-1" />

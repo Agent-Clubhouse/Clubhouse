@@ -218,7 +218,7 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
   }
 
   return (
-    <div className="w-full h-full overflow-hidden">
+    <div className="w-full h-full overflow-hidden" data-testid="popout-hub-view">
       <PaneContainer
         tree={paneTree}
         focusedPaneId={focusedPaneId}
