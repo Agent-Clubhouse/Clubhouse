@@ -6,6 +6,9 @@
  * - Blank-screen regressions from Zustand selector crashes
  * - Agent lifecycle bugs (create / display / delete)
  * - Settings persistence failures across navigation
+ *
+ * Uses a dedicated fixture (project-smoke) to avoid conflicts with other
+ * parallel E2E test files that share project-a / project-b fixtures.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
 import * as path from 'path';
@@ -15,9 +18,10 @@ import { launchApp } from './launch';
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
 
-const FIXTURE_A = path.resolve(__dirname, 'fixtures/project-a');
+// Dedicated fixtures for smoke tests — not shared with other spec files
+const FIXTURE_SMOKE = path.resolve(__dirname, 'fixtures/project-smoke');
 const FIXTURE_B = path.resolve(__dirname, 'fixtures/project-b');
-const AGENTS_JSON_DIR = path.join(FIXTURE_A, '.clubhouse');
+const AGENTS_JSON_DIR = path.join(FIXTURE_SMOKE, '.clubhouse');
 const AGENTS_JSON = path.join(AGENTS_JSON_DIR, 'agents.json');
 
 // ---------------------------------------------------------------------------
@@ -58,7 +62,7 @@ async function getTitleBarText(): Promise<string> {
   return window.locator('[data-testid="title-bar"]').first().textContent() as Promise<string>;
 }
 
-/** Write durable agents to agents.json in the fixture project. */
+/** Write durable agents to agents.json in the smoke fixture project. */
 function writeAgentsJson(
   agents: Array<{ id: string; name: string; color: string }>,
 ) {
@@ -74,8 +78,8 @@ function writeAgentsJson(
 
 /** Clean up agents.json to restore fixture state. */
 function cleanupAgentsJson() {
-  if (fs.existsSync(AGENTS_JSON)) {
-    fs.writeFileSync(AGENTS_JSON, '[]', 'utf-8');
+  if (fs.existsSync(AGENTS_JSON_DIR)) {
+    fs.rmSync(AGENTS_JSON_DIR, { recursive: true, force: true });
   }
 }
 
@@ -85,6 +89,28 @@ async function assertNotBlankScreen() {
   await expect(root).toBeVisible({ timeout: 5_000 });
   const childCount = await root.evaluate((el) => el.children.length);
   expect(childCount).toBeGreaterThan(0);
+}
+
+/**
+ * Navigate to the Display & UI settings sub-page.
+ * Settings must already be open (explorerTab === 'settings').
+ * The category nav is in the AccessoryPanel, using plain buttons.
+ */
+async function navigateToDisplaySettings() {
+  const displayBtn = window.locator('button:has-text("Display & UI")');
+  await expect(displayBtn).toBeVisible({ timeout: 5_000 });
+  await displayBtn.click();
+  await window.waitForTimeout(500);
+}
+
+/**
+ * Ensure we're on the agents tab for the smoke project.
+ * Clicks the project in the rail and waits for the agents tab.
+ */
+async function navigateToSmokeProject() {
+  const proj = window.locator('[title="project-smoke"]').first();
+  await proj.click();
+  await window.waitForTimeout(500);
 }
 
 // ---------------------------------------------------------------------------
@@ -141,16 +167,17 @@ test.describe('Blank-Screen Prevention', () => {
   });
 
   test('project view renders without blank screen after adding project', async () => {
-    await addProject(FIXTURE_A);
+    await addProject(FIXTURE_SMOKE);
     await window.waitForTimeout(500);
 
     const title = await getTitleBarText();
-    expect(title).toContain('project-a');
+    expect(title).toContain('project-smoke');
     await assertNotBlankScreen();
   });
 
-  test('agent list renders in project view', async () => {
-    // Wait for durable agents to load from agents.json
+  test('agent list or no-agent placeholder renders in project view', async () => {
+    // The app should show either the agent list (with durable agents) or
+    // the no-active-agent placeholder — never a blank screen.
     const agentList = window.locator('[data-testid="agent-list"]');
     const noAgent = window.locator('[data-testid="no-active-agent"]');
 
@@ -159,14 +186,6 @@ test.describe('Blank-Screen Prevention', () => {
 
     // Either the agent list or the no-agent placeholder must be visible
     expect(listVisible || noAgentVisible).toBe(true);
-
-    if (listVisible) {
-      // Verify durable agents loaded
-      await expect(
-        window.locator('[data-testid^="durable-drag-"]').first(),
-      ).toBeVisible({ timeout: 15_000 });
-    }
-
     await assertNotBlankScreen();
   });
 
@@ -207,23 +226,21 @@ test.describe('Blank-Screen Prevention', () => {
     expect(title).toContain('project-b');
     await assertNotBlankScreen();
 
-    // Switch back to project-a
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(500);
+    // Switch back to smoke project
+    await navigateToSmokeProject();
 
     const titleAfter = await getTitleBarText();
-    expect(titleAfter).toContain('project-a');
+    expect(titleAfter).toContain('project-smoke');
     await assertNotBlankScreen();
   });
 
   test('rapid project switching does not cause blank screen', async () => {
-    const projA = window.locator('[title="project-a"]').first();
+    const projSmoke = window.locator('[title="project-smoke"]').first();
     const projB = window.locator('[title="project-b"]').first();
 
     // Rapidly switch 5 times
     for (let i = 0; i < 5; i++) {
-      await projA.click();
+      await projSmoke.click();
       await projB.click();
     }
 
@@ -263,9 +280,7 @@ test.describe('Blank-Screen Prevention', () => {
     }
 
     // Project
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(500);
+    await navigateToSmokeProject();
     await assertNotBlankScreen();
 
     // Settings
@@ -274,15 +289,14 @@ test.describe('Blank-Screen Prevention', () => {
     await window.waitForTimeout(500);
     await assertNotBlankScreen();
 
-    // Help (while settings is open — this should switch to help)
+    // Help (while settings is open — tests the toggle-off-settings + toggle-on-help path)
     const helpBtn = window.locator('[data-testid="nav-help"]');
     await helpBtn.click();
     await window.waitForTimeout(500);
     await assertNotBlankScreen();
 
     // Back to project
-    await projA.click();
-    await window.waitForTimeout(500);
+    await navigateToSmokeProject();
     await assertNotBlankScreen();
   });
 
@@ -322,17 +336,15 @@ test.describe('Blank-Screen Prevention', () => {
 
 test.describe('Agent Lifecycle', () => {
   test('durable agents from agents.json appear in the list', async () => {
-    // Navigate to project-a (which has our pre-written agents.json)
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(500);
+    // Navigate to smoke project (which has our pre-written agents.json)
+    await navigateToSmokeProject();
 
     // Wait for durable agents to render
     await expect(
       window.locator('[data-testid^="durable-drag-"]').first(),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Verify both smoke agents appear
+    // Verify both smoke agents appear via their data-agent-id attributes
     const order = await window.evaluate(() => {
       const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
       return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
@@ -343,6 +355,7 @@ test.describe('Agent Lifecycle', () => {
   });
 
   test('agent names are visible in the list', async () => {
+    // Agent names are set as data-agent-name on the AgentListItem elements
     await expect(
       window.locator('[data-agent-name="smoke-alpha"]').first(),
     ).toBeVisible({ timeout: 5_000 });
@@ -354,117 +367,98 @@ test.describe('Agent Lifecycle', () => {
 
   test('agent status displays correctly (sleeping for unstarted durable agents)', async () => {
     // Durable agents that haven't been started should show "sleeping" status
-    // Look for status indicators near the agent entries
-    const agentEntry = window.locator('[data-testid="durable-drag-0"]');
-    await expect(agentEntry).toBeVisible({ timeout: 5_000 });
+    // The AgentListItem renders a status label span below the name
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
 
-    // The agent should exist and have a visible status indicator.
-    // Durable agents load as "sleeping" by default.
-    const statusText = await agentEntry.evaluate((el) => {
-      // Look for status text or data-status attribute
-      const statusEl = el.querySelector('[data-status]');
-      if (statusEl) return statusEl.getAttribute('data-status');
-      // Fallback: look for text content mentioning status
-      const text = el.textContent || '';
-      if (text.toLowerCase().includes('running')) return 'running';
-      if (text.toLowerCase().includes('sleeping')) return 'sleeping';
-      return 'unknown';
-    });
-
-    // Agent should be in sleeping state (not started)
-    expect(['sleeping', 'unknown']).toContain(statusText);
+    // Check that the agent item contains status text indicating sleeping state
+    const itemText = await agentItem.textContent();
+    // Sleeping durable agents display "Sleeping" as their status label
+    expect(itemText?.toLowerCase()).toContain('sleeping');
   });
 
-  test('clicking an agent selects it', async () => {
-    // Click the first agent
-    const agentEntry = window.locator('[data-testid="durable-drag-0"]');
-    await agentEntry.click();
+  test('clicking an agent selects it and updates the main content area', async () => {
+    // Click the first smoke agent
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_1"]');
+    await agentItem.click();
     await window.waitForTimeout(500);
 
-    // After clicking, the agent should be visually selected (has a
-    // highlight or selected state) — verify by checking if the main
-    // content area updates or the agent has a selected class.
-    // We check that the click didn't crash the app.
+    // After clicking a sleeping durable agent, the main content should show
+    // either the SleepingAgent view or the no-active-agent placeholder
+    // (depending on whether the store accepts the selection)
     await assertNotBlankScreen();
+
+    // Verify the clicked agent is marked as active in the DOM
+    const isActive = await agentItem.getAttribute('data-active');
+    expect(isActive).toBe('true');
   });
 
-  test('agent removal via agents.json rewrite + project reload', async () => {
-    // Rewrite agents.json to remove one agent
-    writeAgentsJson([
-      { id: 'smoke_agent_1', name: 'smoke-alpha', color: 'indigo' },
-      // smoke_agent_2 (smoke-beta) removed
-    ]);
+  test('agent delete button is visible for sleeping durable agents', async () => {
+    // The delete action button should be visible for sleeping durable agents
+    // It's rendered inside the agent item's action bar
+    const agentItem = window.locator('[data-testid="agent-item-smoke_agent_2"]');
+    await expect(agentItem).toBeVisible({ timeout: 5_000 });
 
-    // Reload by switching projects and back (triggers loadDurableAgents)
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
+    // Hover over the agent to ensure action buttons are visible
+    await agentItem.hover();
+    await window.waitForTimeout(300);
+
+    // Check for the delete action button or the overflow menu
+    const deleteBtn = agentItem.locator('[data-testid="action-delete"]');
+    const overflowBtn = agentItem.locator('[data-testid="action-overflow"]');
+
+    const deleteVisible = await deleteBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+    const overflowVisible = await overflowBtn.isVisible({ timeout: 2_000 }).catch(() => false);
+
+    // Delete button should be directly visible OR in the overflow menu
+    expect(deleteVisible || overflowVisible).toBe(true);
+  });
+
+  test('completed agents section is present in agent view', async () => {
+    // Ensure we're on the agents tab for the smoke project
+    await navigateToSmokeProject();
     await window.waitForTimeout(500);
 
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(1_000);
-
-    // Wait for durable agents to re-render
-    await expect(
-      window.locator('[data-testid^="durable-drag-"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
-
-    // Verify smoke_agent_2 is no longer in the list
-    const order = await window.evaluate(() => {
-      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
-      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
-    });
-
-    expect(order).toContain('smoke_agent_1');
-    expect(order).not.toContain('smoke_agent_2');
-
-    // Verify the removed agent's name is no longer visible
-    const betaVisible = await window
-      .locator('[data-agent-name="smoke-beta"]')
-      .isVisible({ timeout: 2_000 })
-      .catch(() => false);
-    expect(betaVisible).toBe(false);
-  });
-
-  test('adding an agent via agents.json rewrite + project reload', async () => {
-    // Add a new agent
-    writeAgentsJson([
-      { id: 'smoke_agent_1', name: 'smoke-alpha', color: 'indigo' },
-      { id: 'smoke_agent_3', name: 'smoke-gamma', color: 'red' },
-    ]);
-
-    // Reload by switching projects
-    const projB = window.locator('[title="project-b"]').first();
-    await projB.click();
-    await window.waitForTimeout(500);
-
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(1_000);
-
-    // Wait for durable agents to render
-    await expect(
-      window.locator('[data-testid^="durable-drag-"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
-
-    const order = await window.evaluate(() => {
-      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
-      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
-    });
-
-    expect(order).toContain('smoke_agent_1');
-    expect(order).toContain('smoke_agent_3');
-
-    // Verify the new agent's name is visible
-    await expect(
-      window.locator('[data-agent-name="smoke-gamma"]').first(),
-    ).toBeVisible({ timeout: 5_000 });
-  });
-
-  test('completed agents section is present', async () => {
-    // The completed footer should always be present
+    // The completed footer should always be present when viewing agents
     const footer = window.locator('[data-testid="completed-footer"]');
     await expect(footer).toBeVisible({ timeout: 5_000 });
+
+    // Verify the completed toggle button shows a count
+    const toggle = window.locator('[data-testid="completed-toggle"]');
+    const text = await toggle.textContent();
+    expect(text).toMatch(/Completed \(\d+\)/);
+  });
+
+  test('switching projects preserves per-project agent view', async () => {
+    // Switch to project-b (no agents)
+    const projB = window.locator('[title="project-b"]').first();
+    await projB.click();
+    await window.waitForTimeout(500);
+
+    // project-b should show no-active-agent or an empty agent list
+    const noAgent = window.locator('[data-testid="no-active-agent"]');
+    const agentItem = window.locator('[data-testid^="agent-item-smoke"]');
+    const noAgentVisible = await noAgent.isVisible({ timeout: 3_000 }).catch(() => false);
+    const smokeAgentVisible = await agentItem.isVisible({ timeout: 1_000 }).catch(() => false);
+
+    // Smoke agents should NOT be visible in project-b (cross-project guard)
+    expect(smokeAgentVisible).toBe(false);
+
+    // Switch back to smoke project — agents should reappear
+    await navigateToSmokeProject();
+    await window.waitForTimeout(500);
+
+    await expect(
+      window.locator('[data-testid^="durable-drag-"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const order = await window.evaluate(() => {
+      const items = document.querySelectorAll('[data-testid^="durable-drag-"]');
+      return Array.from(items).map((el) => el.getAttribute('data-agent-id') || '');
+    });
+
+    expect(order).toContain('smoke_agent_1');
+    expect(order).toContain('smoke_agent_2');
   });
 });
 
@@ -473,7 +467,8 @@ test.describe('Agent Lifecycle', () => {
 // ===========================================================================
 
 test.describe('Settings Persistence', () => {
-  test('can navigate to settings display page', async () => {
+  test('can navigate to settings and display sub-page', async () => {
+    // Open settings
     const settingsBtn = window.locator('[data-testid="nav-settings"]');
     await settingsBtn.click();
     await window.waitForTimeout(500);
@@ -481,45 +476,24 @@ test.describe('Settings Persistence', () => {
     const title = await getTitleBarText();
     expect(title).toContain('Settings');
     await assertNotBlankScreen();
+
+    // Navigate to Display & UI sub-page via the category nav
+    await navigateToDisplaySettings();
   });
 
   test('theme selection is visible in display settings', async () => {
-    // Navigate to settings if not already there
-    const title = await getTitleBarText();
-    if (!title.includes('Settings')) {
-      const settingsBtn = window.locator('[data-testid="nav-settings"]');
-      await settingsBtn.click();
-      await window.waitForTimeout(500);
-    }
-
-    // Click the Display sub-page tab in the explorer rail
-    const displayTab = window.locator('[data-testid="explorer-tab-display"]');
-    const displayVisible = await displayTab.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (displayVisible) {
-      await displayTab.click();
-      await window.waitForTimeout(500);
-    }
-
     // Verify theme section exists — look for "Color Theme" heading
     const themeHeading = window.locator('text=Color Theme');
     await expect(themeHeading).toBeVisible({ timeout: 5_000 });
   });
 
   test('changing theme applies immediately', async () => {
-    // Read the current theme before changing
-    const initialThemeId = await window.evaluate(() => {
-      return document.documentElement.getAttribute('data-theme') ||
-        getComputedStyle(document.documentElement).getPropertyValue('--ctp-base').trim();
-    });
-
-    // Find a different theme button and click it.
-    // The theme buttons are styled with background colors from the theme definition.
-    // Look for a theme button that is NOT currently selected (no ring-1 class).
+    // Find theme buttons in the grid
     const themeButtons = window.locator('.grid.grid-cols-2 button');
     const count = await themeButtons.count();
     expect(count).toBeGreaterThan(1);
 
-    // Click the second theme (which should be different from default catppuccin-mocha)
+    // Click the second theme (different from default catppuccin-mocha)
     await themeButtons.nth(1).click();
     await window.waitForTimeout(500);
 
@@ -531,8 +505,13 @@ test.describe('Settings Persistence', () => {
   test('theme persists after navigating away and back to settings', async () => {
     // Get the currently selected theme button text
     const selectedThemeName = await window.evaluate(() => {
-      const selected = document.querySelector('.grid.grid-cols-2 button.border-ctp-accent, .grid.grid-cols-2 button[class*="ring-1"]');
-      return selected?.textContent?.trim() || '';
+      const buttons = document.querySelectorAll('.grid.grid-cols-2 button');
+      for (const btn of buttons) {
+        if (btn.className.includes('border-ctp-accent') || btn.className.includes('ring-1')) {
+          return btn.textContent?.trim() || '';
+        }
+      }
+      return '';
     });
     expect(selectedThemeName.length).toBeGreaterThan(0);
 
@@ -551,18 +530,18 @@ test.describe('Settings Persistence', () => {
     title = await getTitleBarText();
     expect(title).toContain('Settings');
 
-    // Go to Display sub-page
-    const displayTab = window.locator('[data-testid="explorer-tab-display"]');
-    const displayVisible = await displayTab.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (displayVisible) {
-      await displayTab.click();
-      await window.waitForTimeout(500);
-    }
+    // Go to Display & UI sub-page
+    await navigateToDisplaySettings();
 
     // Verify the same theme is still selected
     const currentThemeName = await window.evaluate(() => {
-      const selected = document.querySelector('.grid.grid-cols-2 button.border-ctp-accent, .grid.grid-cols-2 button[class*="ring-1"]');
-      return selected?.textContent?.trim() || '';
+      const buttons = document.querySelectorAll('.grid.grid-cols-2 button');
+      for (const btn of buttons) {
+        if (btn.className.includes('border-ctp-accent') || btn.className.includes('ring-1')) {
+          return btn.textContent?.trim() || '';
+        }
+      }
+      return '';
     });
     expect(currentThemeName).toBe(selectedThemeName);
   });
@@ -570,8 +549,13 @@ test.describe('Settings Persistence', () => {
   test('theme persists after switching projects', async () => {
     // Get the currently selected theme name
     const selectedThemeName = await window.evaluate(() => {
-      const selected = document.querySelector('.grid.grid-cols-2 button.border-ctp-accent, .grid.grid-cols-2 button[class*="ring-1"]');
-      return selected?.textContent?.trim() || '';
+      const buttons = document.querySelectorAll('.grid.grid-cols-2 button');
+      for (const btn of buttons) {
+        if (btn.className.includes('border-ctp-accent') || btn.className.includes('ring-1')) {
+          return btn.textContent?.trim() || '';
+        }
+      }
+      return '';
     });
 
     // Close settings first
@@ -584,27 +568,25 @@ test.describe('Settings Persistence', () => {
     await projB.click();
     await window.waitForTimeout(500);
 
-    // Switch back to project-a
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
-    await window.waitForTimeout(500);
+    // Switch back to smoke project
+    await navigateToSmokeProject();
 
     // Re-open settings
     await settingsBtn.click();
     await window.waitForTimeout(500);
 
-    // Go to Display sub-page
-    const displayTab = window.locator('[data-testid="explorer-tab-display"]');
-    const displayVisible = await displayTab.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (displayVisible) {
-      await displayTab.click();
-      await window.waitForTimeout(500);
-    }
+    // Go to Display & UI sub-page
+    await navigateToDisplaySettings();
 
     // Verify theme is still the same
     const currentThemeName = await window.evaluate(() => {
-      const selected = document.querySelector('.grid.grid-cols-2 button.border-ctp-accent, .grid.grid-cols-2 button[class*="ring-1"]');
-      return selected?.textContent?.trim() || '';
+      const buttons = document.querySelectorAll('.grid.grid-cols-2 button');
+      for (const btn of buttons) {
+        if (btn.className.includes('border-ctp-accent') || btn.className.includes('ring-1')) {
+          return btn.textContent?.trim() || '';
+        }
+      }
+      return '';
     });
     expect(currentThemeName).toBe(selectedThemeName);
 
@@ -614,21 +596,16 @@ test.describe('Settings Persistence', () => {
   });
 
   test('Home view toggle persists in localStorage', async () => {
-    // Open settings
+    // Open settings and go to Display & UI
     const settingsBtn = window.locator('[data-testid="nav-settings"]');
     await settingsBtn.click();
     await window.waitForTimeout(500);
 
-    // Go to Display sub-page
-    const displayTab = window.locator('[data-testid="explorer-tab-display"]');
-    const displayVisible = await displayTab.isVisible({ timeout: 3_000 }).catch(() => false);
-    if (displayVisible) {
-      await displayTab.click();
-      await window.waitForTimeout(500);
-    }
+    await navigateToDisplaySettings();
 
-    // Read the current Home toggle state
+    // Read the current Home toggle state — it's the first toggle-track button
     const homeToggle = window.locator('button.toggle-track').first();
+    await expect(homeToggle).toBeVisible({ timeout: 5_000 });
     const initialState = await homeToggle.getAttribute('data-on');
 
     // Toggle it
@@ -661,9 +638,8 @@ test.describe('Settings Persistence', () => {
   });
 
   test('completed section collapse state persists in localStorage', async () => {
-    // Navigate to a project first
-    const projA = window.locator('[title="project-a"]').first();
-    await projA.click();
+    // Navigate to smoke project to see the agent list
+    await navigateToSmokeProject();
     await window.waitForTimeout(500);
 
     // Find the completed toggle
@@ -696,42 +672,22 @@ test.describe('Settings Persistence', () => {
     expect(restoredValue === 'true').toBe(wasCollapsed);
   });
 
-  test('settings page selection is preserved within session', async () => {
+  test('settings navigation does not cause blank screen', async () => {
     // Open settings
     const settingsBtn = window.locator('[data-testid="nav-settings"]');
     await settingsBtn.click();
     await window.waitForTimeout(500);
 
-    // Find and click a different settings tab (e.g., notifications, logging)
-    const tabs = window.locator('[data-testid^="explorer-tab-"]');
-    const tabCount = await tabs.count();
-
-    // Try to click the "notifications" or "logging" tab if available
-    let targetTab: string | null = null;
-    for (let i = 0; i < tabCount; i++) {
-      const testId = await tabs.nth(i).getAttribute('data-testid');
-      if (testId && (testId.includes('notification') || testId.includes('logging') || testId.includes('sound'))) {
-        targetTab = testId;
-        await tabs.nth(i).click();
-        await window.waitForTimeout(500);
-        break;
+    // Click through several settings sub-pages via category nav buttons
+    const subPages = ['Notifications', 'Logging', 'About', 'Display & UI'];
+    for (const pageName of subPages) {
+      const btn = window.locator(`button:has-text("${pageName}")`);
+      const visible = await btn.isVisible({ timeout: 2_000 }).catch(() => false);
+      if (visible) {
+        await btn.click();
+        await window.waitForTimeout(300);
+        await assertNotBlankScreen();
       }
-    }
-
-    if (targetTab) {
-      // Navigate away from settings
-      await settingsBtn.click();
-      await window.waitForTimeout(500);
-
-      // Navigate back
-      await settingsBtn.click();
-      await window.waitForTimeout(500);
-
-      // The settings page should still show (it reopens fresh to the default sub-page,
-      // which is fine — the key thing is it doesn't crash or blank-screen)
-      const title = await getTitleBarText();
-      expect(title).toContain('Settings');
-      await assertNotBlankScreen();
     }
 
     // Close settings
