@@ -12,8 +12,8 @@ const MODE_LABELS: Record<PaletteMode, string | null> = {
 const MODE_HINTS: { prefix: string; label: string }[] = [
   { prefix: '>', label: 'commands' },
   { prefix: '@', label: 'agents' },
-  { prefix: '#', label: 'projects' },
-  { prefix: '/', label: 'hubs' },
+  { prefix: '/', label: 'projects' },
+  { prefix: '#', label: 'hubs' },
 ];
 
 export function CommandPaletteInput() {

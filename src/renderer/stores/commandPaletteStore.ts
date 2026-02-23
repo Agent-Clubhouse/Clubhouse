@@ -27,8 +27,8 @@ function saveRecents(recents: RecentCommand[]): void {
 function deriveMode(query: string): PaletteMode {
   if (query.startsWith('>')) return 'commands';
   if (query.startsWith('@')) return 'agents';
-  if (query.startsWith('#')) return 'projects';
-  if (query.startsWith('/')) return 'hubs';
+  if (query.startsWith('#')) return 'hubs';
+  if (query.startsWith('/')) return 'projects';
   return 'all';
 }
 
