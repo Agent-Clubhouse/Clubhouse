@@ -694,7 +694,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       }
       handleSpawnQuickAgent(res, projectId, null, body);
     }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { error: String(err) });
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);
       res.end();
     });
@@ -718,7 +718,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       }
       handleSpawnQuickAgent(res, parentInfo.project.id, parentAgentId, body);
     }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { error: String(err) });
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);
       res.end();
     });
@@ -737,7 +737,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       }
       handleWakeAgent(res, agentId, body);
     }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { error: String(err) });
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);
       res.end();
     });
@@ -756,7 +756,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       }
       handlePermissionResponse(res, agentId, body);
     }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { error: String(err) });
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);
       res.end();
     });

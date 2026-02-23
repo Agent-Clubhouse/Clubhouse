@@ -623,7 +623,7 @@ describe('annex-server', () => {
       // The key assertion: no unhandled promise rejection, and appLog was called
       expect(appLog).toHaveBeenCalledWith(
         'core:annex', 'error', 'readBody failed',
-        expect.objectContaining({ error: expect.any(String) }),
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
       );
     });
 
@@ -643,7 +643,7 @@ describe('annex-server', () => {
 
       expect(appLog).toHaveBeenCalledWith(
         'core:annex', 'error', 'readBody failed',
-        expect.objectContaining({ error: expect.any(String) }),
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
       );
     });
 
@@ -654,7 +654,7 @@ describe('annex-server', () => {
 
       expect(appLog).toHaveBeenCalledWith(
         'core:annex', 'error', 'readBody failed',
-        expect.objectContaining({ error: expect.any(String) }),
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
       );
     });
 
@@ -665,7 +665,7 @@ describe('annex-server', () => {
 
       expect(appLog).toHaveBeenCalledWith(
         'core:annex', 'error', 'readBody failed',
-        expect.objectContaining({ error: expect.any(String) }),
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
       );
     });
   });
