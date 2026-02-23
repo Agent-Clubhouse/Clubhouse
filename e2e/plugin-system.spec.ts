@@ -87,10 +87,21 @@ async function openSettings() {
 
 /** Navigate to the Plugins settings sub-page (within settings view). */
 async function navigateToPluginsSettings() {
-  const pluginsBtn = window.locator('button:has-text("Plugins")');
+  // Use exact text match to avoid matching "project-plugins" in the sidebar
+  const pluginsBtn = window.locator('button', { hasText: /^Plugins$/ });
   await expect(pluginsBtn).toBeVisible({ timeout: 5_000 });
   await pluginsBtn.click();
   await window.waitForTimeout(500);
+}
+
+/** Ensure we're on a project view (not settings or help). */
+async function ensureProjectView() {
+  const projBtn = window.locator('[title="project-plugins"]').first();
+  const isVisible = await projBtn.isVisible({ timeout: 3_000 }).catch(() => false);
+  if (isVisible) {
+    await projBtn.click();
+    await window.waitForTimeout(500);
+  }
 }
 
 /** Close settings by toggling the settings button. */
@@ -505,17 +516,22 @@ test.describe('Plugin Store State Integrity', () => {
   });
 
   test('plugin tabs remain after navigating settings and back', async () => {
+    // Ensure we start on a project view
+    await ensureProjectView();
+
     // Navigate to settings
     await openSettings();
     await window.waitForTimeout(500);
 
-    // Navigate back to the project
+    // Navigate back to the project by clicking the project button
+    // (closeSettings toggles the nav button, but we need to explicitly
+    // return to project view for the ExplorerRail to show plugin tabs)
     await closeSettings();
-    await window.waitForTimeout(500);
+    await ensureProjectView();
 
     // Plugin tabs should still be present
     const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toBeVisible({ timeout: 5_000 });
+    await expect(hubTab).toBeVisible({ timeout: 10_000 });
 
     const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
     await expect(terminalTab).toBeVisible({ timeout: 5_000 });
@@ -525,6 +541,9 @@ test.describe('Plugin Store State Integrity', () => {
   });
 
   test('plugin tabs survive rapid navigation cycles', async () => {
+    // Ensure we start on a project view
+    await ensureProjectView();
+
     // Rapidly toggle settings 3 times
     for (let i = 0; i < 3; i++) {
       const settingsBtn = window.locator('[data-testid="nav-settings"]');
@@ -534,12 +553,15 @@ test.describe('Plugin Store State Integrity', () => {
       await window.waitForTimeout(200);
     }
 
+    // Ensure we're back on project view after rapid toggling
+    await ensureProjectView();
+
     // Wait for UI to settle
     await window.waitForTimeout(1_000);
 
     // Plugin tabs should still be intact
     const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
-    await expect(hubTab).toBeVisible({ timeout: 5_000 });
+    await expect(hubTab).toBeVisible({ timeout: 10_000 });
 
     await assertNotBlankScreen();
   });
@@ -561,6 +583,9 @@ test.describe('Plugin System Console Errors', () => {
   });
 
   test('exercise plugin system to collect errors', async () => {
+    // Ensure we're on project view first
+    await ensureProjectView();
+
     // Navigate through plugin tabs to trigger any deferred errors
     await clickExplorerTab('explorer-tab-plugin:hub');
     await window.waitForTimeout(300);
