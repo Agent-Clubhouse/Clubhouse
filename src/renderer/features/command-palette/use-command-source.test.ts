@@ -81,6 +81,32 @@ vi.mock('../../stores/annexStore', () => ({
   ),
 }));
 
+const mockSetProjectActiveHub = vi.fn();
+const mockSetAppActiveHub = vi.fn();
+
+const projectHubState = {
+  hubs: [{ id: 'ph1', name: 'ProjectHub1' }] as any[],
+  activeHubId: 'ph1',
+  setActiveHub: mockSetProjectActiveHub,
+};
+
+const appHubState = {
+  hubs: [{ id: 'ah1', name: 'AppHub1' }, { id: 'ah2', name: 'AppHub2' }] as any[],
+  activeHubId: 'ah1',
+  setActiveHub: mockSetAppActiveHub,
+};
+
+vi.mock('../../plugins/builtin/hub/main', () => ({
+  useProjectHubStore: Object.assign(
+    (selector: any) => selector(projectHubState),
+    { getState: () => projectHubState },
+  ),
+  useAppHubStore: Object.assign(
+    (selector: any) => selector(appHubState),
+    { getState: () => appHubState },
+  ),
+}));
+
 vi.mock('../../plugins/plugin-hotkeys', () => ({
   pluginHotkeyRegistry: { getAll: () => [] },
 }));
@@ -193,5 +219,65 @@ describe('useCommandSource', () => {
     item.execute();
     expect(mockToggleSettings).not.toHaveBeenCalled();
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
+  });
+
+  // ── Hub resolution tests ────────────────────────────────────────────
+
+  it('includes both project hubs and app hubs when a project is active', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectHub = findItem(result.current, 'hub:project:ph1');
+    const appHub1 = findItem(result.current, 'hub:app:ah1');
+    const appHub2 = findItem(result.current, 'hub:app:ah2');
+    expect(projectHub).toBeTruthy();
+    expect(projectHub.label).toBe('ProjectHub1');
+    expect(appHub1).toBeTruthy();
+    expect(appHub1.label).toBe('AppHub1');
+    expect(appHub2).toBeTruthy();
+    expect(appHub2.label).toBe('AppHub2');
+  });
+
+  it('marks the active project hub as Active', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectHub = findItem(result.current, 'hub:project:ph1');
+    expect(projectHub.detail).toBe('Active');
+  });
+
+  it('shows project name as detail for non-active project hubs', () => {
+    projectHubState.hubs = [{ id: 'ph1', name: 'PH1' }, { id: 'ph2', name: 'PH2' }];
+    projectHubState.activeHubId = 'ph1';
+    const { result } = renderHook(() => useCommandSource());
+    const ph2 = findItem(result.current, 'hub:project:ph2');
+    expect(ph2.detail).toBe('Test');
+    projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
+  });
+
+  it('labels app hubs with Home detail', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const appHub2 = findItem(result.current, 'hub:app:ah2');
+    expect(appHub2.detail).toBe('Home');
+  });
+
+  it('project hub execution switches to the project then activates the hub', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectHub = findItem(result.current, 'hub:project:ph1');
+    projectHub.execute();
+    expect(mockSetActiveProject).toHaveBeenCalledWith('p1');
+    expect(mockSetProjectActiveHub).toHaveBeenCalledWith('ph1');
+  });
+
+  it('app hub execution switches to home then activates the hub', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const appHub = findItem(result.current, 'hub:app:ah1');
+    appHub.execute();
+    expect(mockSetActiveProject).toHaveBeenCalledWith(null);
+    expect(mockSetAppActiveHub).toHaveBeenCalledWith('ah1');
+  });
+
+  it('all hub items have # type indicator', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const hubItems = result.current.filter((i: any) => i.category === 'Hubs');
+    for (const hub of hubItems) {
+      expect(hub.typeIndicator).toBe('#');
+    }
   });
 });

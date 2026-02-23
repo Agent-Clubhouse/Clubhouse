@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
 import { CommandPaletteInput } from './CommandPaletteInput';
 import { CommandPaletteList } from './CommandPaletteList';
@@ -73,35 +73,31 @@ export function CommandPalette() {
     item.execute();
   }, [recordRecent, close]);
 
-  // Keyboard handler
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        moveSelection(1, filteredItems.length - 1);
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        moveSelection(-1, filteredItems.length - 1);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        const selected = filteredItems[selectedIndex];
-        if (selected) executeItem(selected.item);
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, close, moveSelection, filteredItems, selectedIndex, executeItem]);
+  // Keyboard handler — uses React onKeyDown on the overlay div so events
+  // are caught during DOM bubbling, avoiding ordering issues with other
+  // window-level listeners (e.g. the global shortcut dispatcher in App).
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveSelection(1, filteredItems.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSelection(-1, filteredItems.length - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const selected = filteredItems[selectedIndex];
+      if (selected) executeItem(selected.item);
+    }
+  }, [close, moveSelection, filteredItems, selectedIndex, executeItem]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50" data-testid="command-palette-overlay">
+    <div className="fixed inset-0 z-50" data-testid="command-palette-overlay" onKeyDown={handleKeyDown}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50" onClick={close} />
       {/* Palette */}
