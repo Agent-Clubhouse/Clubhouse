@@ -13,11 +13,15 @@ vi.mock('fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
-vi.mock('child_process', () => ({
-  execSync: vi.fn(),
+const mockExtractAllTo = vi.fn();
+vi.mock('adm-zip', () => ({
+  default: vi.fn(() => ({
+    extractAllTo: mockExtractAllTo,
+  })),
 }));
 
 import * as fs from 'fs';
+import AdmZip from 'adm-zip';
 import { fetchRegistry, installPlugin, _resetCache } from './marketplace-service';
 
 // Mock global fetch
@@ -194,6 +198,68 @@ describe('marketplace-service', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('manifest.json');
+    });
+
+    it('uses adm-zip for extraction instead of shell command', async () => {
+      const crypto = await import('crypto');
+      const buffer = Buffer.from('fake zip content');
+      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      });
+
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s.endsWith('manifest.json')) return true;
+        if (s.endsWith('.tmp.zip')) return true;
+        return false;
+      });
+
+      vi.mocked(fs.readdirSync).mockReturnValue([] as any);
+
+      const result = await installPlugin({
+        pluginId: 'test-plugin',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/test.zip',
+        sha256: hash,
+      });
+
+      expect(result.success).toBe(true);
+      expect(AdmZip).toHaveBeenCalledWith(expect.stringContaining('test-plugin.tmp.zip'));
+      expect(mockExtractAllTo).toHaveBeenCalledWith(expect.stringContaining('test-plugin'), true);
+    });
+
+    it('returns error when adm-zip extraction fails', async () => {
+      const crypto = await import('crypto');
+      const buffer = Buffer.from('fake zip content');
+      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      });
+
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s.endsWith('.tmp.zip')) return true;
+        return false;
+      });
+
+      mockExtractAllTo.mockImplementation(() => {
+        throw new Error('Invalid or unsupported zip format');
+      });
+
+      const result = await installPlugin({
+        pluginId: 'test-plugin',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/test.zip',
+        sha256: hash,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid or unsupported zip format');
     });
   });
 });
