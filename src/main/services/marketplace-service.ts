@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { app } from 'electron';
+import AdmZip from 'adm-zip';
 import { appLog } from './log-service';
 import type {
   MarketplaceRegistry,
@@ -94,10 +95,10 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
       fs.rmSync(pluginDir, { recursive: true, force: true });
     }
 
-    // 5. Extract — use unzip CLI (available on macOS/Linux) to keep it simple
+    // 5. Extract using adm-zip (cross-platform, no shell dependency)
     fs.mkdirSync(pluginDir, { recursive: true });
-    const { execSync } = await import('child_process');
-    execSync(`unzip -o "${tmpZipPath}" -d "${pluginDir}"`, { stdio: 'ignore' });
+    const zip = new AdmZip(tmpZipPath);
+    zip.extractAllTo(pluginDir, true);
 
     // 6. If the zip extracted into a single subdirectory, hoist its contents up
     const entries = fs.readdirSync(pluginDir);
