@@ -39,49 +39,9 @@ describe('GettingStartedSettingsView', () => {
     expect(useOnboardingStore.getState().showOnboarding).toBe(true);
   });
 
-  it('does not show topics when no cohort is set', () => {
+  it('does not show learning track topics', () => {
+    useOnboardingStore.setState({ cohort: 'new-dev' });
     render(<GettingStartedSettingsView />);
     expect(screen.queryByTestId('getting-started-topics')).not.toBeInTheDocument();
-  });
-
-  it('shows new-dev topics when cohort is new-dev', () => {
-    useOnboardingStore.setState({ cohort: 'new-dev' });
-    render(<GettingStartedSettingsView />);
-    expect(screen.getByTestId('getting-started-topics')).toBeInTheDocument();
-    expect(screen.getByText('How Agents Work Under the Hood')).toBeInTheDocument();
-    expect(screen.getByText('Let Agents Do the Heavy Lifting')).toBeInTheDocument();
-  });
-
-  it('shows experienced-dev topics when cohort is experienced-dev', () => {
-    useOnboardingStore.setState({ cohort: 'experienced-dev' });
-    render(<GettingStartedSettingsView />);
-    expect(screen.getByTestId('getting-started-topics')).toBeInTheDocument();
-    expect(screen.getByText('Git Worktrees for Parallel Work')).toBeInTheDocument();
-    expect(screen.getByText('Built-in Project Tools')).toBeInTheDocument();
-  });
-
-  it('shows seasoned-dev topics when cohort is seasoned-dev', () => {
-    useOnboardingStore.setState({ cohort: 'seasoned-dev' });
-    render(<GettingStartedSettingsView />);
-    expect(screen.getByTestId('getting-started-topics')).toBeInTheDocument();
-    expect(screen.getByText('Parallel Agents, Isolated Worktrees')).toBeInTheDocument();
-    expect(screen.getByText('Per-Agent Settings')).toBeInTheDocument();
-  });
-
-  it('renders 3 topic sections per cohort', () => {
-    useOnboardingStore.setState({ cohort: 'new-dev' });
-    render(<GettingStartedSettingsView />);
-    expect(screen.getByTestId('topic-section-0')).toBeInTheDocument();
-    expect(screen.getByTestId('topic-section-1')).toBeInTheDocument();
-    expect(screen.getByTestId('topic-section-2')).toBeInTheDocument();
-  });
-
-  it('all cohorts share the first topic', () => {
-    for (const cohort of ['new-dev', 'experienced-dev', 'seasoned-dev'] as const) {
-      useOnboardingStore.setState({ cohort });
-      const { unmount } = render(<GettingStartedSettingsView />);
-      expect(screen.getByText('Projects, Quick Agents & Durable Agents')).toBeInTheDocument();
-      unmount();
-    }
   });
 });

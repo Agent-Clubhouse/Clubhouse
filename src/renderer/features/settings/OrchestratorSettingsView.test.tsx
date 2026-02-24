@@ -52,10 +52,10 @@ describe('OrchestratorSettingsView', () => {
   beforeEach(resetStores);
 
   describe('app-level settings (no projectId)', () => {
-    it('renders the Agents heading', () => {
+    it('renders the Orchestrators & Agents heading', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Agents')).toBeInTheDocument();
-      expect(screen.getByText('Configure agent backends and behavior.')).toBeInTheDocument();
+      expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
+      expect(screen.getByText('Configure orchestrator backends and agent behavior.')).toBeInTheDocument();
     });
 
     it('renders Clubhouse Mode toggle', () => {
@@ -210,7 +210,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('renders project-level description', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Configure agent behavior for this project.')).toBeInTheDocument();
+      expect(screen.getByText('Configure orchestrator and agent behavior for this project.')).toBeInTheDocument();
     });
 
     it('renders Clubhouse Mode dropdown', () => {
@@ -255,7 +255,7 @@ describe('OrchestratorSettingsView', () => {
     it('returns null for invalid project', () => {
       const { container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
       // Should still render the outer wrapper but ProjectAgentSettings returns null
-      expect(screen.getByText('Agents')).toBeInTheDocument();
+      expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();
     });
   });
