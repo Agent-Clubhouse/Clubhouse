@@ -3,6 +3,9 @@ export interface WildcardContext {
   standbyBranch: string;   // e.g. "bold-falcon/standby"
   agentPath: string;       // e.g. ".clubhouse/agents/bold-falcon/"
   sourceControlProvider?: string; // e.g. "github" or "azure-devops"
+  buildCommand?: string;   // e.g. "npm run build"
+  testCommand?: string;    // e.g. "npm test"
+  lintCommand?: string;    // e.g. "npm run lint"
 }
 
 /**
@@ -15,7 +18,10 @@ export function replaceWildcards(text: string, ctx: WildcardContext): string {
     .replace(/@@AgentName/g, ctx.agentName)
     .replace(/@@StandbyBranch/g, ctx.standbyBranch)
     .replace(/@@Path/g, ctx.agentPath)
-    .replace(/@@SourceControlProvider/g, ctx.sourceControlProvider || '');
+    .replace(/@@SourceControlProvider/g, ctx.sourceControlProvider || '')
+    .replace(/@@BuildCommand/g, ctx.buildCommand || 'npm run build')
+    .replace(/@@TestCommand/g, ctx.testCommand || 'npm test')
+    .replace(/@@LintCommand/g, ctx.lintCommand || 'npm run lint');
 
   // Process @@If(value)...@@EndIf conditional blocks
   result = processConditionalBlocks(result, ctx);
@@ -40,6 +46,15 @@ export function unreplaceWildcards(text: string, ctx: WildcardContext): string {
   ];
   if (ctx.sourceControlProvider) {
     pairs.push({ value: ctx.sourceControlProvider, token: '@@SourceControlProvider' });
+  }
+  if (ctx.buildCommand) {
+    pairs.push({ value: ctx.buildCommand, token: '@@BuildCommand' });
+  }
+  if (ctx.testCommand) {
+    pairs.push({ value: ctx.testCommand, token: '@@TestCommand' });
+  }
+  if (ctx.lintCommand) {
+    pairs.push({ value: ctx.lintCommand, token: '@@LintCommand' });
   }
 
   // Sort longest-value-first to avoid partial matches

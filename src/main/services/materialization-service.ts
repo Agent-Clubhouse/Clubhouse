@@ -133,6 +133,7 @@ export function buildWildcardContext(
   agent: DurableAgentConfig,
   projectPath: string,
   sourceControlProvider?: SourceControlProvider,
+  commands?: { buildCommand?: string; testCommand?: string; lintCommand?: string },
 ): WildcardContext {
   const agentPath = agent.worktreePath
     ? path.relative(projectPath, agent.worktreePath).replace(/\\/g, '/') + '/'
@@ -142,6 +143,9 @@ export function buildWildcardContext(
     standbyBranch: agent.branch || `${agent.name}/standby`,
     agentPath,
     sourceControlProvider,
+    buildCommand: commands?.buildCommand,
+    testCommand: commands?.testCommand,
+    lintCommand: commands?.lintCommand,
   };
 }
 
@@ -188,7 +192,12 @@ export function materializeAgent(params: {
   }
 
   const scp = resolveSourceControlProvider(projectPath);
-  const ctx = buildWildcardContext(agent, projectPath, scp);
+  const commands = {
+    buildCommand: defaults.buildCommand,
+    testCommand: defaults.testCommand,
+    lintCommand: defaults.lintCommand,
+  };
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
   const conv = provider.conventions;
 
   // 1. Instructions
@@ -244,7 +253,12 @@ export function previewMaterialization(params: {
   const { projectPath, agent, provider } = params;
   const defaults = readProjectAgentDefaults(projectPath);
   const scp = resolveSourceControlProvider(projectPath);
-  const ctx = buildWildcardContext(agent, projectPath, scp);
+  const commands = {
+    buildCommand: defaults.buildCommand,
+    testCommand: defaults.testCommand,
+    lintCommand: defaults.lintCommand,
+  };
+  const ctx = buildWildcardContext(agent, projectPath, scp, commands);
   const conv = provider.conventions;
 
   const instructions = defaults.instructions

@@ -119,6 +119,9 @@ export interface ProjectAgentDefaults {
   mcpJson?: string;
   freeAgentMode?: boolean;
   sourceControlProvider?: SourceControlProvider;
+  buildCommand?: string;
+  testCommand?: string;
+  lintCommand?: string;
 }
 
 export interface DurableAgentConfig {
