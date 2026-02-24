@@ -39,22 +39,22 @@ function SettingsCategoryNav() {
         {isApp ? (
           <>
             {navButton('About', 'about')}
-            {navButton('Getting Started', 'getting-started')}
-            {navButton('Agents', 'orchestrators')}
+            {navButton('Orchestrators & Agents', 'orchestrators')}
             {navButton('Display & UI', 'display')}
+            {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Notifications', 'notifications')}
             {navButton('Sounds', 'sounds')}
-            {navButton('Logging', 'logging')}
-            {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Plugins', 'plugins')}
             {navButton('Annex', 'annex')}
             {navButton('Updates', 'updates')}
+            {navButton('Logging', 'logging')}
+            {navButton('Getting Started', 'getting-started')}
             {navButton("What's New", 'whats-new')}
           </>
         ) : (
           <>
             {navButton('Project Settings', 'project')}
-            {navButton('Agents', 'orchestrators')}
+            {navButton('Orchestrators & Agents', 'orchestrators')}
             {navButton('Notifications', 'notifications')}
             {navButton('Sounds', 'sounds')}
             {navButton('Plugins', 'plugins')}

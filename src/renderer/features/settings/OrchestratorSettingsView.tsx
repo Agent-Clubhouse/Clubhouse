@@ -334,11 +334,11 @@ export function OrchestratorSettingsView({ projectId }: Props) {
   return (
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
       <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Agents</h2>
+        <h2 className="text-lg font-semibold text-ctp-text mb-1">Orchestrators & Agents</h2>
         <p className="text-sm text-ctp-subtext0 mb-6">
           {projectId
-            ? 'Configure agent behavior for this project.'
-            : 'Configure agent backends and behavior.'}
+            ? 'Configure orchestrator and agent behavior for this project.'
+            : 'Configure orchestrator backends and agent behavior.'}
         </p>
 
         {projectId

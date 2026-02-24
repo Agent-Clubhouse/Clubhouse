@@ -362,6 +362,11 @@ export function PluginListSettings() {
             ? 'Enable plugins to make them available. Project-scoped plugins also need to be enabled per project.'
             : `Enable plugins for ${project?.displayName || project?.name || 'this project'}. Only plugins enabled at the app level appear here.`}
         </p>
+        {!isAppContext && (
+          <p className="text-xs text-ctp-subtext0/70 mb-4 italic">
+            To install or manage external plugins, go to the app-level Plugin settings.
+          </p>
+        )}
         {isAppContext && (
           <div className="mb-6">
             <p className="text-xs text-ctp-subtext0 mb-3">
@@ -443,6 +448,9 @@ export function PluginListSettings() {
                   : 'Enable external plugins above to discover and load community plugins.'}
               </p>
             )}
+            <p className="text-xs text-ctp-subtext0/70 mt-3 italic">
+              Some plugins may also need to be enabled per-project in that project's plugin settings.
+            </p>
           </>
         )}
 
