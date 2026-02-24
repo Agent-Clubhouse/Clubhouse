@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -11,11 +11,22 @@ import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
 
+/** Hub metadata loaded from storage for non-active projects */
+interface CrossProjectHub {
+  hubId: string;
+  hubName: string;
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+}
+
 /** Helper to get formatted shortcut string for a given shortcut ID */
 function getShortcut(shortcuts: Record<string, { currentBinding: string }>, id: string): string | undefined {
   const def = shortcuts[id];
   return def ? formatBinding(def.currentBinding) : undefined;
 }
+
+const HUB_TAB = 'plugin:hub';
 
 export function useCommandSource(): CommandItem[] {
   const projects = useProjectStore((s) => s.projects);
@@ -40,6 +51,40 @@ export function useCommandSource(): CommandItem[] {
   const projectActiveHubId = useProjectHubStore((s) => s.activeHubId);
   const appHubs = useAppHubStore((s) => s.hubs);
   const appActiveHubId = useAppHubStore((s) => s.activeHubId);
+
+  // Load hubs from non-active projects so the palette shows all hubs
+  const [otherProjectHubs, setOtherProjectHubs] = useState<CrossProjectHub[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadOtherHubs() {
+      const entries: CrossProjectHub[] = [];
+      for (const project of projects) {
+        if (project.id === activeProjectId) continue;
+        try {
+          const instances = await window.clubhouse.plugin.storageRead({
+            pluginId: 'hub',
+            scope: 'project-local',
+            key: 'hub-instances',
+            projectPath: project.path,
+          }) as { id: string; name: string }[] | null;
+          if (Array.isArray(instances)) {
+            for (const inst of instances) {
+              entries.push({
+                hubId: inst.id,
+                hubName: inst.name,
+                projectId: project.id,
+                projectName: project.displayName || project.name,
+                projectPath: project.path,
+              });
+            }
+          }
+        } catch { /* ignore read errors for individual projects */ }
+      }
+      if (!cancelled) setOtherProjectHubs(entries);
+    }
+    loadOtherHubs();
+    return () => { cancelled = true; };
+  }, [projects, activeProjectId]);
 
   return useMemo(() => {
     const items: CommandItem[] = [];
@@ -90,11 +135,11 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    // Hubs — resolve ALL hubs (project + app), like agents
+    // Hubs — resolve ALL hubs across all projects + app
     const activeProject = projects.find((p) => p.id === activeProjectId);
     const activeProjectLabel = activeProject?.displayName || activeProject?.name;
 
-    // Project hubs (when a project is active)
+    // Project hubs (active project — from reactive store)
     if (activeProjectId) {
       for (const hub of projectHubs) {
         items.push({
@@ -106,10 +151,35 @@ export function useCommandSource(): CommandItem[] {
           detail: hub.id === projectActiveHubId ? 'Active' : activeProjectLabel,
           execute: () => {
             setActiveProject(activeProjectId);
+            setExplorerTab(HUB_TAB, activeProjectId);
             useProjectHubStore.getState().setActiveHub(hub.id);
           },
         });
       }
+    }
+
+    // Hubs from other (non-active) projects — loaded from storage
+    for (const entry of otherProjectHubs) {
+      items.push({
+        id: `hub:project:${entry.projectId}:${entry.hubId}`,
+        label: entry.hubName,
+        category: 'Hubs',
+        typeIndicator: '#',
+        keywords: ['hub', 'tab', 'workspace', entry.projectName],
+        detail: entry.projectName,
+        execute: async () => {
+          // Pre-write the desired active hub to storage so loadHub picks it up
+          await window.clubhouse.plugin.storageWrite({
+            pluginId: 'hub',
+            scope: 'project-local',
+            key: 'hub-active-id',
+            value: entry.hubId,
+            projectPath: entry.projectPath,
+          });
+          setActiveProject(entry.projectId);
+          setExplorerTab(HUB_TAB, entry.projectId);
+        },
+      });
     }
 
     // App-level hubs (always shown)
@@ -123,6 +193,7 @@ export function useCommandSource(): CommandItem[] {
         detail: hub.id === appActiveHubId && !activeProjectId ? 'Active' : 'Home',
         execute: () => {
           setActiveProject(null);
+          setExplorerTab(HUB_TAB);
           useAppHubStore.getState().setActiveHub(hub.id);
         },
       });
@@ -311,6 +382,7 @@ export function useCommandSource(): CommandItem[] {
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
     annexSettings, annexStatus,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
+    otherProjectHubs,
     setActiveProject, setActiveAgent, setExplorerTab, toggleSettings,
     setSettingsSubPage, setSettingsContext, toggleHelp, openAbout,
     toggleExplorerCollapse, toggleAccessoryCollapse,
