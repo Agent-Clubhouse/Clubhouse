@@ -416,9 +416,10 @@ function createEventsAPI(): EventsAPI {
 }
 
 function createSettingsAPI(ctx: PluginContext): SettingsAPI {
-  const settingsKey = (ctx.scope === 'project' || ctx.scope === 'dual') && ctx.projectId
-    ? `${ctx.projectId}:${ctx.pluginId}`
-    : `app:${ctx.pluginId}`;
+  const settingsScope = (ctx.scope === 'project' || ctx.scope === 'dual') && ctx.projectId
+    ? ctx.projectId
+    : 'app';
+  const settingsKey = `${settingsScope}:${ctx.pluginId}`;
   const changeHandlers = new Set<(key: string, value: unknown) => void>();
 
   // Subscribe to store changes and dispatch to changeHandlers
@@ -445,6 +446,9 @@ function createSettingsAPI(ctx: PluginContext): SettingsAPI {
     },
     getAll(): Record<string, unknown> {
       return usePluginStore.getState().pluginSettings[settingsKey] || {};
+    },
+    set(key: string, value: unknown): void {
+      usePluginStore.getState().setPluginSetting(settingsScope, ctx.pluginId, key, value);
     },
     onChange(callback: (key: string, value: unknown) => void): Disposable {
       changeHandlers.add(callback);

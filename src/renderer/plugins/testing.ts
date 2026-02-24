@@ -79,6 +79,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     settings: {
       get: (): undefined => undefined,
       getAll: () => ({}),
+      set: noop,
       onChange: () => ({ dispose: noop }),
     },
     agents: {

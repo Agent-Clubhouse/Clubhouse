@@ -464,6 +464,24 @@ describe('plugin-api-factory', () => {
       expect(api.settings.getAll()).toEqual({});
     });
 
+    it('set writes a setting to the store', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      api.settings.set('color', 'blue');
+      expect(usePluginStore.getState().pluginSettings['proj-1:test-plugin']?.color).toBe('blue');
+    });
+
+    it('set for app-scoped plugin writes to app: prefix', () => {
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined }), undefined, allPermsManifest);
+      api.settings.set('mode', 'zen');
+      expect(usePluginStore.getState().pluginSettings['app:test-plugin']?.mode).toBe('zen');
+    });
+
+    it('set value is readable via get', () => {
+      const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+      api.settings.set('size', 42);
+      expect(api.settings.get('size')).toBe(42);
+    });
+
     it('uses app: prefix for app-scoped plugins', () => {
       usePluginStore.setState({
         pluginSettings: { 'app:test-plugin': { mode: 'zen' } },
