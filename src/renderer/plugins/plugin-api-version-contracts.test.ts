@@ -69,7 +69,7 @@ const COMMANDS_API_METHODS: (keyof CommandsAPI)[] = [
 
 const EVENTS_API_METHODS: (keyof EventsAPI)[] = ['on'];
 
-const SETTINGS_API_METHODS: (keyof SettingsAPI)[] = ['get', 'getAll', 'onChange'];
+const SETTINGS_API_METHODS: (keyof SettingsAPI)[] = ['get', 'getAll', 'set', 'onChange'];
 
 const AGENTS_API_METHODS: (keyof AgentsAPI)[] = [
   'list', 'runQuick', 'kill', 'resume', 'listCompleted', 'dismissCompleted',
@@ -908,6 +908,10 @@ describe('§4 Mock API safe return values', () => {
 
   it('api.settings.getAll() returns empty object', () => {
     expect(api.settings.getAll()).toEqual({});
+  });
+
+  it('api.settings.set() is a no-op (returns undefined)', () => {
+    expect(api.settings.set('k', 'v')).toBeUndefined();
   });
 
   it('api.agents.list() returns empty array', () => {
