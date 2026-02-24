@@ -26,13 +26,15 @@ export async function launchApp() {
 
   // The onboarding store reads localStorage at module-load time (before our
   // evaluate runs), so a 500ms timer in App.tsx may still fire startOnboarding().
-  // Wait long enough for the timer (500ms) + React render, then dismiss if
-  // the modal appeared.  Use a generous timeout for slow CI runners (Ubuntu).
+  // Use waitFor (which polls) instead of isVisible (which returns instantly and
+  // misses the backdrop on slow Windows CI runners).
   const onboardingBackdrop = rendererWindow.locator('[data-testid="onboarding-backdrop"]');
-  const isVisible = await onboardingBackdrop.isVisible({ timeout: 3_000 }).catch(() => false);
-  if (isVisible) {
+  try {
+    await onboardingBackdrop.waitFor({ state: 'visible', timeout: 3_000 });
     await rendererWindow.locator('[data-testid="onboarding-skip"]').click();
-    await onboardingBackdrop.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    await onboardingBackdrop.waitFor({ state: 'hidden', timeout: 5_000 });
+  } catch {
+    // Modal never appeared — onboarding was already completed
   }
 
   return { electronApp, window: rendererWindow };
