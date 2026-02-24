@@ -7,6 +7,8 @@ import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
 import { AGENT_COLORS } from '../../shared/name-generator';
 
+const EMPTY_STRING_ARRAY: string[] = [];
+
 interface TabEntry { id: string; label: string; icon: ReactNode }
 
 const TAB_ORDER_KEY_PREFIX = 'clubhouse_explorer_tab_order_';
@@ -123,21 +125,20 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
   const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
-  const bsProjectOverrides = useBadgeSettingsStore((s) => s.projectOverrides);
+  const bsProjectOverride = useBadgeSettingsStore((s) => projectId ? s.projectOverrides[projectId] : undefined);
   const tabBadge = useMemo(() => {
     if (!projectId) return null;
-    const overrides = bsProjectOverrides[projectId];
-    const enabled = overrides?.enabled ?? bsEnabled;
+    const enabled = bsProjectOverride?.enabled ?? bsEnabled;
     if (!enabled) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId && b.target.tabId === tab.id,
     );
-    const pluginBadges = overrides?.pluginBadges ?? bsPluginBadges;
+    const pluginBadges = bsProjectOverride?.pluginBadges ?? bsPluginBadges;
     if (!pluginBadges) {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, projectId, tab.id, bsEnabled, bsPluginBadges, bsProjectOverrides]);
+  }, [badges, projectId, tab.id, bsEnabled, bsPluginBadges, bsProjectOverride]);
 
   return (
     <button
@@ -166,26 +167,37 @@ export function ExplorerRail() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = projects.find((p) => p.id === activeProjectId);
-  const plugins = usePluginStore((s) => s.plugins);
-  const projectEnabled = usePluginStore((s) => s.projectEnabled);
+  const allPlugins = usePluginStore((s) => s.plugins);
+  const enabledPluginIds = usePluginStore(
+    (s) => (activeProjectId ? s.projectEnabled[activeProjectId] : undefined) ?? EMPTY_STRING_ARRAY,
+  );
 
-  // Get enabled project-scoped (and dual-scoped) plugins for the active project
-  const rawEnabledPluginIds = activeProjectId ? projectEnabled[activeProjectId] : undefined;
-  const enabledPluginIds = useMemo(() => rawEnabledPluginIds || [], [rawEnabledPluginIds]);
-  const pluginTabs = enabledPluginIds
-    .map((id) => plugins[id])
-    .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab);
+  // Memoize plugin tab data to avoid new arrays every render.
+  // Build a stable key from enabled IDs + their activation status so the memo
+  // only recalculates when the actual plugin list or statuses change.
+  const pluginTabKey = useMemo(
+    () => enabledPluginIds.map((id) => `${id}:${allPlugins[id]?.status ?? ''}`).join(','),
+    [enabledPluginIds, allPlugins],
+  );
 
-  // Build unified tab list: core tabs + plugin tabs
-  const pluginEntries: TabEntry[] = pluginTabs.map((entry) => ({
-    id: `plugin:${entry.manifest.id}`,
-    label: entry.manifest.contributes!.tab!.label,
-    icon: entry.manifest.contributes!.tab!.icon
-      ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
-      : PLUGIN_FALLBACK_ICON,
-  }));
+  const pluginEntries: TabEntry[] = useMemo(() => {
+    return enabledPluginIds
+      .map((id) => allPlugins[id])
+      .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab)
+      .map((entry) => ({
+        id: `plugin:${entry.manifest.id}`,
+        label: entry.manifest.contributes!.tab!.label,
+        icon: entry.manifest.contributes!.tab!.icon
+          ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
+          : PLUGIN_FALLBACK_ICON,
+      }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pluginTabKey]);
 
-  const rawTabs: TabEntry[] = [...CORE_TABS, ...pluginEntries];
+  const rawTabs: TabEntry[] = useMemo(
+    () => [...CORE_TABS, ...pluginEntries],
+    [pluginEntries],
+  );
 
   // Order version counter forces re-render after drag-drop reorder
   const [orderVersion, setOrderVersion] = useState(0);
@@ -213,8 +225,7 @@ export function ExplorerRail() {
     }
 
     return ordered;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId, rawTabs.length, pluginTabs.length, orderVersion]);
+  }, [activeProjectId, rawTabs, orderVersion]);
 
   // Drag-to-reorder state (mirrors ProjectRail pattern)
   const [dragIndex, setDragIndex] = useState<number | null>(null);

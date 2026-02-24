@@ -269,6 +269,7 @@ export async function activatePlugin(
     // Update status
     store.setPluginStatus(pluginId, 'activated');
     activeContexts.set(contextKey, ctx);
+    store.bumpContextRevision();
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     const errStack = err instanceof Error ? err.stack : undefined;
@@ -302,6 +303,7 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
 
   // Remove this context
   activeContexts.delete(contextKey);
+  usePluginStore.getState().bumpContextRevision();
 
   // Check if any other contexts remain for this plugin
   const hasRemainingContexts = [...activeContexts.keys()].some(

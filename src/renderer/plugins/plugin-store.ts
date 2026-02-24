@@ -27,8 +27,10 @@ interface PluginState {
   pluginSettings: Record<string, Record<string, unknown>>; // "projectId:pluginId" or "app:pluginId" -> settings
   externalPluginsEnabled: boolean;
   permissionViolations: PermissionViolation[];
+  contextRevision: number;
 
   // Actions
+  bumpContextRevision: () => void;
   setExternalPluginsEnabled: (enabled: boolean) => void;
   registerPlugin: (manifest: PluginManifest, source: PluginSource, pluginPath: string, status?: PluginStatus, error?: string) => void;
   setPluginStatus: (pluginId: string, status: PluginStatus, error?: string) => void;
@@ -57,6 +59,10 @@ export const usePluginStore = create<PluginState>((set) => ({
   pluginSettings: {},
   externalPluginsEnabled: false,
   permissionViolations: [],
+  contextRevision: 0,
+
+  bumpContextRevision: () =>
+    set((s) => ({ contextRevision: s.contextRevision + 1 })),
 
   setExternalPluginsEnabled: (enabled) =>
     set({ externalPluginsEnabled: enabled }),

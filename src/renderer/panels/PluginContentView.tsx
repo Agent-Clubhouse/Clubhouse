@@ -62,13 +62,11 @@ export class PluginErrorBoundary extends React.Component<
 }
 
 export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?: PluginRenderMode }) {
-  const modules = usePluginStore((s) => s.modules);
-  const plugins = usePluginStore((s) => s.plugins);
+  const mod = usePluginStore((s) => s.modules[pluginId]);
+  const entry = usePluginStore((s) => s.plugins[pluginId]);
+  const contextRevision = usePluginStore((s) => s.contextRevision);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const [activating, setActivating] = useState(false);
-
-  const mod = modules[pluginId];
-  const entry = plugins[pluginId];
 
   // For app-mode plugins, look up the app-level context (no projectId).
   // For project-mode, use the active project.

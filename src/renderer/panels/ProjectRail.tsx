@@ -30,21 +30,20 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
   const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
   const bsProjectRailBadges = useBadgeSettingsStore((s) => s.projectRailBadges);
-  const bsProjectOverrides = useBadgeSettingsStore((s) => s.projectOverrides);
+  const bsProjectOverride = useBadgeSettingsStore((s) => s.projectOverrides[project.id]);
   const projectBadge = useMemo(() => {
-    const overrides = bsProjectOverrides[project.id];
-    const enabled = overrides?.enabled ?? bsEnabled;
-    const projectRailBadges = overrides?.projectRailBadges ?? bsProjectRailBadges;
+    const enabled = bsProjectOverride?.enabled ?? bsEnabled;
+    const projectRailBadges = bsProjectOverride?.projectRailBadges ?? bsProjectRailBadges;
     if (!enabled || !projectRailBadges) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === project.id,
     );
-    const pluginBadges = overrides?.pluginBadges ?? bsPluginBadges;
+    const pluginBadges = bsProjectOverride?.pluginBadges ?? bsPluginBadges;
     if (!pluginBadges) {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, project.id, bsEnabled, bsPluginBadges, bsProjectRailBadges, bsProjectOverrides]);
+  }, [badges, project.id, bsEnabled, bsPluginBadges, bsProjectRailBadges, bsProjectOverride]);
 
   return (
     <button

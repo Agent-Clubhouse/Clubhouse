@@ -53,14 +53,9 @@ export function App() {
   const handleHookEvent = useAgentStore((s) => s.handleHookEvent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const explorerTab = useUIStore((s) => s.explorerTab);
-  const pluginsMap = usePluginStore((s) => s.plugins);
-  const isPluginFullWidth = (() => {
-    if (!explorerTab.startsWith('plugin:')) return false;
-    const pluginId = explorerTab.slice('plugin:'.length);
-    const entry = pluginsMap[pluginId];
-    return entry?.manifest.contributes?.tab?.layout === 'full';
-  })();
-  const isFullWidth = isPluginFullWidth;
+  const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
+  const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
+  const isFullWidth = activePluginEntry?.manifest.contributes?.tab?.layout === 'full';
   const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
   const loadTheme = useThemeStore((s) => s.loadTheme);
   const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
@@ -553,17 +548,11 @@ export function App() {
     help: 'Help',
   };
   const tabLabel = (() => {
+    if (!activePluginEntry) return CORE_LABELS[explorerTab] || explorerTab;
     if (explorerTab.startsWith('plugin:app:')) {
-      const pluginId = explorerTab.slice('plugin:app:'.length);
-      const entry = pluginsMap[pluginId];
-      return entry?.manifest.contributes?.railItem?.label || entry?.manifest.name || pluginId;
+      return activePluginEntry.manifest.contributes?.railItem?.label || activePluginEntry.manifest.name || activePluginId;
     }
-    if (explorerTab.startsWith('plugin:')) {
-      const pluginId = explorerTab.slice('plugin:'.length);
-      const entry = pluginsMap[pluginId];
-      return entry?.manifest.contributes?.tab?.label || entry?.manifest.name || pluginId;
-    }
-    return CORE_LABELS[explorerTab] || explorerTab;
+    return activePluginEntry.manifest.contributes?.tab?.label || activePluginEntry.manifest.name || activePluginId;
   })();
 
   const titleText = isHome
