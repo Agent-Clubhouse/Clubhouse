@@ -121,19 +121,23 @@ const PLUGIN_FALLBACK_ICON = (
 
 function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
   const badges = useBadgeStore((s) => s.badges);
-  const badgeSettings = useBadgeSettingsStore();
+  const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
+  const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
+  const bsProjectOverrides = useBadgeSettingsStore((s) => s.projectOverrides);
   const tabBadge = useMemo(() => {
     if (!projectId) return null;
-    const settings = badgeSettings.getProjectSettings(projectId);
-    if (!settings.enabled) return null;
+    const overrides = bsProjectOverrides[projectId];
+    const enabled = overrides?.enabled ?? bsEnabled;
+    if (!enabled) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId && b.target.tabId === tab.id,
     );
-    if (!settings.pluginBadges) {
+    const pluginBadges = overrides?.pluginBadges ?? bsPluginBadges;
+    if (!pluginBadges) {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, projectId, tab.id, badgeSettings]);
+  }, [badges, projectId, tab.id, bsEnabled, bsPluginBadges, bsProjectOverrides]);
 
   return (
     <button
@@ -166,7 +170,8 @@ export function ExplorerRail() {
   const projectEnabled = usePluginStore((s) => s.projectEnabled);
 
   // Get enabled project-scoped (and dual-scoped) plugins for the active project
-  const enabledPluginIds = activeProjectId ? (projectEnabled[activeProjectId] || []) : [];
+  const rawEnabledPluginIds = activeProjectId ? projectEnabled[activeProjectId] : undefined;
+  const enabledPluginIds = useMemo(() => rawEnabledPluginIds || [], [rawEnabledPluginIds]);
   const pluginTabs = enabledPluginIds
     .map((id) => plugins[id])
     .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab);
