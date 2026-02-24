@@ -388,7 +388,7 @@ const api = {
       command: string;
       args: string[];
       allowedCommands: string[];
-      projectPath: string;
+      projectPath?: string;
       options?: { timeout?: number };
     }) => ipcRenderer.invoke(IPC.PROCESS.EXEC, req),
   },
