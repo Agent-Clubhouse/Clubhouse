@@ -1,96 +1,56 @@
-# Agent Terminal and Output
+# Terminal & Transcripts
 
-Every running agent in Clubhouse has a terminal view that shows its real-time output. The terminal is the primary way to observe what an agent is doing, interact with permission prompts, and debug issues.
+Every agent has a terminal view showing real-time output, plus a structured transcript for organized review.
 
 ## Terminal View
 
-When you select a running agent in the explorer, the main content area displays its terminal. The terminal is built on xterm.js and behaves like a standard terminal emulator:
+The terminal (built on xterm.js) behaves like a standard terminal emulator:
+- Full ANSI color support and theme-aware colors
+- Scrollback buffer preserved for the session
+- Text selection and clipboard copy
+- Auto-resizes with window and panel changes
 
-- **ANSI color support** — output from the orchestrator, including syntax-highlighted diffs, colored status messages, and formatted tables, renders with full color.
-- **Theme-aware** — the terminal background, foreground, and color palette automatically match your Clubhouse theme (light or dark). If you switch themes, open terminals update immediately.
-- **Scrollback** — you can scroll up through the terminal history to review earlier output. The scrollback buffer is preserved for the duration of the agent's session.
-- **Text selection and copy** — select text in the terminal with your mouse and copy it to the clipboard.
+## User Input
 
-## User Input Forwarding
-
-You can type directly into the agent's terminal. Keystrokes are forwarded to the underlying orchestrator process. This is useful for:
-
-- Responding to interactive prompts from tools the agent invokes (e.g., a CLI tool that asks for confirmation).
-- Sending text input when the agent runs a command that reads from stdin.
-
-Note that in most cases, the agent handles its own input and output. User input forwarding is a fallback for situations where the orchestrator or a subprocess needs direct human input.
-
-## Terminal Resizing
-
-The terminal automatically resizes when:
-
-- You resize the Clubhouse window.
-- You drag the panel divider to make the terminal area wider or narrower.
-- You toggle the sidebar or other panels that affect available space.
-
-The resize signal is forwarded to the orchestrator process so that command output wraps correctly at the new width. You do not need to do anything manually.
+You can type directly into an agent's terminal. Keystrokes are forwarded to the orchestrator process — useful for responding to interactive prompts from tools the agent invokes.
 
 ## Output Buffering
 
-When you switch away from an agent (for example, by selecting a different agent or navigating to settings), the terminal output continues to be captured in the background. When you switch back, all buffered output is replayed into the terminal view so you see the complete history.
-
-This means you never lose output by switching between agents. Every agent's terminal maintains its full session history regardless of whether it is currently visible.
-
-## Transcript Viewer
-
-In addition to the raw terminal, Clubhouse provides a **transcript viewer** — a structured event log that organizes the agent's activity into discrete, readable entries. The transcript is available for both running and completed agents.
-
-Each transcript entry includes:
-
-| Field | Description |
-|-------|-------------|
-| **Timestamp** | When the event occurred, shown as a relative time (e.g., "2m ago") or absolute time. |
-| **Event type** | The kind of event: tool call, permission request, error, completion, or informational message. |
-| **Tool name** | For tool call events, the name of the tool that was invoked (e.g., Read, Edit, Bash). |
-| **Input** | The parameters passed to the tool (e.g., the file path for a Read, the command for a Bash call). |
-| **Output** | The result returned by the tool, which may be truncated for large outputs. |
-| **Status** | Whether the event succeeded, failed, or is still pending. |
-
-The transcript viewer is useful for quickly scanning what an agent did without reading through terminal output line by line. You can open it from the agent's toolbar or from a completed quick agent's ghost card.
+Switching away from an agent doesn't lose output. All data is captured in the background and replayed when you switch back.
 
 ## Permission Prompts
 
-When an agent running in interactive mode wants to perform a sensitive operation, it pauses and requests permission. Clubhouse surfaces these requests with clear visual indicators:
+When an agent in interactive mode needs approval for a sensitive operation:
 
-1. **Orange ring** — the agent's avatar ring in the explorer turns orange, signaling that attention is needed.
-2. **Permission banner** — inside the terminal view, a banner appears describing the operation the agent wants to perform (e.g., "Edit file: src/index.ts" or "Run command: npm test").
-3. **Approve / Deny buttons** — click **Approve** to let the agent proceed or **Deny** to reject the operation. The agent will attempt to continue its mission after a denial, possibly choosing an alternative approach.
+1. **Orange ring** appears on the agent's avatar in the explorer
+2. **Permission banner** describes the operation (e.g., "Edit file: src/index.ts")
+3. **Approve / Deny** buttons let you respond
 
-Operations that typically require permission include:
+Common permission requests: file edits, shell commands, file deletions, Git operations.
 
-- Writing or editing files
-- Running shell commands
-- Deleting files
-- Performing Git operations (committing, pushing, branch manipulation)
+**Batch approval** — When multiple similar requests queue up, you may see an option to approve all at once.
 
-In headless mode, these prompts are skipped and the agent proceeds automatically. See the **Quick Agents** help topic for details on headless mode.
+In headless mode, prompts are skipped automatically.
 
-### Batch Approval
+## Transcript Viewer
 
-If an agent requests permission for several similar operations in sequence (for example, editing multiple files as part of a refactor), you may see a batch approval option that lets you approve all pending operations at once rather than one at a time.
+A structured event log organizing agent activity into discrete entries:
+
+| Field | Description |
+|-------|-------------|
+| **Timestamp** | When the event occurred |
+| **Event type** | Tool call, permission request, error, or completion |
+| **Tool name** | e.g., Read, Edit, Bash |
+| **Input/Output** | Parameters and results |
+| **Status** | Succeeded, failed, or pending |
+
+Open from the agent toolbar or a ghost card's context menu.
 
 ## Utility Terminal
 
-Sometimes you need to do manual work in an agent's working directory — run a build, inspect files, test a command, or check Git status. Clubhouse provides a **utility terminal** for this purpose.
+Need to do manual work in an agent's worktree? Open a **Utility Terminal**:
 
-To open a utility terminal:
+1. Select the agent
+2. Click **Utility Terminal** in the toolbar
 
-1. Select the agent in the explorer.
-2. Click the **Utility Terminal** button in the agent's toolbar (or use the context menu).
-3. A new shell session opens in a tab, with the working directory set to the agent's worktree.
-
-The utility terminal is a standard shell session (your default shell, typically bash or zsh). It is completely independent of the agent's orchestrator process — commands you run here do not affect the agent, and the agent does not see your commands.
-
-Use the utility terminal to:
-
-- Run builds or tests against the agent's branch.
-- Inspect the file system to verify changes the agent made.
-- Run Git commands (check status, view diffs, create commits).
-- Debug issues by running the same commands the agent attempted.
-
-You can have multiple utility terminals open at the same time, and they persist until you close them or delete the agent.
+This opens a standard shell session (bash/zsh) in the agent's working directory — completely independent of the agent's process. Use it to run builds, inspect files, check Git status, or debug.
