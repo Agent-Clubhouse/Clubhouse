@@ -57,11 +57,11 @@ function SettingsContextPicker() {
   const projectIcons = useProjectStore((s) => s.projectIcons);
 
   return (
-    <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full">
+    <div className="flex flex-col bg-ctp-mantle border-r border-surface-0 h-full min-h-0">
       <div className="px-3 py-3 border-b border-surface-0">
         <h2 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Settings</h2>
       </div>
-      <nav className="flex-1 py-1 flex flex-col">
+      <nav className="flex-1 py-1 flex flex-col min-h-0 overflow-y-auto">
         <button
           onClick={() => setSettingsContext('app')}
           className={`
@@ -288,7 +288,7 @@ export function ExplorerRail() {
           {activeProject?.displayName || activeProject?.name || 'No Project'}
         </h2>
       </div>
-      <nav className="flex-1 py-1 flex flex-col">
+      <nav className="flex-1 py-1 flex flex-col min-h-0 overflow-y-auto">
         {orderedTabs.map((tab, i) => (
           <div
             key={tab.id}

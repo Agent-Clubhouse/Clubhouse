@@ -35,7 +35,7 @@ function SettingsCategoryNav() {
           {isApp ? 'App Settings' : 'Project Settings'}
         </span>
       </div>
-      <nav className="py-1 flex-1 flex flex-col">
+      <nav className="py-1 flex-1 flex flex-col min-h-0 overflow-y-auto">
         {isApp ? (
           <>
             {navButton('About', 'about')}
