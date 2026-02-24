@@ -119,6 +119,9 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
       return { success: false, error: 'Downloaded plugin does not contain a manifest.json' };
     }
 
+    // 8. Write .marketplace marker so the client knows this was installed from the marketplace
+    fs.writeFileSync(path.join(pluginDir, '.marketplace'), '', 'utf-8');
+
     appLog('marketplace', 'info', `Plugin ${pluginId} installed successfully`);
     return { success: true };
   } catch (err: unknown) {

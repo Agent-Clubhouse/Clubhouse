@@ -10,6 +10,8 @@ function getCommunityPluginsDir(): string {
 export interface DiscoveredPlugin {
   manifest: PluginManifest;
   pluginPath: string;
+  /** True when the plugin was installed via the marketplace (has .marketplace marker). */
+  fromMarketplace: boolean;
 }
 
 export function discoverCommunityPlugins(): DiscoveredPlugin[] {
@@ -35,9 +37,12 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
       try {
         const raw = fs.readFileSync(manifestPath, 'utf-8');
         const manifest = JSON.parse(raw) as PluginManifest;
+        const pluginDir = path.join(pluginsDir, dir.name);
+        const fromMarketplace = fs.existsSync(path.join(pluginDir, '.marketplace'));
         results.push({
           manifest,
-          pluginPath: path.join(pluginsDir, dir.name),
+          pluginPath: pluginDir,
+          fromMarketplace,
         });
       } catch {
         // Invalid manifest, skip

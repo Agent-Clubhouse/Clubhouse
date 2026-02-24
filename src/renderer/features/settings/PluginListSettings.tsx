@@ -65,7 +65,7 @@ function SourceBadge({ entry }: { entry: PluginRegistryEntry }) {
       <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent">Built-in</span>
     );
   }
-  if (entry.source === 'community' && entry.manifest.official) {
+  if (entry.source === 'marketplace') {
     return (
       <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">Official</span>
     );
@@ -211,7 +211,7 @@ export function PluginListSettings() {
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
   const builtinPlugins = filteredPlugins.filter((e) => e.source === 'builtin');
-  const externalPlugins = filteredPlugins.filter((e) => e.source === 'community');
+  const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const isEnabled = (pluginId: string): boolean => {
     if (isAppContext) {

@@ -65,10 +65,11 @@ export async function initializePluginSystem(): Promise<void> {
   // Discover community plugins (only when external plugins are enabled)
   if (externalEnabled) {
     const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
-    for (const { manifest: rawManifest, pluginPath } of communityPlugins) {
+    for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+      const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
       const result = validateManifest(rawManifest);
       if (result.valid && result.manifest) {
-        store.registerPlugin(result.manifest, 'community', pluginPath, 'registered');
+        store.registerPlugin(result.manifest, source, pluginPath, 'registered');
       } else {
         rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
           meta: { pluginPath, errors: result.errors },
@@ -81,7 +82,7 @@ export async function initializePluginSystem(): Promise<void> {
           engine: { api: 0 },
           scope: 'project',
         };
-        store.registerPlugin(partialManifest, 'community', pluginPath, 'incompatible', result.errors.join('; '));
+        store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
       }
     }
   }
@@ -435,8 +436,8 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     return;
   }
 
-  // 4. Re-register with updated manifest
-  store.registerPlugin(validation.manifest, 'community', entry.pluginPath, 'registered');
+  // 4. Re-register with updated manifest (preserve original source)
+  store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
 
   // 5. Re-activate in all contexts where it was previously active
   for (const ctx of contextsToRestore) {
