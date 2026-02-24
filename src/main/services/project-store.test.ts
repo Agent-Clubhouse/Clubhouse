@@ -235,6 +235,113 @@ describe('icon preservation across close/reopen (#209)', () => {
   });
 });
 
+describe('settings preservation across close/reopen', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+  });
+
+  it('remove preserves displayName, color, and orchestrator to a JSON sidecar', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
+
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_del', name: 'MyProj', path: '/my-project', displayName: 'Workshop', color: 'emerald', orchestrator: 'claude' },
+      ],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+    const writtenFiles: Record<string, string> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenFiles[String(p)] = String(data); });
+
+    remove('proj_del');
+
+    // Should have written a _preserved_<hash>.json sidecar
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+    expect(writtenFiles[sidecarPath]).toBeDefined();
+    const saved = JSON.parse(writtenFiles[sidecarPath]);
+    expect(saved.displayName).toBe('Workshop');
+    expect(saved.color).toBe('emerald');
+    expect(saved.orchestrator).toBe('claude');
+  });
+
+  it('remove with no custom settings writes no sidecar', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_plain', name: 'Plain', path: '/plain' },
+      ],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_plain.png'] as any);
+
+    const writtenFiles: Record<string, string> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenFiles[String(p)] = String(data); });
+
+    remove('proj_plain');
+
+    // Only the projects.json write should exist, no sidecar
+    const sidecarKeys = Object.keys(writtenFiles).filter((k) => k.includes('_preserved_'));
+    expect(sidecarKeys).toHaveLength(0);
+  });
+
+  it('re-adding same path restores preserved settings', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    // Mock: sidecar file exists, no store file, no icon files
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === sidecarPath) return JSON.stringify({ displayName: 'Workshop', color: 'emerald' });
+      return '';
+    });
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    const project = add('/my-project');
+
+    expect(project.displayName).toBe('Workshop');
+    expect(project.color).toBe('emerald');
+    // Sidecar should be cleaned up
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(sidecarPath);
+  });
+
+  it('re-adding different path does not pick up another path settings', () => {
+    const crypto = require('crypto');
+    const hashA = crypto.createHash('sha256').update('/project-a').digest('hex').slice(0, 16);
+    const hashB = crypto.createHash('sha256').update('/project-b').digest('hex').slice(0, 16);
+    const sidecarA = path.join(BASE_DIR, `_preserved_${hashA}.json`);
+
+    // Only project-a has a sidecar
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === sidecarA) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === sidecarA) return JSON.stringify({ displayName: 'A Name' });
+      return '';
+    });
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    const projectB = add('/project-b');
+
+    expect(projectB.displayName).toBeUndefined();
+    expect(hashA).not.toBe(hashB);
+  });
+});
+
 describe('update', () => {
   beforeEach(() => {
     vi.clearAllMocks();

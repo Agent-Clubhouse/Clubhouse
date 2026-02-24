@@ -62,6 +62,40 @@ function preserveIcon(project: Project): void {
 }
 
 /**
+ * Stash user-configured project settings (displayName, color, orchestrator)
+ * to a JSON sidecar so they survive a remove → re-add cycle at the same path.
+ */
+function preserveSettings(project: Project): void {
+  const settings: Record<string, string> = {};
+  if (project.displayName) settings.displayName = project.displayName;
+  if (project.color) settings.color = project.color;
+  if (project.orchestrator) settings.orchestrator = project.orchestrator;
+
+  if (Object.keys(settings).length === 0) return;
+
+  const hash = pathHash(project.path);
+  const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(settings), 'utf-8');
+}
+
+/**
+ * Restore preserved settings for a project path. Returns partial project
+ * fields and removes the stash file. Returns empty object if none found.
+ */
+function restorePreservedSettings(project: Project): Partial<Pick<Project, 'displayName' | 'color' | 'orchestrator'>> {
+  const hash = pathHash(project.path);
+  const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    fs.unlinkSync(filePath);
+    return data;
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Check for a preserved icon for the given project path and, if found,
  * rename it to use the new project ID. Returns the new filename or null.
  */
@@ -160,6 +194,12 @@ export function add(dirPath: string): Project {
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const project: Project = { id, name, path: dirPath };
 
+  // Restore preserved settings (displayName, color, orchestrator) from a previous session
+  const restoredSettings = restorePreservedSettings(project);
+  if (restoredSettings.displayName) project.displayName = restoredSettings.displayName;
+  if (restoredSettings.color) project.color = restoredSettings.color;
+  if (restoredSettings.orchestrator) project.orchestrator = restoredSettings.orchestrator;
+
   // Restore a preserved icon from a previous session at this path
   const restoredIcon = restorePreservedIcon(project);
   if (restoredIcon) {
@@ -176,6 +216,11 @@ export function remove(id: string): void {
   const project = projects.find((p) => p.id === id);
   const filtered = projects.filter((p) => p.id !== id);
   writeProjects(filtered);
+
+  if (project) {
+    // Preserve user-configured settings for later re-add at the same path
+    preserveSettings(project);
+  }
 
   // Preserve the icon for later re-add at the same path; delete if no icon
   if (project?.icon) {

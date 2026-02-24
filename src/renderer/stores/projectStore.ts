@@ -58,6 +58,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((s) => ({ projects: [...s.projects, project] }));
     set({ activeProjectId: project.id });
     get().checkGit(project.id, project.path);
+    if (project.icon) {
+      get().loadProjectIcon(project);
+    }
     return project;
   },
 
