@@ -85,4 +85,39 @@ describe('SettingsContextPicker (via ExplorerRail)', () => {
     expect(screen.getByText('C')).toBeInTheDocument();
     expect(screen.getByText('Custom Name')).toBeInTheDocument();
   });
+
+  it('settings context picker nav is scrollable when content overflows', () => {
+    useProjectStore.setState({
+      projects: Array.from({ length: 20 }, (_, i) =>
+        makeProject({ id: `p${i}`, name: `Project ${i}` }),
+      ),
+      projectIcons: {},
+    });
+
+    const { container } = render(<ExplorerRail />);
+    const nav = container.querySelector('nav');
+    expect(nav).toBeInTheDocument();
+    expect(nav!.className).toContain('overflow-y-auto');
+    expect(nav!.className).toContain('min-h-0');
+  });
+});
+
+describe('ExplorerRail tabs nav', () => {
+  beforeEach(() => {
+    resetStores();
+    useUIStore.setState({ explorerTab: 'agents' });
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'TestProj' })],
+      activeProjectId: 'p1',
+      projectIcons: {},
+    });
+  });
+
+  it('tabs nav is scrollable when content overflows', () => {
+    const { container } = render(<ExplorerRail />);
+    const nav = container.querySelector('nav');
+    expect(nav).toBeInTheDocument();
+    expect(nav!.className).toContain('overflow-y-auto');
+    expect(nav!.className).toContain('min-h-0');
+  });
 });
