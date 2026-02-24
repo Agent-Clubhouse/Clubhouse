@@ -200,6 +200,41 @@ describe('marketplace-service', () => {
       expect(result.error).toContain('manifest.json');
     });
 
+    it('writes .marketplace marker after successful install', async () => {
+      const crypto = await import('crypto');
+      const buffer = Buffer.from('fake zip content');
+      const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      });
+
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s.endsWith('manifest.json')) return true;
+        if (s.endsWith('.tmp.zip')) return true;
+        return false;
+      });
+
+      vi.mocked(fs.readdirSync).mockReturnValue([] as any);
+
+      const result = await installPlugin({
+        pluginId: 'test-plugin',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/test.zip',
+        sha256: hash,
+      });
+
+      expect(result.success).toBe(true);
+      // Verify .marketplace marker was written
+      expect(fs.writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('.marketplace'),
+        '',
+        'utf-8',
+      );
+    });
+
     it('uses adm-zip for extraction instead of shell command', async () => {
       const crypto = await import('crypto');
       const buffer = Buffer.from('fake zip content');

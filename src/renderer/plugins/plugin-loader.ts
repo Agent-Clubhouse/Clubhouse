@@ -65,10 +65,11 @@ export async function initializePluginSystem(): Promise<void> {
   // Discover community plugins (only when external plugins are enabled)
   if (externalEnabled) {
     const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
-    for (const { manifest: rawManifest, pluginPath } of communityPlugins) {
+    for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+      const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
       const result = validateManifest(rawManifest);
       if (result.valid && result.manifest) {
-        store.registerPlugin(result.manifest, 'community', pluginPath, 'registered');
+        store.registerPlugin(result.manifest, source, pluginPath, 'registered');
       } else {
         rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
           meta: { pluginPath, errors: result.errors },
@@ -81,7 +82,7 @@ export async function initializePluginSystem(): Promise<void> {
           engine: { api: 0 },
           scope: 'project',
         };
-        store.registerPlugin(partialManifest, 'community', pluginPath, 'incompatible', result.errors.join('; '));
+        store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
       }
     }
   }
@@ -435,8 +436,8 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     return;
   }
 
-  // 4. Re-register with updated manifest
-  store.registerPlugin(validation.manifest, 'community', entry.pluginPath, 'registered');
+  // 4. Re-register with updated manifest (preserve original source)
+  store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
 
   // 5. Re-activate in all contexts where it was previously active
   for (const ctx of contextsToRestore) {
@@ -455,6 +456,47 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
   rendererLog('core:plugins', 'info', `Plugin ${pluginId} hot-reloaded successfully`, {
     meta: { newVersion: finalEntry?.manifest.version, status: finalEntry?.status },
   });
+}
+
+/**
+ * Discover and register newly added local plugins without touching existing ones.
+ * Scans ~/.clubhouse/plugins/, finds directories not yet registered in the store,
+ * validates their manifests, and registers them. Returns the IDs of newly found plugins.
+ */
+export async function discoverNewPlugins(): Promise<string[]> {
+  const store = usePluginStore.getState();
+  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+  const newPluginIds: string[] = [];
+
+  for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+    const id = (rawManifest as Record<string, unknown>)?.id as string | undefined;
+    if (!id || store.plugins[id]) continue; // already registered
+
+    const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
+    const result = validateManifest(rawManifest);
+    if (result.valid && result.manifest) {
+      store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+      newPluginIds.push(result.manifest.id);
+      rendererLog('core:plugins', 'info', `Discovered new plugin: ${result.manifest.id}`, {
+        meta: { pluginPath, source },
+      });
+    } else {
+      rendererLog('core:plugins', 'warn', `New plugin incompatible: ${pluginPath}`, {
+        meta: { pluginPath, errors: result.errors },
+      });
+      const partialManifest: PluginManifest = {
+        id: id || pluginPath.split('/').pop() || 'unknown',
+        name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
+        version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
+        engine: { api: 0 },
+        scope: 'project',
+      };
+      store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
+      newPluginIds.push(partialManifest.id);
+    }
+  }
+
+  return newPluginIds;
 }
 
 /** @internal — only for tests */

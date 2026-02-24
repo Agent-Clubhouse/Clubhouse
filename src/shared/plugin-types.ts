@@ -150,7 +150,6 @@ export interface PluginManifest {
   version: string;
   description?: string;
   author?: string;
-  official?: boolean;
   engine: { api: number };
   scope: 'project' | 'app' | 'dual';
   main?: string;                     // path to main module relative to plugin dir
@@ -174,7 +173,7 @@ export type PluginStatus =
   | 'errored'
   | 'incompatible';
 
-export type PluginSource = 'builtin' | 'community';
+export type PluginSource = 'builtin' | 'community' | 'marketplace';
 
 export interface PluginRegistryEntry {
   manifest: PluginManifest;

@@ -48,6 +48,55 @@ describe('plugin-discovery', () => {
       expect(result).toHaveLength(1);
       expect(result[0].manifest.id).toBe('my-plugin');
       expect(result[0].pluginPath).toBe(path.join(PLUGINS_DIR, 'my-plugin'));
+      expect(result[0].fromMarketplace).toBe(false);
+    });
+
+    it('sets fromMarketplace true when .marketplace marker exists', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s === PLUGINS_DIR) return true;
+        if (s.endsWith('manifest.json')) return true;
+        if (s.endsWith('.marketplace')) return true;
+        return false;
+      });
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'market-plugin', isDirectory: () => true, isSymbolicLink: () => false },
+      ] as any);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        id: 'market-plugin',
+        name: 'Market Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+      }));
+
+      const result = discoverCommunityPlugins();
+      expect(result).toHaveLength(1);
+      expect(result[0].fromMarketplace).toBe(true);
+    });
+
+    it('sets fromMarketplace false when .marketplace marker is absent', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s === PLUGINS_DIR) return true;
+        if (s.endsWith('manifest.json')) return true;
+        if (s.endsWith('.marketplace')) return false;
+        return false;
+      });
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'local-plugin', isDirectory: () => true, isSymbolicLink: () => false },
+      ] as any);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        id: 'local-plugin',
+        name: 'Local Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+      }));
+
+      const result = discoverCommunityPlugins();
+      expect(result).toHaveLength(1);
+      expect(result[0].fromMarketplace).toBe(false);
     });
 
     it('skips non-directory entries', () => {

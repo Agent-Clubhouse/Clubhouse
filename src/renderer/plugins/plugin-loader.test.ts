@@ -59,6 +59,7 @@ import {
   deactivatePlugin,
   handleProjectSwitch,
   getActiveContext,
+  discoverNewPlugins,
   _resetActiveContexts,
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
@@ -110,7 +111,7 @@ describe('plugin-loader', () => {
     it('discovers community plugins and registers them', async () => {
       const manifest = makeManifest({ id: 'community-1' });
       mockPlugin.discoverCommunity.mockResolvedValue([
-        { manifest, pluginPath: '/plugins/community-1' },
+        { manifest, pluginPath: '/plugins/community-1', fromMarketplace: false },
       ]);
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
         if (req.key === 'external-plugins-enabled') return true;
@@ -125,9 +126,26 @@ describe('plugin-loader', () => {
       expect(store.plugins['community-1'].status).toBe('registered');
     });
 
+    it('registers marketplace-installed plugins with marketplace source', async () => {
+      const manifest = makeManifest({ id: 'market-1' });
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest, pluginPath: '/plugins/market-1', fromMarketplace: true },
+      ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      const store = usePluginStore.getState();
+      expect(store.plugins['market-1']).toBeDefined();
+      expect(store.plugins['market-1'].source).toBe('marketplace');
+    });
+
     it('registers invalid community plugins as incompatible', async () => {
       mockPlugin.discoverCommunity.mockResolvedValue([
-        { manifest: { id: 'bad-plugin' }, pluginPath: '/plugins/bad' },
+        { manifest: { id: 'bad-plugin' }, pluginPath: '/plugins/bad', fromMarketplace: false },
       ]);
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
         if (req.key === 'external-plugins-enabled') return true;
@@ -830,6 +848,64 @@ describe('plugin-loader', () => {
       expect(getActiveContext('pp', 'proj-1')).toBeDefined();
       expect(getActiveContext('pp', 'proj-2')).toBeUndefined();
       expect(getActiveContext('pp')).toBeUndefined(); // Without projectId, different key
+    });
+  });
+
+  // ── discoverNewPlugins ──────────────────────────────────────────────
+
+  describe('discoverNewPlugins()', () => {
+    it('registers newly discovered plugins', async () => {
+      const manifest = makeManifest({ id: 'new-plug' });
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest, pluginPath: '/plugins/new-plug', fromMarketplace: false },
+      ]);
+
+      const result = await discoverNewPlugins();
+
+      expect(result).toEqual(['new-plug']);
+      const store = usePluginStore.getState();
+      expect(store.plugins['new-plug']).toBeDefined();
+      expect(store.plugins['new-plug'].source).toBe('community');
+    });
+
+    it('skips already registered plugins', async () => {
+      usePluginStore.getState().registerPlugin(makeManifest({ id: 'existing' }), 'community', '/plugins/existing', 'registered');
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'existing' }), pluginPath: '/plugins/existing', fromMarketplace: false },
+      ]);
+
+      const result = await discoverNewPlugins();
+
+      expect(result).toEqual([]);
+    });
+
+    it('registers marketplace source for plugins with fromMarketplace flag', async () => {
+      const manifest = makeManifest({ id: 'market-new' });
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest, pluginPath: '/plugins/market-new', fromMarketplace: true },
+      ]);
+
+      const result = await discoverNewPlugins();
+
+      expect(result).toEqual(['market-new']);
+      expect(usePluginStore.getState().plugins['market-new'].source).toBe('marketplace');
+    });
+
+    it('registers incompatible new plugins', async () => {
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: { id: 'bad-new' }, pluginPath: '/plugins/bad-new', fromMarketplace: false },
+      ]);
+
+      const result = await discoverNewPlugins();
+
+      expect(result).toEqual(['bad-new']);
+      expect(usePluginStore.getState().plugins['bad-new'].status).toBe('incompatible');
+    });
+
+    it('returns empty array when no new plugins found', async () => {
+      mockPlugin.discoverCommunity.mockResolvedValue([]);
+      const result = await discoverNewPlugins();
+      expect(result).toEqual([]);
     });
   });
 });
