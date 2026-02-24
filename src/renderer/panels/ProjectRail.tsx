@@ -27,18 +27,24 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   const letter = label.charAt(0).toUpperCase();
   const hasImage = !!project.icon && !!iconDataUrl;
   const badges = useBadgeStore((s) => s.badges);
-  const badgeSettings = useBadgeSettingsStore();
+  const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
+  const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
+  const bsProjectRailBadges = useBadgeSettingsStore((s) => s.projectRailBadges);
+  const bsProjectOverrides = useBadgeSettingsStore((s) => s.projectOverrides);
   const projectBadge = useMemo(() => {
-    const settings = badgeSettings.getProjectSettings(project.id);
-    if (!settings.enabled || !settings.projectRailBadges) return null;
+    const overrides = bsProjectOverrides[project.id];
+    const enabled = overrides?.enabled ?? bsEnabled;
+    const projectRailBadges = overrides?.projectRailBadges ?? bsProjectRailBadges;
+    if (!enabled || !projectRailBadges) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === project.id,
     );
-    if (!settings.pluginBadges) {
+    const pluginBadges = overrides?.pluginBadges ?? bsPluginBadges;
+    if (!pluginBadges) {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, project.id, badgeSettings]);
+  }, [badges, project.id, bsEnabled, bsPluginBadges, bsProjectRailBadges, bsProjectOverrides]);
 
   return (
     <button
@@ -99,14 +105,15 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
   const pluginBadges = useBadgeStore((s) => s.badges);
-  const pluginBadgeSettings = useBadgeSettingsStore();
+  const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
+  const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
   const pluginBadge = useMemo(() => {
-    if (!pluginBadgeSettings.enabled || !pluginBadgeSettings.pluginBadges) return null;
+    if (!bsEnabled || !bsPluginBadges) return null;
     const filtered = Object.values(pluginBadges).filter(
       (b) => b.target.kind === 'app-plugin' && b.target.pluginId === entry.manifest.id,
     );
     return aggregateBadges(filtered);
-  }, [pluginBadges, entry.manifest.id, pluginBadgeSettings]);
+  }, [pluginBadges, entry.manifest.id, bsEnabled, bsPluginBadges]);
 
   return (
     <button
