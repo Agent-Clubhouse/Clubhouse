@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { app } from 'electron';
 import { Project } from '../../shared/types';
 import { appLog } from './log-service';
@@ -30,6 +31,60 @@ function getIconsDir(): string {
     fs.mkdirSync(dir, { recursive: true });
   }
   return dir;
+}
+
+/** Deterministic short hash for a filesystem path, used to key preserved icons. */
+function pathHash(dirPath: string): string {
+  return crypto.createHash('sha256').update(dirPath).digest('hex').slice(0, 16);
+}
+
+/**
+ * Rename a project's icon file to a path-based preserved name so it can be
+ * restored when the same directory is re-added as a project.
+ */
+function preserveIcon(project: Project): void {
+  const iconsDir = getIconsDir();
+  try {
+    const files = fs.readdirSync(iconsDir);
+    const hash = pathHash(project.path);
+    for (const file of files) {
+      if (file.startsWith(project.id + '.')) {
+        const ext = path.extname(file);
+        fs.renameSync(
+          path.join(iconsDir, file),
+          path.join(iconsDir, `_preserved_${hash}${ext}`),
+        );
+      }
+    }
+  } catch {
+    // icons dir may not exist yet
+  }
+}
+
+/**
+ * Check for a preserved icon for the given project path and, if found,
+ * rename it to use the new project ID. Returns the new filename or null.
+ */
+function restorePreservedIcon(project: Project): string | null {
+  const iconsDir = getIconsDir();
+  const hash = pathHash(project.path);
+  try {
+    const files = fs.readdirSync(iconsDir);
+    for (const file of files) {
+      if (file.startsWith(`_preserved_${hash}.`)) {
+        const ext = path.extname(file);
+        const newName = `${project.id}${ext}`;
+        fs.renameSync(
+          path.join(iconsDir, file),
+          path.join(iconsDir, newName),
+        );
+        return newName;
+      }
+    }
+  } catch {
+    // icons dir may not exist yet
+  }
+  return null;
 }
 
 function migrate(raw: unknown): ProjectStoreV1 {
@@ -104,6 +159,13 @@ export function add(dirPath: string): Project {
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const project: Project = { id, name, path: dirPath };
+
+  // Restore a preserved icon from a previous session at this path
+  const restoredIcon = restorePreservedIcon(project);
+  if (restoredIcon) {
+    project.icon = restoredIcon;
+  }
+
   projects.push(project);
   writeProjects(projects);
   return project;
@@ -111,9 +173,16 @@ export function add(dirPath: string): Project {
 
 export function remove(id: string): void {
   const projects = readProjects();
+  const project = projects.find((p) => p.id === id);
   const filtered = projects.filter((p) => p.id !== id);
   writeProjects(filtered);
-  removeIconFile(id);
+
+  // Preserve the icon for later re-add at the same path; delete if no icon
+  if (project?.icon) {
+    preserveIcon(project);
+  } else {
+    removeIconFile(id);
+  }
 }
 
 export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
