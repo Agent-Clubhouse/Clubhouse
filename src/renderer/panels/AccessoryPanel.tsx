@@ -66,14 +66,12 @@ function SettingsCategoryNav() {
 }
 
 function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
-  const modules = usePluginStore((s) => s.modules);
+  const mod = usePluginStore((s) => s.modules[pluginId]);
+  const entry = usePluginStore((s) => s.plugins[pluginId]);
+  const contextRevision = usePluginStore((s) => s.contextRevision);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
-  const mod = modules[pluginId];
   if (!mod?.SidebarPanel) return null;
-
-  const plugins = usePluginStore((s) => s.plugins);
-  const entry = plugins[pluginId];
 
   const ctx = getActiveContext(pluginId, activeProjectId || undefined);
   if (!ctx) return null;
@@ -92,7 +90,8 @@ function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
 
 export function AccessoryPanel() {
   const explorerTab = useUIStore((s) => s.explorerTab);
-  const plugins = usePluginStore((s) => s.plugins);
+  const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
+  const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
 
   if (explorerTab === 'agents') {
     return (
@@ -107,15 +106,13 @@ export function AccessoryPanel() {
   }
 
   // Plugin tabs with sidebar layout
-  if (explorerTab.startsWith('plugin:')) {
-    const pluginId = explorerTab.slice('plugin:'.length);
-    const entry = plugins[pluginId];
-    const layout = entry?.manifest.contributes?.tab?.layout ?? 'sidebar-content';
+  if (activePluginId) {
+    const layout = activePluginEntry?.manifest.contributes?.tab?.layout ?? 'sidebar-content';
 
     if (layout === 'sidebar-content') {
       return (
         <div className="flex flex-col bg-ctp-base border-r border-surface-0 h-full min-h-0 overflow-hidden">
-          <PluginSidebarPanel pluginId={pluginId} />
+          <PluginSidebarPanel pluginId={activePluginId} />
         </div>
       );
     }

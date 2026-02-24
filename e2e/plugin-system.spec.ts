@@ -573,10 +573,92 @@ test.describe('Plugin Store State Integrity', () => {
 });
 
 // ===========================================================================
-// PART E: Console Error Monitoring
+// PART E: Plugin Tab Restore on Project Switch (Issue #266)
 // ===========================================================================
 
-test.describe('Plugin System Console Errors', () => {
+test.describe('Plugin Tab Restore on Project Switch', () => {
+  const FIXTURE_B = path.resolve(__dirname, 'fixtures/project-b');
+
+  test('add a second project for switching tests', async () => {
+    await addProject(FIXTURE_B);
+    await window.waitForTimeout(1_000);
+    const titleText = await getTitleBarText();
+    expect(titleText).toContain('project-b');
+  });
+
+  test('set Hub tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
+    // Navigate to project-plugins and click Hub tab
+    const projPlugins = window.locator('[title="project-plugins"]').first();
+    await projPlugins.click();
+    await window.waitForTimeout(500);
+    await clickExplorerTab('explorer-tab-plugin:hub');
+    const hubTab = window.locator('[data-testid="explorer-tab-plugin:hub"]');
+    await expect(hubTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+
+    // Switch to project-b
+    const projB = window.locator('[title="project-b"]').first();
+    await projB.click();
+    await window.waitForTimeout(1_000);
+    await assertNotBlankScreen();
+
+    // Switch back to project-plugins — Hub tab should restore
+    await projPlugins.click();
+    await window.waitForTimeout(1_500);
+    await assertNotBlankScreen();
+
+    // Hub tab should still be active (restored from saved state)
+    await expect(hubTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+  });
+
+  test('set Terminal tab active on project-plugins, switch to project-b, switch back — no blank screen', async () => {
+    // Navigate to project-plugins and click Terminal tab
+    const projPlugins = window.locator('[title="project-plugins"]').first();
+    await projPlugins.click();
+    await window.waitForTimeout(500);
+    await clickExplorerTab('explorer-tab-plugin:terminal');
+    const termTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
+    await expect(termTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+
+    // Switch to project-b
+    const projB = window.locator('[title="project-b"]').first();
+    await projB.click();
+    await window.waitForTimeout(1_000);
+    await assertNotBlankScreen();
+
+    // Switch back to project-plugins — Terminal tab should restore
+    await projPlugins.click();
+    await window.waitForTimeout(1_500);
+    await assertNotBlankScreen();
+
+    // Terminal tab should still be active
+    await expect(termTab).toHaveAttribute('data-active', 'true', { timeout: 5_000 });
+  });
+
+  test('rapid project switching with plugin tab active does not blank screen', async () => {
+    // Set Hub tab active on project-plugins
+    const projPlugins = window.locator('[title="project-plugins"]').first();
+    const projB = window.locator('[title="project-b"]').first();
+    await projPlugins.click();
+    await window.waitForTimeout(500);
+    await clickExplorerTab('explorer-tab-plugin:hub');
+
+    // Rapidly switch between projects 5 times
+    for (let i = 0; i < 5; i++) {
+      await projB.click();
+      await projPlugins.click();
+    }
+
+    // Wait for all transitions to settle
+    await window.waitForTimeout(2_000);
+    await assertNotBlankScreen();
+  });
+});
+
+// ===========================================================================
+// PART F: Console Error Monitoring
+// ===========================================================================
+
+test.describe('Plugin System Console Errors (Part F)', () => {
   const consoleErrors: string[] = [];
 
   test.beforeAll(async () => {

@@ -379,6 +379,79 @@ describe('Zustand selector safety — static analysis guard', () => {
   });
 
   /**
+   * Scan for Zustand selectors that return entire record/map objects from stores
+   * where the record is frequently mutated during project switches. These records
+   * get a new reference on every related mutation, causing components to re-render
+   * unnecessarily and can trigger infinite re-render loops (Issue #266).
+   *
+   * Dangerous: usePluginStore(s => s.modules)      — changes on every module load/unload
+   * Safe:      usePluginStore(s => s.modules[id])   — only re-renders when this entry changes
+   *
+   * Dangerous: useBadgeSettingsStore(s => s.projectOverrides) — entire record
+   * Safe:      useBadgeSettingsStore(s => s.projectOverrides[projectId]) — single entry
+   *
+   * Note: `usePluginStore(s => s.plugins)` is intentionally NOT included because it's
+   * used broadly in settings pages, command palette, etc. where the re-render cost is
+   * acceptable. Components in the hot render path (PluginContentView, App.tsx) use
+   * targeted selectors.
+   */
+  it('no components select entire record objects from frequently-mutated stores', () => {
+    // These specific record selectors were the root cause of the #266 crash.
+    // They change on every plugin activation/deactivation or settings update,
+    // and when used in hot-path components cause re-render storms.
+    const broadRecordPatterns = [
+      /usePluginStore\(\s*(?:\([^)]*\)|[a-z_$]\w*)\s*=>\s*(?:\([^)]*\)|[a-z_$]\w*)\.modules\s*\)/g,
+      /usePluginStore\(\s*(?:\([^)]*\)|[a-z_$]\w*)\s*=>\s*(?:\([^)]*\)|[a-z_$]\w*)\.projectEnabled\s*\)/g,
+      /useBadgeSettingsStore\(\s*(?:\([^)]*\)|[a-z_$]\w*)\s*=>\s*(?:\([^)]*\)|[a-z_$]\w*)\.projectOverrides\s*\)/g,
+    ];
+
+    const violations: string[] = [];
+
+    // Exempt directories: settings pages, help view, and command palette
+    // legitimately iterate over entire record maps (e.g. listing all plugins).
+    // These views are not in the hot render path during project switches.
+    const exemptDirs = new Set(['settings', 'help', 'command-palette']);
+
+    function scanDir(dir: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+          if (exemptDirs.has(entry.name)) continue;
+          scanDir(fullPath);
+        } else if (/\.(tsx?|jsx?)$/.test(entry.name) && !entry.name.includes('.test.')) {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          for (const pattern of broadRecordPatterns) {
+            pattern.lastIndex = 0;
+            let match: RegExpExecArray | null;
+            while ((match = pattern.exec(content)) !== null) {
+              const before = content.slice(0, match.index);
+              const line = before.split('\n').length;
+              const relPath = path.relative(rendererDir, fullPath);
+              violations.push(`${relPath}:${line}: ${match[0]}`);
+            }
+          }
+        }
+      }
+    }
+
+    scanDir(rendererDir);
+
+    if (violations.length > 0) {
+      throw new Error(
+        'Broad record selector detected on a frequently-mutated store! ' +
+        'Selecting an entire record (e.g., `s.plugins`) returns a new reference on every ' +
+        'related mutation, causing unnecessary re-renders and potential infinite loops ' +
+        'when used as useMemo/useCallback dependencies.\n\n' +
+        'Violations:\n' +
+        violations.map((v) => `  ${v}`).join('\n') +
+        '\n\nFix: Select a specific entry: `useStore(s => s.plugins[pluginId])` or ' +
+        'use a computed key to narrow the subscription.',
+      );
+    }
+  });
+
+  /**
    * Scan for inline `|| []` or `?? []` inside Zustand selector callbacks.
    * These create a new empty array on every render.
    *
