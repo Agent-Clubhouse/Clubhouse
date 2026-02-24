@@ -125,21 +125,20 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
   const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
-  const bsProjectOverrides = useBadgeSettingsStore((s) => s.projectOverrides);
+  const bsProjectOverride = useBadgeSettingsStore((s) => projectId ? s.projectOverrides[projectId] : undefined);
   const tabBadge = useMemo(() => {
     if (!projectId) return null;
-    const overrides = bsProjectOverrides[projectId];
-    const enabled = overrides?.enabled ?? bsEnabled;
+    const enabled = bsProjectOverride?.enabled ?? bsEnabled;
     if (!enabled) return null;
     let filtered = Object.values(badges).filter(
       (b) => b.target.kind === 'explorer-tab' && b.target.projectId === projectId && b.target.tabId === tab.id,
     );
-    const pluginBadges = overrides?.pluginBadges ?? bsPluginBadges;
+    const pluginBadges = bsProjectOverride?.pluginBadges ?? bsPluginBadges;
     if (!pluginBadges) {
       filtered = filtered.filter((b) => !b.source.startsWith('plugin:'));
     }
     return aggregateBadges(filtered);
-  }, [badges, projectId, tab.id, bsEnabled, bsPluginBadges, bsProjectOverrides]);
+  }, [badges, projectId, tab.id, bsEnabled, bsPluginBadges, bsProjectOverride]);
 
   return (
     <button
