@@ -19,7 +19,7 @@ export const manifest: PluginManifest = {
     tab: { label: 'Hub', icon: GRID_ICON, layout: 'full' },
     railItem: { label: 'Hub', icon: SPOKE_ICON, position: 'top' },
     commands: [{ id: 'split-pane', title: 'Split Pane' }],
-    storage: { scope: 'global' },
+    storage: { scope: 'project-local' },
     settings: [
       {
         key: 'cross-project-hub',

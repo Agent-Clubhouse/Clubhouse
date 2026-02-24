@@ -55,9 +55,9 @@ describe('hub manifest', () => {
     expect(cmds.some((c) => c.id === 'split-pane')).toBe(true);
   });
 
-  it('contributes global storage scope', () => {
+  it('contributes project-local storage scope', () => {
     expect(manifest.contributes?.storage).toBeDefined();
-    expect(manifest.contributes!.storage!.scope).toBe('global');
+    expect(manifest.contributes!.storage!.scope).toBe('project-local');
   });
 
   it('contributes cross-project-hub boolean setting with default true', () => {

@@ -11,13 +11,26 @@ import { broadcastHubState } from './hub-sync';
 
 const PANE_PREFIX = 'hub';
 
-// Separate store instances for project vs app mode so they don't collide
-export const useProjectHubStore = createHubStore(PANE_PREFIX);
+// App-mode hub store: single instance shared across all projects
 export const useAppHubStore = createHubStore(PANE_PREFIX);
+
+// Project-mode hub stores: one per project, keyed by projectId
+const projectHubStores = new Map<string, ReturnType<typeof createHubStore>>();
+
+/** Get (or create) the hub store for a specific project. */
+export function getProjectHubStore(projectId: string | null): ReturnType<typeof createHubStore> {
+  if (!projectId) return createHubStore(PANE_PREFIX); // transient fallback
+  let store = projectHubStores.get(projectId);
+  if (!store) {
+    store = createHubStore(PANE_PREFIX);
+    projectHubStores.set(projectId, store);
+  }
+  return store;
+}
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   const disposable = api.commands.register('split-pane', () => {
-    const store = api.context.mode === 'app' ? useAppHubStore : useProjectHubStore;
+    const store = api.context.mode === 'app' ? useAppHubStore : getProjectHubStore(api.context.projectId ?? null);
     const { focusedPaneId } = store.getState();
     store.getState().splitPane(focusedPaneId, 'horizontal', PANE_PREFIX);
   });
@@ -30,7 +43,7 @@ export function deactivate(): void {
 
 export function MainPanel({ api }: { api: PluginAPI }) {
   const isAppMode = api.context.mode === 'app';
-  const store = isAppMode ? useAppHubStore : useProjectHubStore;
+  const store = isAppMode ? useAppHubStore : getProjectHubStore(api.context.projectId ?? null);
   const storage = isAppMode ? api.storage.global : api.storage.projectLocal;
 
   const hubs = store((s) => s.hubs);
@@ -41,9 +54,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load persisted state
+  const currentProjectId = isAppMode ? undefined : api.context.projectId;
   useEffect(() => {
-    store.getState().loadHub(storage, PANE_PREFIX);
-  }, [store, storage]);
+    store.getState().loadHub(storage, PANE_PREFIX, currentProjectId);
+  }, [store, storage, currentProjectId]);
 
   // Debounced auto-save
   const scheduleSave = useCallback(() => {

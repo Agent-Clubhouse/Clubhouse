@@ -9,6 +9,7 @@ import {
   swapPanes,
   removePanesByAgent,
   validateAgents,
+  sanitizeProjectIds,
   findLeaf,
   findSplit,
   getFirstLeafId,
@@ -772,6 +773,47 @@ describe('pane-tree', () => {
       expect(leafB1.id).toBe('hub_1');
       expect(leafB2.id).toBe('hub_2');
       // Note: same prefix+number is fine because they belong to different store instances
+    });
+  });
+
+  // ── sanitizeProjectIds ───────────────────────────────────────────────
+
+  describe('sanitizeProjectIds', () => {
+    it('keeps leaves with matching projectId', () => {
+      const leaf: LeafPane = { type: 'leaf', id: 'hub_1', agentId: 'a1', projectId: 'proj-1' };
+      const result = sanitizeProjectIds(leaf, 'proj-1') as LeafPane;
+      expect(result.agentId).toBe('a1');
+      expect(result.projectId).toBe('proj-1');
+    });
+
+    it('clears leaves with mismatched projectId', () => {
+      const leaf: LeafPane = { type: 'leaf', id: 'hub_1', agentId: 'a1', projectId: 'proj-other' };
+      const result = sanitizeProjectIds(leaf, 'proj-1') as LeafPane;
+      expect(result.agentId).toBeNull();
+      expect(result.projectId).toBeUndefined();
+    });
+
+    it('leaves without projectId are untouched', () => {
+      const leaf: LeafPane = { type: 'leaf', id: 'hub_1', agentId: 'a1' };
+      const result = sanitizeProjectIds(leaf, 'proj-1') as LeafPane;
+      expect(result.agentId).toBe('a1');
+      expect(result.projectId).toBeUndefined();
+    });
+
+    it('recursively sanitizes split tree', () => {
+      const tree: SplitPane = {
+        type: 'split', id: 'hub_3', direction: 'horizontal',
+        children: [
+          { type: 'leaf', id: 'hub_1', agentId: 'a1', projectId: 'proj-1' },
+          { type: 'leaf', id: 'hub_2', agentId: 'a2', projectId: 'proj-other' },
+        ],
+      };
+      const result = sanitizeProjectIds(tree, 'proj-1');
+      const leaves = collectLeaves(result);
+      expect(leaves[0].agentId).toBe('a1');
+      expect(leaves[0].projectId).toBe('proj-1');
+      expect(leaves[1].agentId).toBeNull();
+      expect(leaves[1].projectId).toBeUndefined();
     });
   });
 });

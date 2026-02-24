@@ -101,11 +101,21 @@ const appHubState = {
   setActiveHub: mockSetAppActiveHub,
 };
 
+const mockProjectHubStore = Object.assign(
+  (selector: any) => selector(projectHubState),
+  { getState: () => projectHubState, subscribe: () => () => {}, destroy: () => {} },
+);
+
+vi.mock('zustand', async () => {
+  const actual = await vi.importActual('zustand');
+  return {
+    ...(actual as any),
+    useStore: (store: any, selector: any) => selector(store.getState()),
+  };
+});
+
 vi.mock('../../plugins/builtin/hub/main', () => ({
-  useProjectHubStore: Object.assign(
-    (selector: any) => selector(projectHubState),
-    { getState: () => projectHubState },
-  ),
+  getProjectHubStore: () => mockProjectHubStore,
   useAppHubStore: Object.assign(
     (selector: any) => selector(appHubState),
     { getState: () => appHubState },

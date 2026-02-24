@@ -3,7 +3,7 @@ import { NotificationSettings } from '../../shared/types';
 import { useAgentStore } from './agentStore';
 import { useUIStore } from './uiStore';
 import { useProjectStore } from './projectStore';
-import { useProjectHubStore, useAppHubStore } from '../plugins/builtin/hub/main';
+import { getProjectHubStore, useAppHubStore } from '../plugins/builtin/hub/main';
 import { collectLeaves } from '../plugins/builtin/hub/pane-tree';
 import { useSoundStore, mapNotificationToSoundEvent } from './soundStore';
 
@@ -21,7 +21,7 @@ function isAgentVisible(agentId: string, projectId: string): boolean {
 
   // Agent is in a visible hub pane
   if (explorerTab === 'plugin:hub' && activeProjectId === projectId) {
-    const leaves = collectLeaves(useProjectHubStore.getState().paneTree);
+    const leaves = collectLeaves(getProjectHubStore(projectId).getState().paneTree);
     if (leaves.some((l) => l.agentId === agentId)) return true;
   }
   if (explorerTab === 'plugin:app:hub' || explorerTab.startsWith('plugin:app:hub')) {
