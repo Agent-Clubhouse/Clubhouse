@@ -458,6 +458,47 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
   });
 }
 
+/**
+ * Discover and register newly added local plugins without touching existing ones.
+ * Scans ~/.clubhouse/plugins/, finds directories not yet registered in the store,
+ * validates their manifests, and registers them. Returns the IDs of newly found plugins.
+ */
+export async function discoverNewPlugins(): Promise<string[]> {
+  const store = usePluginStore.getState();
+  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+  const newPluginIds: string[] = [];
+
+  for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+    const id = (rawManifest as Record<string, unknown>)?.id as string | undefined;
+    if (!id || store.plugins[id]) continue; // already registered
+
+    const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
+    const result = validateManifest(rawManifest);
+    if (result.valid && result.manifest) {
+      store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+      newPluginIds.push(result.manifest.id);
+      rendererLog('core:plugins', 'info', `Discovered new plugin: ${result.manifest.id}`, {
+        meta: { pluginPath, source },
+      });
+    } else {
+      rendererLog('core:plugins', 'warn', `New plugin incompatible: ${pluginPath}`, {
+        meta: { pluginPath, errors: result.errors },
+      });
+      const partialManifest: PluginManifest = {
+        id: id || pluginPath.split('/').pop() || 'unknown',
+        name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
+        version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
+        engine: { api: 0 },
+        scope: 'project',
+      };
+      store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', result.errors.join('; '));
+      newPluginIds.push(partialManifest.id);
+    }
+  }
+
+  return newPluginIds;
+}
+
 /** @internal — only for tests */
 export function _resetActiveContexts(): void {
   activeContexts.clear();

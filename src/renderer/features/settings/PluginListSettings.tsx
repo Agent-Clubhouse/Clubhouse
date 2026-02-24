@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
-import { activatePlugin, deactivatePlugin } from '../../plugins/plugin-loader';
+import { activatePlugin, deactivatePlugin, discoverNewPlugins } from '../../plugins/plugin-loader';
 import type { PluginPermission, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
@@ -195,6 +195,8 @@ export function PluginListSettings() {
 
   const [restartHint, setRestartHint] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
 
   const isAppContext = settingsContext === 'app';
   const projectId = isAppContext ? undefined : settingsContext;
@@ -331,6 +333,23 @@ export function PluginListSettings() {
     } catch { /* ignore */ }
   };
 
+  const handleScanNewPlugins = async () => {
+    setScanning(true);
+    setScanResult(null);
+    try {
+      const newIds = await discoverNewPlugins();
+      if (newIds.length === 0) {
+        setScanResult('No new plugins found.');
+      } else {
+        setScanResult(`Found ${newIds.length} new plugin(s): ${newIds.join(', ')}`);
+      }
+    } catch {
+      setScanResult('Failed to scan for new plugins.');
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const hasSettings = (entry: PluginRegistryEntry): boolean => {
     return !!(entry.manifest.settingsPanel || (entry.manifest.contributes?.settings && entry.manifest.contributes.settings.length > 0));
   };
@@ -429,13 +448,26 @@ export function PluginListSettings() {
               {restartHint && (
                 <p className="text-xs text-ctp-peach mb-3">Restart Clubhouse for this change to take full effect.</p>
               )}
-              {externalPlugins.length > 0 && (
+              <div className="flex items-center gap-2 mb-3">
                 <button
-                  onClick={handleUninstallAll}
-                  className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer mb-3"
+                  onClick={handleScanNewPlugins}
+                  disabled={scanning}
+                  className="text-[11px] px-2 py-1 rounded border border-ctp-accent/30 text-ctp-accent hover:bg-ctp-accent/10 cursor-pointer disabled:opacity-50"
+                  data-testid="scan-plugins-button"
                 >
-                  Uninstall All
+                  {scanning ? 'Scanning...' : 'Reload Local Plugins'}
                 </button>
+                {externalPlugins.length > 0 && (
+                  <button
+                    onClick={handleUninstallAll}
+                    className="text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer"
+                  >
+                    Uninstall All
+                  </button>
+                )}
+              </div>
+              {scanResult && (
+                <p className="text-xs text-ctp-subtext0 mb-3">{scanResult}</p>
               )}
             </div>
 
