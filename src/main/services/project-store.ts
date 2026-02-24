@@ -4,6 +4,8 @@ import * as crypto from 'crypto';
 import { app } from 'electron';
 import { Project } from '../../shared/types';
 import { appLog } from './log-service';
+import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
+import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
 const CURRENT_VERSION = 1;
 
@@ -63,26 +65,33 @@ function preserveIcon(project: Project): void {
 
 /**
  * Stash user-configured project settings (displayName, color, orchestrator)
- * to a JSON sidecar so they survive a remove → re-add cycle at the same path.
+ * plus the old project ID to a JSON sidecar so they survive a remove → re-add
+ * cycle at the same path. The old ID is needed to migrate ID-keyed overrides
+ * in external settings files (badge-settings, sound-settings).
  */
 function preserveSettings(project: Project): void {
   const settings: Record<string, string> = {};
+  // Always save the project ID so we can migrate ID-keyed overrides on restore
+  settings._previousId = project.id;
   if (project.displayName) settings.displayName = project.displayName;
   if (project.color) settings.color = project.color;
   if (project.orchestrator) settings.orchestrator = project.orchestrator;
-
-  if (Object.keys(settings).length === 0) return;
 
   const hash = pathHash(project.path);
   const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
   fs.writeFileSync(filePath, JSON.stringify(settings), 'utf-8');
 }
 
+interface PreservedSettings extends Partial<Pick<Project, 'displayName' | 'color' | 'orchestrator'>> {
+  _previousId?: string;
+}
+
 /**
  * Restore preserved settings for a project path. Returns partial project
- * fields and removes the stash file. Returns empty object if none found.
+ * fields (plus _previousId for override migration) and removes the stash
+ * file. Returns empty object if none found.
  */
-function restorePreservedSettings(project: Project): Partial<Pick<Project, 'displayName' | 'color' | 'orchestrator'>> {
+function restorePreservedSettings(project: Project): PreservedSettings {
   const hash = pathHash(project.path);
   const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
   try {
@@ -92,6 +101,36 @@ function restorePreservedSettings(project: Project): Partial<Pick<Project, 'disp
     return data;
   } catch {
     return {};
+  }
+}
+
+/**
+ * Re-key project overrides in external settings files (badge-settings,
+ * sound-settings) from the old project ID to the new one.
+ */
+function migrateProjectOverrides(oldId: string, newId: string): void {
+  try {
+    // Badge settings
+    const badge = getBadgeSettings();
+    if (badge.projectOverrides?.[oldId]) {
+      badge.projectOverrides[newId] = badge.projectOverrides[oldId];
+      delete badge.projectOverrides[oldId];
+      saveBadgeSettings(badge);
+    }
+  } catch {
+    // Non-critical — don't block add()
+  }
+
+  try {
+    // Sound settings
+    const sound = getSoundSettings();
+    if (sound.projectOverrides?.[oldId]) {
+      sound.projectOverrides[newId] = sound.projectOverrides[oldId];
+      delete sound.projectOverrides[oldId];
+      saveSoundSettings(sound);
+    }
+  } catch {
+    // Non-critical — don't block add()
   }
 }
 
@@ -199,6 +238,11 @@ export function add(dirPath: string): Project {
   if (restoredSettings.displayName) project.displayName = restoredSettings.displayName;
   if (restoredSettings.color) project.color = restoredSettings.color;
   if (restoredSettings.orchestrator) project.orchestrator = restoredSettings.orchestrator;
+
+  // Migrate ID-keyed overrides in external settings files (badge, sound)
+  if (restoredSettings._previousId) {
+    migrateProjectOverrides(restoredSettings._previousId, id);
+  }
 
   // Restore a preserved icon from a previous session at this path
   const restoredIcon = restorePreservedIcon(project);

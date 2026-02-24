@@ -13,9 +13,24 @@ vi.mock('fs', () => ({
   renameSync: vi.fn(),
 }));
 
+const mockBadgeSettings = { enabled: true, pluginBadges: true, projectRailBadges: true };
+const mockSoundSettings = { activePack: null, eventSettings: {} };
+
+vi.mock('./badge-settings', () => ({
+  getSettings: vi.fn(() => ({ ...mockBadgeSettings })),
+  saveSettings: vi.fn(),
+}));
+
+vi.mock('./sound-service', () => ({
+  getSettings: vi.fn(() => ({ ...mockSoundSettings })),
+  saveSettings: vi.fn(),
+}));
+
 // electron is aliased to our mock by vitest.config.ts
 import * as fs from 'fs';
 import { list, add, remove, update, reorder, readIconData } from './project-store';
+import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
+import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
 // The module uses app.getPath('home') which returns path.join(os.tmpdir(), 'clubhouse-test-home')
 // and app.isPackaged = false → dirName = '.clubhouse-dev'
@@ -142,11 +157,11 @@ describe('remove', () => {
     mockStoreFile(store);
     vi.mocked(fs.readdirSync).mockReturnValue(['proj_del.png'] as any);
 
-    let writtenData = '';
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+    const writtenFiles: Record<string, string> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenFiles[String(p)] = String(data); });
 
     remove('proj_del');
-    const result = JSON.parse(writtenData);
+    const result = JSON.parse(writtenFiles[STORE_PATH]);
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0].id).toBe('proj_keep');
     expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
@@ -162,11 +177,11 @@ describe('remove', () => {
     mockStoreFile(store);
     vi.mocked(fs.readdirSync).mockReturnValue(['proj_del.png'] as any);
 
-    let writtenData = '';
-    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+    const writtenFiles: Record<string, string> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenFiles[String(p)] = String(data); });
 
     remove('proj_del');
-    const result = JSON.parse(writtenData);
+    const result = JSON.parse(writtenFiles[STORE_PATH]);
     expect(result.projects).toHaveLength(0);
     // Icon file should be renamed (preserved), not deleted
     expect(vi.mocked(fs.renameSync)).toHaveBeenCalledTimes(1);
@@ -241,7 +256,7 @@ describe('settings preservation across close/reopen', () => {
     vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
   });
 
-  it('remove preserves displayName, color, and orchestrator to a JSON sidecar', () => {
+  it('remove preserves displayName, color, orchestrator, and previous ID to sidecar', () => {
     const crypto = require('crypto');
     const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
 
@@ -259,16 +274,19 @@ describe('settings preservation across close/reopen', () => {
 
     remove('proj_del');
 
-    // Should have written a _preserved_<hash>.json sidecar
     const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
     expect(writtenFiles[sidecarPath]).toBeDefined();
     const saved = JSON.parse(writtenFiles[sidecarPath]);
+    expect(saved._previousId).toBe('proj_del');
     expect(saved.displayName).toBe('Workshop');
     expect(saved.color).toBe('emerald');
     expect(saved.orchestrator).toBe('claude');
   });
 
-  it('remove with no custom settings writes no sidecar', () => {
+  it('remove with no custom settings still writes sidecar with previous ID', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/plain').digest('hex').slice(0, 16);
+
     const store = {
       version: 1,
       projects: [
@@ -283,9 +301,11 @@ describe('settings preservation across close/reopen', () => {
 
     remove('proj_plain');
 
-    // Only the projects.json write should exist, no sidecar
-    const sidecarKeys = Object.keys(writtenFiles).filter((k) => k.includes('_preserved_'));
-    expect(sidecarKeys).toHaveLength(0);
+    // Sidecar should still be written with _previousId for override migration
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+    expect(writtenFiles[sidecarPath]).toBeDefined();
+    const saved = JSON.parse(writtenFiles[sidecarPath]);
+    expect(saved._previousId).toBe('proj_plain');
   });
 
   it('re-adding same path restores preserved settings', () => {
@@ -293,7 +313,6 @@ describe('settings preservation across close/reopen', () => {
     const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
     const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
 
-    // Mock: sidecar file exists, no store file, no icon files
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s === sidecarPath) return true;
@@ -301,7 +320,7 @@ describe('settings preservation across close/reopen', () => {
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p) === sidecarPath) return JSON.stringify({ displayName: 'Workshop', color: 'emerald' });
+      if (String(p) === sidecarPath) return JSON.stringify({ _previousId: 'proj_old', displayName: 'Workshop', color: 'emerald' });
       return '';
     });
     vi.mocked(fs.readdirSync).mockReturnValue([]);
@@ -311,7 +330,6 @@ describe('settings preservation across close/reopen', () => {
 
     expect(project.displayName).toBe('Workshop');
     expect(project.color).toBe('emerald');
-    // Sidecar should be cleaned up
     expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(sidecarPath);
   });
 
@@ -321,7 +339,6 @@ describe('settings preservation across close/reopen', () => {
     const hashB = crypto.createHash('sha256').update('/project-b').digest('hex').slice(0, 16);
     const sidecarA = path.join(BASE_DIR, `_preserved_${hashA}.json`);
 
-    // Only project-a has a sidecar
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s === sidecarA) return true;
@@ -329,7 +346,7 @@ describe('settings preservation across close/reopen', () => {
       return false;
     });
     vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
-      if (String(p) === sidecarA) return JSON.stringify({ displayName: 'A Name' });
+      if (String(p) === sidecarA) return JSON.stringify({ _previousId: 'proj_a_old', displayName: 'A Name' });
       return '';
     });
     vi.mocked(fs.readdirSync).mockReturnValue([]);
@@ -339,6 +356,95 @@ describe('settings preservation across close/reopen', () => {
 
     expect(projectB.displayName).toBeUndefined();
     expect(hashA).not.toBe(hashB);
+  });
+
+  it('migrates badge overrides from old project ID to new ID on re-add', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === sidecarPath) return JSON.stringify({ _previousId: 'proj_old_123' });
+      return '';
+    });
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    // Badge settings have an override for the old project ID
+    const badgeOverrides = { enabled: false, pluginBadges: false };
+    vi.mocked(getBadgeSettings).mockReturnValue({
+      enabled: true, pluginBadges: true, projectRailBadges: true,
+      projectOverrides: { proj_old_123: badgeOverrides },
+    });
+    vi.mocked(getSoundSettings).mockReturnValue({ activePack: null, eventSettings: {} as any });
+
+    const project = add('/my-project');
+
+    // Badge settings should be saved with the override migrated to the new ID
+    expect(saveBadgeSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectOverrides: expect.objectContaining({
+          [project.id]: badgeOverrides,
+        }),
+      }),
+    );
+    // Old key should be removed
+    const savedBadge = vi.mocked(saveBadgeSettings).mock.calls[0][0];
+    expect(savedBadge.projectOverrides).not.toHaveProperty('proj_old_123');
+  });
+
+  it('migrates sound overrides from old project ID to new ID on re-add', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === sidecarPath) return JSON.stringify({ _previousId: 'proj_old_456' });
+      return '';
+    });
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    vi.mocked(getBadgeSettings).mockReturnValue({ enabled: true, pluginBadges: true, projectRailBadges: true });
+    const soundOverride = { activePack: 'retro-sounds' };
+    vi.mocked(getSoundSettings).mockReturnValue({
+      activePack: null, eventSettings: {} as any,
+      projectOverrides: { proj_old_456: soundOverride },
+    });
+
+    const project = add('/my-project');
+
+    expect(saveSoundSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectOverrides: expect.objectContaining({
+          [project.id]: soundOverride,
+        }),
+      }),
+    );
+    const savedSound = vi.mocked(saveSoundSettings).mock.calls[0][0];
+    expect(savedSound.projectOverrides).not.toHaveProperty('proj_old_456');
+  });
+
+  it('skips migration when no previous ID in sidecar', () => {
+    mockNoStoreFile();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+    add('/brand-new-project');
+
+    expect(saveBadgeSettings).not.toHaveBeenCalled();
+    expect(saveSoundSettings).not.toHaveBeenCalled();
   });
 });
 
