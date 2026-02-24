@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CommandPalette } from './CommandPalette';
 import { useCommandPaletteStore } from '../../stores/commandPaletteStore';
@@ -79,20 +79,30 @@ describe('CommandPalette', () => {
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
 
-  it('closes on Escape key', () => {
+  it('closes on Escape key via overlay onKeyDown', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     render(<CommandPalette />);
-    fireEvent.keyDown(window, { key: 'Escape' });
+    const overlay = screen.getByTestId('command-palette-overlay');
+    fireEvent.keyDown(overlay, { key: 'Escape' });
+    expect(useCommandPaletteStore.getState().isOpen).toBe(false);
+  });
+
+  it('closes on Escape when fired from input (bubbles to overlay)', () => {
+    useCommandPaletteStore.setState({ isOpen: true });
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText('Type to search...');
+    fireEvent.keyDown(input, { key: 'Escape' });
     expect(useCommandPaletteStore.getState().isOpen).toBe(false);
   });
 
   it('navigates selection with arrow keys', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     render(<CommandPalette />);
+    const overlay = screen.getByTestId('command-palette-overlay');
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
-    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    fireEvent.keyDown(overlay, { key: 'ArrowDown' });
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(1);
-    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    fireEvent.keyDown(overlay, { key: 'ArrowUp' });
     expect(useCommandPaletteStore.getState().selectedIndex).toBe(0);
   });
 

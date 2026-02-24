@@ -90,20 +90,41 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    // Hubs — show hubs for the current context (project or app)
-    const hubs = activeProjectId ? projectHubs : appHubs;
-    const activeHubId = activeProjectId ? projectActiveHubId : appActiveHubId;
-    const hubStore = activeProjectId ? useProjectHubStore : useAppHubStore;
+    // Hubs — resolve ALL hubs (project + app), like agents
+    const activeProject = projects.find((p) => p.id === activeProjectId);
+    const activeProjectLabel = activeProject?.displayName || activeProject?.name;
 
-    for (const hub of hubs) {
+    // Project hubs (when a project is active)
+    if (activeProjectId) {
+      for (const hub of projectHubs) {
+        items.push({
+          id: `hub:project:${hub.id}`,
+          label: hub.name,
+          category: 'Hubs',
+          typeIndicator: '#',
+          keywords: ['hub', 'tab', 'workspace', activeProjectLabel || ''],
+          detail: hub.id === projectActiveHubId ? 'Active' : activeProjectLabel,
+          execute: () => {
+            setActiveProject(activeProjectId);
+            useProjectHubStore.getState().setActiveHub(hub.id);
+          },
+        });
+      }
+    }
+
+    // App-level hubs (always shown)
+    for (const hub of appHubs) {
       items.push({
-        id: `hub:${hub.id}`,
+        id: `hub:app:${hub.id}`,
         label: hub.name,
         category: 'Hubs',
         typeIndicator: '#',
-        keywords: ['hub', 'tab', 'workspace'],
-        detail: hub.id === activeHubId ? 'Active' : undefined,
-        execute: () => hubStore.getState().setActiveHub(hub.id),
+        keywords: ['hub', 'tab', 'workspace', 'home', 'app'],
+        detail: hub.id === appActiveHubId && !activeProjectId ? 'Active' : 'Home',
+        execute: () => {
+          setActiveProject(null);
+          useAppHubStore.getState().setActiveHub(hub.id);
+        },
       });
     }
 
