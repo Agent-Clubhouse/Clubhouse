@@ -112,6 +112,7 @@ vi.stubGlobal('clubhouse', {
     writeMcpRawJson: async () => ({ ok: true }),
     readProjectAgentDefaults: async () => ({}),
     writeProjectAgentDefaults: asyncNoop,
+    resetProjectAgentDefaults: asyncNoop,
     getConventions: async () => null,
     materializeAgent: asyncNoop,
     previewMaterialization: async () => null,

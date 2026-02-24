@@ -50,6 +50,7 @@ vi.mock('../services/agent-config', () => ({
 vi.mock('../services/materialization-service', () => ({
   materializeAgent: vi.fn(),
   previewMaterialization: vi.fn(() => ({ instructions: 'merged', permissions: {}, mcpJson: null, skills: [], agentTemplates: [] })),
+  resetProjectAgentDefaults: vi.fn(),
 }));
 
 vi.mock('../services/config-diff-service', () => ({
@@ -63,7 +64,7 @@ import { registerAgentSettingsHandlers } from './agent-settings-handlers';
 import * as agentSettings from '../services/agent-settings-service';
 import * as agentSystem from '../services/agent-system';
 import * as agentConfig from '../services/agent-config';
-import { materializeAgent, previewMaterialization } from '../services/materialization-service';
+import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 
 describe('agent-settings-handlers', () => {
@@ -89,7 +90,7 @@ describe('agent-settings-handlers', () => {
       IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.DELETE_AGENT_TEMPLATE,
       IPC.AGENT.LIST_AGENT_TEMPLATE_FILES,
       IPC.AGENT.READ_MCP_RAW_JSON, IPC.AGENT.WRITE_MCP_RAW_JSON,
-      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS,
+      IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS,
       IPC.AGENT.GET_CONVENTIONS,
       IPC.AGENT.READ_SOURCE_SKILL_CONTENT, IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, IPC.AGENT.DELETE_SOURCE_SKILL,
       IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT,
@@ -312,6 +313,12 @@ describe('agent-settings-handlers', () => {
     const handler = handlers.get(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS)!;
     await handler({}, '/project', { model: 'opus' });
     expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith('/project', { model: 'opus' });
+  });
+
+  it('RESET_PROJECT_AGENT_DEFAULTS delegates to resetProjectAgentDefaults', async () => {
+    const handler = handlers.get(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS)!;
+    await handler({}, '/project');
+    expect(resetProjectAgentDefaults).toHaveBeenCalledWith('/project');
   });
 
   // --- Conventions ---

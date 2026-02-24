@@ -34,6 +34,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const loadDefaults = useCallback(async () => {
     try {
@@ -83,6 +85,14 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     setSaving(false);
   };
 
+  const handleReset = async () => {
+    setResetting(true);
+    await window.clubhouse.agentSettings.resetProjectAgentDefaults(projectPath);
+    setShowResetConfirm(false);
+    setResetting(false);
+    await loadDefaults();
+  };
+
   if (!loaded) return null;
 
   return (
@@ -91,18 +101,53 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">
           Default Agent Settings
         </h3>
-        <button
-          onClick={handleSave}
-          disabled={!dirty || saving}
-          className={`text-xs px-3 py-1 rounded transition-colors ${
-            dirty
-              ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
-              : 'bg-surface-1 text-ctp-subtext0 cursor-default'
-          }`}
-        >
-          {saving ? 'Saving...' : 'Save Defaults'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowResetConfirm(true)}
+            className="text-xs px-3 py-1 rounded transition-colors bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer"
+          >
+            Reset to Defaults
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!dirty || saving}
+            className={`text-xs px-3 py-1 rounded transition-colors ${
+              dirty
+                ? 'bg-ctp-blue text-white hover:bg-ctp-blue/80 cursor-pointer'
+                : 'bg-surface-1 text-ctp-subtext0 cursor-default'
+            }`}
+          >
+            {saving ? 'Saving...' : 'Save Defaults'}
+          </button>
+        </div>
       </div>
+
+      {/* Reset confirmation dialog */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
+            <h3 className="text-sm font-semibold text-ctp-text mb-2">Reset to Defaults?</h3>
+            <p className="text-xs text-ctp-subtext0 mb-4">
+              This will replace all project-level agent default settings (instructions, permissions, and commands) with the built-in defaults. Any customizations will be lost.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={resetting}
+                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
+              >
+                {resetting ? 'Resetting...' : 'Reset'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Mode note */}

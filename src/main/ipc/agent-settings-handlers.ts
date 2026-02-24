@@ -4,7 +4,7 @@ import * as agentSettings from '../services/agent-settings-service';
 import { SettingsConventions } from '../services/agent-settings-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig } from '../services/agent-config';
-import { materializeAgent, previewMaterialization } from '../services/materialization-service';
+import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
 
 /**
@@ -124,6 +124,10 @@ export function registerAgentSettingsHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, (_event, projectPath: string, defaults: any) => {
     agentSettings.writeProjectAgentDefaults(projectPath, defaults);
+  });
+
+  ipcMain.handle(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, (_event, projectPath: string) => {
+    resetProjectAgentDefaults(projectPath);
   });
 
   // --- Orchestrator conventions ---
