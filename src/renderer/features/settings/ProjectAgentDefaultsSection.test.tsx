@@ -198,6 +198,55 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
+  describe('reset to defaults', () => {
+    it('renders the Reset to Defaults button', async () => {
+      renderSection();
+      expect(await screen.findByText('Reset to Defaults')).toBeInTheDocument();
+    });
+
+    it('shows confirmation dialog on click', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Reset to Defaults'));
+      expect(screen.getByText('Reset to Defaults?')).toBeInTheDocument();
+      expect(screen.getByText(/replace all project-level agent default settings/)).toBeInTheDocument();
+    });
+
+    it('cancels confirmation dialog', async () => {
+      renderSection();
+      fireEvent.click(await screen.findByText('Reset to Defaults'));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByText('Reset to Defaults?')).not.toBeInTheDocument();
+    });
+
+    it('calls resetProjectAgentDefaults and reloads on confirm', async () => {
+      window.clubhouse.agentSettings.resetProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
+      // After reset, readProjectAgentDefaults returns fresh defaults
+      const readMock = vi.fn()
+        .mockResolvedValueOnce({
+          instructions: 'Custom instructions',
+          permissions: { allow: ['Read(**)'] },
+        })
+        .mockResolvedValueOnce({
+          instructions: 'Default @@AgentName instructions',
+          permissions: { allow: ['Read(@@Path**)'] },
+        });
+      window.clubhouse.agentSettings.readProjectAgentDefaults = readMock;
+
+      renderSection();
+      await screen.findByText('Default Agent Settings');
+      fireEvent.click(screen.getByText('Reset to Defaults'));
+      fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.resetProjectAgentDefaults).toHaveBeenCalledWith('/project');
+      });
+      // Verify it reloaded defaults
+      await waitFor(() => {
+        expect(readMock).toHaveBeenCalledTimes(2);
+      });
+    });
+  });
+
   describe('loading states', () => {
     it('returns null before loading completes', () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockReturnValue(new Promise(() => {}));

@@ -243,6 +243,8 @@ const api = {
       lintCommand?: string;
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
+    resetProjectAgentDefaults: (projectPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, projectPath),
     getConventions: (projectPath: string): Promise<{
       configDir: string;
       localInstructionsFile: string;

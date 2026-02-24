@@ -428,15 +428,10 @@ function copyDirRecursive(src: string, dest: string, ctx: WildcardContext): void
 // ── Default templates & skills ───────────────────────────────────────────
 
 /**
- * Create default template content when clubhouse mode is first enabled
- * and no agentDefaults exist yet.
+ * Build the default agent templates (instructions + permissions).
  */
-export function ensureDefaultTemplates(projectPath: string): void {
-  const existing = readProjectAgentDefaults(projectPath);
-  const hasDefaults = !!(existing.instructions || existing.permissions || existing.mcpJson);
-
-  if (!hasDefaults) {
-    const defaultInstructions = `You are an agent named *@@AgentName*. Your standby branch is @@StandbyBranch.
+export function getDefaultAgentTemplates(): ProjectAgentDefaults {
+  const defaultInstructions = `You are an agent named *@@AgentName*. Your standby branch is @@StandbyBranch.
 Avoid pushing to remote from your standby branch.
 
 You are working in a Git Worktree at \`@@Path\`. You have a full copy of the
@@ -451,51 +446,70 @@ When given a mission:
 5. Push changes and open a PR to main with descriptive details
 6. Return to your standby branch and pull latest from main`;
 
-    const defaultPermissions = {
-      allow: [
-        'Read(@@Path**)',
-        'Edit(@@Path**)',
-        'Write(@@Path**)',
-        'Bash(cd @@Path**)',
-        'Bash(git:*)',
-        'Bash(gh pr:*)',
-        'Bash(gh issue:*)',
-        'Bash(az repos:*)',
-        'Bash(az devops:*)',
-        'Bash(npm:*)',
-        'Bash(npx:*)',
-        'Bash(yarn:*)',
-        'Bash(pnpm:*)',
-        'Bash(cargo:*)',
-        'Bash(make:*)',
-        'Bash(go:*)',
-        'Bash(pip:*)',
-        'Bash(python:*)',
-        'Bash(mvn:*)',
-        'Bash(gradle:*)',
-        'Bash(dotnet:*)',
-        'Bash(grep:*)',
-        'Bash(find:*)',
-        'Bash(head:*)',
-        'Bash(tail:*)',
-        'WebSearch',
-      ],
-      deny: [
-        'Read(../**)',
-        'Edit(../**)',
-        'Write(../**)',
-      ],
-    };
+  const defaultPermissions = {
+    allow: [
+      'Read(@@Path**)',
+      'Edit(@@Path**)',
+      'Write(@@Path**)',
+      'Bash(cd @@Path**)',
+      'Bash(git:*)',
+      'Bash(gh pr:*)',
+      'Bash(gh issue:*)',
+      'Bash(az repos:*)',
+      'Bash(az devops:*)',
+      'Bash(npm:*)',
+      'Bash(npx:*)',
+      'Bash(yarn:*)',
+      'Bash(pnpm:*)',
+      'Bash(cargo:*)',
+      'Bash(make:*)',
+      'Bash(go:*)',
+      'Bash(pip:*)',
+      'Bash(python:*)',
+      'Bash(mvn:*)',
+      'Bash(gradle:*)',
+      'Bash(dotnet:*)',
+      'Bash(grep:*)',
+      'Bash(find:*)',
+      'Bash(head:*)',
+      'Bash(tail:*)',
+      'WebSearch',
+    ],
+    deny: [
+      'Read(../**)',
+      'Edit(../**)',
+      'Write(../**)',
+    ],
+  };
 
-    const defaults: ProjectAgentDefaults = {
-      instructions: defaultInstructions,
-      permissions: defaultPermissions,
-    };
+  return {
+    instructions: defaultInstructions,
+    permissions: defaultPermissions,
+  };
+}
 
-    writeProjectAgentDefaults(projectPath, defaults);
+/**
+ * Create default template content when clubhouse mode is first enabled
+ * and no agentDefaults exist yet.
+ */
+export function ensureDefaultTemplates(projectPath: string): void {
+  const existing = readProjectAgentDefaults(projectPath);
+  const hasDefaults = !!(existing.instructions || existing.permissions || existing.mcpJson);
+
+  if (!hasDefaults) {
+    writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
   }
 
   // Always ensure default skills exist (even when defaults already exist)
+  ensureDefaultSkills(projectPath);
+}
+
+/**
+ * Reset project agent defaults to the built-in templates, overwriting any
+ * existing customizations. Also re-ensures default skills.
+ */
+export function resetProjectAgentDefaults(projectPath: string): void {
+  writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
   ensureDefaultSkills(projectPath);
 }
 

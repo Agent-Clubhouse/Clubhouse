@@ -35,6 +35,8 @@ import {
   previewMaterialization,
   ensureDefaultTemplates,
   ensureDefaultSkills,
+  resetProjectAgentDefaults,
+  getDefaultAgentTemplates,
   resolveSourceControlProvider,
   enableExclusions,
   disableExclusions,
@@ -454,6 +456,59 @@ describe('materialization-service', () => {
         (call) => (call[0] as string).includes('SKILL.md'),
       );
       expect(skillWrites).toHaveLength(0);
+    });
+  });
+
+  describe('getDefaultAgentTemplates', () => {
+    it('returns instructions containing wildcards', () => {
+      const templates = getDefaultAgentTemplates();
+      expect(templates.instructions).toContain('@@AgentName');
+      expect(templates.instructions).toContain('@@StandbyBranch');
+      expect(templates.instructions).toContain('@@Path');
+    });
+
+    it('returns permissions with allow and deny lists', () => {
+      const templates = getDefaultAgentTemplates();
+      expect(templates.permissions?.allow).toContain('Read(@@Path**)');
+      expect(templates.permissions?.deny).toContain('Read(../**)');
+    });
+  });
+
+  describe('resetProjectAgentDefaults', () => {
+    it('overwrites existing defaults with built-in templates', () => {
+      // Existing customized defaults
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { instructions: 'custom instructions' },
+      }));
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      resetProjectAgentDefaults('/project');
+
+      const settingsWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+        (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
+      );
+      expect(settingsWriteCall).toBeDefined();
+      const written = JSON.parse(settingsWriteCall![1] as string);
+      expect(written.agentDefaults.instructions).toContain('@@AgentName');
+      expect(written.agentDefaults.permissions.allow).toContain('Read(@@Path**)');
+    });
+
+    it('also ensures default skills exist', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { instructions: 'custom' },
+      }));
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      resetProjectAgentDefaults('/project');
+
+      const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
+        (call) => (call[0] as string).includes('SKILL.md'),
+      );
+      expect(skillWrites).toHaveLength(7);
     });
   });
 
