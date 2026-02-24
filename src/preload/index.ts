@@ -227,6 +227,9 @@ const api = {
       mcpJson?: string;
       freeAgentMode?: boolean;
       sourceControlProvider?: 'github' | 'azure-devops';
+      buildCommand?: string;
+      testCommand?: string;
+      lintCommand?: string;
     }> =>
       ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
     writeProjectAgentDefaults: (projectPath: string, defaults: {
@@ -235,6 +238,9 @@ const api = {
       mcpJson?: string;
       freeAgentMode?: boolean;
       sourceControlProvider?: 'github' | 'azure-devops';
+      buildCommand?: string;
+      testCommand?: string;
+      lintCommand?: string;
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
     getConventions: (projectPath: string): Promise<{
