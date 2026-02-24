@@ -21,30 +21,29 @@ const EXCLUDE_TAG = 'clubhouse-mode';
 
 export const MISSION_SKILL_CONTENT = `---
 name: mission
-description: Perform a coding task such as implementing a feature or fixing a bug following a defined series of steps and best practices
+description: Perform a coding task — plan, implement, validate, and deliver via pull request
 ---
 
 # Mission Skill
 
 ## Critical Rules
-1. **Stay in your work tree** - you can look at your \`cwd\` to know your current root; you should not need to read or modify files outside your current root
-2. **Work in a branch** - you should perform your work in a branch. The correct naming convention is <agent-name>/<mission-name>. You should create a short name for your mission
-3. **Write new tests** - if you implement new functionality you must write tests to prevent future regressions
+1. **Stay in your work tree** — your \`cwd\` is your root; do not read or modify files outside it
+2. **Work in a branch** — naming convention: \`<agent-name>/<mission-name>\` (keep names short)
+3. **Write new tests** — new functionality must include tests to prevent regressions
 
 ## Workflow
-The mission begins when a prompt provides detail on what needs to be accomplished.
 
 1. Create your working branch, based off origin/main
 2. Ask clarifying questions of the user to ensure the outcome is fully captured
 3. Create a test plan with test cases and acceptance criteria
 4. Proceed to implement the work, committing regularly with descriptive messages
-5. Validate your work by running \`npm run validate\` to perform full E2E tests on the product
-6. Fix any test failures and run again; repeat until all tests pass
+5. Validate your changes by invoking the \`/validate-changes\` skill
+6. Fix any failures and re-validate; repeat until all checks pass
 7. Commit any remaining work and push your branch to remote
 8. Create a PR by invoking the \`/create-pr\` skill
 9. Return to standby by invoking the \`/go-standby\` skill
 
-**Clean State** - your standby state should be clean from untracked or uncommitted changes; if this is not the case let the user know before starting next work
+**Clean State** — your standby state should be clean from untracked or uncommitted changes; if this is not the case let the user know before starting next work
 `;
 
 export const CREATE_PR_SKILL_CONTENT = `---
@@ -125,6 +124,81 @@ Return to your standby branch and prepare for the next task.
    \`\`\`
 4. Verify your working tree is clean
 5. Await further instructions
+`;
+
+export const BUILD_SKILL_CONTENT = `---
+name: build
+description: Build the project using the configured build command
+---
+
+# Build
+
+Run the project build:
+
+\`\`\`bash
+@@BuildCommand
+\`\`\`
+
+If the build fails, analyze the error output and attempt to fix the issue. Re-run until the build succeeds.
+`;
+
+export const TEST_SKILL_CONTENT = `---
+name: test
+description: Run the project test suite using the configured test command
+---
+
+# Test
+
+Run the project tests:
+
+\`\`\`bash
+@@TestCommand
+\`\`\`
+
+If tests fail, analyze the failures and fix the underlying issues. Re-run until all tests pass.
+`;
+
+export const LINT_SKILL_CONTENT = `---
+name: lint
+description: Run the project linter using the configured lint command
+---
+
+# Lint
+
+Run the project linter:
+
+\`\`\`bash
+@@LintCommand
+\`\`\`
+
+If there are lint errors, fix them. Re-run until the linter passes cleanly.
+`;
+
+export const VALIDATE_CHANGES_SKILL_CONTENT = `---
+name: validate-changes
+description: Run full validation — build, test, and lint — to verify changes before pushing
+---
+
+# Validate Changes
+
+Run the full validation pipeline to ensure your changes are ready to push.
+
+## Steps
+
+1. **Build** the project:
+   \`\`\`bash
+   @@BuildCommand
+   \`\`\`
+2. **Run tests**:
+   \`\`\`bash
+   @@TestCommand
+   \`\`\`
+3. **Run linter**:
+   \`\`\`bash
+   @@LintCommand
+   \`\`\`
+
+If any step fails, fix the issues and re-run the full pipeline. Do not proceed until all steps pass.
 `;
 
 // ── Wildcard context ─────────────────────────────────────────────────────
@@ -373,7 +447,7 @@ When given a mission:
 1. Create a branch \`@@AgentName/<mission-name>\` based off origin/main
 2. Create test plans and test cases for the work
 3. Implement the work, committing frequently with descriptive messages
-4. Run full validation (build, test, lint) to verify changes
+4. Validate changes using \`/validate-changes\` (build, test, lint)
 5. Push changes and open a PR to main with descriptive details
 6. Return to your standby branch and pull latest from main`;
 
@@ -383,10 +457,28 @@ When given a mission:
         'Edit(@@Path**)',
         'Write(@@Path**)',
         'Bash(cd @@Path**)',
+        'Bash(git:*)',
         'Bash(gh pr:*)',
         'Bash(gh issue:*)',
         'Bash(az repos:*)',
         'Bash(az devops:*)',
+        'Bash(npm:*)',
+        'Bash(npx:*)',
+        'Bash(yarn:*)',
+        'Bash(pnpm:*)',
+        'Bash(cargo:*)',
+        'Bash(make:*)',
+        'Bash(go:*)',
+        'Bash(pip:*)',
+        'Bash(python:*)',
+        'Bash(mvn:*)',
+        'Bash(gradle:*)',
+        'Bash(dotnet:*)',
+        'Bash(grep:*)',
+        'Bash(find:*)',
+        'Bash(head:*)',
+        'Bash(tail:*)',
+        'WebSearch',
       ],
       deny: [
         'Read(../**)',
@@ -418,6 +510,10 @@ export function ensureDefaultSkills(projectPath: string): void {
   ensureSkillFile(skillsDir, 'mission', MISSION_SKILL_CONTENT);
   ensureSkillFile(skillsDir, 'create-pr', CREATE_PR_SKILL_CONTENT);
   ensureSkillFile(skillsDir, 'go-standby', GO_STANDBY_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'build', BUILD_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'test', TEST_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'lint', LINT_SKILL_CONTENT);
+  ensureSkillFile(skillsDir, 'validate-changes', VALIDATE_CHANGES_SKILL_CONTENT);
 
   // Ensure the source skills path is set in project settings
   const settingsPath = path.join(clubhouseDir, 'settings.json');
