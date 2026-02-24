@@ -317,6 +317,68 @@ describe('Zustand selector safety — static analysis guard', () => {
   });
 
   /**
+   * Scan for non-destructured `const x = useXxxStore()` calls.
+   * Assigning the entire store to a single variable is almost always a
+   * mistake — the variable is then used as a useMemo/useCallback dependency
+   * which breaks memoization (Zustand returns a new top-level reference
+   * after every setState call).
+   *
+   * Dangerous: const badgeSettings = useBadgeSettingsStore();
+   * Safe:      const enabled = useBadgeSettingsStore(s => s.enabled);
+   * Safe:      const { saveSettings } = useSoundStore();  // destructured
+   * Safe:      useBadgeSettingsStore.getState()
+   *
+   * Destructured bare calls (`const { fn } = useStore()`) are allowed
+   * because they extract individual values — primitives and function refs
+   * are referentially stable in Zustand. The risk only materializes when
+   * the whole store object is held as a single reference.
+   */
+  it('no components assign useXxxStore() to a single variable (non-destructured)', () => {
+    // Match `const|let|var identifier = useXxxStore()` — non-destructured.
+    // Does NOT match destructured: `const { a, b } = useXxxStore()`
+    const bareAssignPattern =
+      /(?:const|let|var)\s+(?!{)\w+\s*=\s*use(?!SyncExternalStore)\w+Store\(\s*\)/g;
+
+    const violations: string[] = [];
+
+    function scanDir(dir: string): void {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+          scanDir(fullPath);
+        } else if (/\.(tsx?|jsx?)$/.test(entry.name) && !entry.name.includes('.test.')) {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          let match: RegExpExecArray | null;
+          while ((match = bareAssignPattern.exec(content)) !== null) {
+            const before = content.slice(0, match.index);
+            const line = before.split('\n').length;
+            const relPath = path.relative(rendererDir, fullPath);
+            violations.push(`${relPath}:${line}: ${match[0]}`);
+          }
+        }
+      }
+    }
+
+    scanDir(rendererDir);
+
+    if (violations.length > 0) {
+      throw new Error(
+        'Non-destructured bare useXxxStore() assignment detected! ' +
+        'Assigning the entire Zustand store to a single variable creates a reference ' +
+        'that changes on every state update, breaking useMemo/useCallback dependencies ' +
+        'and causing infinite re-render loops.\n\n' +
+        'Violations:\n' +
+        violations.map((v) => `  ${v}`).join('\n') +
+        '\n\nFix: Use a selector to pick individual state fields: ' +
+        '`const enabled = useXxxStore(s => s.enabled)`. If you need multiple fields, ' +
+        'use multiple selector calls. If you need actions, use destructuring: ' +
+        '`const { saveSettings } = useXxxStore()`.',
+      );
+    }
+  });
+
+  /**
    * Scan for inline `|| []` or `?? []` inside Zustand selector callbacks.
    * These create a new empty array on every render.
    *

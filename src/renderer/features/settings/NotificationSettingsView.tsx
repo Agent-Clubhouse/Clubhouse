@@ -68,34 +68,35 @@ const BADGE_TOGGLES: { key: keyof ResolvedBadgeSettings; label: string; descript
 ];
 
 function BadgeSettingsSection({ projectId }: { projectId?: string }) {
-  const badgeSettings = useBadgeSettingsStore();
+  const { enabled, pluginBadges, projectRailBadges, projectOverrides,
+    saveAppSettings, setProjectOverride, clearProjectOverride, getProjectSettings } = useBadgeSettingsStore();
   const resolved = projectId
-    ? badgeSettings.getProjectSettings(projectId)
-    : { enabled: badgeSettings.enabled, pluginBadges: badgeSettings.pluginBadges, projectRailBadges: badgeSettings.projectRailBadges };
-  const overrides = projectId ? badgeSettings.projectOverrides[projectId] : undefined;
+    ? getProjectSettings(projectId)
+    : { enabled, pluginBadges, projectRailBadges };
+  const overrides = projectId ? projectOverrides[projectId] : undefined;
 
   const handleAppToggle = (key: keyof ResolvedBadgeSettings, value: boolean) => {
-    badgeSettings.saveAppSettings({ [key]: value });
+    saveAppSettings({ [key]: value });
   };
 
   const handleProjectToggle = (key: keyof ResolvedBadgeSettings, value: boolean | undefined) => {
     if (!projectId) return;
     if (value === undefined) {
       // Remove this key from overrides
-      const current = badgeSettings.projectOverrides[projectId] ?? {};
+      const current = projectOverrides[projectId] ?? {};
       const { [key]: _, ...rest } = current;
       if (Object.keys(rest).length === 0) {
-        badgeSettings.clearProjectOverride(projectId);
+        clearProjectOverride(projectId);
       } else {
         // Rewrite the override without this key
-        badgeSettings.clearProjectOverride(projectId).then(() => {
+        clearProjectOverride(projectId).then(() => {
           if (Object.keys(rest).length > 0) {
-            badgeSettings.setProjectOverride(projectId, rest);
+            setProjectOverride(projectId, rest);
           }
         });
       }
     } else {
-      badgeSettings.setProjectOverride(projectId, { [key]: value });
+      setProjectOverride(projectId, { [key]: value });
     }
   };
 
