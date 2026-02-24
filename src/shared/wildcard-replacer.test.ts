@@ -182,4 +182,53 @@ describe('unreplaceWildcards', () => {
     const resolved = replaceWildcards(template, ctx);
     expect(unreplaceWildcards(resolved, ctx)).toBe(template);
   });
+
+  it('reverses buildCommand back to @@BuildCommand', () => {
+    const ctxWithCmd = { ...ctx, buildCommand: 'cargo build' };
+    expect(unreplaceWildcards('Run: cargo build', ctxWithCmd)).toBe('Run: @@BuildCommand');
+  });
+
+  it('reverses testCommand back to @@TestCommand', () => {
+    const ctxWithCmd = { ...ctx, testCommand: 'cargo test' };
+    expect(unreplaceWildcards('Run: cargo test', ctxWithCmd)).toBe('Run: @@TestCommand');
+  });
+
+  it('reverses lintCommand back to @@LintCommand', () => {
+    const ctxWithCmd = { ...ctx, lintCommand: 'cargo clippy' };
+    expect(unreplaceWildcards('Run: cargo clippy', ctxWithCmd)).toBe('Run: @@LintCommand');
+  });
+});
+
+describe('@@BuildCommand / @@TestCommand / @@LintCommand replacement', () => {
+  it('replaces @@BuildCommand with configured value', () => {
+    const ctxWithCmd = { ...ctx, buildCommand: 'cargo build' };
+    expect(replaceWildcards('Run: @@BuildCommand', ctxWithCmd)).toBe('Run: cargo build');
+  });
+
+  it('replaces @@TestCommand with configured value', () => {
+    const ctxWithCmd = { ...ctx, testCommand: 'cargo test' };
+    expect(replaceWildcards('Run: @@TestCommand', ctxWithCmd)).toBe('Run: cargo test');
+  });
+
+  it('replaces @@LintCommand with configured value', () => {
+    const ctxWithCmd = { ...ctx, lintCommand: 'cargo clippy' };
+    expect(replaceWildcards('Run: @@LintCommand', ctxWithCmd)).toBe('Run: cargo clippy');
+  });
+
+  it('falls back to npm defaults when commands not set', () => {
+    expect(replaceWildcards('@@BuildCommand', ctx)).toBe('npm run build');
+    expect(replaceWildcards('@@TestCommand', ctx)).toBe('npm test');
+    expect(replaceWildcards('@@LintCommand', ctx)).toBe('npm run lint');
+  });
+
+  it('replaces all three commands in the same text', () => {
+    const ctxWithCmds = {
+      ...ctx,
+      buildCommand: 'make build',
+      testCommand: 'make test',
+      lintCommand: 'make lint',
+    };
+    const input = '1. @@BuildCommand\n2. @@TestCommand\n3. @@LintCommand';
+    expect(replaceWildcards(input, ctxWithCmds)).toBe('1. make build\n2. make test\n3. make lint');
+  });
 });

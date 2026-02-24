@@ -41,6 +41,10 @@ import {
   MISSION_SKILL_CONTENT,
   CREATE_PR_SKILL_CONTENT,
   GO_STANDBY_SKILL_CONTENT,
+  BUILD_SKILL_CONTENT,
+  TEST_SKILL_CONTENT,
+  LINT_SKILL_CONTENT,
+  VALIDATE_CHANGES_SKILL_CONTENT,
 } from './materialization-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
@@ -128,6 +132,24 @@ describe('materialization-service', () => {
     it('omits sourceControlProvider when not provided', () => {
       const ctx = buildWildcardContext(testAgent, '/project');
       expect(ctx.sourceControlProvider).toBeUndefined();
+    });
+
+    it('includes command wildcards when provided', () => {
+      const ctx = buildWildcardContext(testAgent, '/project', undefined, {
+        buildCommand: 'cargo build',
+        testCommand: 'cargo test',
+        lintCommand: 'cargo clippy',
+      });
+      expect(ctx.buildCommand).toBe('cargo build');
+      expect(ctx.testCommand).toBe('cargo test');
+      expect(ctx.lintCommand).toBe('cargo clippy');
+    });
+
+    it('omits command wildcards when not provided', () => {
+      const ctx = buildWildcardContext(testAgent, '/project');
+      expect(ctx.buildCommand).toBeUndefined();
+      expect(ctx.testCommand).toBeUndefined();
+      expect(ctx.lintCommand).toBeUndefined();
     });
   });
 
@@ -316,6 +338,35 @@ describe('materialization-service', () => {
       expect(written.agentDefaults.permissions.allow).toContain('Read(@@Path**)');
     });
 
+    it('includes generic build tool permissions in defaults', () => {
+      let callCount = 0;
+      vi.mocked(fs.readFileSync).mockImplementation(() => {
+        callCount++;
+        if (callCount <= 1) {
+          return JSON.stringify({ defaults: {}, quickOverrides: {} });
+        }
+        throw new Error('ENOENT');
+      });
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      ensureDefaultTemplates('/project');
+
+      const settingsWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+        (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
+      );
+      expect(settingsWriteCall).toBeDefined();
+      const written = JSON.parse(settingsWriteCall![1] as string);
+      const allow = written.agentDefaults.permissions.allow;
+      expect(allow).toContain('Bash(git:*)');
+      expect(allow).toContain('Bash(npm:*)');
+      expect(allow).toContain('Bash(yarn:*)');
+      expect(allow).toContain('Bash(pnpm:*)');
+      expect(allow).toContain('Bash(cargo:*)');
+      expect(allow).toContain('Bash(make:*)');
+      expect(allow).toContain('Bash(go:*)');
+      expect(allow).toContain('WebSearch');
+    });
+
     it('includes az repos and az devops permissions in defaults', () => {
       let callCount = 0;
       vi.mocked(fs.readFileSync).mockImplementation(() => {
@@ -338,7 +389,7 @@ describe('materialization-service', () => {
       expect(written.agentDefaults.permissions.allow).toContain('Bash(az devops:*)');
     });
 
-    it('creates all three default skills when no defaults exist', () => {
+    it('creates all default skills when no defaults exist', () => {
       let callCount = 0;
       vi.mocked(fs.readFileSync).mockImplementation(() => {
         callCount++;
@@ -354,12 +405,16 @@ describe('materialization-service', () => {
       const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
         (call) => (call[0] as string).includes('SKILL.md'),
       );
-      expect(skillWrites).toHaveLength(3);
+      expect(skillWrites).toHaveLength(7);
 
       const paths = skillWrites.map((call) => (call[0] as string).replace(/\\/g, '/'));
       expect(paths.some((p) => p.includes('/mission/'))).toBe(true);
       expect(paths.some((p) => p.includes('/create-pr/'))).toBe(true);
       expect(paths.some((p) => p.includes('/go-standby/'))).toBe(true);
+      expect(paths.some((p) => p.includes('/build/'))).toBe(true);
+      expect(paths.some((p) => p.includes('/test/'))).toBe(true);
+      expect(paths.some((p) => p.includes('/lint/'))).toBe(true);
+      expect(paths.some((p) => p.includes('/validate-changes/'))).toBe(true);
     });
 
     it('still creates skills even when defaults already exist', () => {
@@ -381,7 +436,7 @@ describe('materialization-service', () => {
       const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
         (call) => (call[0] as string).includes('SKILL.md'),
       );
-      expect(skillWrites).toHaveLength(3);
+      expect(skillWrites).toHaveLength(7);
     });
 
     it('no-ops when defaults already exist and skill files already exist', () => {
@@ -403,7 +458,7 @@ describe('materialization-service', () => {
   });
 
   describe('ensureDefaultSkills', () => {
-    it('creates all three skills when none exist', () => {
+    it('creates all seven skills when none exist', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
 
@@ -412,7 +467,7 @@ describe('materialization-service', () => {
       const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
         (call) => (call[0] as string).includes('SKILL.md'),
       );
-      expect(skillWrites).toHaveLength(3);
+      expect(skillWrites).toHaveLength(7);
 
       const normalize = (call: unknown[]) => (call[0] as string).replace(/\\/g, '/');
       const missionWrite = skillWrites.find((call) => normalize(call).includes('/mission/'));
@@ -427,6 +482,20 @@ describe('materialization-service', () => {
       const goStandbyWrite = skillWrites.find((call) => normalize(call).includes('/go-standby/'));
       expect(goStandbyWrite![1]).toContain('Go Standby');
       expect(goStandbyWrite![1]).toContain('@@StandbyBranch');
+
+      const buildWrite = skillWrites.find((call) => normalize(call).endsWith('/build/SKILL.md'));
+      expect(buildWrite![1]).toContain('@@BuildCommand');
+
+      const testWrite = skillWrites.find((call) => normalize(call).endsWith('/test/SKILL.md'));
+      expect(testWrite![1]).toContain('@@TestCommand');
+
+      const lintWrite = skillWrites.find((call) => normalize(call).endsWith('/lint/SKILL.md'));
+      expect(lintWrite![1]).toContain('@@LintCommand');
+
+      const validateWrite = skillWrites.find((call) => normalize(call).includes('/validate-changes/'));
+      expect(validateWrite![1]).toContain('@@BuildCommand');
+      expect(validateWrite![1]).toContain('@@TestCommand');
+      expect(validateWrite![1]).toContain('@@LintCommand');
     });
 
     it('skips existing skills', () => {
@@ -443,9 +512,15 @@ describe('materialization-service', () => {
   });
 
   describe('skill content constants', () => {
-    it('MISSION_SKILL_CONTENT references /create-pr and /go-standby', () => {
+    it('MISSION_SKILL_CONTENT references /validate-changes, /create-pr, and /go-standby', () => {
+      expect(MISSION_SKILL_CONTENT).toContain('/validate-changes');
       expect(MISSION_SKILL_CONTENT).toContain('/create-pr');
       expect(MISSION_SKILL_CONTENT).toContain('/go-standby');
+    });
+
+    it('MISSION_SKILL_CONTENT does not contain hardcoded npm commands', () => {
+      expect(MISSION_SKILL_CONTENT).not.toContain('npm run validate');
+      expect(MISSION_SKILL_CONTENT).not.toContain('npm test');
     });
 
     it('CREATE_PR_SKILL_CONTENT has both provider conditional blocks', () => {
@@ -457,6 +532,24 @@ describe('materialization-service', () => {
 
     it('GO_STANDBY_SKILL_CONTENT uses @@StandbyBranch', () => {
       expect(GO_STANDBY_SKILL_CONTENT).toContain('@@StandbyBranch');
+    });
+
+    it('BUILD_SKILL_CONTENT uses @@BuildCommand', () => {
+      expect(BUILD_SKILL_CONTENT).toContain('@@BuildCommand');
+    });
+
+    it('TEST_SKILL_CONTENT uses @@TestCommand', () => {
+      expect(TEST_SKILL_CONTENT).toContain('@@TestCommand');
+    });
+
+    it('LINT_SKILL_CONTENT uses @@LintCommand', () => {
+      expect(LINT_SKILL_CONTENT).toContain('@@LintCommand');
+    });
+
+    it('VALIDATE_CHANGES_SKILL_CONTENT uses all three command wildcards', () => {
+      expect(VALIDATE_CHANGES_SKILL_CONTENT).toContain('@@BuildCommand');
+      expect(VALIDATE_CHANGES_SKILL_CONTENT).toContain('@@TestCommand');
+      expect(VALIDATE_CHANGES_SKILL_CONTENT).toContain('@@LintCommand');
     });
   });
 

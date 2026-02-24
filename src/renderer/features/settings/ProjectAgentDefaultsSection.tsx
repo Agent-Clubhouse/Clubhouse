@@ -10,6 +10,9 @@ interface ProjectAgentDefaults {
   mcpJson?: string;
   freeAgentMode?: boolean;
   sourceControlProvider?: SourceControlProvider;
+  buildCommand?: string;
+  testCommand?: string;
+  lintCommand?: string;
 }
 
 interface Props {
@@ -25,6 +28,9 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [mcpJson, setMcpJson] = useState('');
   const [freeAgentMode, setFreeAgentMode] = useState(false);
   const [sourceControlProvider, setSourceControlProvider] = useState<SourceControlProvider>('github');
+  const [buildCommand, setBuildCommand] = useState('');
+  const [testCommand, setTestCommand] = useState('');
+  const [lintCommand, setLintCommand] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -39,6 +45,9 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setMcpJson(d.mcpJson || '');
       setFreeAgentMode(d.freeAgentMode ?? false);
       setSourceControlProvider(d.sourceControlProvider ?? 'github');
+      setBuildCommand(d.buildCommand || '');
+      setTestCommand(d.testCommand || '');
+      setLintCommand(d.lintCommand || '');
       setLoaded(true);
       setDirty(false);
     } catch {
@@ -65,6 +74,9 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
     if (sourceControlProvider !== 'github') newDefaults.sourceControlProvider = sourceControlProvider;
+    if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
+    if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
+    if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
@@ -129,6 +141,46 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           <p className="text-[10px] text-ctp-subtext0/60 mt-1">
             Replaces <code className="bg-surface-0 px-0.5 rounded">@@SourceControlProvider</code> in skill templates and controls conditional blocks.
           </p>
+        </div>
+
+        {/* Build / Test / Lint Commands */}
+        <div>
+          <label className="block text-xs text-ctp-subtext0 mb-1">Project Commands</label>
+          <p className="text-[10px] text-ctp-subtext0/60 mb-2">
+            Configure the commands agents use to build, test, and lint your project. These replace <code className="bg-surface-0 px-0.5 rounded">@@BuildCommand</code>, <code className="bg-surface-0 px-0.5 rounded">@@TestCommand</code>, and <code className="bg-surface-0 px-0.5 rounded">@@LintCommand</code> in skills.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Build</label>
+              <input
+                value={buildCommand}
+                onChange={(e) => { setBuildCommand(e.target.value); setDirty(true); }}
+                placeholder="npm run build"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Test</label>
+              <input
+                value={testCommand}
+                onChange={(e) => { setTestCommand(e.target.value); setDirty(true); }}
+                placeholder="npm test"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Lint</label>
+              <input
+                value={lintCommand}
+                onChange={(e) => { setLintCommand(e.target.value); setDirty(true); }}
+                placeholder="npm run lint"
+                className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+                spellCheck={false}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Default Free Agent Mode */}
