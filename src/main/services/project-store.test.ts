@@ -10,6 +10,7 @@ vi.mock('fs', () => ({
   readdirSync: vi.fn(() => []),
   unlinkSync: vi.fn(),
   copyFileSync: vi.fn(),
+  renameSync: vi.fn(),
 }));
 
 // electron is aliased to our mock by vitest.config.ts
@@ -130,7 +131,7 @@ describe('remove', () => {
     vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
   });
 
-  it('filters by id and cleans up icon', () => {
+  it('filters by id and cleans up icon when project has no icon', () => {
     const store = {
       version: 1,
       projects: [
@@ -149,6 +150,88 @@ describe('remove', () => {
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0].id).toBe('proj_keep');
     expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
+  });
+
+  it('preserves icon file when project has an icon', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_del', name: 'Del', path: '/del', icon: 'proj_del.png' },
+      ],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_del.png'] as any);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    remove('proj_del');
+    const result = JSON.parse(writtenData);
+    expect(result.projects).toHaveLength(0);
+    // Icon file should be renamed (preserved), not deleted
+    expect(vi.mocked(fs.renameSync)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalled();
+    // Preserved filename should use _preserved_ prefix with path hash
+    const renameCall = vi.mocked(fs.renameSync).mock.calls[0];
+    expect(String(renameCall[0])).toContain('proj_del.png');
+    expect(String(renameCall[1])).toMatch(/_preserved_[0-9a-f]+\.png/);
+  });
+});
+
+describe('icon preservation across close/reopen (#209)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+  });
+
+  it('re-adding same path restores the preserved icon', () => {
+    // First, the preserved icon file exists from a previous remove
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/my-project').digest('hex').slice(0, 16);
+    const preservedFile = `_preserved_${hash}.png`;
+
+    mockNoStoreFile();
+    vi.mocked(fs.readdirSync).mockReturnValue([preservedFile] as any);
+
+    const project = add('/my-project');
+
+    // The project should have its icon restored
+    expect(project.icon).toBeDefined();
+    expect(project.icon).toContain(project.id);
+    expect(project.icon).toMatch(/\.png$/);
+
+    // The preserved file should be renamed to the new project ID
+    expect(vi.mocked(fs.renameSync)).toHaveBeenCalledTimes(1);
+    const renameCall = vi.mocked(fs.renameSync).mock.calls[0];
+    expect(String(renameCall[0])).toContain(preservedFile);
+    expect(String(renameCall[1])).toContain(project.id);
+  });
+
+  it('add without preserved icon returns no icon', () => {
+    mockNoStoreFile();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+
+    const project = add('/brand-new-project');
+    expect(project.icon).toBeUndefined();
+    expect(vi.mocked(fs.renameSync)).not.toHaveBeenCalled();
+  });
+
+  it('different paths get different preserved keys', () => {
+    const crypto = require('crypto');
+    const hash1 = crypto.createHash('sha256').update('/project-a').digest('hex').slice(0, 16);
+    const hash2 = crypto.createHash('sha256').update('/project-b').digest('hex').slice(0, 16);
+
+    // Only project-a has a preserved icon
+    const preservedFile = `_preserved_${hash1}.png`;
+    mockNoStoreFile();
+    vi.mocked(fs.readdirSync).mockReturnValue([preservedFile] as any);
+
+    // Adding project-b should not pick up project-a's icon
+    const projectB = add('/project-b');
+    expect(projectB.icon).toBeUndefined();
+
+    // Sanity check: hashes differ
+    expect(hash1).not.toBe(hash2);
   });
 });
 
