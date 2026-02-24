@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { useStore } from 'zustand';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -6,7 +7,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useKeyboardShortcutsStore, formatBinding } from '../../stores/keyboardShortcutsStore';
 import { useAnnexStore } from '../../stores/annexStore';
-import { useProjectHubStore, useAppHubStore } from '../../plugins/builtin/hub/main';
+import { getProjectHubStore, useAppHubStore } from '../../plugins/builtin/hub/main';
 import { pluginHotkeyRegistry } from '../../plugins/plugin-hotkeys';
 import { pluginCommandRegistry } from '../../plugins/plugin-commands';
 import { CommandItem, SETTINGS_PAGES } from './command-registry';
@@ -47,8 +48,9 @@ export function useCommandSource(): CommandItem[] {
   const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
   const annexSettings = useAnnexStore((s) => s.settings);
   const annexStatus = useAnnexStore((s) => s.status);
-  const projectHubs = useProjectHubStore((s) => s.hubs);
-  const projectActiveHubId = useProjectHubStore((s) => s.activeHubId);
+  const currentProjectStore = getProjectHubStore(activeProjectId);
+  const projectHubs = useStore(currentProjectStore, (s) => s.hubs);
+  const projectActiveHubId = useStore(currentProjectStore, (s) => s.activeHubId);
   const appHubs = useAppHubStore((s) => s.hubs);
   const appActiveHubId = useAppHubStore((s) => s.activeHubId);
 
@@ -152,7 +154,7 @@ export function useCommandSource(): CommandItem[] {
           execute: () => {
             setActiveProject(activeProjectId);
             setExplorerTab(HUB_TAB, activeProjectId);
-            useProjectHubStore.getState().setActiveHub(hub.id);
+            getProjectHubStore(activeProjectId).getState().setActiveHub(hub.id);
           },
         });
       }

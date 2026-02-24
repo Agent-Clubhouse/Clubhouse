@@ -2,8 +2,8 @@
  * Hub state synchronisation between main window (leader) and pop-out
  * windows (followers).
  *
- * The main window's hub stores (`useProjectHubStore` / `useAppHubStore`)
- * are the single source of truth.  Pop-outs forward mutations here;
+ * The main window's hub stores (per-project via `getProjectHubStore()` /
+ * `useAppHubStore`) are the single source of truth.  Pop-outs forward mutations here;
  * this module applies them and broadcasts the resulting state to all
  * pop-out windows via IPC.
  */

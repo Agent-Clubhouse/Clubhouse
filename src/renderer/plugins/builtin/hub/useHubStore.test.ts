@@ -174,6 +174,64 @@ describe('useHubStore', () => {
 
       expect(store.getState().activeHubId).toBe('hub_inst_1');
     });
+
+    it('sanitizes cross-project references when currentProjectId is provided', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      const instances: HubInstanceData[] = [
+        {
+          id: 'hub_inst_1', name: 'test',
+          paneTree: {
+            type: 'split', id: 'hub_10', direction: 'horizontal' as const,
+            children: [
+              { type: 'leaf', id: 'hub_11', agentId: 'a1', projectId: 'proj-1' },
+              { type: 'leaf', id: 'hub_12', agentId: 'a2', projectId: 'proj-other' },
+            ],
+          },
+        },
+      ];
+      storage.data.set('hub-instances', instances);
+
+      await store.getState().loadHub(storage, 'hub', 'proj-1');
+
+      const leaves = collectLeaves(store.getState().paneTree);
+      // Matching projectId kept
+      expect(leaves[0].agentId).toBe('a1');
+      expect(leaves[0].projectId).toBe('proj-1');
+      // Mismatched projectId cleared
+      expect(leaves[1].agentId).toBeNull();
+      expect(leaves[1].projectId).toBeUndefined();
+    });
+
+    it('does not sanitize when currentProjectId is omitted', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      const instances: HubInstanceData[] = [
+        {
+          id: 'hub_inst_1', name: 'test',
+          paneTree: { type: 'leaf', id: 'hub_11', agentId: 'a2', projectId: 'proj-other' },
+        },
+      ];
+      storage.data.set('hub-instances', instances);
+
+      await store.getState().loadHub(storage, 'hub');
+
+      const leaf = store.getState().paneTree as LeafPane;
+      expect(leaf.agentId).toBe('a2');
+      expect(leaf.projectId).toBe('proj-other');
+    });
+
+    it('sanitizes legacy tree during migration with currentProjectId', async () => {
+      const store = createHubStore('hub');
+      const storage = createMockStorage();
+      storage.data.set('hub-pane-tree', { type: 'leaf', id: 'hub_42', agentId: 'a1', projectId: 'wrong-proj' });
+
+      await store.getState().loadHub(storage, 'hub', 'my-proj');
+
+      const leaf = store.getState().hubs[0].paneTree as LeafPane;
+      expect(leaf.agentId).toBeNull();
+      expect(leaf.projectId).toBeUndefined();
+    });
   });
 
   // ── saveHub ───────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   swapPanes as swapPanesOp,
   removePanesByAgent as removePanesByAgentOp,
   validateAgents as validateAgentsOp,
+  sanitizeProjectIds as sanitizeProjectIdsOp,
   setSplitRatio as setSplitRatioOp,
   getFirstLeafId,
   findLeaf,
@@ -45,7 +46,7 @@ export interface HubState {
   loaded: boolean;
 
   // Lifecycle
-  loadHub: (storage: ScopedStorage, prefix: string) => Promise<void>;
+  loadHub: (storage: ScopedStorage, prefix: string, currentProjectId?: string) => Promise<void>;
   saveHub: (storage: ScopedStorage) => Promise<void>;
 
   // Hub management
@@ -155,18 +156,23 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
 
     // ── Lifecycle ──────────────────────────────────────────────────
 
-    loadHub: async (storage, prefix) => {
+    loadHub: async (storage, prefix, currentProjectId) => {
+      /** Sanitize cross-project references when loading in project context. */
+      const sanitize = (tree: PaneNode): PaneNode =>
+        currentProjectId ? sanitizeProjectIdsOp(tree, currentProjectId) : tree;
+
       try {
         // Try new multi-hub format first
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as HubInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const hubs: HubInstance[] = savedInstances.map((s): HubInstance => {
-            syncCounterToTree(s.paneTree, paneCounter);
+            const tree = sanitize(s.paneTree);
+            syncCounterToTree(tree, paneCounter);
             return {
               id: s.id,
               name: s.name,
-              paneTree: s.paneTree,
-              focusedPaneId: getFirstLeafId(s.paneTree),
+              paneTree: tree,
+              focusedPaneId: getFirstLeafId(tree),
               zoomedPaneId: null,
             };
           });
@@ -189,12 +195,13 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
         // Migrate from legacy single-tree format
         const legacyTree = await storage.read(LEGACY_STORAGE_KEY) as PaneNode | null;
         if (legacyTree && (legacyTree.type === 'leaf' || legacyTree.type === 'split')) {
-          syncCounterToTree(legacyTree, paneCounter);
+          const tree = sanitize(legacyTree);
+          syncCounterToTree(tree, paneCounter);
           const hub: HubInstance = {
             id: generateHubId(hubCounter),
             name: generateHubName(),
-            paneTree: legacyTree,
-            focusedPaneId: getFirstLeafId(legacyTree),
+            paneTree: tree,
+            focusedPaneId: getFirstLeafId(tree),
             zoomedPaneId: null,
           };
           set({ hubs: [hub], activeHubId: hub.id, loaded: true, ...syncDerivedState([hub], hub.id) });

@@ -137,6 +137,16 @@ export function validateAgents(tree: PaneNode, knownIds: Set<string>): PaneNode 
   );
 }
 
+/** Strip cross-project references: clear panes whose projectId doesn't match the current project. */
+export function sanitizeProjectIds(tree: PaneNode, currentProjectId: string): PaneNode {
+  return mapLeaves(tree, (leaf) => {
+    if (leaf.projectId && leaf.projectId !== currentProjectId) {
+      return { ...leaf, agentId: null, projectId: undefined };
+    }
+    return leaf;
+  });
+}
+
 export function findLeaf(tree: PaneNode, paneId: string): LeafPane | null {
   if (tree.type === 'leaf') {
     return tree.id === paneId ? tree : null;

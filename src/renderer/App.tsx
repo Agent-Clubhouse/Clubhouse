@@ -41,7 +41,7 @@ import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
-import { useProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
+import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
 import type { HubMutation } from '../shared/types';
 
@@ -180,8 +180,8 @@ export function App() {
   // Respond to hub state requests from pop-out windows
   useEffect(() => {
     const remove = window.clubhouse.window.onRequestHubState(
-      (requestId: string, hubId: string, scope: string) => {
-        const store = scope === 'global' ? useAppHubStore : useProjectHubStore;
+      (requestId: string, hubId: string, scope: string, projectId?: string) => {
+        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
         const state = store.getState();
         const hub = state.hubs.find((h) => h.id === hubId);
         if (hub) {
@@ -202,8 +202,8 @@ export function App() {
   // Apply hub mutations forwarded from pop-out windows
   useEffect(() => {
     const remove = window.clubhouse.window.onHubMutation(
-      (hubId: string, scope: string, mutation: unknown) => {
-        const store = scope === 'global' ? useAppHubStore : useProjectHubStore;
+      (hubId: string, scope: string, mutation: unknown, projectId?: string) => {
+        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
         applyHubMutation(store, hubId, mutation as HubMutation);
       },
     );

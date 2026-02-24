@@ -41,4 +41,35 @@ describe('hub main', () => {
     expect(hubModule.MainPanel).toBeDefined();
     expect(typeof hubModule.MainPanel).toBe('function');
   });
+
+  it('exports getProjectHubStore function', () => {
+    expect(hubModule.getProjectHubStore).toBeDefined();
+    expect(typeof hubModule.getProjectHubStore).toBe('function');
+  });
+
+  it('getProjectHubStore returns the same store for the same projectId', () => {
+    const store1 = hubModule.getProjectHubStore('proj-1');
+    const store2 = hubModule.getProjectHubStore('proj-1');
+    expect(store1).toBe(store2);
+  });
+
+  it('getProjectHubStore returns different stores for different projectIds', () => {
+    const storeA = hubModule.getProjectHubStore('proj-a');
+    const storeB = hubModule.getProjectHubStore('proj-b');
+    expect(storeA).not.toBe(storeB);
+  });
+
+  it('per-project stores have isolated state', () => {
+    const storeA = hubModule.getProjectHubStore('proj-iso-a');
+    const storeB = hubModule.getProjectHubStore('proj-iso-b');
+
+    // Modify store A
+    const paneId = storeA.getState().paneTree.id;
+    storeA.getState().assignAgent(paneId, 'agent-1', 'proj-iso-a');
+
+    // Store B should be unaffected
+    const leafB = storeB.getState().paneTree;
+    expect(leafB.type).toBe('leaf');
+    expect((leafB as any).agentId).toBeNull();
+  });
 });
