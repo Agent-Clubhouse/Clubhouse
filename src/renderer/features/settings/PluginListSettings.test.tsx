@@ -6,9 +6,11 @@ import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 
 // Mock plugin-loader to avoid side effects
+const mockDiscoverNewPlugins = vi.fn(async () => [] as string[]);
 vi.mock('../../plugins/plugin-loader', () => ({
   activatePlugin: vi.fn(async () => {}),
   deactivatePlugin: vi.fn(async () => {}),
+  discoverNewPlugins: (...args: unknown[]) => mockDiscoverNewPlugins(...args),
 }));
 
 // Mock the marketplace dialog to avoid nested async fetching
@@ -90,5 +92,87 @@ describe('PluginListSettings', () => {
   it('renders the Workshop link', () => {
     render(<PluginListSettings />);
     expect(screen.getByTestId('workshop-link')).toBeInTheDocument();
+  });
+
+  it('renders "Official" badge for marketplace source plugins', () => {
+    usePluginStore.setState({
+      plugins: {
+        'market-plug': {
+          manifest: {
+            id: 'market-plug',
+            name: 'Market Plugin',
+            version: '1.0.0',
+            engine: { api: 0.5 },
+            scope: 'app',
+          },
+          status: 'activated',
+          source: 'marketplace',
+          pluginPath: '/plugins/market-plug',
+        },
+      },
+      appEnabled: ['market-plug'],
+      externalPluginsEnabled: true,
+    } as any);
+
+    render(<PluginListSettings />);
+    expect(screen.getByText('Official')).toBeInTheDocument();
+  });
+
+  it('renders "Community" badge for community source plugins', () => {
+    usePluginStore.setState({
+      plugins: {
+        'comm-plug': {
+          manifest: {
+            id: 'comm-plug',
+            name: 'Community Plugin',
+            version: '1.0.0',
+            engine: { api: 0.5 },
+            scope: 'app',
+          },
+          status: 'activated',
+          source: 'community',
+          pluginPath: '/plugins/comm-plug',
+        },
+      },
+      appEnabled: ['comm-plug'],
+      externalPluginsEnabled: true,
+    } as any);
+
+    render(<PluginListSettings />);
+    expect(screen.getByText('Community')).toBeInTheDocument();
+    expect(screen.queryByText('Official')).not.toBeInTheDocument();
+  });
+
+  it('renders "Reload Local Plugins" button in app context', () => {
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+    expect(screen.getByTestId('scan-plugins-button')).toBeInTheDocument();
+    expect(screen.getByText('Reload Local Plugins')).toBeInTheDocument();
+  });
+
+  it('calls discoverNewPlugins when scan button is clicked', async () => {
+    mockDiscoverNewPlugins.mockResolvedValue(['new-plug-1']);
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+
+    fireEvent.click(screen.getByTestId('scan-plugins-button'));
+
+    await screen.findByText(/Found 1 new plugin/);
+  });
+
+  it('shows no new plugins message when scan finds nothing', async () => {
+    mockDiscoverNewPlugins.mockResolvedValue([]);
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+
+    fireEvent.click(screen.getByTestId('scan-plugins-button'));
+
+    await screen.findByText('No new plugins found.');
   });
 });
