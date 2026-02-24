@@ -7,6 +7,7 @@ import {
 } from '../../stores/keyboardShortcutsStore';
 import { pluginHotkeyRegistry, PluginShortcut } from '../../plugins/plugin-hotkeys';
 import { usePluginStore } from '../../plugins/plugin-store';
+import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 
 function ShortcutRow({ shortcut }: { shortcut: ShortcutDefinition }) {
   const editingId = useKeyboardShortcutsStore((s) => s.editingId);
@@ -145,6 +146,11 @@ export function KeyboardShortcutsSettingsView() {
   const resetAll = useKeyboardShortcutsStore((s) => s.resetAll);
   const pluginShortcuts = usePluginShortcuts();
   const pluginsMap = usePluginStore((s) => s.plugins);
+  const clipboardCompat = useClipboardSettingsStore((s) => s.clipboardCompat);
+  const loadClipboard = useClipboardSettingsStore((s) => s.loadSettings);
+  const saveClipboard = useClipboardSettingsStore((s) => s.saveSettings);
+
+  useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
   // Group system shortcuts by category
   const grouped: Record<string, ShortcutDefinition[]> = {};
@@ -172,6 +178,26 @@ export function KeyboardShortcutsSettingsView() {
         <p className="text-sm text-ctp-subtext0 mb-6">
           Customize keyboard shortcuts. Click a binding to record a new one.
         </p>
+
+        {/* Clipboard Compatibility */}
+        <div className="space-y-3 mb-6">
+          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Compatibility</h3>
+          <div className="flex items-center justify-between py-1.5">
+            <div>
+              <div className="text-sm text-ctp-text">Enable Clipboard Compatibility</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">
+                Use explicit clipboard handling for terminal paste. Enable this if paste does not work on your platform.
+              </div>
+            </div>
+            <button
+              onClick={() => saveClipboard(!clipboardCompat)}
+              className="toggle-track"
+              data-on={String(clipboardCompat)}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </div>
+        </div>
 
         {Object.entries(grouped).map(([category, items]) => (
           <div key={category} className="space-y-1 mb-6">
