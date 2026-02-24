@@ -1,4 +1,7 @@
 import gettingStarted from './content/general-getting-started.md';
+import dashboard from './content/general-dashboard.md';
+import commandPalette from './content/general-command-palette.md';
+import hub from './content/general-hub.md';
 import navigation from './content/general-navigation.md';
 import keyboardShortcuts from './content/general-keyboard-shortcuts.md';
 import updates from './content/general-updates.md';
@@ -8,13 +11,16 @@ import projectsSettings from './content/projects-settings.md';
 import agentsOverview from './content/agents-overview.md';
 import agentsDurable from './content/agents-durable.md';
 import agentsQuick from './content/agents-quick.md';
+import agentsClubhouseMode from './content/agents-clubhouse-mode.md';
 import agentsTerminal from './content/agents-terminal.md';
+import settingsOrchestrators from './content/settings-orchestrators.md';
 import pluginsOverview from './content/plugins-overview.md';
 import pluginsPermissions from './content/plugins-permissions.md';
 import pluginsCreating from './content/plugins-creating.md';
 import settingsThemes from './content/settings-themes.md';
+import settingsSound from './content/settings-sound.md';
 import settingsNotifications from './content/settings-notifications.md';
-import settingsOrchestrators from './content/settings-orchestrators.md';
+import settingsAnnex from './content/settings-annex.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
@@ -37,9 +43,12 @@ export const HELP_SECTIONS: HelpSection[] = [
     title: 'General',
     topics: [
       { id: 'getting-started', title: 'Getting Started', content: gettingStarted },
+      { id: 'dashboard', title: 'Dashboard', content: dashboard },
+      { id: 'command-palette', title: 'Command Palette', content: commandPalette },
+      { id: 'hub', title: 'Hub & Workspaces', content: hub },
       { id: 'navigation', title: 'Navigation & Layout', content: navigation },
       { id: 'keyboard-shortcuts', title: 'Keyboard Shortcuts', content: keyboardShortcuts },
-      { id: 'updates', title: 'Automatic Updates', content: updates },
+      { id: 'updates', title: 'Updates', content: updates },
     ],
   },
   {
@@ -53,19 +62,21 @@ export const HELP_SECTIONS: HelpSection[] = [
   },
   {
     id: 'agents',
-    title: 'Agents',
+    title: 'Agents & Orchestrators',
     topics: [
-      { id: 'agents-overview', title: 'Agent Types & Lifecycle', content: agentsOverview },
+      { id: 'agents-overview', title: 'Agent Overview', content: agentsOverview },
       { id: 'agents-durable', title: 'Durable Agents', content: agentsDurable },
-      { id: 'agents-quick', title: 'Quick Agents & Headless Mode', content: agentsQuick },
+      { id: 'agents-quick', title: 'Quick Agents', content: agentsQuick },
+      { id: 'agents-clubhouse-mode', title: 'Clubhouse Mode', content: agentsClubhouseMode },
       { id: 'agents-terminal', title: 'Terminal & Transcripts', content: agentsTerminal },
+      { id: 'orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
     ],
   },
   {
     id: 'plugins',
     title: 'Plugins',
     topics: [
-      { id: 'plugins-overview', title: 'Using Plugins', content: pluginsOverview },
+      { id: 'plugins-overview', title: 'Installing & Using Plugins', content: pluginsOverview },
       { id: 'plugins-permissions', title: 'Plugin Permissions', content: pluginsPermissions },
       { id: 'plugins-creating', title: 'Creating Plugins', content: pluginsCreating },
     ],
@@ -74,9 +85,10 @@ export const HELP_SECTIONS: HelpSection[] = [
     id: 'settings',
     title: 'Settings',
     topics: [
-      { id: 'settings-themes', title: 'Themes & Appearance', content: settingsThemes },
+      { id: 'settings-themes', title: 'Display & Themes', content: settingsThemes },
+      { id: 'settings-sound', title: 'Sound & Audio', content: settingsSound },
       { id: 'settings-notifications', title: 'Notifications & Badges', content: settingsNotifications },
-      { id: 'settings-orchestrators', title: 'Orchestrators', content: settingsOrchestrators },
+      { id: 'settings-annex', title: 'Annex (iOS Companion)', content: settingsAnnex },
       { id: 'settings-logging', title: 'Logging & Diagnostics', content: settingsLogging },
     ],
   },
