@@ -90,6 +90,8 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       dismissCompleted: noop,
       getDetailedStatus: () => null,
       getModelOptions: async () => [{ id: 'default', label: 'Default' }],
+      listOrchestrators: () => [],
+      checkOrchestratorAvailability: async () => ({ available: false }),
       onStatusChange: () => ({ dispose: noop }),
       onAnyChange: () => ({ dispose: noop }),
     },

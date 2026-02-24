@@ -35,6 +35,7 @@ import type {
   ProjectInfo,
   AgentInfo,
   PluginAgentDetailedStatus,
+  PluginOrchestratorInfo,
   CompletedQuickAgentInfo,
   ModelOption,
   Disposable,
@@ -48,6 +49,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useUIStore } from '../stores/uiStore';
+import { useOrchestratorStore } from '../stores/orchestratorStore';
 
 /**
  * Creates a Proxy that defers scope-violation errors to invocation time.
@@ -453,7 +455,7 @@ function createSettingsAPI(ctx: PluginContext): SettingsAPI {
   };
 }
 
-function createAgentsAPI(ctx: PluginContext): AgentsAPI {
+function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {
   return {
     list(): AgentInfo[] {
       const agents = useAgentStore.getState().agents;
@@ -473,10 +475,16 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
           worktreePath: a.worktreePath,
           model: a.model,
           parentAgentId: a.parentAgentId,
+          orchestrator: a.orchestrator,
+          freeAgentMode: a.freeAgentMode,
         }));
     },
 
-    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string }): Promise<string> {
+    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string> {
+      if (options?.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
+        throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
+      }
+
       let projectId = ctx.projectId;
       let projectPath = ctx.projectPath;
 
@@ -495,6 +503,9 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
         projectPath,
         mission,
         options?.model,
+        undefined, // parentAgentId
+        options?.orchestrator,
+        options?.freeAgentMode,
       );
     },
 
@@ -549,7 +560,7 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
       };
     },
 
-    async getModelOptions(projectId?: string): Promise<ModelOption[]> {
+    async getModelOptions(projectId?: string, orchestrator?: string): Promise<ModelOption[]> {
       const DEFAULT_OPTIONS: ModelOption[] = [
         { id: 'default', label: 'Default' },
         { id: 'opus', label: 'Opus' },
@@ -561,11 +572,36 @@ function createAgentsAPI(ctx: PluginContext): AgentsAPI {
       const project = useProjectStore.getState().projects.find((p) => p.id === pid);
       if (!project) return DEFAULT_OPTIONS;
       try {
-        const result = await window.clubhouse.agent.getModelOptions(project.path);
+        const result = await window.clubhouse.agent.getModelOptions(project.path, orchestrator);
         if (Array.isArray(result) && result.length > 0) return result;
         return DEFAULT_OPTIONS;
       } catch {
         return DEFAULT_OPTIONS;
+      }
+    },
+
+    listOrchestrators(): PluginOrchestratorInfo[] {
+      const orchestrators = useOrchestratorStore.getState().allOrchestrators;
+      return orchestrators.map((o) => ({
+        id: o.id,
+        displayName: o.displayName,
+        shortName: o.shortName,
+        badge: o.badge,
+        capabilities: {
+          headless: o.capabilities.headless,
+          hooks: o.capabilities.hooks,
+          sessionResume: o.capabilities.sessionResume,
+          permissions: o.capabilities.permissions,
+        },
+      }));
+    },
+
+    async checkOrchestratorAvailability(orchestratorId: string): Promise<{ available: boolean; error?: string }> {
+      try {
+        const result = await window.clubhouse.agent.checkOrchestrator(ctx.projectPath, orchestratorId);
+        return { available: !!result?.available, error: result?.error };
+      } catch (err) {
+        return { available: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
 
@@ -1425,10 +1461,7 @@ function createThemeAPI(ctx: PluginContext): ThemeAPI {
 }
 
 function createProcessAPI(ctx: PluginContext, manifest?: PluginManifest): ProcessAPI {
-  const { projectPath, pluginId } = ctx;
-  if (!projectPath) {
-    throw new Error('ProcessAPI requires projectPath');
-  }
+  const { pluginId } = ctx;
   const allowedCommands = manifest?.allowedCommands ?? [];
   return {
     async exec(command, args, options?) {
@@ -1437,7 +1470,7 @@ function createProcessAPI(ctx: PluginContext, manifest?: PluginManifest): Proces
         command,
         args,
         allowedCommands,
-        projectPath,
+        projectPath: ctx.projectPath,
         options,
       });
     },
@@ -1492,7 +1525,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     settings: createSettingsAPI(ctx), // always available
     agents: gated(
       true, scopeLabel, 'agents', 'agents',
-      ctx.pluginId, manifest, () => createAgentsAPI(ctx),
+      ctx.pluginId, manifest, () => createAgentsAPI(ctx, manifest),
     ),
     hub: createHubAPI(), // always available
     navigation: gated(
@@ -1516,7 +1549,8 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => createFilesAPI(ctx, manifest),
     ),
     process: gated(
-      projectAvailable && !!ctx.projectPath, scopeLabel, 'process', 'process',
+      (projectAvailable && !!ctx.projectPath) || hasPermission(manifest, 'process'),
+      scopeLabel, 'process', 'process',
       ctx.pluginId, manifest, () => createProcessAPI(ctx, manifest),
     ),
     badges: gated(

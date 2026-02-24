@@ -1923,7 +1923,7 @@ describe('plugin-api-factory', () => {
         ]);
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         const options = await api.agents.getModelOptions();
-        expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p1');
+        expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p1', undefined);
         expect(options).toEqual([{ id: 'custom', label: 'Custom' }]);
       });
 
@@ -1938,7 +1938,7 @@ describe('plugin-api-factory', () => {
         mockAgent.getModelOptions.mockResolvedValue([{ id: 'x', label: 'X' }]);
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1' }), undefined, allPermsManifest);
         await api.agents.getModelOptions('proj-2');
-        expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p2');
+        expect(mockAgent.getModelOptions).toHaveBeenCalledWith('/projects/p2', undefined);
       });
 
       it('returns defaults on throw', async () => {
@@ -2643,7 +2643,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-1');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('do stuff');
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined, undefined, undefined, undefined);
       });
 
       it('uses override projectId to resolve different project path', async () => {
@@ -2657,7 +2657,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-2');
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.runQuick('task', { projectId: 'proj-2' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined, undefined, undefined, undefined);
       });
 
       it('throws on unknown projectId', async () => {
@@ -2676,7 +2676,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-3');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('task', { model: 'opus' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus');
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus', undefined, undefined, undefined);
       });
     });
   });

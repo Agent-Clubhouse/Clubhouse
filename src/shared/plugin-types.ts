@@ -48,6 +48,7 @@ export type PluginPermission =
   | 'agent-config'
   | 'agent-config.cross-project'
   | 'agent-config.permissions'
+  | 'agents.free-agent-mode'
   | 'agent-config.mcp'
   | 'sounds'
   | 'theme';
@@ -71,6 +72,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config',
   'agent-config.cross-project',
   'agent-config.permissions',
+  'agents.free-agent-mode',
   'agent-config.mcp',
   'sounds',
   'theme',
@@ -100,6 +102,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config': 'Inject skills, agent templates, and instruction content into project agents',
   'agent-config.cross-project': 'Inject agent configuration into other projects where the plugin is also enabled (elevated)',
   'agent-config.permissions': 'Modify agent permission allow/deny rules (elevated)',
+  'agents.free-agent-mode': 'Spawn agents with all permissions bypassed (elevated, dangerous)',
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
   sounds: 'Register and manage custom notification sound packs',
   theme: 'Read the current theme and subscribe to theme changes',
@@ -241,6 +244,19 @@ export interface ProjectInfo {
   path: string;
 }
 
+export interface PluginOrchestratorInfo {
+  id: string;
+  displayName: string;
+  shortName: string;
+  badge?: string;
+  capabilities: {
+    headless: boolean;
+    hooks: boolean;
+    sessionResume: boolean;
+    permissions: boolean;
+  };
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -255,6 +271,8 @@ export interface AgentInfo {
   worktreePath?: string;
   model?: string;
   parentAgentId?: string;
+  orchestrator?: string;
+  freeAgentMode?: boolean;
 }
 
 export interface PluginAgentDetailedStatus {
@@ -360,13 +378,15 @@ export interface ModelOption {
 
 export interface AgentsAPI {
   list(): AgentInfo[];
-  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string }): Promise<string>;
+  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string>;
   kill(agentId: string): Promise<void>;
   resume(agentId: string, options?: { mission?: string }): Promise<void>;
   listCompleted(projectId?: string): CompletedQuickAgentInfo[];
   dismissCompleted(projectId: string, agentId: string): void;
   getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null;
-  getModelOptions(projectId?: string): Promise<ModelOption[]>;
+  getModelOptions(projectId?: string, orchestrator?: string): Promise<ModelOption[]>;
+  listOrchestrators(): PluginOrchestratorInfo[];
+  checkOrchestratorAvailability(orchestratorId: string): Promise<{ available: boolean; error?: string }>;
   onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable;
   /** Subscribe to any change in the agents store (status, detailed status, new/removed agents). */
   onAnyChange(callback: () => void): Disposable;

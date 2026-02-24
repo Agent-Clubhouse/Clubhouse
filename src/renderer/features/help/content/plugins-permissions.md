@@ -8,7 +8,7 @@ Every plugin manifest includes a `permissions` array listing the capabilities th
 
 ## Permission Reference
 
-The following table lists all 15 available permissions.
+The following table lists all available permissions.
 
 | Permission | Description |
 |------------|-------------|
@@ -27,6 +27,7 @@ The following table lists all 15 available permissions.
 | **logging** | Write to the application log. Provides structured logging methods at five levels: `debug`, `info`, `warn`, `error`, and `fatal`. Log entries are written to the application log with the plugin ID as context. |
 | **process** | Execute allowed CLI commands. Grants the ability to run external command-line programs. This permission requires the plugin to also declare an `allowedCommands` list in the manifest (see below). |
 | **badges** | Display badge indicators on tabs and rail items. Allows the plugin to set, update, and clear count or dot badges on its own tab and rail icon. |
+| **agents.free-agent-mode** | Spawn agents with all permissions bypassed. This is an elevated, dangerous permission — agents launched with free-agent mode skip all permission prompts. Requires the base `agents` permission. |
 
 ## Permission Violations
 
@@ -78,3 +79,19 @@ The allowed commands are declared in the manifest's `allowedCommands` array:
 In this example, the plugin can only execute the `gh` (GitHub CLI) command. Any attempt to run a command not in the `allowedCommands` list will be blocked.
 
 This is a safety mechanism: even if you trust a plugin enough to grant it the `process` permission, you can see at a glance which specific programs it will run.
+
+## Free Agent Mode
+
+The `agents.free-agent-mode` permission allows a plugin to spawn agents that bypass all permission prompts. This is an **elevated and dangerous** capability — agents launched in free-agent mode can execute any tool without user approval.
+
+This permission requires the base `agents` permission. To use it:
+
+```json
+{
+  "permissions": ["agents", "agents.free-agent-mode"]
+}
+```
+
+The plugin can then pass `freeAgentMode: true` to `api.agents.runQuick()`. If a plugin attempts to use `freeAgentMode: true` without declaring the `agents.free-agent-mode` permission, the call will throw an error.
+
+Only grant this permission to plugins you fully trust, as free-agent mode removes the safety net of permission prompts for spawned agents.

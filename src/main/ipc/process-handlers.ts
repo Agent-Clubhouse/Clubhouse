@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, app } from 'electron';
 import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
@@ -8,7 +8,7 @@ interface ProcessExecRequest {
   command: string;
   args: string[];
   allowedCommands: string[];
-  projectPath: string;
+  projectPath?: string;
   options?: { timeout?: number };
 }
 
@@ -41,13 +41,15 @@ export function registerProcessHandlers(): void {
       timeout = Math.max(MIN_TIMEOUT, Math.min(MAX_TIMEOUT, options.timeout));
     }
 
+    const cwd = projectPath || app.getPath('home');
+
     return new Promise((resolve) => {
       execFile(
         command,
         args,
         {
           shell: process.platform === 'win32', // .cmd/.bat commands need shell on Windows
-          cwd: projectPath,
+          cwd,
           timeout,
           env: getShellEnvironment(),
           maxBuffer: 10 * 1024 * 1024,

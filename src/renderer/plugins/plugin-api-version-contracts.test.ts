@@ -73,7 +73,8 @@ const SETTINGS_API_METHODS: (keyof SettingsAPI)[] = ['get', 'getAll', 'onChange'
 
 const AGENTS_API_METHODS: (keyof AgentsAPI)[] = [
   'list', 'runQuick', 'kill', 'resume', 'listCompleted', 'dismissCompleted',
-  'getDetailedStatus', 'getModelOptions', 'onStatusChange', 'onAnyChange',
+  'getDetailedStatus', 'getModelOptions', 'listOrchestrators', 'checkOrchestratorAvailability',
+  'onStatusChange', 'onAnyChange',
 ];
 
 const HUB_API_METHODS: (keyof HubAPI)[] = ['refresh'];
@@ -166,7 +167,7 @@ function fullV05Manifest(): Record<string, unknown> {
       'notifications', 'storage', 'navigation', 'projects', 'commands',
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
-      'agent-config.mcp', 'sounds', 'theme',
+      'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
     ],
     externalRoots: [{ settingKey: 'ext-data', root: 'data' }],
     allowedCommands: ['node', 'npm'],
@@ -450,6 +451,23 @@ describe('§2 Per-version manifest validation', () => {
     });
   });
 
+  describe('v0.6 agents.free-agent-mode permission hierarchy', () => {
+    it('accepts agents.free-agent-mode with base agents permission', () => {
+      const result = validateManifest(minimalV06Manifest({
+        permissions: ['agents', 'agents.free-agent-mode'],
+      }));
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects agents.free-agent-mode WITHOUT base agents permission', () => {
+      const result = validateManifest(minimalV06Manifest({
+        permissions: ['agents.free-agent-mode'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('requires the base "agents" permission'))).toBe(true);
+    });
+  });
+
   describe('every supported version passes with each valid scope', () => {
     for (const version of SUPPORTED_API_VERSIONS) {
       for (const scope of ['project', 'app', 'dual'] as const) {
@@ -472,7 +490,7 @@ describe('§2 Per-version manifest validation', () => {
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
       // Skip sub-permissions that require base permissions
-      const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp'];
+      const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode'];
       const needsExternalRoots = perm === 'files.external';
       const needsAllowedCommands = perm === 'process';
 
@@ -481,7 +499,9 @@ describe('§2 Per-version manifest validation', () => {
         const extras: Record<string, unknown> = {};
 
         // Add base permission if this is a sub-permission
-        if (requiresBase.includes(perm)) {
+        if (perm === 'agents.free-agent-mode') {
+          permissions.unshift('agents');
+        } else if (requiresBase.includes(perm)) {
           permissions.unshift('agent-config');
         }
 
@@ -902,6 +922,15 @@ describe('§4 Mock API safe return values', () => {
     expect(api.agents.listCompleted()).toEqual([]);
   });
 
+  it('api.agents.listOrchestrators() returns empty array', () => {
+    expect(api.agents.listOrchestrators()).toEqual([]);
+  });
+
+  it('api.agents.checkOrchestratorAvailability() returns unavailable', async () => {
+    const result = await api.agents.checkOrchestratorAvailability('test');
+    expect(result).toEqual({ available: false });
+  });
+
   it('api.files.readTree() returns empty array', async () => {
     expect(await api.files.readTree()).toEqual([]);
   });
@@ -1118,7 +1147,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'notifications', 'storage', 'navigation', 'projects', 'commands',
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
-      'agent-config.mcp', 'sounds', 'theme',
+      'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

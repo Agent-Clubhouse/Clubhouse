@@ -185,6 +185,9 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (permissions.includes('agent-config.mcp') && !permissions.includes('agent-config')) {
       errors.push('"agent-config.mcp" requires the base "agent-config" permission');
     }
+    if (permissions.includes('agents.free-agent-mode') && !permissions.includes('agents')) {
+      errors.push('"agents.free-agent-mode" requires the base "agents" permission');
+    }
   }
 
   // Validate command declarations with defaultBinding (v0.6+ feature)
