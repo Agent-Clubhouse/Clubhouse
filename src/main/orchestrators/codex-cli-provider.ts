@@ -120,6 +120,11 @@ export class CodexCliProvider implements OrchestratorProvider {
     const binary = findCodexBinary();
     const args: string[] = [];
 
+    // Session resume: --continue for most recent session
+    if (opts.resume) {
+      args.push('--continue');
+    }
+
     if (opts.freeAgentMode) {
       args.push('--full-auto');
     }

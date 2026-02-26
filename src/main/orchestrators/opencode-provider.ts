@@ -115,6 +115,15 @@ export class OpenCodeProvider implements OrchestratorProvider {
     const binary = findOpenCodeBinary();
     const args: string[] = [];
 
+    // Session resume: --session <id> for specific session, --continue for most recent
+    if (opts.resume) {
+      if (opts.sessionId) {
+        args.push('--session', opts.sessionId);
+      } else {
+        args.push('--continue');
+      }
+    }
+
     if (opts.model && opts.model !== 'default') {
       args.push('--model', opts.model);
     }

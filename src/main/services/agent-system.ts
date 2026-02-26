@@ -90,6 +90,10 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
+  /** When true, attempt to resume the previous CLI session instead of starting fresh */
+  resume?: boolean;
+  /** Specific session ID to resume (provider-specific format) */
+  sessionId?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -183,6 +187,8 @@ async function spawnPtyAgent(
     allowedTools,
     agentId: params.agentId,
     freeAgentMode: params.freeAgentMode,
+    resume: params.resume,
+    sessionId: params.sessionId,
   });
 
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
