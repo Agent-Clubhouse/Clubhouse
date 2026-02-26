@@ -34,6 +34,7 @@ import {
   deleteForce,
   getDurableConfig,
   updateDurableConfig,
+  updateSessionId,
   ensureGitignore,
   saveAgentIcon,
 } from './agent-config';
@@ -830,7 +831,112 @@ describe('updateDurableConfig', () => {
     expect(result).not.toBeNull();
     expect(result!.freeAgentMode).toBeUndefined();
   });
+
+  it('persists lastSessionId and round-trips', () => {
+    const agents = [
+      { id: 'durable_sess', name: 'sess-agent', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateDurableConfig(PROJECT_PATH, 'durable_sess', { lastSessionId: 'sess-abc-123' });
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_sess');
+    expect(result).not.toBeNull();
+    expect(result!.lastSessionId).toBe('sess-abc-123');
+  });
+
+  it('removes lastSessionId field when set to null', () => {
+    const agents = [
+      { id: 'durable_clearsess', name: 'clearsess', color: 'indigo', lastSessionId: 'old-session', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateDurableConfig(PROJECT_PATH, 'durable_clearsess', { lastSessionId: null });
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_clearsess');
+    expect(result).not.toBeNull();
+    expect(result!.lastSessionId).toBeUndefined();
+  });
 });
+
+describe('updateSessionId', () => {
+  it('persists a session ID via updateSessionId helper', () => {
+    const agents = [
+      { id: 'durable_sid', name: 'sid-agent', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateSessionId(PROJECT_PATH, 'durable_sid', 'session-uuid-789');
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_sid');
+    expect(result).not.toBeNull();
+    expect(result!.lastSessionId).toBe('session-uuid-789');
+  });
+
+  it('clears session ID when null', () => {
+    const agents = [
+      { id: 'durable_clr', name: 'clr-agent', color: 'indigo', lastSessionId: 'old-sess', createdAt: '2024-01-01' },
+    ];
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+
+    updateSessionId(PROJECT_PATH, 'durable_clr', null);
+
+    const result = getDurableConfig(PROJECT_PATH, 'durable_clr');
+    expect(result).not.toBeNull();
+    expect(result!.lastSessionId).toBeUndefined();
+  });
 
 describe('ensureGitignore edge cases', () => {
   beforeEach(() => {

@@ -124,6 +124,143 @@ describe('Provider integration tests', () => {
     });
   });
 
+  describe('session resume flag generation', () => {
+    it('ClaudeCode: adds --continue when resume=true without sessionId', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+      });
+      expect(args).toContain('--continue');
+      expect(args).not.toContain('--resume');
+    });
+
+    it('ClaudeCode: adds --resume <id> when resume=true with sessionId', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+        sessionId: 'sess-abc-123',
+      });
+      expect(args).toContain('--resume');
+      expect(args[args.indexOf('--resume') + 1]).toBe('sess-abc-123');
+      expect(args).not.toContain('--continue');
+    });
+
+    it('ClaudeCode: no resume flags when resume is false', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: false,
+      });
+      expect(args).not.toContain('--continue');
+      expect(args).not.toContain('--resume');
+    });
+
+    it('ClaudeCode: resume flags coexist with other options', async () => {
+      const provider = new ClaudeCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+        model: 'opus',
+        mission: 'Continue work',
+      });
+      expect(args).toContain('--continue');
+      expect(args).toContain('--model');
+      expect(args[args.indexOf('--model') + 1]).toBe('opus');
+      expect(args[args.length - 1]).toBe('Continue work');
+    });
+
+    it('CopilotCli: adds --continue for interactive resume (no mission/prompt)', async () => {
+      const provider = new CopilotCliProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+      });
+      expect(args).toContain('--continue');
+    });
+
+    it('CopilotCli: adds --resume <id> for interactive resume with sessionId', async () => {
+      const provider = new CopilotCliProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+        sessionId: 'copilot-uuid-456',
+      });
+      expect(args).toContain('--resume');
+      expect(args[args.indexOf('--resume') + 1]).toBe('copilot-uuid-456');
+    });
+
+    it('CopilotCli: skips resume flags in prompt mode (mission present)', async () => {
+      const provider = new CopilotCliProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+        mission: 'Fix bug',
+      });
+      // Copilot CLI does not support resume with -p flag
+      expect(args).not.toContain('--continue');
+      expect(args).not.toContain('--resume');
+      expect(args).toContain('-p');
+    });
+
+    it('OpenCode: adds --continue when resume=true without sessionId', async () => {
+      const provider = new OpenCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+      });
+      expect(args).toContain('--continue');
+    });
+
+    it('OpenCode: adds --session <id> when resume=true with sessionId', async () => {
+      const provider = new OpenCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+        sessionId: 'ses_01ABC123',
+      });
+      expect(args).toContain('--session');
+      expect(args[args.indexOf('--session') + 1]).toBe('ses_01ABC123');
+      expect(args).not.toContain('--continue');
+    });
+
+    it('OpenCode: no resume flags when resume is false', async () => {
+      const provider = new OpenCodeProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: false,
+      });
+      expect(args).not.toContain('--continue');
+      expect(args).not.toContain('--session');
+    });
+
+    it('CodexCli: adds --continue when resume=true', async () => {
+      const provider = new CodexCliProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: true,
+      });
+      expect(args).toContain('--continue');
+    });
+
+    it('CodexCli: no resume flags when resume is false', async () => {
+      const provider = new CodexCliProvider();
+      const { args } = await provider.buildSpawnCommand({
+        cwd: '/p',
+        resume: false,
+      });
+      expect(args).not.toContain('--continue');
+    });
+
+    it('all providers declare sessionResume capability', () => {
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
+      for (const p of providers) {
+        expect(p.getCapabilities().sessionResume).toBe(true);
+      }
+    });
+  });
+
   describe('freeAgentMode flag generation', () => {
     it('ClaudeCode: adds --dangerously-skip-permissions when freeAgentMode is true', async () => {
       const provider = new ClaudeCodeProvider();
