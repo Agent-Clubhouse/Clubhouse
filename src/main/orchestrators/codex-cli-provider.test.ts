@@ -11,14 +11,25 @@ vi.mock('fs', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
-  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: Function) => cb(new Error('not found'), '', '')),
+  execFile: vi.fn((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+    // Support --version for checkAvailability validation
+    if (args && args[0] === '--version') {
+      return cb(null, '1.0.0', '');
+    }
+    return cb(new Error('not found'), '', '');
+  }),
 }));
 
 vi.mock('../util/shell', () => ({
-  getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
+  getShellEnvironment: vi.fn(() => ({
+    PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
+    OPENAI_API_KEY: 'sk-test-key',
+  })),
 }));
 
 import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import { getShellEnvironment } from '../util/shell';
 import { CodexCliProvider } from './codex-cli-provider';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
@@ -117,13 +128,9 @@ describe('CodexCliProvider', () => {
   });
 
   describe('checkAvailability', () => {
-    it('returns available when binary exists', async () => {
+    it('returns available when binary exists, runs, and API key is set', async () => {
       const result = await provider.checkAvailability();
       expect(result.available).toBe(true);
-    });
-
-    it('returns no error when available', async () => {
-      const result = await provider.checkAvailability();
       expect(result.error).toBeUndefined();
     });
 
@@ -135,11 +142,42 @@ describe('CodexCliProvider', () => {
       expect(result.error).toMatch(/Could not find/);
     });
 
-    it('error message includes binary name', async () => {
+    it('error message includes binary name when not found', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
       const result = await provider.checkAvailability();
       expect(result.error).toMatch(/codex/);
+    });
+
+    it('returns error when binary found but fails to execute', async () => {
+      vi.mocked(childProcess.execFile).mockImplementation(
+        (_cmd: string, _args: unknown, _opts: unknown, cb: any) => cb(new Error('exec failed'), '', '')
+      );
+
+      const result = await provider.checkAvailability();
+      expect(result.available).toBe(false);
+      expect(result.error).toMatch(/failed to execute/);
+      expect(result.error).toMatch(/Reinstall/);
+    });
+
+    it('returns error when OPENAI_API_KEY is missing', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
+      });
+
+      const result = await provider.checkAvailability();
+      expect(result.available).toBe(false);
+      expect(result.error).toMatch(/OPENAI_API_KEY/);
+    });
+
+    it('accepts OPENAI_BASE_URL as alternative to OPENAI_API_KEY', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
+        OPENAI_BASE_URL: 'https://custom-endpoint.com',
+      });
+
+      const result = await provider.checkAvailability();
+      expect(result.available).toBe(true);
     });
   });
 

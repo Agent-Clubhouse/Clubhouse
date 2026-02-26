@@ -84,7 +84,7 @@ describe('SleepingAgent', () => {
 
     it('shows default error hint when no errorMessage', () => {
       renderComponent({ status: 'error' });
-      expect(screen.getByText('Agent CLI may not be installed or accessible')).toBeInTheDocument();
+      expect(screen.getByText('Check that the CLI is installed and your API key is configured')).toBeInTheDocument();
     });
   });
 
