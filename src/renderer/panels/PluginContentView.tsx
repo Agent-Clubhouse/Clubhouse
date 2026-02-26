@@ -4,6 +4,7 @@ import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext, activatePlugin } from '../plugins/plugin-loader';
 import { useProjectStore } from '../stores/projectStore';
+import { usePluginUpdateStore } from '../stores/pluginUpdateStore';
 import { rendererLog } from '../plugins/renderer-logger';
 import type { PluginRenderMode } from '../../shared/plugin-types';
 
@@ -68,6 +69,10 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const [activating, setActivating] = useState(false);
 
+  // Check if this plugin is currently being hot-reloaded (updated)
+  const isReloading = usePluginUpdateStore((s) => !!s.updating[pluginId]);
+  const reloadError = usePluginUpdateStore((s) => s.updateErrors[pluginId]);
+
   // For app-mode plugins, look up the app-level context (no projectId).
   // For project-mode, use the active project.
   const contextProjectId = mode === 'app' ? undefined : (activeProjectId || undefined);
@@ -88,12 +93,47 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
 
   // Auto-activate app-mode plugins on demand if context doesn't exist yet.
   // This handles race conditions between plugin init and first render.
+  // Also handles re-activation after a failed hot-reload when the plugin
+  // is in 'registered' or 'deactivated' state (not 'errored' or 'incompatible').
   useEffect(() => {
-    if (mode === 'app' && !ctx && mod && entry && entry.status !== 'incompatible' && !activating) {
+    if (
+      mode === 'app' && !ctx && entry && !activating && !isReloading &&
+      (entry.status === 'registered' || entry.status === 'deactivated' || (entry.status === 'activated' && mod))
+    ) {
       setActivating(true);
       activatePlugin(pluginId).finally(() => setActivating(false));
     }
-  }, [mode, ctx, mod, entry, pluginId, activating]);
+  }, [mode, ctx, mod, entry, pluginId, activating, isReloading]);
+
+  // During hot-reload, show a loading state instead of error messages.
+  // The module is temporarily removed during the deactivate→reactivate cycle.
+  if (isReloading || (entry && entry.status === 'registered' && !mod && !reloadError)) {
+    return (
+      <div className="flex items-center justify-center h-full bg-ctp-base">
+        <p className="text-ctp-subtext0 text-xs">Reloading plugin...</p>
+      </div>
+    );
+  }
+
+  // Show reload error with context if hot-reload failed
+  if (reloadError && (!mod || !ctx)) {
+    return (
+      <div className="flex items-center justify-center h-full bg-ctp-base">
+        <div className="text-center text-ctp-subtext0 max-w-md">
+          <p className="text-lg mb-2">Plugin Update Error</p>
+          <p className="text-sm mb-3">
+            Plugin &quot;{entry?.manifest.name || pluginId}&quot; was updated but failed to reload.
+          </p>
+          <pre className="text-xs text-left bg-surface-0 p-3 rounded overflow-auto max-h-24 mb-3">
+            {reloadError}
+          </pre>
+          <p className="text-xs text-ctp-overlay0">
+            Try restarting the app to load the updated plugin.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!mod || !mod.MainPanel) {
     return (
@@ -126,7 +166,7 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   const MainPanel = mod.MainPanel;
 
   return (
-    <PluginErrorBoundary key={pluginId} pluginId={pluginId}>
+    <PluginErrorBoundary key={`${pluginId}-${contextRevision}`} pluginId={pluginId}>
       <PluginAPIProvider api={api}>
         <div className="h-full bg-ctp-base overflow-hidden">
           <MainPanel api={api} />

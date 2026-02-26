@@ -439,20 +439,47 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
   // 4. Re-register with updated manifest (preserve original source)
   store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
 
-  // 5. Re-activate in all contexts where it was previously active
+  // 5. Re-activate in all contexts where it was previously active.
+  //    Wrap each activation in try/catch so one context failure doesn't
+  //    prevent the remaining contexts from being restored.
+  const activationErrors: string[] = [];
   for (const ctx of contextsToRestore) {
-    await activatePlugin(pluginId, ctx.projectId, ctx.projectPath);
+    try {
+      await activatePlugin(pluginId, ctx.projectId, ctx.projectPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      activationErrors.push(ctx.projectId ? `project ${ctx.projectId}: ${msg}` : `app: ${msg}`);
+      rendererLog('core:plugins', 'error', `Hot-reload: failed to re-activate ${pluginId} in context`, {
+        meta: { pluginId, projectId: ctx.projectId, error: msg },
+      });
+    }
   }
 
   // If the plugin had no project contexts but was app-enabled, re-activate at app level
   if (contextsToRestore.length === 0 && store.appEnabled.includes(pluginId)) {
     const updatedEntry = usePluginStore.getState().plugins[pluginId];
     if (updatedEntry && (updatedEntry.manifest.scope === 'app' || updatedEntry.manifest.scope === 'dual')) {
-      await activatePlugin(pluginId);
+      try {
+        await activatePlugin(pluginId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        activationErrors.push(`app: ${msg}`);
+        rendererLog('core:plugins', 'error', `Hot-reload: failed to re-activate ${pluginId} at app level`, {
+          meta: { pluginId, error: msg },
+        });
+      }
     }
   }
 
   const finalEntry = usePluginStore.getState().plugins[pluginId];
+
+  if (activationErrors.length > 0) {
+    rendererLog('core:plugins', 'warn', `Plugin ${pluginId} hot-reloaded with activation errors`, {
+      meta: { newVersion: finalEntry?.manifest.version, status: finalEntry?.status, errors: activationErrors },
+    });
+    throw new Error(`Hot-reload activation failed: ${activationErrors.join('; ')}`);
+  }
+
   rendererLog('core:plugins', 'info', `Plugin ${pluginId} hot-reloaded successfully`, {
     meta: { newVersion: finalEntry?.manifest.version, status: finalEntry?.status },
   });
