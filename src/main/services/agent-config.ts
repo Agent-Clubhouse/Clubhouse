@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { exec, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
@@ -6,6 +6,16 @@ import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus,
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
+
+/** Non-blocking git command execution. Prevents UI freezes in large repos. */
+function execGitAsync(cmd: string, cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { cwd, encoding: 'utf-8' }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) {
@@ -123,7 +133,7 @@ export function updateDurableConfig(
   writeAgents(projectPath, agents);
 }
 
-export function createDurable(
+export async function createDurable(
   projectPath: string,
   name: string,
   color: string,
@@ -131,7 +141,7 @@ export function createDurable(
   useWorktree: boolean = true,
   orchestrator?: OrchestratorId,
   freeAgentMode?: boolean,
-): DurableAgentConfig {
+): Promise<DurableAgentConfig> {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
 
@@ -149,7 +159,7 @@ export function createDurable(
     if (hasGit) {
       // Ensure repo has at least one commit (required for branching/worktrees)
       try {
-        execSync('git rev-parse HEAD', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' });
+        await execGitAsync('git rev-parse HEAD', projectPath);
       } catch {
         // Empty repo with no commits — bootstrap with an initial commit
         // Include .gitignore which ensureGitignore() has already created/updated
@@ -159,13 +169,9 @@ export function createDurable(
         try {
           const gitignorePath = path.join(projectPath, '.gitignore');
           if (fs.existsSync(gitignorePath)) {
-            execSync('git add .gitignore', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' });
+            await execGitAsync('git add .gitignore', projectPath);
           }
-          execSync('git commit --allow-empty -m "Clubhouse - Initial Commit"', {
-            cwd: projectPath,
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          });
+          await execGitAsync('git commit --allow-empty -m "Clubhouse - Initial Commit"', projectPath);
         } catch (commitErr) {
           appLog('core:agent-config', 'warn', 'Failed to create initial commit in empty repository', {
             meta: {
@@ -178,17 +184,14 @@ export function createDurable(
       }
 
       try {
-        execSync(`git branch "${branch}"`, { cwd: projectPath, encoding: 'utf-8' });
+        await execGitAsync(`git branch "${branch}"`, projectPath);
       } catch {
         // Branch may already exist
       }
 
       try {
         ensureDir(path.dirname(worktreePath));
-        execSync(`git worktree add "${worktreePath}" "${branch}"`, {
-          cwd: projectPath,
-          encoding: 'utf-8',
-        });
+        await execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath);
       } catch (err) {
         appLog('core:agent-config', 'warn', 'Git worktree creation failed, falling back to plain directory', {
           meta: {
