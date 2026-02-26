@@ -60,6 +60,7 @@ import {
   handleProjectSwitch,
   getActiveContext,
   discoverNewPlugins,
+  hotReloadPlugin,
   _resetActiveContexts,
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
@@ -906,6 +907,151 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([]);
       const result = await discoverNewPlugins();
       expect(result).toEqual([]);
+    });
+  });
+
+  // ── hotReloadPlugin ──────────────────────────────────────────────────
+
+  describe('hotReloadPlugin()', () => {
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    it('does nothing for unknown plugin', async () => {
+      await hotReloadPlugin('nonexistent');
+      // Should log error and return without crashing
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'error', msg: expect.stringContaining('Cannot hot-reload unknown plugin') }),
+      );
+    });
+
+    it('refuses to hot-reload builtin plugin', async () => {
+      usePluginStore.getState().registerPlugin(makeManifest({ id: 'builtin-p', scope: 'app' }), 'builtin', '', 'registered');
+      await hotReloadPlugin('builtin-p');
+      expect(mockLog.write).toHaveBeenCalledWith(
+        expect.objectContaining({ ns: 'core:plugins', level: 'warn', msg: expect.stringContaining('Cannot hot-reload built-in plugin') }),
+      );
+    });
+
+    it('deactivates and re-activates a community plugin', async () => {
+      const mod: PluginModule = { activate: vi.fn(), deactivate: vi.fn(), MainPanel: () => null };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'reload-me', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/reload-me', 'registered');
+      usePluginStore.getState().enableApp('reload-me');
+
+      // Activate first
+      await activatePlugin('reload-me');
+      expect(getActiveContext('reload-me')).toBeDefined();
+
+      // Mock re-discovery for hot-reload
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'reload-me', scope: 'app', version: '2.0.0' }), pluginPath: '/plugins/reload-me', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('reload-me');
+
+      // Should have called deactivate on the old module
+      expect(mod.deactivate).toHaveBeenCalledTimes(1);
+      // Should have re-activated
+      expect(getActiveContext('reload-me')).toBeDefined();
+      expect(usePluginStore.getState().plugins['reload-me'].manifest.version).toBe('2.0.0');
+    });
+
+    it('continues activating remaining contexts when one fails', async () => {
+      // Set up a plugin active in multiple project contexts
+      const mod: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'multi-ctx', scope: 'project' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/multi-ctx', 'registered');
+
+      // Activate in two projects
+      await activatePlugin('multi-ctx', 'proj-1', '/p1');
+      await activatePlugin('multi-ctx', 'proj-2', '/p2');
+      expect(getActiveContext('multi-ctx', 'proj-1')).toBeDefined();
+      expect(getActiveContext('multi-ctx', 'proj-2')).toBeDefined();
+
+      // Mock re-discovery
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'multi-ctx', scope: 'project', version: '2.0.0' }), pluginPath: '/plugins/multi-ctx', fromMarketplace: false },
+      ]);
+
+      // Make the first activation fail but the second succeed.
+      // After deactivation, the module was removed, so activatePlugin will
+      // do a fresh dynamic import for each context.
+      let callCount = 0;
+      mockDynamicImport.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error('Module load failed');
+        return { activate: vi.fn() };
+      });
+
+      // Should throw because at least one context failed
+      await expect(hotReloadPlugin('multi-ctx')).rejects.toThrow('Hot-reload activation failed');
+
+      // The second context should still have been attempted even though the
+      // first failed — the hot-reload resets 'errored' to 'registered' before
+      // retrying the next context.
+      expect(callCount).toBeGreaterThanOrEqual(2);
+      // The second context should have successfully activated
+      expect(getActiveContext('multi-ctx', 'proj-2')).toBeDefined();
+    });
+
+    it('throws when re-activation fails', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'fail-reload', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/fail-reload', 'registered');
+      usePluginStore.getState().enableApp('fail-reload');
+
+      await activatePlugin('fail-reload');
+
+      // Mock re-discovery
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'fail-reload', scope: 'app', version: '2.0.0' }), pluginPath: '/plugins/fail-reload', fromMarketplace: false },
+      ]);
+
+      // Make re-activation fail
+      mockDynamicImport.mockRejectedValue(new Error('Syntax error in updated module'));
+
+      await expect(hotReloadPlugin('fail-reload')).rejects.toThrow('Hot-reload activation failed');
+    });
+
+    it('sets errored status when plugin not found on disk after update', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'vanished', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/vanished', 'registered');
+      await activatePlugin('vanished');
+
+      // Discovery returns nothing
+      mockPlugin.discoverCommunity.mockResolvedValue([]);
+
+      await hotReloadPlugin('vanished');
+
+      expect(usePluginStore.getState().plugins['vanished'].status).toBe('errored');
+      expect(usePluginStore.getState().plugins['vanished'].error).toContain('not found');
+    });
+
+    it('re-activates app-level plugin when no contexts were active', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'app-reactivate', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/app-reactivate', 'registered');
+      usePluginStore.getState().enableApp('app-reactivate');
+      // Don't activate — simulate a plugin that has no active contexts
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'app-reactivate', scope: 'app', version: '2.0.0' }), pluginPath: '/plugins/app-reactivate', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('app-reactivate');
+
+      expect(getActiveContext('app-reactivate')).toBeDefined();
+      expect(usePluginStore.getState().plugins['app-reactivate'].status).toBe('activated');
     });
   });
 });
