@@ -506,28 +506,48 @@ export function ensureDefaultTemplates(projectPath: string): void {
 
 /**
  * Reset project agent defaults to the built-in templates, overwriting any
- * existing customizations. Also re-ensures default skills.
+ * existing customizations. Also resets all default skills to their built-in
+ * content (overwriting stale customizations).
  */
 export function resetProjectAgentDefaults(projectPath: string): void {
   writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
-  ensureDefaultSkills(projectPath);
+  resetDefaultSkills(projectPath);
 }
+
+/** All default skill definitions. */
+const DEFAULT_SKILLS: Array<{ name: string; content: string }> = [
+  { name: 'mission', content: MISSION_SKILL_CONTENT },
+  { name: 'create-pr', content: CREATE_PR_SKILL_CONTENT },
+  { name: 'go-standby', content: GO_STANDBY_SKILL_CONTENT },
+  { name: 'build', content: BUILD_SKILL_CONTENT },
+  { name: 'test', content: TEST_SKILL_CONTENT },
+  { name: 'lint', content: LINT_SKILL_CONTENT },
+  { name: 'validate-changes', content: VALIDATE_CHANGES_SKILL_CONTENT },
+];
 
 /**
  * Ensure all default skills exist in the project's source skills directory.
  * Creates any missing skill files without overwriting existing ones.
  */
 export function ensureDefaultSkills(projectPath: string): void {
+  writeDefaultSkills(projectPath, false);
+}
+
+/**
+ * Reset all default skills to their built-in content, overwriting any
+ * existing customizations.
+ */
+export function resetDefaultSkills(projectPath: string): void {
+  writeDefaultSkills(projectPath, true);
+}
+
+function writeDefaultSkills(projectPath: string, force: boolean): void {
   const clubhouseDir = path.join(projectPath, '.clubhouse');
   const skillsDir = path.join(clubhouseDir, 'skills');
 
-  ensureSkillFile(skillsDir, 'mission', MISSION_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'create-pr', CREATE_PR_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'go-standby', GO_STANDBY_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'build', BUILD_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'test', TEST_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'lint', LINT_SKILL_CONTENT);
-  ensureSkillFile(skillsDir, 'validate-changes', VALIDATE_CHANGES_SKILL_CONTENT);
+  for (const skill of DEFAULT_SKILLS) {
+    writeSkillFile(skillsDir, skill.name, skill.content, force);
+  }
 
   // Ensure the source skills path is set in project settings
   const settingsPath = path.join(clubhouseDir, 'settings.json');
@@ -549,13 +569,13 @@ export function ensureDefaultSkills(projectPath: string): void {
 }
 
 /**
- * Create a single skill file if it doesn't already exist.
+ * Write a single skill file. When force is false, skip if the file already exists.
  */
-function ensureSkillFile(skillsDir: string, name: string, content: string): void {
+function writeSkillFile(skillsDir: string, name: string, content: string, force: boolean): void {
   const dir = path.join(skillsDir, name);
   const filePath = path.join(dir, 'SKILL.md');
 
-  if (fs.existsSync(filePath)) return;
+  if (!force && fs.existsSync(filePath)) return;
 
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });

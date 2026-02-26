@@ -35,6 +35,7 @@ import {
   previewMaterialization,
   ensureDefaultTemplates,
   ensureDefaultSkills,
+  resetDefaultSkills,
   resetProjectAgentDefaults,
   getDefaultAgentTemplates,
   resolveSourceControlProvider,
@@ -510,6 +511,24 @@ describe('materialization-service', () => {
       );
       expect(skillWrites).toHaveLength(7);
     });
+
+    it('overwrites existing skill files with built-in defaults', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: { instructions: 'custom' },
+      }));
+      // All files already exist
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+
+      resetProjectAgentDefaults('/project');
+
+      // Skills should still be written even though files exist
+      const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
+        (call) => (call[0] as string).includes('SKILL.md'),
+      );
+      expect(skillWrites).toHaveLength(7);
+    });
   });
 
   describe('ensureDefaultSkills', () => {
@@ -563,6 +582,35 @@ describe('materialization-service', () => {
         (call) => (call[0] as string).includes('SKILL.md'),
       );
       expect(skillWrites).toHaveLength(0);
+    });
+  });
+
+  describe('resetDefaultSkills', () => {
+    it('overwrites all skill files even when they already exist', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
+
+      resetDefaultSkills('/project');
+
+      const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
+        (call) => (call[0] as string).includes('SKILL.md'),
+      );
+      expect(skillWrites).toHaveLength(7);
+    });
+
+    it('writes latest built-in content when overwriting', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
+
+      resetDefaultSkills('/project');
+
+      const skillWrites = vi.mocked(fs.writeFileSync).mock.calls.filter(
+        (call) => (call[0] as string).includes('SKILL.md'),
+      );
+      const normalize = (call: unknown[]) => (call[0] as string).replace(/\\/g, '/');
+      const missionWrite = skillWrites.find((call) => normalize(call).includes('/mission/'));
+      expect(missionWrite![1]).toContain('Mission Skill');
+      expect(missionWrite![1]).toContain('/validate-changes');
     });
   });
 
