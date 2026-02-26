@@ -54,6 +54,12 @@ vi.mock('../../shared/name-generator', () => ({
   generateQuickName: vi.fn().mockReturnValue('swift-fox'),
 }));
 
+// Mock ipc-broadcast (used for notifying renderer of annex-spawned agents)
+const mockBroadcastToAllWindows = vi.fn();
+vi.mock('../util/ipc-broadcast', () => ({
+  broadcastToAllWindows: (...args: unknown[]) => mockBroadcastToAllWindows(...args),
+}));
+
 import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
 import * as projectStore from './project-store';
@@ -336,6 +342,33 @@ describe('annex-server', () => {
           kind: 'quick',
           mission: 'Fix the tests',
           projectPath: '/tmp/test',
+        }),
+      );
+    });
+
+    it('POST /api/v1/projects/:id/agents/quick notifies desktop renderer via IPC', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+
+      const { port, token } = await startAndPair();
+      mockBroadcastToAllWindows.mockClear();
+
+      await request(
+        port, 'POST', '/api/v1/projects/proj_1/agents/quick',
+        { prompt: 'Fix the tests' },
+        authHeaders(token),
+      );
+
+      expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+        'annex:agent-spawned',
+        expect.objectContaining({
+          name: 'swift-fox',
+          kind: 'quick',
+          status: 'running',
+          prompt: 'Fix the tests',
+          projectId: 'proj_1',
+          headless: true,
         }),
       );
     });
