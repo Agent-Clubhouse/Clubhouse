@@ -35,6 +35,7 @@ describe('pluginUpdateStore', () => {
       lastCheck: null,
       updating: {},
       error: null,
+      updateErrors: {},
       dismissed: false,
     });
   });
@@ -133,7 +134,7 @@ describe('pluginUpdateStore', () => {
       expect(usePluginUpdateStore.getState().updates).toHaveLength(1);
     });
 
-    it('handles exception during update', async () => {
+    it('handles exception during update and tracks error', async () => {
       mockUpdatePlugin.mockRejectedValue(new Error('Network error'));
 
       const result = await usePluginUpdateStore.getState().updatePlugin('my-plugin');
@@ -141,6 +142,7 @@ describe('pluginUpdateStore', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Network error');
       expect(usePluginUpdateStore.getState().updating).toEqual({});
+      expect(usePluginUpdateStore.getState().updateErrors['my-plugin']).toBe('Network error');
     });
 
     it('sets updating phase during update', async () => {
@@ -282,6 +284,126 @@ describe('pluginUpdateStore', () => {
       });
 
       expect(usePluginUpdateStore.getState().dismissed).toBe(false);
+    });
+
+    it('preserves local updating state when IPC broadcast arrives during active update', () => {
+      // Simulate renderer actively updating a plugin
+      usePluginUpdateStore.setState({ updating: { 'my-plugin': 'reloading' } });
+
+      let callback: (status: any) => void;
+      mockOnPluginUpdatesChanged.mockImplementation((cb: any) => {
+        callback = cb;
+        return () => {};
+      });
+
+      initPluginUpdateListener();
+
+      // Main process broadcasts with empty updating state (it finished its part)
+      callback!({
+        updates: [],
+        checking: false,
+        lastCheck: '2025-06-01T00:00:00Z',
+        updating: {},
+        error: null,
+      });
+
+      // Renderer's local updating state should be preserved
+      expect(usePluginUpdateStore.getState().updating).toEqual({ 'my-plugin': 'reloading' });
+    });
+
+    it('accepts IPC updating state when no local updates are active', () => {
+      // No active local updates
+      usePluginUpdateStore.setState({ updating: {} });
+
+      let callback: (status: any) => void;
+      mockOnPluginUpdatesChanged.mockImplementation((cb: any) => {
+        callback = cb;
+        return () => {};
+      });
+
+      initPluginUpdateListener();
+
+      // Main process broadcasts with updating state
+      callback!({
+        updates: [],
+        checking: false,
+        lastCheck: '2025-06-01T00:00:00Z',
+        updating: { 'other-plugin': 'downloading' },
+        error: null,
+      });
+
+      // Should accept the main process state
+      expect(usePluginUpdateStore.getState().updating).toEqual({ 'other-plugin': 'downloading' });
+    });
+  });
+
+  describe('hot-reload error tracking', () => {
+    beforeEach(() => {
+      usePluginUpdateStore.setState({
+        updates: [
+          {
+            pluginId: 'my-plugin',
+            pluginName: 'My Plugin',
+            currentVersion: '1.0.0',
+            latestVersion: '2.0.0',
+            assetUrl: 'https://example.com/my-plugin-2.0.0.zip',
+            sha256: 'abc',
+            size: 1024,
+          },
+        ],
+      });
+    });
+
+    it('tracks error when hot-reload fails after successful download', async () => {
+      mockUpdatePlugin.mockResolvedValue({ success: true, pluginId: 'my-plugin', newVersion: '2.0.0' });
+      vi.mocked(hotReloadPlugin).mockRejectedValue(new Error('Module syntax error'));
+
+      const result = await usePluginUpdateStore.getState().updatePlugin('my-plugin');
+
+      // Should still report success (files updated) but include the error
+      expect(result.success).toBe(true);
+      expect(result.error).toBe('Module syntax error');
+      expect(usePluginUpdateStore.getState().updateErrors['my-plugin']).toBe('Module syntax error');
+      // Plugin should be removed from updates (files are updated)
+      expect(usePluginUpdateStore.getState().updates).toHaveLength(0);
+      // Updating state should be cleared
+      expect(usePluginUpdateStore.getState().updating).toEqual({});
+    });
+
+    it('tracks error when download fails', async () => {
+      mockUpdatePlugin.mockResolvedValue({ success: false, pluginId: 'my-plugin', error: 'Download failed' });
+
+      const result = await usePluginUpdateStore.getState().updatePlugin('my-plugin');
+
+      expect(result.success).toBe(false);
+      expect(usePluginUpdateStore.getState().updateErrors['my-plugin']).toBe('Download failed');
+      // Plugin should remain in updates list since download failed
+      expect(usePluginUpdateStore.getState().updates).toHaveLength(1);
+    });
+
+    it('clears previous error on retry', async () => {
+      // First attempt fails
+      mockUpdatePlugin.mockResolvedValue({ success: false, pluginId: 'my-plugin', error: 'First failure' });
+      await usePluginUpdateStore.getState().updatePlugin('my-plugin');
+      expect(usePluginUpdateStore.getState().updateErrors['my-plugin']).toBe('First failure');
+
+      // Second attempt succeeds
+      mockUpdatePlugin.mockResolvedValue({ success: true, pluginId: 'my-plugin', newVersion: '2.0.0' });
+      vi.mocked(hotReloadPlugin).mockResolvedValue(undefined);
+      await usePluginUpdateStore.getState().updatePlugin('my-plugin');
+
+      // Error should be cleared
+      expect(usePluginUpdateStore.getState().updateErrors['my-plugin']).toBeUndefined();
+    });
+
+    it('clearUpdateError removes a specific plugin error', () => {
+      usePluginUpdateStore.setState({
+        updateErrors: { 'plugin-a': 'error A', 'plugin-b': 'error B' },
+      });
+
+      usePluginUpdateStore.getState().clearUpdateError('plugin-a');
+
+      expect(usePluginUpdateStore.getState().updateErrors).toEqual({ 'plugin-b': 'error B' });
     });
   });
 });
