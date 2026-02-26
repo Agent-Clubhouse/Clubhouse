@@ -162,7 +162,8 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
     cleanupSession(agentId);
     onExit?.(agentId, exitCode);
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
+    // Include last PTY output so the renderer can show diagnostics on early exit
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode, ptyBuffer);
     annexEventBus.emitPtyExit(agentId, exitCode);
   });
 }

@@ -57,8 +57,8 @@ function useAgentStateSync() {
 
     // 3. Subscribe to PTY exit events (same as App.tsx, simplified)
     const removeExitListener = window.clubhouse.pty.onExit(
-      (agentId: string, exitCode: number) => {
-        useAgentStore.getState().updateAgentStatus(agentId, 'sleeping', exitCode);
+      (agentId: string, exitCode: number, lastOutput?: string) => {
+        useAgentStore.getState().updateAgentStatus(agentId, 'sleeping', exitCode, undefined, lastOutput);
         // Allow re-detection on next wake
         awokenAgents.delete(agentId);
       },

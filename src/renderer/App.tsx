@@ -356,9 +356,9 @@ export function App() {
 
   useEffect(() => {
     const removeExitListener = window.clubhouse.pty.onExit(
-      async (agentId: string, exitCode: number) => {
+      async (agentId: string, exitCode: number, lastOutput?: string) => {
         const agent = useAgentStore.getState().agents[agentId];
-        updateAgentStatus(agentId, 'sleeping', exitCode);
+        updateAgentStatus(agentId, 'sleeping', exitCode, undefined, lastOutput);
 
         // Handle quick agent completion FIRST (before plugin events which could throw)
         if (agent?.kind === 'quick' && agent.mission) {

@@ -48,7 +48,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           </p>
           {agent.status === 'error' && (
             <p className="text-xs text-ctp-subtext0 mb-4 max-w-xs">
-              {agent.errorMessage || 'Agent CLI may not be installed or accessible'}
+              {agent.errorMessage || 'Check that the CLI is installed and your API key is configured'}
             </p>
           )}
           {agent.status !== 'error' && <div className="mb-4" />}
