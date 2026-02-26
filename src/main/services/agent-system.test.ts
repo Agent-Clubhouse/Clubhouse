@@ -233,6 +233,40 @@ describe('agent-system', () => {
         expect.objectContaining({ allowedTools: ['Bash(git:*)'] })
       );
     });
+
+    it('throws with descriptive error when pre-flight check fails', async () => {
+      mockProvider.checkAvailability.mockResolvedValueOnce({
+        available: false,
+        error: 'OPENAI_API_KEY is not set',
+      });
+
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+        })
+      ).rejects.toThrowError('OPENAI_API_KEY is not set');
+    });
+
+    it('does not spawn PTY when pre-flight check fails', async () => {
+      mockProvider.checkAvailability.mockResolvedValueOnce({
+        available: false,
+        error: 'CLI not found',
+      });
+
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+        })
+      ).rejects.toThrow();
+
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
   });
 
   describe('killAgent', () => {

@@ -131,6 +131,55 @@ describe('agentStore', () => {
       expect(getState().agents['a_msg'].errorMessage).toBe('Custom error from binary lookup');
     });
 
+    it('durable sleeping <3s uses PTY output as error message', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_pty', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_pty: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_pty', 'sleeping', 1, undefined, 'Error: OPENAI_API_KEY not set');
+      expect(getState().agents['a_pty'].status).toBe('error');
+      expect(getState().agents['a_pty'].errorMessage).toContain('OPENAI_API_KEY');
+    });
+
+    it('durable sleeping <3s strips ANSI from PTY output', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_ansi', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_ansi: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_ansi', 'sleeping', 1, undefined, '\x1B[31mError\x1B[0m: API key missing');
+      expect(getState().agents['a_ansi'].status).toBe('error');
+      expect(getState().agents['a_ansi'].errorMessage).toBe('Error: API key missing');
+      expect(getState().agents['a_ansi'].errorMessage).not.toContain('\x1B');
+    });
+
+    it('durable sleeping <3s falls back to generic message when no PTY output', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_noptybuf', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_noptybuf: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_noptybuf', 'sleeping', 1, undefined, '');
+      expect(getState().agents['a_noptybuf'].status).toBe('error');
+      expect(getState().agents['a_noptybuf'].errorMessage).toContain('exited immediately');
+    });
+
     it('durable sleeping >3s stays sleeping', () => {
       vi.useFakeTimers();
       const now = Date.now();
