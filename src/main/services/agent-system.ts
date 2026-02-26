@@ -90,6 +90,10 @@ export interface SpawnAgentParams {
   maxTurns?: number;
   maxBudgetUsd?: number;
   freeAgentMode?: boolean;
+  /** When true, attempt to resume the previous CLI session instead of starting fresh */
+  resume?: boolean;
+  /** Specific session ID to resume (provider-specific format) */
+  sessionId?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {
@@ -98,6 +102,18 @@ export function isHeadlessAgent(agentId: string): boolean {
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const provider = resolveOrchestrator(params.projectPath, params.orchestrator);
+
+  // Pre-flight: verify the orchestrator CLI is available before spawning.
+  // This catches missing binaries and auth issues early with clear errors,
+  // rather than letting the PTY start and exit immediately.
+  const availability = await provider.checkAvailability();
+  if (!availability.available) {
+    const msg = availability.error || `${provider.displayName} CLI is not available`;
+    appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
+      meta: { agentId: params.agentId, error: msg },
+    });
+    throw new Error(msg);
+  }
 
   agentProjectMap.set(params.agentId, params.projectPath);
   if (params.orchestrator) {
@@ -183,6 +199,8 @@ async function spawnPtyAgent(
     allowedTools,
     agentId: params.agentId,
     freeAgentMode: params.freeAgentMode,
+    resume: params.resume,
+    sessionId: params.sessionId,
   });
 
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {

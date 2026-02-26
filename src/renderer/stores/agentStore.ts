@@ -45,7 +45,7 @@ interface AgentState {
   saveAgentIcon: (agentId: string, projectPath: string, dataUrl: string) => Promise<void>;
   removeAgentIcon: (agentId: string, projectPath: string) => Promise<void>;
   loadAgentIcon: (agent: Agent) => Promise<void>;
-  updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number, errorMessage?: string) => void;
+  updateAgentStatus: (id: string, status: AgentStatus, exitCode?: number, errorMessage?: string, lastOutput?: string) => void;
   handleHookEvent: (agentId: string, event: AgentHookEvent) => void;
   clearStaleStatuses: () => void;
   recordActivity: (id: string) => void;
@@ -272,7 +272,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return agentId;
   },
 
-  spawnDurableAgent: async (projectId, projectPath, config, _resume, mission?) => {
+  spawnDurableAgent: async (projectId, projectPath, config, resume, mission?) => {
     const agentId = config.id;
 
     const agent: Agent = {
@@ -311,6 +311,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         mission,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode,
+        resume,
+        sessionId: resume ? config.lastSessionId : undefined,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
@@ -484,7 +486,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     get().removeAgent(id);
   },
 
-  updateAgentStatus: (id, status, exitCode, errorMessage) => {
+  updateAgentStatus: (id, status, exitCode, errorMessage, lastOutput?) => {
     set((s) => {
       const agent = s.agents[id];
       if (!agent) return s;
@@ -497,9 +499,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         if (spawnedAt && Date.now() - spawnedAt < 3000) {
           finalStatus = 'error';
           if (!resolvedErrorMessage) {
-            resolvedErrorMessage = exitCode != null && exitCode !== 0
-              ? `Agent process exited immediately (code ${exitCode})`
-              : 'Agent process exited immediately after launch';
+            // Extract meaningful diagnostic from PTY output (strip ANSI codes)
+            const cleanOutput = lastOutput
+              ?.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
+              .trim()
+              .split('\n')
+              .filter((l) => l.trim().length > 0)
+              .slice(-3)
+              .join(' | ');
+
+            if (cleanOutput) {
+              resolvedErrorMessage = cleanOutput.slice(0, 200);
+            } else {
+              resolvedErrorMessage = exitCode != null && exitCode !== 0
+                ? `Agent process exited immediately (code ${exitCode})`
+                : 'Agent process exited immediately after launch';
+            }
           }
         }
       }

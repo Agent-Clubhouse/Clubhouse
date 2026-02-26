@@ -131,6 +131,55 @@ describe('agentStore', () => {
       expect(getState().agents['a_msg'].errorMessage).toBe('Custom error from binary lookup');
     });
 
+    it('durable sleeping <3s uses PTY output as error message', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_pty', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_pty: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_pty', 'sleeping', 1, undefined, 'Error: OPENAI_API_KEY not set');
+      expect(getState().agents['a_pty'].status).toBe('error');
+      expect(getState().agents['a_pty'].errorMessage).toContain('OPENAI_API_KEY');
+    });
+
+    it('durable sleeping <3s strips ANSI from PTY output', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_ansi', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_ansi: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_ansi', 'sleeping', 1, undefined, '\x1B[31mError\x1B[0m: API key missing');
+      expect(getState().agents['a_ansi'].status).toBe('error');
+      expect(getState().agents['a_ansi'].errorMessage).toBe('Error: API key missing');
+      expect(getState().agents['a_ansi'].errorMessage).not.toContain('\x1B');
+    });
+
+    it('durable sleeping <3s falls back to generic message when no PTY output', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_noptybuf', kind: 'durable', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentSpawnedAt: { ...s.agentSpawnedAt, a_noptybuf: now },
+      }));
+
+      vi.setSystemTime(now + 1000);
+      getState().updateAgentStatus('a_noptybuf', 'sleeping', 1, undefined, '');
+      expect(getState().agents['a_noptybuf'].status).toBe('error');
+      expect(getState().agents['a_noptybuf'].errorMessage).toContain('exited immediately');
+    });
+
     it('durable sleeping >3s stays sleeping', () => {
       vi.useFakeTimers();
       const now = Date.now();
@@ -604,6 +653,82 @@ describe('agentStore', () => {
       const agent = getState().agents['durable_noicon'];
       expect(agent).toBeDefined();
       expect(agent.icon).toBeUndefined();
+    });
+
+    it('passes resume=true to spawnAgent when waking agent', async () => {
+      const config = {
+        id: 'durable_resume',
+        name: 'resume-agent',
+        color: 'indigo',
+        worktreePath: '/wt/resume-agent',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+    });
+
+    it('passes resume=false to spawnAgent when cold starting', async () => {
+      const config = {
+        id: 'durable_cold',
+        name: 'cold-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(false);
+    });
+
+    it('passes lastSessionId when resume=true and config has lastSessionId', async () => {
+      const config = {
+        id: 'durable_sessid',
+        name: 'sessid-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+        lastSessionId: 'sess-abc-123',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+      expect(spawnCall.sessionId).toBe('sess-abc-123');
+    });
+
+    it('does not pass sessionId when resume=false even if config has lastSessionId', async () => {
+      const config = {
+        id: 'durable_nosess',
+        name: 'nosess-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+        lastSessionId: 'sess-abc-123',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(false);
+      expect(spawnCall.sessionId).toBeUndefined();
+    });
+
+    it('passes undefined sessionId when resume=true but config has no lastSessionId', async () => {
+      const config = {
+        id: 'durable_nolast',
+        name: 'nolast-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+      expect(spawnCall.sessionId).toBeUndefined();
     });
   });
 

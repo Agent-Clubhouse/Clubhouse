@@ -137,6 +137,8 @@ export interface DurableAgentConfig {
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
   clubhouseModeOverride?: boolean;
+  /** Last CLI session ID, used to resume previous session on wake */
+  lastSessionId?: string;
 }
 
 export interface ClubhouseModeSettings {
@@ -512,6 +514,10 @@ export interface SpawnAgentParams {
   allowedTools?: string[];
   orchestrator?: OrchestratorId;
   freeAgentMode?: boolean;
+  /** When true, attempt to resume the previous CLI session instead of starting fresh */
+  resume?: boolean;
+  /** Specific session ID to resume (provider-specific format) */
+  sessionId?: string;
 }
 
 export type AgentDetailedState = 'idle' | 'working' | 'needs_permission' | 'tool_error';

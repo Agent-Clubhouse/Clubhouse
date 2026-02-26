@@ -12,6 +12,7 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { getShellEnvironment } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
 
@@ -73,6 +74,10 @@ function findCodexBinary(): string {
       homePath('.volta', 'bin', 'codex'),
       homePath('.local', 'share', 'pnpm', 'codex'),
       homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'codex'),
+      // NVM installs — nvm creates a `current` symlink to the active version
+      homePath('.nvm', 'current', 'bin', 'codex'),
+      // Bun global installs
+      homePath('.bun', 'bin', 'codex'),
     );
   }
   return findBinaryInPath(['codex'], paths);
@@ -105,20 +110,49 @@ export class CodexCliProvider implements OrchestratorProvider {
   };
 
   async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+    let binary: string;
     try {
-      findCodexBinary();
-      return { available: true };
+      binary = findCodexBinary();
     } catch (err: unknown) {
       return {
         available: false,
         error: err instanceof Error ? err.message : 'Could not find Codex CLI',
       };
     }
+
+    // Binary found — verify it actually runs (catches broken installs / wrong arch)
+    try {
+      await execFileAsync(binary, ['--version'], {
+        timeout: 10000,
+        shell: process.platform === 'win32',
+      });
+    } catch {
+      return {
+        available: false,
+        error: `Found Codex at ${binary} but it failed to execute. Reinstall with: npm install -g @openai/codex`,
+      };
+    }
+
+    // Check for API key in the shell environment
+    const env = getShellEnvironment();
+    if (!env.OPENAI_API_KEY && !env.OPENAI_BASE_URL) {
+      return {
+        available: false,
+        error: 'OPENAI_API_KEY is not set. Run "export OPENAI_API_KEY=<your-key>" in your shell config, then restart Clubhouse.',
+      };
+    }
+
+    return { available: true };
   }
 
   async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> }> {
     const binary = findCodexBinary();
     const args: string[] = [];
+
+    // Session resume: --continue for most recent session
+    if (opts.resume) {
+      args.push('--continue');
+    }
 
     if (opts.freeAgentMode) {
       args.push('--full-auto');

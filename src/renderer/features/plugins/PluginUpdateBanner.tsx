@@ -4,18 +4,19 @@ export function PluginUpdateBanner() {
   const updates = usePluginUpdateStore((s) => s.updates);
   const dismissed = usePluginUpdateStore((s) => s.dismissed);
   const updating = usePluginUpdateStore((s) => s.updating);
+  const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
   const dismiss = usePluginUpdateStore((s) => s.dismiss);
   const updateAll = usePluginUpdateStore((s) => s.updateAll);
   const updatePlugin = usePluginUpdateStore((s) => s.updatePlugin);
+  const clearUpdateError = usePluginUpdateStore((s) => s.clearUpdateError);
 
-  if (updates.length === 0 || dismissed) return null;
-
+  const hasErrors = Object.keys(updateErrors).length > 0;
   const isUpdating = Object.keys(updating).length > 0;
+
+  // Show banner if there are updates available OR if there are unresolved errors
+  if ((updates.length === 0 && !hasErrors) || dismissed) return null;
+
   const pluginNames = updates.map((u) => u.pluginName);
-  const message =
-    updates.length === 1
-      ? `Plugin update available: ${pluginNames[0]} v${updates[0].latestVersion}`
-      : `${updates.length} plugin updates available: ${pluginNames.join(', ')}`;
 
   const handleUpdate = () => {
     if (updates.length === 1) {
@@ -24,6 +25,43 @@ export function PluginUpdateBanner() {
       updateAll();
     }
   };
+
+  // If there are only errors (no pending updates), show error-only banner
+  if (updates.length === 0 && hasErrors) {
+    const errorEntries = Object.entries(updateErrors);
+    return (
+      <div
+        className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-peach/10 border-b border-ctp-peach/20 text-ctp-peach text-sm"
+        data-testid="plugin-update-banner"
+      >
+        {/* Warning icon */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" />
+          <line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+
+        <span className="flex-1" data-testid="plugin-update-message">
+          {errorEntries.length === 1
+            ? `Plugin reload failed — restart may be needed`
+            : `${errorEntries.length} plugins failed to reload — restart may be needed`}
+        </span>
+
+        <button
+          onClick={() => errorEntries.forEach(([id]) => clearUpdateError(id))}
+          className="text-ctp-peach/50 hover:text-ctp-peach transition-colors cursor-pointer px-1"
+          data-testid="plugin-update-dismiss-btn"
+        >
+          x
+        </button>
+      </div>
+    );
+  }
+
+  const message =
+    updates.length === 1
+      ? `Plugin update available: ${pluginNames[0]} v${updates[0].latestVersion}`
+      : `${updates.length} plugin updates available: ${pluginNames.join(', ')}`;
 
   return (
     <div
@@ -40,6 +78,11 @@ export function PluginUpdateBanner() {
 
       <span className="flex-1" data-testid="plugin-update-message">
         {message}
+        {hasErrors && (
+          <span className="text-ctp-peach ml-2">
+            ({Object.keys(updateErrors).length} failed to reload)
+          </span>
+        )}
       </span>
 
       <button
@@ -49,7 +92,7 @@ export function PluginUpdateBanner() {
           transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         data-testid="plugin-update-btn"
       >
-        {isUpdating ? 'Updating...' : 'Update now'}
+        {isUpdating ? 'Updating...' : hasErrors ? 'Retry' : 'Update now'}
       </button>
 
       <button

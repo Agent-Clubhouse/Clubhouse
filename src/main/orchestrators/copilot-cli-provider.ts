@@ -120,6 +120,17 @@ export class CopilotCliProvider implements OrchestratorProvider {
     const binary = findCopilotBinary();
     const args: string[] = [];
 
+    // Session resume: --resume <id> for specific session, --continue for most recent.
+    // Note: Copilot CLI does not support resume in prompt mode (-p), so resume
+    // flags are only appended for interactive (non-prompt) sessions.
+    if (opts.resume && !(opts.mission || opts.systemPrompt)) {
+      if (opts.sessionId) {
+        args.push('--resume', opts.sessionId);
+      } else {
+        args.push('--continue');
+      }
+    }
+
     if (opts.freeAgentMode) {
       args.push('--yolo');
     }

@@ -20,9 +20,9 @@ const api = {
       ipcRenderer.on(IPC.PTY.DATA, listener);
       return () => { ipcRenderer.removeListener(IPC.PTY.DATA, listener); };
     },
-    onExit: (callback: (agentId: string, exitCode: number) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, exitCode: number) =>
-        callback(agentId, exitCode);
+    onExit: (callback: (agentId: string, exitCode: number, lastOutput?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, exitCode: number, lastOutput?: string) =>
+        callback(agentId, exitCode, lastOutput);
       ipcRenderer.on(IPC.PTY.EXIT, listener);
       return () => { ipcRenderer.removeListener(IPC.PTY.EXIT, listener); };
     },
@@ -103,6 +103,8 @@ const api = {
       allowedTools?: string[];
       orchestrator?: string;
       freeAgentMode?: boolean;
+      resume?: boolean;
+      sessionId?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string, orchestrator?: string) =>
