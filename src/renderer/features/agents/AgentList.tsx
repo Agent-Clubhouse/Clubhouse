@@ -152,15 +152,26 @@ export function AgentList() {
     setQuickTargetParentId(null);
   };
 
+  const registerCreatingAgent = useAgentStore((s) => s.registerCreatingAgent);
+  const removeAgent = useAgentStore((s) => s.removeAgent);
+
   const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean) => {
     if (!activeProject) return;
     setShowDialog(false);
+
+    // Show agent in 'creating' state immediately while worktree is set up
+    const tempId = useWorktree
+      ? registerCreatingAgent(activeProject.id, name, color, orchestrator, freeAgentMode)
+      : null;
+
     try {
       const config = await window.clubhouse.agent.createDurable(
         activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode
       );
+      if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
     } catch (err) {
+      if (tempId) removeAgent(tempId);
       console.error('Failed to create durable agent:', err);
     }
   };

@@ -261,7 +261,7 @@ export interface AgentInfo {
   id: string;
   name: string;
   kind: 'durable' | 'quick';
-  status: 'running' | 'sleeping' | 'error';
+  status: 'running' | 'sleeping' | 'creating' | 'error';
   color: string;
   icon?: string;
   exitCode?: number;

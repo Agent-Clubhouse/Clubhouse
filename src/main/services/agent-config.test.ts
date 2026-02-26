@@ -2,8 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
 // Mock child_process (include execFile used by orchestrator providers)
+// exec is used by async createDurable (via execGitAsync); execSync by other functions
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
+  exec: vi.fn((_cmd: string, _opts: any, cb: Function) => {
+    cb(null, '', '');
+    return {};
+  }),
   execFile: vi.fn(),
 }));
 
@@ -20,7 +25,7 @@ vi.mock('fs', () => ({
 }));
 
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { exec, execSync } from 'child_process';
 import {
   listDurable,
   createDurable,
@@ -105,32 +110,36 @@ describe('createDurable', () => {
     vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
-    vi.mocked(execSync).mockReturnValue('');
+    // Default: async exec succeeds for all commands
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      cb(null, '', '');
+      return {} as any;
+    });
   });
 
-  it('generates durable_ prefixed ID', () => {
-    const config = createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+  it('generates durable_ prefixed ID', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
   });
 
-  it('branch = {name}/standby', () => {
-    const config = createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+  it('branch = {name}/standby', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.branch).toBe('my-agent/standby');
   });
 
-  it('worktree path always uses agents/', () => {
-    const config = createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+  it('worktree path always uses agents/', async () => {
+    const config = await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
     expect(config.worktreePath).toContain(path.join('agents', 'my-agent'));
   });
 
-  it('calls git branch + git worktree add when .git exists', () => {
-    createDurable(PROJECT_PATH, 'my-agent', 'indigo');
-    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+  it('calls git branch + git worktree add when .git exists', async () => {
+    await createDurable(PROJECT_PATH, 'my-agent', 'indigo');
+    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes('git branch'))).toBe(true);
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
   });
 
-  it('falls back to mkdir when no git', () => {
+  it('falls back to mkdir when no git', async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.git')) return false;
@@ -140,25 +149,26 @@ describe('createDurable', () => {
       if (s.endsWith('settings.json')) return false;
       return false;
     });
-    const config = createDurable(PROJECT_PATH, 'no-git-agent', 'indigo');
+    const config = await createDurable(PROJECT_PATH, 'no-git-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
-    // git commands should not have been called
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    // async git commands should not have been called
+    expect(vi.mocked(exec)).not.toHaveBeenCalled();
     // mkdirSync should have been called for the worktree path
     expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalled();
   });
 
-  it('falls back to mkdir when worktree add fails', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      if (String(cmd).includes('git worktree add')) throw new Error('worktree fail');
-      return '';
+  it('falls back to mkdir when worktree add fails', async () => {
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+      if (String(cmd).includes('git worktree add')) cb(new Error('worktree fail'), '', '');
+      else cb(null, '', '');
+      return {} as any;
     });
-    const config = createDurable(PROJECT_PATH, 'wt-fail-agent', 'indigo');
+    const config = await createDurable(PROJECT_PATH, 'wt-fail-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
     expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalled();
   });
 
-  it('creates initial commit with .gitignore when repo has no commits', () => {
+  it('creates initial commit with .gitignore when repo has no commits', async () => {
     const writtenData: Record<string, string> = {};
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
@@ -177,14 +187,15 @@ describe('createDurable', () => {
     vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
       const c = String(cmd);
       // Simulate empty repo: rev-parse HEAD fails
-      if (c.includes('git rev-parse HEAD')) throw new Error('fatal: bad default revision \'HEAD\'');
-      return '';
+      if (c.includes('git rev-parse HEAD')) cb(new Error('fatal: bad default revision \'HEAD\''), '', '');
+      else cb(null, '', '');
+      return {} as any;
     });
-    createDurable(PROJECT_PATH, 'empty-repo-agent', 'indigo');
-    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+    await createDurable(PROJECT_PATH, 'empty-repo-agent', 'indigo');
+    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
     // Should check for HEAD validity
     expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
     // Should stage .gitignore
@@ -196,10 +207,10 @@ describe('createDurable', () => {
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
   });
 
-  it('skips initial commit when repo already has commits', () => {
-    // Default mock returns '' for all commands (success)
-    createDurable(PROJECT_PATH, 'normal-repo-agent', 'indigo');
-    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+  it('skips initial commit when repo already has commits', async () => {
+    // Default mock succeeds for all commands (including rev-parse HEAD)
+    await createDurable(PROJECT_PATH, 'normal-repo-agent', 'indigo');
+    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
     // Should check for HEAD validity
     expect(calls.some((c) => c.includes('git rev-parse HEAD'))).toBe(true);
     // Should NOT create initial commit
@@ -209,21 +220,22 @@ describe('createDurable', () => {
     expect(calls.some((c) => c.includes('git worktree add'))).toBe(true);
   });
 
-  it('falls back to mkdir when initial commit also fails', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
+  it('falls back to mkdir when initial commit also fails', async () => {
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
       const c = String(cmd);
-      if (c.includes('git rev-parse HEAD')) throw new Error('fatal: bad default revision');
-      if (c.includes('git commit --allow-empty')) throw new Error('commit failed');
-      if (c.includes('git worktree add')) throw new Error('invalid reference');
-      return '';
+      if (c.includes('git rev-parse HEAD')) cb(new Error('fatal: bad default revision'), '', '');
+      else if (c.includes('git commit --allow-empty')) cb(new Error('commit failed'), '', '');
+      else if (c.includes('git worktree add')) cb(new Error('invalid reference'), '', '');
+      else cb(null, '', '');
+      return {} as any;
     });
-    const config = createDurable(PROJECT_PATH, 'commit-fail-agent', 'indigo');
+    const config = await createDurable(PROJECT_PATH, 'commit-fail-agent', 'indigo');
     expect(config.id).toMatch(/^durable_/);
     // Should still create the directory as fallback
     expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalled();
   });
 
-  it('appends to existing config, does not overwrite', () => {
+  it('appends to existing config, does not overwrite', async () => {
     const existing = [{ id: 'durable_old', name: 'old', color: 'amber', branch: 'old/standby', worktreePath: '/old', createdAt: '2024-01-01' }];
     const writtenData: Record<string, string> = {};
     const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
@@ -244,48 +256,48 @@ describe('createDurable', () => {
       writtenData[String(p)] = String(data);
     });
 
-    createDurable(PROJECT_PATH, 'new-agent', 'emerald');
+    await createDurable(PROJECT_PATH, 'new-agent', 'emerald');
     const written = JSON.parse(writtenData[agentsJsonPath]);
     expect(written.length).toBe(2);
     expect(written[0].id).toBe('durable_old');
     expect(written[1].id).toMatch(/^durable_/);
   });
 
-  it('omits model field when "default"', () => {
-    const config = createDurable(PROJECT_PATH, 'default-model', 'indigo', 'default');
+  it('omits model field when "default"', async () => {
+    const config = await createDurable(PROJECT_PATH, 'default-model', 'indigo', 'default');
     expect(config).not.toHaveProperty('model');
   });
 
-  it('includes model field when not "default"', () => {
-    const config = createDurable(PROJECT_PATH, 'custom-model', 'indigo', 'claude-sonnet-4-5-20250929');
+  it('includes model field when not "default"', async () => {
+    const config = await createDurable(PROJECT_PATH, 'custom-model', 'indigo', 'claude-sonnet-4-5-20250929');
     expect(config.model).toBe('claude-sonnet-4-5-20250929');
   });
 
-  it('skips worktree when useWorktree is false', () => {
-    const config = createDurable(PROJECT_PATH, 'no-wt', 'indigo', 'default', false);
+  it('skips worktree when useWorktree is false', async () => {
+    const config = await createDurable(PROJECT_PATH, 'no-wt', 'indigo', 'default', false);
     expect(config.id).toMatch(/^durable_/);
     expect(config.worktreePath).toBeUndefined();
     expect(config.branch).toBeUndefined();
-    // No git commands should be called
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    // No git commands should be called (neither sync nor async)
+    expect(vi.mocked(exec)).not.toHaveBeenCalled();
   });
 
-  it('includes freeAgentMode when true', () => {
-    const config = createDurable(PROJECT_PATH, 'free-agent', 'indigo', 'default', true, undefined, true);
+  it('includes freeAgentMode when true', async () => {
+    const config = await createDurable(PROJECT_PATH, 'free-agent', 'indigo', 'default', true, undefined, true);
     expect(config.freeAgentMode).toBe(true);
   });
 
-  it('omits freeAgentMode when false', () => {
-    const config = createDurable(PROJECT_PATH, 'no-free', 'indigo', 'default', true, undefined, false);
+  it('omits freeAgentMode when false', async () => {
+    const config = await createDurable(PROJECT_PATH, 'no-free', 'indigo', 'default', true, undefined, false);
     expect(config).not.toHaveProperty('freeAgentMode');
   });
 
-  it('omits freeAgentMode when undefined', () => {
-    const config = createDurable(PROJECT_PATH, 'default-free', 'indigo');
+  it('omits freeAgentMode when undefined', async () => {
+    const config = await createDurable(PROJECT_PATH, 'default-free', 'indigo');
     expect(config).not.toHaveProperty('freeAgentMode');
   });
 
-  it('ensureGitignore skips when all patterns already present', () => {
+  it('ensureGitignore skips when all patterns already present', async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return true;
@@ -302,12 +314,12 @@ describe('createDurable', () => {
       return '[]';
     });
 
-    createDurable(PROJECT_PATH, 'gitignore-test', 'indigo');
+    await createDurable(PROJECT_PATH, 'gitignore-test', 'indigo');
     // Should NOT append because all patterns already exist
     expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
   });
 
-  it('appends only missing gitignore patterns', () => {
+  it('appends only missing gitignore patterns', async () => {
     const appendedData: string[] = [];
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
@@ -327,7 +339,7 @@ describe('createDurable', () => {
       appendedData.push(String(data));
     });
 
-    createDurable(PROJECT_PATH, 'partial-test', 'indigo');
+    await createDurable(PROJECT_PATH, 'partial-test', 'indigo');
     expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalled();
     const appended = appendedData.join('');
     // Should add the missing lines but not duplicate existing ones
@@ -337,6 +349,14 @@ describe('createDurable', () => {
     expect(appended).not.toContain('.clubhouse/agents/');
     // Header should not be duplicated
     expect(appended).not.toContain('# Clubhouse agent manager');
+  });
+
+  it('uses async exec (non-blocking) for git operations', async () => {
+    await createDurable(PROJECT_PATH, 'async-test', 'indigo');
+    // Verify async exec was used (not execSync) for git operations
+    expect(vi.mocked(exec)).toHaveBeenCalled();
+    // execSync should NOT be called by createDurable for worktree operations
+    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
   });
 });
 
@@ -942,9 +962,14 @@ describe('updateSessionId', () => {
 describe('ensureGitignore edge cases', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default async exec mock for createDurable
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      cb(null, '', '');
+      return {} as any;
+    });
   });
 
-  it('appends selective patterns when .gitignore exists without clubhouse patterns', () => {
+  it('appends selective patterns when .gitignore exists without clubhouse patterns', async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return true;
@@ -959,14 +984,14 @@ describe('ensureGitignore edge cases', () => {
       return '[]';
     });
 
-    createDurable(PROJECT_PATH, 'append-test', 'indigo');
+    await createDurable(PROJECT_PATH, 'append-test', 'indigo');
     expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalled();
     const appendCall = vi.mocked(fs.appendFileSync).mock.calls[0];
     expect(String(appendCall[1])).toContain('.clubhouse/agents/');
     expect(String(appendCall[1])).toContain('.clubhouse/agents.json');
   });
 
-  it('creates .gitignore when none exists', () => {
+  it('creates .gitignore when none exists', async () => {
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
       if (s.endsWith('.gitignore')) return false;
@@ -981,7 +1006,7 @@ describe('ensureGitignore edge cases', () => {
       return '[]';
     });
 
-    createDurable(PROJECT_PATH, 'create-gitignore-test', 'indigo');
+    await createDurable(PROJECT_PATH, 'create-gitignore-test', 'indigo');
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
     const gitignoreWrite = writeCalls.find((c) => String(c[0]).endsWith('.gitignore'));
     expect(gitignoreWrite).toBeDefined();

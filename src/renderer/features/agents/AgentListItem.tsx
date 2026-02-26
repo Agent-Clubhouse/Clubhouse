@@ -18,12 +18,14 @@ interface Props {
 const STATUS_CONFIG: Record<string, { label: string }> = {
   running: { label: 'Running' },
   sleeping: { label: 'Sleeping' },
+  creating: { label: 'Setting up worktree…' },
   error: { label: 'Error' },
 };
 
 const STATUS_RING_COLOR: Record<string, string> = {
   running: '#22c55e',
   sleeping: '#6c7086',
+  creating: '#818cf8',
   error: '#f87171',
 };
 
@@ -139,8 +141,9 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
     : baseRingColor;
 
+  const isCreating = agent.status === 'creating';
   const hasDetailed = agent.status === 'running' && detailed;
-  const isWorking = hasDetailed ? detailed.state === 'working' : isThinking;
+  const isWorking = isCreating || (hasDetailed ? detailed.state === 'working' : isThinking);
   const statusLabel = hasDetailed ? detailed.message : (isThinking ? 'Thinking...' : statusInfo.label);
 
   const isDurable = agent.kind === 'durable';
@@ -189,6 +192,9 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
 
   const actions: ActionDef[] = useMemo(() => {
     const list: ActionDef[] = [];
+
+    // No actions while agent is being created
+    if (isCreating) return list;
 
     // Priority 1: Start/Stop (highest — collapses last)
     if (agent.status === 'running') {
@@ -276,7 +282,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, onSpawnQuickChild, handleStopOrRemove, handleWake, handlePopOut, handleSpawnChild, handleSettings, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handlePopOut, handleSpawnChild, handleSettings, handleDelete]);
 
   // ── Responsive action collapse ─────────────────────────────────
 
