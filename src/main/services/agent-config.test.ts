@@ -937,6 +937,7 @@ describe('updateSessionId', () => {
     expect(result).not.toBeNull();
     expect(result!.lastSessionId).toBeUndefined();
   });
+});
 
 describe('ensureGitignore edge cases', () => {
   beforeEach(() => {
