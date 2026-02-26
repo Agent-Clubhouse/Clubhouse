@@ -103,6 +103,8 @@ const api = {
       allowedTools?: string[];
       orchestrator?: string;
       freeAgentMode?: boolean;
+      resume?: boolean;
+      sessionId?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string, orchestrator?: string) =>

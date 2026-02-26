@@ -7,6 +7,8 @@ export interface SpawnOpts {
   systemPrompt?: string;
   allowedTools?: string[];
   resume?: boolean;
+  /** Specific session ID to resume; when resume is true but sessionId is absent, resume the most recent session */
+  sessionId?: string;
   agentId?: string;
   freeAgentMode?: boolean;
 }

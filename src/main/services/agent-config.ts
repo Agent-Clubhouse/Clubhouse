@@ -88,7 +88,7 @@ export function getDurableConfig(projectPath: string, agentId: string): DurableA
 export function updateDurableConfig(
   projectPath: string,
   agentId: string,
-  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean },
+  updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null },
 ): void {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
@@ -120,7 +120,19 @@ export function updateDurableConfig(
       delete agent.clubhouseModeOverride;
     }
   }
+  if (updates.lastSessionId !== undefined) {
+    if (updates.lastSessionId) {
+      agent.lastSessionId = updates.lastSessionId;
+    } else {
+      delete agent.lastSessionId;
+    }
+  }
   writeAgents(projectPath, agents);
+}
+
+/** Persist the last CLI session ID for a durable agent */
+export function updateSessionId(projectPath: string, agentId: string, sessionId: string | null): void {
+  updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
 }
 
 export function createDurable(

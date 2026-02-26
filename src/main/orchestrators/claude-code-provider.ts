@@ -135,6 +135,15 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     const binary = findClaudeBinary();
     const args: string[] = [];
 
+    // Session resume: --resume <id> for specific session, --continue for most recent
+    if (opts.resume) {
+      if (opts.sessionId) {
+        args.push('--resume', opts.sessionId);
+      } else {
+        args.push('--continue');
+      }
+    }
+
     if (opts.freeAgentMode) {
       args.push('--dangerously-skip-permissions');
     }

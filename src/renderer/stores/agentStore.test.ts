@@ -654,6 +654,82 @@ describe('agentStore', () => {
       expect(agent).toBeDefined();
       expect(agent.icon).toBeUndefined();
     });
+
+    it('passes resume=true to spawnAgent when waking agent', async () => {
+      const config = {
+        id: 'durable_resume',
+        name: 'resume-agent',
+        color: 'indigo',
+        worktreePath: '/wt/resume-agent',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+    });
+
+    it('passes resume=false to spawnAgent when cold starting', async () => {
+      const config = {
+        id: 'durable_cold',
+        name: 'cold-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(false);
+    });
+
+    it('passes lastSessionId when resume=true and config has lastSessionId', async () => {
+      const config = {
+        id: 'durable_sessid',
+        name: 'sessid-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+        lastSessionId: 'sess-abc-123',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+      expect(spawnCall.sessionId).toBe('sess-abc-123');
+    });
+
+    it('does not pass sessionId when resume=false even if config has lastSessionId', async () => {
+      const config = {
+        id: 'durable_nosess',
+        name: 'nosess-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+        lastSessionId: 'sess-abc-123',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(false);
+      expect(spawnCall.sessionId).toBeUndefined();
+    });
+
+    it('passes undefined sessionId when resume=true but config has no lastSessionId', async () => {
+      const config = {
+        id: 'durable_nolast',
+        name: 'nolast-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+
+      const spawnCall = mockAgent.spawnAgent.mock.calls[0][0];
+      expect(spawnCall.resume).toBe(true);
+      expect(spawnCall.sessionId).toBeUndefined();
+    });
   });
 
   describe('loadDurableAgents', () => {

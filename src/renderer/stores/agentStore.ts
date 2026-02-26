@@ -270,7 +270,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return agentId;
   },
 
-  spawnDurableAgent: async (projectId, projectPath, config, _resume, mission?) => {
+  spawnDurableAgent: async (projectId, projectPath, config, resume, mission?) => {
     const agentId = config.id;
 
     const agent: Agent = {
@@ -309,6 +309,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         mission,
         orchestrator: config.orchestrator,
         freeAgentMode: config.freeAgentMode,
+        resume,
+        sessionId: resume ? config.lastSessionId : undefined,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
