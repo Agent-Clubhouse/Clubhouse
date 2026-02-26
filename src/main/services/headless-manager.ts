@@ -8,6 +8,7 @@ import { parseTranscript, TranscriptSummary } from './transcript-parser';
 import { getShellEnvironment } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import * as annexEventBus from './annex-event-bus';
 import { HeadlessOutputKind } from '../orchestrators/types';
 
 /**
@@ -136,21 +137,24 @@ export function spawnHeadless(
       // Persist to disk
       logStream.write(JSON.stringify(event) + '\n');
 
-      // Emit hook events to renderer for status tracking
+      // Emit hook events to renderer + annex event bus for status tracking
       const hookEvents = mapToHookEvent(event, activeToolBlocks);
       for (const hookEvent of hookEvents) {
         broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+        annexEventBus.emitHookEvent(agentId, hookEvent as any);
       }
     });
   }
 
   // Emit initial notification for text mode so HeadlessAgentView shows activity
   if (outputKind === 'text') {
-    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
-      kind: 'notification',
+    const textNotification = {
+      kind: 'notification' as const,
       message: 'Agent running (text output — live events unavailable)',
       timestamp: Date.now(),
-    });
+    };
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, textNotification);
+    annexEventBus.emitHookEvent(agentId, textNotification);
   }
 
   proc.stdout?.on('data', (chunk: Buffer) => {
@@ -174,12 +178,14 @@ export function spawnHeadless(
     stderrChunks.push(msg);
     appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
 
-    // Forward stderr to renderer so headless view can show errors
-    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
-      kind: 'notification',
+    // Forward stderr to renderer + annex so headless view can show errors
+    const stderrNotification = {
+      kind: 'notification' as const,
       message: msg,
       timestamp: Date.now(),
-    });
+    };
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stderrNotification);
+    annexEventBus.emitHookEvent(agentId, stderrNotification);
   });
 
   let exited = false;
@@ -203,11 +209,13 @@ export function spawnHeadless(
       transcript.push(resultEvent);
       logStream.write(JSON.stringify(resultEvent) + '\n');
 
-      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, {
-        kind: 'stop',
+      const stopEvent = {
+        kind: 'stop' as const,
         message: session.textBuffer.trim().slice(0, 500),
         timestamp: Date.now(),
-      });
+      };
+      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stopEvent);
+      annexEventBus.emitHookEvent(agentId, stopEvent);
     }
 
     logStream.end();
@@ -220,6 +228,7 @@ export function spawnHeadless(
     onExit?.(agentId, code ?? 0);
 
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, code ?? 0);
+    annexEventBus.emitPtyExit(agentId, code ?? 0);
   });
 
   proc.on('error', (err) => {
@@ -233,6 +242,7 @@ export function spawnHeadless(
     onExit?.(agentId, 1);
 
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
+    annexEventBus.emitPtyExit(agentId, 1);
   });
 }
 

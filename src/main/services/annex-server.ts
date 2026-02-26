@@ -12,6 +12,8 @@ import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent } from './agent-system';
 import { appLog } from './log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { IPC } from '../../shared/ipc-channels';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
 import type {
@@ -443,6 +445,21 @@ async function handleSpawnQuickAgent(
     });
 
     tracked.status = 'running';
+
+    // Notify the desktop renderer so the agent appears in the UI
+    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
+      id: agentId,
+      name,
+      kind: 'quick',
+      status: 'running',
+      prompt,
+      model: model || null,
+      orchestrator: orchestrator || null,
+      freeAgentMode,
+      parentAgentId,
+      projectId,
+      headless: true,
+    });
 
     sendJson(res, 201, {
       id: agentId,

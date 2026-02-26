@@ -528,6 +528,23 @@ const api = {
       ipcRenderer.on(IPC.ANNEX.STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.STATUS_CHANGED, listener); };
     },
+    onAgentSpawned: (callback: (agent: {
+      id: string;
+      name: string;
+      kind: 'quick';
+      status: string;
+      prompt: string;
+      model: string | null;
+      orchestrator: string | null;
+      freeAgentMode: boolean;
+      parentAgentId: string | null;
+      projectId: string;
+      headless: boolean;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agent: any) => callback(agent);
+      ipcRenderer.on(IPC.ANNEX.AGENT_SPAWNED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_SPAWNED, listener); };
+    },
   },
   window: {
     createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; hubId?: string; projectId?: string; title?: string }) =>

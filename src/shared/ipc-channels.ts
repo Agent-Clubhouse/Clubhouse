@@ -217,5 +217,6 @@ export const IPC = {
     GET_STATUS: 'annex:get-status',
     REGENERATE_PIN: 'annex:regenerate-pin',
     STATUS_CHANGED: 'annex:status-changed',
+    AGENT_SPAWNED: 'annex:agent-spawned',
   },
 } as const;
