@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../services/agent-config', () => ({
   listDurable: vi.fn(() => [{ id: 'a1', name: 'Bot' }]),
-  createDurable: vi.fn(() => ({ id: 'agent-1', name: 'Test' })),
+  createDurable: vi.fn(async () => ({ id: 'agent-1', name: 'Test' })),
   deleteDurable: vi.fn(),
   renameDurable: vi.fn(),
   updateDurable: vi.fn(),
