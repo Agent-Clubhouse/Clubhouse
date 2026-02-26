@@ -976,7 +976,9 @@ describe('plugin-loader', () => {
         { manifest: makeManifest({ id: 'multi-ctx', scope: 'project', version: '2.0.0' }), pluginPath: '/plugins/multi-ctx', fromMarketplace: false },
       ]);
 
-      // Make the first activation fail but the second succeed
+      // Make the first activation fail but the second succeed.
+      // After deactivation, the module was removed, so activatePlugin will
+      // do a fresh dynamic import for each context.
       let callCount = 0;
       mockDynamicImport.mockImplementation(async () => {
         callCount++;
@@ -987,9 +989,12 @@ describe('plugin-loader', () => {
       // Should throw because at least one context failed
       await expect(hotReloadPlugin('multi-ctx')).rejects.toThrow('Hot-reload activation failed');
 
-      // But the second context should still have been attempted
-      // (activate was called twice total via dynamic import)
-      expect(mockDynamicImport).toHaveBeenCalledTimes(2);
+      // The second context should still have been attempted even though the
+      // first failed — the hot-reload resets 'errored' to 'registered' before
+      // retrying the next context.
+      expect(callCount).toBeGreaterThanOrEqual(2);
+      // The second context should have successfully activated
+      expect(getActiveContext('multi-ctx', 'proj-2')).toBeDefined();
     });
 
     it('throws when re-activation fails', async () => {
