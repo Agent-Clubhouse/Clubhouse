@@ -204,6 +204,12 @@ vi.stubGlobal('clubhouse', {
     saveClubhouseModeSettings: asyncNoop,
     onUpdateStatusChanged: () => noop,
   },
+  profile: {
+    getSettings: async () => ({ profiles: [] }),
+    saveProfile: asyncNoop,
+    deleteProfile: asyncNoop,
+    getProfileEnvKeys: async () => [],
+  },
   annex: {
     getSettings: async () => ({ enabled: false, deviceName: '' }),
     saveSettings: asyncNoop,

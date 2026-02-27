@@ -929,6 +929,47 @@ describe('Provider integration tests', () => {
     });
   });
 
+  describe('getProfileEnvKeys', () => {
+    it('ClaudeCode: returns CLAUDE_CONFIG_DIR', () => {
+      const provider = new ClaudeCodeProvider();
+      const keys = provider.getProfileEnvKeys();
+      expect(keys).toContain('CLAUDE_CONFIG_DIR');
+      expect(keys).toHaveLength(1);
+    });
+
+    it('CopilotCli: returns GH_HOST and GH_TOKEN', () => {
+      const provider = new CopilotCliProvider();
+      const keys = provider.getProfileEnvKeys();
+      expect(keys).toContain('GH_HOST');
+      expect(keys).toContain('GH_TOKEN');
+      expect(keys).toHaveLength(2);
+    });
+
+    it('CodexCli: returns OPENAI_API_KEY and OPENAI_BASE_URL', () => {
+      const provider = new CodexCliProvider();
+      const keys = provider.getProfileEnvKeys();
+      expect(keys).toContain('OPENAI_API_KEY');
+      expect(keys).toContain('OPENAI_BASE_URL');
+      expect(keys).toHaveLength(2);
+    });
+
+    it('OpenCode: returns OPENCODE_CONFIG_DIR', () => {
+      const provider = new OpenCodeProvider();
+      const keys = provider.getProfileEnvKeys();
+      expect(keys).toContain('OPENCODE_CONFIG_DIR');
+      expect(keys).toHaveLength(1);
+    });
+
+    it('all providers return non-empty arrays', () => {
+      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
+      for (const p of providers) {
+        const keys = p.getProfileEnvKeys();
+        expect(Array.isArray(keys)).toBe(true);
+        expect(keys.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
   describe('getModelOptions', () => {
     it('CopilotCli: falls back to static list when binary not found', async () => {
       const provider = new CopilotCliProvider();
