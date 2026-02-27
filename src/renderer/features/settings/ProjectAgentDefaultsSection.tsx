@@ -4,6 +4,7 @@ import type { SourceControlProvider } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
 import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 interface ProjectAgentDefaults {
   instructions?: string;
@@ -41,6 +42,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [resetting, setResetting] = useState(false);
   const profiles = useProfileStore((s) => s.profiles);
   const loadProfiles = useProfileStore((s) => s.loadProfiles);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
   const loadDefaults = useCallback(async () => {
     try {
@@ -197,25 +199,39 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
         </div>
 
         {/* Default Profile */}
-        {profiles.length > 0 && (
-          <div>
-            <label className="block text-xs text-ctp-subtext0 mb-1">Default Profile</label>
-            <select
-              value={profileId || ''}
-              onChange={(e) => { setProfileId(e.target.value || undefined); setDirty(true); }}
-              className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-                text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-            >
-              <option value="">None (default credentials)</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.orchestrator})</option>
-              ))}
-            </select>
-            <p className="text-[10px] text-ctp-subtext0/60 mt-1">
-              Profile env vars are injected when agents in this project spawn. Agents can override individually.
-            </p>
-          </div>
-        )}
+        {profiles.length > 0 && (() => {
+          const activeProfile = profiles.find((p) => p.id === profileId);
+          const coveredNames = activeProfile
+            ? Object.keys(activeProfile.orchestrators).map(
+                (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
+              )
+            : [];
+          return (
+            <div>
+              <label className="block text-xs text-ctp-subtext0 mb-1">Default Profile</label>
+              <select
+                value={profileId || ''}
+                onChange={(e) => { setProfileId(e.target.value || undefined); setDirty(true); }}
+                className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+                  text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              >
+                <option value="">None (default credentials)</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+                Profile env vars are injected when agents in this project spawn.
+                {activeProfile && ' Only orchestrators configured in the profile appear in agent creation.'}
+              </p>
+              {coveredNames.length > 0 && (
+                <p className="text-[10px] text-ctp-accent/80 mt-1">
+                  Covers: {coveredNames.join(', ')}
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Build / Test / Lint Commands */}
         <div>

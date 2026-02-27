@@ -1,11 +1,131 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
-import type { OrchestratorProfile } from '../../../shared/types';
+import type { OrchestratorProfile, OrchestratorProfileEntry } from '../../../shared/types';
 
 function generateId(): string {
   return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+// --- Env var editor for a single orchestrator entry ---
+
+interface EnvEditorProps {
+  entries: Array<{ key: string; value: string }>;
+  suggestedKeys: string[];
+  onChange: (entries: Array<{ key: string; value: string }>) => void;
+}
+
+function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
+  const updateEntry = (index: number, field: 'key' | 'value', val: string) => {
+    const next = [...entries];
+    next[index] = { ...next[index], [field]: val };
+    onChange(next);
+  };
+
+  const addEntry = () => {
+    const nextKey = suggestedKeys.find((k) => !entries.some((e) => e.key === k)) || '';
+    onChange([...entries, { key: nextKey, value: '' }]);
+  };
+
+  const removeEntry = (index: number) => {
+    if (entries.length === 1) {
+      onChange([{ key: '', value: '' }]);
+      return;
+    }
+    onChange(entries.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {suggestedKeys.length > 0 && (
+        <p className="text-[10px] text-ctp-subtext0/60">
+          Suggested keys: {suggestedKeys.map((k) => (
+            <code key={k} className="bg-ctp-surface0/30 px-1 rounded mx-0.5">{k}</code>
+          ))}
+        </p>
+      )}
+      {entries.map((entry, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <input
+            type="text"
+            value={entry.key}
+            onChange={(e) => updateEntry(i, 'key', e.target.value)}
+            placeholder="KEY"
+            list={`env-keys-${i}`}
+            className="w-48 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
+              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+          />
+          <datalist id={`env-keys-${i}`}>
+            {suggestedKeys.map((k) => <option key={k} value={k} />)}
+          </datalist>
+          <span className="text-ctp-subtext0 text-xs">=</span>
+          <input
+            type="text"
+            value={entry.value}
+            onChange={(e) => updateEntry(i, 'value', e.target.value)}
+            placeholder="value (~ expands to home dir)"
+            className="flex-1 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
+              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+          />
+          <button
+            onClick={() => removeEntry(i)}
+            className="text-ctp-subtext0 hover:text-ctp-red text-xs cursor-pointer"
+            title="Remove"
+          >
+            x
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addEntry}
+        className="text-xs text-ctp-accent hover:underline cursor-pointer"
+      >
+        + Add variable
+      </button>
+    </div>
+  );
+}
+
+// --- Orchestrator section within the profile edit form ---
+
+interface OrchestratorSectionProps {
+  orchestratorName: string;
+  entry: OrchestratorProfileEntry;
+  suggestedKeys: string[];
+  onUpdate: (entry: OrchestratorProfileEntry) => void;
+  onRemove: () => void;
+}
+
+function OrchestratorSection({ orchestratorName, entry, suggestedKeys, onUpdate, onRemove }: OrchestratorSectionProps) {
+  const entries = Object.entries(entry.env).length > 0
+    ? Object.entries(entry.env).map(([key, value]) => ({ key, value }))
+    : [{ key: '', value: '' }];
+
+  const handleEnvChange = (newEntries: Array<{ key: string; value: string }>) => {
+    const env: Record<string, string> = {};
+    for (const { key, value } of newEntries) {
+      if (key.trim()) env[key.trim()] = value;
+    }
+    onUpdate({ env });
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-ctp-base border border-surface-1 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-ctp-text">{orchestratorName}</span>
+        <button
+          onClick={onRemove}
+          className="text-[10px] text-ctp-red hover:underline cursor-pointer"
+        >
+          Remove
+        </button>
+      </div>
+      <EnvVarEditor entries={entries} suggestedKeys={suggestedKeys} onChange={handleEnvChange} />
+    </div>
+  );
+}
+
+// --- Profile edit form ---
 
 interface EditFormProps {
   profile: OrchestratorProfile;
@@ -15,26 +135,23 @@ interface EditFormProps {
 
 function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
   const [name, setName] = useState(profile.name);
-  const [orchestrator, setOrchestrator] = useState(profile.orchestrator);
-  const [envEntries, setEnvEntries] = useState<Array<{ key: string; value: string }>>(
-    Object.entries(profile.env).length > 0
-      ? Object.entries(profile.env).map(([key, value]) => ({ key, value }))
-      : [{ key: '', value: '' }]
+  const [orchestrators, setOrchestrators] = useState<Record<string, OrchestratorProfileEntry>>(
+    profile.orchestrators
   );
   const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
   const getProfileEnvKeys = useProfileStore((s) => s.getProfileEnvKeys);
-  const [suggestedKeys, setSuggestedKeys] = useState<string[]>([]);
+  const [suggestedKeysMap, setSuggestedKeysMap] = useState<Record<string, string[]>>({});
 
+  // Load suggested keys for all configured orchestrators
   const loadSuggestions = useCallback(async () => {
-    const keys = await getProfileEnvKeys(orchestrator);
-    setSuggestedKeys(keys);
-    // If creating a new profile with empty env, pre-populate with the suggested key
-    if (envEntries.length === 1 && !envEntries[0].key && !envEntries[0].value && keys.length > 0) {
-      setEnvEntries([{ key: keys[0], value: '' }]);
+    const map: Record<string, string[]> = {};
+    for (const orchId of Object.keys(orchestrators)) {
+      map[orchId] = await getProfileEnvKeys(orchId);
     }
-  }, [orchestrator, getProfileEnvKeys]); // eslint-disable-line react-hooks/exhaustive-deps
+    setSuggestedKeysMap(map);
+  }, [Object.keys(orchestrators).join(','), getProfileEnvKeys]); // eslint-disable-line
 
   useEffect(() => {
     loadSuggestions();
@@ -42,31 +159,28 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
 
   const handleSave = () => {
     if (!name.trim()) return;
-    const env: Record<string, string> = {};
-    for (const { key, value } of envEntries) {
-      if (key.trim()) env[key.trim()] = value;
-    }
-    onSave({ ...profile, name: name.trim(), orchestrator, env });
+    onSave({ ...profile, name: name.trim(), orchestrators });
   };
 
-  const updateEntry = (index: number, field: 'key' | 'value', val: string) => {
-    const next = [...envEntries];
-    next[index] = { ...next[index], [field]: val };
-    setEnvEntries(next);
+  const handleAddOrchestrator = async (orchId: string) => {
+    const keys = await getProfileEnvKeys(orchId);
+    const initialEnv: Record<string, string> = {};
+    if (keys.length > 0) initialEnv[keys[0]] = '';
+    setOrchestrators({ ...orchestrators, [orchId]: { env: initialEnv } });
+    setSuggestedKeysMap((prev) => ({ ...prev, [orchId]: keys }));
   };
 
-  const addEntry = () => {
-    const nextKey = suggestedKeys.find((k) => !envEntries.some((e) => e.key === k)) || '';
-    setEnvEntries([...envEntries, { key: nextKey, value: '' }]);
+  const handleRemoveOrchestrator = (orchId: string) => {
+    const next = { ...orchestrators };
+    delete next[orchId];
+    setOrchestrators(next);
   };
 
-  const removeEntry = (index: number) => {
-    if (envEntries.length === 1) {
-      setEnvEntries([{ key: '', value: '' }]);
-      return;
-    }
-    setEnvEntries(envEntries.filter((_, i) => i !== index));
+  const handleUpdateOrchestrator = (orchId: string, entry: OrchestratorProfileEntry) => {
+    setOrchestrators({ ...orchestrators, [orchId]: entry });
   };
+
+  const availableToAdd = enabledOrchestrators.filter((o) => !orchestrators[o.id]);
 
   return (
     <div className="p-4 rounded-lg bg-ctp-mantle border border-surface-0 space-y-4">
@@ -82,67 +196,47 @@ function ProfileEditForm({ profile, onSave, onCancel }: EditFormProps) {
         />
       </div>
 
-      <div className="space-y-2">
-        <label className="block text-xs text-ctp-subtext0">Orchestrator</label>
-        <select
-          value={orchestrator}
-          onChange={(e) => setOrchestrator(e.target.value)}
-          className="w-full px-3 py-1.5 text-sm rounded-lg bg-ctp-base border border-surface-2
-            text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-        >
-          {enabledOrchestrators.map((o) => (
-            <option key={o.id} value={o.id}>{o.displayName}</option>
-          ))}
-        </select>
-      </div>
+      <div className="space-y-3">
+        <label className="block text-xs text-ctp-subtext0">Orchestrators</label>
+        {Object.entries(orchestrators).map(([orchId, entry]) => {
+          const orchName = allOrchestrators.find((o) => o.id === orchId)?.displayName || orchId;
+          return (
+            <OrchestratorSection
+              key={orchId}
+              orchestratorName={orchName}
+              entry={entry}
+              suggestedKeys={suggestedKeysMap[orchId] || []}
+              onUpdate={(updated) => handleUpdateOrchestrator(orchId, updated)}
+              onRemove={() => handleRemoveOrchestrator(orchId)}
+            />
+          );
+        })}
 
-      <div className="space-y-2">
-        <label className="block text-xs text-ctp-subtext0">Environment Variables</label>
-        {suggestedKeys.length > 0 && (
-          <p className="text-[10px] text-ctp-subtext0/60">
-            Suggested keys for this orchestrator: {suggestedKeys.map((k) => (
-              <code key={k} className="bg-ctp-surface0/30 px-1 rounded mx-0.5">{k}</code>
-            ))}
-          </p>
+        {Object.keys(orchestrators).length === 0 && (
+          <p className="text-xs text-ctp-subtext0/60">No orchestrators configured. Add one below.</p>
         )}
-        {envEntries.map((entry, i) => (
-          <div key={i} className="flex gap-2 items-center">
-            <input
-              type="text"
-              value={entry.key}
-              onChange={(e) => updateEntry(i, 'key', e.target.value)}
-              placeholder="KEY"
-              list={`env-keys-${i}`}
-              className="w-48 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
+
+        {availableToAdd.length > 0 && (
+          <div className="flex items-center gap-2">
+            <select
+              id="add-orchestrator-select"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  handleAddOrchestrator(e.target.value);
+                  e.target.value = '';
+                }
+              }}
+              className="px-2 py-1 text-xs rounded bg-ctp-base border border-surface-2
                 text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-            />
-            <datalist id={`env-keys-${i}`}>
-              {suggestedKeys.map((k) => <option key={k} value={k} />)}
-            </datalist>
-            <span className="text-ctp-subtext0 text-xs">=</span>
-            <input
-              type="text"
-              value={entry.value}
-              onChange={(e) => updateEntry(i, 'value', e.target.value)}
-              placeholder="value (~ expands to home dir)"
-              className="flex-1 px-2 py-1 text-xs font-mono rounded bg-ctp-base border border-surface-2
-                text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-            />
-            <button
-              onClick={() => removeEntry(i)}
-              className="text-ctp-subtext0 hover:text-ctp-red text-xs cursor-pointer"
-              title="Remove"
             >
-              x
-            </button>
+              <option value="" disabled>+ Add Orchestrator</option>
+              {availableToAdd.map((o) => (
+                <option key={o.id} value={o.id}>{o.displayName}</option>
+              ))}
+            </select>
           </div>
-        ))}
-        <button
-          onClick={addEntry}
-          className="text-xs text-ctp-accent hover:underline cursor-pointer"
-        >
-          + Add variable
-        </button>
+        )}
       </div>
 
       <div className="flex gap-2 justify-end">
@@ -185,8 +279,7 @@ export function ProfilesSettingsView() {
     const newProfile: OrchestratorProfile = {
       id: generateId(),
       name: '',
-      orchestrator: 'claude-code',
-      env: {},
+      orchestrators: {},
     };
     setEditingId(newProfile.id);
     // Temporarily add to show the edit form
@@ -203,8 +296,10 @@ export function ProfilesSettingsView() {
     setShowConfirmDelete(null);
   };
 
-  const getOrchestratorName = (id: string) => {
-    return allOrchestrators.find((o) => o.id === id)?.displayName || id;
+  const getOrchestratorNames = (profile: OrchestratorProfile): string => {
+    const ids = Object.keys(profile.orchestrators);
+    if (ids.length === 0) return 'No orchestrators';
+    return ids.map((id) => allOrchestrators.find((o) => o.id === id)?.displayName || id).join(', ');
   };
 
   return (
@@ -212,8 +307,9 @@ export function ProfilesSettingsView() {
       <div className="max-w-2xl">
         <h2 className="text-lg font-semibold text-ctp-text mb-1">Profiles</h2>
         <p className="text-sm text-ctp-subtext0 mb-4">
-          Named profiles allow switching between different accounts or configurations per orchestrator
-          (e.g. Work vs Personal). Each profile injects environment variables when spawning agents.
+          Named profiles allow switching between different accounts or configurations
+          (e.g. Work vs Personal). Each profile can hold env configs for multiple orchestrators.
+          When a profile is active on a project, only its configured orchestrators appear in agent creation.
         </p>
 
         <div className="mb-4 px-3 py-2 rounded-lg bg-ctp-info/10 border border-ctp-info/20 text-xs text-ctp-info">
@@ -241,11 +337,15 @@ export function ProfilesSettingsView() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-ctp-text font-medium">{p.name}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-1 text-ctp-subtext0">
-                        {getOrchestratorName(p.orchestrator)}
+                        {getOrchestratorNames(p)}
                       </span>
                     </div>
                     <div className="text-xs text-ctp-subtext0 mt-0.5 font-mono">
-                      {Object.entries(p.env).map(([k, v]) => `${k}=${v}`).join(', ') || 'No env vars set'}
+                      {Object.entries(p.orchestrators).map(([orchId, entry]) => {
+                        const envStr = Object.entries(entry.env).map(([k, v]) => `${k}=${v}`).join(', ');
+                        const orchName = allOrchestrators.find((o) => o.id === orchId)?.shortName || orchId;
+                        return envStr ? `${orchName}: ${envStr}` : null;
+                      }).filter(Boolean).join(' | ') || 'No env vars set'}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -285,9 +385,9 @@ export function ProfilesSettingsView() {
         <div className="mt-8 space-y-2">
           <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Usage</h3>
           <p className="text-xs text-ctp-subtext0">
-            Once created, profiles can be assigned in <strong>Orchestrators & Agents</strong> settings at the project level
-            or per individual agent in the agent config panel. The profile's environment variables are injected
-            when the agent spawns.
+            Once created, assign a profile in <strong>Orchestrators & Agents</strong> settings at the project level.
+            When a profile is active, only orchestrators configured in that profile appear in agent creation.
+            The profile's environment variables are injected when the agent spawns.
           </p>
         </div>
 

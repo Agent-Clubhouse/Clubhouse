@@ -516,16 +516,14 @@ const api = {
       profiles: Array<{
         id: string;
         name: string;
-        orchestrator: string;
-        env: Record<string, string>;
+        orchestrators: Record<string, { env: Record<string, string> }>;
       }>;
     }> =>
       ipcRenderer.invoke(IPC.PROFILE.GET_SETTINGS),
     saveProfile: (profile: {
       id: string;
       name: string;
-      orchestrator: string;
-      env: Record<string, string>;
+      orchestrators: Record<string, { env: Record<string, string> }>;
     }) =>
       ipcRenderer.invoke(IPC.PROFILE.SAVE_PROFILE, profile),
     deleteProfile: (profileId: string) =>

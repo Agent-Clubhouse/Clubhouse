@@ -22,7 +22,13 @@ describe('profileStore', () => {
   describe('loadProfiles', () => {
     it('loads profiles from IPC', async () => {
       const profiles = [
-        { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+        {
+          id: 'p1',
+          name: 'Work',
+          orchestrators: {
+            'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+          },
+        },
       ];
       (window as any).clubhouse.profile.getSettings.mockResolvedValue({ profiles });
 
@@ -50,7 +56,13 @@ describe('profileStore', () => {
 
   describe('saveProfile', () => {
     it('calls IPC and reloads', async () => {
-      const profile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} };
+      const profile = {
+        id: 'p1',
+        name: 'Work',
+        orchestrators: {
+          'claude-code': { env: {} },
+        },
+      };
       (window as any).clubhouse.profile.saveProfile.mockResolvedValue(undefined);
       (window as any).clubhouse.profile.getSettings.mockResolvedValue({ profiles: [profile] });
 
@@ -70,34 +82,6 @@ describe('profileStore', () => {
 
       expect((window as any).clubhouse.profile.deleteProfile).toHaveBeenCalledWith('p1');
       expect(useProfileStore.getState().profiles).toEqual([]);
-    });
-  });
-
-  describe('getProfilesForOrchestrator', () => {
-    it('filters profiles by orchestrator', () => {
-      useProfileStore.setState({
-        profiles: [
-          { id: 'p1', name: 'Work CC', orchestrator: 'claude-code', env: {} },
-          { id: 'p2', name: 'Personal CC', orchestrator: 'claude-code', env: {} },
-          { id: 'p3', name: 'Work Codex', orchestrator: 'codex-cli', env: {} },
-        ],
-      });
-
-      const ccProfiles = useProfileStore.getState().getProfilesForOrchestrator('claude-code');
-      expect(ccProfiles).toHaveLength(2);
-      expect(ccProfiles[0].name).toBe('Work CC');
-      expect(ccProfiles[1].name).toBe('Personal CC');
-    });
-
-    it('returns empty array when no matches', () => {
-      useProfileStore.setState({
-        profiles: [
-          { id: 'p1', name: 'Work CC', orchestrator: 'claude-code', env: {} },
-        ],
-      });
-
-      const result = useProfileStore.getState().getProfilesForOrchestrator('opencode');
-      expect(result).toEqual([]);
     });
   });
 

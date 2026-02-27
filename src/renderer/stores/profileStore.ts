@@ -7,10 +7,9 @@ interface ProfileState {
   saveProfile: (profile: OrchestratorProfile) => Promise<void>;
   deleteProfile: (profileId: string) => Promise<void>;
   getProfileEnvKeys: (orchestratorId: string) => Promise<string[]>;
-  getProfilesForOrchestrator: (orchestratorId: string) => OrchestratorProfile[];
 }
 
-export const useProfileStore = create<ProfileState>((set, get) => ({
+export const useProfileStore = create<ProfileState>((set) => ({
   profiles: [],
 
   loadProfiles: async () => {
@@ -37,9 +36,5 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   getProfileEnvKeys: async (orchestratorId) => {
     return window.clubhouse.profile.getProfileEnvKeys(orchestratorId);
-  },
-
-  getProfilesForOrchestrator: (orchestratorId) => {
-    return get().profiles.filter((p) => p.orchestrator === orchestratorId);
   },
 }));

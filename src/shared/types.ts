@@ -86,12 +86,16 @@ export interface CompletedQuickAgent {
 
 // --- Profile types ---
 
-/** Named profile mapping orchestrator credentials/config directories */
+/** Per-orchestrator env config within a profile */
+export interface OrchestratorProfileEntry {
+  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
+}
+
+/** Named profile containing env configs for multiple orchestrators */
 export interface OrchestratorProfile {
   id: string;
   name: string;           // e.g. "Work", "Personal"
-  orchestrator: OrchestratorId;
-  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
+  orchestrators: Record<string, OrchestratorProfileEntry>;
 }
 
 export interface ProfilesSettings {
@@ -155,8 +159,6 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
-  /** Profile to use when spawning this agent (overrides project default) */
-  profileId?: string;
 }
 
 export interface ClubhouseModeSettings {

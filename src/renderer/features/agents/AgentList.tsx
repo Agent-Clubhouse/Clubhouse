@@ -9,6 +9,7 @@ import { DeleteAgentDialog } from './DeleteAgentDialog';
 import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 import type { CompletedQuickAgent } from '../../../shared/types';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -27,11 +28,10 @@ export function AgentList() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
   const { options: MODEL_OPTIONS } = useModelOptions();
-  const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
-  const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const { effectiveOrchestrators: enabledOrchestrators, activeProfile, isOrchestratorInProfile } = useEffectiveOrchestrators(activeProject?.path);
   const allCompleted = useQuickAgentStore((s) => s.completedAgents);
   const completedAgents = useMemo(
     () => (activeProjectId ? allCompleted[activeProjectId] ?? EMPTY_COMPLETED : EMPTY_COMPLETED),
@@ -416,13 +416,23 @@ export function AgentList() {
                   {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
                     <div data-testid="drag-indicator" className="absolute -top-px left-3 right-3 h-0.5 bg-indigo-500 rounded-full z-10" />
                   )}
-                  <AgentListItem
-                    agent={durable}
-                    isActive={durable.id === activeAgentId}
-                    isThinking={isThinking(durable.id)}
-                    onSelect={() => { selectCompleted(null); setActiveAgent(durable.id, activeProjectId ?? undefined); }}
-                    onSpawnQuickChild={() => handleSpawnQuickChild(durable.id)}
-                  />
+                  <div className="relative">
+                    <AgentListItem
+                      agent={durable}
+                      isActive={durable.id === activeAgentId}
+                      isThinking={isThinking(durable.id)}
+                      onSelect={() => { selectCompleted(null); setActiveAgent(durable.id, activeProjectId ?? undefined); }}
+                      onSpawnQuickChild={() => handleSpawnQuickChild(durable.id)}
+                    />
+                    {activeProfile && durable.orchestrator && !isOrchestratorInProfile(durable.orchestrator) && (
+                      <span
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-yellow-500"
+                        title={`${durable.orchestrator} is not configured in the "${activeProfile.name}" profile`}
+                      >
+                        ⚠
+                      </span>
+                    )}
+                  </div>
                   {/* Inline mission input targeting this durable */}
                   {isMissionTarget && renderMissionInput(true)}
                   {/* Child quick agents (indented) */}
@@ -536,6 +546,7 @@ export function AgentList() {
         <AddAgentDialog
           onClose={() => setShowDialog(false)}
           onCreate={handleCreateDurable}
+          projectPath={activeProject?.path}
         />
       )}
       {deleteDialogAgent && <DeleteAgentDialog />}

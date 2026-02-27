@@ -15,6 +15,15 @@ vi.mock('./settings-store', () => ({
 import { getSettings, saveSettings, getProfiles, getProfile, saveProfile, deleteProfile, resolveProfileEnv } from './profile-settings';
 import type { OrchestratorProfile } from '../../shared/types';
 
+const makeProfile = (overrides?: Partial<OrchestratorProfile>): OrchestratorProfile => ({
+  id: 'p1',
+  name: 'Work',
+  orchestrators: {
+    'claude-code': { env: {} },
+  },
+  ...overrides,
+});
+
 describe('profile-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -22,7 +31,7 @@ describe('profile-settings', () => {
 
   describe('getSettings', () => {
     it('returns settings from store', () => {
-      const settings = { profiles: [{ id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} }] };
+      const settings = { profiles: [makeProfile()] };
       mockGet.mockReturnValue(settings);
       expect(getSettings()).toEqual(settings);
     });
@@ -39,8 +48,8 @@ describe('profile-settings', () => {
   describe('getProfiles', () => {
     it('returns profiles array', () => {
       const profiles = [
-        { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} },
-        { id: 'p2', name: 'Personal', orchestrator: 'claude-code', env: {} },
+        makeProfile(),
+        makeProfile({ id: 'p2', name: 'Personal' }),
       ];
       mockGet.mockReturnValue({ profiles });
       expect(getProfiles()).toEqual(profiles);
@@ -54,7 +63,7 @@ describe('profile-settings', () => {
 
   describe('getProfile', () => {
     it('returns matching profile by id', () => {
-      const profile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} };
+      const profile = makeProfile();
       mockGet.mockReturnValue({ profiles: [profile] });
       expect(getProfile('p1')).toEqual(profile);
     });
@@ -70,7 +79,11 @@ describe('profile-settings', () => {
       const existing = { profiles: [] as OrchestratorProfile[] };
       mockGet.mockReturnValue(existing);
 
-      const newProfile: OrchestratorProfile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } };
+      const newProfile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+        },
+      });
       saveProfile(newProfile);
 
       expect(mockSave).toHaveBeenCalledWith({ profiles: [newProfile] });
@@ -78,19 +91,24 @@ describe('profile-settings', () => {
 
     it('updates an existing profile', () => {
       const existing = {
-        profiles: [{ id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} }],
+        profiles: [makeProfile()],
       };
       mockGet.mockReturnValue(existing);
 
-      const updated: OrchestratorProfile = { id: 'p1', name: 'Work Updated', orchestrator: 'claude-code', env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } };
+      const updated = makeProfile({
+        name: 'Work Updated',
+        orchestrators: {
+          'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+        },
+      });
       saveProfile(updated);
 
       expect(mockSave).toHaveBeenCalledWith({ profiles: [updated] });
     });
 
     it('preserves other profiles when updating', () => {
-      const p1: OrchestratorProfile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} };
-      const p2: OrchestratorProfile = { id: 'p2', name: 'Personal', orchestrator: 'claude-code', env: {} };
+      const p1 = makeProfile();
+      const p2 = makeProfile({ id: 'p2', name: 'Personal' });
       mockGet.mockReturnValue({ profiles: [p1, p2] });
 
       const updated = { ...p1, name: 'Work V2' };
@@ -102,8 +120,8 @@ describe('profile-settings', () => {
 
   describe('deleteProfile', () => {
     it('removes profile by id', () => {
-      const p1: OrchestratorProfile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} };
-      const p2: OrchestratorProfile = { id: 'p2', name: 'Personal', orchestrator: 'claude-code', env: {} };
+      const p1 = makeProfile();
+      const p2 = makeProfile({ id: 'p2', name: 'Personal' });
       mockGet.mockReturnValue({ profiles: [p1, p2] });
 
       deleteProfile('p1');
@@ -112,7 +130,7 @@ describe('profile-settings', () => {
     });
 
     it('no-ops when id does not exist', () => {
-      const p1: OrchestratorProfile = { id: 'p1', name: 'Work', orchestrator: 'claude-code', env: {} };
+      const p1 = makeProfile();
       mockGet.mockReturnValue({ profiles: [p1] });
 
       deleteProfile('nonexistent');
@@ -122,71 +140,101 @@ describe('profile-settings', () => {
   });
 
   describe('resolveProfileEnv', () => {
-    it('expands ~ to home directory', () => {
+    it('expands ~ to home directory for matching orchestrator', () => {
       const home = os.homedir();
-      const profile: OrchestratorProfile = {
-        id: 'p1',
-        name: 'Work',
-        orchestrator: 'claude-code',
-        env: { CLAUDE_CONFIG_DIR: '~/.claude-work' },
-      };
+      const profile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+        },
+      });
 
-      const result = resolveProfileEnv(profile);
-      expect(result.CLAUDE_CONFIG_DIR).toBe(path.join(home, '.claude-work'));
+      const result = resolveProfileEnv(profile, 'claude-code');
+      expect(result).toBeDefined();
+      expect(result!.CLAUDE_CONFIG_DIR).toBe(path.join(home, '.claude-work'));
+    });
+
+    it('returns undefined for orchestrator not in profile', () => {
+      const profile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+        },
+      });
+
+      const result = resolveProfileEnv(profile, 'codex-cli');
+      expect(result).toBeUndefined();
     });
 
     it('expands standalone ~', () => {
       const home = os.homedir();
-      const profile: OrchestratorProfile = {
-        id: 'p1',
-        name: 'Work',
-        orchestrator: 'claude-code',
-        env: { SOME_VAR: '~' },
-      };
+      const profile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: { SOME_VAR: '~' } },
+        },
+      });
 
-      const result = resolveProfileEnv(profile);
-      expect(result.SOME_VAR).toBe(home);
+      const result = resolveProfileEnv(profile, 'claude-code');
+      expect(result).toBeDefined();
+      expect(result!.SOME_VAR).toBe(home);
     });
 
     it('leaves absolute paths unchanged', () => {
-      const profile: OrchestratorProfile = {
-        id: 'p1',
-        name: 'Work',
-        orchestrator: 'codex-cli',
-        env: { OPENAI_API_KEY: 'sk-12345' },
-      };
+      const profile = makeProfile({
+        orchestrators: {
+          'codex-cli': { env: { OPENAI_API_KEY: 'sk-12345' } },
+        },
+      });
 
-      const result = resolveProfileEnv(profile);
-      expect(result.OPENAI_API_KEY).toBe('sk-12345');
+      const result = resolveProfileEnv(profile, 'codex-cli');
+      expect(result).toBeDefined();
+      expect(result!.OPENAI_API_KEY).toBe('sk-12345');
     });
 
     it('handles multiple env vars', () => {
-      const home = os.homedir();
-      const profile: OrchestratorProfile = {
-        id: 'p1',
-        name: 'Work',
-        orchestrator: 'codex-cli',
-        env: {
-          OPENAI_API_KEY: 'sk-12345',
-          OPENAI_BASE_URL: 'https://api.openai.com',
+      const profile = makeProfile({
+        orchestrators: {
+          'codex-cli': { env: {
+            OPENAI_API_KEY: 'sk-12345',
+            OPENAI_BASE_URL: 'https://api.openai.com',
+          }},
         },
-      };
+      });
 
-      const result = resolveProfileEnv(profile);
-      expect(result.OPENAI_API_KEY).toBe('sk-12345');
-      expect(result.OPENAI_BASE_URL).toBe('https://api.openai.com');
+      const result = resolveProfileEnv(profile, 'codex-cli');
+      expect(result).toBeDefined();
+      expect(result!.OPENAI_API_KEY).toBe('sk-12345');
+      expect(result!.OPENAI_BASE_URL).toBe('https://api.openai.com');
     });
 
-    it('handles empty env', () => {
-      const profile: OrchestratorProfile = {
-        id: 'p1',
-        name: 'Work',
-        orchestrator: 'claude-code',
-        env: {},
-      };
+    it('handles empty env for matching orchestrator', () => {
+      const profile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: {} },
+        },
+      });
 
-      const result = resolveProfileEnv(profile);
+      const result = resolveProfileEnv(profile, 'claude-code');
       expect(result).toEqual({});
+    });
+
+    it('handles profile with multiple orchestrators', () => {
+      const home = os.homedir();
+      const profile = makeProfile({
+        orchestrators: {
+          'claude-code': { env: { CLAUDE_CONFIG_DIR: '~/.claude-work' } },
+          'codex-cli': { env: { OPENAI_API_KEY: 'sk-work' } },
+        },
+      });
+
+      const ccResult = resolveProfileEnv(profile, 'claude-code');
+      expect(ccResult).toBeDefined();
+      expect(ccResult!.CLAUDE_CONFIG_DIR).toBe(path.join(home, '.claude-work'));
+
+      const codexResult = resolveProfileEnv(profile, 'codex-cli');
+      expect(codexResult).toBeDefined();
+      expect(codexResult!.OPENAI_API_KEY).toBe('sk-work');
+
+      const otherResult = resolveProfileEnv(profile, 'opencode');
+      expect(otherResult).toBeUndefined();
     });
   });
 });

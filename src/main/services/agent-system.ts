@@ -155,7 +155,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
 
     if (headlessResult) {
       headlessAgentSet.add(params.agentId);
-      const profileEnv = resolveProfileEnv(params.projectPath, params.agentId);
+      const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
       const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
       headlessManager.spawnHeadless(
         params.agentId,
@@ -219,7 +219,7 @@ async function spawnPtyAgent(
     },
   });
 
-  const profileEnv = resolveProfileEnv(params.projectPath, params.agentId);
+  const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
   const spawnEnv = { ...env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
 
   if (profileEnv) {
@@ -258,30 +258,27 @@ export async function checkAvailability(
 }
 
 /**
- * Resolve the profile env vars for an agent.
- * Priority: agent-level profileId > project-level profileId > none.
+ * Resolve the profile env vars for an agent spawn.
+ * Uses project-level profileId, then looks up the orchestrator-specific entry.
+ * If the orchestrator is not configured in the profile, logs a warning and returns undefined.
  */
-export function resolveProfileEnv(projectPath: string, agentId?: string): Record<string, string> | undefined {
-  let profileId: string | undefined;
-
-  // Check agent-level override first
-  if (agentId) {
-    const config = getDurableConfig(projectPath, agentId);
-    profileId = config?.profileId;
-  }
-
-  // Fall back to project-level default
-  if (!profileId) {
-    const defaults = readProjectAgentDefaults(projectPath);
-    profileId = defaults?.profileId;
-  }
-
+export function resolveProfileEnv(projectPath: string, orchestratorId: string): Record<string, string> | undefined {
+  const defaults = readProjectAgentDefaults(projectPath);
+  const profileId = defaults?.profileId;
   if (!profileId) return undefined;
 
   const profile = profileSettings.getProfile(profileId);
   if (!profile) return undefined;
 
-  return profileSettings.resolveProfileEnv(profile);
+  const resolved = profileSettings.resolveProfileEnv(profile, orchestratorId);
+  if (!resolved) {
+    appLog('core:agent', 'warn', `Profile "${profile.name}" has no config for orchestrator "${orchestratorId}" — spawning without profile env`, {
+      meta: { profileId, orchestratorId },
+    });
+    return undefined;
+  }
+
+  return resolved;
 }
 
 export function getAvailableOrchestrators() {

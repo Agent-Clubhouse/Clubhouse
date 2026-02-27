@@ -2,22 +2,23 @@ import { useState } from 'react';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
 
 interface Props {
   onClose: () => void;
   onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean) => void;
+  projectPath?: string;
 }
 
-export function AddAgentDialog({ onClose, onCreate }: Props) {
+export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   const [name, setName] = useState(generateDurableName());
   const [color, setColor] = useState<string>(AGENT_COLORS[0].id);
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
-  const enabled = useOrchestratorStore((s) => s.enabled);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
-  const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
+  const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators(projectPath);
   const [orchestrator, setOrchestrator] = useState(enabledOrchestrators[0]?.id || 'claude-code');
   const selectedAvail = availability[orchestrator];
   const { options: MODEL_OPTIONS, loading: modelsLoading } = useModelOptions(orchestrator);

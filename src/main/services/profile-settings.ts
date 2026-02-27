@@ -43,10 +43,13 @@ export function deleteProfile(profileId: string): void {
 }
 
 /** Expand ~ in env var values to the user's home directory */
-export function resolveProfileEnv(profile: OrchestratorProfile): Record<string, string> {
+export function resolveProfileEnv(profile: OrchestratorProfile, orchestratorId: string): Record<string, string> | undefined {
+  const entry = profile.orchestrators[orchestratorId];
+  if (!entry) return undefined;
+
   const home = os.homedir();
   const resolved: Record<string, string> = {};
-  for (const [key, value] of Object.entries(profile.env)) {
+  for (const [key, value] of Object.entries(entry.env)) {
     resolved[key] = value.startsWith('~/')
       ? path.join(home, value.slice(2))
       : value.replace(/^~(?=\/|$)/, home);
