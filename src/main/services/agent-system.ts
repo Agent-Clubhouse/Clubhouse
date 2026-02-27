@@ -11,6 +11,8 @@ import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig } from './agent-config';
 import { materializeAgent } from './materialization-service';
+import * as profileSettings from './profile-settings';
+import { readProjectAgentDefaults } from './agent-settings-service';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -153,7 +155,8 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
 
     if (headlessResult) {
       headlessAgentSet.add(params.agentId);
-      const spawnEnv = { ...headlessResult.env, CLUBHOUSE_AGENT_ID: params.agentId };
+      const profileEnv = resolveProfileEnv(params.projectPath, params.agentId);
+      const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
       headlessManager.spawnHeadless(
         params.agentId,
         params.cwd,
@@ -216,7 +219,15 @@ async function spawnPtyAgent(
     },
   });
 
-  const spawnEnv = { ...env, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
+  const profileEnv = resolveProfileEnv(params.projectPath, params.agentId);
+  const spawnEnv = { ...env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
+
+  if (profileEnv) {
+    appLog('core:agent', 'info', 'Profile env injected', {
+      meta: { agentId: params.agentId, profileKeys: Object.keys(profileEnv).join(',') },
+    });
+  }
+
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId) => {
     configPipeline.restoreForAgent(exitAgentId);
   });
@@ -244,6 +255,33 @@ export async function checkAvailability(
     return { available: false, error: `Unknown orchestrator: ${id}` };
   }
   return provider.checkAvailability();
+}
+
+/**
+ * Resolve the profile env vars for an agent.
+ * Priority: agent-level profileId > project-level profileId > none.
+ */
+export function resolveProfileEnv(projectPath: string, agentId?: string): Record<string, string> | undefined {
+  let profileId: string | undefined;
+
+  // Check agent-level override first
+  if (agentId) {
+    const config = getDurableConfig(projectPath, agentId);
+    profileId = config?.profileId;
+  }
+
+  // Fall back to project-level default
+  if (!profileId) {
+    const defaults = readProjectAgentDefaults(projectPath);
+    profileId = defaults?.profileId;
+  }
+
+  if (!profileId) return undefined;
+
+  const profile = profileSettings.getProfile(profileId);
+  if (!profile) return undefined;
+
+  return profileSettings.resolveProfileEnv(profile);
 }
 
 export function getAvailableOrchestrators() {

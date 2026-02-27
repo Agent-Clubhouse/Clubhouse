@@ -200,6 +200,10 @@ export class OpenCodeProvider implements OrchestratorProvider {
     }
     return [{ id: 'default', label: 'Default' }];
   }
+  getProfileEnvKeys(): string[] {
+    return ['OPENCODE_CONFIG_DIR'];
+  }
+
   getDefaultPermissions(kind: 'durable' | 'quick') {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }

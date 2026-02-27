@@ -211,6 +211,12 @@ export const IPC = {
     UPDATE_PLUGIN: 'marketplace:update-plugin',
     PLUGIN_UPDATES_CHANGED: 'marketplace:plugin-updates-changed',
   },
+  PROFILE: {
+    GET_SETTINGS: 'profile:get-settings',
+    SAVE_PROFILE: 'profile:save-profile',
+    DELETE_PROFILE: 'profile:delete-profile',
+    GET_PROFILE_ENV_KEYS: 'profile:get-profile-env-keys',
+  },
   ANNEX: {
     GET_SETTINGS: 'annex:get-settings',
     SAVE_SETTINGS: 'annex:save-settings',

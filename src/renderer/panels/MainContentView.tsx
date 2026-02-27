@@ -13,6 +13,7 @@ import { NotificationSettingsView } from '../features/settings/NotificationSetti
 import { SoundSettingsView } from '../features/settings/SoundSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
+import { ProfilesSettingsView } from '../features/settings/ProfilesSettingsView';
 import { PluginContentView } from './PluginContentView';
 import { PluginDetailSettings } from '../features/settings/PluginDetailSettings';
 import { PluginListSettings } from '../features/settings/PluginListSettings';
@@ -102,6 +103,7 @@ export function MainContentView() {
   if (explorerTab === 'settings') {
     const projectId = settingsContext !== 'app' ? settingsContext : undefined;
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
+    if (settingsSubPage === 'profiles') return <ProfilesSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
     if (settingsSubPage === 'sounds') return <SoundSettingsView projectId={projectId} />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;

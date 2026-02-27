@@ -286,6 +286,10 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     return { binary, args, outputKind: 'stream-json' };
   }
 
+  getProfileEnvKeys(): string[] {
+    return ['CLAUDE_CONFIG_DIR'];
+  }
+
   async getModelOptions() {
     return MODEL_OPTIONS;
   }
