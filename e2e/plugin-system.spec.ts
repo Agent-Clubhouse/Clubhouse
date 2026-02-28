@@ -294,21 +294,24 @@ test.describe('Plugin Settings', () => {
   });
 
   test('built-in plugins show "Built-in" badge', async () => {
-    // Each built-in plugin should have a "Built-in" badge
+    // Each built-in plugin should have a "Built-in" badge — wait for render before counting
     const badges = window.locator('text=Built-in');
+    await expect(badges.first()).toBeVisible({ timeout: 5_000 });
     const count = await badges.count();
     // At least 3 for hub, terminal, files
     expect(count).toBeGreaterThanOrEqual(3);
   });
 
   test('built-in plugins show version and API version', async () => {
-    // Plugins should display version info (v1.0.0)
+    // Plugins should display version info (v1.0.0) — use auto-retrying assertion for CI stability
     const versionLabels = window.locator('text=v1.0.0');
+    await expect(versionLabels.first()).toBeVisible({ timeout: 5_000 });
     const count = await versionLabels.count();
     expect(count).toBeGreaterThanOrEqual(3);
 
-    // API version badge (API 0.5)
-    const apiLabels = window.locator('text=API 0.5');
+    // API version badge (API 0.6) — built-in plugins upgraded to v0.6
+    const apiLabels = window.locator('text=API 0.6');
+    await expect(apiLabels.first()).toBeVisible({ timeout: 5_000 });
     const apiCount = await apiLabels.count();
     expect(apiCount).toBeGreaterThanOrEqual(3);
   });
@@ -317,6 +320,7 @@ test.describe('Plugin Settings', () => {
     // Toggles for built-in plugins — they should be in the "on" state
     // The toggle is a button with bg-ctp-accent class when enabled
     const toggles = window.locator('.bg-ctp-accent.rounded-full');
+    await expect(toggles.first()).toBeVisible({ timeout: 5_000 });
     const count = await toggles.count();
     // At least 3 toggles for the built-in plugins
     expect(count).toBeGreaterThanOrEqual(3);

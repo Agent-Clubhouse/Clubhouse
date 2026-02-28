@@ -17,8 +17,8 @@ describe('hub manifest', () => {
     expect(manifest.scope).toBe('dual');
   });
 
-  it('targets engine.api 0.5', () => {
-    expect(manifest.engine.api).toBe(0.5);
+  it('targets engine.api 0.6', () => {
+    expect(manifest.engine.api).toBe(0.6);
   });
 
   it('declares required permissions', () => {
@@ -49,10 +49,12 @@ describe('hub manifest', () => {
     expect(manifest.contributes!.railItem!.position).toBe('top');
   });
 
-  it('contributes split-pane command', () => {
+  it('contributes split-pane command with defaultBinding', () => {
     expect(manifest.contributes?.commands).toBeDefined();
     const cmds = manifest.contributes!.commands!;
-    expect(cmds.some((c) => c.id === 'split-pane')).toBe(true);
+    const splitPane = cmds.find((c) => c.id === 'split-pane');
+    expect(splitPane).toBeDefined();
+    expect(splitPane!.defaultBinding).toBe('Meta+Shift+\\');
   });
 
   it('contributes project-local storage scope', () => {
