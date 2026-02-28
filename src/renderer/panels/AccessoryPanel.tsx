@@ -40,6 +40,7 @@ function SettingsCategoryNav() {
           <>
             {navButton('About', 'about')}
             {navButton('Orchestrators & Agents', 'orchestrators')}
+            {navButton('Profiles', 'profiles')}
             {navButton('Display & UI', 'display')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Notifications', 'notifications')}

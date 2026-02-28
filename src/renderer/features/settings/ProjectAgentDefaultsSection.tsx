@@ -3,6 +3,8 @@ import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
 import type { SourceControlProvider } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
 import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
+import { useProfileStore } from '../../stores/profileStore';
+import { useOrchestratorStore } from '../../stores/orchestratorStore';
 
 interface ProjectAgentDefaults {
   instructions?: string;
@@ -13,6 +15,7 @@ interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
+  profileId?: string;
 }
 
 interface Props {
@@ -31,11 +34,15 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [buildCommand, setBuildCommand] = useState('');
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
+  const [profileId, setProfileId] = useState<string | undefined>(undefined);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const profiles = useProfileStore((s) => s.profiles);
+  const loadProfiles = useProfileStore((s) => s.loadProfiles);
+  const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
   const loadDefaults = useCallback(async () => {
     try {
@@ -50,6 +57,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setBuildCommand(d.buildCommand || '');
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
+      setProfileId(d.profileId);
       setLoaded(true);
       setDirty(false);
     } catch {
@@ -59,7 +67,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
   useEffect(() => {
     loadDefaults();
-  }, [loadDefaults]);
+    loadProfiles();
+  }, [loadDefaults, loadProfiles]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -79,6 +88,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (buildCommand.trim()) newDefaults.buildCommand = buildCommand.trim();
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
+    if (profileId) newDefaults.profileId = profileId;
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
@@ -187,6 +197,41 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             Replaces <code className="bg-surface-0 px-0.5 rounded">@@SourceControlProvider</code> in skill templates and controls conditional blocks.
           </p>
         </div>
+
+        {/* Default Profile */}
+        {profiles.length > 0 && (() => {
+          const activeProfile = profiles.find((p) => p.id === profileId);
+          const coveredNames = activeProfile
+            ? Object.keys(activeProfile.orchestrators).map(
+                (id) => allOrchestrators.find((o) => o.id === id)?.displayName || id
+              )
+            : [];
+          return (
+            <div>
+              <label className="block text-xs text-ctp-subtext0 mb-1">Default Profile</label>
+              <select
+                value={profileId || ''}
+                onChange={(e) => { setProfileId(e.target.value || undefined); setDirty(true); }}
+                className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+                  text-ctp-text focus:outline-none focus:border-ctp-accent/50"
+              >
+                <option value="">None (default credentials)</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+                Profile env vars are injected when agents in this project spawn.
+                {activeProfile && ' Only orchestrators configured in the profile appear in agent creation.'}
+              </p>
+              {coveredNames.length > 0 && (
+                <p className="text-[10px] text-ctp-accent/80 mt-1">
+                  Covers: {coveredNames.join(', ')}
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Build / Test / Lint Commands */}
         <div>

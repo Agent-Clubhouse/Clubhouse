@@ -252,6 +252,10 @@ export class CopilotCliProvider implements OrchestratorProvider {
     return { binary, args, outputKind: 'text' };
   }
 
+  getProfileEnvKeys(): string[] {
+    return ['GH_HOST', 'GH_TOKEN'];
+  }
+
   async getModelOptions() {
     try {
       const binary = findCopilotBinary();

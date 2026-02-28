@@ -84,6 +84,24 @@ export interface CompletedQuickAgent {
   cancelled?: boolean;
 }
 
+// --- Profile types ---
+
+/** Per-orchestrator env config within a profile */
+export interface OrchestratorProfileEntry {
+  env: Record<string, string>;  // e.g. { CLAUDE_CONFIG_DIR: "~/.claude-work" }
+}
+
+/** Named profile containing env configs for multiple orchestrators */
+export interface OrchestratorProfile {
+  id: string;
+  name: string;           // e.g. "Work", "Personal"
+  orchestrators: Record<string, OrchestratorProfileEntry>;
+}
+
+export interface ProfilesSettings {
+  profiles: OrchestratorProfile[];
+}
+
 // --- Config inheritance types ---
 
 export interface PermissionsConfig {
@@ -122,6 +140,8 @@ export interface ProjectAgentDefaults {
   buildCommand?: string;
   testCommand?: string;
   lintCommand?: string;
+  /** Default profile to use for agents in this project */
+  profileId?: string;
 }
 
 export interface DurableAgentConfig {
@@ -248,7 +268,7 @@ export interface SoundSettings {
   projectOverrides?: Record<string, { activePack?: string | null }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
+export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
 
 // --- Annex (LAN monitoring) types ---
 

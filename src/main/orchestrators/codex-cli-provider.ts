@@ -247,6 +247,10 @@ export class CodexCliProvider implements OrchestratorProvider {
     return FALLBACK_MODEL_OPTIONS;
   }
 
+  getProfileEnvKeys(): string[] {
+    return ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
+  }
+
   getDefaultPermissions(kind: 'durable' | 'quick') {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }

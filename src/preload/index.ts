@@ -232,6 +232,7 @@ const api = {
       buildCommand?: string;
       testCommand?: string;
       lintCommand?: string;
+      profileId?: string;
     }> =>
       ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
     writeProjectAgentDefaults: (projectPath: string, defaults: {
@@ -243,6 +244,7 @@ const api = {
       buildCommand?: string;
       testCommand?: string;
       lintCommand?: string;
+      profileId?: string;
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
     resetProjectAgentDefaults: (projectPath: string): Promise<void> =>
@@ -508,6 +510,26 @@ const api = {
       ipcRenderer.on(IPC.APP.UPDATE_STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
     },
+  },
+  profile: {
+    getSettings: (): Promise<{
+      profiles: Array<{
+        id: string;
+        name: string;
+        orchestrators: Record<string, { env: Record<string, string> }>;
+      }>;
+    }> =>
+      ipcRenderer.invoke(IPC.PROFILE.GET_SETTINGS),
+    saveProfile: (profile: {
+      id: string;
+      name: string;
+      orchestrators: Record<string, { env: Record<string, string> }>;
+    }) =>
+      ipcRenderer.invoke(IPC.PROFILE.SAVE_PROFILE, profile),
+    deleteProfile: (profileId: string) =>
+      ipcRenderer.invoke(IPC.PROFILE.DELETE_PROFILE, profileId),
+    getProfileEnvKeys: (orchestratorId: string): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.PROFILE.GET_PROFILE_ENV_KEYS, orchestratorId),
   },
   annex: {
     getSettings: () =>

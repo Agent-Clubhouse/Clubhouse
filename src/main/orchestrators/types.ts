@@ -93,6 +93,10 @@ export interface OrchestratorProvider {
   buildSummaryInstruction(agentId: string): string;
   readQuickSummary(agentId: string): Promise<{ summary: string | null; filesModified: string[] } | null>;
 
+  // Profile support
+  /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
+  getProfileEnvKeys(): string[];
+
   // Headless mode (optional — absence means headless not supported)
   buildHeadlessCommand?(opts: HeadlessOpts): Promise<HeadlessCommandResult | null>;
 }
