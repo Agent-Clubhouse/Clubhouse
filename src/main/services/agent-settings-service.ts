@@ -16,6 +16,7 @@ export interface SettingsConventions {
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
   localSettingsFile: string;   // e.g. 'settings.local.json', 'hooks/hooks.json'
+  settingsFormat?: 'json' | 'toml';  // defaults to 'json'
 }
 
 const CLAUDE_CODE_CONVENTIONS: SettingsConventions = {
@@ -315,6 +316,8 @@ export function createAgentTemplateDir(basePath: string, name: string, isSource:
  */
 export function readPermissions(worktreePath: string, conv?: SettingsConventions): PermissionsConfig {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  // Non-JSON settings files (e.g. TOML) are not supported — return empty
+  if (c.settingsFormat && c.settingsFormat !== 'json') return {};
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
   try {
     const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
@@ -452,6 +455,8 @@ export function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConv
  */
 export function readMcpRawJson(worktreePath: string, conv?: SettingsConventions): string {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  // Non-JSON config files (e.g. TOML) cannot be read as JSON — return empty default
+  if (c.settingsFormat && c.settingsFormat !== 'json') return '{\n  "mcpServers": {}\n}';
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   try {
     return fs.readFileSync(filePath, 'utf-8');
@@ -467,6 +472,10 @@ export function readMcpRawJson(worktreePath: string, conv?: SettingsConventions)
  */
 export function writeMcpRawJson(worktreePath: string, content: string, conv?: SettingsConventions): { ok: boolean; error?: string } {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  // Non-JSON config files (e.g. TOML) — refuse to write JSON content
+  if (c.settingsFormat && c.settingsFormat !== 'json') {
+    return { ok: false, error: 'MCP config writes are not supported for non-JSON settings formats' };
+  }
   try {
     JSON.parse(content); // Validate
   } catch (e) {
@@ -486,6 +495,8 @@ export function writeMcpRawJson(worktreePath: string, content: string, conv?: Se
  */
 export function writePermissions(worktreePath: string, permissions: PermissionsConfig, conv?: SettingsConventions): void {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
+  // Non-JSON settings files (e.g. TOML) are not supported — skip write
+  if (c.settingsFormat && c.settingsFormat !== 'json') return;
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
   const settingsDir = path.dirname(settingsPath);
   if (!fs.existsSync(settingsDir)) {
@@ -567,7 +578,7 @@ export function applyAgentDefaults(
     writePermissions(worktreePath, defaults.permissions, conv);
   }
 
-  if (defaults.mcpJson) {
+  if (defaults.mcpJson && (!c.settingsFormat || c.settingsFormat === 'json')) {
     try {
       JSON.parse(defaults.mcpJson); // Validate before writing
       const mcpPath = path.join(worktreePath, c.mcpConfigFile);

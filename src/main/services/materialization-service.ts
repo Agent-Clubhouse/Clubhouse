@@ -289,8 +289,8 @@ export function materializeAgent(params: {
     writePermissions(worktreePath, resolvedPerms, conv);
   }
 
-  // 3. MCP JSON
-  if (defaults.mcpJson) {
+  // 3. MCP JSON — skip for non-JSON settings formats (e.g. TOML)
+  if (defaults.mcpJson && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
     try {
       const resolved = replaceWildcards(defaults.mcpJson, ctx);
       JSON.parse(resolved); // Validate
