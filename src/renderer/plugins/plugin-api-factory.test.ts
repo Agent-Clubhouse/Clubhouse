@@ -1601,7 +1601,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('agent-1');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.resume('agent-1');
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/p1', durableConfig, true, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/p1', durableConfig, false, undefined);
       });
     });
 

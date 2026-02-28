@@ -730,6 +730,52 @@ describe('agentStore', () => {
       expect(spawnCall.resume).toBe(true);
       expect(spawnCall.sessionId).toBeUndefined();
     });
+
+    it('sets resuming=true on agent when resume=true', async () => {
+      const config = {
+        id: 'durable_resuming',
+        name: 'resuming-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, true);
+      expect(getState().agents['durable_resuming'].resuming).toBe(true);
+    });
+
+    it('does not set resuming when resume=false', async () => {
+      const config = {
+        id: 'durable_noresume',
+        name: 'noresume-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await getState().spawnDurableAgent('proj_1', '/project', config, false);
+      expect(getState().agents['durable_noresume'].resuming).toBeUndefined();
+    });
+  });
+
+  describe('clearResuming', () => {
+    it('clears the resuming flag on an agent', () => {
+      seedAgent({ id: 'a_res', resuming: true });
+      getState().clearResuming('a_res');
+      expect(getState().agents['a_res'].resuming).toBeUndefined();
+    });
+
+    it('no-op if agent is not resuming', () => {
+      seedAgent({ id: 'a_nores' });
+      const before = getState().agents;
+      getState().clearResuming('a_nores');
+      // Should return same state reference (no mutation)
+      expect(getState().agents).toBe(before);
+    });
+
+    it('no-op for unknown agent', () => {
+      const before = getState().agents;
+      getState().clearResuming('nonexistent');
+      expect(getState().agents).toBe(before);
+    });
   });
 
   describe('loadDurableAgents', () => {

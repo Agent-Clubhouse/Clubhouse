@@ -3,7 +3,11 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
+import { useAgentStore } from '../../stores/agentStore';
 import { attachClipboardHandlers } from '../terminal/clipboard';
+
+/** How long PTY output must be silent before we consider a resume "done". */
+const RESUME_SETTLE_MS = 1500;
 
 interface Props {
   agentId: string;
@@ -17,6 +21,24 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const terminalColors = useThemeStore((s) => s.theme.terminal);
   const clipboardCompat = useClipboardSettingsStore((s) => s.clipboardCompat);
   const loadClipboard = useClipboardSettingsStore((s) => s.loadSettings);
+
+  const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
+  const clearResuming = useAgentStore((s) => s.clearResuming);
+
+  // Debounce timer that detects when PTY output settles after a resume replay
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasReceivedDataRef = useRef(false);
+
+  const finishResume = useCallback(() => {
+    clearResuming(agentId);
+    // Re-fit the terminal to fix rendering glitches from the replay burst
+    requestAnimationFrame(() => {
+      if (fitAddonRef.current && terminalRef.current) {
+        fitAddonRef.current.fit();
+        window.clubhouse.pty.resize(agentId, terminalRef.current.cols, terminalRef.current.rows);
+      }
+    });
+  }, [agentId, clearResuming]);
 
   useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
@@ -110,6 +132,38 @@ export function AgentTerminal({ agentId, focused }: Props) {
     };
   }, [agentId]);
 
+  // Resume settle detection: watch PTY data and clear resuming after silence
+  useEffect(() => {
+    if (!resuming) return;
+
+    hasReceivedDataRef.current = false;
+
+    const removeListener = window.clubhouse.pty.onData(
+      (id: string, _data: string) => {
+        if (id !== agentId) return;
+        hasReceivedDataRef.current = true;
+
+        // Reset the settle timer on each data chunk
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = setTimeout(() => {
+          finishResume();
+        }, RESUME_SETTLE_MS);
+      }
+    );
+
+    // Safety fallback: if no data arrives within 10s, clear the overlay anyway
+    const fallbackTimer = setTimeout(() => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      finishResume();
+    }, 10_000);
+
+    return () => {
+      removeListener();
+      clearTimeout(fallbackTimer);
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    };
+  }, [resuming, agentId, finishResume]);
+
   // Attach clipboard handlers only when clipboard compatibility is enabled
   useEffect(() => {
     if (!clipboardCompat || !terminalRef.current || !containerRef.current) return;
@@ -139,12 +193,23 @@ export function AgentTerminal({ agentId, focused }: Props) {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      data-testid="agent-terminal"
-      className="w-full h-full overflow-hidden"
-      style={{ padding: '8px' }}
-      onMouseDown={handleMouseDown}
-    />
+    <div className="relative w-full h-full">
+      <div
+        ref={containerRef}
+        data-testid="agent-terminal"
+        className="w-full h-full overflow-hidden"
+        style={{ padding: '8px' }}
+        onMouseDown={handleMouseDown}
+      />
+      {resuming && (
+        <div
+          data-testid="resume-overlay"
+          className="absolute inset-0 flex flex-col items-center justify-center bg-ctp-base/90 z-10"
+        >
+          <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mb-3" />
+          <span className="text-sm text-ctp-subtext0">Resuming session...</span>
+        </div>
+      )}
+    </div>
   );
 }
