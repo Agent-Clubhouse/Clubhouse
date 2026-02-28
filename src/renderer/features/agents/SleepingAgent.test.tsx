@@ -132,7 +132,7 @@ describe('SleepingAgent', () => {
       expect(screen.queryByText('Retry')).toBeNull();
     });
 
-    it('calls spawnDurableAgent when Wake Up is clicked', async () => {
+    it('calls spawnDurableAgent with resume=false when Wake Up is clicked', async () => {
       const durableConfig = { id: 'agent-1', name: 'bold-falcon' };
       window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
 
@@ -148,7 +148,7 @@ describe('SleepingAgent', () => {
           'proj-1',
           '/projects/test',
           durableConfig,
-          true,
+          false,
         );
       });
     });
@@ -177,6 +177,52 @@ describe('SleepingAgent', () => {
       // Should return early without calling listDurable
       await new Promise((r) => setTimeout(r, 50));
       expect(window.clubhouse.agent.listDurable).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('split button dropdown', () => {
+    it('renders dropdown toggle for durable agents', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      expect(screen.getByTestId('wake-dropdown-toggle')).toBeInTheDocument();
+    });
+
+    it('shows dropdown menu when toggle is clicked', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      expect(screen.queryByTestId('wake-dropdown-menu')).toBeNull();
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      expect(screen.getByTestId('wake-dropdown-menu')).toBeInTheDocument();
+    });
+
+    it('dropdown contains Wake & Resume option', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      expect(screen.getByTestId('wake-resume-option')).toBeInTheDocument();
+    });
+
+    it('calls spawnDurableAgent with resume=true when Wake & Resume is clicked', async () => {
+      const durableConfig = { id: 'agent-1', name: 'bold-falcon' };
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      fireEvent.click(screen.getByTestId('wake-resume-option'));
+
+      await waitFor(() => {
+        expect(mockSpawnDurableAgent).toHaveBeenCalledWith(
+          'proj-1',
+          '/projects/test',
+          durableConfig,
+          true,
+        );
+      });
+    });
+
+    it('closes dropdown on Escape', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      expect(screen.getByTestId('wake-dropdown-menu')).toBeInTheDocument();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(screen.queryByTestId('wake-dropdown-menu')).toBeNull();
     });
   });
 });
