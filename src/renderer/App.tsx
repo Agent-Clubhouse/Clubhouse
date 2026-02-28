@@ -8,19 +8,11 @@ import { usePanelStore } from './stores/panelStore';
 import { Dashboard } from './features/projects/Dashboard';
 import { GitBanner } from './features/projects/GitBanner';
 import { useProjectStore } from './stores/projectStore';
-import { useAgentStore, consumeCancelled } from './stores/agentStore';
+import { useAgentStore } from './stores/agentStore';
 import { useUIStore } from './stores/uiStore';
-import { useNotificationStore } from './stores/notificationStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
-import { useThemeStore } from './stores/themeStore';
-import { useOrchestratorStore } from './stores/orchestratorStore';
-import { useLoggingStore } from './stores/loggingStore';
-import { useHeadlessStore } from './stores/headlessStore';
-import { useBadgeSettingsStore } from './stores/badgeSettingsStore';
-import { initBadgeSideEffects } from './stores/badgeStore';
 import { usePluginStore } from './plugins/plugin-store';
-import { initializePluginSystem, handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
-import { pluginEventBus } from './plugins/plugin-events';
+import { handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
@@ -29,50 +21,19 @@ import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
 import { QuickAgentDialog } from './features/agents/QuickAgentDialog';
-import { useCommandPaletteStore } from './stores/commandPaletteStore';
-import { useKeyboardShortcutsStore, eventToBinding } from './stores/keyboardShortcutsStore';
-import { getCommandActions } from './features/command-palette/command-actions';
-import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
-import { useOnboardingStore } from './stores/onboardingStore';
-import { useUpdateStore } from './stores/updateStore';
-import { initUpdateListener } from './stores/updateStore';
-import { initAnnexListener } from './stores/annexStore';
-import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
-import { useClubhouseModeStore } from './stores/clubhouseModeStore';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
-import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
-import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
-import type { HubMutation } from '../shared/types';
+import { initApp } from './app-initializer';
+import { initAppEventBridge } from './app-event-bridge';
 
 export function App() {
-  const loadProjects = useProjectStore((s) => s.loadProjects);
+  // ── Layout state (only selectors needed for rendering) ──────────────────
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const updateAgentStatus = useAgentStore((s) => s.updateAgentStatus);
-  const handleHookEvent = useAgentStore((s) => s.handleHookEvent);
-  const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
   const isFullWidth = activePluginEntry?.manifest.contributes?.tab?.layout === 'full';
-  const loadNotificationSettings = useNotificationStore((s) => s.loadSettings);
-  const loadTheme = useThemeStore((s) => s.loadTheme);
-  const checkAndNotify = useNotificationStore((s) => s.checkAndNotify);
-  const clearNotification = useNotificationStore((s) => s.clearNotification);
-  const activeAgentId = useAgentStore((s) => s.activeAgentId);
-  const addCompleted = useQuickAgentStore((s) => s.addCompleted);
-  const loadCompleted = useQuickAgentStore((s) => s.loadCompleted);
-  const removeAgent = useAgentStore((s) => s.removeAgent);
-  const clearStaleStatuses = useAgentStore((s) => s.clearStaleStatuses);
-  const loadOrchestratorSettings = useOrchestratorStore((s) => s.loadSettings);
-  const loadLoggingSettings = useLoggingStore((s) => s.loadSettings);
-  const loadHeadlessSettings = useHeadlessStore((s) => s.loadSettings);
-  const loadBadgeSettings = useBadgeSettingsStore((s) => s.loadSettings);
-  const loadUpdateSettings = useUpdateStore((s) => s.loadSettings);
-  const checkWhatsNew = useUpdateStore((s) => s.checkWhatsNew);
-  const onboardingCompleted = useOnboardingStore((s) => s.completed);
-  const startOnboarding = useOnboardingStore((s) => s.startOnboarding);
 
   const explorerWidth = usePanelStore((s) => s.explorerWidth);
   const explorerCollapsed = usePanelStore((s) => s.explorerCollapsed);
@@ -83,212 +44,33 @@ export function App() {
   const toggleExplorerCollapse = usePanelStore((s) => s.toggleExplorerCollapse);
   const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
 
+  // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
-    loadProjects();
-    loadNotificationSettings();
-    loadTheme();
-    loadOrchestratorSettings();
-    loadLoggingSettings();
-    loadHeadlessSettings();
-    loadBadgeSettings();
-    loadUpdateSettings();
-    initBadgeSideEffects();
-    initializePluginSystem().catch((err) => {
-      console.error('[Plugins] Failed to initialize plugin system:', err);
-    });
-  }, [loadProjects, loadNotificationSettings, loadTheme, loadOrchestratorSettings, loadLoggingSettings, loadHeadlessSettings, loadBadgeSettings, loadUpdateSettings]);
-
-  // Listen for update status changes from main process
-  useEffect(() => {
-    const remove = initUpdateListener();
-    return () => remove();
-  }, []);
-
-  // Listen for Annex status changes from main process
-  useEffect(() => {
-    const remove = initAnnexListener();
-    return () => remove();
-  }, []);
-
-  // Listen for plugin update status changes from main process
-  useEffect(() => {
-    const remove = initPluginUpdateListener();
-    return () => remove();
-  }, []);
-
-  // Check for What's New dialog after startup
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      checkWhatsNew();
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [checkWhatsNew]);
-
-  // Show onboarding on first launch
-  useEffect(() => {
-    if (!onboardingCompleted) {
-      const timer = setTimeout(() => {
-        startOnboarding();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const remove = window.clubhouse.app.onOpenSettings(() => {
-      useUIStore.getState().toggleSettings();
-    });
-    return () => remove();
-  }, []);
-
-  useEffect(() => {
-    const remove = window.clubhouse.app.onOpenAbout(() => {
-      const state = useUIStore.getState();
-      if (state.explorerTab !== 'settings') {
-        state.openAbout();
-      } else {
-        state.setSettingsSubPage('about');
-      }
-    });
-    return () => remove();
-  }, []);
-
-  // Navigate to agent when notification is clicked
-  useEffect(() => {
-    const remove = window.clubhouse.app.onNotificationClicked((agentId: string, projectId: string) => {
-      useProjectStore.getState().setActiveProject(projectId);
-      useUIStore.getState().setExplorerTab('agents', projectId);
-      useAgentStore.getState().setActiveAgent(agentId, projectId);
-    });
-    return () => remove();
-  }, []);
-
-  // Respond to agent state requests from pop-out windows so they can
-  // mirror the same agents, detailed statuses, and icons.
-  useEffect(() => {
-    const remove = window.clubhouse.window.onRequestAgentState((requestId: string) => {
-      const state = useAgentStore.getState();
-      window.clubhouse.window.respondAgentState(requestId, {
-        agents: state.agents,
-        agentDetailedStatus: state.agentDetailedStatus,
-        agentIcons: state.agentIcons,
-      });
-    });
-    return () => remove();
-  }, []);
-
-  // Respond to hub state requests from pop-out windows
-  useEffect(() => {
-    const remove = window.clubhouse.window.onRequestHubState(
-      (requestId: string, hubId: string, scope: string, projectId?: string) => {
-        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
-        const state = store.getState();
-        const hub = state.hubs.find((h) => h.id === hubId);
-        if (hub) {
-          window.clubhouse.window.respondHubState(requestId, {
-            hubId: hub.id,
-            paneTree: hub.paneTree,
-            focusedPaneId: hub.focusedPaneId,
-            zoomedPaneId: hub.zoomedPaneId,
-          });
-        } else {
-          window.clubhouse.window.respondHubState(requestId, null);
-        }
-      },
-    );
-    return () => remove();
-  }, []);
-
-  // Apply hub mutations forwarded from pop-out windows
-  useEffect(() => {
-    const remove = window.clubhouse.window.onHubMutation(
-      (hubId: string, scope: string, mutation: unknown, projectId?: string) => {
-        const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
-        applyHubMutation(store, hubId, mutation as HubMutation);
-      },
-    );
-    return () => remove();
-  }, []);
-
-  // Navigate to agent when requested from a pop-out window
-  useEffect(() => {
-    const remove = window.clubhouse.window.onNavigateToAgent((agentId: string) => {
-      const agent = useAgentStore.getState().agents[agentId];
-      if (agent) {
-        useProjectStore.getState().setActiveProject(agent.projectId);
-        useUIStore.getState().setExplorerTab('agents', agent.projectId);
-        useAgentStore.getState().setActiveAgent(agentId, agent.projectId);
-      }
-    });
-    return () => remove();
-  }, []);
-
-  // Clear any active OS notification when the user navigates to the agent's view
-  useEffect(() => {
-    if (activeAgentId && activeProjectId && explorerTab === 'agents') {
-      clearNotification(activeAgentId, activeProjectId);
-    }
-  }, [activeAgentId, activeProjectId, explorerTab, clearNotification]);
-
-  // Unified keyboard shortcut dispatcher
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Skip if recording a new binding in settings
-      if (useKeyboardShortcutsStore.getState().editingId) return;
-
-      const binding = eventToBinding(e);
-      if (!binding) return;
-
-      const target = e.target as HTMLElement | null;
-      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' ||
-        target?.isContentEditable || target?.closest?.('[contenteditable]') != null;
-
-      // Find matching system shortcut
-      const { shortcuts } = useKeyboardShortcutsStore.getState();
-      const matched = Object.values(shortcuts).find((s) => s.currentBinding === binding);
-
-      if (matched) {
-        const actions = getCommandActions();
-        const action = actions.find((a) => a.id === matched.id);
-        if (!action) return;
-
-        // Guard: skip non-global shortcuts when focus is in a text input
-        if (isTextInput && !action.global) return;
-        // Guard: skip non-palette shortcuts when palette is open
-        if (useCommandPaletteStore.getState().isOpen && matched.id !== 'command-palette') return;
-
-        e.preventDefault();
-        action.execute();
-        return;
-      }
-
-      // Check plugin hotkeys (system shortcuts take priority — first claimer wins)
-      const pluginShortcut = pluginHotkeyRegistry.findByBinding(binding);
-      if (pluginShortcut) {
-        if (isTextInput && !pluginShortcut.global) return;
-        if (useCommandPaletteStore.getState().isOpen) return;
-
-        e.preventDefault();
-        pluginShortcut.handler();
-      }
+    const cleanupInit = initApp();
+    const cleanupBridge = initAppEventBridge();
+    return () => {
+      cleanupInit();
+      cleanupBridge();
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  // ── Reactive effects (depend on state already subscribed for rendering) ─
 
   // Load durable agents for all projects so the dashboard shows them
   useEffect(() => {
+    const loadDurableAgents = useAgentStore.getState().loadDurableAgents;
     for (const p of projects) {
       loadDurableAgents(p.id, p.path);
     }
-  }, [projects, loadDurableAgents]);
+  }, [projects]);
 
   // Load completed quick agents for all projects
   useEffect(() => {
+    const loadCompleted = useQuickAgentStore.getState().loadCompleted;
     for (const p of projects) {
       loadCompleted(p.id);
     }
-  }, [projects, loadCompleted]);
+  }, [projects]);
 
   // Handle plugin lifecycle on project switches
   const prevProjectIdRef = useRef<string | null>(null);
@@ -326,248 +108,7 @@ export function App() {
     }
   }, [activeProjectId, projects]);
 
-  // Emit agent:status-changed plugin events when agent statuses change
-  const prevAgentStatusesRef = useRef<Record<string, string>>({});
-  useEffect(() => {
-    const unsub = useAgentStore.subscribe((state) => {
-      const prev = prevAgentStatusesRef.current;
-      const next: Record<string, string> = {};
-      for (const [id, agent] of Object.entries(state.agents)) {
-        next[id] = agent.status;
-        if (prev[id] && prev[id] !== agent.status) {
-          pluginEventBus.emit('agent:status-changed', {
-            agentId: id,
-            status: agent.status,
-            prevStatus: prev[id],
-            name: agent.name,
-          });
-        }
-      }
-      prevAgentStatusesRef.current = next;
-    });
-    return unsub;
-  }, []);
-
-  // Periodically clear stale detailed statuses (e.g. stuck "Thinking" or "Searching files")
-  useEffect(() => {
-    const id = setInterval(clearStaleStatuses, 10_000);
-    return () => clearInterval(id);
-  }, [clearStaleStatuses]);
-
-  useEffect(() => {
-    const removeExitListener = window.clubhouse.pty.onExit(
-      async (agentId: string, exitCode: number, lastOutput?: string) => {
-        const agent = useAgentStore.getState().agents[agentId];
-        updateAgentStatus(agentId, 'sleeping', exitCode, undefined, lastOutput);
-
-        // Handle quick agent completion FIRST (before plugin events which could throw)
-        if (agent?.kind === 'quick' && agent.mission) {
-          let summary: string | null = null;
-          let filesModified: string[] = [];
-          let costUsd: number | undefined;
-          let durationMs: number | undefined;
-          let toolsUsed: string[] | undefined;
-
-          if (agent.headless) {
-            // Headless agents: read enriched data from transcript
-            try {
-              const transcript = await window.clubhouse.agent.readTranscript(agentId);
-              if (transcript) {
-                // Parse transcript events to extract summary data
-                const events = transcript.split('\n')
-                  .filter((line: string) => line.trim())
-                  .map((line: string) => {
-                    try { return JSON.parse(line); } catch { return null; }
-                  })
-                  .filter(Boolean);
-
-                // Extract data from transcript events (--verbose format)
-                let lastAssistantText = '';
-                const tools = new Set<string>();
-
-                for (const evt of events) {
-                  // Result event: summary, cost, duration
-                  if (evt.type === 'result') {
-                    if (typeof evt.result === 'string' && evt.result) {
-                      summary = evt.result;
-                    }
-                    if (evt.total_cost_usd != null) costUsd = evt.total_cost_usd;
-                    else if (evt.cost_usd != null) costUsd = evt.cost_usd;
-                    if (evt.duration_ms != null) durationMs = evt.duration_ms;
-                  }
-
-                  // --verbose: assistant messages contain text and tool_use blocks
-                  if (evt.type === 'assistant' && evt.message?.content) {
-                    for (const block of evt.message.content) {
-                      if (block.type === 'text' && block.text) {
-                        lastAssistantText = block.text;
-                      }
-                      if (block.type === 'tool_use' && block.name) {
-                        tools.add(block.name);
-                      }
-                    }
-                  }
-
-                  // Legacy streaming format fallback
-                  if (evt.type === 'content_block_start' && evt.content_block?.type === 'tool_use' && evt.content_block?.name) {
-                    tools.add(evt.content_block.name);
-                  }
-                }
-
-                // Fall back to last assistant text if result was empty
-                if (!summary && lastAssistantText.trim()) {
-                  const text = lastAssistantText.trim();
-                  summary = text.length > 500 ? text.slice(0, 497) + '...' : text;
-                }
-
-                if (tools.size > 0) toolsUsed = Array.from(tools);
-              }
-            } catch {
-              // Transcript not available
-            }
-          } else {
-            // PTY agents: read /tmp summary file
-            try {
-              const result = await window.clubhouse.agent.readQuickSummary(agentId);
-              if (result) {
-                summary = result.summary;
-                filesModified = result.filesModified;
-              }
-            } catch {
-              // Summary not available
-            }
-          }
-
-          // If the summary was found, treat as success regardless of exit code
-          // (we often force-kill quick agents after they finish, giving >128 codes)
-          const cancelled = consumeCancelled(agentId);
-          const effectiveExitCode = summary ? 0 : exitCode;
-
-          addCompleted({
-            id: agentId,
-            projectId: agent.projectId,
-            name: agent.name,
-            mission: agent.mission,
-            summary,
-            filesModified,
-            exitCode: effectiveExitCode,
-            completedAt: Date.now(),
-            parentAgentId: agent.parentAgentId,
-            headless: agent.headless,
-            costUsd,
-            durationMs,
-            toolsUsed,
-            orchestrator: agent.orchestrator || 'claude-code',
-            model: agent.model,
-            cancelled,
-          });
-
-          removeAgent(agentId);
-        }
-
-        // Emit plugin event after completion logic (wrapped to prevent silent failures)
-        try {
-          pluginEventBus.emit('agent:completed', { agentId, exitCode, name: agent?.name });
-        } catch {
-          // Plugin listener error — don't break the app
-        }
-
-        // Config changes detection for durable agents in clubhouse mode
-        if (agent?.kind === 'durable' && agent.worktreePath) {
-          const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-          if (project) {
-            const cmEnabled = useClubhouseModeStore.getState().isEnabledForProject(project.path);
-            if (cmEnabled) {
-              try {
-                const diff = await window.clubhouse.agentSettings.computeConfigDiff(project.path, agentId);
-                if (diff.hasDiffs) {
-                  useAgentStore.getState().openConfigChangesDialog(agentId, project.path);
-                }
-              } catch { /* silent */ }
-            }
-          }
-        }
-      }
-    );
-    return () => removeExitListener();
-  }, [updateAgentStatus, addCompleted, removeAgent]);
-
-  useEffect(() => {
-    const removeHookListener = window.clubhouse.agent.onHookEvent(
-      (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
-        handleHookEvent(agentId, event as import('../shared/types').AgentHookEvent);
-        const agent = useAgentStore.getState().agents[agentId];
-        if (!agent) return;
-        const name = agent.name;
-        checkAndNotify(name, event.kind, event.toolName, agentId, agent.projectId);
-
-        // Emit plugin events for agent lifecycle
-        if (event.kind === 'stop') {
-          pluginEventBus.emit('agent:completed', { agentId, name });
-        } else {
-          pluginEventBus.emit('agent:spawned', { agentId, name, kind: event.kind });
-        }
-
-        // Emit agent:hook for all hook events
-        pluginEventBus.emit('agent:hook', {
-          agentId,
-          kind: event.kind,
-          toolName: event.toolName,
-          timestamp: event.timestamp,
-        });
-
-        // Auto-exit quick agents when the agent finishes (stop event).
-        // Headless agents exit on their own — skip the kill timer.
-        if (event.kind === 'stop' && agent.kind === 'quick' && !agent.headless) {
-          // Delay gives the agent time to write the summary file before we send /exit.
-          const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
-          setTimeout(() => {
-            const currentAgent = useAgentStore.getState().agents[agentId];
-            if (currentAgent?.status !== 'running') return; // already exited
-            if (project) {
-              window.clubhouse.agent.killAgent(agentId, project.path);
-            } else {
-              window.clubhouse.pty.kill(agentId);
-            }
-          }, 2000);
-        }
-      }
-    );
-    return () => removeHookListener();
-  }, [handleHookEvent, checkAndNotify]);
-
-  // Listen for agents spawned remotely via the Annex (iOS companion) and register
-  // them in the local agent store so they appear in the UI and flow through the
-  // normal completion path (exit handler, completed list, etc.).
-  useEffect(() => {
-    const removeAnnexSpawnListener = window.clubhouse.annex.onAgentSpawned((agent) => {
-      const existing = useAgentStore.getState().agents[agent.id];
-      if (existing) return; // Already known
-
-      useAgentStore.setState((s) => ({
-        agents: {
-          ...s.agents,
-          [agent.id]: {
-            id: agent.id,
-            projectId: agent.projectId,
-            name: agent.name,
-            kind: agent.kind,
-            status: agent.status as import('../shared/types').AgentStatus,
-            color: 'gray',
-            mission: agent.prompt,
-            model: agent.model || undefined,
-            parentAgentId: agent.parentAgentId || undefined,
-            orchestrator: agent.orchestrator || undefined,
-            headless: agent.headless || undefined,
-            freeAgentMode: agent.freeAgentMode || undefined,
-          },
-        },
-        agentSpawnedAt: { ...s.agentSpawnedAt, [agent.id]: Date.now() },
-      }));
-    });
-    return () => removeAnnexSpawnListener();
-  }, []);
-
+  // ── Derived layout state ────────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
   const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
