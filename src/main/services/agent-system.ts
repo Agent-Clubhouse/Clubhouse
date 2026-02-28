@@ -195,21 +195,24 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
-  const port = await waitHookServerReady();
-  const hookUrl = `http://127.0.0.1:${port}/hook`;
-  await provider.writeHooksConfig(params.cwd, hookUrl);
-
-  const { binary, args, env } = await provider.buildSpawnCommand({
-    cwd: params.cwd,
-    model: params.model,
-    mission: params.mission,
-    systemPrompt: params.systemPrompt,
-    allowedTools,
-    agentId: params.agentId,
-    freeAgentMode: params.freeAgentMode,
-    resume: params.resume,
-    sessionId: params.sessionId,
-  });
+  // Run hook server setup and command building in parallel — they're independent.
+  const [, { binary, args, env }] = await Promise.all([
+    waitHookServerReady().then(async (port) => {
+      const hookUrl = `http://127.0.0.1:${port}/hook`;
+      await provider.writeHooksConfig(params.cwd, hookUrl);
+    }),
+    provider.buildSpawnCommand({
+      cwd: params.cwd,
+      model: params.model,
+      mission: params.mission,
+      systemPrompt: params.systemPrompt,
+      allowedTools,
+      agentId: params.agentId,
+      freeAgentMode: params.freeAgentMode,
+      resume: params.resume,
+      sessionId: params.sessionId,
+    }),
+  ]);
 
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
     meta: {
