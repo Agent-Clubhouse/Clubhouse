@@ -15,6 +15,13 @@ import * as annexServer from './services/annex-server';
 // instead of "Electron" during development.
 app.name = 'Clubhouse';
 
+// Windows requires an explicit AppUserModelID for toast notifications to work.
+// This must match the ID used by the Squirrel installer's Start Menu shortcut
+// so Windows can associate notifications with the correct app.
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.mason-allen.clubhouse');
+}
+
 // Catch-all handlers for truly unexpected errors. These fire *after* logService.init()
 // has been called (in registerAllHandlers), so early crashes before `ready` won't log —
 // but those are visible in stderr anyway.

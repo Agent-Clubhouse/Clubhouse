@@ -82,6 +82,10 @@ const config: ForgeConfig = {
       icon: path.resolve(__dirname, 'assets', 'icon.icns'),
     }, ['darwin']),
     new MakerSquirrel({
+      // The name is used to derive the AppUserModelID for the Start Menu shortcut.
+      // It must align with the ID set by app.setAppUserModelId() in the main process
+      // so Windows can route toast notifications to the correct app.
+      name: 'com.mason-allen.clubhouse',
       iconUrl: 'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse/main/assets/icon.ico',
       ...(fs.existsSync(path.resolve(__dirname, 'assets', 'icon.ico'))
         ? { setupIcon: path.resolve(__dirname, 'assets', 'icon.ico') }
