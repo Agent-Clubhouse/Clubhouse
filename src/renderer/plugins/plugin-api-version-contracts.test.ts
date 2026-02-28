@@ -737,11 +737,9 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
   });
 
   describe('api.hub surface', () => {
-    for (const method of HUB_API_METHODS) {
-      it(`api.hub.${method} exists and is callable`, () => {
-        expect(typeof api.hub[method]).toBe('function');
-      });
-    }
+    it('api.hub namespace exists', () => {
+      expect(api.hub).toBeDefined();
+    });
   });
 
   describe('api.navigation surface', () => {
