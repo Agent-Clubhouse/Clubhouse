@@ -239,6 +239,26 @@ jobs:
       - name: Build Windows installer
         run: npx electron-forge make --arch=${{ matrix.arch }}
 
+      - name: Authenticate to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows executables
+        uses: azure/trusted-signing-action@v0
+        with:
+          endpoint: https://wus2.codesigning.azure.net/
+          signing-account-name: Clubhouse-Win-Signing
+          certificate-profile-name: clubhouse-win-codesign
+          files-folder: out/make
+          files-folder-filter: exe
+          files-folder-depth: 10
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Compute artifact hashes
         id: hash
         shell: pwsh
