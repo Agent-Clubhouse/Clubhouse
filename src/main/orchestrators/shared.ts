@@ -22,14 +22,10 @@ export function clearBinaryCache(): void {
  * Results are cached for 5 minutes to avoid repeatedly spawning login shells
  * (which can take 500ms–2s on complex shell setups).
  *
- * On Windows the most reliable check is `where` — it resolves the binary
- * exactly the way cmd.exe does (honoring PATH, PATHEXT, App Paths, etc.).
- * We try that first, then fall back to a manual PATH scan and finally
- * provider-supplied extra paths.
- *
- * On macOS/Linux we source the user's login shell to get the full PATH
- * (packaged Electron apps launched from the Dock only see a minimal PATH),
- * then check extra paths.
+ * Lookup order is optimized for speed:
+ * 1. Provider-supplied well-known paths — instant filesystem check
+ * 2. Manual PATH scan (using process.env.PATH first, shell env if available)
+ * 3. Shell-native lookup (`where`/`which`) — last resort, spawns a login shell
  */
 export function findBinaryInPath(names: string[], extraPaths: string[]): string {
   const cacheKey = names[0] || '';
@@ -49,43 +45,28 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
     return found;
   };
 
-  // ── 1. Shell-native lookup (`where` / `which`) — most authoritative ──
-  for (const name of names) {
-    try {
-      if (isWin) {
-        const result = execSync(`where ${name}`, {
-          encoding: 'utf-8',
-          timeout: 5000,
-          windowsHide: true,
-          stdio: ['pipe', 'pipe', 'pipe'], // suppress "INFO: Could not find files" on stderr
-        }).trim().split(/\r?\n/)[0].trim();
-        if (result && fs.existsSync(result)) return cacheHit(result);
-      } else {
-        const shell = process.env.SHELL || '/bin/zsh';
-        const raw = execSync(`${shell} -ilc 'which ${name}'`, {
-          encoding: 'utf-8',
-          timeout: 5000,
-        }).trim();
-        // Shell startup messages may appear before the `which` output.
-        // Take the last non-empty line which is the actual path.
-        const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
-        const result = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-        if (result && fs.existsSync(result)) return cacheHit(result);
-      }
-    } catch {
-      // not on PATH — continue to manual search
-    }
+  // ── 1. Provider-supplied well-known paths — fastest (no shell spawn) ──
+  for (const p of extraPaths) {
+    if (fs.existsSync(p)) return cacheHit(p);
   }
 
   // ── 2. Manual PATH scan ──
-  // getShellEnvironment() spreads process.env into a plain object which loses
-  // Windows' case-insensitive key access (actual key is "Path", not "PATH").
-  // Try the shell env first (works on Unix and in tests), fall back to the
-  // case-insensitive process.env.PATH accessor which always works on Windows.
+  // Start with process.env.PATH (available immediately, no shell spawn).
+  // If shell env is already cached, also check its PATH for additional entries
+  // (packaged macOS apps launched from Finder have a minimal PATH).
+  const envPATH = process.env.PATH || '';
   const shellEnv = getShellEnvironment();
-  const shellPATH = shellEnv.PATH || process.env.PATH || '';
-  for (const dir of shellPATH.split(path.delimiter)) {
-    if (!dir) continue;
+  const shellPATH = shellEnv.PATH || '';
+  // Combine both PATHs, deduplicating directories
+  const seenDirs = new Set<string>();
+  const allDirs: string[] = [];
+  for (const p of envPATH.split(path.delimiter).concat(shellPATH.split(path.delimiter))) {
+    if (p && !seenDirs.has(p)) {
+      seenDirs.add(p);
+      allDirs.push(p);
+    }
+  }
+  for (const dir of allDirs) {
     for (const name of names) {
       const candidate = path.join(dir, name);
       if (fs.existsSync(candidate)) return cacheHit(candidate);
@@ -98,9 +79,32 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
     }
   }
 
-  // ── 3. Provider-supplied well-known paths (fallback) ──
-  for (const p of extraPaths) {
-    if (fs.existsSync(p)) return cacheHit(p);
+  // ── 3. Shell-native lookup (`where` / `which`) — last resort ──
+  // Only reached when the binary isn't in well-known paths or on PATH.
+  // This spawns a login shell which can take 500ms–2s.
+  for (const name of names) {
+    try {
+      if (isWin) {
+        const result = execSync(`where ${name}`, {
+          encoding: 'utf-8',
+          timeout: 5000,
+          windowsHide: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim().split(/\r?\n/)[0].trim();
+        if (result && fs.existsSync(result)) return cacheHit(result);
+      } else {
+        const shell = process.env.SHELL || '/bin/zsh';
+        const raw = execSync(`${shell} -ilc 'which ${name}'`, {
+          encoding: 'utf-8',
+          timeout: 5000,
+        }).trim();
+        const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const result = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+        if (result && fs.existsSync(result)) return cacheHit(result);
+      }
+    } catch {
+      // not found — continue
+    }
   }
 
   throw new Error(

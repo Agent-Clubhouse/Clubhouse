@@ -11,6 +11,7 @@ import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpd
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
+import { preWarmShellEnvironment } from './util/shell';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -101,6 +102,10 @@ const createWindow = (): void => {
 };
 
 app.on('ready', () => {
+  // Pre-warm the shell environment cache in background so the first agent
+  // wake doesn't pay the 500ms–2s login shell penalty.
+  preWarmShellEnvironment();
+
   registerAllHandlers();
   buildMenu();
 
