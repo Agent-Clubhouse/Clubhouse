@@ -1,24 +1,35 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Use vi.hoisted so these are available when vi.mock factories run (which are hoisted)
-const { mockShow, mockClose, mockOn, mockIsSupported, notificationInstances } = vi.hoisted(() => {
-  return {
-    mockShow: vi.fn(),
-    mockClose: vi.fn(),
-    mockOn: vi.fn(),
-    mockIsSupported: vi.fn().mockReturnValue(true),
-    notificationInstances: [] as Array<Record<string, unknown>>,
-  };
-});
+const { mockShow, mockClose, mockOn, mockIsSupported, mockGetPath, mockCreateFromPath, notificationInstances } =
+  vi.hoisted(() => {
+    return {
+      mockShow: vi.fn(),
+      mockClose: vi.fn(),
+      mockOn: vi.fn(),
+      mockIsSupported: vi.fn().mockReturnValue(true),
+      mockGetPath: vi.fn().mockReturnValue('/fake/app.exe'),
+      mockCreateFromPath: vi.fn().mockReturnValue({ isEmpty: () => true }),
+      notificationInstances: [] as Array<{ opts: Record<string, unknown> }>,
+    };
+  });
 
 vi.mock('electron', () => {
   return {
+    app: {
+      getPath: mockGetPath,
+    },
+    nativeImage: {
+      createFromPath: mockCreateFromPath,
+    },
     Notification: class MockNotification {
+      opts: Record<string, unknown>;
       show = mockShow;
       close = mockClose;
       on = mockOn;
       static isSupported = mockIsSupported;
-      constructor(_opts: Record<string, unknown>) {
+      constructor(opts: Record<string, unknown>) {
+        this.opts = opts;
         notificationInstances.push(this);
       }
     },
@@ -46,6 +57,9 @@ describe('notification-service', () => {
     mockOn.mockClear();
     mockIsSupported.mockClear();
     mockIsSupported.mockReturnValue(true);
+    mockGetPath.mockClear();
+    mockCreateFromPath.mockClear();
+    mockCreateFromPath.mockReturnValue({ isEmpty: () => true });
     notificationInstances.length = 0;
   });
 
@@ -59,6 +73,24 @@ describe('notification-service', () => {
 
       expect(notificationInstances).toHaveLength(1);
       expect(mockShow).toHaveBeenCalledOnce();
+    });
+
+    it('passes title, body, and silent to Notification constructor', () => {
+      sendNotification('Hello', 'World', true);
+
+      expect(notificationInstances[0].opts).toMatchObject({
+        title: 'Hello',
+        body: 'World',
+        silent: true,
+      });
+    });
+
+    it('does not include icon on non-Windows platforms', () => {
+      // Test runs on macOS/Linux CI — icon should not be present
+      sendNotification('Title', 'Body', false);
+
+      expect(notificationInstances[0].opts).not.toHaveProperty('icon');
+      expect(mockCreateFromPath).not.toHaveBeenCalled();
     });
 
     it('auto-dismisses notification after 5 seconds', () => {

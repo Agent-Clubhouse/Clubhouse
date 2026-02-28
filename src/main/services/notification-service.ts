@@ -1,8 +1,28 @@
-import { BrowserWindow, Notification } from 'electron';
+import { app, BrowserWindow, nativeImage, NativeImage, Notification } from 'electron';
 import { NotificationSettings } from '../../shared/types';
 import { IPC } from '../../shared/ipc-channels';
 import { createSettingsStore } from './settings-store';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+
+/**
+ * Lazily resolved icon for Windows toast notifications.
+ * Windows notifications need an explicit icon; on macOS the app icon is used automatically.
+ * We extract it from the running exe so it works in both dev and packaged builds.
+ */
+let iconResolved = false;
+let cachedIcon: NativeImage | undefined;
+function getNotificationIcon(): NativeImage | undefined {
+  if (process.platform !== 'win32') return undefined;
+  if (iconResolved) return cachedIcon;
+  iconResolved = true;
+  try {
+    const icon = nativeImage.createFromPath(app.getPath('exe'));
+    cachedIcon = icon.isEmpty() ? undefined : icon;
+  } catch {
+    cachedIcon = undefined;
+  }
+  return cachedIcon;
+}
 
 const store = createSettingsStore<NotificationSettings>('notification-settings.json', {
   enabled: true,
@@ -53,7 +73,8 @@ export function sendNotification(
     clearEntry(key);
   }
 
-  const n = new Notification({ title, body, silent });
+  const icon = getNotificationIcon();
+  const n = new Notification({ title, body, silent, ...(icon ? { icon } : {}) });
   n.on('click', () => {
     // Focus the first available window to bring the app to the foreground
     const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
