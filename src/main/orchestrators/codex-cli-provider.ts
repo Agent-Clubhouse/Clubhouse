@@ -125,6 +125,7 @@ export class CodexCliProvider implements OrchestratorProvider {
       await execFileAsync(binary, ['--version'], {
         timeout: 10000,
         shell: process.platform === 'win32',
+        env: getShellEnvironment(),
       });
     } catch {
       return {
@@ -238,6 +239,7 @@ export class CodexCliProvider implements OrchestratorProvider {
       const { stdout } = await execFileAsync(binary, ['--help'], {
         timeout: 5000,
         shell: process.platform === 'win32',
+        env: getShellEnvironment(),
       });
       const parsed = parseModelChoicesFromHelp(stdout);
       if (parsed) return parsed;

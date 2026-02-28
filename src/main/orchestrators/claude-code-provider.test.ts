@@ -89,6 +89,21 @@ describe('ClaudeCodeProvider', () => {
       );
       await provider.checkAvailability();
     });
+
+    it('passes shell environment to execFile for auth check', async () => {
+      const { execFile } = await import('child_process');
+      const { getShellEnvironment } = await import('../util/shell');
+      const mockEnv = { PATH: '/custom/path:/usr/bin', HOME: '/home/user' };
+      vi.mocked(getShellEnvironment).mockReturnValue(mockEnv);
+      vi.mocked(execFile).mockImplementation(
+        (_cmd: any, _args: any, opts: any, cb: any) => {
+          expect(opts.env).toEqual(mockEnv);
+          cb(null, '{}', '');
+          return {} as any;
+        }
+      );
+      await provider.checkAvailability();
+    });
   });
 
   describe('buildSpawnCommand', () => {

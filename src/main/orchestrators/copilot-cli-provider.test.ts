@@ -30,7 +30,13 @@ vi.mock('../services/config-pipeline', () => ({
   isClubhouseHookEntry: vi.fn(() => false),
 }));
 
+vi.mock('../util/shell', () => ({
+  getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
+}));
+
 import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { findBinaryInPath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
@@ -460,6 +466,19 @@ describe('CopilotCliProvider', () => {
         expect(opt.id.length).toBeGreaterThan(0);
         expect(opt.label.length).toBeGreaterThan(0);
       }
+    });
+
+    it('passes shell environment to execFile for --help call', async () => {
+      const mockEnv = { PATH: '/custom/path:/usr/bin', HOME: '/home/user' };
+      vi.mocked(getShellEnvironment).mockReturnValue(mockEnv);
+
+      await provider.getModelOptions();
+
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const helpCall = calls.find((c) => (c[1] as string[])?.[0] === '--help');
+      expect(helpCall).toBeDefined();
+      const opts = helpCall![2] as Record<string, unknown>;
+      expect(opts.env).toEqual(mockEnv);
     });
   });
 

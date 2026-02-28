@@ -12,6 +12,7 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { getShellEnvironment } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const execFileAsync = promisify(execFile);
@@ -116,6 +117,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], {
         timeout: 10000,
         shell: process.platform === 'win32', // .cmd shims need shell on Windows
+        env: getShellEnvironment(),
       });
       const result = JSON.parse(stdout);
       if (result.is_error && typeof result.result === 'string') {

@@ -170,6 +170,24 @@ describe('CodexCliProvider', () => {
       expect(result.error).toMatch(/OPENAI_API_KEY/);
     });
 
+    it('passes shell environment to execFile for --version check', async () => {
+      const mockEnv = {
+        PATH: '/custom/path:/usr/bin',
+        OPENAI_API_KEY: 'sk-test-key',
+        HOME: '/home/user',
+      };
+      vi.mocked(getShellEnvironment).mockReturnValue(mockEnv);
+
+      await provider.checkAvailability();
+
+      // execFile is called with (binary, args, opts, cb) — verify opts.env
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const versionCall = calls.find((c) => (c[1] as string[])?.[0] === '--version');
+      expect(versionCall).toBeDefined();
+      const opts = versionCall![2] as Record<string, unknown>;
+      expect(opts.env).toEqual(mockEnv);
+    });
+
     it('accepts OPENAI_BASE_URL as alternative to OPENAI_API_KEY', async () => {
       vi.mocked(getShellEnvironment).mockReturnValue({
         PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
@@ -524,6 +542,22 @@ describe('CodexCliProvider', () => {
       const options = await provider.getModelOptions();
       expect(options[0].id).toBe('default');
       expect(options[0].label).toBe('Default');
+    });
+
+    it('passes shell environment to execFile for --help call', async () => {
+      const mockEnv = {
+        PATH: '/custom/path:/usr/bin',
+        OPENAI_API_KEY: 'sk-test-key',
+      };
+      vi.mocked(getShellEnvironment).mockReturnValue(mockEnv);
+
+      await provider.getModelOptions();
+
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const helpCall = calls.find((c) => (c[1] as string[])?.[0] === '--help');
+      expect(helpCall).toBeDefined();
+      const opts = helpCall![2] as Record<string, unknown>;
+      expect(opts.env).toEqual(mockEnv);
     });
   });
 
