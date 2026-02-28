@@ -954,28 +954,30 @@ describe('headless-manager', () => {
       setMaxTranscriptBytes(1024 * 1024);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
-      // Push events under the high cap
-      for (let i = 0; i < 3; i++) {
-        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(200)}` };
+      // Push small events (~40 bytes each) under the high cap
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `m${i}` };
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-      // All 3 should be in memory
+      // All 5 should be in memory
       let transcript = readTranscript('test-agent');
       let lines = transcript!.split('\n').filter(l => l.trim());
-      expect(lines.length).toBe(3);
+      expect(lines.length).toBe(5);
 
-      // Lower the cap — next event will trigger eviction
-      setMaxTranscriptBytes(200);
+      // Lower the cap — next event will push us over and trigger eviction
+      // Each event is ~40 bytes, total ~240 bytes for 6 events.
+      // With cap=150, target=112. Eviction removes oldest until under 112.
+      setMaxTranscriptBytes(150);
 
-      const event = { type: 'result', result: `trigger-${'x'.repeat(200)}` };
+      const event = { type: 'result', result: 'trigger' };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
 
       // Some old events should be evicted now
       transcript = readTranscript('test-agent');
-      // Falls through to partial in-memory since disk mock throws
       lines = transcript!.split('\n').filter(l => l.trim());
-      expect(lines.length).toBeLessThan(4);
+      expect(lines.length).toBeLessThan(6);
+      expect(lines.length).toBeGreaterThan(0);
       expect(transcript).toContain('trigger');
     });
   });

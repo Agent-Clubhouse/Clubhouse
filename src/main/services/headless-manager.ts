@@ -75,8 +75,11 @@ function evictOldEvents(session: HeadlessSession): void {
   }
 
   if (removeCount > 0) {
-    session.transcript = session.transcript.slice(removeCount);
-    session.transcriptEventSizes = session.transcriptEventSizes.slice(removeCount);
+    // Use splice (in-place) instead of slice — the spawnHeadless closure
+    // captures local references to these arrays, so replacing them would
+    // cause new events to be pushed to a stale reference.
+    session.transcript.splice(0, removeCount);
+    session.transcriptEventSizes.splice(0, removeCount);
     session.transcriptBytes -= removeBytes;
 
     if (!session.transcriptEvicted) {
