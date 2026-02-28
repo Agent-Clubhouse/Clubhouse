@@ -38,6 +38,13 @@ export function getShellEnvironment(): Record<string, string> {
   return getShellEnv();
 }
 
+/** Clear the cached shell environment so the next getShellEnvironment() call
+ *  re-sources the user's login shell.  Useful when env vars may have changed
+ *  since the app launched (e.g. user added an API key to their shell config). */
+export function invalidateShellEnvironmentCache(): void {
+  cachedShellEnv = null;
+}
+
 /** Returns the platform-appropriate default shell. */
 export function getDefaultShell(): string {
   if (process.platform === 'win32') {

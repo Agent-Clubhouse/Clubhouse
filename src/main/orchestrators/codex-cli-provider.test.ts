@@ -25,11 +25,12 @@ vi.mock('../util/shell', () => ({
     PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
     OPENAI_API_KEY: 'sk-test-key',
   })),
+  invalidateShellEnvironmentCache: vi.fn(),
 }));
 
 import * as fs from 'fs';
 import * as childProcess from 'child_process';
-import { getShellEnvironment } from '../util/shell';
+import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { CodexCliProvider } from './codex-cli-provider';
 
 /** Match any path whose basename is 'codex' (with or without .exe/.cmd) */
@@ -160,14 +161,18 @@ describe('CodexCliProvider', () => {
       expect(result.error).toMatch(/Reinstall/);
     });
 
-    it('returns error when OPENAI_API_KEY is missing', async () => {
+    it('does not block when OPENAI_API_KEY is missing (delegates to binary)', async () => {
       vi.mocked(getShellEnvironment).mockReturnValue({
         PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
       });
 
       const result = await provider.checkAvailability();
-      expect(result.available).toBe(false);
-      expect(result.error).toMatch(/OPENAI_API_KEY/);
+      expect(result.available).toBe(true);
+    });
+
+    it('invalidates shell env cache before checking', async () => {
+      await provider.checkAvailability();
+      expect(invalidateShellEnvironmentCache).toHaveBeenCalled();
     });
 
     it('passes shell environment to execFile for --version check', async () => {
@@ -188,7 +193,7 @@ describe('CodexCliProvider', () => {
       expect(opts.env).toEqual(mockEnv);
     });
 
-    it('accepts OPENAI_BASE_URL as alternative to OPENAI_API_KEY', async () => {
+    it('succeeds with OPENAI_BASE_URL and no OPENAI_API_KEY', async () => {
       vi.mocked(getShellEnvironment).mockReturnValue({
         PATH: `/usr/local/bin${path.delimiter}/usr/bin`,
         OPENAI_BASE_URL: 'https://custom-endpoint.com',
@@ -313,6 +318,36 @@ describe('CodexCliProvider', () => {
       });
       expect(args).not.toContain('--allowedTools');
       expect(args).not.toContain('--allow-tool');
+    });
+
+    it('passes OPENAI_API_KEY through env when available', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: '/usr/bin',
+        OPENAI_API_KEY: 'sk-test-key',
+      });
+      const { env } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(env).toBeDefined();
+      expect(env!.OPENAI_API_KEY).toBe('sk-test-key');
+    });
+
+    it('passes OPENAI_BASE_URL through env when available', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: '/usr/bin',
+        OPENAI_BASE_URL: 'https://custom.example.com',
+      });
+      const { env } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(env).toBeDefined();
+      expect(env!.OPENAI_BASE_URL).toBe('https://custom.example.com');
+    });
+
+    it('returns empty env when no API keys in shell environment', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: '/usr/bin',
+      });
+      const { env } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(env).toBeDefined();
+      expect(env!.OPENAI_API_KEY).toBeUndefined();
+      expect(env!.OPENAI_BASE_URL).toBeUndefined();
     });
   });
 
@@ -488,12 +523,17 @@ describe('CodexCliProvider', () => {
       expect(result!.binary).toContain('codex');
     });
 
-    it('does not include env overrides', async () => {
+    it('passes OPENAI_API_KEY through env when available', async () => {
+      vi.mocked(getShellEnvironment).mockReturnValue({
+        PATH: '/usr/bin',
+        OPENAI_API_KEY: 'sk-test-key',
+      });
       const result = await provider.buildHeadlessCommand({
         cwd: '/p',
         mission: 'test',
       });
-      expect(result!.env).toBeUndefined();
+      expect(result!.env).toBeDefined();
+      expect(result!.env!.OPENAI_API_KEY).toBe('sk-test-key');
     });
   });
 

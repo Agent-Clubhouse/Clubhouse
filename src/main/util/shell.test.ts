@@ -4,7 +4,7 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache } from './shell';
 import { execSync } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -31,6 +31,30 @@ describe('getShellEnvironment', () => {
     const env2 = getShellEnvironment();
     // Should be the same reference due to caching
     expect(env1).toBe(env2);
+  });
+});
+
+describe('invalidateShellEnvironmentCache', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('causes getShellEnvironment to re-source on next call', () => {
+    // Clear any cache left from prior tests
+    invalidateShellEnvironmentCache();
+
+    vi.mocked(execSync).mockImplementation(() => 'FOO=bar\n');
+    const env1 = getShellEnvironment();
+    expect(env1.FOO).toBe('bar');
+
+    // Simulate the user adding a new env var
+    vi.mocked(execSync).mockImplementation(() => 'FOO=bar\nNEW_KEY=new_value\n');
+    invalidateShellEnvironmentCache();
+
+    const env2 = getShellEnvironment();
+    expect(env2.NEW_KEY).toBe('new_value');
+    // Should be a different reference since cache was invalidated
+    expect(env1).not.toBe(env2);
   });
 });
 
