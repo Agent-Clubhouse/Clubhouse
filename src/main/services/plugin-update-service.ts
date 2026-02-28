@@ -3,13 +3,15 @@ import * as path from 'path';
 import { app, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
-import { fetchRegistry, installPlugin } from './marketplace-service';
+import { fetchAllRegistries, installPlugin } from './marketplace-service';
+import { listCustomMarketplaces } from './custom-marketplace-service';
 import { isNewerVersion } from './auto-update-service';
 import type {
   PluginUpdateInfo,
   PluginUpdateCheckResult,
   PluginUpdatesStatus,
   PluginUpdateResult,
+  MarketplacePlugin,
 } from '../../shared/marketplace-types';
 
 // ---------------------------------------------------------------------------
@@ -101,11 +103,12 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
   appLog('marketplace:updates', 'info', 'Checking for plugin updates');
 
   try {
-    const { registry } = await fetchRegistry();
+    const customMarketplaces = listCustomMarketplaces();
+    const { allPlugins } = await fetchAllRegistries(customMarketplaces);
     const installed = getInstalledPlugins();
     const updates: PluginUpdateInfo[] = [];
 
-    for (const regPlugin of registry.plugins) {
+    for (const regPlugin of allPlugins) {
       const local = installed.get(regPlugin.id);
       if (!local) continue; // Not installed — skip
 
