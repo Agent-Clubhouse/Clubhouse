@@ -397,7 +397,7 @@ describe('plugin-storage', () => {
       expect(gitignoreWrites[0][1]).toBe('node_modules/\n.clubhouse/plugin-data-local/\n');
     });
 
-    it('swallows errors gracefully', async () => {
+    it('swallows gitignore errors gracefully', async () => {
       vi.resetModules();
       vi.mock('fs/promises', () => ({
         readFile: vi.fn(),
@@ -411,10 +411,18 @@ describe('plugin-storage', () => {
       const freshFsp = await import('fs/promises');
       const freshStorage = await import('./plugin-storage');
 
+      // readFile for .gitignore will fail — should be swallowed
       vi.mocked(freshFsp.readFile).mockRejectedValue(new Error('permission denied'));
-      vi.mocked(freshFsp.writeFile).mockRejectedValue(new Error('permission denied'));
+      // writeFile for .gitignore will also fail — should be swallowed
+      // But writeFile for the actual KV file should succeed
+      vi.mocked(freshFsp.writeFile).mockImplementation(async (p: any) => {
+        // The .gitignore write fails, the KV write succeeds
+        if (typeof p === 'string' && p.endsWith('.gitignore')) {
+          throw new Error('permission denied');
+        }
+      });
 
-      // Should not throw
+      // Should not throw — gitignore errors are swallowed
       await expect(
         freshStorage.writeKey({ pluginId: 'p', scope: 'project-local', key: 'k', value: 'v', projectPath: path.join(path.sep, 'projects', 'y') }),
       ).resolves.not.toThrow();

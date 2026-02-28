@@ -1,5 +1,4 @@
 import * as fs from 'fs/promises';
-import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type {

@@ -8,6 +8,12 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => undefined),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
   execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
@@ -21,6 +27,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
@@ -504,7 +511,7 @@ describe('Provider integration tests', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.hooks).toBeDefined();
       // Claude Code uses PascalCase event names
       expect(written.hooks.PreToolUse).toBeDefined();
@@ -520,7 +527,7 @@ describe('Provider integration tests', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.claude', 'settings.local.json'),
         expect.any(String),
         'utf-8'
@@ -536,7 +543,7 @@ describe('Provider integration tests', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // Must have version 1 wrapper
       expect(written.version).toBe(1);
       expect(written.hooks).toBeDefined();
@@ -569,7 +576,7 @@ describe('Provider integration tests', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'hooks', 'hooks.json'),
         expect.any(String),
         'utf-8'
@@ -579,13 +586,13 @@ describe('Provider integration tests', () => {
     it('CodexCli: writeHooksConfig is a no-op', async () => {
       const provider = new CodexCliProvider();
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
     });
 
     it('OpenCode: writeHooksConfig is a no-op', async () => {
       const provider = new OpenCodeProvider();
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
     });
   });
 
@@ -843,11 +850,11 @@ describe('Provider integration tests', () => {
           Stop: [{ hooks: [{ type: 'command', command: 'echo "user stop hook"' }] }],
         },
       };
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify(existingConfig));
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify(existingConfig));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // User's other settings preserved
       expect(written.someOtherSetting).toBe(true);
       // PreToolUse should have user entry + our entry
@@ -871,11 +878,11 @@ describe('Provider integration tests', () => {
           ],
         },
       };
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify(existingConfig));
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify(existingConfig));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // Should have user entry + new Clubhouse entry (old one replaced)
       expect(written.hooks.PreToolUse).toHaveLength(2);
       expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
@@ -897,11 +904,11 @@ describe('Provider integration tests', () => {
           customEvent: [{ bash: 'echo "custom"' }],
         },
       };
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify(existingConfig));
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify(existingConfig));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.version).toBe(1);
       // preToolUse should have user entry + our entry
       expect(written.hooks.preToolUse).toHaveLength(2);
@@ -917,12 +924,12 @@ describe('Provider integration tests', () => {
         const s = String(p);
         return isKnownBinary(s) || s.includes('.github');
       });
-      // readFileSync throws (no existing file)
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      // fsp.readFile rejects (no existing file)
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.version).toBe(1);
       expect(written.hooks.preToolUse).toHaveLength(1);
       expect(written.hooks.preToolUse[0].bash).toContain('CLUBHOUSE_AGENT_ID');

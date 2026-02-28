@@ -8,6 +8,12 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => undefined),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
   execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: Function) => cb(new Error('not found'), '', '')),
@@ -18,6 +24,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { ClaudeCodeProvider } from './claude-code-provider';
 
 /** Match any path whose basename is 'claude' (with or without .exe/.cmd) */
@@ -329,12 +336,12 @@ describe('ClaudeCodeProvider', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join('/project', '.claude'),
         { recursive: true }
       );
-      expect(fs.writeFileSync).toHaveBeenCalled();
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(fsp.writeFile).toHaveBeenCalled();
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.hooks).toBeDefined();
       expect(written.hooks.PreToolUse).toBeDefined();
       expect(written.hooks.Stop).toBeDefined();
@@ -348,7 +355,7 @@ describe('ClaudeCodeProvider', () => {
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       const command = written.hooks.PreToolUse[0].hooks[0].command as string;
       if (process.platform === 'win32') {
         expect(command).toContain('%CLUBHOUSE_AGENT_ID%');
@@ -362,11 +369,11 @@ describe('ClaudeCodeProvider', () => {
 
     it('merges with existing settings', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ existingKey: 'value' }));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ existingKey: 'value' }));
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.existingKey).toBe('value');
       expect(written.hooks).toBeDefined();
     });

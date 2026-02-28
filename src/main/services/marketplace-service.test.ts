@@ -13,6 +13,19 @@ vi.mock('fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(async () => undefined),
+  writeFile: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  readdir: vi.fn(async () => []),
+  stat: vi.fn(async () => ({ isDirectory: () => false })),
+  rm: vi.fn(async () => undefined),
+  rmdir: vi.fn(async () => undefined),
+  rename: vi.fn(async () => undefined),
+  access: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => undefined),
+}));
+
 const mockExtractAllTo = vi.fn();
 vi.mock('adm-zip', () => ({
   default: vi.fn(function () {
@@ -21,6 +34,7 @@ vi.mock('adm-zip', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import AdmZip from 'adm-zip';
 import {
   fetchRegistry,
@@ -389,14 +403,9 @@ describe('marketplace-service', () => {
         arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
       });
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        const s = String(p);
-        if (s.endsWith('manifest.json')) return false;
-        if (s.endsWith('.tmp.zip')) return true;
-        return false;
-      });
-
-      vi.mocked(fs.readdirSync).mockReturnValue([] as any);
+      // fsp.access for manifest.json check — reject means file missing
+      vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(fsp.readdir).mockResolvedValue([] as any);
 
       const result = await installPlugin({
         pluginId: 'test-plugin',
@@ -419,14 +428,9 @@ describe('marketplace-service', () => {
         arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
       });
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        const s = String(p);
-        if (s.endsWith('manifest.json')) return true;
-        if (s.endsWith('.tmp.zip')) return true;
-        return false;
-      });
-
-      vi.mocked(fs.readdirSync).mockReturnValue([] as any);
+      // fsp.access for manifest.json check — resolve means file exists
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([] as any);
 
       const result = await installPlugin({
         pluginId: 'test-plugin',
@@ -437,7 +441,7 @@ describe('marketplace-service', () => {
 
       expect(result.success).toBe(true);
       // Verify .marketplace marker was written
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('.marketplace'),
         '',
         'utf-8',
@@ -454,14 +458,9 @@ describe('marketplace-service', () => {
         arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
       });
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        const s = String(p);
-        if (s.endsWith('manifest.json')) return true;
-        if (s.endsWith('.tmp.zip')) return true;
-        return false;
-      });
-
-      vi.mocked(fs.readdirSync).mockReturnValue([] as any);
+      // fsp.access for manifest.json check — resolve means file exists
+      vi.mocked(fsp.access).mockResolvedValue(undefined);
+      vi.mocked(fsp.readdir).mockResolvedValue([] as any);
 
       const result = await installPlugin({
         pluginId: 'test-plugin',
