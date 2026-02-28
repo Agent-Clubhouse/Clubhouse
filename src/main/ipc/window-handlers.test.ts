@@ -88,7 +88,7 @@ vi.mock('../services/log-service', () => ({
 }));
 
 import { BrowserWindow, ipcMain } from 'electron';
-import { registerWindowHandlers } from './window-handlers';
+import { registerWindowHandlers, _resetForTesting } from './window-handlers';
 import { IPC } from '../../shared/ipc-channels';
 
 /** Helper: find an ipcMain.on() handler by channel name. */
@@ -103,6 +103,7 @@ describe('window-handlers', () => {
   beforeEach(() => {
     (BrowserWindow as any)._reset();
     (ipcMain as any)._resetOnceListeners();
+    _resetForTesting();
     vi.clearAllMocks();
     handlers = new Map();
     (ipcMain.handle as any).mockImplementation((channel: string, handler: any) => {
@@ -405,13 +406,20 @@ describe('window-handlers', () => {
     expect(list2.length).toBe(1);
   });
 
-  it('GET_AGENT_STATE does not call removeListener when response arrives before timeout', async () => {
+  it('GET_AGENT_STATE does not call removeListener when relay response arrives before timeout', async () => {
+    // Ensure cold cache so relay is triggered
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
 
     const statePromise = handler({});
 
-    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    // Verify relay was triggered (cold cache)
+    const relayCalls = mainWin.webContents.send.mock.calls.filter(
+      (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+    );
+    expect(relayCalls.length).toBe(1);
+
+    const requestId = relayCalls[0][1];
     const mockState = { agents: { a1: { id: 'a1' } }, agentDetailedStatus: {}, agentIcons: {} };
 
     const responseHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_RESPONSE);
@@ -474,6 +482,7 @@ describe('window-handlers', () => {
       'hub-1',
       'global',
       mutation,
+      undefined, // projectId
     );
   });
 });

@@ -56,6 +56,14 @@ const cachedHubState = new Map<string, HubStateSnapshot>();
 
 let pendingAgentRelay: Promise<AgentStateSnapshot> | null = null;
 
+/** @internal Reset module state for testing. */
+export function _resetForTesting(): void {
+  popoutWindows.clear();
+  cachedAgentState = null;
+  cachedHubState.clear();
+  pendingAgentRelay = null;
+}
+
 function getThemeColors(): { bg: string; mantle: string; text: string } {
   try {
     const { themeId } = getThemeSettings();

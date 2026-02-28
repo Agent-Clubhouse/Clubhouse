@@ -66,6 +66,7 @@ describe('PopoutWindow', () => {
     window.clubhouse.pty.onData = vi.fn().mockReturnValue(noop);
     window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(noop);
     window.clubhouse.window.getAgentState = getAgentStateMock;
+    window.clubhouse.window.onAgentStateChanged = vi.fn().mockReturnValue(noop);
     window.clubhouse.window.getPopoutParams = vi.fn().mockReturnValue({
       type: 'hub',
       hubId: 'hub-1',
@@ -143,6 +144,37 @@ describe('PopoutWindow', () => {
     await waitFor(() => {
       expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
     });
+  });
+
+  it('subscribes to agent state broadcasts on mount', async () => {
+    render(<PopoutWindow />);
+    expect(window.clubhouse.window.onAgentStateChanged).toHaveBeenCalled();
+  });
+
+  it('updates agent store when broadcast arrives', async () => {
+    let stateCallback: (state: any) => void = () => {};
+    (window.clubhouse.window.onAgentStateChanged as any).mockImplementation((cb: any) => {
+      stateCallback = cb;
+      return noop;
+    });
+
+    render(<PopoutWindow />);
+    await waitFor(() => {
+      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+    });
+
+    mockSetState.mockClear();
+
+    // Simulate a broadcast
+    stateCallback({
+      agents: { 'a2': { id: 'a2', name: 'new-agent', status: 'running', kind: 'durable', projectId: 'p1', color: 'green' } },
+      agentDetailedStatus: { 'a2': { state: 'idle' } },
+      agentIcons: { 'a2': 'icon.png' },
+    });
+
+    expect(mockSetState).toHaveBeenCalledWith(expect.objectContaining({
+      agents: expect.objectContaining({ 'a2': expect.any(Object) }),
+    }));
   });
 
   it('subscribes to pty data events on mount', async () => {
