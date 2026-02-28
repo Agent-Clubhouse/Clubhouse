@@ -15,10 +15,9 @@ async function loadMonaco() {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ensureThemes(m: any): void {
+async function ensureThemes(m: any): Promise<void> {
   if (themesRegistered) return;
-  // Lazy import themes to avoid circular issues in tests
-  const { THEMES } = require('../../../themes/index');
+  const { THEMES } = await import('../../../themes/index');
   for (const [id, theme] of Object.entries(THEMES)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
@@ -65,10 +64,10 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
 
     let disposed = false;
 
-    loadMonaco().then((m) => {
+    loadMonaco().then(async (m) => {
       if (disposed || !containerRef.current) return;
       monacoRef.current = m;
-      ensureThemes(m);
+      await ensureThemes(m);
 
       const editor = m.editor.create(containerRef.current, {
         value,
