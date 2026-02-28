@@ -33,10 +33,10 @@ vi.mock('fs', async () => {
 });
 
 // Mock fs/promises for async transcript APIs
-const mockFsPromises = {
-  stat: vi.fn(() => Promise.reject(new Error('ENOENT'))),
-  readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
-};
+const mockFsPromises = vi.hoisted(() => ({
+  stat: vi.fn((): Promise<{ size: number }> => Promise.reject(new Error('ENOENT'))),
+  readFile: vi.fn((): Promise<string> => Promise.reject(new Error('ENOENT'))),
+}));
 vi.mock('fs/promises', () => mockFsPromises);
 
 // Mock shell environment
