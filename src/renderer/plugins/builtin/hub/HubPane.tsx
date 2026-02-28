@@ -207,14 +207,14 @@ export function HubPane({
       {agent && (
         <div
           className={`
-            absolute top-2 left-2 z-20 transition-all duration-150 ease-out
+            absolute top-2 left-2 z-20 transition-all duration-150 ease-out pointer-events-none
             ${expanded ? 'right-2' : ''}
           `}
           style={expanded ? undefined : { maxWidth: 'fit-content' }}
         >
           <div
             className={`
-              flex items-center gap-1.5 rounded-lg backdrop-blur-md transition-all duration-150
+              flex items-center gap-1.5 rounded-lg backdrop-blur-md transition-all duration-150 pointer-events-auto
               ${expanded
                 ? 'bg-ctp-mantle/95 shadow-lg px-2.5 py-1.5'
                 : 'bg-ctp-mantle/70 shadow px-2 py-1 cursor-grab'

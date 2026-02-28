@@ -1,4 +1,4 @@
-import { render, act, screen } from '@testing-library/react';
+import { render, act, fireEvent, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -209,6 +209,13 @@ describe('AgentTerminal', () => {
   describe('focus behavior', () => {
     it('focuses terminal when focused prop is true', () => {
       render(<AgentTerminal agentId="agent-1" focused={true} />);
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('re-focuses terminal on mousedown for focus recovery', () => {
+      render(<AgentTerminal agentId="agent-1" focused={true} />);
+      term().focus.mockClear();
+      fireEvent.mouseDown(screen.getByTestId('agent-terminal'));
       expect(term().focus).toHaveBeenCalled();
     });
   });
