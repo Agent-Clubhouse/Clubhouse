@@ -177,6 +177,38 @@ describe('PopoutWindow', () => {
     }));
   });
 
+  it('does not regress running agent to sleeping via broadcast', async () => {
+    // Simulate an agent that the popout locally detected as running via PTY data
+    mockAgentState.agents = {
+      'a1': { id: 'a1', name: 'agent', status: 'running', kind: 'durable', projectId: 'p1', color: 'blue' },
+    };
+
+    let stateCallback: (state: any) => void = () => {};
+    (window.clubhouse.window.onAgentStateChanged as any).mockImplementation((cb: any) => {
+      stateCallback = cb;
+      return noop;
+    });
+
+    render(<PopoutWindow />);
+    await waitFor(() => {
+      expect(screen.getByTestId('popout-hub-view')).toBeInTheDocument();
+    });
+
+    mockSetState.mockClear();
+
+    // Main window broadcasts with stale "sleeping" status
+    stateCallback({
+      agents: { 'a1': { id: 'a1', name: 'agent', status: 'sleeping', kind: 'durable', projectId: 'p1', color: 'blue' } },
+      agentDetailedStatus: {},
+      agentIcons: {},
+    });
+
+    expect(mockSetState).toHaveBeenCalled();
+    const call = mockSetState.mock.calls[0][0];
+    // Should preserve the local "running" status, not regress to "sleeping"
+    expect(call.agents['a1'].status).toBe('running');
+  });
+
   it('subscribes to pty data events on mount', async () => {
     render(<PopoutWindow />);
     expect(window.clubhouse.pty.onData).toHaveBeenCalled();

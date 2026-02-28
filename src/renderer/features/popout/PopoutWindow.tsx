@@ -69,9 +69,19 @@ function useAgentStateSync() {
     //    new agents, status changes, icons, etc.
     const removeStateListener = window.clubhouse.window.onAgentStateChanged(
       (snapshot) => {
+        const currentAgents = useAgentStore.getState().agents;
         const agents: Record<string, Agent> = {};
         for (const [id, raw] of Object.entries(snapshot.agents)) {
-          agents[id] = raw as Agent;
+          const incoming = raw as Agent;
+          const current = currentAgents[id];
+          // Don't regress from "running" to "sleeping" via broadcast — PTY
+          // data (step 5) is ground truth that the process is alive, and the
+          // popout has its own onExit listener (step 3) for real exits.
+          if (current?.status === 'running' && incoming.status === 'sleeping') {
+            agents[id] = current;
+          } else {
+            agents[id] = incoming;
+          }
         }
         useAgentStore.setState({
           agents,
