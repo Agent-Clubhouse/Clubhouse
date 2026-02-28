@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Minimal mock for monaco-editor in vitest
 
 const mockEditor = {

@@ -3,7 +3,6 @@ import { generateMonacoTheme } from './monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 
 // Cached module reference — populated on first dynamic import
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let monacoModule: any | null = null;
 let themesRegistered = false;
 
@@ -14,12 +13,10 @@ async function loadMonaco() {
   return monacoModule;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function ensureThemes(m: any): Promise<void> {
   if (themesRegistered) return;
   const { THEMES } = await import('../../../themes/index');
   for (const [id, theme] of Object.entries(THEMES)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
   }
   themesRegistered = true;
@@ -35,9 +32,7 @@ interface MonacoEditorProps {
 
 export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const monacoRef = useRef<any>(null);
   const savedContentRef = useRef(value);
   const onSaveRef = useRef(onSave);
