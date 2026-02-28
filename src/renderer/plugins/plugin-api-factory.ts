@@ -530,7 +530,7 @@ function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsA
       const configs = await window.clubhouse.agent.listDurable(project.path);
       const config = configs.find((c: { id: string }) => c.id === agentId);
       if (!config) throw new Error('Durable config not found for agent');
-      await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, true, options?.mission);
+      await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, false, options?.mission);
     },
 
     listCompleted(projectId?: string): CompletedQuickAgentInfo[] {

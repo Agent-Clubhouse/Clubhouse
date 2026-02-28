@@ -1,6 +1,7 @@
-import { render, act } from '@testing-library/react';
+import { render, act, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
+import { useAgentStore } from '../../stores/agentStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 
 // Shared state holders for mock instances (using globalThis so hoisted vi.mock can set them)
@@ -229,8 +230,142 @@ describe('AgentTerminal', () => {
   describe('container rendering', () => {
     it('renders a container div with padding', () => {
       const { container } = render(<AgentTerminal agentId="agent-1" />);
-      const div = container.firstElementChild as HTMLElement;
-      expect(div.style.padding).toBe('8px');
+      const terminalDiv = container.querySelector('[data-testid="agent-terminal"]') as HTMLElement;
+      expect(terminalDiv.style.padding).toBe('8px');
+    });
+  });
+
+  describe('resume overlay', () => {
+    function setResuming(resuming: boolean) {
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1',
+            projectId: 'proj-1',
+            name: 'test',
+            kind: 'durable',
+            status: 'running',
+            color: 'indigo',
+            resuming: resuming || undefined,
+          },
+        },
+        clearResuming: vi.fn(),
+      });
+    }
+
+    it('shows resume overlay when agent.resuming is true', () => {
+      setResuming(true);
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(screen.getByTestId('resume-overlay')).toBeInTheDocument();
+      expect(screen.getByText('Resuming session...')).toBeInTheDocument();
+    });
+
+    it('does not show resume overlay when agent.resuming is falsy', () => {
+      setResuming(false);
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(screen.queryByTestId('resume-overlay')).toBeNull();
+    });
+
+    it('clears resuming after PTY data settles', () => {
+      vi.useFakeTimers();
+      const clearResuming = vi.fn();
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1', projectId: 'proj-1', name: 'test',
+            kind: 'durable', status: 'running', color: 'indigo',
+            resuming: true,
+          },
+        },
+        clearResuming,
+      });
+
+      // onData is called multiple times (main effect + resume effect)
+      // Capture all callbacks
+      const dataCallbacks: Array<(id: string, data: string) => void> = [];
+      (window.clubhouse.pty.onData as any).mockImplementation((cb: any) => {
+        dataCallbacks.push(cb);
+        return vi.fn();
+      });
+
+      render(<AgentTerminal agentId="agent-1" />);
+
+      // Simulate PTY data burst then silence
+      act(() => {
+        for (const cb of dataCallbacks) {
+          cb('agent-1', 'replay data');
+        }
+      });
+
+      // Not cleared yet — settle timer hasn't fired
+      expect(clearResuming).not.toHaveBeenCalled();
+
+      // Advance past the settle timeout (1500ms)
+      act(() => { vi.advanceTimersByTime(1500); });
+      expect(clearResuming).toHaveBeenCalledWith('agent-1');
+
+      vi.useRealTimers();
+    });
+
+    it('clears resuming via fallback timer if no data arrives', () => {
+      vi.useFakeTimers();
+      const clearResuming = vi.fn();
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1', projectId: 'proj-1', name: 'test',
+            kind: 'durable', status: 'running', color: 'indigo',
+            resuming: true,
+          },
+        },
+        clearResuming,
+      });
+
+      render(<AgentTerminal agentId="agent-1" />);
+
+      // No PTY data at all — fallback timer at 10s
+      act(() => { vi.advanceTimersByTime(10_000); });
+      expect(clearResuming).toHaveBeenCalledWith('agent-1');
+
+      vi.useRealTimers();
+    });
+
+    it('triggers a re-fit after resume finishes', () => {
+      vi.useFakeTimers();
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1', projectId: 'proj-1', name: 'test',
+            kind: 'durable', status: 'running', color: 'indigo',
+            resuming: true,
+          },
+        },
+        clearResuming: vi.fn(),
+      });
+
+      const dataCallbacks: Array<(id: string, data: string) => void> = [];
+      (window.clubhouse.pty.onData as any).mockImplementation((cb: any) => {
+        dataCallbacks.push(cb);
+        return vi.fn();
+      });
+
+      render(<AgentTerminal agentId="agent-1" />);
+
+      // Clear fit calls from initialization
+      fitAddon().fit.mockClear();
+      (window.clubhouse.pty.resize as any).mockClear();
+
+      // Trigger data then let it settle
+      act(() => {
+        for (const cb of dataCallbacks) cb('agent-1', 'data');
+      });
+      act(() => { vi.advanceTimersByTime(1500); });
+
+      // Re-fit should have been called after resume finished
+      expect(fitAddon().fit).toHaveBeenCalled();
+      expect(window.clubhouse.pty.resize).toHaveBeenCalledWith('agent-1', 80, 24);
+
+      vi.useRealTimers();
     });
   });
 });
