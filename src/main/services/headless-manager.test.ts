@@ -61,12 +61,14 @@ vi.mock('./annex-event-bus', () => ({
 function createMockProcess() {
   const proc = new EventEmitter() as EventEmitter & {
     pid: number;
+    exitCode: number | null;
     stdin: { end: ReturnType<typeof vi.fn> } | null;
     stdout: EventEmitter | null;
     stderr: EventEmitter | null;
     kill: ReturnType<typeof vi.fn>;
   };
   proc.pid = 12345;
+  proc.exitCode = null; // matches real ChildProcess default
   proc.stdin = { end: vi.fn() };
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
@@ -1247,14 +1249,13 @@ describe('headless-manager', () => {
     it('sweep does not remove sessions with live processes', () => {
       spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
-
-      // exitCode is null for live processes (default in mock)
-      expect((mockProcess as any).exitCode).toBeUndefined();
+      // exitCode is null for running processes (set by createMockProcess)
+      expect(mockProcess.exitCode).toBeNull();
 
       startStaleSweep();
       vi.advanceTimersByTime(30_000);
 
-      // Session should still exist
+      // Session should still exist — process hasn't exited
       expect(isHeadless('test-agent')).toBe(true);
     });
   });
