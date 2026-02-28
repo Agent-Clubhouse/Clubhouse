@@ -105,10 +105,15 @@ export function isHeadlessAgent(agentId: string): boolean {
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const provider = resolveOrchestrator(params.projectPath, params.orchestrator);
 
+  // Resolve profile env early so it can be passed to checkAvailability.
+  // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
+  // config directory when a profile is active.
+  const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
+
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
   // rather than letting the PTY start and exit immediately.
-  const availability = await provider.checkAvailability();
+  const availability = await provider.checkAvailability(profileEnv);
   if (!availability.available) {
     const msg = availability.error || `${provider.displayName} CLI is not available`;
     appLog('core:agent', 'error', `Pre-flight check failed for ${provider.id}`, {
@@ -155,7 +160,6 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
 
     if (headlessResult) {
       headlessAgentSet.add(params.agentId);
-      const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
       const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
       headlessManager.spawnHeadless(
         params.agentId,
@@ -173,13 +177,14 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   }
 
   // Fall back to PTY mode
-  await spawnPtyAgent(params, provider, allowedTools);
+  await spawnPtyAgent(params, provider, allowedTools, profileEnv);
 }
 
 async function spawnPtyAgent(
   params: SpawnAgentParams,
   provider: OrchestratorProvider,
   allowedTools: string[] | undefined,
+  profileEnv: Record<string, string> | undefined,
 ): Promise<void> {
   const nonce = randomUUID();
   agentNonceMap.set(params.agentId, nonce);
@@ -219,7 +224,6 @@ async function spawnPtyAgent(
     },
   });
 
-  const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
   const spawnEnv = { ...env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
 
   if (profileEnv) {
@@ -254,7 +258,8 @@ export async function checkAvailability(
   if (!provider) {
     return { available: false, error: `Unknown orchestrator: ${id}` };
   }
-  return provider.checkAvailability();
+  const profileEnv = projectPath ? resolveProfileEnv(projectPath, id) : undefined;
+  return provider.checkAvailability(profileEnv);
 }
 
 /**

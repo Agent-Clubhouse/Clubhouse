@@ -109,7 +109,7 @@ export class CodexCliProvider implements OrchestratorProvider {
     localSettingsFile: 'config.toml',
   };
 
-  async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+  async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     let binary: string;
     try {
       binary = findCodexBinary();
@@ -125,7 +125,7 @@ export class CodexCliProvider implements OrchestratorProvider {
       await execFileAsync(binary, ['--version'], {
         timeout: 10000,
         shell: process.platform === 'win32',
-        env: getShellEnvironment(),
+        env: { ...getShellEnvironment(), ...envOverride },
       });
     } catch {
       return {
@@ -134,8 +134,8 @@ export class CodexCliProvider implements OrchestratorProvider {
       };
     }
 
-    // Check for API key in the shell environment
-    const env = getShellEnvironment();
+    // Check for API key — merge profile env so profile-supplied keys are visible
+    const env = { ...getShellEnvironment(), ...envOverride };
     if (!env.OPENAI_API_KEY && !env.OPENAI_BASE_URL) {
       return {
         available: false,

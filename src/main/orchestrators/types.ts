@@ -71,7 +71,7 @@ export interface OrchestratorProvider {
   getCapabilities(): ProviderCapabilities;
 
   // Lifecycle
-  checkAvailability(): Promise<{ available: boolean; error?: string }>;
+  checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }>;
   buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> }>;
   getExitCommand(): string;
 

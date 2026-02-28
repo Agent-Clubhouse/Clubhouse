@@ -105,7 +105,7 @@ export class CopilotCliProvider implements OrchestratorProvider {
     localSettingsFile: 'hooks/hooks.json',
   };
 
-  async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     try {
       findCopilotBinary();
       return { available: true };
