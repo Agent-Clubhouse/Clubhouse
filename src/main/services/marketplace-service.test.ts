@@ -22,7 +22,13 @@ vi.mock('adm-zip', () => ({
 
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
-import { fetchRegistry, installPlugin, _resetCache } from './marketplace-service';
+import {
+  fetchRegistry,
+  fetchCustomRegistry,
+  fetchAllRegistries,
+  installPlugin,
+  _resetCache,
+} from './marketplace-service';
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -59,6 +65,33 @@ const sampleFeatured = {
   version: 1,
   updated: '2025-01-01T00:00:00Z',
   featured: [{ id: 'test-plugin', reason: 'Great plugin' }],
+};
+
+const sampleCustomRegistry = {
+  version: 1,
+  updated: '2025-01-01T00:00:00Z',
+  plugins: [
+    {
+      id: 'custom-plugin',
+      name: 'Custom Plugin',
+      description: 'A private plugin',
+      author: 'Private Author',
+      official: false,
+      repo: 'https://internal.example.com/custom-plugin',
+      path: 'plugins/custom',
+      tags: ['private'],
+      latest: '2.0.0',
+      releases: {
+        '2.0.0': {
+          api: 0.5,
+          asset: 'https://internal.example.com/custom-plugin-2.0.0.zip',
+          sha256: 'def456',
+          permissions: ['storage'],
+          size: 2048,
+        },
+      },
+    },
+  ],
 };
 
 describe('marketplace-service', () => {
@@ -130,6 +163,182 @@ describe('marketplace-service', () => {
       // Only 2 calls total (registry + featured from first call)
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(second).toEqual(first);
+    });
+  });
+
+  describe('fetchCustomRegistry', () => {
+    it('fetches a custom registry from URL', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleCustomRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: false, // featured not available
+        });
+
+      const result = await fetchCustomRegistry({
+        id: 'cm-1',
+        name: 'My Store',
+        url: 'https://internal.example.com/registry/registry.json',
+        enabled: true,
+      });
+
+      expect(result.registry.plugins).toHaveLength(1);
+      expect(result.registry.plugins[0].id).toBe('custom-plugin');
+    });
+
+    it('throws on failed custom registry fetch', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      });
+
+      await expect(
+        fetchCustomRegistry({
+          id: 'cm-1',
+          name: 'Private Store',
+          url: 'https://private.example.com/registry.json',
+          enabled: true,
+        }),
+      ).rejects.toThrow('Failed to fetch custom registry');
+    });
+
+    it('caches custom registry results', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleCustomRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+        });
+
+      const marketplace = {
+        id: 'cm-1',
+        name: 'My Store',
+        url: 'https://internal.example.com/registry.json',
+        enabled: true,
+      };
+
+      const first = await fetchCustomRegistry(marketplace);
+      const second = await fetchCustomRegistry(marketplace);
+
+      // Only 2 fetch calls total (registry + featured attempt from first call)
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(second.registry.plugins).toEqual(first.registry.plugins);
+    });
+  });
+
+  describe('fetchAllRegistries', () => {
+    it('merges official and custom registry plugins', async () => {
+      // Official registry fetch (registry + featured)
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleFeatured,
+        })
+        // Custom registry fetch (registry + featured attempt)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleCustomRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+        });
+
+      const result = await fetchAllRegistries([
+        { id: 'cm-1', name: 'Private Store', url: 'https://private.example.com/registry.json', enabled: true },
+      ]);
+
+      expect(result.allPlugins).toHaveLength(2);
+      expect(result.allPlugins[0].id).toBe('test-plugin');
+      expect(result.allPlugins[0].marketplaceId).toBeUndefined();
+      expect(result.allPlugins[1].id).toBe('custom-plugin');
+      expect(result.allPlugins[1].marketplaceId).toBe('cm-1');
+      expect(result.allPlugins[1].marketplaceName).toBe('Private Store');
+    });
+
+    it('skips disabled custom marketplaces', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleFeatured,
+        });
+
+      const result = await fetchAllRegistries([
+        { id: 'cm-1', name: 'Disabled Store', url: 'https://disabled.example.com/registry.json', enabled: false },
+      ]);
+
+      // Only official plugins, no custom fetch calls
+      expect(result.allPlugins).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2); // official registry + featured only
+    });
+
+    it('deduplicates plugins — official takes precedence', async () => {
+      const duplicateCustomRegistry = {
+        ...sampleCustomRegistry,
+        plugins: [
+          { ...sampleCustomRegistry.plugins[0], id: 'test-plugin' }, // same ID as official
+        ],
+      };
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleFeatured,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => duplicateCustomRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+        });
+
+      const result = await fetchAllRegistries([
+        { id: 'cm-1', name: 'Store', url: 'https://store.example.com/registry.json', enabled: true },
+      ]);
+
+      // Only 1 plugin — official version wins
+      expect(result.allPlugins).toHaveLength(1);
+      expect(result.allPlugins[0].marketplaceId).toBeUndefined(); // official
+    });
+
+    it('handles custom registry fetch failure gracefully', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleFeatured,
+        })
+        .mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await fetchAllRegistries([
+        { id: 'cm-1', name: 'Bad Store', url: 'https://bad.example.com/registry.json', enabled: true },
+      ]);
+
+      // Official plugins still present
+      expect(result.allPlugins).toHaveLength(1);
+      // Custom entry has error
+      expect(result.custom).toHaveLength(1);
+      expect(result.custom[0].error).toBe('Network error');
     });
   });
 
