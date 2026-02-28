@@ -6,6 +6,7 @@ import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig } from '../services/agent-config';
 import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
+import { appLog } from '../services/log-service';
 
 /**
  * Resolve orchestrator conventions for a project path.
@@ -15,7 +16,8 @@ function getConventions(projectPath?: string): SettingsConventions | undefined {
   if (!projectPath) return undefined;
   try {
     return resolveOrchestrator(projectPath).conventions;
-  } catch {
+  } catch (err) {
+    appLog('core:agent-settings', 'warn', `Failed to resolve orchestrator conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return undefined;
   }
 }
@@ -136,7 +138,8 @@ export function registerAgentSettingsHandlers(): void {
     try {
       const provider = resolveOrchestrator(projectPath);
       return provider.conventions;
-    } catch {
+    } catch (err) {
+      appLog('core:agent-settings', 'warn', `Failed to get conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
       return null;
     }
   });
