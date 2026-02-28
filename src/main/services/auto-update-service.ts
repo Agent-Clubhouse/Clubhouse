@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import * as https from 'https';
 import * as http from 'http';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { IPC } from '../../shared/ipc-channels';
@@ -368,13 +369,14 @@ async function downloadUpdate(
   artifact: UpdateArtifact,
 ): Promise<void> {
   const tmpDir = path.join(app.getPath('temp'), 'clubhouse-updates');
-  fs.mkdirSync(tmpDir, { recursive: true });
+  await fsp.mkdir(tmpDir, { recursive: true });
 
   const ext = path.extname(new URL(artifact.url).pathname) || '.zip';
   const destPath = path.join(tmpDir, `Clubhouse-${version}${ext}`);
 
   // Skip download if file already exists and hash matches
-  if (fs.existsSync(destPath)) {
+  try {
+    await fsp.access(destPath);
     try {
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
@@ -393,7 +395,9 @@ async function downloadUpdate(
     } catch {
       // Re-download if verification fails
     }
-    fs.unlinkSync(destPath);
+    await fsp.unlink(destPath);
+  } catch {
+    // File doesn't exist, proceed with download
   }
 
   setState('downloading', {
@@ -478,16 +482,14 @@ export async function applyUpdate(): Promise<void> {
         const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
 
         // Clean up any previous extract
-        if (fs.existsSync(tmpExtract)) {
-          fs.rmSync(tmpExtract, { recursive: true, force: true });
-        }
-        fs.mkdirSync(tmpExtract, { recursive: true });
+        await fsp.rm(tmpExtract, { recursive: true, force: true });
+        await fsp.mkdir(tmpExtract, { recursive: true });
 
         // Extract ZIP
         execSync(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`, { timeout: 60_000 });
 
         // Find the .app inside
-        const extracted = fs.readdirSync(tmpExtract).find((f) => f.endsWith('.app'));
+        const extracted = (await fsp.readdir(tmpExtract)).find((f) => f.endsWith('.app'));
         if (!extracted) throw new Error('No .app found in update archive');
 
         const newAppPath = path.join(tmpExtract, extracted);

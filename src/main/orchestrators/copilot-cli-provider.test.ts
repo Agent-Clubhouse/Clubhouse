@@ -8,6 +8,12 @@ vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => undefined),
+}));
+
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
   execSync: vi.fn(() => {
@@ -35,6 +41,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment } from '../util/shell';
 import { CopilotCliProvider } from './copilot-cli-provider';
@@ -178,13 +185,13 @@ describe('CopilotCliProvider', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join('/project', '.github', 'hooks'),
         { recursive: true },
       );
-      expect(fs.writeFileSync).toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalled();
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.hooks).toBeDefined();
       expect(written.hooks.preToolUse).toBeDefined();
       expect(written.hooks.postToolUse).toBeDefined();
@@ -195,7 +202,7 @@ describe('CopilotCliProvider', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       const hookEntry = written.hooks.preToolUse[0];
       if (process.platform === 'win32') {
         expect(hookEntry.bash).toContain('%CLUBHOUSE_AGENT_ID%');
@@ -207,38 +214,36 @@ describe('CopilotCliProvider', () => {
     });
 
     it('merges with existing settings preserving user hooks', async () => {
-      const existingConfig = {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         version: 1,
         hooks: {
           preToolUse: [{ type: 'command', bash: 'echo user-hook', timeoutSec: 3 }],
         },
-      };
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingConfig));
+      }));
       vi.mocked(isClubhouseHookEntry).mockReturnValue(false);
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // User hook should be preserved (first), Clubhouse hook appended
       expect(written.hooks.preToolUse.length).toBeGreaterThan(1);
       expect(written.hooks.preToolUse[0].bash).toBe('echo user-hook');
     });
 
     it('replaces stale Clubhouse entries', async () => {
-      const existingConfig = {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         version: 1,
         hooks: {
           preToolUse: [{ type: 'command', bash: 'old-clubhouse-hook' }],
         },
-      };
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existingConfig));
+      }));
       vi.mocked(isClubhouseHookEntry).mockReturnValue(true);
 
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       // Stale hook should be removed, only new Clubhouse hook present
       expect(written.hooks.preToolUse).toHaveLength(1);
       expect(written.hooks.preToolUse[0].bash).not.toBe('old-clubhouse-hook');
@@ -248,7 +253,7 @@ describe('CopilotCliProvider', () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       for (const eventKey of ['preToolUse', 'postToolUse', 'errorOccurred']) {
         const entry = written.hooks[eventKey][0];
         expect(entry.type).toBe('command');
