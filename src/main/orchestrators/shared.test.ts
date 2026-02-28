@@ -109,7 +109,7 @@ describe('shared orchestrator utilities', () => {
       expect(result).toBe('C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd');
     });
 
-    it('prioritizes where/which result over PATH scan and extraPaths', () => {
+    it('prioritizes extraPaths over PATH scan and where/which', () => {
       const whereResult = '/found/by/where/claude';
       const pathResult = path.join('/usr/local/bin', 'claude');
       vi.mocked(execSync).mockReturnValue(whereResult + '\n');
@@ -117,7 +117,8 @@ describe('shared orchestrator utilities', () => {
         return p === whereResult || p === pathResult || p === '/extra/claude';
       });
       const result = findBinaryInPath(['claude'], ['/extra/claude']);
-      expect(result).toBe(whereResult);
+      // extraPaths are checked first (instant fs check, no shell spawn)
+      expect(result).toBe('/extra/claude');
     });
 
     it('falls through all stages in order when earlier stages miss', () => {

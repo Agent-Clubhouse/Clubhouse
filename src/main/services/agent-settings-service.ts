@@ -2,6 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults } from '../../shared/types';
+import { appLog } from './log-service';
+
+const LOG_NS = 'core:agent-settings';
 
 /**
  * Orchestrator convention paths used by settings functions.
@@ -37,7 +40,8 @@ export function readClaudeMd(worktreePath: string): string {
   const filePath = path.join(worktreePath, 'CLAUDE.md');
   try {
     return fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read CLAUDE.md at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
   }
 }
@@ -59,7 +63,8 @@ function parseMcpServers(filePath: string, scope: 'project' | 'global'): McpServ
       env: config.env as Record<string, string> | undefined,
       scope,
     }));
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to parse MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -88,7 +93,8 @@ export function listSkills(worktreePath: string, conv?: SettingsConventions): Sk
         const hasReadme = fs.existsSync(path.join(skillPath, 'README.md'));
         return { name: e.name, path: skillPath, hasReadme };
       });
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to list skills from ${skillsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -105,7 +111,8 @@ export function listAgentTemplates(worktreePath: string, conv?: SettingsConventi
         const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
         return { name: e.name, path: agentPath, hasReadme };
       });
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to list agent templates from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -117,7 +124,8 @@ function readSettings(projectPath: string): ProjectSettings {
     if (!raw.defaults) raw.defaults = {};
     if (!raw.quickOverrides) raw.quickOverrides = {};
     return raw;
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read project settings from ${settingsFile}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return { defaults: {}, quickOverrides: {} };
   }
 }
@@ -141,7 +149,8 @@ export function listSourceSkills(projectPath: string): SkillEntry[] {
         const hasReadme = fs.existsSync(path.join(skillPath, 'README.md'));
         return { name: e.name, path: skillPath, hasReadme };
       });
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to list source skills from ${skillsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -159,7 +168,8 @@ export function listSourceAgentTemplates(projectPath: string): AgentTemplateEntr
         const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
         return { name: e.name, path: agentPath, hasReadme };
       });
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to list source agent templates from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -173,7 +183,8 @@ export function readSourceSkillContent(projectPath: string, skillName: string): 
   const filePath = path.join(projectPath, '.clubhouse', skillsSubdir, skillName, 'SKILL.md');
   try {
     return fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read source skill content at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
   }
 }
@@ -210,7 +221,8 @@ export function readSourceAgentTemplateContent(projectPath: string, agentName: s
   const filePath = path.join(projectPath, '.clubhouse', agentsSubdir, agentName, 'README.md');
   try {
     return fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read source agent template at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
   }
 }
@@ -315,7 +327,8 @@ export function readPermissions(worktreePath: string, conv?: SettingsConventions
       allow: Array.isArray(perms.allow) ? perms.allow : undefined,
       deny: Array.isArray(perms.deny) ? perms.deny : undefined,
     };
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read permissions from ${settingsPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return {};
   }
 }
@@ -329,7 +342,8 @@ export function readSkillContent(worktreePath: string, skillName: string, conv?:
   const filePath = path.join(worktreePath, c.configDir, c.skillsDir, skillName, 'SKILL.md');
   try {
     return fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read skill content at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
   }
 }
@@ -368,7 +382,8 @@ export function readAgentTemplateContent(worktreePath: string, agentName: string
     const dirPath = path.join(worktreePath, c.configDir, c.agentTemplatesDir, agentName, 'README.md');
     try {
       return fs.readFileSync(dirPath, 'utf-8');
-    } catch {
+    } catch (err) {
+      appLog(LOG_NS, 'warn', `Failed to read agent template "${agentName}" (tried .md and directory forms)`, { meta: { error: err instanceof Error ? err.message : String(err) } });
       return '';
     }
   }
@@ -428,7 +443,8 @@ export function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConv
       }
     }
     return results;
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to list agent template files from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
@@ -444,7 +460,8 @@ export function readMcpRawJson(worktreePath: string, conv?: SettingsConventions)
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   try {
     return fs.readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '{\n  "mcpServers": {}\n}';
   }
 }
@@ -489,8 +506,8 @@ export function writePermissions(worktreePath: string, permissions: PermissionsC
   let existing: Record<string, unknown> = {};
   try {
     existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-  } catch {
-    // File doesn't exist or is invalid
+  } catch (err) {
+    appLog(LOG_NS, 'warn', `Failed to read existing settings at ${settingsPath}, starting fresh`, { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
 
   // Build the permissions object, omitting empty arrays
@@ -568,8 +585,8 @@ export function applyAgentDefaults(
       const dir = path.dirname(mcpPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(mcpPath, defaults.mcpJson, 'utf-8');
-    } catch {
-      // Skip invalid JSON
+    } catch (err) {
+      appLog(LOG_NS, 'warn', 'Skipped invalid MCP JSON in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
   }
 }

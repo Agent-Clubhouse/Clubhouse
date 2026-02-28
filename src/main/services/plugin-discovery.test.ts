@@ -8,6 +8,11 @@ vi.mock('fs', () => ({
   readdirSync: vi.fn(),
   statSync: vi.fn(),
   rmSync: vi.fn(),
+  promises: {
+    lstat: vi.fn(),
+    unlink: vi.fn(),
+    rm: vi.fn(),
+  },
 }));
 
 import * as fs from 'fs';
@@ -209,19 +214,44 @@ describe('plugin-discovery', () => {
   });
 
   describe('uninstallPlugin', () => {
-    it('removes plugin directory recursively', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      uninstallPlugin('my-plugin');
-      expect(fs.rmSync).toHaveBeenCalledWith(
+    it('removes plugin directory recursively with async rm', async () => {
+      vi.mocked(fs.promises.lstat).mockResolvedValue({
+        isSymbolicLink: () => false,
+      } as any);
+      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+
+      await uninstallPlugin('my-plugin');
+
+      expect(fs.promises.rm).toHaveBeenCalledWith(
         path.join(PLUGINS_DIR, 'my-plugin'),
         { recursive: true, force: true },
       );
+      expect(fs.promises.unlink).not.toHaveBeenCalled();
     });
 
-    it('does nothing when plugin directory does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      uninstallPlugin('nonexistent');
-      expect(fs.rmSync).not.toHaveBeenCalled();
+    it('removes only the symlink when plugin is a symlink', async () => {
+      vi.mocked(fs.promises.lstat).mockResolvedValue({
+        isSymbolicLink: () => true,
+      } as any);
+      vi.mocked(fs.promises.unlink).mockResolvedValue(undefined);
+
+      await uninstallPlugin('linked-plugin');
+
+      expect(fs.promises.unlink).toHaveBeenCalledWith(
+        path.join(PLUGINS_DIR, 'linked-plugin'),
+      );
+      expect(fs.promises.rm).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when plugin path does not exist', async () => {
+      vi.mocked(fs.promises.lstat).mockRejectedValue(
+        Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+      );
+
+      await uninstallPlugin('nonexistent');
+
+      expect(fs.promises.rm).not.toHaveBeenCalled();
+      expect(fs.promises.unlink).not.toHaveBeenCalled();
     });
   });
 });

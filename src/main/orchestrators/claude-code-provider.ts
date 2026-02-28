@@ -1,8 +1,6 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import {
   OrchestratorProvider,
   OrchestratorConventions,
@@ -13,10 +11,7 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
-import { getShellEnvironment } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
-
-const execFileAsync = promisify(execFile);
 
 const TOOL_VERBS: Record<string, string> = {
   Bash: 'Running command',
@@ -102,39 +97,16 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     localSettingsFile: 'settings.local.json',
   };
 
-  async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
-    let binary: string;
+  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     try {
-      binary = findClaudeBinary();
+      findClaudeBinary();
+      return { available: true };
     } catch (err: unknown) {
       return {
         available: false,
         error: err instanceof Error ? err.message : 'Could not find Claude CLI',
       };
     }
-
-    // Binary found — verify authentication with a quick no-op call.
-    // Merge profile env (e.g. CLAUDE_CONFIG_DIR) so auth checks run against
-    // the correct config directory when a profile is active.
-    try {
-      const env = { ...getShellEnvironment(), ...envOverride };
-      const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], {
-        timeout: 10000,
-        shell: process.platform === 'win32', // .cmd shims need shell on Windows
-        env,
-      });
-      const result = JSON.parse(stdout);
-      if (result.is_error && typeof result.result === 'string') {
-        const msg = result.result as string;
-        if (msg.includes('API key') || msg.includes('/login') || msg.includes('authentication')) {
-          return { available: false, error: 'Not signed in — run "claude" and follow login prompts' };
-        }
-        return { available: false, error: msg };
-      }
-    } catch {
-      // Timeout or parse failure — binary exists so treat as available
-    }
-    return { available: true };
   }
 
   async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
