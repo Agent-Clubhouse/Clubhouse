@@ -13,6 +13,7 @@ export interface SettingsConventions {
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'
   localSettingsFile: string;   // e.g. 'settings.local.json', 'hooks/hooks.json'
+  settingsFormat?: 'json' | 'toml';  // defaults to 'json'
 }
 
 const CLAUDE_CODE_CONVENTIONS: SettingsConventions = {

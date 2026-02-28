@@ -51,6 +51,8 @@ export interface OrchestratorConventions {
   agentTemplatesDir: string;
   /** Settings filename within configDir (e.g. 'settings.local.json') */
   localSettingsFile: string;
+  /** Format of the settings and MCP config files. Defaults to 'json'. */
+  settingsFormat?: 'json' | 'toml';
 }
 
 export interface ProviderCapabilities {
