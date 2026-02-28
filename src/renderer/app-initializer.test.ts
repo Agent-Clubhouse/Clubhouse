@@ -1,17 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// ─── Mock stores ────────────────────────────────────────────────────────────
+// ─── Hoisted mocks (vi.mock factories are hoisted above imports) ────────────
 
-const mockLoadProjects = vi.fn();
-const mockLoadNotificationSettings = vi.fn();
-const mockLoadTheme = vi.fn();
-const mockLoadOrchestratorSettings = vi.fn();
-const mockLoadLoggingSettings = vi.fn();
-const mockLoadHeadlessSettings = vi.fn();
-const mockLoadBadgeSettings = vi.fn();
-const mockLoadUpdateSettings = vi.fn();
-const mockCheckWhatsNew = vi.fn();
-const mockStartOnboarding = vi.fn();
+const {
+  mockLoadProjects,
+  mockLoadNotificationSettings,
+  mockLoadTheme,
+  mockLoadOrchestratorSettings,
+  mockLoadLoggingSettings,
+  mockLoadHeadlessSettings,
+  mockLoadBadgeSettings,
+  mockLoadUpdateSettings,
+  mockCheckWhatsNew,
+  mockStartOnboarding,
+  mockInitBadgeSideEffects,
+  mockInitializePluginSystem,
+} = vi.hoisted(() => ({
+  mockLoadProjects: vi.fn(),
+  mockLoadNotificationSettings: vi.fn(),
+  mockLoadTheme: vi.fn(),
+  mockLoadOrchestratorSettings: vi.fn(),
+  mockLoadLoggingSettings: vi.fn(),
+  mockLoadHeadlessSettings: vi.fn(),
+  mockLoadBadgeSettings: vi.fn(),
+  mockLoadUpdateSettings: vi.fn(),
+  mockCheckWhatsNew: vi.fn(),
+  mockStartOnboarding: vi.fn(),
+  mockInitBadgeSideEffects: vi.fn(),
+  mockInitializePluginSystem: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('./stores/projectStore', () => ({
   useProjectStore: Object.assign(vi.fn(), {
@@ -55,7 +72,6 @@ vi.mock('./stores/badgeSettingsStore', () => ({
   }),
 }));
 
-const mockInitBadgeSideEffects = vi.fn();
 vi.mock('./stores/badgeStore', () => ({
   initBadgeSideEffects: mockInitBadgeSideEffects,
 }));
@@ -88,7 +104,6 @@ vi.mock('./stores/onboardingStore', () => ({
   }),
 }));
 
-const mockInitializePluginSystem = vi.fn().mockResolvedValue(undefined);
 vi.mock('./plugins/plugin-loader', () => ({
   initializePluginSystem: mockInitializePluginSystem,
 }));
@@ -106,6 +121,11 @@ describe('initApp', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockOnboardingCompleted = true;
+    // mockReset:true clears implementations — restore them each test
+    mockInitializePluginSystem.mockResolvedValue(undefined);
+    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     cleanup = initApp();
   });
 
@@ -161,6 +181,10 @@ describe('initApp – onboarding', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockOnboardingCompleted = false;
+    mockInitializePluginSystem.mockResolvedValue(undefined);
+    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     cleanup = initApp();
   });
 
