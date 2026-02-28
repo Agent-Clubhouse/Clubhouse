@@ -9,13 +9,39 @@ import type {
 import { SUPPORTED_REGISTRY_VERSION } from '../../../shared/marketplace-types';
 import { SUPPORTED_API_VERSIONS } from '../../plugins/manifest-validator';
 import { usePluginStore } from '../../plugins/plugin-store';
-import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
-import type { PluginPermission } from '../../../shared/plugin-types';
+import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
+import type { PluginPermission, PermissionRiskLevel } from '../../../shared/plugin-types';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
+
+const RISK_COLORS: Record<PermissionRiskLevel, string> = {
+  safe: 'bg-green-500/20 text-green-400',
+  elevated: 'bg-yellow-500/20 text-yellow-400',
+  dangerous: 'bg-red-500/20 text-red-400',
+};
+
+function sortPermissionsByRisk(perms: string[]): string[] {
+  return [...perms].sort((a, b) => {
+    const ra = PERMISSION_RISK_LEVELS[a as PluginPermission] ?? 'safe';
+    const rb = PERMISSION_RISK_LEVELS[b as PluginPermission] ?? 'safe';
+    return RISK_ORDER[ra] - RISK_ORDER[rb];
+  });
+}
+
+function RiskBadge({ permission }: { permission: string }) {
+  const level = PERMISSION_RISK_LEVELS[permission as PluginPermission];
+  if (!level || level === 'safe') return null;
+  return (
+    <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[level]}`}>
+      {level}
+    </span>
+  );
 }
 
 type FilterTab = 'all' | 'featured' | 'official';
@@ -95,21 +121,37 @@ function PluginCard({ plugin, featured, installed, installing, onInstall }: Plug
           >
             {installed ? 'Installed' : installing ? 'Installing...' : 'Install'}
           </button>
-          {release.permissions.length > 0 && (
-            <button
-              onClick={() => setShowPerms(!showPerms)}
-              className="text-[10px] text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
-            >
-              {showPerms ? 'Hide' : 'View'} permissions ({release.permissions.length})
-            </button>
-          )}
+          {release.permissions.length > 0 && (() => {
+            const maxRisk = release.permissions.reduce<PermissionRiskLevel>((max, p) => {
+              const r = PERMISSION_RISK_LEVELS[p as PluginPermission] ?? 'safe';
+              return RISK_ORDER[r] > RISK_ORDER[max] ? r : max;
+            }, 'safe');
+            return (
+              <div className="flex items-center gap-1.5">
+                {maxRisk !== 'safe' && (
+                  <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[maxRisk]}`}>
+                    {maxRisk}
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowPerms(!showPerms)}
+                  className="text-[10px] text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
+                >
+                  {showPerms ? 'Hide' : 'View'} permissions ({release.permissions.length})
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
       {showPerms && release.permissions.length > 0 && (
         <div className="mt-3 pt-3 border-t border-surface-0 space-y-1.5">
-          {release.permissions.map((perm) => (
+          {sortPermissionsByRisk(release.permissions).map((perm) => (
             <div key={perm}>
-              <span className="text-xs font-mono text-ctp-accent">{perm}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-mono text-ctp-accent">{perm}</span>
+                <RiskBadge permission={perm} />
+              </div>
               <p className="text-[10px] text-ctp-subtext0">
                 {PERMISSION_DESCRIPTIONS[perm as PluginPermission] || 'Unknown permission'}
               </p>
