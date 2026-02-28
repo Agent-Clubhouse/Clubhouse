@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Minimal mock for monaco-editor in vitest
 
 const mockEditor = {
@@ -7,6 +6,7 @@ const mockEditor = {
   setValue: () => {},
   getModel: () => null as any,
   addCommand: () => {},
+  updateOptions: () => {},
   onDidChangeModelContent: () => ({ dispose: () => {} }),
 };
 
