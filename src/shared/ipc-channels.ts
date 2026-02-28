@@ -210,6 +210,10 @@ export const IPC = {
     CHECK_PLUGIN_UPDATES: 'marketplace:check-plugin-updates',
     UPDATE_PLUGIN: 'marketplace:update-plugin',
     PLUGIN_UPDATES_CHANGED: 'marketplace:plugin-updates-changed',
+    LIST_CUSTOM: 'marketplace:list-custom',
+    ADD_CUSTOM: 'marketplace:add-custom',
+    REMOVE_CUSTOM: 'marketplace:remove-custom',
+    TOGGLE_CUSTOM: 'marketplace:toggle-custom',
   },
   PROFILE: {
     GET_SETTINGS: 'profile:get-settings',

@@ -34,8 +34,13 @@ vi.mock('child_process', () => ({
 
 // Mock marketplace-service
 vi.mock('./marketplace-service', () => ({
-  fetchRegistry: vi.fn(),
+  fetchAllRegistries: vi.fn(),
   installPlugin: vi.fn(),
+}));
+
+// Mock custom-marketplace-service
+vi.mock('./custom-marketplace-service', () => ({
+  listCustomMarketplaces: vi.fn(() => []),
 }));
 
 // Mock auto-update-service (for isNewerVersion)
@@ -57,7 +62,7 @@ vi.mock('./log-service', () => ({
 }));
 
 import * as fs from 'fs';
-import { fetchRegistry, installPlugin } from './marketplace-service';
+import { fetchAllRegistries, installPlugin } from './marketplace-service';
 import {
   checkForPluginUpdates,
   updatePlugin,
@@ -65,61 +70,63 @@ import {
   _resetState,
 } from './plugin-update-service';
 
-const sampleRegistry = {
-  registry: {
-    version: 1,
-    updated: '2025-01-01T00:00:00Z',
-    plugins: [
-      {
-        id: 'my-plugin',
-        name: 'My Plugin',
-        description: 'A test plugin',
-        author: 'Test',
-        official: false,
-        repo: 'https://github.com/test/my-plugin',
-        path: 'plugins/my-plugin',
-        tags: ['test'],
-        latest: '2.0.0',
-        releases: {
-          '1.0.0': {
-            api: 0.5,
-            asset: 'https://example.com/my-plugin-1.0.0.zip',
-            sha256: 'abc',
-            permissions: ['storage'],
-            size: 1024,
-          },
-          '2.0.0': {
-            api: 0.5,
-            asset: 'https://example.com/my-plugin-2.0.0.zip',
-            sha256: 'def',
-            permissions: ['storage'],
-            size: 2048,
-          },
-        },
+const samplePlugins = [
+  {
+    id: 'my-plugin',
+    name: 'My Plugin',
+    description: 'A test plugin',
+    author: 'Test',
+    official: false,
+    repo: 'https://github.com/test/my-plugin',
+    path: 'plugins/my-plugin',
+    tags: ['test'],
+    latest: '2.0.0',
+    releases: {
+      '1.0.0': {
+        api: 0.5,
+        asset: 'https://example.com/my-plugin-1.0.0.zip',
+        sha256: 'abc',
+        permissions: ['storage'],
+        size: 1024,
       },
-      {
-        id: 'other-plugin',
-        name: 'Other Plugin',
-        description: 'Another plugin',
-        author: 'Test',
-        official: false,
-        repo: 'https://github.com/test/other-plugin',
-        path: 'plugins/other-plugin',
-        tags: ['test'],
-        latest: '1.0.0',
-        releases: {
-          '1.0.0': {
-            api: 0.5,
-            asset: 'https://example.com/other-1.0.0.zip',
-            sha256: 'ghi',
-            permissions: [],
-            size: 512,
-          },
-        },
+      '2.0.0': {
+        api: 0.5,
+        asset: 'https://example.com/my-plugin-2.0.0.zip',
+        sha256: 'def',
+        permissions: ['storage'],
+        size: 2048,
       },
-    ],
+    },
   },
-  featured: null,
+  {
+    id: 'other-plugin',
+    name: 'Other Plugin',
+    description: 'Another plugin',
+    author: 'Test',
+    official: false,
+    repo: 'https://github.com/test/other-plugin',
+    path: 'plugins/other-plugin',
+    tags: ['test'],
+    latest: '1.0.0',
+    releases: {
+      '1.0.0': {
+        api: 0.5,
+        asset: 'https://example.com/other-1.0.0.zip',
+        sha256: 'ghi',
+        permissions: [],
+        size: 512,
+      },
+    },
+  },
+];
+
+const sampleAllRegistriesResult = {
+  official: {
+    registry: { version: 1, updated: '2025-01-01T00:00:00Z', plugins: samplePlugins },
+    featured: null,
+  },
+  custom: [],
+  allPlugins: samplePlugins,
 };
 
 describe('plugin-update-service', () => {
@@ -130,7 +137,7 @@ describe('plugin-update-service', () => {
 
   describe('checkForPluginUpdates', () => {
     it('detects available updates for installed plugins', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
       // Simulate installed plugins dir
       vi.mocked(fs.existsSync).mockReturnValue(true);
@@ -151,7 +158,7 @@ describe('plugin-update-service', () => {
     });
 
     it('returns no updates when plugins are up to date', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
@@ -166,7 +173,7 @@ describe('plugin-update-service', () => {
     });
 
     it('skips plugins not in the registry', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
@@ -181,7 +188,7 @@ describe('plugin-update-service', () => {
     });
 
     it('returns empty when no plugins are installed', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
       const result = await checkForPluginUpdates();
@@ -189,7 +196,7 @@ describe('plugin-update-service', () => {
     });
 
     it('handles registry fetch failure gracefully', async () => {
-      vi.mocked(fetchRegistry).mockRejectedValue(new Error('Network error'));
+      vi.mocked(fetchAllRegistries).mockRejectedValue(new Error('Network error'));
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
       const result = await checkForPluginUpdates();
@@ -201,7 +208,7 @@ describe('plugin-update-service', () => {
     });
 
     it('skips malformed manifest files', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
@@ -214,37 +221,36 @@ describe('plugin-update-service', () => {
     });
 
     it('detects multiple updates', async () => {
-      const registry = {
-        ...sampleRegistry,
-        registry: {
-          ...sampleRegistry.registry,
-          plugins: [
-            ...sampleRegistry.registry.plugins,
-            {
-              id: 'third-plugin',
-              name: 'Third Plugin',
-              description: 'Third',
-              author: 'Test',
-              official: false,
-              repo: 'https://github.com/test/third',
-              path: 'plugins/third',
-              tags: [],
-              latest: '3.0.0',
-              releases: {
-                '3.0.0': {
-                  api: 0.5,
-                  asset: 'https://example.com/third-3.0.0.zip',
-                  sha256: 'xyz',
-                  permissions: [],
-                  size: 256,
-                },
-              },
-            },
-          ],
+      const thirdPlugin = {
+        id: 'third-plugin',
+        name: 'Third Plugin',
+        description: 'Third',
+        author: 'Test',
+        official: false,
+        repo: 'https://github.com/test/third',
+        path: 'plugins/third',
+        tags: [],
+        latest: '3.0.0',
+        releases: {
+          '3.0.0': {
+            api: 0.5,
+            asset: 'https://example.com/third-3.0.0.zip',
+            sha256: 'xyz',
+            permissions: [],
+            size: 256,
+          },
         },
       };
 
-      vi.mocked(fetchRegistry).mockResolvedValue(registry as any);
+      const extendedPlugins = [...samplePlugins, thirdPlugin];
+      vi.mocked(fetchAllRegistries).mockResolvedValue({
+        official: {
+          registry: { version: 1, updated: '2025-01-01T00:00:00Z', plugins: extendedPlugins },
+          featured: null,
+        },
+        custom: [],
+        allPlugins: extendedPlugins,
+      } as any);
 
       vi.mocked(fs.existsSync).mockImplementation((p: any) => {
         const s = String(p);
@@ -277,7 +283,7 @@ describe('plugin-update-service', () => {
 
     it('calls installPlugin and returns success', async () => {
       // First, set up an available update
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
@@ -306,7 +312,7 @@ describe('plugin-update-service', () => {
     });
 
     it('returns error when installation fails', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
@@ -332,7 +338,7 @@ describe('plugin-update-service', () => {
     });
 
     it('clears updating state on failure', async () => {
-      vi.mocked(fetchRegistry).mockResolvedValue(sampleRegistry as any);
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue([
         { name: 'my-plugin', isDirectory: () => true } as any,

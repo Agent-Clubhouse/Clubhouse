@@ -97,3 +97,37 @@ export interface PluginUpdatesStatus {
 
 /** The registry schema version the client understands. */
 export const SUPPORTED_REGISTRY_VERSION = 1;
+
+// ── Custom marketplace types ─────────────────────────────────────────
+
+export interface CustomMarketplace {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+
+export interface CustomMarketplaceAddRequest {
+  name: string;
+  url: string;
+}
+
+export interface CustomMarketplaceRemoveRequest {
+  id: string;
+}
+
+export interface CustomMarketplaceToggleRequest {
+  id: string;
+  enabled: boolean;
+}
+
+/**
+ * Extended fetch result that includes plugins from all registries
+ * (official + custom), each tagged with their source marketplace.
+ */
+export interface MarketplacePluginWithSource extends MarketplacePlugin {
+  /** Which marketplace this plugin came from. undefined = official. */
+  marketplaceId?: string;
+  /** Display name of the source marketplace. */
+  marketplaceName?: string;
+}
