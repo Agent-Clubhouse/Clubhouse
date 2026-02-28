@@ -64,7 +64,34 @@ function useAgentStateSync() {
       },
     );
 
-    // 4. Detect sleeping → running transitions via PTY data.
+    // 4. Subscribe to agent state broadcasts from the main window.
+    //    This provides push-based updates instead of polling, covering
+    //    new agents, status changes, icons, etc.
+    const removeStateListener = window.clubhouse.window.onAgentStateChanged(
+      (snapshot) => {
+        const currentAgents = useAgentStore.getState().agents;
+        const agents: Record<string, Agent> = {};
+        for (const [id, raw] of Object.entries(snapshot.agents)) {
+          const incoming = raw as Agent;
+          const current = currentAgents[id];
+          // Don't regress from "running" to "sleeping" via broadcast — PTY
+          // data (step 5) is ground truth that the process is alive, and the
+          // popout has its own onExit listener (step 3) for real exits.
+          if (current?.status === 'running' && incoming.status === 'sleeping') {
+            agents[id] = current;
+          } else {
+            agents[id] = incoming;
+          }
+        }
+        useAgentStore.setState({
+          agents,
+          agentDetailedStatus: snapshot.agentDetailedStatus as any,
+          agentIcons: snapshot.agentIcons,
+        });
+      },
+    );
+
+    // 5. Detect sleeping → running transitions via PTY data.
     //    When an agent is woken from the main window, the pop-out's store still
     //    shows 'sleeping'. Hook events may not arrive promptly (the agent might
     //    be idle at a prompt). PTY data is a reliable signal that the process is
@@ -97,6 +124,7 @@ function useAgentStateSync() {
       cancelled = true;
       removeHookListener();
       removeExitListener();
+      removeStateListener();
       removeDataListener();
     };
   }, []);

@@ -23,8 +23,10 @@ vi.stubGlobal('window', {
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
     },
     window: {
+      isPopout: vi.fn(() => false),
       onRequestAgentState: vi.fn(() => mockRemovers.onRequestAgentState),
       respondAgentState: vi.fn(),
+      broadcastAgentState: vi.fn(),
       onRequestHubState: vi.fn(() => mockRemovers.onRequestHubState),
       respondHubState: vi.fn(),
       onHubMutation: vi.fn(() => mockRemovers.onHubMutation),

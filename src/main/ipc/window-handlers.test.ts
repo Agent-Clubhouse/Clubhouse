@@ -88,14 +88,23 @@ vi.mock('../services/log-service', () => ({
 }));
 
 import { BrowserWindow, ipcMain } from 'electron';
-import { registerWindowHandlers } from './window-handlers';
+import { registerWindowHandlers, _resetForTesting } from './window-handlers';
 import { IPC } from '../../shared/ipc-channels';
+
+/** Helper: find an ipcMain.on() handler by channel name. */
+function findOnHandler(channel: string): ((...args: any[]) => void) | undefined {
+  const onCalls = (ipcMain.on as any).mock.calls;
+  return onCalls.find((call: any[]) => call[0] === channel)?.[1];
+}
 
 describe('window-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
 
   beforeEach(() => {
     (BrowserWindow as any)._reset();
+    (ipcMain as any)._resetOnceListeners();
+    _resetForTesting();
+    vi.clearAllMocks();
     handlers = new Map();
     (ipcMain.handle as any).mockImplementation((channel: string, handler: any) => {
       handlers.set(channel, handler);
@@ -134,19 +143,13 @@ describe('window-handlers', () => {
     const closeHandler = handlers.get(IPC.WINDOW.CLOSE_POPOUT)!;
     await closeHandler({}, windowId);
 
-    const listHandler = handlers.get(IPC.WINDOW.LIST_POPOUTS)!;
     const windows = BrowserWindow.getAllWindows();
     const win = windows.find((w: any) => w.id === windowId);
     expect(win?.closed).toBe(true);
   });
 
   it('FOCUS_MAIN focuses the main window (non-popout)', async () => {
-    // Create a popout first, so we have both a main window-like entry and a popout
-    // The main window is any window NOT in the popout map
-    // We need a window that exists before popout creation
-    // Add a "main" window manually
     const mainWin = new (BrowserWindow as any)({});
-    // Now create a popout
     const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
     await createHandler({}, { type: 'agent', agentId: 'a1' });
 
@@ -169,19 +172,20 @@ describe('window-handlers', () => {
     );
   });
 
-  it('GET_AGENT_STATE sends REQUEST_AGENT_STATE to the main window', async () => {
+  // ── Agent state: relay (cold cache) ─────────────────────────────────
+
+  it('GET_AGENT_STATE relays via REQUEST_AGENT_STATE when cache is cold', async () => {
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
 
     const statePromise = handler({});
 
-    // The handler should have sent REQUEST_AGENT_STATE to the main window
     expect(mainWin.webContents.send).toHaveBeenCalledWith(
       IPC.WINDOW.REQUEST_AGENT_STATE,
       expect.any(String),
     );
 
-    // Simulate the main renderer responding via the on(AGENT_STATE_RESPONSE) handler
+    // Simulate the main renderer responding
     const requestId = mainWin.webContents.send.mock.calls[0][1];
     const mockState = {
       agents: { 'a1': { id: 'a1', name: 'test' } },
@@ -189,93 +193,191 @@ describe('window-handlers', () => {
       agentIcons: {},
     };
 
-    // Find the on() handler registered for AGENT_STATE_RESPONSE
-    const onCalls = (ipcMain.on as any).mock.calls;
-    const responseHandler = onCalls.find(
-      (call: any[]) => call[0] === IPC.WINDOW.AGENT_STATE_RESPONSE,
-    )?.[1];
+    const responseHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_RESPONSE);
     expect(responseHandler).toBeDefined();
-
-    // Call the on() handler which triggers the once() listener via emit
-    responseHandler({}, requestId, mockState);
+    responseHandler!({}, requestId, mockState);
 
     const result = await statePromise;
     expect(result).toEqual(mockState);
   });
 
   it('GET_AGENT_STATE returns empty state when no main window exists', async () => {
-    // No main window created
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
     const result = await handler({});
     expect(result).toEqual({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
   });
 
-  it('GET_AGENT_STATE cleans up once listener on timeout using removeListener', async () => {
+  it('GET_AGENT_STATE times out after 1.5s (reduced from 5s)', async () => {
     vi.useFakeTimers();
-    const mainWin = new (BrowserWindow as any)({});
+    new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
 
     const statePromise = handler({});
 
-    // Extract the requestId from the send call
-    const requestId = mainWin.webContents.send.mock.calls[0][1];
-    const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
-
-    // Verify the once listener was registered
-    expect(ipcMain.once).toHaveBeenCalledWith(channel, expect.any(Function));
-
-    // Advance past the 5s timeout
-    vi.advanceTimersByTime(5000);
+    // 1.5s timeout (reduced from 5s)
+    vi.advanceTimersByTime(1500);
 
     const result = await statePromise;
     expect(result).toEqual({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
 
-    // Verify removeListener was called with the specific handler (not removeAllListeners)
-    expect(ipcMain.removeListener).toHaveBeenCalledWith(channel, expect.any(Function));
-
-    // Verify the handler passed to removeListener is the same one passed to once
-    const onceHandler = (ipcMain.once as any).mock.calls.find(
-      (call: any[]) => call[0] === channel,
-    )?.[1];
-    const removedHandler = (ipcMain.removeListener as any).mock.calls.find(
-      (call: any[]) => call[0] === channel,
-    )?.[1];
-    expect(removedHandler).toBe(onceHandler);
-
     vi.useRealTimers();
   });
 
-  it('GET_HUB_STATE cleans up once listener on timeout using removeListener', async () => {
-    vi.useFakeTimers();
+  // ── Agent state: caching ────────────────────────────────────────────
+
+  it('GET_AGENT_STATE serves from cache after AGENT_STATE_CHANGED broadcast', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const cachedState = {
+      agents: { a1: { id: 'a1', name: 'cached' } },
+      agentDetailedStatus: { a1: { status: 'idle' } },
+      agentIcons: { a1: 'icon.png' },
+    };
+
+    // Simulate main renderer broadcasting agent state
+    const broadcastHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_CHANGED);
+    expect(broadcastHandler).toBeDefined();
+    broadcastHandler!({}, cachedState);
+
+    // Now GET_AGENT_STATE should return cached state instantly (no relay)
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+    const result = await handler({});
+    expect(result).toEqual(cachedState);
+
+    // Should NOT have sent REQUEST_AGENT_STATE (served from cache)
+    expect(mainWin.webContents.send).not.toHaveBeenCalledWith(
+      IPC.WINDOW.REQUEST_AGENT_STATE,
+      expect.any(String),
+    );
+  });
+
+  // ── Agent state: batching ──────────────────────────────────────────
+
+  it('GET_AGENT_STATE batches concurrent requests into a single relay', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
+
+    // Fire two concurrent requests
+    const promise1 = handler({});
+    const promise2 = handler({});
+
+    // Only ONE relay should have been sent
+    const relayCalls = mainWin.webContents.send.mock.calls.filter(
+      (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+    );
+    expect(relayCalls.length).toBe(1);
+
+    // Respond to the single relay
+    const requestId = relayCalls[0][1];
+    const mockState = { agents: { a1: { id: 'a1' } }, agentDetailedStatus: {}, agentIcons: {} };
+    const responseHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_RESPONSE);
+    responseHandler!({}, requestId, mockState);
+
+    // Both promises should resolve with the same state
+    const [result1, result2] = await Promise.all([promise1, promise2]);
+    expect(result1).toEqual(mockState);
+    expect(result2).toEqual(mockState);
+  });
+
+  // ── Agent state: broadcast forwarding ───────────────────────────────
+
+  it('AGENT_STATE_CHANGED is forwarded to all popout windows', async () => {
+    // Create two popouts
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'agent', agentId: 'a1' });
+    await createHandler({}, { type: 'agent', agentId: 'a2' });
+
+    const popoutWindows = BrowserWindow.getAllWindows();
+    expect(popoutWindows.length).toBe(2);
+
+    const broadcastState = {
+      agents: { a1: { id: 'a1', status: 'running' } },
+      agentDetailedStatus: {},
+      agentIcons: {},
+    };
+
+    // Simulate main renderer broadcasting
+    const broadcastHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_CHANGED);
+    broadcastHandler!({}, broadcastState);
+
+    // Both popouts should receive the broadcast
+    for (const win of popoutWindows) {
+      expect((win as any).webContents.send).toHaveBeenCalledWith(
+        IPC.WINDOW.AGENT_STATE_CHANGED,
+        broadcastState,
+      );
+    }
+  });
+
+  // ── Hub state: caching ──────────────────────────────────────────────
+
+  it('GET_HUB_STATE serves from cache after HUB_STATE_CHANGED broadcast', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const cachedHub = {
+      hubId: 'hub-1',
+      paneTree: { id: 'root', type: 'leaf' },
+      focusedPaneId: 'root',
+      zoomedPaneId: null,
+    };
+
+    // Simulate main renderer broadcasting hub state
+    const broadcastHandler = findOnHandler(IPC.WINDOW.HUB_STATE_CHANGED);
+    broadcastHandler!({}, cachedHub);
+
+    // Now GET_HUB_STATE should return cached state instantly
+    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
+    const result = await handler({}, 'hub-1', 'global');
+    expect(result).toEqual(cachedHub);
+
+    // Should NOT have sent REQUEST_HUB_STATE (served from cache)
+    expect(mainWin.webContents.send).not.toHaveBeenCalledWith(
+      IPC.WINDOW.REQUEST_HUB_STATE,
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+    );
+  });
+
+  it('GET_HUB_STATE falls back to relay when cache misses', async () => {
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
 
-    const statePromise = handler({}, 'hub-1', 'messages');
+    const statePromise = handler({}, 'hub-1', 'global');
 
-    // Extract the requestId from the send call
+    // Should have sent a relay request
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(
+      IPC.WINDOW.REQUEST_HUB_STATE,
+      expect.any(String),
+      'hub-1',
+      'global',
+      undefined,
+    );
+
+    // Respond to the relay
     const requestId = mainWin.webContents.send.mock.calls[0][1];
-    const channel = `${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`;
+    const mockHub = {
+      hubId: 'hub-1',
+      paneTree: { id: 'root' },
+      focusedPaneId: 'root',
+      zoomedPaneId: null,
+    };
+    const responseHandler = findOnHandler(IPC.WINDOW.HUB_STATE_RESPONSE);
+    responseHandler!({}, requestId, mockHub);
 
-    // Verify the once listener was registered
-    expect(ipcMain.once).toHaveBeenCalledWith(channel, expect.any(Function));
+    const result = await statePromise;
+    expect(result).toEqual(mockHub);
+  });
 
-    // Advance past the 5s timeout
-    vi.advanceTimersByTime(5000);
+  it('GET_HUB_STATE times out after 1.5s (reduced from 5s)', async () => {
+    vi.useFakeTimers();
+    new (BrowserWindow as any)({});
+    const handler = handlers.get(IPC.WINDOW.GET_HUB_STATE)!;
+
+    const statePromise = handler({}, 'hub-1', 'global');
+
+    vi.advanceTimersByTime(1500);
 
     const result = await statePromise;
     expect(result).toBeNull();
-
-    // Verify removeListener was called with the specific handler
-    expect(ipcMain.removeListener).toHaveBeenCalledWith(channel, expect.any(Function));
-
-    // Verify the handler passed to removeListener is the same one passed to once
-    const onceHandler = (ipcMain.once as any).mock.calls.find(
-      (call: any[]) => call[0] === channel,
-    )?.[1];
-    const removedHandler = (ipcMain.removeListener as any).mock.calls.find(
-      (call: any[]) => call[0] === channel,
-    )?.[1];
-    expect(removedHandler).toBe(onceHandler);
 
     vi.useRealTimers();
   });
@@ -304,21 +406,24 @@ describe('window-handlers', () => {
     expect(list2.length).toBe(1);
   });
 
-  it('GET_AGENT_STATE does not call removeListener when response arrives before timeout', async () => {
+  it('GET_AGENT_STATE does not call removeListener when relay response arrives before timeout', async () => {
+    // Ensure cold cache so relay is triggered
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;
 
     const statePromise = handler({});
 
-    const requestId = mainWin.webContents.send.mock.calls[0][1];
+    // Verify relay was triggered (cold cache)
+    const relayCalls = mainWin.webContents.send.mock.calls.filter(
+      (call: any[]) => call[0] === IPC.WINDOW.REQUEST_AGENT_STATE,
+    );
+    expect(relayCalls.length).toBe(1);
+
+    const requestId = relayCalls[0][1];
     const mockState = { agents: { a1: { id: 'a1' } }, agentDetailedStatus: {}, agentIcons: {} };
 
-    // Simulate the response arriving before timeout
-    const onCalls = (ipcMain.on as any).mock.calls;
-    const responseHandler = onCalls.find(
-      (call: any[]) => call[0] === IPC.WINDOW.AGENT_STATE_RESPONSE,
-    )?.[1];
-    responseHandler({}, requestId, mockState);
+    const responseHandler = findOnHandler(IPC.WINDOW.AGENT_STATE_RESPONSE);
+    responseHandler!({}, requestId, mockState);
 
     const result = await statePromise;
     expect(result).toEqual(mockState);
@@ -329,5 +434,55 @@ describe('window-handlers', () => {
       (call: any[]) => call[0] === channel,
     );
     expect(removeListenerCalls.length).toBe(0);
+  });
+
+  // ── Hub state: broadcast forwarding ─────────────────────────────────
+
+  it('HUB_STATE_CHANGED is forwarded to all popout windows', async () => {
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
+    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
+
+    const popoutWindows = BrowserWindow.getAllWindows();
+
+    const hubState = {
+      hubId: 'hub-1',
+      paneTree: { id: 'root' },
+      focusedPaneId: 'root',
+      zoomedPaneId: null,
+    };
+
+    const broadcastHandler = findOnHandler(IPC.WINDOW.HUB_STATE_CHANGED);
+    broadcastHandler!({}, hubState);
+
+    for (const win of popoutWindows) {
+      expect((win as any).webContents.send).toHaveBeenCalledWith(
+        IPC.WINDOW.HUB_STATE_CHANGED,
+        hubState,
+      );
+    }
+  });
+
+  // ── Hub mutation forwarding ──────────────────────────────────────────
+
+  it('HUB_MUTATION is forwarded to the main window', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    // Create a popout so mainWin is distinguishable
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'hub', hubId: 'hub-1' });
+
+    const mutationHandler = findOnHandler(IPC.WINDOW.HUB_MUTATION);
+    expect(mutationHandler).toBeDefined();
+
+    const mutation = { type: 'split', paneId: 'p1', direction: 'horizontal', position: 'after' };
+    mutationHandler!({}, 'hub-1', 'global', mutation);
+
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(
+      IPC.WINDOW.REQUEST_HUB_MUTATION,
+      'hub-1',
+      'global',
+      mutation,
+      undefined, // projectId
+    );
   });
 });

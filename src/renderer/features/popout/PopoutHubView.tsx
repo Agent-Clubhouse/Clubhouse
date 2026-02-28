@@ -7,7 +7,7 @@
  *   same pane tree using the shared PaneContainer component.
  * - All mutations (split, close, assign, swap, resize, zoom) are
  *   forwarded to the main window via IPC — no local state modification.
- * - Periodic reconciliation (every 5 seconds) catches any missed events.
+ * - Periodic reconciliation (every 30 seconds) catches any missed events.
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { PaneContainer } from '../../plugins/builtin/hub/PaneContainer';
@@ -26,7 +26,10 @@ interface PopoutHubViewProps {
 }
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
-const RECONCILE_INTERVAL_MS = 5000;
+/** Reconciliation is a safety net for missed broadcasts — not the primary
+ *  sync mechanism. 30s is sufficient since HUB_STATE_CHANGED push updates
+ *  handle the fast path. */
+const RECONCILE_INTERVAL_MS = 30_000;
 
 export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
   const [paneTree, setPaneTree] = useState<PaneNode | null>(null);

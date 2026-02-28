@@ -202,6 +202,7 @@ export const IPC = {
     GET_HUB_STATE: 'window:get-hub-state',
     REQUEST_HUB_STATE: 'window:request-hub-state',
     HUB_STATE_RESPONSE: 'window:hub-state-response',
+    AGENT_STATE_CHANGED: 'window:agent-state-changed',
     HUB_STATE_CHANGED: 'window:hub-state-changed',
     HUB_MUTATION: 'window:hub-mutation',
     REQUEST_HUB_MUTATION: 'window:request-hub-mutation',

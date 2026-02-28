@@ -628,6 +628,21 @@ const api = {
       agentIcons: Record<string, string>;
     }) =>
       ipcRenderer.send(IPC.WINDOW.AGENT_STATE_RESPONSE, requestId, state),
+    broadcastAgentState: (state: {
+      agents: Record<string, unknown>;
+      agentDetailedStatus: Record<string, unknown>;
+      agentIcons: Record<string, string>;
+    }) =>
+      ipcRenderer.send(IPC.WINDOW.AGENT_STATE_CHANGED, state),
+    onAgentStateChanged: (callback: (state: {
+      agents: Record<string, unknown>;
+      agentDetailedStatus: Record<string, unknown>;
+      agentIcons: Record<string, string>;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      ipcRenderer.on(IPC.WINDOW.AGENT_STATE_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.AGENT_STATE_CHANGED, listener); };
+    },
 
     // Hub state sync — leader/follower protocol
     getHubState: (hubId: string, scope: string, projectId?: string): Promise<{
