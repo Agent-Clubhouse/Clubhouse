@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
@@ -44,8 +46,6 @@ export function registerAgentHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     // Read the file and return as data URL for crop preview
-    const fs = require('fs');
-    const path = require('path');
     const filePath = result.filePaths[0];
     const ext = path.extname(filePath).toLowerCase();
     const mimeMap: Record<string, string> = {

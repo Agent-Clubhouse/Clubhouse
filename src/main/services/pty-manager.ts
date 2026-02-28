@@ -33,6 +33,22 @@ function winQuoteArg(arg: string): string {
 }
 const sessions = new Map<string, ManagedSession>();
 
+/**
+ * Flush a pending command to the PTY. Used in both onData (shell startup) and
+ * resize (terminal got its real size) paths.
+ */
+function flushPendingCommand(session: ManagedSession): boolean {
+  if (!session.pendingCommand) return false;
+  const cmd = session.pendingCommand;
+  session.pendingCommand = undefined;
+  if (process.platform === 'win32') {
+    session.process.write(`${cmd} & exit\r\n`);
+  } else {
+    session.process.write(`exec ${cmd}\n`);
+  }
+  return true;
+}
+
 function appendToBuffer(session: ManagedSession, data: string): void {
   session.outputChunks.push(data);
   session.outputSize += data.length;
@@ -133,14 +149,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     // Shell emitted data while a command is pending — it's ready for input.
     // Fire the command immediately so agents start without waiting for a
     // terminal UI resize (which only happens when the hub pane is visible).
-    if (current.pendingCommand) {
-      const cmd = current.pendingCommand;
-      current.pendingCommand = undefined;
-      if (process.platform === 'win32') {
-        current.process.write(`${cmd} & exit\r\n`);
-      } else {
-        current.process.write(`exec ${cmd}\n`);
-      }
+    if (flushPendingCommand(current)) {
       return; // suppress shell startup output
     }
 
@@ -158,7 +167,6 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
     });
-    console.error(`[pty-exit] agentId=${agentId} exitCode=${exitCode} binary=${binary} lastOutput=${ptyBuffer.slice(-200)}`);
 
     cleanupSession(agentId);
     onExit?.(agentId, exitCode);
@@ -236,17 +244,8 @@ export function resize(agentId: string, cols: number, rows: number): void {
     session.process.resize(cols, rows);
   }
   // If there's a pending command, the terminal just sent its real size — fire it now.
-  if (session?.pendingCommand) {
-    const cmd = session.pendingCommand;
-    session.pendingCommand = undefined;
-    if (process.platform === 'win32') {
-      // On Windows cmd.exe: run the command and exit the shell when done.
-      // "& exit" ensures cmd.exe closes after the agent process exits,
-      // so the PTY exits cleanly and triggers the onExit handler (ghost creation).
-      session.process.write(`${cmd} & exit\r\n`);
-    } else {
-      session.process.write(`exec ${cmd}\n`);
-    }
+  if (session) {
+    flushPendingCommand(session);
   }
 }
 

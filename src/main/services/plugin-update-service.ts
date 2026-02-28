@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { app, BrowserWindow } from 'electron';
+import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { fetchAllRegistries, installPlugin } from './marketplace-service';
 import { listCustomMarketplaces } from './custom-marketplace-service';
 import { isNewerVersion } from './auto-update-service';
@@ -77,14 +78,7 @@ function getInstalledPlugins(): Map<string, { version: string; name: string; plu
 }
 
 function broadcastStatus(): void {
-  const wins = BrowserWindow.getAllWindows();
-  for (const win of wins) {
-    try {
-      win.webContents.send(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, { ...status });
-    } catch {
-      // Window may be destroyed
-    }
-  }
+  broadcastToAllWindows(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, { ...status });
 }
 
 // ---------------------------------------------------------------------------

@@ -150,6 +150,14 @@ export const usePluginUpdateStore = create<PluginUpdateStoreState>((set, get) =>
   },
 }));
 
+/** Clear the dismiss timer. Call in test teardown to avoid leaked timers. */
+export function resetDismissTimer(): void {
+  if (dismissTimer) {
+    clearTimeout(dismissTimer);
+    dismissTimer = null;
+  }
+}
+
 /** Listen for plugin update status changes from the main process. */
 export function initPluginUpdateListener(): () => void {
   return window.clubhouse.marketplace.onPluginUpdatesChanged((status) => {
