@@ -100,10 +100,17 @@ export function registerWindowHandlers(): void {
 
   ipcMain.handle(IPC.WINDOW.LIST_POPOUTS, () => {
     const list: Array<{ windowId: number; params: PopoutParams }> = [];
+    const staleIds: number[] = [];
     for (const [windowId, entry] of popoutWindows) {
       if (!entry.window.isDestroyed()) {
         list.push({ windowId, params: entry.params });
+      } else {
+        staleIds.push(windowId);
       }
+    }
+    // Clean up stale entries for destroyed windows
+    for (const id of staleIds) {
+      popoutWindows.delete(id);
     }
     return list;
   });

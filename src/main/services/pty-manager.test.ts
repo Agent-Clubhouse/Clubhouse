@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock node-pty
 const mockProcess = {
@@ -34,7 +34,7 @@ vi.mock('../../shared/ipc-channels', () => ({
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll } from './pty-manager';
+import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep } from './pty-manager';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -771,6 +771,57 @@ describe('pty-manager', () => {
       spawn('agent_ir_killed', '/test', '/usr/local/bin/claude', []);
       kill('agent_ir_killed');
       expect(isRunning('agent_ir_killed')).toBe(false);
+    });
+  });
+
+  describe('stale session sweep', () => {
+    afterEach(() => {
+      stopStaleSweep();
+      vi.useRealTimers();
+    });
+
+    it('startStaleSweep and stopStaleSweep are idempotent', () => {
+      // Should not throw when called multiple times
+      startStaleSweep();
+      startStaleSweep();
+      stopStaleSweep();
+      stopStaleSweep();
+    });
+
+    it('sweep cleans up sessions whose processes have died', () => {
+      vi.useFakeTimers();
+      spawn('agent_stale_sweep', '/test', '/usr/local/bin/claude', []);
+      expect(isRunning('agent_stale_sweep')).toBe(true);
+
+      // Mock process.kill to throw (simulating dead process)
+      const originalKill = process.kill;
+      process.kill = vi.fn(() => { throw new Error('ESRCH'); }) as any;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Session should have been cleaned up
+      expect(isRunning('agent_stale_sweep')).toBe(false);
+
+      process.kill = originalKill;
+    });
+
+    it('sweep does not remove sessions with live processes', () => {
+      vi.useFakeTimers();
+      spawn('agent_alive_sweep', '/test', '/usr/local/bin/claude', []);
+      expect(isRunning('agent_alive_sweep')).toBe(true);
+
+      // Mock process.kill to succeed (process is alive)
+      const originalKill = process.kill;
+      process.kill = vi.fn(() => true) as any;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Session should still exist
+      expect(isRunning('agent_alive_sweep')).toBe(true);
+
+      process.kill = originalKill;
     });
   });
 });

@@ -67,3 +67,12 @@ export function removeAllListeners(): void {
   ptyExitListeners.clear();
   agentSpawnedListeners.clear();
 }
+
+/** Return current listener counts for diagnostics and leak detection. */
+export function getListenerCounts(): { ptyData: number; hookEvent: number; ptyExit: number; agentSpawned: number; total: number } {
+  const ptyData = ptyDataListeners.size;
+  const hookEvent = hookEventListeners.size;
+  const ptyExit = ptyExitListeners.size;
+  const agentSpawned = agentSpawnedListeners.size;
+  return { ptyData, hookEvent, ptyExit, agentSpawned, total: ptyData + hookEvent + ptyExit + agentSpawned };
+}
