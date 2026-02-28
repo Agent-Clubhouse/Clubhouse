@@ -24,12 +24,12 @@ vi.mock('../orchestrators', () => ({
 import { registerProfileHandlers } from './profile-handlers';
 
 describe('profile-handlers', () => {
-  let handlers: Record<string, Function>;
+  let handlers: Record<string, (...args: any[]) => any>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     handlers = {};
-    mockHandle.mockImplementation((channel: string, handler: Function) => {
+    mockHandle.mockImplementation((channel: string, handler: (...args: any[]) => any) => {
       handlers[channel] = handler;
     });
     registerProfileHandlers();
