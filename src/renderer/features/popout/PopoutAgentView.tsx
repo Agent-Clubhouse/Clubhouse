@@ -74,7 +74,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
     const configs = await window.clubhouse.agent.listDurable(agentProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
-      await spawnDurableAgent(agentProject.id, agentProject.path, config, true);
+      await spawnDurableAgent(agentProject.id, agentProject.path, config, false);
     }
   }, [agent, projects, spawnDurableAgent]);
 
