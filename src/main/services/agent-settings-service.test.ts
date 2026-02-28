@@ -748,6 +748,76 @@ describe('orchestrator convention routing', () => {
 });
 
 // =============================================================================
+// TOML settings format guard: non-JSON settings files must not be written as JSON
+// =============================================================================
+
+const CODEX_CONVENTIONS: SettingsConventions = {
+  configDir: '.codex',
+  skillsDir: 'skills',
+  agentTemplatesDir: 'agents',
+  mcpConfigFile: '.codex/config.toml',
+  localSettingsFile: 'config.toml',
+  settingsFormat: 'toml',
+};
+
+describe('TOML settingsFormat guard', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('readPermissions returns empty for TOML conventions without reading file', () => {
+    const result = readPermissions(WORKTREE, CODEX_CONVENTIONS);
+    expect(result).toEqual({});
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('writePermissions is a no-op for TOML conventions', () => {
+    writePermissions(WORKTREE, { allow: ['Read', 'Write'], deny: ['WebFetch'] }, CODEX_CONVENTIONS);
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(fs.mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('readMcpRawJson returns empty default for TOML conventions without reading file', () => {
+    const result = readMcpRawJson(WORKTREE, CODEX_CONVENTIONS);
+    expect(JSON.parse(result)).toEqual({ mcpServers: {} });
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('writeMcpRawJson returns error for TOML conventions without writing file', () => {
+    const result = writeMcpRawJson(WORKTREE, '{"mcpServers": {}}', CODEX_CONVENTIONS);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not supported/i);
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('applyAgentDefaults skips permissions and MCP JSON for TOML conventions', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.includes('settings.json') && !s.includes('config.toml')) {
+        return JSON.stringify({
+          defaults: {},
+          quickOverrides: {},
+          agentDefaults: {
+            instructions: '# Codex Agent',
+            mcpJson: '{"mcpServers": {"test": {}}}',
+            permissions: { allow: ['shell(git:*)'] },
+          },
+        });
+      }
+      throw new Error('ENOENT');
+    });
+
+    const writeInstructions = vi.fn();
+    applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, CODEX_CONVENTIONS);
+
+    // Instructions should still be written via the custom writer
+    expect(writeInstructions).toHaveBeenCalledWith(WORKTREE, '# Codex Agent');
+
+    // No files should be written (permissions and MCP JSON both skipped)
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
 // Error logging: catch blocks log warnings instead of silently swallowing
 // =============================================================================
 

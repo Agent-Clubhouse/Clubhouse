@@ -107,6 +107,7 @@ export class CodexCliProvider implements OrchestratorProvider {
     skillsDir: 'skills',
     agentTemplatesDir: 'agents',
     localSettingsFile: 'config.toml',
+    settingsFormat: 'toml',
   };
 
   async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
