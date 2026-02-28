@@ -32,6 +32,8 @@ describe('broadcastToAllWindows', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    // Provide a safe default so flushAllPending can iterate windows
+    mockGetAllWindows.mockReturnValue([]);
     clearAllPolicies();
     flushAllPending();
   });
