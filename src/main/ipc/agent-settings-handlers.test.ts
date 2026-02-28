@@ -58,6 +58,10 @@ vi.mock('../services/config-diff-service', () => ({
   propagateChanges: vi.fn(() => ({ ok: true, message: 'done', propagatedCount: 2 })),
 }));
 
+vi.mock('../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAgentSettingsHandlers } from './agent-settings-handlers';

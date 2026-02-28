@@ -247,7 +247,9 @@ function initPtyExitListener(): () => void {
               if (diff.hasDiffs) {
                 useAgentStore.getState().openConfigChangesDialog(agentId, project.path);
               }
-            } catch { /* silent */ }
+            } catch (err) {
+              console.warn('[app-event-bridge] Failed to compute config diff for agent', agentId, err);
+            }
           }
         }
       }

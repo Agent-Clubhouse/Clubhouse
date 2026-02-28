@@ -274,7 +274,9 @@ function diffMcp(
       const resolved = replaceWildcards(defaultMcpJson, ctx);
       const parsed = JSON.parse(resolved);
       defaultServers = parsed.mcpServers || {};
-    } catch { /* ignore invalid JSON */ }
+    } catch (err) {
+      appLog('core:config-diff', 'warn', 'Failed to parse default MCP JSON for diff', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
   }
 
   let agentServers: Record<string, unknown> = {};
@@ -282,7 +284,9 @@ function diffMcp(
     const rawJson = readMcpRawJson(worktreePath, conv);
     const parsed = JSON.parse(rawJson);
     agentServers = parsed.mcpServers || {};
-  } catch { /* ignore */ }
+  } catch (err) {
+    appLog('core:config-diff', 'warn', 'Failed to parse agent MCP config for diff', { meta: { error: err instanceof Error ? err.message : String(err) } });
+  }
 
   const defaultNames = new Set(Object.keys(defaultServers));
   const agentNames = new Set(Object.keys(agentServers));
@@ -485,7 +489,9 @@ function propagateMcp(
     try {
       mcpObj = JSON.parse(defaults.mcpJson);
       if (!mcpObj.mcpServers) mcpObj.mcpServers = {};
-    } catch { /* start fresh */ }
+    } catch (err) {
+      appLog('core:config-diff', 'warn', 'Failed to parse default MCP JSON for propagation, starting fresh', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
   }
 
   const serverName = item.id.split(':').slice(2).join(':');
@@ -504,7 +510,9 @@ function propagateMcp(
         );
         mcpObj.mcpServers[serverName] = unreplaced;
       }
-    } catch { /* skip */ }
+    } catch (err) {
+      appLog('core:config-diff', 'warn', 'Failed to read agent MCP config for propagation', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    }
   }
 
   defaults.mcpJson = JSON.stringify(mcpObj, null, 2);
