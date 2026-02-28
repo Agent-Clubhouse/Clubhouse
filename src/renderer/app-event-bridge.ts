@@ -331,6 +331,22 @@ function initAnnexSpawnListener(): () => void {
   return removeAnnexSpawnListener;
 }
 
+// ─── Agent State Broadcasting (popout sync) ─────────────────────────────────
+
+function initAgentStateBroadcast(): () => void {
+  // Skip in popout windows — only the main renderer broadcasts.
+  if (window.clubhouse.window.isPopout()) return () => {};
+
+  const unsub = useAgentStore.subscribe((state) => {
+    window.clubhouse.window.broadcastAgentState({
+      agents: state.agents,
+      agentDetailedStatus: state.agentDetailedStatus,
+      agentIcons: state.agentIcons,
+    });
+  });
+  return unsub;
+}
+
 // ─── Agent Status Change Emitter (plugin events) ───────────────────────────
 
 function initAgentStatusEmitter(): () => void {
@@ -448,6 +464,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initPtyExitListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initAnnexSpawnListener());
+  cleanups.push(initAgentStateBroadcast());
   cleanups.push(initAgentStatusEmitter());
   cleanups.push(initNotificationClearing());
   cleanups.push(initStaleStatusCleanup());

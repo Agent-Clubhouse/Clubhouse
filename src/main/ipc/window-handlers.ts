@@ -20,7 +20,41 @@ interface PopoutEntry {
   params: PopoutParams;
 }
 
+interface AgentStateSnapshot {
+  agents: Record<string, unknown>;
+  agentDetailedStatus: Record<string, unknown>;
+  agentIcons: Record<string, string>;
+}
+
+interface HubStateSnapshot {
+  hubId: string;
+  paneTree: unknown;
+  focusedPaneId: string;
+  zoomedPaneId: string | null;
+}
+
+const EMPTY_AGENT_STATE: AgentStateSnapshot = { agents: {}, agentDetailedStatus: {}, agentIcons: {} };
+
+/** Reduced timeout for relay round-trips (was 5s). */
+const RELAY_TIMEOUT_MS = 1500;
+
 const popoutWindows = new Map<number, PopoutEntry>();
+
+// ── State caches ──────────────────────────────────────────────────────────
+// The main renderer broadcasts state changes which we cache here.
+// GET_AGENT_STATE / GET_HUB_STATE can serve from cache instantly instead
+// of performing a round-trip relay.
+
+let cachedAgentState: AgentStateSnapshot | null = null;
+
+/** Hub state keyed by hubId. */
+const cachedHubState = new Map<string, HubStateSnapshot>();
+
+// ── Batching ──────────────────────────────────────────────────────────────
+// When the cache is cold (e.g. first popout before any broadcast),
+// concurrent GET requests are batched so only one relay round-trip fires.
+
+let pendingAgentRelay: Promise<AgentStateSnapshot> | null = null;
 
 function getThemeColors(): { bg: string; mantle: string; text: string } {
   try {
@@ -28,6 +62,57 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
     return getThemeColorsForTitleBar(themeId);
   } catch {
     return getThemeColorsForTitleBar('catppuccin-mocha');
+  }
+}
+
+function findMainWindow(): BrowserWindow | undefined {
+  return BrowserWindow.getAllWindows().find(
+    (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
+  );
+}
+
+/**
+ * Relay agent state from the main renderer. Batches concurrent requests
+ * so only one IPC round-trip is fired.
+ */
+function relayAgentState(): Promise<AgentStateSnapshot> {
+  if (pendingAgentRelay) return pendingAgentRelay;
+
+  pendingAgentRelay = new Promise<AgentStateSnapshot>((resolve) => {
+    const mainWindow = findMainWindow();
+    if (!mainWindow) {
+      resolve(EMPTY_AGENT_STATE);
+      return;
+    }
+
+    const requestId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
+
+    const handler = (_e: any, state: AgentStateSnapshot) => {
+      clearTimeout(timeout);
+      cachedAgentState = state;
+      resolve(state);
+    };
+
+    const timeout = setTimeout(() => {
+      ipcMain.removeListener(channel, handler);
+      resolve(cachedAgentState ?? EMPTY_AGENT_STATE);
+    }, RELAY_TIMEOUT_MS);
+
+    ipcMain.once(channel as any, handler);
+    mainWindow.webContents.send(IPC.WINDOW.REQUEST_AGENT_STATE, requestId);
+  }).finally(() => {
+    pendingAgentRelay = null;
+  });
+
+  return pendingAgentRelay;
+}
+
+function broadcastToPopouts(channel: string, ...args: any[]): void {
+  for (const [, entry] of popoutWindows) {
+    if (!entry.window.isDestroyed()) {
+      entry.window.webContents.send(channel, ...args);
+    }
   }
 }
 
@@ -116,8 +201,7 @@ export function registerWindowHandlers(): void {
   });
 
   ipcMain.handle(IPC.WINDOW.FOCUS_MAIN, (_event, agentId?: string) => {
-    const allWindows = BrowserWindow.getAllWindows();
-    const mainWindow = allWindows.find(w => !popoutWindows.has(w.id) && !w.isDestroyed());
+    const mainWindow = findMainWindow();
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -127,57 +211,40 @@ export function registerWindowHandlers(): void {
     }
   });
 
-  // Relay agent state from the main window to a requesting popout window.
-  // The popout invokes GET_AGENT_STATE → main process sends REQUEST_AGENT_STATE
-  // to the main renderer → main renderer responds via AGENT_STATE_RESPONSE.
-  ipcMain.handle(IPC.WINDOW.GET_AGENT_STATE, (_event) => {
-    return new Promise((resolve) => {
-      const mainWindow = BrowserWindow.getAllWindows().find(
-        (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
-      );
-      if (!mainWindow) {
-        resolve({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
-        return;
-      }
+  // ── Agent state sync ────────────────────────────────────────────────────
+  //
+  // The main renderer broadcasts AGENT_STATE_CHANGED on every store change.
+  // We cache the latest snapshot and forward it to all popouts.
+  // GET_AGENT_STATE serves from cache when available; otherwise it falls
+  // back to a batched relay round-trip with a reduced 1.5s timeout.
 
-      const requestId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-      const channel = `${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`;
-
-      const handler = (_e: any, state: any) => {
-        clearTimeout(timeout);
-        resolve(state);
-      };
-
-      const timeout = setTimeout(() => {
-        ipcMain.removeListener(channel, handler);
-        resolve({ agents: {}, agentDetailedStatus: {}, agentIcons: {} });
-      }, 5000);
-
-      ipcMain.once(channel as any, handler);
-
-      mainWindow.webContents.send(IPC.WINDOW.REQUEST_AGENT_STATE, requestId);
-    });
+  ipcMain.handle(IPC.WINDOW.GET_AGENT_STATE, () => {
+    if (cachedAgentState) return cachedAgentState;
+    return relayAgentState();
   });
 
-  // Forward state responses from the main renderer back to the correct
-  // ipcMain.once listener keyed by requestId.
+  // Forward relay responses from main renderer → keyed ipcMain.once listener
   ipcMain.on(IPC.WINDOW.AGENT_STATE_RESPONSE, (_event, requestId: string, state: any) => {
-    // Re-emit on the keyed channel so the handle() above resolves
     ipcMain.emit(`${IPC.WINDOW.AGENT_STATE_RESPONSE}:${requestId}`, _event, state);
+  });
+
+  // Main renderer broadcasts agent state changes → cache + forward to popouts
+  ipcMain.on(IPC.WINDOW.AGENT_STATE_CHANGED, (_event, state: AgentStateSnapshot) => {
+    cachedAgentState = state;
+    broadcastToPopouts(IPC.WINDOW.AGENT_STATE_CHANGED, state);
   });
 
   // ── Hub state sync (leader/follower) ─────────────────────────────────
   //
-  // Same relay pattern as agent state: pop-out → main process → main
-  // renderer → main process → pop-out. The main window's hub store is
-  // the single authority; pop-outs are followers.
+  // Same pattern: cache from HUB_STATE_CHANGED broadcasts, serve from
+  // cache on GET_HUB_STATE, fall back to batched relay with 1.5s timeout.
 
-  // Pop-out requests current hub state snapshot
   ipcMain.handle(IPC.WINDOW.GET_HUB_STATE, (_event, hubId: string, scope: string, projectId?: string) => {
+    const cached = cachedHubState.get(hubId);
+    if (cached) return cached;
+
     return new Promise((resolve) => {
-      const mainWindow = BrowserWindow.getAllWindows().find(
-        (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
-      );
+      const mainWindow = findMainWindow();
       if (!mainWindow) {
         resolve(null);
         return;
@@ -188,39 +255,34 @@ export function registerWindowHandlers(): void {
 
       const handler = (_e: any, state: any) => {
         clearTimeout(timeout);
+        if (state && state.hubId) cachedHubState.set(state.hubId, state);
         resolve(state);
       };
 
       const timeout = setTimeout(() => {
         ipcMain.removeListener(channel, handler);
         resolve(null);
-      }, 5000);
+      }, RELAY_TIMEOUT_MS);
 
       ipcMain.once(channel as any, handler);
-
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_STATE, requestId, hubId, scope, projectId);
     });
   });
 
-  // Forward hub state responses from the main renderer
+  // Forward hub state relay responses from the main renderer
   ipcMain.on(IPC.WINDOW.HUB_STATE_RESPONSE, (_event, requestId: string, state: any) => {
     ipcMain.emit(`${IPC.WINDOW.HUB_STATE_RESPONSE}:${requestId}`, _event, state);
   });
 
-  // Main renderer broadcasts hub state changes → forward to all pop-outs
+  // Main renderer broadcasts hub state changes → cache + forward to popouts
   ipcMain.on(IPC.WINDOW.HUB_STATE_CHANGED, (_event, state: any) => {
-    for (const [, entry] of popoutWindows) {
-      if (!entry.window.isDestroyed()) {
-        entry.window.webContents.send(IPC.WINDOW.HUB_STATE_CHANGED, state);
-      }
-    }
+    if (state && state.hubId) cachedHubState.set(state.hubId, state);
+    broadcastToPopouts(IPC.WINDOW.HUB_STATE_CHANGED, state);
   });
 
   // Pop-out sends a hub mutation → forward to main renderer
   ipcMain.on(IPC.WINDOW.HUB_MUTATION, (_event, hubId: string, scope: string, mutation: any, projectId?: string) => {
-    const mainWindow = BrowserWindow.getAllWindows().find(
-      (w) => !popoutWindows.has(w.id) && !w.isDestroyed(),
-    );
+    const mainWindow = findMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_MUTATION, hubId, scope, mutation, projectId);
     }
