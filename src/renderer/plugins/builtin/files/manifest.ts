@@ -8,12 +8,12 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Project file browser with Monaco editor, markdown preview, and image display.',
   author: 'Clubhouse',
-  engine: { api: 0.5 },
+  engine: { api: 0.6 },
   scope: 'project',
   permissions: ['files', 'git', 'commands', 'notifications'],
   contributes: {
     tab: { label: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
-    commands: [{ id: 'refresh', title: 'Refresh File Tree' }],
+    commands: [{ id: 'refresh', title: 'Refresh File Tree', defaultBinding: 'Meta+Shift+R' }],
     settings: [
       {
         key: 'showHiddenFiles',

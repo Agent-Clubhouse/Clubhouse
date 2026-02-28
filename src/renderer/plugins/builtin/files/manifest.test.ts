@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { manifest } from './manifest';
 import { validateManifest } from '../../manifest-validator';
 
-describe('terminal plugin manifest', () => {
+describe('files plugin manifest', () => {
   it('passes manifest validation', () => {
     const result = validateManifest(manifest);
     expect(result.valid).toBe(true);
@@ -10,7 +10,7 @@ describe('terminal plugin manifest', () => {
   });
 
   it('has correct id', () => {
-    expect(manifest.id).toBe('terminal');
+    expect(manifest.id).toBe('files');
   });
 
   it('is project-scoped', () => {
@@ -23,9 +23,9 @@ describe('terminal plugin manifest', () => {
 
   it('declares required permissions', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['terminal', 'commands', 'agents']),
+      expect.arrayContaining(['files', 'git', 'commands', 'notifications']),
     );
-    expect(manifest.permissions).toHaveLength(3);
+    expect(manifest.permissions).toHaveLength(4);
   });
 
   it('contributes help topics', () => {
@@ -37,15 +37,15 @@ describe('terminal plugin manifest', () => {
   it('contributes a sidebar-content layout tab', () => {
     expect(manifest.contributes?.tab).toBeDefined();
     expect(manifest.contributes!.tab!.layout).toBe('sidebar-content');
-    expect(manifest.contributes!.tab!.label).toBe('Terminal');
+    expect(manifest.contributes!.tab!.label).toBe('Files');
   });
 
-  it('contributes a restart command with defaultBinding', () => {
+  it('contributes a refresh command with defaultBinding', () => {
     const cmds = manifest.contributes?.commands;
     expect(cmds).toBeDefined();
-    const restart = cmds!.find((c) => c.id === 'restart');
-    expect(restart).toBeDefined();
-    expect(restart!.defaultBinding).toBe('Meta+Shift+T');
+    const refresh = cmds!.find((c) => c.id === 'refresh');
+    expect(refresh).toBeDefined();
+    expect(refresh!.defaultBinding).toBe('Meta+Shift+R');
   });
 
   it('has a tab icon (SVG string)', () => {
@@ -54,5 +54,9 @@ describe('terminal plugin manifest', () => {
 
   it('does not contribute a rail item (project-scoped only)', () => {
     expect(manifest.contributes?.railItem).toBeUndefined();
+  });
+
+  it('uses declarative settings panel', () => {
+    expect(manifest.settingsPanel).toBe('declarative');
   });
 });

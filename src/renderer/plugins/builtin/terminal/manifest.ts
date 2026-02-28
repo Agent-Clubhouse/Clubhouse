@@ -8,12 +8,12 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Interactive shell terminal scoped to each project.',
   author: 'Clubhouse',
-  engine: { api: 0.5 },
+  engine: { api: 0.6 },
   scope: 'project',
   permissions: ['terminal', 'commands', 'agents'],
   contributes: {
     tab: { label: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
-    commands: [{ id: 'restart', title: 'Restart Terminal' }],
+    commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Shift+T' }],
     help: {
       topics: [
         {
