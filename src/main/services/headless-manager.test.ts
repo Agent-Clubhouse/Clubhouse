@@ -790,23 +790,13 @@ describe('headless-manager', () => {
   // Transcript memory cap (Issue #319)
   // ============================================================
   describe('transcript memory cap', () => {
-    // Helper: create a large event of approximately `bytes` serialized size
-    function makeLargeEvent(bytes: number): { type: string; result: string } {
-      // Account for JSON overhead: {"type":"result","result":"..."}
-      const overhead = Buffer.byteLength(JSON.stringify({ type: 'result', result: '' }), 'utf-8');
-      const padding = Math.max(0, bytes - overhead);
-      return { type: 'result', result: 'x'.repeat(padding) };
-    }
-
     it('tracks transcriptBytes as events are pushed', () => {
       setMaxTranscriptBytes(1024 * 1024); // 1MB — high enough to not trigger eviction
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
-      const serialized = JSON.stringify(event);
-      const expectedBytes = Buffer.byteLength(serialized, 'utf-8');
 
-      mockProcess.stdout!.emit('data', Buffer.from(serialized + '\n'));
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
 
       // readTranscript returns the in-memory transcript; verify it has content
       const transcript = readTranscript('test-agent');
