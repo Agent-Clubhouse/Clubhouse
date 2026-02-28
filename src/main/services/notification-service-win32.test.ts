@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * Windows-specific notification tests.
  *
  * These tests mock process.platform as 'win32' and use vi.resetModules()
- * to get a fresh module load with the Windows code path active.
+ * to get a fresh module load so the icon resolution code path runs.
  */
 
 const { mockShow, mockClose, mockOn, mockIsSupported, mockGetPath, mockCreateFromPath, mockIsEmpty } = vi.hoisted(
@@ -55,6 +55,26 @@ vi.mock('./settings-store', () => ({
   }),
 }));
 
+/** Helper: reset modules, re-register mocks, and dynamically import a fresh notification-service. */
+async function freshImport() {
+  vi.resetModules();
+  // Re-register the settings-store mock so the fresh import can resolve it.
+  // vi.mock (hoisted) registrations may not persist through resetModules for
+  // relative-path mocks, so we use doMock here.
+  vi.doMock('./settings-store', () => ({
+    createSettingsStore: vi.fn().mockReturnValue({
+      get: vi.fn().mockReturnValue({}),
+      save: vi.fn(),
+    }),
+  }));
+
+  const mod = await import('./notification-service');
+  const electron = await import('electron');
+  const instances = (electron as unknown as { __instances: Array<{ opts: Record<string, unknown> }> }).__instances;
+  instances.length = 0;
+  return { ...mod, instances };
+}
+
 describe('notification-service (win32)', () => {
   const originalPlatform = process.platform;
 
@@ -84,12 +104,7 @@ describe('notification-service (win32)', () => {
   });
 
   it('includes icon in Notification constructor on Windows', async () => {
-    // Reset modules to get a fresh import with win32 platform
-    vi.resetModules();
-    const { sendNotification } = await import('./notification-service');
-    const electron = await import('electron');
-    const instances = (electron as unknown as { __instances: Array<{ opts: Record<string, unknown> }> }).__instances;
-    instances.length = 0;
+    const { sendNotification, instances } = await freshImport();
 
     sendNotification('Agent done', 'Your agent finished', false);
 
@@ -103,11 +118,7 @@ describe('notification-service (win32)', () => {
     mockIsEmpty.mockReturnValue(true);
     mockCreateFromPath.mockReturnValue({ isEmpty: mockIsEmpty });
 
-    vi.resetModules();
-    const { sendNotification } = await import('./notification-service');
-    const electron = await import('electron');
-    const instances = (electron as unknown as { __instances: Array<{ opts: Record<string, unknown> }> }).__instances;
-    instances.length = 0;
+    const { sendNotification, instances } = await freshImport();
 
     sendNotification('Agent done', 'Your agent finished', false);
 
@@ -120,11 +131,7 @@ describe('notification-service (win32)', () => {
       throw new Error('icon not found');
     });
 
-    vi.resetModules();
-    const { sendNotification } = await import('./notification-service');
-    const electron = await import('electron');
-    const instances = (electron as unknown as { __instances: Array<{ opts: Record<string, unknown> }> }).__instances;
-    instances.length = 0;
+    const { sendNotification, instances } = await freshImport();
 
     sendNotification('Agent done', 'Your agent finished', false);
 
@@ -133,11 +140,7 @@ describe('notification-service (win32)', () => {
   });
 
   it('caches the icon after first resolution', async () => {
-    vi.resetModules();
-    const { sendNotification } = await import('./notification-service');
-    const electron = await import('electron');
-    const instances = (electron as unknown as { __instances: Array<{ opts: Record<string, unknown> }> }).__instances;
-    instances.length = 0;
+    const { sendNotification, instances } = await freshImport();
 
     sendNotification('First', 'Body', false);
     sendNotification('Second', 'Body', false);
