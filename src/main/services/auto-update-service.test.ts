@@ -47,7 +47,7 @@ describe('auto-update-service', () => {
       expect(isNewerVersion('0.0.1', '1.0.0')).toBe(false);
     });
 
-    // Preview (rc) version comparisons
+    // Preview (rc) version comparisons — legacy format
     it('rc version is newer than older stable', () => {
       expect(isNewerVersion('0.32.0rc', '0.31.0')).toBe(true);
     });
@@ -71,27 +71,70 @@ describe('auto-update-service', () => {
     it('lower-base rc is not newer than higher stable', () => {
       expect(isNewerVersion('0.31.0rc', '0.32.0')).toBe(false);
     });
+
+    // Beta prerelease version comparisons
+    it('beta version is newer than older stable', () => {
+      expect(isNewerVersion('0.34.0-beta.1', '0.33.0')).toBe(true);
+    });
+
+    it('stable version is newer than same-base beta', () => {
+      expect(isNewerVersion('0.34.0', '0.34.0-beta.2')).toBe(true);
+    });
+
+    it('beta version is not newer than same-base stable', () => {
+      expect(isNewerVersion('0.34.0-beta.2', '0.34.0')).toBe(false);
+    });
+
+    it('higher beta number is newer than lower', () => {
+      expect(isNewerVersion('0.34.0-beta.2', '0.34.0-beta.1')).toBe(true);
+    });
+
+    it('lower beta number is not newer than higher', () => {
+      expect(isNewerVersion('0.34.0-beta.1', '0.34.0-beta.2')).toBe(false);
+    });
+
+    it('equal beta versions are not newer', () => {
+      expect(isNewerVersion('0.34.0-beta.1', '0.34.0-beta.1')).toBe(false);
+    });
+
+    it('beta is newer than legacy rc with same base', () => {
+      expect(isNewerVersion('0.34.0-beta.1', '0.34.0rc')).toBe(true);
+    });
+
+    it('lower-base beta is not newer than higher stable', () => {
+      expect(isNewerVersion('0.33.0-beta.1', '0.34.0')).toBe(false);
+    });
   });
 
   describe('parseVersion', () => {
     it('parses stable version', () => {
       const result = parseVersion('1.2.3');
-      expect(result).toEqual({ parts: [1, 2, 3], rc: false });
+      expect(result).toEqual({ parts: [1, 2, 3], prerelease: false, prereleaseNum: 0 });
     });
 
     it('parses rc version', () => {
       const result = parseVersion('1.2.3rc');
-      expect(result).toEqual({ parts: [1, 2, 3], rc: true });
+      expect(result).toEqual({ parts: [1, 2, 3], prerelease: true, prereleaseNum: 0 });
     });
 
     it('parses two-part version', () => {
       const result = parseVersion('1.0');
-      expect(result).toEqual({ parts: [1, 0], rc: false });
+      expect(result).toEqual({ parts: [1, 0], prerelease: false, prereleaseNum: 0 });
     });
 
     it('parses two-part rc version', () => {
       const result = parseVersion('1.0rc');
-      expect(result).toEqual({ parts: [1, 0], rc: true });
+      expect(result).toEqual({ parts: [1, 0], prerelease: true, prereleaseNum: 0 });
+    });
+
+    it('parses beta version', () => {
+      const result = parseVersion('0.34.0-beta.1');
+      expect(result).toEqual({ parts: [0, 34, 0], prerelease: true, prereleaseNum: 1 });
+    });
+
+    it('parses higher beta number', () => {
+      const result = parseVersion('0.34.0-beta.15');
+      expect(result).toEqual({ parts: [0, 34, 0], prerelease: true, prereleaseNum: 15 });
     });
   });
 
