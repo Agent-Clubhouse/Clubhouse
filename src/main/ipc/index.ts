@@ -14,6 +14,7 @@ import { registerProfileHandlers } from './profile-handlers';
 import * as hookServer from '../services/hook-server';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as logService from '../services/log-service';
+import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 export function registerAllHandlers(): void {
   // Register orchestrator providers before anything else
@@ -21,6 +22,9 @@ export function registerAllHandlers(): void {
 
   // Initialize logging service early so handlers can use it
   logService.init();
+
+  // Register broadcast throttle policies before handlers that emit events
+  registerDefaultBroadcastPolicies();
 
   logService.appLog('core:startup', 'info', 'Registering IPC handlers');
 

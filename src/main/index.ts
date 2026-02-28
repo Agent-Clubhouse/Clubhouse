@@ -10,6 +10,7 @@ import { appLog } from './services/log-service';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
+import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -183,6 +184,9 @@ app.on('before-quit', () => {
   } catch (err) {
     appLog('core:shutdown', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
   }
+
+  // Flush any pending throttled IPC broadcasts before tearing down
+  flushPendingBroadcasts();
 
   annexServer.stop();
   restoreAll();
