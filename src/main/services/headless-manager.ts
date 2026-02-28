@@ -22,12 +22,26 @@ function winQuoteHeadlessArg(arg: string): string {
   return '"' + arg.replace(/"/g, '""') + '"';
 }
 
+/** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
+let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
+
+/** Change the in-memory transcript cap. Primarily for testing. */
+export function setMaxTranscriptBytes(bytes: number): void {
+  maxTranscriptBytes = bytes;
+}
+
 interface HeadlessSession {
   process: ChildProcess;
   agentId: string;
   outputKind: HeadlessOutputKind;
   parser: JsonlParser | null;
   transcript: StreamJsonEvent[];
+  /** Byte size of each serialized event, parallel to `transcript`. */
+  transcriptEventSizes: number[];
+  /** Total in-memory transcript size in bytes. */
+  transcriptBytes: number;
+  /** True once events have been evicted from the in-memory transcript. */
+  transcriptEvicted: boolean;
   transcriptPath: string;
   startedAt: number;
   textBuffer?: string;
@@ -40,6 +54,45 @@ const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
 function ensureLogsDir(): void {
   if (!fs.existsSync(LOGS_DIR)) {
     fs.mkdirSync(LOGS_DIR, { recursive: true });
+  }
+}
+
+/**
+ * Evict oldest events from the in-memory transcript to stay under the memory cap.
+ * Events are already persisted to disk via the log stream, so no data is lost.
+ */
+function evictOldEvents(session: HeadlessSession): void {
+  const target = Math.floor(maxTranscriptBytes * 0.75);
+  let removeBytes = 0;
+  let removeCount = 0;
+
+  while (
+    removeCount < session.transcriptEventSizes.length &&
+    (session.transcriptBytes - removeBytes) > target
+  ) {
+    removeBytes += session.transcriptEventSizes[removeCount];
+    removeCount++;
+  }
+
+  if (removeCount > 0) {
+    // Use splice (in-place) instead of slice — the spawnHeadless closure
+    // captures local references to these arrays, so replacing them would
+    // cause new events to be pushed to a stale reference.
+    session.transcript.splice(0, removeCount);
+    session.transcriptEventSizes.splice(0, removeCount);
+    session.transcriptBytes -= removeBytes;
+
+    if (!session.transcriptEvicted) {
+      session.transcriptEvicted = true;
+      appLog('core:headless', 'warn', `Transcript memory cap reached, evicting old events`, {
+        meta: {
+          agentId: session.agentId,
+          evictedCount: removeCount,
+          remaining: session.transcript.length,
+          bytesFreed: removeBytes,
+        },
+      });
+    }
   }
 }
 
@@ -104,6 +157,7 @@ export function spawnHeadless(
 
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   const transcript: StreamJsonEvent[] = [];
+  const transcriptEventSizes: number[] = [];
   let stdoutBytes = 0;
   let stderrChunks: string[] = [];
 
@@ -113,6 +167,9 @@ export function spawnHeadless(
     outputKind,
     parser,
     transcript,
+    transcriptEventSizes,
+    transcriptBytes: 0,
+    transcriptEvicted: false,
     transcriptPath,
     startedAt: Date.now(),
   };
@@ -125,7 +182,12 @@ export function spawnHeadless(
 
   if (parser) {
     parser.on('line', (event: StreamJsonEvent) => {
+      const serialized = JSON.stringify(event);
+      const eventBytes = Buffer.byteLength(serialized, 'utf-8');
+
       transcript.push(event);
+      transcriptEventSizes.push(eventBytes);
+      session.transcriptBytes += eventBytes;
 
       // Log first event for diagnostics
       if (transcript.length === 1) {
@@ -134,8 +196,13 @@ export function spawnHeadless(
         });
       }
 
-      // Persist to disk
-      logStream.write(JSON.stringify(event) + '\n');
+      // Persist to disk (always — disk is the source of truth)
+      logStream.write(serialized + '\n');
+
+      // Evict old events if in-memory transcript exceeds the cap
+      if (session.transcriptBytes > maxTranscriptBytes) {
+        evictOldEvents(session);
+      }
 
       // Emit hook events to renderer + annex event bus for status tracking
       const hookEvents = mapToHookEvent(event, activeToolBlocks);
@@ -206,8 +273,12 @@ export function spawnHeadless(
         duration_ms: Date.now() - session.startedAt,
         cost_usd: 0,
       };
+      const serialized = JSON.stringify(resultEvent);
+      const eventBytes = Buffer.byteLength(serialized, 'utf-8');
       transcript.push(resultEvent);
-      logStream.write(JSON.stringify(resultEvent) + '\n');
+      transcriptEventSizes.push(eventBytes);
+      session.transcriptBytes += eventBytes;
+      logStream.write(serialized + '\n');
 
       const stopEvent = {
         kind: 'stop' as const,
@@ -267,10 +338,18 @@ export function readTranscript(agentId: string): string | null {
   // First check in-memory session
   const session = sessions.get(agentId);
   if (session) {
+    // When old events have been evicted, disk has the complete transcript
+    if (session.transcriptEvicted) {
+      try {
+        return fs.readFileSync(session.transcriptPath, 'utf-8');
+      } catch {
+        // Fall through to partial in-memory transcript
+      }
+    }
     return session.transcript.map((e) => JSON.stringify(e)).join('\n');
   }
 
-  // Fall back to disk
+  // Fall back to disk for completed sessions
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     return fs.readFileSync(transcriptPath, 'utf-8');
@@ -282,10 +361,22 @@ export function readTranscript(agentId: string): string | null {
 export function getTranscriptSummary(agentId: string): TranscriptSummary | null {
   const session = sessions.get(agentId);
   if (session) {
+    // When old events have been evicted, parse full transcript from disk
+    if (session.transcriptEvicted) {
+      try {
+        const raw = fs.readFileSync(session.transcriptPath, 'utf-8');
+        const events = raw.split('\n')
+          .filter((line) => line.trim())
+          .map((line) => JSON.parse(line) as StreamJsonEvent);
+        return parseTranscript(events);
+      } catch {
+        // Fall through to partial in-memory transcript
+      }
+    }
     return parseTranscript(session.transcript);
   }
 
-  // Fall back to disk
+  // Fall back to disk for completed sessions
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     const raw = fs.readFileSync(transcriptPath, 'utf-8');

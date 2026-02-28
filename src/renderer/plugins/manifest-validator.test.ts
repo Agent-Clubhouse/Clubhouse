@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateManifest, SUPPORTED_API_VERSIONS } from './manifest-validator';
+import { PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 describe('manifest-validator', () => {
   const validManifest = {
@@ -711,6 +712,47 @@ describe('manifest-validator', () => {
       });
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('requires the base "agent-config" permission');
+    });
+  });
+
+  // --- hierarchy-driven validation ---
+
+  describe('PERMISSION_HIERARCHY enforcement', () => {
+    const base = {
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.5 },
+      scope: 'project' as const,
+      contributes: { help: {} },
+    };
+
+    it('rejects every child permission when its parent is missing', () => {
+      for (const [child, parent] of Object.entries(PERMISSION_HIERARCHY)) {
+        // Build a permissions array with the child but not the parent
+        // Skip files.external which also needs externalRoots
+        if (child === 'files.external') continue;
+        const result = validateManifest({
+          ...base,
+          permissions: [child],
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e: string) => e.includes(`"${child}"`) && e.includes(`"${parent}"`))).toBe(true);
+      }
+    });
+
+    it('accepts every child permission when its parent is present', () => {
+      for (const [child, parent] of Object.entries(PERMISSION_HIERARCHY)) {
+        // files.external also needs externalRoots
+        if (child === 'files.external') continue;
+        const result = validateManifest({
+          ...base,
+          permissions: [parent, child],
+        });
+        // Should not have hierarchy errors (may have other unrelated errors like process needing allowedCommands)
+        const hierarchyErrors = result.errors.filter((e: string) => e.includes('requires the base'));
+        expect(hierarchyErrors).toHaveLength(0);
+      }
     });
   });
 });

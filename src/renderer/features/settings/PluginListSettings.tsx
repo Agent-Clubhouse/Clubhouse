@@ -3,10 +3,26 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { activatePlugin, deactivatePlugin, discoverNewPlugins } from '../../plugins/plugin-loader';
-import type { PluginPermission, PluginRegistryEntry } from '../../../shared/plugin-types';
-import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
+import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
+import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
+
+const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
+
+const RISK_COLORS: Record<PermissionRiskLevel, string> = {
+  safe: 'bg-green-500/20 text-green-400',
+  elevated: 'bg-yellow-500/20 text-yellow-400',
+  dangerous: 'bg-red-500/20 text-red-400',
+};
+
+function sortPermissionsByRisk(perms: PluginPermission[]): PluginPermission[] {
+  return [...perms].sort((a, b) => {
+    const ra = PERMISSION_RISK_LEVELS[a] ?? 'safe';
+    const rb = PERMISSION_RISK_LEVELS[b] ?? 'safe';
+    return RISK_ORDER[ra] - RISK_ORDER[rb];
+  });
+}
 
 function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const [open, setOpen] = useState(false);
@@ -28,6 +44,7 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   if (!permissions || permissions.length === 0) return null;
 
   const rect = btnRef.current?.getBoundingClientRect();
+  const sorted = sortPermissionsByRisk(permissions);
 
   return (
     <div className="relative" ref={ref}>
@@ -42,17 +59,27 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
       {open && (
         <div
           data-testid="permission-popup"
-          className="fixed z-50 w-64 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
+          className="fixed z-50 w-72 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
           style={rect ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : undefined}
         >
           <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
           <div className="space-y-1.5">
-            {permissions.map((perm: PluginPermission) => (
-              <div key={perm}>
-                <span className="text-xs font-mono text-ctp-accent">{perm}</span>
-                <p className="text-[10px] text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</p>
-              </div>
-            ))}
+            {sorted.map((perm: PluginPermission) => {
+              const risk = PERMISSION_RISK_LEVELS[perm];
+              return (
+                <div key={perm}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-mono text-ctp-accent">{perm}</span>
+                    {risk !== 'safe' && (
+                      <span className={`text-[9px] px-1 py-0.5 rounded font-medium uppercase ${RISK_COLORS[risk]}`}>
+                        {risk}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

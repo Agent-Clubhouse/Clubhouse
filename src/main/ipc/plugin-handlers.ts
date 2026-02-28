@@ -12,40 +12,40 @@ export function registerPluginHandlers(): void {
   });
 
   // ── KV Storage ───────────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.STORAGE_READ, (_event, req) => {
+  ipcMain.handle(IPC.PLUGIN.STORAGE_READ, async (_event, req) => {
     return pluginStorage.readKey(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.STORAGE_WRITE, (_event, req) => {
-    pluginStorage.writeKey(req);
+  ipcMain.handle(IPC.PLUGIN.STORAGE_WRITE, async (_event, req) => {
+    await pluginStorage.writeKey(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.STORAGE_DELETE, (_event, req) => {
-    pluginStorage.deleteKey(req);
+  ipcMain.handle(IPC.PLUGIN.STORAGE_DELETE, async (_event, req) => {
+    await pluginStorage.deleteKey(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.STORAGE_LIST, (_event, req) => {
+  ipcMain.handle(IPC.PLUGIN.STORAGE_LIST, async (_event, req) => {
     return pluginStorage.listKeys(req);
   });
 
   // ── File Storage ─────────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.FILE_READ, (_event, req) => {
+  ipcMain.handle(IPC.PLUGIN.FILE_READ, async (_event, req) => {
     return pluginStorage.readPluginFile(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.FILE_WRITE, (_event, req) => {
-    pluginStorage.writePluginFile(req);
+  ipcMain.handle(IPC.PLUGIN.FILE_WRITE, async (_event, req) => {
+    await pluginStorage.writePluginFile(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.FILE_DELETE, (_event, req) => {
-    pluginStorage.deletePluginFile(req);
+  ipcMain.handle(IPC.PLUGIN.FILE_DELETE, async (_event, req) => {
+    await pluginStorage.deletePluginFile(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.FILE_EXISTS, (_event, req) => {
+  ipcMain.handle(IPC.PLUGIN.FILE_EXISTS, async (_event, req) => {
     return pluginStorage.pluginFileExists(req);
   });
 
-  ipcMain.handle(IPC.PLUGIN.FILE_LIST_DIR, (_event, req) => {
+  ipcMain.handle(IPC.PLUGIN.FILE_LIST_DIR, async (_event, req) => {
     return pluginStorage.listPluginDir(req);
   });
 
@@ -76,8 +76,8 @@ export function registerPluginHandlers(): void {
   });
 
   // ── Misc ─────────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.MKDIR, (_event, pluginId: string, scope: string, relativePath: string, projectPath?: string) => {
-    pluginStorage.mkdirPlugin(pluginId, scope as 'project' | 'global', relativePath, projectPath);
+  ipcMain.handle(IPC.PLUGIN.MKDIR, async (_event, pluginId: string, scope: string, relativePath: string, projectPath?: string) => {
+    await pluginStorage.mkdirPlugin(pluginId, scope as 'project' | 'global', relativePath, projectPath);
   });
 
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, (_event, pluginId: string) => {

@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { app } from 'electron';
@@ -194,7 +194,7 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
   appLog('marketplace', 'info', `Installing plugin: ${pluginId} from ${assetUrl}`);
 
   const pluginsDir = getCommunityPluginsDir();
-  fs.mkdirSync(pluginsDir, { recursive: true });
+  await fsp.mkdir(pluginsDir, { recursive: true });
 
   const pluginDir = path.join(pluginsDir, pluginId);
   const tmpZipPath = path.join(pluginsDir, `${pluginId}.tmp.zip`);
@@ -214,52 +214,51 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
     }
 
     // 3. Write zip to temp file
-    fs.writeFileSync(tmpZipPath, buffer);
+    await fsp.writeFile(tmpZipPath, buffer);
 
     // 4. Remove old version if present
-    if (fs.existsSync(pluginDir)) {
-      fs.rmSync(pluginDir, { recursive: true, force: true });
-    }
+    await fsp.rm(pluginDir, { recursive: true, force: true });
 
     // 5. Extract using adm-zip (cross-platform, no shell dependency)
-    fs.mkdirSync(pluginDir, { recursive: true });
+    await fsp.mkdir(pluginDir, { recursive: true });
     const zip = new AdmZip(tmpZipPath);
     zip.extractAllTo(pluginDir, true);
 
     // 6. If the zip extracted into a single subdirectory, hoist its contents up
-    const entries = fs.readdirSync(pluginDir);
+    const entries = await fsp.readdir(pluginDir);
     if (entries.length === 1) {
       const singleDir = path.join(pluginDir, entries[0]);
-      if (fs.statSync(singleDir).isDirectory()) {
-        const innerEntries = fs.readdirSync(singleDir);
+      const singleStat = await fsp.stat(singleDir);
+      if (singleStat.isDirectory()) {
+        const innerEntries = await fsp.readdir(singleDir);
         for (const e of innerEntries) {
-          fs.renameSync(path.join(singleDir, e), path.join(pluginDir, e));
+          await fsp.rename(path.join(singleDir, e), path.join(pluginDir, e));
         }
-        fs.rmdirSync(singleDir);
+        await fsp.rmdir(singleDir);
       }
     }
 
     // 7. Verify manifest.json exists
-    if (!fs.existsSync(path.join(pluginDir, 'manifest.json'))) {
-      fs.rmSync(pluginDir, { recursive: true, force: true });
+    try {
+      await fsp.access(path.join(pluginDir, 'manifest.json'));
+    } catch {
+      await fsp.rm(pluginDir, { recursive: true, force: true });
       return { success: false, error: 'Downloaded plugin does not contain a manifest.json' };
     }
 
     // 8. Write .marketplace marker so the client knows this was installed from the marketplace
-    fs.writeFileSync(path.join(pluginDir, '.marketplace'), '', 'utf-8');
+    await fsp.writeFile(path.join(pluginDir, '.marketplace'), '', 'utf-8');
 
     appLog('marketplace', 'info', `Plugin ${pluginId} installed successfully`);
     return { success: true };
   } catch (err: unknown) {
     // Clean up on failure
-    if (fs.existsSync(pluginDir)) {
-      try { fs.rmSync(pluginDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    }
+    try { await fsp.rm(pluginDir, { recursive: true, force: true }); } catch { /* ignore */ }
     const message = err instanceof Error ? err.message : String(err);
     appLog('marketplace', 'error', `Failed to install ${pluginId}: ${message}`);
     return { success: false, error: message };
   } finally {
     // Clean up temp zip
-    try { if (fs.existsSync(tmpZipPath)) fs.unlinkSync(tmpZipPath); } catch { /* ignore */ }
+    try { await fsp.unlink(tmpZipPath); } catch { /* ignore */ }
   }
 }

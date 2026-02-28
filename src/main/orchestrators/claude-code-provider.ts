@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -196,15 +197,13 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     };
 
     const claudeDir = path.join(cwd, '.claude');
-    if (!fs.existsSync(claudeDir)) {
-      fs.mkdirSync(claudeDir, { recursive: true });
-    }
+    await fsp.mkdir(claudeDir, { recursive: true });
 
     const settingsPath = path.join(claudeDir, 'settings.local.json');
 
     let existing: Record<string, unknown> = {};
     try {
-      existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
     } catch {
       // No existing file
     }
@@ -220,7 +219,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     }
 
     const merged: Record<string, unknown> = { ...existing, hooks: mergedHooks };
-    fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+    await fsp.writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
   }
 
   parseHookEvent(raw: unknown): NormalizedHookEvent | null {

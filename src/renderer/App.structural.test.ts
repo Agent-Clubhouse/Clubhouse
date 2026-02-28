@@ -3,13 +3,13 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 /**
- * Structural regression tests for App.tsx.
+ * Structural regression tests for App.tsx and its extracted modules.
  *
- * These tests parse the source text of App.tsx to verify:
+ * These tests parse the source text to verify:
  *  1. Global dialog components are present in ALL JSX return paths
- *  2. All useEffect hooks are accounted for (guards against accidental deletion)
+ *  2. App.tsx subscribes only to layout-related store selectors
  *  3. Initialization order: settings load before plugin system init
- *  4. Listener cleanup: useEffect hooks that register listeners return cleanup fns
+ *  4. Listener cleanup: event bridge and initializer return cleanup fns
  *  5. Plugin system initializes before project-specific plugin activation
  *
  * This approach (static source analysis) is intentional — it catches structural
@@ -17,7 +17,9 @@ import { join } from 'path';
  */
 
 // Normalize line endings so the test works on Windows (CRLF) and Unix (LF)
-const source = readFileSync(join(__dirname, 'App.tsx'), 'utf-8').replace(/\r\n/g, '\n');
+const appSource = readFileSync(join(__dirname, 'App.tsx'), 'utf-8').replace(/\r\n/g, '\n');
+const eventBridgeSource = readFileSync(join(__dirname, 'app-event-bridge.ts'), 'utf-8').replace(/\r\n/g, '\n');
+const initializerSource = readFileSync(join(__dirname, 'app-initializer.ts'), 'utf-8').replace(/\r\n/g, '\n');
 
 /**
  * Helper: extract all JSX return blocks from the App component.
@@ -26,7 +28,7 @@ const source = readFileSync(join(__dirname, 'App.tsx'), 'utf-8').replace(/\r\n/g
  */
 function getJsxReturnBlocks(): Array<{ block: string; startIdx: number; label: string }> {
   const jsxReturnPattern = /^([ ]+)return \(\n\s+<div/gm;
-  const matches = [...source.matchAll(jsxReturnPattern)];
+  const matches = [...appSource.matchAll(jsxReturnPattern)];
   const blocks: Array<{ block: string; startIdx: number; label: string }> = [];
 
   for (const match of matches) {
@@ -34,11 +36,11 @@ function getJsxReturnBlocks(): Array<{ block: string; startIdx: number; label: s
     const indent = match[1]; // capture the exact indentation of `return (`
     // Find the closing `);` at the same indentation level
     const closer = `\n${indent});`;
-    const endIdx = source.indexOf(closer, startIdx);
-    const block = source.slice(startIdx, endIdx + closer.length);
+    const endIdx = appSource.indexOf(closer, startIdx);
+    const block = appSource.slice(startIdx, endIdx + closer.length);
 
     // Determine which return path this is based on surrounding context
-    const contextBefore = source.slice(Math.max(0, startIdx - 200), startIdx);
+    const contextBefore = appSource.slice(Math.max(0, startIdx - 200), startIdx);
     let label = 'unknown';
     if (contextBefore.includes('if (isHome)')) label = 'Home';
     else if (contextBefore.includes('if (isAppPlugin)')) label = 'AppPlugin';
@@ -100,78 +102,89 @@ describe('App.tsx – global dialog presence in all return paths', () => {
   }
 });
 
-// ─── 2. useEffect Hook Count ───────────────────────────────────────────────
+// ─── 2. Selector Count (App.tsx should be lean) ────────────────────────────
 
-describe('App.tsx – useEffect hook registration', () => {
-  it('should have the expected number of useEffect hooks', () => {
-    // Count all useEffect( calls inside the App function body
-    const appBody = source.slice(source.indexOf('export function App()'));
-    const useEffectMatches = [...appBody.matchAll(/useEffect\(/g)];
-
-    // As of the current version, App.tsx has 22 useEffect hooks.
-    // If this number changes, it likely means a hook was added or removed —
-    // either way warrants review.
-    expect(useEffectMatches.length).toBeGreaterThanOrEqual(20);
+describe('App.tsx – selector discipline', () => {
+  it('should have at most 15 store selector calls (layout-only)', () => {
+    const appBody = appSource.slice(appSource.indexOf('export function App()'));
+    // Count useXxxStore((s) => ...) calls
+    const selectorCalls = [...appBody.matchAll(/use\w+Store\(\(s\)/g)];
+    expect(selectorCalls.length).toBeLessThanOrEqual(15);
   });
 
-  it('should register the init useEffect with all settings loaders', () => {
-    // The first useEffect should call all settings loaders before plugin init
-    const initEffectPattern = /useEffect\(\(\) => \{[\s\S]*?loadProjects\(\);[\s\S]*?\}, \[/;
-    const match = source.match(initEffectPattern);
-    expect(match, 'Init useEffect not found').toBeTruthy();
-
-    const initBlock = match![0];
-    const expectedLoaders = [
-      'loadProjects',
-      'loadNotificationSettings',
-      'loadTheme',
-      'loadOrchestratorSettings',
-      'loadLoggingSettings',
-      'loadHeadlessSettings',
-      'loadBadgeSettings',
-      'loadUpdateSettings',
-      'initBadgeSideEffects',
+  it('should NOT subscribe to agentStore for event handler functions', () => {
+    const appBody = appSource.slice(appSource.indexOf('export function App()'));
+    // These function selectors were moved to app-event-bridge.ts
+    const removedSelectors = [
+      'updateAgentStatus',
+      'handleHookEvent',
+      'clearStaleStatuses',
+      'removeAgent',
     ];
-
-    for (const loader of expectedLoaders) {
+    for (const sel of removedSelectors) {
       expect(
-        initBlock,
-        `Init useEffect is missing call to ${loader}()`,
-      ).toContain(`${loader}(`);
+        appBody,
+        `App.tsx should not subscribe to agentStore.${sel} (moved to event bridge)`,
+      ).not.toMatch(new RegExp(`useAgentStore\\(\\(s\\)\\s*=>\\s*s\\.${sel}\\)`));
+    }
+  });
+
+  it('should NOT subscribe to initialization-only stores', () => {
+    const appBody = appSource.slice(appSource.indexOf('export function App()'));
+    // These stores were only used for initialization — now in app-initializer.ts
+    const removedStores = [
+      'useThemeStore',
+      'useOrchestratorStore',
+      'useLoggingStore',
+      'useHeadlessStore',
+      'useBadgeSettingsStore',
+      'useOnboardingStore',
+      'useUpdateStore',
+      'useNotificationStore',
+    ];
+    for (const store of removedStores) {
+      expect(
+        appBody,
+        `App.tsx should not import ${store} (moved to initializer/event bridge)`,
+      ).not.toContain(`${store}(`);
     }
   });
 });
 
-// ─── 3. Initialization Order ───────────────────────────────────────────────
+// ─── 3. App.tsx useEffect count (should be minimal) ────────────────────────
 
-describe('App.tsx – initialization order', () => {
-  it('should call initializePluginSystem AFTER all settings loaders in the init useEffect', () => {
-    // Extract the init useEffect body
-    const initEffectStart = source.indexOf('useEffect(() => {\n    loadProjects()');
-    expect(initEffectStart, 'Init useEffect not found').toBeGreaterThan(-1);
+describe('App.tsx – useEffect hook registration', () => {
+  it('should have minimal useEffect hooks (init + reactive effects only)', () => {
+    const appBody = appSource.slice(appSource.indexOf('export function App()'));
+    const useEffectMatches = [...appBody.matchAll(/useEffect\(/g)];
+    // After refactor: 1 (init+bridge) + 1 (load durable) + 1 (load completed) + 1 (project switch) = 4
+    expect(useEffectMatches.length).toBeGreaterThanOrEqual(3);
+    expect(useEffectMatches.length).toBeLessThanOrEqual(6);
+  });
 
-    const initEffectEnd = source.indexOf('}, [loadProjects,', initEffectStart);
-    const initBody = source.slice(initEffectStart, initEffectEnd);
+  it('should initialize via initApp and initAppEventBridge', () => {
+    expect(appSource).toContain('initApp()');
+    expect(appSource).toContain('initAppEventBridge()');
+  });
+});
 
-    // Find positions of settings loaders and plugin init
-    const settingsLoaders = [
-      'loadProjects()',
-      'loadNotificationSettings()',
-      'loadTheme()',
-      'loadOrchestratorSettings()',
-      'loadLoggingSettings()',
-      'loadHeadlessSettings()',
-      'loadBadgeSettings()',
-      'loadUpdateSettings()',
-      'initBadgeSideEffects()',
+// ─── 4. Initializer Module ─────────────────────────────────────────────────
+
+describe('app-initializer.ts – initialization order', () => {
+  it('should call all settings loaders before plugin system init', () => {
+    const expectedLoaders = [
+      'loadProjects',
+      'loadSettings', // notification, orchestrator, logging, headless, badge, update stores
+      'loadTheme',
+      'initBadgeSideEffects',
     ];
 
-    const pluginInitPos = initBody.indexOf('initializePluginSystem()');
-    expect(pluginInitPos, 'initializePluginSystem() not found in init useEffect').toBeGreaterThan(-1);
+    const pluginInitPos = initializerSource.indexOf('initializePluginSystem()');
+    expect(pluginInitPos, 'initializePluginSystem() not found').toBeGreaterThan(-1);
 
-    for (const loader of settingsLoaders) {
-      const loaderPos = initBody.indexOf(loader);
-      expect(loaderPos, `${loader} not found in init useEffect`).toBeGreaterThan(-1);
+    for (const loader of expectedLoaders) {
+      const loaderPos = initializerSource.indexOf(loader);
+      expect(loaderPos, `${loader} not found in initializer`).toBeGreaterThan(-1);
       expect(
         loaderPos,
         `${loader} should be called BEFORE initializePluginSystem()`,
@@ -180,94 +193,72 @@ describe('App.tsx – initialization order', () => {
   });
 
   it('should handle initializePluginSystem failure gracefully (catch handler)', () => {
-    // Plugin init should have a .catch() so a failure doesn't crash the app
     expect(
-      source,
+      initializerSource,
       'initializePluginSystem() should have a .catch() handler',
     ).toMatch(/initializePluginSystem\(\)\.catch\(/);
   });
 
-  it('should activate project plugins only after project switch (not in init useEffect)', () => {
-    // handleProjectSwitch should NOT be in the init useEffect
-    const initEffectStart = source.indexOf('useEffect(() => {\n    loadProjects()');
-    const initEffectEnd = source.indexOf('}, [loadProjects,', initEffectStart);
-    const initBody = source.slice(initEffectStart, initEffectEnd);
-
-    expect(
-      initBody,
-      'handleProjectSwitch should not be called in the init useEffect',
-    ).not.toContain('handleProjectSwitch');
+  it('should set up update, annex, and plugin-update listeners', () => {
+    expect(initializerSource).toContain('initUpdateListener()');
+    expect(initializerSource).toContain('initAnnexListener()');
+    expect(initializerSource).toContain('initPluginUpdateListener()');
   });
 
-  it('should call handleProjectSwitch in the activeProjectId useEffect', () => {
-    // There should be a useEffect that depends on activeProjectId and calls handleProjectSwitch
-    const projectSwitchPattern = /useEffect\(\(\) => \{[\s\S]*?handleProjectSwitch[\s\S]*?\}, \[activeProjectId/;
-    expect(
-      source,
-      'No useEffect with handleProjectSwitch dependent on activeProjectId',
-    ).toMatch(projectSwitchPattern);
+  it('should handle What\'s New and onboarding checks', () => {
+    expect(initializerSource).toContain('checkWhatsNew()');
+    expect(initializerSource).toContain('startOnboarding()');
   });
 });
 
-// ─── 4. Listener Cleanup Patterns ──────────────────────────────────────────
+// ─── 5. Event Bridge Module ────────────────────────────────────────────────
 
-describe('App.tsx – listener cleanup', () => {
-  it('should return cleanup functions for IPC listeners', () => {
-    // These useEffects register IPC listeners and should return cleanup functions
-    const listenerPatterns = [
-      { name: 'initUpdateListener', pattern: /initUpdateListener\(\)[\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'initAnnexListener', pattern: /initAnnexListener\(\)[\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'initPluginUpdateListener', pattern: /initPluginUpdateListener\(\)[\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onOpenSettings', pattern: /onOpenSettings\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onOpenAbout', pattern: /onOpenAbout\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onNotificationClicked', pattern: /onNotificationClicked\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onRequestAgentState', pattern: /onRequestAgentState\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onRequestHubState', pattern: /onRequestHubState\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onHubMutation', pattern: /onHubMutation\([\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onNavigateToAgent', pattern: /window\.clubhouse\.window\.onNavigateToAgent[\s\S]*?return \(\) => remove\(\)/ },
-      { name: 'onExit (pty)', pattern: /pty\.onExit\([\s\S]*?return \(\) => removeExitListener\(\)/ },
-      { name: 'onHookEvent', pattern: /onHookEvent\([\s\S]*?return \(\) => removeHookListener\(\)/ },
+describe('app-event-bridge.ts – listener registration', () => {
+  it('should register all IPC listeners', () => {
+    const expectedListeners = [
+      'onOpenSettings',
+      'onOpenAbout',
+      'onNotificationClicked',
+      'onRequestAgentState',
+      'onRequestHubState',
+      'onHubMutation',
+      'onNavigateToAgent',
     ];
 
-    for (const { name, pattern } of listenerPatterns) {
+    for (const listener of expectedListeners) {
       expect(
-        source,
-        `Listener "${name}" should have a cleanup function returned from its useEffect`,
-      ).toMatch(pattern);
+        eventBridgeSource,
+        `Event bridge should register ${listener}`,
+      ).toContain(listener);
     }
   });
 
-  it('should clean up the keyboard shortcut listener', () => {
-    expect(
-      source,
-      'Keyboard shortcut handler should remove the event listener on cleanup',
-    ).toMatch(/addEventListener\('keydown', handler\)[\s\S]*?removeEventListener\('keydown', handler\)/);
+  it('should register agent lifecycle listeners', () => {
+    expect(eventBridgeSource).toContain('pty.onExit(');
+    expect(eventBridgeSource).toContain('onHookEvent(');
+    expect(eventBridgeSource).toContain('onAgentSpawned(');
   });
 
-  it('should clean up the stale status interval', () => {
-    expect(
-      source,
-      'clearStaleStatuses interval should be cleaned up with clearInterval',
-    ).toMatch(/setInterval\(clearStaleStatuses[\s\S]*?clearInterval\(id\)/);
+  it('should set up keyboard shortcut dispatcher', () => {
+    expect(eventBridgeSource).toContain("addEventListener('keydown'");
+    expect(eventBridgeSource).toContain("removeEventListener('keydown'");
   });
 
-  it('should clean up the agent status subscription', () => {
-    expect(
-      source,
-      'Agent status subscription should return unsub cleanup',
-    ).toMatch(/useAgentStore\.subscribe\([\s\S]*?return unsub/);
+  it('should set up stale status cleanup interval', () => {
+    expect(eventBridgeSource).toContain('clearStaleStatuses');
+    expect(eventBridgeSource).toContain('setInterval');
+    expect(eventBridgeSource).toContain('clearInterval');
   });
-});
 
-// ─── 5. Plugin System Guards ───────────────────────────────────────────────
+  it('should set up agent status change emitter for plugins', () => {
+    expect(eventBridgeSource).toContain('useAgentStore.subscribe');
+    expect(eventBridgeSource).toContain("pluginEventBus.emit('agent:status-changed'");
+  });
 
-describe('App.tsx – plugin system safety', () => {
-  it('should wrap plugin event emissions in try/catch in the onExit handler', () => {
-    // The onExit handler emits pluginEventBus events — these should be wrapped
-    // to prevent a plugin listener error from crashing the app
-    const onExitBlock = source.slice(
-      source.indexOf('pty.onExit('),
-      source.indexOf('return () => removeExitListener()'),
+  it('should wrap plugin event emissions in try/catch in the PTY exit handler', () => {
+    const onExitBlock = eventBridgeSource.slice(
+      eventBridgeSource.indexOf('pty.onExit('),
+      eventBridgeSource.indexOf('return removeExitListener'),
     );
 
     expect(
@@ -276,11 +267,29 @@ describe('App.tsx – plugin system safety', () => {
     ).toMatch(/try\s*\{[\s\S]*?pluginEventBus\.emit\('agent:completed'[\s\S]*?\}\s*catch/);
   });
 
+  it('should use getState() instead of hooks for all store access', () => {
+    // The event bridge should never use React hooks
+    expect(eventBridgeSource).not.toMatch(/\buseEffect\b/);
+    expect(eventBridgeSource).not.toMatch(/\buseState\b/);
+    expect(eventBridgeSource).not.toMatch(/\buseRef\b/);
+  });
+});
+
+// ─── 6. Project Switch (still in App.tsx) ──────────────────────────────────
+
+describe('App.tsx – project switch handling', () => {
+  it('should call handleProjectSwitch in the activeProjectId useEffect', () => {
+    const projectSwitchPattern = /useEffect\(\(\) => \{[\s\S]*?handleProjectSwitch[\s\S]*?\}, \[activeProjectId/;
+    expect(
+      appSource,
+      'No useEffect with handleProjectSwitch dependent on activeProjectId',
+    ).toMatch(projectSwitchPattern);
+  });
+
   it('should handle project plugin config load failures', () => {
-    // The project switch useEffect loads plugin config — should handle errors
-    const projectSwitchBlock = source.slice(
-      source.indexOf('handleProjectSwitch'),
-      source.indexOf('}, [activeProjectId, projects]'),
+    const projectSwitchBlock = appSource.slice(
+      appSource.indexOf('handleProjectSwitch'),
+      appSource.indexOf('}, [activeProjectId, projects]'),
     );
 
     expect(
@@ -290,26 +299,54 @@ describe('App.tsx – plugin system safety', () => {
   });
 });
 
-// ─── 6. Import Verification ───────────────────────────────────────────────
+// ─── 7. Import Verification ───────────────────────────────────────────────
 
 describe('App.tsx – required imports', () => {
+  it('should import initApp and initAppEventBridge', () => {
+    expect(appSource).toContain("from './app-initializer'");
+    expect(appSource).toContain("from './app-event-bridge'");
+  });
+
+  it('should import handleProjectSwitch from plugin-loader', () => {
+    expect(appSource).toContain('handleProjectSwitch');
+  });
+});
+
+describe('app-event-bridge.ts – required imports', () => {
   const requiredImports = [
-    { module: 'plugin-loader', names: ['initializePluginSystem', 'handleProjectSwitch'] },
-    { module: 'plugin-events', names: ['pluginEventBus'] },
-    { module: 'updateStore', names: ['initUpdateListener'] },
-    { module: 'annexStore', names: ['initAnnexListener'] },
-    { module: 'pluginUpdateStore', names: ['initPluginUpdateListener'] },
-    { module: 'badgeStore', names: ['initBadgeSideEffects'] },
+    'pluginEventBus',
+    'consumeCancelled',
+    'eventToBinding',
+    'getCommandActions',
+    'pluginHotkeyRegistry',
+    'applyHubMutation',
   ];
 
-  for (const { module, names } of requiredImports) {
-    for (const name of names) {
-      it(`should import ${name} from ${module}`, () => {
-        expect(
-          source,
-          `Missing import: ${name} from ${module}`,
-        ).toContain(name);
-      });
-    }
+  for (const name of requiredImports) {
+    it(`should import ${name}`, () => {
+      expect(
+        eventBridgeSource,
+        `Missing import: ${name}`,
+      ).toContain(name);
+    });
+  }
+});
+
+describe('app-initializer.ts – required imports', () => {
+  const requiredImports = [
+    'initializePluginSystem',
+    'initUpdateListener',
+    'initAnnexListener',
+    'initPluginUpdateListener',
+    'initBadgeSideEffects',
+  ];
+
+  for (const name of requiredImports) {
+    it(`should import ${name}`, () => {
+      expect(
+        initializerSource,
+        `Missing import: ${name}`,
+      ).toContain(name);
+    });
   }
 });
