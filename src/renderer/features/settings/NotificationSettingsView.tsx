@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useBadgeStore } from '../../stores/badgeStore';
 import { useBadgeSettingsStore, ResolvedBadgeSettings } from '../../stores/badgeSettingsStore';
+import { Toggle } from '../../components/Toggle';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'Permission Needed', description: 'Notify when an agent is waiting for approval' },
@@ -9,27 +10,6 @@ const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSet
   { key: 'agentIdle', label: 'Agent Idle', description: 'Notify when an agent is waiting for input' },
   { key: 'agentError', label: 'Agent Error', description: 'Notify when a tool call fails' },
 ];
-
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && onChange(!checked)}
-      className={`
-        relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
-        ${checked ? 'bg-indigo-500' : 'bg-surface-2'}
-      `}
-    >
-      <span
-        className={`
-          absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200
-          ${checked ? 'translate-x-4' : 'translate-x-0'}
-        `}
-      />
-    </button>
-  );
-}
 
 // Three-state toggle for project overrides: global default / on / off
 function TriStateToggle({ value, onChange, disabled }: {
@@ -52,7 +32,7 @@ function TriStateToggle({ value, onChange, disabled }: {
           onClick={() => !disabled && onChange(val)}
           className={`
             px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors
-            ${value === val ? 'bg-indigo-500 text-white' : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'}
+            ${value === val ? 'bg-ctp-accent text-white' : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'}
           `}
         >
           {label}

@@ -1,25 +1,6 @@
 import { useEffect } from 'react';
 import { useAnnexStore } from '../../stores/annexStore';
-
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`
-        relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-        ${checked ? 'bg-indigo-500' : 'bg-surface-2'}
-      `}
-    >
-      <span
-        className={`
-          absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200
-          ${checked ? 'translate-x-4' : 'translate-x-0'}
-        `}
-      />
-    </button>
-  );
-}
+import { Toggle } from '../../components/Toggle';
 
 export function AnnexSettingsView() {
   const settings = useAnnexStore((s) => s.settings);
