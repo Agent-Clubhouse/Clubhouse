@@ -57,16 +57,17 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-          # Detect preview (rc) tags: v1.0.0rc → is_preview=true
-          if [[ "$VERSION" == *rc ]]; then
+          # Detect preview tags: v1.0.0rc or v1.0.0-beta.1 → is_preview=true
+          if [[ "$VERSION" == *rc ]] || [[ "$VERSION" == *-beta.* ]]; then
             echo "is_preview=true" >> "$GITHUB_OUTPUT"
             echo "Preview release detected: ${VERSION}"
           else
             echo "is_preview=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # Verify tag version matches package.json (skip for preview tags
-          # since the rc suffix won't match the package version)
+          # Verify tag version matches package.json (skip for legacy rc tags
+          # since the rc suffix won't match; beta tags should match since
+          # package.json stores the full version including -beta.N)
           if [[ "$VERSION" != *rc ]]; then
             PKG_VERSION=$(node -p "require('./package.json').version")
             if [ "$VERSION" != "$PKG_VERSION" ]; then

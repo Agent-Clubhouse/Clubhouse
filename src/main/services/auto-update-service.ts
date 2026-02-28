@@ -60,23 +60,56 @@ function platformKey(): string {
 }
 
 /**
- * Parse a version string, separating the numeric parts from an optional
- * pre-release suffix (e.g. "rc").  "1.2.3rc" → { parts: [1,2,3], rc: true }
+ * Parsed version info. A version can be:
+ * - Stable: "1.2.3" → { parts: [1,2,3], prerelease: false, prereleaseNum: 0 }
+ * - Legacy RC: "1.2.3rc" → { parts: [1,2,3], prerelease: true, prereleaseNum: 0 }
+ * - Beta: "1.2.3-beta.2" → { parts: [1,2,3], prerelease: true, prereleaseNum: 2 }
  */
-export function parseVersion(v: string): { parts: number[]; rc: boolean } {
-  const rc = v.endsWith('rc');
-  const base = rc ? v.slice(0, -2) : v;
-  return { parts: base.split('.').map(Number), rc };
+export interface ParsedVersion {
+  parts: number[];
+  prerelease: boolean;
+  prereleaseNum: number;
 }
 
 /**
- * Semver comparison that understands the `rc` suffix.
+ * Parse a version string, separating the numeric parts from an optional
+ * pre-release suffix.
+ *
+ * Supported formats:
+ * - "1.2.3"         → stable
+ * - "1.2.3rc"       → legacy RC (prerelease, no number)
+ * - "1.2.3-beta.1"  → beta prerelease with number
+ */
+export function parseVersion(v: string): ParsedVersion {
+  // Match "-beta.N" suffix
+  const betaMatch = v.match(/^(.+)-beta\.(\d+)$/);
+  if (betaMatch) {
+    return {
+      parts: betaMatch[1].split('.').map(Number),
+      prerelease: true,
+      prereleaseNum: parseInt(betaMatch[2], 10),
+    };
+  }
+
+  // Legacy "rc" suffix
+  const rc = v.endsWith('rc');
+  const base = rc ? v.slice(0, -2) : v;
+  return {
+    parts: base.split('.').map(Number),
+    prerelease: rc,
+    prereleaseNum: 0,
+  };
+}
+
+/**
+ * Semver comparison that understands pre-release suffixes (`rc`, `-beta.N`).
  * Returns true if a > b.
  *
  * Rules:
  * - Numeric parts are compared left-to-right (major.minor.patch).
- * - When the numeric parts are equal, the stable release (no suffix) is
- *   considered newer than the rc pre-release: 1.0.0 > 1.0.0rc.
+ * - When the numeric parts are equal, stable > prerelease.
+ * - When both are prereleases with equal base, higher beta number wins.
+ *   (e.g., 0.34.0-beta.2 > 0.34.0-beta.1 > 0.34.0rc)
  */
 export function isNewerVersion(a: string, b: string): boolean {
   const va = parseVersion(a);
@@ -87,8 +120,13 @@ export function isNewerVersion(a: string, b: string): boolean {
     if (na > nb) return true;
     if (na < nb) return false;
   }
-  // Base versions are equal — stable beats rc
-  if (!va.rc && vb.rc) return true;
+  // Base versions are equal — stable beats prerelease
+  if (!va.prerelease && vb.prerelease) return true;
+  if (va.prerelease && !vb.prerelease) return false;
+  // Both are prereleases — higher beta number wins
+  if (va.prerelease && vb.prerelease) {
+    return va.prereleaseNum > vb.prereleaseNum;
+  }
   return false;
 }
 
@@ -250,8 +288,8 @@ async function fetchBestManifest(previewChannel: boolean): Promise<UpdateManifes
 
   if (!preview) return stable;
 
-  // Pick whichever is newer. isNewerVersion handles rc suffixes and
-  // considers a stable release newer than its rc counterpart.
+  // Pick whichever is newer. isNewerVersion handles prerelease suffixes
+  // (rc, -beta.N) and considers a stable release newer than its prerelease.
   if (isNewerVersion(preview.version, stable.version)) {
     return preview;
   }
