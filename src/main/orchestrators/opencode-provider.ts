@@ -100,7 +100,7 @@ export class OpenCodeProvider implements OrchestratorProvider {
     localSettingsFile: 'opencode.json',
   };
 
-  async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     try {
       findOpenCodeBinary();
       return { available: true };

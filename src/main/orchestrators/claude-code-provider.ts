@@ -102,7 +102,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     localSettingsFile: 'settings.local.json',
   };
 
-  async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+  async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     let binary: string;
     try {
       binary = findClaudeBinary();
@@ -113,12 +113,15 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       };
     }
 
-    // Binary found — verify authentication with a quick no-op call
+    // Binary found — verify authentication with a quick no-op call.
+    // Merge profile env (e.g. CLAUDE_CONFIG_DIR) so auth checks run against
+    // the correct config directory when a profile is active.
     try {
+      const env = { ...getShellEnvironment(), ...envOverride };
       const { stdout } = await execFileAsync(binary, ['-p', '', '--output-format', 'json'], {
         timeout: 10000,
         shell: process.platform === 'win32', // .cmd shims need shell on Windows
-        env: getShellEnvironment(),
+        env,
       });
       const result = JSON.parse(stdout);
       if (result.is_error && typeof result.result === 'string') {

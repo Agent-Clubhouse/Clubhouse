@@ -109,7 +109,7 @@ export class CodexCliProvider implements OrchestratorProvider {
     localSettingsFile: 'config.toml',
   };
 
-  async checkAvailability(): Promise<{ available: boolean; error?: string }> {
+  async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     let binary: string;
     try {
       binary = findCodexBinary();
@@ -128,7 +128,7 @@ export class CodexCliProvider implements OrchestratorProvider {
       await execFileAsync(binary, ['--version'], {
         timeout: 10000,
         shell: process.platform === 'win32',
-        env: getShellEnvironment(),
+        env: { ...getShellEnvironment(), ...envOverride },
       });
     } catch {
       return {

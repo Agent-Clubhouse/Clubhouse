@@ -5,8 +5,22 @@ import { execSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
 
+/** Cached binary lookup results keyed by the first binary name */
+const binaryCache = new Map<string, { path: string; ts: number }>();
+
+/** Cache TTL — 5 minutes. Binary paths rarely change within a session. */
+const BINARY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Clear the binary cache. Exported for tests and manual invalidation. */
+export function clearBinaryCache(): void {
+  binaryCache.clear();
+}
+
 /**
  * Shared binary finder used by all orchestrator providers.
+ *
+ * Results are cached for 5 minutes to avoid repeatedly spawning login shells
+ * (which can take 500ms–2s on complex shell setups).
  *
  * On Windows the most reliable check is `where` — it resolves the binary
  * exactly the way cmd.exe does (honoring PATH, PATHEXT, App Paths, etc.).
@@ -18,7 +32,22 @@ import { getShellEnvironment } from '../util/shell';
  * then check extra paths.
  */
 export function findBinaryInPath(names: string[], extraPaths: string[]): string {
+  const cacheKey = names[0] || '';
+  const cached = binaryCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < BINARY_CACHE_TTL_MS) {
+    // Verify the cached path still exists (handles uninstalls / path changes)
+    if (fs.existsSync(cached.path)) {
+      return cached.path;
+    }
+    binaryCache.delete(cacheKey);
+  }
+
   const isWin = process.platform === 'win32';
+
+  const cacheHit = (found: string) => {
+    binaryCache.set(cacheKey, { path: found, ts: Date.now() });
+    return found;
+  };
 
   // ── 1. Shell-native lookup (`where` / `which`) — most authoritative ──
   for (const name of names) {
@@ -30,7 +59,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'], // suppress "INFO: Could not find files" on stderr
         }).trim().split(/\r?\n/)[0].trim();
-        if (result && fs.existsSync(result)) return result;
+        if (result && fs.existsSync(result)) return cacheHit(result);
       } else {
         const shell = process.env.SHELL || '/bin/zsh';
         const raw = execSync(`${shell} -ilc 'which ${name}'`, {
@@ -41,7 +70,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
         // Take the last non-empty line which is the actual path.
         const lines = raw.split(/\r?\n/).filter(l => l.trim().length > 0);
         const result = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-        if (result && fs.existsSync(result)) return result;
+        if (result && fs.existsSync(result)) return cacheHit(result);
       }
     } catch {
       // not on PATH — continue to manual search
@@ -59,11 +88,11 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
     if (!dir) continue;
     for (const name of names) {
       const candidate = path.join(dir, name);
-      if (fs.existsSync(candidate)) return candidate;
+      if (fs.existsSync(candidate)) return cacheHit(candidate);
       if (isWin) {
         for (const ext of ['.exe', '.cmd', '.ps1']) {
           const withExt = candidate + ext;
-          if (fs.existsSync(withExt)) return withExt;
+          if (fs.existsSync(withExt)) return cacheHit(withExt);
         }
       }
     }
@@ -71,7 +100,7 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
 
   // ── 3. Provider-supplied well-known paths (fallback) ──
   for (const p of extraPaths) {
-    if (fs.existsSync(p)) return p;
+    if (fs.existsSync(p)) return cacheHit(p);
   }
 
   throw new Error(
