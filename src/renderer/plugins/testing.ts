@@ -96,9 +96,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       onStatusChange: () => ({ dispose: noop }),
       onAnyChange: () => ({ dispose: noop }),
     },
-    hub: {
-      refresh: noop,
-    },
+    hub: {},
     navigation: {
       focusAgent: noop,
       setExplorerTab: noop,

@@ -143,9 +143,9 @@ describe('testing utilities', () => {
       expect(api.projects.list()).toEqual([]);
     });
 
-    it('hub refresh is callable', () => {
+    it('hub namespace exists', () => {
       const api = createMockAPI();
-      expect(() => api.hub.refresh()).not.toThrow();
+      expect(api.hub).toBeDefined();
     });
 
     it('navigation API methods are callable', () => {

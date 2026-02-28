@@ -654,9 +654,9 @@ describe('plugin-api-factory', () => {
   // ── HubAPI ────────────────────────────────────────────────────────────
 
   describe('hub API', () => {
-    it('refresh is callable without error', () => {
+    it('hub namespace exists', () => {
       const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
-      expect(() => api.hub.refresh()).not.toThrow();
+      expect(api.hub).toBeDefined();
     });
   });
 
@@ -2867,8 +2867,7 @@ describe('plugin-api-factory', () => {
       it('api.hub is available with empty permissions', () => {
         const manifest = v05Manifest([]);
         const api = createPluginAPI(makeCtx(), undefined, manifest);
-        expect(typeof api.hub.refresh).toBe('function');
-        expect(() => api.hub.refresh()).not.toThrow();
+        expect(api.hub).toBeDefined();
       });
     });
 

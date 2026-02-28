@@ -82,7 +82,6 @@ import {
   isHeadless,
   kill,
   readTranscript,
-  getTranscriptSummary,
   setMaxTranscriptBytes,
 } from './headless-manager';
 
@@ -551,28 +550,6 @@ describe('headless-manager', () => {
   });
 
   // ============================================================
-  // getTranscriptSummary
-  // ============================================================
-  describe('getTranscriptSummary', () => {
-    it('returns summary for active stream-json session', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
-
-      const event = { type: 'result', result: 'Fixed the bug', cost_usd: 0.02, duration_ms: 5000 };
-      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
-
-      const summary = getTranscriptSummary('test-agent');
-      expect(summary).not.toBeNull();
-      expect(summary!.summary).toBe('Fixed the bug');
-      expect(summary!.costUsd).toBe(0.02);
-      expect(summary!.durationMs).toBe(5000);
-    });
-
-    it('returns null for unknown agent', () => {
-      expect(getTranscriptSummary('unknown-agent')).toBeNull();
-    });
-  });
-
-  // ============================================================
   // Environment handling
   // ============================================================
   describe('environment', () => {
@@ -894,26 +871,6 @@ describe('headless-manager', () => {
         expect.stringContaining('test-agent.jsonl'),
         'utf-8'
       );
-    });
-
-    it('getTranscriptSummary falls back to disk when transcript is evicted', () => {
-      setMaxTranscriptBytes(200);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
-
-      // Push enough data to trigger eviction
-      for (let i = 0; i < 5; i++) {
-        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
-        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
-      }
-
-      // Make readFileSync return a transcript with a result event
-      const diskData = '{"type":"result","result":"Disk summary","cost_usd":0.1,"duration_ms":5000}\n';
-      (fs.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(diskData);
-
-      const summary = getTranscriptSummary('test-agent');
-      expect(summary).not.toBeNull();
-      expect(summary!.summary).toBe('Disk summary');
-      expect(summary!.costUsd).toBe(0.1);
     });
 
     it('does not evict when under the cap', () => {

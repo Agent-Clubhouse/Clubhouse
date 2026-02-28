@@ -77,7 +77,7 @@ const AGENTS_API_METHODS: (keyof AgentsAPI)[] = [
   'onStatusChange', 'onAnyChange',
 ];
 
-const HUB_API_METHODS: (keyof HubAPI)[] = ['refresh'];
+const HUB_API_METHODS: (keyof HubAPI)[] = [];
 
 const NAVIGATION_API_METHODS: (keyof NavigationAPI)[] = [
   'focusAgent', 'setExplorerTab', 'popOutAgent', 'toggleSidebar', 'toggleAccessoryPanel',

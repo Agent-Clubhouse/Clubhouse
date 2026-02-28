@@ -358,37 +358,6 @@ export function readTranscript(agentId: string): string | null {
   }
 }
 
-export function getTranscriptSummary(agentId: string): TranscriptSummary | null {
-  const session = sessions.get(agentId);
-  if (session) {
-    // When old events have been evicted, parse full transcript from disk
-    if (session.transcriptEvicted) {
-      try {
-        const raw = fs.readFileSync(session.transcriptPath, 'utf-8');
-        const events = raw.split('\n')
-          .filter((line) => line.trim())
-          .map((line) => JSON.parse(line) as StreamJsonEvent);
-        return parseTranscript(events);
-      } catch {
-        // Fall through to partial in-memory transcript
-      }
-    }
-    return parseTranscript(session.transcript);
-  }
-
-  // Fall back to disk for completed sessions
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
-  try {
-    const raw = fs.readFileSync(transcriptPath, 'utf-8');
-    const events = raw.split('\n')
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line) as StreamJsonEvent);
-    return parseTranscript(events);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Map stream-json events to normalized hook events for the renderer.
  *
