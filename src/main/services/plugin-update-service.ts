@@ -11,7 +11,6 @@ import type {
   PluginUpdateCheckResult,
   PluginUpdatesStatus,
   PluginUpdateResult,
-  MarketplacePlugin,
 } from '../../shared/marketplace-types';
 
 // ---------------------------------------------------------------------------

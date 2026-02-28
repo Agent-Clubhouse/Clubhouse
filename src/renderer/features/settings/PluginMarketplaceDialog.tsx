@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type {
   MarketplacePlugin,
   MarketplaceFeaturedEntry,
@@ -218,10 +218,8 @@ export function PluginMarketplaceDialog({ onClose }: { onClose: () => void }) {
   // Merge official and custom plugins into a unified list
   const allPlugins: MarketplacePluginWithSource[] = useMemo(() => {
     if (!data) return [];
-    const official: MarketplacePluginWithSource[] = data.registry.plugins.map((p) => ({
+    const official: MarketplacePluginWithSource[] = data.registry.plugins.map((p): MarketplacePluginWithSource => ({
       ...p,
-      marketplaceId: undefined,
-      marketplaceName: undefined,
     }));
     return [...official, ...customPlugins];
   }, [data, customPlugins]);

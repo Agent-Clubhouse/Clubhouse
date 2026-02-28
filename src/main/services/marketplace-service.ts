@@ -133,10 +133,8 @@ export async function fetchAllRegistries(customMarketplaces: CustomMarketplace[]
   const official = await fetchRegistry();
 
   // Tag official plugins
-  const allPlugins: MarketplacePluginWithSource[] = official.registry.plugins.map((p) => ({
+  const allPlugins: MarketplacePluginWithSource[] = official.registry.plugins.map((p): MarketplacePluginWithSource => ({
     ...p,
-    marketplaceId: undefined,
-    marketplaceName: undefined,
   }));
 
   // Track plugin IDs to avoid duplicates (official takes precedence)
