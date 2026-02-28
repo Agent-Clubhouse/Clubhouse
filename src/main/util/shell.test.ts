@@ -35,8 +35,16 @@ describe('getShellEnvironment', () => {
 });
 
 describe('invalidateShellEnvironmentCache', () => {
+  const originalPlatform = process.platform;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // Force non-Windows so the execSync code path is exercised
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   it('causes getShellEnvironment to re-source on next call', () => {
