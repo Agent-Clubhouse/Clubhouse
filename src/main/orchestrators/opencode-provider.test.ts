@@ -26,7 +26,13 @@ vi.mock('./shared', () => ({
   readQuickSummary: vi.fn(async () => null),
 }));
 
+vi.mock('../util/shell', () => ({
+  getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
+}));
+
 import * as fs from 'fs';
+import * as childProcess from 'child_process';
+import { getShellEnvironment } from '../util/shell';
 import { OpenCodeProvider } from './opencode-provider';
 import { findBinaryInPath } from './shared';
 
@@ -327,6 +333,19 @@ describe('OpenCodeProvider', () => {
         expect(opt.id.length).toBeGreaterThan(0);
         expect(opt.label.length).toBeGreaterThan(0);
       }
+    });
+
+    it('passes shell environment to execFile for models call', async () => {
+      const mockEnv = { PATH: '/custom/path:/usr/bin', HOME: '/home/user' };
+      vi.mocked(getShellEnvironment).mockReturnValue(mockEnv);
+
+      await provider.getModelOptions();
+
+      const calls = vi.mocked(childProcess.execFile).mock.calls;
+      const modelsCall = calls.find((c) => (c[1] as string[])?.[0] === 'models');
+      expect(modelsCall).toBeDefined();
+      const opts = modelsCall![2] as Record<string, unknown>;
+      expect(opts.env).toEqual(mockEnv);
     });
   });
 

@@ -12,6 +12,7 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { getShellEnvironment } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
 
@@ -192,6 +193,7 @@ export class OpenCodeProvider implements OrchestratorProvider {
       const { stdout } = await execFileAsync(binary, ['models'], {
         timeout: 15000,
         shell: process.platform === 'win32',
+        env: getShellEnvironment(),
       });
       const parsed = parseOpenCodeModels(stdout);
       if (parsed) return parsed;
