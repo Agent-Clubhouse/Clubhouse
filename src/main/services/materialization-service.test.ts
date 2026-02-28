@@ -272,6 +272,46 @@ describe('materialization-service', () => {
 
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
     });
+
+    it('skips MCP JSON write for TOML settings format', () => {
+      const tomlConventions: OrchestratorConventions = {
+        ...testConventions,
+        mcpConfigFile: '.codex/config.toml',
+        localSettingsFile: 'config.toml',
+        settingsFormat: 'toml',
+      };
+      const tomlProvider: OrchestratorProvider = {
+        ...mockProvider,
+        conventions: tomlConventions,
+        writeInstructions: vi.fn(),
+      };
+
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaults: {},
+        quickOverrides: {},
+        agentDefaults: {
+          instructions: 'Agent @@AgentName',
+          mcpJson: '{"mcpServers": {"test": {}}}',
+          permissions: { allow: ['shell(git:*)'] },
+        },
+      }));
+
+      materializeAgent({ projectPath: '/project', agent: testAgent, provider: tomlProvider });
+
+      // Instructions should still be written via the provider
+      expect(tomlProvider.writeInstructions).toHaveBeenCalled();
+
+      // MCP JSON and permissions should NOT be written to filesystem
+      const fileWrites = vi.mocked(fs.writeFileSync).mock.calls;
+      const tomlWrites = fileWrites.filter((c) => String(c[0]).includes('config.toml'));
+      expect(tomlWrites).toHaveLength(0);
+
+      // No settings.local.json or config.toml permissions writes
+      const permWrites = fileWrites.filter((c) =>
+        String(c[0]).includes('settings.local.json') || String(c[0]).includes('config.toml'),
+      );
+      expect(permWrites).toHaveLength(0);
+    });
   });
 
   describe('previewMaterialization', () => {
