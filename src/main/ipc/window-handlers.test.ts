@@ -280,6 +280,30 @@ describe('window-handlers', () => {
     vi.useRealTimers();
   });
 
+  it('LIST_POPOUTS cleans up destroyed windows', async () => {
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'agent', agentId: 'a1' });
+    await createHandler({}, { type: 'agent', agentId: 'a2' });
+
+    // Mark the first window as destroyed
+    const allWindows = BrowserWindow.getAllWindows();
+    // The first popout is the one we want to destroy
+    // getAllWindows returns non-destroyed windows, but we need the actual instance
+    // Let's destroy the underlying window object
+    const firstWin = allWindows[0] as any;
+    firstWin.destroyed = true;
+
+    const listHandler = handlers.get(IPC.WINDOW.LIST_POPOUTS)!;
+    const list = await listHandler({});
+
+    // Only one window should be listed (the non-destroyed one)
+    expect(list.length).toBe(1);
+
+    // Call list again — the stale entry should have been cleaned up in the first call
+    const list2 = await listHandler({});
+    expect(list2.length).toBe(1);
+  });
+
   it('GET_AGENT_STATE does not call removeListener when response arrives before timeout', async () => {
     const mainWin = new (BrowserWindow as any)({});
     const handler = handlers.get(IPC.WINDOW.GET_AGENT_STATE)!;

@@ -33,6 +33,45 @@ function winQuoteArg(arg: string): string {
 }
 const sessions = new Map<string, ManagedSession>();
 
+/** Interval (ms) between stale session sweep checks. */
+const STALE_SWEEP_INTERVAL = 30_000;
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start a periodic sweep that detects PTY sessions whose processes have
+ * died without triggering the onExit handler (e.g., crash during startup).
+ * This is a safety net — normal exits are handled by the onExit callback.
+ */
+export function startStaleSweep(): void {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(() => {
+    for (const [agentId, session] of sessions) {
+      try {
+        // Signal 0 checks process liveness without sending a real signal
+        process.kill(session.process.pid, 0);
+      } catch {
+        // Process is dead but session was never cleaned up
+        appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
+          meta: { agentId, pid: session.process.pid },
+        });
+        cleanupSession(agentId);
+        broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
+        annexEventBus.emitPtyExit(agentId, 1);
+      }
+    }
+  }, STALE_SWEEP_INTERVAL);
+  sweepTimer.unref();
+}
+
+/** Stop the periodic stale session sweep. */
+export function stopStaleSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
+}
+
 function appendToBuffer(session: ManagedSession, data: string): void {
   session.outputChunks.push(data);
   session.outputSize += data.length;

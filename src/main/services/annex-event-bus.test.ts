@@ -8,7 +8,9 @@ import {
   onPtyData,
   onHookEvent,
   onPtyExit,
+  onAgentSpawned,
   removeAllListeners,
+  getListenerCounts,
 } from './annex-event-bus';
 
 beforeEach(() => {
@@ -88,5 +90,50 @@ describe('annex-event-bus', () => {
     emitHookEvent('a', { kind: 'stop', timestamp: 0 });
     emitPtyExit('a', 1);
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  describe('getListenerCounts', () => {
+    it('returns zero counts when no listeners registered', () => {
+      const counts = getListenerCounts();
+      expect(counts).toEqual({ ptyData: 0, hookEvent: 0, ptyExit: 0, agentSpawned: 0, total: 0 });
+    });
+
+    it('tracks listener counts per type', () => {
+      onPtyData(vi.fn());
+      onPtyData(vi.fn());
+      onHookEvent(vi.fn());
+      onPtyExit(vi.fn());
+      onAgentSpawned(vi.fn());
+
+      const counts = getListenerCounts();
+      expect(counts.ptyData).toBe(2);
+      expect(counts.hookEvent).toBe(1);
+      expect(counts.ptyExit).toBe(1);
+      expect(counts.agentSpawned).toBe(1);
+      expect(counts.total).toBe(5);
+    });
+
+    it('decrements after unsubscribe', () => {
+      const unsub1 = onPtyData(vi.fn());
+      const unsub2 = onPtyData(vi.fn());
+      expect(getListenerCounts().ptyData).toBe(2);
+
+      unsub1();
+      expect(getListenerCounts().ptyData).toBe(1);
+
+      unsub2();
+      expect(getListenerCounts().ptyData).toBe(0);
+    });
+
+    it('resets to zero after removeAllListeners', () => {
+      onPtyData(vi.fn());
+      onHookEvent(vi.fn());
+      onPtyExit(vi.fn());
+      onAgentSpawned(vi.fn());
+      expect(getListenerCounts().total).toBe(4);
+
+      removeAllListeners();
+      expect(getListenerCounts().total).toBe(0);
+    });
   });
 });

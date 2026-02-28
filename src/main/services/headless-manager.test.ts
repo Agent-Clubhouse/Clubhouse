@@ -93,6 +93,8 @@ import {
   getTranscriptInfo,
   readTranscriptPage,
   setMaxTranscriptBytes,
+  startStaleSweep,
+  stopStaleSweep,
 } from './headless-manager';
 
 describe('headless-manager', () => {
@@ -116,6 +118,7 @@ describe('headless-manager', () => {
     }
     // Reset transcript cap to default
     setMaxTranscriptBytes(10 * 1024 * 1024);
+    stopStaleSweep();
     vi.useRealTimers();
   });
 
@@ -1135,6 +1138,124 @@ describe('headless-manager', () => {
       expect(page!.totalEvents).toBe(5);
       expect(page!.events).toHaveLength(3);
       expect(page!.events[0].result).toBe('disk-0');
+    });
+  });
+
+  // ============================================================
+  // kill() timer race condition (Issue #326)
+  // ============================================================
+  describe('kill() — process identity guard', () => {
+    it('does not delete replacement session when old kill timer fires', () => {
+      // Spawn agent → kill it → spawn replacement
+      const proc1 = createMockProcess();
+      mockProcess = proc1;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Kill the first session (starts 5s force-kill timer)
+      kill('test-agent');
+
+      // Simulate old process exiting naturally via close event
+      proc1.emit('close', 0);
+
+      // Spawn a replacement session with the same agentId
+      const proc2 = createMockProcess();
+      mockProcess = proc2;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Advance past the 5s force-kill timer from the first kill()
+      vi.advanceTimersByTime(5000);
+
+      // The replacement session MUST still exist
+      expect(isHeadless('test-agent')).toBe(true);
+    });
+
+    it('force-kills the correct process when timer fires on same session', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+
+      kill('test-agent');
+      mockProcess.kill.mockClear();
+
+      // Advance to 5s force-kill timer
+      vi.advanceTimersByTime(5000);
+
+      // Process should have received SIGKILL
+      expect(mockProcess.kill).toHaveBeenCalledWith('SIGKILL');
+      // Session should be cleaned up
+      expect(isHeadless('test-agent')).toBe(false);
+    });
+
+    it('clears kill timer when process exits via close event', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+
+      kill('test-agent');
+      mockProcess.kill.mockClear();
+
+      // Simulate process exiting naturally before the 5s timer
+      mockProcess.emit('close', 0);
+      expect(isHeadless('test-agent')).toBe(false);
+
+      // Advance past timer — should not throw or send extra SIGKILL
+      vi.advanceTimersByTime(5000);
+      expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGKILL');
+    });
+
+    it('double kill() clears the first timer', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+
+      // Kill twice rapidly
+      kill('test-agent');
+      kill('test-agent');
+      mockProcess.kill.mockClear();
+
+      // Advance to 5s — only one SIGKILL should fire
+      vi.advanceTimersByTime(5000);
+      const sigkillCalls = mockProcess.kill.mock.calls.filter(
+        (c: string[]) => c[0] === 'SIGKILL'
+      );
+      expect(sigkillCalls.length).toBeLessThanOrEqual(1);
+    });
+  });
+
+  // ============================================================
+  // Stale session sweep (Issue #326)
+  // ============================================================
+  describe('stale session sweep', () => {
+    it('startStaleSweep and stopStaleSweep are idempotent', () => {
+      startStaleSweep();
+      startStaleSweep();
+      stopStaleSweep();
+      stopStaleSweep();
+    });
+
+    it('sweep cleans up sessions whose processes have exited without close event', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Simulate process exiting without firing close/error event
+      // by setting exitCode directly (as Node.js does when process exits)
+      (mockProcess as any).exitCode = 1;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Sweep should have detected the stale session
+      expect(isHeadless('test-agent')).toBe(false);
+    });
+
+    it('sweep does not remove sessions with live processes', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // exitCode is null for live processes (default in mock)
+      expect((mockProcess as any).exitCode).toBeUndefined();
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Session should still exist
+      expect(isHeadless('test-agent')).toBe(true);
     });
   });
 });
