@@ -130,6 +130,23 @@ describe('HubPane', () => {
     expect(screen.getByTestId('popout-button')).toBeInTheDocument();
   });
 
+  it('chip wrapper has pointer-events-none to prevent focus theft', () => {
+    const { container } = render(
+      <HubPane
+        {...defaultProps}
+        api={createTestAPI()}
+        pane={{ ...BASE_PANE, agentId: 'agent-1' }}
+        agents={[RUNNING_AGENT]}
+      />,
+    );
+    // The chip wrapper div is the absolute-positioned overlay
+    const chipWrapper = container.querySelector('.pointer-events-none.z-20');
+    expect(chipWrapper).toBeInTheDocument();
+    // The inner interactive chip should have pointer-events-auto
+    const innerChip = chipWrapper?.querySelector('.pointer-events-auto');
+    expect(innerChip).toBeInTheDocument();
+  });
+
   it('pop-out button calls createPopout with correct params', () => {
     const createPopout = vi.fn().mockResolvedValue(1);
     window.clubhouse.window.createPopout = createPopout;

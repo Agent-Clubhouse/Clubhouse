@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
@@ -126,12 +126,17 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     }
   }, [focused]);
 
+  const handleMouseDown = useCallback(() => {
+    terminalRef.current?.focus();
+  }, []);
+
   return (
     <div
       ref={containerRef}
       data-testid="shell-terminal"
       className="w-full h-full overflow-hidden"
       style={{ padding: '8px' }}
+      onMouseDown={handleMouseDown}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -208,6 +208,13 @@ describe('AgentTerminal', () => {
   describe('focus behavior', () => {
     it('focuses terminal when focused prop is true', () => {
       render(<AgentTerminal agentId="agent-1" focused={true} />);
+      expect(term().focus).toHaveBeenCalled();
+    });
+
+    it('re-focuses terminal on mousedown for focus recovery', () => {
+      const { container } = render(<AgentTerminal agentId="agent-1" focused={true} />);
+      term().focus.mockClear();
+      fireEvent.mouseDown(container.firstElementChild as HTMLElement);
       expect(term().focus).toHaveBeenCalled();
     });
   });

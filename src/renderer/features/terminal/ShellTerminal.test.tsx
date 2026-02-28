@@ -1,4 +1,4 @@
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
@@ -244,6 +244,13 @@ describe('ShellTerminal', () => {
       // but not again from the focused effect
       const focusCalls = term().focus.mock.calls.length;
       expect(focusCalls).toBe(1); // only mount focus
+    });
+
+    it('re-focuses terminal on mousedown for focus recovery', () => {
+      const { container } = render(<ShellTerminal sessionId="shell-1" focused={true} />);
+      term().focus.mockClear();
+      fireEvent.mouseDown(container.firstElementChild as HTMLElement);
+      expect(term().focus).toHaveBeenCalled();
     });
   });
 
