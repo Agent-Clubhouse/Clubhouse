@@ -1,4 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+/** Page size for paginated transcript loading */
+const PAGE_SIZE = 100;
+
+/** Threshold in bytes above which we warn before loading */
+const LARGE_TRANSCRIPT_BYTES = 50 * 1024 * 1024; // 50 MB
 
 interface TranscriptEvent {
   type: string;
@@ -18,46 +24,152 @@ interface Props {
 
 export function TranscriptViewer({ agentId }: Props) {
   const [events, setEvents] = useState<TranscriptEvent[]>([]);
+  const [totalEvents, setTotalEvents] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [largeWarning, setLargeWarning] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Track the lowest offset loaded so far (we load from the end backwards)
+  const loadedOffsetRef = useRef(0);
+
+  const loadPage = useCallback(async (offset: number, limit: number, prepend: boolean) => {
+    try {
+      const page = await window.clubhouse.agent.readTranscriptPage(agentId, offset, limit);
+      if (!page) return;
+      setTotalEvents(page.totalEvents);
+      const newEvents = page.events as TranscriptEvent[];
+      if (newEvents.length === 0) return;
+      loadedOffsetRef.current = offset;
+      setEvents((prev) => prepend ? [...newEvents, ...prev] : newEvents);
+    } catch {
+      setError(true);
+    }
+  }, [agentId]);
+
+  // Initial load: get transcript info, then load last PAGE_SIZE events
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await window.clubhouse.agent.readTranscript(agentId);
-        if (cancelled || !raw) return;
-        const parsed = raw.split('\n')
-          .filter((line: string) => line.trim())
-          .map((line: string) => {
-            try { return JSON.parse(line) as TranscriptEvent; } catch { return null; }
-          })
-          .filter(Boolean) as TranscriptEvent[];
-        setEvents(parsed);
+        const info = await window.clubhouse.agent.getTranscriptInfo(agentId);
+        if (cancelled || !info) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        setTotalEvents(info.totalEvents);
+
+        // Warn for very large transcripts
+        if (info.fileSizeBytes > LARGE_TRANSCRIPT_BYTES) {
+          setLargeWarning(info.fileSizeBytes);
+          setLoading(false);
+          return;
+        }
+
+        // Load the last PAGE_SIZE events (most recent)
+        const offset = Math.max(0, info.totalEvents - PAGE_SIZE);
+        await loadPage(offset, PAGE_SIZE, false);
       } catch {
-        // Transcript not available
+        setError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [agentId]);
+  }, [agentId, loadPage]);
+
+  // Intersection observer for lazy loading earlier events on scroll
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+        if (loadedOffsetRef.current <= 0) return;
+        if (loadingMore) return;
+
+        setLoadingMore(true);
+        const newOffset = Math.max(0, loadedOffsetRef.current - PAGE_SIZE);
+        const limit = loadedOffsetRef.current - newOffset;
+
+        // Preserve scroll position when prepending
+        const container = scrollContainerRef.current;
+        const prevScrollHeight = container?.scrollHeight ?? 0;
+
+        loadPage(newOffset, limit, true).then(() => {
+          setLoadingMore(false);
+          // Restore scroll position after prepend
+          if (container) {
+            requestAnimationFrame(() => {
+              const newScrollHeight = container.scrollHeight;
+              container.scrollTop += newScrollHeight - prevScrollHeight;
+            });
+          }
+        });
+      },
+      { root: scrollContainerRef.current, rootMargin: '100px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadPage, loadingMore, events.length]);
+
+  // Handle dismissing large transcript warning
+  const handleLoadLargeTranscript = useCallback(async () => {
+    setLargeWarning(null);
+    setLoading(true);
+    const offset = Math.max(0, totalEvents - PAGE_SIZE);
+    await loadPage(offset, PAGE_SIZE, false);
+    setLoading(false);
+  }, [totalEvents, loadPage]);
 
   if (loading) {
     return <div className="text-xs text-ctp-subtext0 p-3">Loading transcript...</div>;
+  }
+
+  if (error) {
+    return <div className="text-xs text-ctp-subtext0 p-3 italic">Failed to load transcript.</div>;
+  }
+
+  if (largeWarning !== null) {
+    const sizeMB = (largeWarning / (1024 * 1024)).toFixed(1);
+    return (
+      <div className="p-3 space-y-2">
+        <p className="text-xs text-ctp-peach">
+          This transcript is {sizeMB} MB ({totalEvents.toLocaleString()} events). Loading may take a moment.
+        </p>
+        <button
+          onClick={handleLoadLargeTranscript}
+          className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer"
+        >
+          Load transcript
+        </button>
+      </div>
+    );
   }
 
   if (events.length === 0) {
     return <div className="text-xs text-ctp-subtext0 p-3 italic">No transcript data available.</div>;
   }
 
-  // Group events into displayable items
   const items = buildDisplayItems(events);
+  const hasMore = loadedOffsetRef.current > 0;
 
   return (
-    <div className="space-y-2 p-3 max-h-[400px] overflow-y-auto">
+    <div ref={scrollContainerRef} className="space-y-2 p-3 max-h-[400px] overflow-y-auto">
+      {hasMore && (
+        <div ref={sentinelRef} className="text-center py-1">
+          {loadingMore && <span className="text-[10px] text-ctp-subtext0">Loading earlier events...</span>}
+        </div>
+      )}
       {items.map((item, i) => (
         <TranscriptItem key={i} item={item} />
       ))}
+      <div className="text-[10px] text-ctp-subtext0 text-right">
+        {events.length} of {totalEvents} events loaded
+      </div>
     </div>
   );
 }
