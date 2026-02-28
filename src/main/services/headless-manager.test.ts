@@ -74,13 +74,16 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockCpSpawn(...args),
 }));
 
+import * as fs from 'fs';
 import { IPC } from '../../shared/ipc-channels';
+import { appLog } from './log-service';
 import {
   spawnHeadless,
   isHeadless,
   kill,
   readTranscript,
   getTranscriptSummary,
+  setMaxTranscriptBytes,
 } from './headless-manager';
 
 describe('headless-manager', () => {
@@ -102,6 +105,8 @@ describe('headless-manager', () => {
       // Trigger close to clean up
       mockProcess.emit('close', 0);
     }
+    // Reset transcript cap to default
+    setMaxTranscriptBytes(10 * 1024 * 1024);
     vi.useRealTimers();
   });
 
@@ -778,6 +783,200 @@ describe('headless-manager', () => {
       mockProcess.emit('close', 1);
 
       expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ============================================================
+  // Transcript memory cap (Issue #319)
+  // ============================================================
+  describe('transcript memory cap', () => {
+    // Helper: create a large event of approximately `bytes` serialized size
+    function makeLargeEvent(bytes: number): { type: string; result: string } {
+      // Account for JSON overhead: {"type":"result","result":"..."}
+      const overhead = Buffer.byteLength(JSON.stringify({ type: 'result', result: '' }), 'utf-8');
+      const padding = Math.max(0, bytes - overhead);
+      return { type: 'result', result: 'x'.repeat(padding) };
+    }
+
+    it('tracks transcriptBytes as events are pushed', () => {
+      setMaxTranscriptBytes(1024 * 1024); // 1MB — high enough to not trigger eviction
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
+      const serialized = JSON.stringify(event);
+      const expectedBytes = Buffer.byteLength(serialized, 'utf-8');
+
+      mockProcess.stdout!.emit('data', Buffer.from(serialized + '\n'));
+
+      // readTranscript returns the in-memory transcript; verify it has content
+      const transcript = readTranscript('test-agent');
+      expect(transcript).toContain('"type":"assistant"');
+
+      // Push a second event and verify both are present
+      const event2 = { type: 'result', result: 'Done' };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event2) + '\n'));
+
+      const transcript2 = readTranscript('test-agent');
+      expect(transcript2).toContain('"type":"assistant"');
+      expect(transcript2).toContain('"type":"result"');
+    });
+
+    it('evicts old events when transcript exceeds cap', () => {
+      // Set a very small cap to trigger eviction quickly
+      setMaxTranscriptBytes(500);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push events that collectively exceed 500 bytes
+      for (let i = 0; i < 10; i++) {
+        const event = { type: 'assistant', message: { content: [{ type: 'text', text: `Message ${i} ${'x'.repeat(100)}` }] } };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // The in-memory transcript should have fewer than 10 events due to eviction
+      const transcript = readTranscript('test-agent');
+      // Since transcriptEvicted is true, readTranscript tries disk first.
+      // Mock readFileSync throws ENOENT, so it falls through to partial in-memory.
+      // Count events in the returned string
+      const lines = transcript!.split('\n').filter(l => l.trim());
+      expect(lines.length).toBeLessThan(10);
+      expect(lines.length).toBeGreaterThan(0);
+    });
+
+    it('keeps most recent events after eviction', () => {
+      setMaxTranscriptBytes(500);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push numbered events
+      for (let i = 0; i < 10; i++) {
+        const event = { type: 'result', result: `event-${i}-${'x'.repeat(80)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // readTranscript falls through to partial in-memory (disk mock throws)
+      const transcript = readTranscript('test-agent');
+      // The last event should still be present
+      expect(transcript).toContain('event-9');
+      // Early events should have been evicted
+      expect(transcript).not.toContain('event-0');
+    });
+
+    it('logs warning on first eviction', () => {
+      setMaxTranscriptBytes(200);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push enough data to trigger eviction
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // appLog should have been called with 'warn' about eviction
+      expect(appLog).toHaveBeenCalledWith(
+        'core:headless',
+        'warn',
+        expect.stringContaining('evicting old events'),
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'test-agent',
+            evictedCount: expect.any(Number),
+          }),
+        })
+      );
+    });
+
+    it('readTranscript falls back to disk when transcript is evicted', () => {
+      setMaxTranscriptBytes(200);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push enough data to trigger eviction
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // Now make readFileSync return full transcript data
+      const fullTranscript = '{"type":"result","result":"full-disk-data"}\n';
+      (fs.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(fullTranscript);
+
+      const result = readTranscript('test-agent');
+      expect(result).toBe(fullTranscript);
+      expect(fs.readFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('test-agent.jsonl'),
+        'utf-8'
+      );
+    });
+
+    it('getTranscriptSummary falls back to disk when transcript is evicted', () => {
+      setMaxTranscriptBytes(200);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push enough data to trigger eviction
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // Make readFileSync return a transcript with a result event
+      const diskData = '{"type":"result","result":"Disk summary","cost_usd":0.1,"duration_ms":5000}\n';
+      (fs.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(diskData);
+
+      const summary = getTranscriptSummary('test-agent');
+      expect(summary).not.toBeNull();
+      expect(summary!.summary).toBe('Disk summary');
+      expect(summary!.costUsd).toBe(0.1);
+    });
+
+    it('does not evict when under the cap', () => {
+      setMaxTranscriptBytes(1024 * 1024); // 1MB
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push a few small events — well under 1MB
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `ok-${i}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      const transcript = readTranscript('test-agent');
+      const lines = transcript!.split('\n').filter(l => l.trim());
+      expect(lines.length).toBe(5); // All events retained
+
+      // No eviction warning should be logged
+      expect(appLog).not.toHaveBeenCalledWith(
+        'core:headless',
+        'warn',
+        expect.stringContaining('evicting'),
+        expect.anything()
+      );
+    });
+
+    it('setMaxTranscriptBytes changes the cap', () => {
+      // Start with a high cap
+      setMaxTranscriptBytes(1024 * 1024);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push events under the high cap
+      for (let i = 0; i < 3; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(200)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // All 3 should be in memory
+      let transcript = readTranscript('test-agent');
+      let lines = transcript!.split('\n').filter(l => l.trim());
+      expect(lines.length).toBe(3);
+
+      // Lower the cap — next event will trigger eviction
+      setMaxTranscriptBytes(200);
+
+      const event = { type: 'result', result: `trigger-${'x'.repeat(200)}` };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      // Some old events should be evicted now
+      transcript = readTranscript('test-agent');
+      // Falls through to partial in-memory since disk mock throws
+      lines = transcript!.split('\n').filter(l => l.trim());
+      expect(lines.length).toBeLessThan(4);
+      expect(transcript).toContain('trigger');
     });
   });
 });
