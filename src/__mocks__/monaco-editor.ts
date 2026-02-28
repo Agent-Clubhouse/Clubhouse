@@ -7,6 +7,7 @@ const mockEditor = {
   setValue: () => {},
   getModel: () => null as any,
   addCommand: () => {},
+  updateOptions: () => {},
   onDidChangeModelContent: () => ({ dispose: () => {} }),
 };
 
