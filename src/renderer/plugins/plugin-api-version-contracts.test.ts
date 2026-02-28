@@ -24,7 +24,6 @@ import type {
   EventsAPI,
   SettingsAPI,
   AgentsAPI,
-  HubAPI,
   NavigationAPI,
   WidgetsAPI,
   TerminalAPI,
@@ -76,8 +75,6 @@ const AGENTS_API_METHODS: (keyof AgentsAPI)[] = [
   'getDetailedStatus', 'getModelOptions', 'listOrchestrators', 'checkOrchestratorAvailability',
   'onStatusChange', 'onAnyChange',
 ];
-
-const HUB_API_METHODS: (keyof HubAPI)[] = [];
 
 const NAVIGATION_API_METHODS: (keyof NavigationAPI)[] = [
   'focusAgent', 'setExplorerTab', 'popOutAgent', 'toggleSidebar', 'toggleAccessoryPanel',

@@ -4,7 +4,6 @@ import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
-import { parseTranscript, TranscriptSummary } from './transcript-parser';
 import { getShellEnvironment } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';

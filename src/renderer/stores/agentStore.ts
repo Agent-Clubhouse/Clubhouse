@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult, HookEventKind } from '../../shared/types';
+import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
 import { useHeadlessStore } from './headlessStore';
