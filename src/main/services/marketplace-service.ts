@@ -10,7 +10,10 @@ import type {
   MarketplaceFetchResult,
   MarketplaceInstallRequest,
   MarketplaceInstallResult,
+  CustomMarketplace,
+  MarketplacePluginWithSource,
 } from '../../shared/marketplace-types';
+import { SUPPORTED_REGISTRY_VERSION } from '../../shared/marketplace-types';
 
 const REGISTRY_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/registry.json';
@@ -21,9 +24,13 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 let registryCache: { data: MarketplaceFetchResult; fetchedAt: number } | null = null;
 
+/** Per-custom-marketplace cache keyed by marketplace id */
+const customRegistryCache = new Map<string, { data: MarketplaceRegistry; fetchedAt: number }>();
+
 /** @internal Reset cache — exported for tests only. */
 export function _resetCache(): void {
   registryCache = null;
+  customRegistryCache.clear();
 }
 
 function getCommunityPluginsDir(): string {
@@ -60,6 +67,127 @@ export async function fetchRegistry(): Promise<MarketplaceFetchResult> {
 
   appLog('marketplace', 'info', `Registry loaded: ${registry.plugins.length} plugin(s)`);
   return result;
+}
+
+/**
+ * Fetch a custom marketplace registry from its URL.
+ * The URL should point to a registry.json following the same schema as the official registry.
+ * A featured.json can optionally be co-located (same directory as registry.json).
+ */
+export async function fetchCustomRegistry(marketplace: CustomMarketplace): Promise<{
+  registry: MarketplaceRegistry;
+  featured: MarketplaceFeatured | null;
+}> {
+  // Check cache
+  const cached = customRegistryCache.get(marketplace.id);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    return { registry: cached.data, featured: null };
+  }
+
+  appLog('marketplace', 'info', `Fetching custom registry: ${marketplace.name} (${marketplace.url})`);
+
+  const registryRes = await fetch(marketplace.url);
+  if (!registryRes.ok) {
+    throw new Error(`Failed to fetch custom registry "${marketplace.name}": ${registryRes.status} ${registryRes.statusText}`);
+  }
+  const registry: MarketplaceRegistry = await registryRes.json();
+
+  if (registry.version > SUPPORTED_REGISTRY_VERSION) {
+    appLog('marketplace', 'warn', `Custom registry "${marketplace.name}" uses version ${registry.version}, client supports ${SUPPORTED_REGISTRY_VERSION}`);
+  }
+
+  // Try to fetch featured.json from the same directory
+  let featured: MarketplaceFeatured | null = null;
+  try {
+    const baseUrl = marketplace.url.replace(/\/[^/]*$/, '');
+    const featuredUrl = `${baseUrl}/featured.json`;
+    const featuredRes = await fetch(featuredUrl);
+    if (featuredRes.ok) {
+      featured = await featuredRes.json();
+    }
+  } catch {
+    // Featured is optional
+  }
+
+  customRegistryCache.set(marketplace.id, { data: registry, fetchedAt: Date.now() });
+
+  appLog('marketplace', 'info', `Custom registry "${marketplace.name}" loaded: ${registry.plugins.length} plugin(s)`);
+  return { registry, featured };
+}
+
+/**
+ * Fetch the official registry plus all enabled custom marketplaces.
+ * Returns a unified list of plugins with source marketplace tags.
+ */
+export async function fetchAllRegistries(customMarketplaces: CustomMarketplace[]): Promise<{
+  official: MarketplaceFetchResult;
+  custom: Array<{
+    marketplace: CustomMarketplace;
+    registry: MarketplaceRegistry;
+    featured: MarketplaceFeatured | null;
+    error?: string;
+  }>;
+  allPlugins: MarketplacePluginWithSource[];
+}> {
+  // Fetch official registry
+  const official = await fetchRegistry();
+
+  // Tag official plugins
+  const allPlugins: MarketplacePluginWithSource[] = official.registry.plugins.map((p) => ({
+    ...p,
+    marketplaceId: undefined,
+    marketplaceName: undefined,
+  }));
+
+  // Track plugin IDs to avoid duplicates (official takes precedence)
+  const seenIds = new Set(allPlugins.map((p) => p.id));
+
+  // Fetch enabled custom registries in parallel
+  const enabledCustom = customMarketplaces.filter((m) => m.enabled);
+  const customResults = await Promise.allSettled(
+    enabledCustom.map(async (m) => {
+      const result = await fetchCustomRegistry(m);
+      return { marketplace: m, ...result };
+    }),
+  );
+
+  const custom: Array<{
+    marketplace: CustomMarketplace;
+    registry: MarketplaceRegistry;
+    featured: MarketplaceFeatured | null;
+    error?: string;
+  }> = [];
+
+  for (const result of customResults) {
+    if (result.status === 'fulfilled') {
+      const { marketplace, registry, featured } = result.value;
+      custom.push({ marketplace, registry, featured });
+
+      // Add non-duplicate plugins with source tags
+      for (const plugin of registry.plugins) {
+        if (!seenIds.has(plugin.id)) {
+          seenIds.add(plugin.id);
+          allPlugins.push({
+            ...plugin,
+            marketplaceId: marketplace.id,
+            marketplaceName: marketplace.name,
+          });
+        }
+      }
+    } else {
+      const marketplace = enabledCustom[customResults.indexOf(result)];
+      const error = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      appLog('marketplace', 'warn', `Failed to fetch custom registry "${marketplace.name}": ${error}`);
+      custom.push({
+        marketplace,
+        registry: { version: 1, updated: '', plugins: [] },
+        featured: null,
+        error,
+      });
+    }
+  }
+
+  return { official, custom, allPlugins };
 }
 
 export async function installPlugin(req: MarketplaceInstallRequest): Promise<MarketplaceInstallResult> {
