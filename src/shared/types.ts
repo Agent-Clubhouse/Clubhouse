@@ -62,6 +62,8 @@ export interface Agent {
   orchestrator?: OrchestratorId;
   headless?: boolean;
   freeAgentMode?: boolean;
+  /** Set when the agent is resuming a previous CLI session (spinner overlay) */
+  resuming?: boolean;
 }
 
 export interface CompletedQuickAgent {

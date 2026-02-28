@@ -51,6 +51,8 @@ interface AgentState {
   recordActivity: (id: string) => void;
   reorderAgents: (projectPath: string, orderedIds: string[]) => Promise<void>;
   isAgentActive: (id: string) => boolean;
+  /** Clear the resuming flag for an agent (called when session replay finishes) */
+  clearResuming: (id: string) => void;
   /** Register a placeholder agent in 'creating' state while worktree is set up. Returns temp ID. */
   registerCreatingAgent: (projectId: string, name: string, color: string, orchestrator?: string, freeAgentMode?: boolean) => string;
 }
@@ -289,6 +291,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       mission,
       orchestrator: config.orchestrator,
       freeAgentMode: config.freeAgentMode || undefined,
+      resuming: resume || undefined,
     };
 
     set((s) => ({
@@ -669,6 +672,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const last = get().agentActivity[id];
     if (!last) return false;
     return Date.now() - last < 3000;
+  },
+
+  clearResuming: (id) => {
+    set((s) => {
+      const agent = s.agents[id];
+      if (!agent || !agent.resuming) return s;
+      return { agents: { ...s.agents, [id]: { ...agent, resuming: undefined } } };
+    });
   },
 
   registerCreatingAgent: (projectId, name, color, orchestrator, freeAgentMode) => {
