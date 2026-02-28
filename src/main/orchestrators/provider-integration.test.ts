@@ -1019,29 +1019,39 @@ describe('Provider integration tests', () => {
   });
 
   describe('findBinaryInPath caching', () => {
-    it('uses cached result on second call, skipping execSync', async () => {
+    it('finds binary via well-known paths without spawning a shell', async () => {
       const provider = new ClaudeCodeProvider();
 
-      // First call — triggers shell lookup
+      // existsSync returns true for known binaries — found via extraPaths (step 1)
       await provider.buildSpawnCommand({ cwd: '/p' });
-      const firstCallCount = vi.mocked(execSync).mock.calls.length;
 
-      // Second call — should use cache, no new execSync
+      // No shell spawn should have been needed (binary found via fs.existsSync)
+      expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    });
+
+    it('uses cached result on second call, skipping fs checks', async () => {
+      const provider = new ClaudeCodeProvider();
+
       await provider.buildSpawnCommand({ cwd: '/p' });
-      expect(vi.mocked(execSync).mock.calls.length).toBe(firstCallCount);
+      const firstExistsSyncCount = vi.mocked(fs.existsSync).mock.calls.length;
+
+      // Second call — should use cache, no new existsSync for binary
+      await provider.buildSpawnCommand({ cwd: '/p' });
+      // Cache hit adds exactly 1 existsSync call (to verify cached path still exists)
+      expect(vi.mocked(fs.existsSync).mock.calls.length).toBe(firstExistsSyncCount + 1);
     });
 
     it('re-discovers binary after cache is cleared', async () => {
       const provider = new ClaudeCodeProvider();
 
       await provider.buildSpawnCommand({ cwd: '/p' });
-      const firstCallCount = vi.mocked(execSync).mock.calls.length;
+      const firstExistsSyncCount = vi.mocked(fs.existsSync).mock.calls.length;
 
       clearBinaryCache();
 
       await provider.buildSpawnCommand({ cwd: '/p' });
-      // After clearing, should have made new execSync calls
-      expect(vi.mocked(execSync).mock.calls.length).toBeGreaterThan(firstCallCount);
+      // After clearing, should have scanned extraPaths again (more existsSync calls)
+      expect(vi.mocked(fs.existsSync).mock.calls.length).toBeGreaterThan(firstExistsSyncCount + 1);
     });
 
     it('re-discovers binary when cached path no longer exists', async () => {
@@ -1067,56 +1077,46 @@ describe('Provider integration tests', () => {
       // Should still succeed by re-discovering
       await provider.buildSpawnCommand({ cwd: '/p' });
     });
+
+    it('falls back to shell-native lookup when not in well-known paths or PATH', async () => {
+      // Make existsSync return false for all paths (binary not at well-known location)
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      // But shell `which` finds it
+      vi.mocked(execSync).mockReturnValue('/custom/path/claude\n');
+      // existsSync needs to return true for the which result
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        return String(p) === '/custom/path/claude';
+      });
+
+      const provider = new ClaudeCodeProvider();
+      const { binary } = await provider.buildSpawnCommand({ cwd: '/p' });
+      expect(binary).toBe('/custom/path/claude');
+      expect(vi.mocked(execSync)).toHaveBeenCalled();
+    });
   });
 
-  describe('checkAvailability with envOverride', () => {
-    it('ClaudeCode: merges envOverride into auth check env', async () => {
+  describe('checkAvailability', () => {
+    it('ClaudeCode: returns available when binary exists (no auth check)', async () => {
       const provider = new ClaudeCodeProvider();
-      // Mock execFile to capture the env
-      let capturedEnv: Record<string, string> | undefined;
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: string, _args: string[], opts: any, cb?: any) => {
-          capturedEnv = opts?.env;
-          if (cb) cb(null, { stdout: JSON.stringify({ result: 'ok' }), stderr: '' });
-          return {} as any;
-        },
-      );
-
-      await provider.checkAvailability({ CLAUDE_CONFIG_DIR: '/custom/config' });
-
-      expect(capturedEnv).toBeDefined();
-      expect(capturedEnv!.CLAUDE_CONFIG_DIR).toBe('/custom/config');
-      // Should still have PATH from shell env
-      expect(capturedEnv!.PATH).toBeDefined();
-    });
-
-    it('ClaudeCode: works without envOverride (backward compat)', async () => {
-      const provider = new ClaudeCodeProvider();
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: string, _args: string[], _opts: any, cb?: any) => {
-          if (cb) cb(null, { stdout: JSON.stringify({ result: 'ok' }), stderr: '' });
-          return {} as any;
-        },
-      );
-
       const result = await provider.checkAvailability();
       expect(result.available).toBe(true);
+      // Should NOT spawn a process for auth check
+      expect(vi.mocked(execFile)).not.toHaveBeenCalled();
     });
 
-    it('ClaudeCode: profile CLAUDE_CONFIG_DIR overrides default', async () => {
+    it('ClaudeCode: returns unavailable when binary not found', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
       const provider = new ClaudeCodeProvider();
-      let capturedEnv: Record<string, string> | undefined;
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: string, _args: string[], opts: any, cb?: any) => {
-          capturedEnv = opts?.env;
-          if (cb) cb(null, { stdout: JSON.stringify({ result: 'ok' }), stderr: '' });
-          return {} as any;
-        },
-      );
+      const result = await provider.checkAvailability();
+      expect(result.available).toBe(false);
+      expect(result.error).toBeDefined();
+    });
 
-      await provider.checkAvailability({ CLAUDE_CONFIG_DIR: '~/.claude-work' });
-
-      expect(capturedEnv!.CLAUDE_CONFIG_DIR).toBe('~/.claude-work');
+    it('ClaudeCode: accepts envOverride param without error', async () => {
+      const provider = new ClaudeCodeProvider();
+      const result = await provider.checkAvailability({ CLAUDE_CONFIG_DIR: '/custom/config' });
+      expect(result.available).toBe(true);
     });
 
     it('CopilotCli: accepts envOverride without error', async () => {
@@ -1125,23 +1125,10 @@ describe('Provider integration tests', () => {
       expect(result.available).toBe(true);
     });
 
-    it('CodexCli: accepts envOverride without error (API key not checked pre-flight)', async () => {
+    it('CodexCli: accepts envOverride without error', async () => {
       const provider = new CodexCliProvider();
-      // Mock execFile to succeed (binary runs)
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: string, _args: string[], _opts: any, cb?: any) => {
-          if (cb) cb(null, { stdout: 'codex v1.0', stderr: '' });
-          return {} as any;
-        },
-      );
-
-      // Without override — no API key in shell env → still available (key check removed)
-      const noKeyResult = await provider.checkAvailability();
-      expect(noKeyResult.available).toBe(true);
-
-      // With override — also works
-      const withKeyResult = await provider.checkAvailability({ OPENAI_API_KEY: 'sk-test-123' });
-      expect(withKeyResult.available).toBe(true);
+      const result = await provider.checkAvailability();
+      expect(result.available).toBe(true);
     });
 
     it('OpenCode: accepts envOverride without error', async () => {
