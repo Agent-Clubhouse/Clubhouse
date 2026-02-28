@@ -1,4 +1,5 @@
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
+import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type {
@@ -13,7 +14,7 @@ import { appLog } from './log-service';
 // Track which projects have already had .gitignore updated this session
 const gitignoreEnsured = new Set<string>();
 
-function ensurePluginDataLocalGitignored(projectPath: string): void {
+async function ensurePluginDataLocalGitignored(projectPath: string): Promise<void> {
   if (gitignoreEnsured.has(projectPath)) return;
   gitignoreEnsured.add(projectPath);
 
@@ -21,12 +22,15 @@ function ensurePluginDataLocalGitignored(projectPath: string): void {
   const gitignorePath = path.join(projectPath, '.gitignore');
 
   try {
-    const content = fs.existsSync(gitignorePath)
-      ? fs.readFileSync(gitignorePath, 'utf-8')
-      : '';
+    let content = '';
+    try {
+      content = await fs.readFile(gitignorePath, 'utf-8');
+    } catch {
+      // File doesn't exist yet
+    }
     if (content.includes(pattern)) return;
     const separator = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-    fs.writeFileSync(gitignorePath, content + separator + pattern + '\n', 'utf-8');
+    await fs.writeFile(gitignorePath, content + separator + pattern + '\n', 'utf-8');
   } catch {
     // Best-effort — don't break storage if .gitignore can't be written
   }
@@ -46,8 +50,8 @@ function getStorageDir(pluginId: string, scope: 'project' | 'project-local' | 'g
   return path.join(getGlobalPluginDataDir(), pluginId);
 }
 
-function ensureDir(dirPath: string): void {
-  fs.mkdirSync(dirPath, { recursive: true });
+async function ensureDir(dirPath: string): Promise<void> {
+  await fs.mkdir(dirPath, { recursive: true });
 }
 
 function assertSafePath(base: string, target: string): void {
@@ -63,44 +67,45 @@ function assertSafePath(base: string, target: string): void {
 
 // ── Key-Value Storage ──────────────────────────────────────────────────
 
-export function readKey(req: PluginStorageReadRequest): unknown {
+export async function readKey(req: PluginStorageReadRequest): Promise<unknown> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   assertSafePath(dir, `${req.key}.json`);
   try {
-    const raw = fs.readFileSync(file, 'utf-8');
+    const raw = await fs.readFile(file, 'utf-8');
     return JSON.parse(raw);
   } catch {
     return undefined;
   }
 }
 
-export function writeKey(req: PluginStorageWriteRequest): void {
+export async function writeKey(req: PluginStorageWriteRequest): Promise<void> {
   if (req.scope === 'project-local' && req.projectPath) {
-    ensurePluginDataLocalGitignored(req.projectPath);
+    await ensurePluginDataLocalGitignored(req.projectPath);
   }
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   assertSafePath(dir, `${req.key}.json`);
-  ensureDir(dir);
+  await ensureDir(dir);
   const file = path.join(dir, `${req.key}.json`);
-  fs.writeFileSync(file, JSON.stringify(req.value), 'utf-8');
+  await fs.writeFile(file, JSON.stringify(req.value), 'utf-8');
 }
 
-export function deleteKey(req: PluginStorageDeleteRequest): void {
+export async function deleteKey(req: PluginStorageDeleteRequest): Promise<void> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   const file = path.join(dir, `${req.key}.json`);
   assertSafePath(dir, `${req.key}.json`);
   try {
-    fs.unlinkSync(file);
+    await fs.unlink(file);
   } catch {
     // File doesn't exist, that's fine
   }
 }
 
-export function listKeys(req: PluginStorageListRequest): string[] {
+export async function listKeys(req: PluginStorageListRequest): Promise<string[]> {
   const dir = path.join(getStorageDir(req.pluginId, req.scope, req.projectPath), 'kv');
   try {
-    return fs.readdirSync(dir)
+    const entries = await fs.readdir(dir);
+    return entries
       .filter((f) => f.endsWith('.json'))
       .map((f) => f.slice(0, -5));
   } catch {
@@ -110,54 +115,59 @@ export function listKeys(req: PluginStorageListRequest): string[] {
 
 // ── Raw File Operations ────────────────────────────────────────────────
 
-export function readPluginFile(req: PluginFileRequest): string {
+export async function readPluginFile(req: PluginFileRequest): Promise<string> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
   assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
-  return fs.readFileSync(filePath, 'utf-8');
+  return fs.readFile(filePath, 'utf-8');
 }
 
-export function writePluginFile(req: PluginFileRequest & { content: string }): void {
+export async function writePluginFile(req: PluginFileRequest & { content: string }): Promise<void> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
   assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, req.content, 'utf-8');
+  await ensureDir(path.dirname(filePath));
+  await fs.writeFile(filePath, req.content, 'utf-8');
 }
 
-export function deletePluginFile(req: PluginFileRequest): void {
+export async function deletePluginFile(req: PluginFileRequest): Promise<void> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
   assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
   try {
-    fs.unlinkSync(filePath);
+    await fs.unlink(filePath);
   } catch {
     // File doesn't exist
   }
 }
 
-export function pluginFileExists(req: PluginFileRequest): boolean {
+export async function pluginFileExists(req: PluginFileRequest): Promise<boolean> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
   assertSafePath(base, req.relativePath);
   const filePath = path.join(base, req.relativePath);
-  return fs.existsSync(filePath);
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-export function listPluginDir(req: PluginFileRequest): Array<{ name: string; isDirectory: boolean }> {
+export async function listPluginDir(req: PluginFileRequest): Promise<Array<{ name: string; isDirectory: boolean }>> {
   const base = getStorageDir(req.pluginId, req.scope, req.projectPath);
   assertSafePath(base, req.relativePath);
   const dirPath = path.join(base, req.relativePath);
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
     return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
   } catch {
     return [];
   }
 }
 
-export function mkdirPlugin(pluginId: string, scope: 'project' | 'global', relativePath: string, projectPath?: string): void {
+export async function mkdirPlugin(pluginId: string, scope: 'project' | 'global', relativePath: string, projectPath?: string): Promise<void> {
   const base = getStorageDir(pluginId, scope, projectPath);
   assertSafePath(base, relativePath);
   const dirPath = path.join(base, relativePath);
-  ensureDir(dirPath);
+  await ensureDir(dirPath);
 }
