@@ -252,7 +252,7 @@ jobs:
         uses: azure/trusted-signing-action@v0
         with:
           endpoint: https://wus2.codesigning.azure.net/
-          signing-account-name: Clubhouse-Win-Signing
+          trusted-signing-account-name: Clubhouse-Win-Signing
           certificate-profile-name: clubhouse-win-codesign
           files-folder: out/make
           files-folder-filter: exe
