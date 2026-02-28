@@ -12,7 +12,7 @@ import {
   NormalizedHookEvent,
 } from './types';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
-import { getShellEnvironment } from '../util/shell';
+import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
 
@@ -120,6 +120,9 @@ export class CodexCliProvider implements OrchestratorProvider {
       };
     }
 
+    // Re-source the shell environment so env vars added after app launch are picked up.
+    invalidateShellEnvironmentCache();
+
     // Binary found — verify it actually runs (catches broken installs / wrong arch)
     try {
       await execFileAsync(binary, ['--version'], {
@@ -134,14 +137,12 @@ export class CodexCliProvider implements OrchestratorProvider {
       };
     }
 
-    // Check for API key in the shell environment
-    const env = getShellEnvironment();
-    if (!env.OPENAI_API_KEY && !env.OPENAI_BASE_URL) {
-      return {
-        available: false,
-        error: 'OPENAI_API_KEY is not set. Run "export OPENAI_API_KEY=<your-key>" in your shell config, then restart Clubhouse.',
-      };
-    }
+    // Don't hard-block on OPENAI_API_KEY here — the key may be available in the
+    // user's shell profile (.zshrc etc.) which the PTY login shell will source,
+    // or it may be injected via a Clubhouse Profile.  Blocking here produces
+    // false negatives when getShellEnvironment() can't capture the full env
+    // (e.g. Electron launched from Dock, env set by direnv/1Password/mise).
+    // The Codex binary will report a clear auth error if the key is truly absent.
 
     return { available: true };
   }
@@ -170,7 +171,14 @@ export class CodexCliProvider implements OrchestratorProvider {
       args.push(parts.join('\n\n'));
     }
 
-    return { binary, args };
+    // Explicitly pass through API keys so they reach the spawned process even
+    // when Electron's own process.env doesn't have them (Dock launch, stale cache).
+    const shellEnv = getShellEnvironment();
+    const env: Record<string, string> = {};
+    if (shellEnv.OPENAI_API_KEY) env.OPENAI_API_KEY = shellEnv.OPENAI_API_KEY;
+    if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
+
+    return { binary, args, env };
   }
 
   getExitCommand(): string {
@@ -230,7 +238,12 @@ export class CodexCliProvider implements OrchestratorProvider {
       args.push('--model', opts.model);
     }
 
-    return { binary, args, outputKind: 'text' };
+    const shellEnv = getShellEnvironment();
+    const env: Record<string, string> = {};
+    if (shellEnv.OPENAI_API_KEY) env.OPENAI_API_KEY = shellEnv.OPENAI_API_KEY;
+    if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
+
+    return { binary, args, env, outputKind: 'text' };
   }
 
   async getModelOptions() {
