@@ -1,5 +1,5 @@
 import type { PluginManifest } from '../../shared/plugin-types';
-import { ALL_PLUGIN_PERMISSIONS } from '../../shared/plugin-types';
+import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 export const SUPPORTED_API_VERSIONS = [0.5, 0.6];
 
@@ -175,18 +175,11 @@ export function validateManifest(raw: unknown): ValidationResult {
   if (apiVersion >= 0.5 && Array.isArray(m.permissions)) {
     const permissions = m.permissions as string[];
 
-    // agent-config.* sub-permissions require base agent-config permission
-    if (permissions.includes('agent-config.cross-project') && !permissions.includes('agent-config')) {
-      errors.push('"agent-config.cross-project" requires the base "agent-config" permission');
-    }
-    if (permissions.includes('agent-config.permissions') && !permissions.includes('agent-config')) {
-      errors.push('"agent-config.permissions" requires the base "agent-config" permission');
-    }
-    if (permissions.includes('agent-config.mcp') && !permissions.includes('agent-config')) {
-      errors.push('"agent-config.mcp" requires the base "agent-config" permission');
-    }
-    if (permissions.includes('agents.free-agent-mode') && !permissions.includes('agents')) {
-      errors.push('"agents.free-agent-mode" requires the base "agents" permission');
+    // Enforce parent-child permission hierarchy from PERMISSION_HIERARCHY
+    for (const [child, parent] of Object.entries(PERMISSION_HIERARCHY)) {
+      if (permissions.includes(child) && !permissions.includes(parent)) {
+        errors.push(`"${child}" requires the base "${parent}" permission`);
+      }
     }
   }
 

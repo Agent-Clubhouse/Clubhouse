@@ -78,6 +78,86 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'theme',
 ] as const;
 
+// ── Permission risk levels ────────────────────────────────────────────
+export type PermissionRiskLevel = 'safe' | 'elevated' | 'dangerous';
+
+/**
+ * Formal parent-child hierarchy for permissions.
+ * Each key is a child permission that requires its value (the parent) to also be declared.
+ * The manifest validator uses this map to auto-derive parent requirements rather than
+ * maintaining hand-written checks for each relationship.
+ */
+export const PERMISSION_HIERARCHY: Readonly<Partial<Record<PluginPermission, PluginPermission>>> = {
+  'files.external': 'files',
+  'agent-config.cross-project': 'agent-config',
+  'agent-config.permissions': 'agent-config',
+  'agent-config.mcp': 'agent-config',
+  'agents.free-agent-mode': 'agents',
+};
+
+/**
+ * Risk classification for each permission.
+ * - safe: read-only or sandboxed operations with minimal blast radius
+ * - elevated: write access, cross-boundary operations, or system integration
+ * - dangerous: bypasses security boundaries or grants unrestricted control
+ */
+export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, PermissionRiskLevel>> = {
+  // safe — read-only or sandboxed
+  logging: 'safe',
+  theme: 'safe',
+  events: 'safe',
+  badges: 'safe',
+  widgets: 'safe',
+  commands: 'safe',
+  navigation: 'safe',
+  notifications: 'safe',
+  sounds: 'safe',
+  storage: 'safe',
+  git: 'safe',
+
+  // elevated — write access or system integration
+  files: 'elevated',
+  'files.external': 'elevated',
+  terminal: 'elevated',
+  agents: 'elevated',
+  projects: 'elevated',
+  process: 'elevated',
+  'agent-config': 'elevated',
+  'agent-config.cross-project': 'elevated',
+  'agent-config.mcp': 'elevated',
+
+  // dangerous — bypasses security boundaries
+  'agent-config.permissions': 'dangerous',
+  'agents.free-agent-mode': 'dangerous',
+};
+
+/** Display labels for risk levels. */
+export const RISK_LEVEL_LABELS: Readonly<Record<PermissionRiskLevel, string>> = {
+  safe: 'Safe',
+  elevated: 'Elevated',
+  dangerous: 'Dangerous',
+};
+
+/**
+ * Return the parent permission required for a given permission, or null if it is a root permission.
+ */
+export function getParentPermission(permission: PluginPermission): PluginPermission | null {
+  return PERMISSION_HIERARCHY[permission] ?? null;
+}
+
+/**
+ * Return all ancestor permissions required for a given permission (parent, grandparent, etc.).
+ */
+export function getRequiredParentPermissions(permission: PluginPermission): PluginPermission[] {
+  const parents: PluginPermission[] = [];
+  let current: PluginPermission | null = getParentPermission(permission);
+  while (current !== null) {
+    parents.push(current);
+    current = getParentPermission(current);
+  }
+  return parents;
+}
+
 export interface PluginExternalRoot {
   settingKey: string;
   root: string;
