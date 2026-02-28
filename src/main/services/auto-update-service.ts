@@ -92,6 +92,39 @@ export function isNewerVersion(a: string, b: string): boolean {
   return false;
 }
 
+/**
+ * Build a Windows batch script that waits for the app to exit, runs the
+ * Squirrel installer silently, relaunches the updated app, and cleans up.
+ */
+export function buildWindowsUpdateScript(
+  downloadPath: string,
+  updateExePath: string,
+  appExeName: string,
+): string {
+  return [
+    '@echo off',
+    'timeout /t 2 /nobreak >nul',
+    `"${downloadPath}" --silent`,
+    `"${updateExePath}" --processStart "${appExeName}"`,
+    `del /f "${downloadPath}" 2>nul`,
+    `del "%~f0"`,
+  ].join('\r\n');
+}
+
+/**
+ * Build a Windows batch script that waits for the app to exit, runs the
+ * Squirrel installer silently, and cleans up — no relaunch.
+ */
+export function buildWindowsQuitUpdateScript(downloadPath: string): string {
+  return [
+    '@echo off',
+    'timeout /t 2 /nobreak >nul',
+    `"${downloadPath}" --silent`,
+    `del /f "${downloadPath}" 2>nul`,
+    `del "%~f0"`,
+  ].join('\r\n');
+}
+
 function broadcastStatus(): void {
   const wins = BrowserWindow.getAllWindows();
   for (const win of wins) {
@@ -446,12 +479,26 @@ export async function applyUpdate(): Promise<void> {
       throw err;
     }
   } else if (process.platform === 'win32') {
-    // On Windows, re-run the Squirrel Setup.exe to update in-place.
-    // --silent skips the animated installer UI for a seamless auto-update.
+    // On Windows, use a batch script to apply the Squirrel update.
+    // Directly spawning Setup.exe while the app is still exiting causes
+    // ~10 second hangs due to file-lock contention.  The batch script
+    // waits for the old process to fully exit, runs the installer, then
+    // relaunches the app via Squirrel's Update.exe.
     try {
       if (fs.existsSync(downloadPath)) {
         const { spawn } = require('child_process');
-        spawn(downloadPath, ['--silent'], { detached: true, stdio: 'ignore' }).unref();
+        const script = path.join(app.getPath('temp'), 'clubhouse-update.cmd');
+        const updateExe = path.resolve(path.dirname(app.getPath('exe')), '..', 'Update.exe');
+        const appExeName = path.basename(app.getPath('exe'));
+
+        fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
+
+        spawn('cmd.exe', ['/c', script], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        }).unref();
+
         app.exit(0);
         return;
       }
@@ -531,10 +578,21 @@ export function applyUpdateOnQuit(): void {
       appLog('update:apply-on-quit', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else if (process.platform === 'win32') {
+    // Same batch-script approach as applyUpdate() — wait for the app to
+    // fully exit before running the installer to avoid file-lock hangs.
+    // No relaunch step since the user chose to quit.
     try {
       if (fs.existsSync(downloadPath)) {
         const { spawn } = require('child_process');
-        spawn(downloadPath, ['--update'], { detached: true, stdio: 'ignore' }).unref();
+        const script = path.join(app.getPath('temp'), 'clubhouse-update-quit.cmd');
+
+        fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
+
+        spawn('cmd.exe', ['/c', script], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        }).unref();
       }
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
