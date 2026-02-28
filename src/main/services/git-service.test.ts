@@ -15,7 +15,7 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-import { getGitInfo, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
+import { getGitInfo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
 
 const DIR = path.join(path.sep, 'test', 'repo');
 
@@ -636,5 +636,273 @@ describe('getGitInfo — stash count', () => {
     });
     const info = getGitInfo(DIR);
     expect(info.stashCount).toBe(0);
+  });
+});
+
+describe('checkout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns true on successful checkout', () => {
+    vi.mocked(execSync).mockReturnValue('Switched to branch \'main\'\n');
+    expect(checkout(DIR, 'main')).toBe(true);
+    expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+      'git checkout main',
+      expect.objectContaining({ cwd: DIR }),
+    );
+  });
+
+  it('returns false when checkout fails (non-existent branch)', () => {
+    vi.mocked(execSync).mockImplementation(() => { throw new Error('pathspec did not match'); });
+    expect(checkout(DIR, 'nonexistent-branch')).toBe(false);
+  });
+
+  it('returns false when checkout fails due to uncommitted changes', () => {
+    vi.mocked(execSync).mockImplementation(() => {
+      throw new Error('Your local changes would be overwritten');
+    });
+    expect(checkout(DIR, 'feature/other')).toBe(false);
+  });
+
+  it('passes branch name directly to git checkout command', () => {
+    vi.mocked(execSync).mockReturnValue('');
+    checkout(DIR, 'feature/my-branch');
+    const call = vi.mocked(execSync).mock.calls[0][0] as string;
+    expect(call).toBe('git checkout feature/my-branch');
+  });
+});
+
+describe('push — success case', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('pushes to remote branch and returns ok:true', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    let pushCalled = false;
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('git push')) {
+        pushCalled = true;
+        return 'Everything up-to-date\n';
+      }
+      if (c.includes('git remote')) return 'origin\n';
+      if (c.includes('rev-parse --abbrev-ref')) return 'feature/x\n';
+      if (c.includes('git branch --no-color')) return '* feature/x\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('rev-list --left-right')) return '0\t0\n';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const result = push(DIR);
+    expect(result.ok).toBe(true);
+    expect(pushCalled).toBe(true);
+  });
+
+  it('returns error message when push command fails', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('git push')) {
+        const err = new Error('rejected') as any;
+        err.stderr = Buffer.from('rejected: non-fast-forward');
+        throw err;
+      }
+      if (c.includes('git remote')) return 'origin\n';
+      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+      if (c.includes('git branch --no-color')) return '* main\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('rev-list --left-right')) return '0\t1\n';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const result = push(DIR);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('rejected');
+  });
+});
+
+describe('pull — success case', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('pulls from remote branch and returns ok:true', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    let pullCalled = false;
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('git pull')) {
+        pullCalled = true;
+        return 'Already up to date.\n';
+      }
+      if (c.includes('git remote')) return 'origin\n';
+      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+      if (c.includes('git branch --no-color')) return '* main\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('rev-list --left-right')) return '0\t0\n';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const result = pull(DIR);
+    expect(result.ok).toBe(true);
+    expect(pullCalled).toBe(true);
+  });
+
+  it('returns error when pull has merge conflicts', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('git pull')) {
+        const err = new Error('merge conflict') as any;
+        err.stderr = Buffer.from('CONFLICT (content): Merge conflict in file.ts');
+        throw err;
+      }
+      if (c.includes('git remote')) return 'origin\n';
+      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+      if (c.includes('git branch --no-color')) return '* main\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('rev-list --left-right')) return '2\t0\n';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const result = pull(DIR);
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('CONFLICT');
+  });
+});
+
+describe('commit — failure case', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns ok:false with error message when commit fails', () => {
+    vi.mocked(execSync).mockImplementation(() => {
+      const err = new Error('nothing to commit') as any;
+      err.stderr = Buffer.from('nothing to commit, working tree clean');
+      throw err;
+    });
+    const result = commit(DIR, 'empty commit');
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('nothing to commit');
+  });
+});
+
+describe('getFileDiff — edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns empty modified when staged read fails', () => {
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('HEAD:')) return 'original\n';
+      if (c.includes(':"')) throw new Error('not in index');
+      return '';
+    });
+    const diff = getFileDiff(DIR, 'gone.ts', true);
+    expect(diff.original).toBe('original\n');
+    expect(diff.modified).toBe('');
+  });
+
+  it('returns empty modified when disk read fails for unstaged', () => {
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      if (String(cmd).includes('HEAD:')) return 'original\n';
+      return '';
+    });
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const diff = getFileDiff(DIR, 'deleted.ts', false);
+    expect(diff.original).toBe('original\n');
+    expect(diff.modified).toBe('');
+  });
+
+  it('returns both empty for completely new untracked file that was deleted', () => {
+    vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const diff = getFileDiff(DIR, 'phantom.ts', false);
+    expect(diff.original).toBe('');
+    expect(diff.modified).toBe('');
+  });
+});
+
+describe('getGitInfo — command failure resilience', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns HEAD when rev-parse fails', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('rev-parse --abbrev-ref')) throw new Error('fatal');
+      if (c.includes('git branch --no-color')) return '* main\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('git remote')) return '';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const info = getGitInfo(DIR);
+    // run() returns '' on error, and the fallback is 'HEAD'
+    expect(info.branch).toBe('HEAD');
+  });
+
+  it('returns empty branches when git branch fails', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+      if (c.includes('git branch --no-color')) throw new Error('fatal');
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return '';
+      if (c.includes('git remote')) return '';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const info = getGitInfo(DIR);
+    expect(info.branches).toEqual([]);
+  });
+
+  it('handles multiple log entries', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(execSync).mockImplementation((cmd: any) => {
+      const c = String(cmd);
+      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+      if (c.includes('git branch --no-color')) return '* main\n';
+      if (c.includes('git status --porcelain')) return '';
+      if (c.includes('git log')) return 'aaa|||aa|||First commit|||Alice|||1 hour ago\nbbb|||bb|||Second commit|||Bob|||2 hours ago\nccc|||cc|||Third commit|||Charlie|||3 hours ago\n';
+      if (c.includes('git remote')) return '';
+      if (c.includes('git stash list')) return '';
+      return '';
+    });
+    const info = getGitInfo(DIR);
+    expect(info.log).toHaveLength(3);
+    expect(info.log[0].author).toBe('Alice');
+    expect(info.log[2].subject).toBe('Third commit');
+  });
+
+  it('detects all conflict codes: DD, AU, UD, UA, DU', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    const conflictCodes = ['DD', 'AU', 'UD', 'UA', 'DU'];
+    for (const code of conflictCodes) {
+      vi.mocked(execSync).mockImplementation((cmd: any) => {
+        const c = String(cmd);
+        if (c.includes('git status --porcelain')) return `${code} conflict-file.ts\n`;
+        if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
+        if (c.includes('git branch --no-color')) return '* main\n';
+        if (c.includes('git log')) return '';
+        if (c.includes('git remote')) return '';
+        if (c.includes('git stash list')) return '';
+        return '';
+      });
+      const info = getGitInfo(DIR);
+      expect(info.hasConflicts).toBe(true);
+    }
   });
 });

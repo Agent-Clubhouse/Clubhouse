@@ -44,6 +44,16 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
+const mockCreatePermission = vi.fn();
+vi.mock('./annex-permission-queue', () => ({
+  createPermission: (...args: unknown[]) => mockCreatePermission(...args),
+}));
+
+const mockEmitHookEvent = vi.fn();
+vi.mock('./annex-event-bus', () => ({
+  emitHookEvent: (...args: unknown[]) => mockEmitHookEvent(...args),
+}));
+
 import { start, stop, getPort, waitReady } from './hook-server';
 
 function postToServer(port: number, path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<number> {
@@ -58,6 +68,26 @@ function postToServer(port: number, path: string, body: unknown, extraHeaders?: 
     }, (res) => {
       res.resume();
       resolve(res.statusCode || 0);
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function postToServerWithBody(port: number, urlPath: string, body: unknown, extraHeaders?: Record<string, string>): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: urlPath,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...extraHeaders },
+    }, (res) => {
+      let responseBody = '';
+      res.on('data', (chunk: Buffer) => { responseBody += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode || 0, body: responseBody }));
     });
     req.on('error', reject);
     req.write(data);
@@ -336,6 +366,266 @@ describe('hook-server', () => {
       expect(status).toBe(200);
       await new Promise(r => setTimeout(r, 50));
       expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('handles parseHookEvent throwing an error', async () => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(undefined);
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => { throw new Error('Parse error'); }),
+        toolVerb: vi.fn(),
+      });
+
+      const status = await postToServer(port, '/hook/agent-1', { hook_event_name: 'PreToolUse' });
+      expect(status).toBe(200);
+      await new Promise(r => setTimeout(r, 50));
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('permission request handling', () => {
+    const VALID_NONCE = 'perm-nonce';
+
+    beforeEach(() => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
+    });
+
+    it('holds response for permission_request until decision is resolved with allow', async () => {
+      let resolveDecision!: (value: string) => void;
+      const decisionPromise = new Promise<string>((resolve) => { resolveDecision = resolve; });
+
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-1',
+        decision: decisionPromise,
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: { command: 'rm -rf /' },
+          message: 'Allow dangerous command?',
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      // Start the request — it should block until we resolve
+      const responsePromise = postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+        tool_name: 'Bash',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      // Give server time to process
+      await new Promise(r => setTimeout(r, 50));
+
+      // Verify createPermission was called
+      expect(mockCreatePermission).toHaveBeenCalledWith(
+        'agent-1',
+        'Bash',
+        { command: 'rm -rf /' },
+        'Allow dangerous command?',
+        120_000,
+      );
+
+      // Resolve the decision
+      resolveDecision('allow');
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.hookSpecificOutput.permissionDecision).toBe('allow');
+    });
+
+    it('returns deny decision when permission is denied', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-2',
+        decision: Promise.resolve('deny'),
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      const response = await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      const body = JSON.parse(response.body);
+      expect(body.hookSpecificOutput.permissionDecision).toBe('deny');
+    });
+
+    it('returns "ask" fallback when permission times out', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-3',
+        decision: Promise.resolve('timeout'),
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Write',
+          toolInput: { path: '/tmp/test' },
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Writing file'),
+      });
+
+      const response = await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      const body = JSON.parse(response.body);
+      expect(body.hookSpecificOutput.permissionDecision).toBe('ask');
+    });
+
+    it('uses "unknown" as tool name when normalized event has no toolName', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-4',
+        decision: Promise.resolve('allow'),
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: undefined,
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => undefined),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockCreatePermission).toHaveBeenCalledWith(
+        'agent-1',
+        'unknown',
+        undefined,
+        undefined,
+        120_000,
+      );
+    });
+
+    it('broadcasts hook event to renderer before holding for permission', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-5',
+        decision: Promise.resolve('allow'),
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      // Should broadcast the event before holding for permission
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:hook-event',
+        'agent-1',
+        expect.objectContaining({ kind: 'permission_request', toolName: 'Bash' }),
+      );
+    });
+  });
+
+  describe('parseHookEvent returning null', () => {
+    const VALID_NONCE = 'null-nonce';
+
+    beforeEach(() => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
+    });
+
+    it('returns 200 but does not broadcast when parseHookEvent returns null', async () => {
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => null),
+        toolVerb: vi.fn(),
+      });
+
+      const status = await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'UnknownEvent',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      await new Promise(r => setTimeout(r, 50));
+      expect(status).toBe(200);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('does not call toolVerb when parseHookEvent returns null', async () => {
+      const mockToolVerb = vi.fn();
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => null),
+        toolVerb: mockToolVerb,
+      });
+
+      await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'SomeEvent',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      await new Promise(r => setTimeout(r, 50));
+      expect(mockToolVerb).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('waitReady edge cases', () => {
+    it('rejects when server has not been started', async () => {
+      stop(); // Make sure server is stopped
+      // Need to re-import to get a fresh module state — but since we share
+      // module state, just verify the rejection
+      // The server was stopped in this test, so waitReady should reject
+      // after stop() sets readyPromise to null
+      await expect(waitReady()).rejects.toThrow('Hook server not started');
+    });
+  });
+
+  describe('annex event bus integration', () => {
+    const VALID_NONCE = 'bus-nonce';
+
+    beforeEach(() => {
+      mockGetAgentProjectPath.mockReturnValue('/my/project');
+      mockGetAgentOrchestrator.mockReturnValue('claude-code');
+      mockGetAgentNonce.mockReturnValue(VALID_NONCE);
+    });
+
+    it('emits hook event to annex event bus', async () => {
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'pre_tool',
+          toolName: 'Read',
+          toolInput: { path: '/tmp/file' },
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Reading file'),
+      });
+
+      await postToServer(port, '/hook/agent-1', {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Read',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'agent-1',
+        expect.objectContaining({
+          kind: 'pre_tool',
+          toolName: 'Read',
+          toolVerb: 'Reading file',
+        }),
+      );
     });
   });
 });
