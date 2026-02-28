@@ -45,6 +45,8 @@ vi.mock('../services/agent-system', () => ({
 
 vi.mock('../services/headless-manager', () => ({
   readTranscript: vi.fn(() => 'transcript text'),
+  getTranscriptInfo: vi.fn(async () => ({ totalEvents: 10, fileSizeBytes: 1024 })),
+  readTranscriptPage: vi.fn(async () => ({ events: [{ type: 'result' }], totalEvents: 10 })),
 }));
 
 vi.mock('../orchestrators/shared', () => ({
@@ -90,7 +92,8 @@ describe('agent-handlers', () => {
       IPC.AGENT.READ_QUICK_SUMMARY, IPC.AGENT.GET_MODEL_OPTIONS,
       IPC.AGENT.CHECK_ORCHESTRATOR, IPC.AGENT.GET_ORCHESTRATORS,
       IPC.AGENT.GET_TOOL_VERB, IPC.AGENT.GET_SUMMARY_INSTRUCTION,
-      IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.IS_HEADLESS_AGENT,
+      IPC.AGENT.READ_TRANSCRIPT, IPC.AGENT.GET_TRANSCRIPT_INFO,
+      IPC.AGENT.READ_TRANSCRIPT_PAGE, IPC.AGENT.IS_HEADLESS_AGENT,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -308,6 +311,20 @@ describe('agent-handlers', () => {
     const result = await handler({}, 'a1');
     expect(headlessManager.readTranscript).toHaveBeenCalledWith('a1');
     expect(result).toBe('transcript text');
+  });
+
+  it('GET_TRANSCRIPT_INFO delegates to headlessManager.getTranscriptInfo', async () => {
+    const handler = handlers.get(IPC.AGENT.GET_TRANSCRIPT_INFO)!;
+    const result = await handler({}, 'a1');
+    expect(headlessManager.getTranscriptInfo).toHaveBeenCalledWith('a1');
+    expect(result).toEqual({ totalEvents: 10, fileSizeBytes: 1024 });
+  });
+
+  it('READ_TRANSCRIPT_PAGE delegates to headlessManager.readTranscriptPage', async () => {
+    const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_PAGE)!;
+    const result = await handler({}, 'a1', 0, 50);
+    expect(headlessManager.readTranscriptPage).toHaveBeenCalledWith('a1', 0, 50);
+    expect(result).toEqual({ events: [{ type: 'result' }], totalEvents: 10 });
   });
 
   it('IS_HEADLESS_AGENT delegates to agentSystem.isHeadlessAgent', async () => {
