@@ -121,6 +121,7 @@ jobs:
     name: Build macOS (${{ matrix.arch }})
     needs: verify-tag
     runs-on: ${{ matrix.runner }}
+    environment: release
     strategy:
       fail-fast: false
       matrix:
@@ -214,6 +215,7 @@ jobs:
     name: Build Windows (${{ matrix.arch }})
     needs: verify-tag
     runs-on: windows-latest
+    environment: release
     strategy:
       fail-fast: false
       matrix:
