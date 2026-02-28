@@ -1,16 +1,23 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import * as monaco from 'monaco-editor';
+import React, { useEffect, useRef, useState } from 'react';
 import { useThemeStore } from '../stores/themeStore';
 
+// Cached module reference — populated on first dynamic import
+let monacoModule: any | null = null;
 let themesRegistered = false;
 
-function ensureThemes(): void {
+async function loadMonaco() {
+  if (!monacoModule) {
+    monacoModule = await import('monaco-editor');
+  }
+  return monacoModule;
+}
+
+async function ensureThemes(m: any): Promise<void> {
   if (themesRegistered) return;
-  const { THEMES } = require('../themes/index');
-  const { generateMonacoTheme } = require('../plugins/builtin/files/monaco-theme');
+  const { THEMES } = await import('../themes/index');
+  const { generateMonacoTheme } = await import('../plugins/builtin/files/monaco-theme');
   for (const [id, theme] of Object.entries(THEMES)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    monaco.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
+    m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
   }
   themesRegistered = true;
 }
@@ -34,61 +41,73 @@ export function SettingsMonacoEditor({
   editorKey,
 }: SettingsMonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
   const onChangeRef = useRef(onChange);
   const themeId = useThemeStore((s) => s.themeId);
+  const [loading, setLoading] = useState(true);
 
   onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    ensureThemes();
+    let disposed = false;
 
-    const editor = monaco.editor.create(containerRef.current, {
-      value,
-      language,
-      theme: `clubhouse-${themeId}`,
-      fontSize: 12,
-      fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
-      minimap: { enabled: false },
-      wordWrap: 'on',
-      automaticLayout: true,
-      scrollBeyondLastLine: false,
-      padding: { top: 6, bottom: 6 },
-      lineNumbers: 'off',
-      glyphMargin: false,
-      folding: false,
-      lineDecorationsWidth: 8,
-      lineNumbersMinChars: 0,
-      renderLineHighlight: 'none',
-      overviewRulerBorder: false,
-      scrollbar: {
-        vertical: 'auto',
-        horizontal: 'auto',
-        verticalScrollbarSize: 6,
-      },
-      readOnly,
-    });
+    loadMonaco().then(async (m) => {
+      if (disposed || !containerRef.current) return;
+      monacoRef.current = m;
+      await ensureThemes(m);
 
-    editorRef.current = editor;
+      const editor = m.editor.create(containerRef.current, {
+        value,
+        language,
+        theme: `clubhouse-${themeId}`,
+        fontSize: 12,
+        fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        automaticLayout: true,
+        scrollBeyondLastLine: false,
+        padding: { top: 6, bottom: 6 },
+        lineNumbers: 'off',
+        glyphMargin: false,
+        folding: false,
+        lineDecorationsWidth: 8,
+        lineNumbersMinChars: 0,
+        renderLineHighlight: 'none',
+        overviewRulerBorder: false,
+        scrollbar: {
+          vertical: 'auto',
+          horizontal: 'auto',
+          verticalScrollbarSize: 6,
+        },
+        readOnly,
+      });
 
-    editor.onDidChangeModelContent(() => {
-      onChangeRef.current(editor.getValue());
+      editorRef.current = editor;
+
+      editor.onDidChangeModelContent(() => {
+        onChangeRef.current(editor.getValue());
+      });
+
+      setLoading(false);
     });
 
     return () => {
-      editor.dispose();
-      editorRef.current = null;
+      disposed = true;
+      if (editorRef.current) {
+        editorRef.current.dispose();
+        editorRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorKey, language]);
 
   // React to theme changes
   useEffect(() => {
-    if (!editorRef.current) return;
-    monaco.editor.setTheme(`clubhouse-${themeId}`);
+    if (!editorRef.current || !monacoRef.current) return;
+    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
   }, [themeId]);
 
   // Sync value changes from outside
@@ -109,7 +128,13 @@ export function SettingsMonacoEditor({
     <div
       ref={containerRef}
       className="w-full rounded-lg border border-surface-1 overflow-hidden"
-      style={{ height }}
-    />
+      style={{ height, position: 'relative' }}
+    >
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs">
+          Loading editor…
+        </div>
+      )}
+    </div>
   );
 }

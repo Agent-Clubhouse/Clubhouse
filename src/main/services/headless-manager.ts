@@ -45,9 +45,54 @@ interface HeadlessSession {
   transcriptPath: string;
   startedAt: number;
   textBuffer?: string;
+  /** Timer for force-kill escalation in kill(). */
+  killTimer?: ReturnType<typeof setTimeout>;
 }
 
 const sessions = new Map<string, HeadlessSession>();
+
+function cleanupHeadlessSession(agentId: string): void {
+  const session = sessions.get(agentId);
+  if (session?.killTimer) {
+    clearTimeout(session.killTimer);
+  }
+  sessions.delete(agentId);
+}
+
+/** Interval (ms) between stale session sweep checks. */
+const STALE_SWEEP_INTERVAL = 30_000;
+
+let sweepTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start a periodic sweep that detects headless sessions whose processes have
+ * died without triggering the close/error handler. Safety net for edge cases.
+ */
+export function startStaleSweep(): void {
+  if (sweepTimer) return;
+  sweepTimer = setInterval(() => {
+    for (const [agentId, session] of sessions) {
+      // ChildProcess.exitCode is non-null once the process has exited
+      if (session.process.exitCode !== null) {
+        appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
+          meta: { agentId, exitCode: session.process.exitCode },
+        });
+        cleanupHeadlessSession(agentId);
+        broadcastToAllWindows(IPC.PTY.EXIT, agentId, session.process.exitCode ?? 1);
+        annexEventBus.emitPtyExit(agentId, session.process.exitCode ?? 1);
+      }
+    }
+  }, STALE_SWEEP_INTERVAL);
+  sweepTimer.unref();
+}
+
+/** Stop the periodic stale session sweep. */
+export function stopStaleSweep(): void {
+  if (sweepTimer) {
+    clearInterval(sweepTimer);
+    sweepTimer = null;
+  }
+}
 
 const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
 
@@ -290,7 +335,7 @@ export function spawnHeadless(
     }
 
     logStream.end();
-    sessions.delete(agentId);
+    cleanupHeadlessSession(agentId);
 
     appLog('core:headless', 'info', `Process exited`, {
       meta: { agentId, exitCode: code, stdoutBytes, events: transcript.length, stderr: stderrChunks.join('\n').slice(0, 500) },
@@ -308,7 +353,7 @@ export function spawnHeadless(
 
     appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
     logStream.end();
-    sessions.delete(agentId);
+    cleanupHeadlessSession(agentId);
 
     onExit?.(agentId, 1);
 
@@ -321,15 +366,22 @@ export function kill(agentId: string): void {
   const session = sessions.get(agentId);
   if (!session) return;
 
+  // Clear any existing kill timer to prevent leaks on double-call
+  if (session.killTimer) clearTimeout(session.killTimer);
+
+  const proc = session.process;
+
   try {
-    session.process.kill('SIGTERM');
+    proc.kill('SIGTERM');
   } catch { /* already dead */ }
 
-  // Force kill after 5 seconds
-  setTimeout(() => {
-    if (sessions.has(agentId)) {
-      try { session.process.kill('SIGKILL'); } catch { /* dead */ }
-      sessions.delete(agentId);
+  // Force kill after 5 seconds, guarded by process identity so a
+  // replacement session spawned with the same agentId is not affected.
+  session.killTimer = setTimeout(() => {
+    const current = sessions.get(agentId);
+    if (current && current.process === proc) {
+      try { proc.kill('SIGKILL'); } catch { /* dead */ }
+      cleanupHeadlessSession(agentId);
     }
   }, 5000);
 }

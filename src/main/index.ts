@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { registerAllHandlers } from './ipc';
-import { killAll } from './services/pty-manager';
+import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
+import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
 import { restoreAll } from './services/config-pipeline';
 import { buildMenu } from './menu';
 import { getSettings as getThemeSettings } from './services/theme-service';
@@ -160,6 +161,10 @@ app.on('ready', () => {
   // Start periodic plugin update checks
   startPeriodicPluginUpdateChecks();
 
+  // Start stale session sweeps (safety net for leaked sessions)
+  startPtyStaleSweep();
+  startHeadlessStaleSweep();
+
   // macOS notification permission is triggered on-demand when the user
   // sends their first test notification or an agent event fires.
   // The app must be codesigned (even ad-hoc) for macOS to show the prompt.
@@ -193,6 +198,8 @@ app.on('before-quit', () => {
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
 
+  stopPtyStaleSweep();
+  stopHeadlessStaleSweep();
   annexServer.stop();
   restoreAll();
   killAll();

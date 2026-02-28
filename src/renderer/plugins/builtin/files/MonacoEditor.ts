@@ -1,21 +1,22 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import * as monaco from 'monaco-editor';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { generateMonacoTheme } from './monaco-theme';
 import { useThemeStore } from '../../../stores/themeStore';
 
-function getMonaco(): typeof monaco {
-  return monaco;
-}
-
+// Cached module reference — populated on first dynamic import
+let monacoModule: any | null = null;
 let themesRegistered = false;
 
-function ensureThemes(): void {
+async function loadMonaco() {
+  if (!monacoModule) {
+    monacoModule = await import('monaco-editor');
+  }
+  return monacoModule;
+}
+
+async function ensureThemes(m: any): Promise<void> {
   if (themesRegistered) return;
-  const m = getMonaco();
-  // Lazy import themes to avoid circular issues in tests
-  const { THEMES } = require('../../../themes/index');
+  const { THEMES } = await import('../../../themes/index');
   for (const [id, theme] of Object.entries(THEMES)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     m.editor.defineTheme(`clubhouse-${id}`, generateMonacoTheme(theme as any) as any);
   }
   themesRegistered = true;
@@ -31,12 +32,13 @@ interface MonacoEditorProps {
 
 export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
   const savedContentRef = useRef(value);
   const onSaveRef = useRef(onSave);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const themeId = useThemeStore((s) => s.themeId);
+  const [loading, setLoading] = useState(true);
 
   onSaveRef.current = onSave;
   onDirtyChangeRef.current = onDirtyChange;
@@ -55,49 +57,59 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const m = getMonaco();
-    ensureThemes();
+    let disposed = false;
 
-    const editor = m.editor.create(containerRef.current, {
-      value,
-      language,
-      theme: `clubhouse-${themeId}`,
-      fontSize: 13,
-      fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
-      bracketPairColorization: { enabled: true },
-      minimap: { enabled: false },
-      wordWrap: 'off',
-      automaticLayout: true,
-      scrollBeyondLastLine: false,
-      padding: { top: 8 },
-    });
+    loadMonaco().then(async (m) => {
+      if (disposed || !containerRef.current) return;
+      monacoRef.current = m;
+      await ensureThemes(m);
 
-    editorRef.current = editor;
+      const editor = m.editor.create(containerRef.current, {
+        value,
+        language,
+        theme: `clubhouse-${themeId}`,
+        fontSize: 13,
+        fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
+        bracketPairColorization: { enabled: true },
+        minimap: { enabled: false },
+        wordWrap: 'off',
+        automaticLayout: true,
+        scrollBeyondLastLine: false,
+        padding: { top: 8 },
+      });
 
-    // Cmd+S / Ctrl+S keybinding
-    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
-      const content = editor.getValue();
-      savedContentRef.current = content;
-      onSaveRef.current(content);
-      onDirtyChangeRef.current(false);
-    });
+      editorRef.current = editor;
 
-    // Track dirty state
-    editor.onDidChangeModelContent(() => {
-      checkDirty();
+      // Cmd+S / Ctrl+S keybinding
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
+        const content = editor.getValue();
+        savedContentRef.current = content;
+        onSaveRef.current(content);
+        onDirtyChangeRef.current(false);
+      });
+
+      // Track dirty state
+      editor.onDidChangeModelContent(() => {
+        checkDirty();
+      });
+
+      setLoading(false);
     });
 
     return () => {
-      editor.dispose();
-      editorRef.current = null;
+      disposed = true;
+      if (editorRef.current) {
+        editorRef.current.dispose();
+        editorRef.current = null;
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath]);
 
   // React to theme changes
   useEffect(() => {
-    if (!editorRef.current) return;
-    monaco.editor.setTheme(`clubhouse-${themeId}`);
+    if (!editorRef.current || !monacoRef.current) return;
+    monacoRef.current.editor.setTheme(`clubhouse-${themeId}`);
   }, [themeId]);
 
   // When value prop changes (for the same filePath), update editor content
@@ -111,11 +123,10 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
 
   // Update language when it changes
   useEffect(() => {
-    if (editorRef.current) {
-      const monaco = getMonaco();
+    if (editorRef.current && monacoRef.current) {
       const model = editorRef.current.getModel();
       if (model) {
-        monaco.editor.setModelLanguage(model, language);
+        monacoRef.current.editor.setModelLanguage(model, language);
       }
     }
   }, [language]);
@@ -123,5 +134,12 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
   return React.createElement('div', {
     ref: containerRef,
     className: 'w-full h-full',
-  });
+    style: { position: 'relative' },
+  },
+    loading
+      ? React.createElement('div', {
+          className: 'absolute inset-0 flex items-center justify-center text-ctp-subtext0 text-xs',
+        }, 'Loading editor…')
+      : null,
+  );
 }
