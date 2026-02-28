@@ -128,6 +128,12 @@ const api = {
     readTranscript: (agentId: string): Promise<string | null> =>
       ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT, agentId),
 
+    getTranscriptInfo: (agentId: string): Promise<{ totalEvents: number; fileSizeBytes: number } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.GET_TRANSCRIPT_INFO, agentId),
+
+    readTranscriptPage: (agentId: string, offset: number, limit: number): Promise<{ events: unknown[]; totalEvents: number } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT_PAGE, agentId, offset, limit),
+
     isHeadlessAgent: (agentId: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.AGENT.IS_HEADLESS_AGENT, agentId),
 

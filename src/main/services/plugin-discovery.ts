@@ -54,9 +54,20 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
   return results;
 }
 
-export function uninstallPlugin(pluginId: string): void {
+export async function uninstallPlugin(pluginId: string): Promise<void> {
   const pluginDir = path.join(getCommunityPluginsDir(), pluginId);
-  if (fs.existsSync(pluginDir)) {
-    fs.rmSync(pluginDir, { recursive: true, force: true });
+
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.lstat(pluginDir);
+  } catch {
+    return; // path doesn't exist — nothing to do
+  }
+
+  if (stat.isSymbolicLink()) {
+    // Remove only the symlink, not the target directory
+    await fs.promises.unlink(pluginDir);
+  } else {
+    await fs.promises.rm(pluginDir, { recursive: true, force: true });
   }
 }

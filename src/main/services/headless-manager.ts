@@ -1,5 +1,6 @@
 import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -356,6 +357,81 @@ export function readTranscript(agentId: string): string | null {
     return null;
   }
 }
+
+export interface TranscriptInfo {
+  totalEvents: number;
+  fileSizeBytes: number;
+}
+
+export interface TranscriptPage {
+  events: StreamJsonEvent[];
+  totalEvents: number;
+}
+
+/**
+ * Return metadata about a transcript without loading event data.
+ * Uses async fs to avoid blocking the main process for large files.
+ */
+export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo | null> {
+  // Check in-memory session first
+  const session = sessions.get(agentId);
+  if (session && !session.transcriptEvicted) {
+    return {
+      totalEvents: session.transcript.length,
+      fileSizeBytes: session.transcriptBytes,
+    };
+  }
+
+  // Read from disk (evicted session or completed session)
+  const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
+  try {
+    const stat = await fsPromises.stat(transcriptPath);
+    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
+    const lineCount = raw.split('\n').filter((l) => l.trim()).length;
+    return { totalEvents: lineCount, fileSizeBytes: stat.size };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Return a page of parsed transcript events.
+ * `offset` is the 0-based event index; `limit` is the max events to return.
+ * Events are returned in chronological order.
+ * Uses async fs to avoid blocking the main process.
+ */
+export async function readTranscriptPage(
+  agentId: string,
+  offset: number,
+  limit: number,
+): Promise<TranscriptPage | null> {
+  // In-memory session (not evicted)
+  const session = sessions.get(agentId);
+  if (session && !session.transcriptEvicted) {
+    const total = session.transcript.length;
+    const events = session.transcript.slice(offset, offset + limit);
+    return { events, totalEvents: total };
+  }
+
+  // Disk: evicted session or completed session
+  const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
+  try {
+    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
+    const allEvents = raw
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        try { return JSON.parse(line) as StreamJsonEvent; } catch { return null; }
+      })
+      .filter(Boolean) as StreamJsonEvent[];
+    const total = allEvents.length;
+    const events = allEvents.slice(offset, offset + limit);
+    return { events, totalEvents: total };
+  } catch {
+    return null;
+  }
+}
+
 
 /**
  * Map stream-json events to normalized hook events for the renderer.

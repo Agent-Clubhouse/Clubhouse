@@ -80,7 +80,7 @@ export function registerPluginHandlers(): void {
     await pluginStorage.mkdirPlugin(pluginId, scope as 'project' | 'global', relativePath, projectPath);
   });
 
-  ipcMain.handle(IPC.PLUGIN.UNINSTALL, (_event, pluginId: string) => {
-    pluginDiscovery.uninstallPlugin(pluginId);
+  ipcMain.handle(IPC.PLUGIN.UNINSTALL, async (_event, pluginId: string) => {
+    await pluginDiscovery.uninstallPlugin(pluginId);
   });
 }

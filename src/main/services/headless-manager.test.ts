@@ -32,6 +32,13 @@ vi.mock('fs', async () => {
   };
 });
 
+// Mock fs/promises for async transcript APIs
+const mockFsPromises = vi.hoisted(() => ({
+  stat: vi.fn((): Promise<{ size: number }> => Promise.reject(new Error('ENOENT'))),
+  readFile: vi.fn((): Promise<string> => Promise.reject(new Error('ENOENT'))),
+}));
+vi.mock('fs/promises', () => mockFsPromises);
+
 // Mock shell environment
 vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: '/usr/local/bin' })),
@@ -82,6 +89,8 @@ import {
   isHeadless,
   kill,
   readTranscript,
+  getTranscriptInfo,
+  readTranscriptPage,
   setMaxTranscriptBytes,
 } from './headless-manager';
 
@@ -926,6 +935,163 @@ describe('headless-manager', () => {
       expect(lines.length).toBeLessThan(6);
       expect(lines.length).toBeGreaterThan(0);
       expect(transcript).toContain('trigger');
+    });
+  });
+
+  // ============================================================
+  // getTranscriptInfo (paginated API)
+  // ============================================================
+  describe('getTranscriptInfo', () => {
+    beforeEach(() => {
+      mockFsPromises.stat.mockReset();
+      mockFsPromises.readFile.mockReset();
+      mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
+      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+    });
+
+    it('returns null for unknown agent with no transcript on disk', async () => {
+      const info = await getTranscriptInfo('unknown-agent');
+      expect(info).toBeNull();
+    });
+
+    it('returns in-memory info for active session', async () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event1 = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
+      const event2 = { type: 'result', result: 'Done' };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event1) + '\n'));
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event2) + '\n'));
+
+      const info = await getTranscriptInfo('test-agent');
+      expect(info).not.toBeNull();
+      expect(info!.totalEvents).toBe(2);
+      expect(info!.fileSizeBytes).toBeGreaterThan(0);
+    });
+
+    it('returns disk info for completed session', async () => {
+      const diskData = '{"type":"result","result":"ok"}\n{"type":"assistant","message":{}}\n';
+      mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
+      mockFsPromises.readFile.mockResolvedValue(diskData);
+
+      const info = await getTranscriptInfo('completed-agent');
+      expect(info).not.toBeNull();
+      expect(info!.totalEvents).toBe(2);
+      expect(info!.fileSizeBytes).toBe(diskData.length);
+    });
+
+    it('falls back to disk when session has evicted events', async () => {
+      setMaxTranscriptBytes(200);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Push enough to trigger eviction
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      const diskData = '{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n';
+      mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
+      mockFsPromises.readFile.mockResolvedValue(diskData);
+
+      const info = await getTranscriptInfo('test-agent');
+      expect(info).not.toBeNull();
+      expect(info!.totalEvents).toBe(5);
+    });
+  });
+
+  // ============================================================
+  // readTranscriptPage (paginated API)
+  // ============================================================
+  describe('readTranscriptPage', () => {
+    beforeEach(() => {
+      mockFsPromises.stat.mockReset();
+      mockFsPromises.readFile.mockReset();
+      mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
+      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+    });
+
+    it('returns null for unknown agent with no transcript on disk', async () => {
+      const page = await readTranscriptPage('unknown-agent', 0, 10);
+      expect(page).toBeNull();
+    });
+
+    it('returns sliced events from in-memory session', async () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `event-${i}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      const page = await readTranscriptPage('test-agent', 1, 2);
+      expect(page).not.toBeNull();
+      expect(page!.totalEvents).toBe(5);
+      expect(page!.events).toHaveLength(2);
+      expect(page!.events[0].result).toBe('event-1');
+      expect(page!.events[1].result).toBe('event-2');
+    });
+
+    it('returns empty events when offset exceeds total', async () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = { type: 'result', result: 'only' };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      const page = await readTranscriptPage('test-agent', 10, 5);
+      expect(page).not.toBeNull();
+      expect(page!.totalEvents).toBe(1);
+      expect(page!.events).toHaveLength(0);
+    });
+
+    it('reads page from disk for completed session', async () => {
+      const events = Array.from({ length: 5 }, (_, i) =>
+        JSON.stringify({ type: 'result', result: `disk-${i}` })
+      ).join('\n') + '\n';
+
+      mockFsPromises.readFile.mockResolvedValue(events);
+
+      const page = await readTranscriptPage('completed-agent', 2, 2);
+      expect(page).not.toBeNull();
+      expect(page!.totalEvents).toBe(5);
+      expect(page!.events).toHaveLength(2);
+      expect(page!.events[0].result).toBe('disk-2');
+      expect(page!.events[1].result).toBe('disk-3');
+    });
+
+    it('clamps page to available events', async () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      for (let i = 0; i < 3; i++) {
+        const event = { type: 'result', result: `e-${i}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // Request more events than available starting from offset 1
+      const page = await readTranscriptPage('test-agent', 1, 100);
+      expect(page!.events).toHaveLength(2);
+      expect(page!.events[0].result).toBe('e-1');
+      expect(page!.events[1].result).toBe('e-2');
+    });
+
+    it('falls back to disk when session has evicted events', async () => {
+      setMaxTranscriptBytes(200);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      for (let i = 0; i < 5; i++) {
+        const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      const diskEvents = Array.from({ length: 5 }, (_, i) =>
+        JSON.stringify({ type: 'result', result: `disk-${i}` })
+      ).join('\n') + '\n';
+      mockFsPromises.readFile.mockResolvedValue(diskEvents);
+
+      const page = await readTranscriptPage('test-agent', 0, 3);
+      expect(page).not.toBeNull();
+      expect(page!.totalEvents).toBe(5);
+      expect(page!.events).toHaveLength(3);
+      expect(page!.events[0].result).toBe('disk-0');
     });
   });
 });
