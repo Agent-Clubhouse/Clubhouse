@@ -42,6 +42,14 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
+// Mock annex event bus
+const mockEmitHookEvent = vi.fn();
+const mockEmitPtyExit = vi.fn();
+vi.mock('./annex-event-bus', () => ({
+  emitHookEvent: (...args: unknown[]) => mockEmitHookEvent(...args),
+  emitPtyExit: (...args: unknown[]) => mockEmitPtyExit(...args),
+}));
+
 // Create a mock child process
 function createMockProcess() {
   const proc = new EventEmitter() as EventEmitter & {
@@ -83,6 +91,8 @@ describe('headless-manager', () => {
     mockProcess = createMockProcess();
     mockWriteStream.write.mockClear();
     mockWriteStream.end.mockClear();
+    mockEmitHookEvent.mockClear();
+    mockEmitPtyExit.mockClear();
   });
 
   afterEach(() => {
@@ -647,6 +657,127 @@ describe('headless-manager', () => {
       const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
       // Mission text should be wrapped in double quotes
       expect(cmdLine).toContain('"Fix the login bug"');
+    });
+  });
+
+  // ============================================================
+  // Annex event bus bridge (headless → WebSocket pipeline)
+  // ============================================================
+  describe('annex event bus bridge', () => {
+    it('emits hook events to annex event bus for stream-json tool_use', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/foo.ts' } }],
+        },
+      };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({ kind: 'pre_tool', toolName: 'Edit' })
+      );
+    });
+
+    it('emits hook events to annex event bus for result/stop', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = { type: 'result', result: 'Done!', cost_usd: 0.05, duration_ms: 3000 };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({ kind: 'stop', message: 'Done!' })
+      );
+    });
+
+    it('emits hook events to annex event bus for post_tool (user tool_result)', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = {
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'tu_123' }] },
+      };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({ kind: 'post_tool' })
+      );
+    });
+
+    it('emits text-mode initial notification to annex event bus', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({
+          kind: 'notification',
+          message: expect.stringContaining('text output'),
+        })
+      );
+    });
+
+    it('emits stderr notification to annex event bus', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.stderr!.emit('data', Buffer.from('Warning: rate limit'));
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({
+          kind: 'notification',
+          message: 'Warning: rate limit',
+        })
+      );
+    });
+
+    it('emits text-mode stop event to annex event bus on close', () => {
+      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+      mockEmitHookEvent.mockClear(); // clear initial notification
+
+      mockProcess.stdout!.emit('data', Buffer.from('Fixed it.'));
+      mockProcess.emit('close', 0);
+
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'test-agent',
+        expect.objectContaining({ kind: 'stop', message: 'Fixed it.' })
+      );
+    });
+
+    it('emits emitPtyExit to annex event bus on normal close', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.emit('close', 0);
+
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 0);
+    });
+
+    it('emits emitPtyExit to annex event bus on non-zero close', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.emit('close', 1);
+
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 1);
+    });
+
+    it('emits emitPtyExit to annex event bus on process error', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.emit('error', new Error('spawn failed'));
+
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 1);
+    });
+
+    it('emits emitPtyExit only once when both error and close fire', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.emit('error', new Error('spawn failed'));
+      mockProcess.emit('close', 1);
+
+      expect(mockEmitPtyExit).toHaveBeenCalledTimes(1);
     });
   });
 });

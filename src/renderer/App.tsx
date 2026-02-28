@@ -536,6 +536,37 @@ export function App() {
     return () => removeHookListener();
   }, [handleHookEvent, checkAndNotify]);
 
+  // Listen for agents spawned remotely via the Annex (iOS companion) and register
+  // them in the local agent store so they appear in the UI and flow through the
+  // normal completion path (exit handler, completed list, etc.).
+  useEffect(() => {
+    const removeAnnexSpawnListener = window.clubhouse.annex.onAgentSpawned((agent) => {
+      const existing = useAgentStore.getState().agents[agent.id];
+      if (existing) return; // Already known
+
+      useAgentStore.setState((s) => ({
+        agents: {
+          ...s.agents,
+          [agent.id]: {
+            id: agent.id,
+            projectId: agent.projectId,
+            name: agent.name,
+            kind: agent.kind,
+            status: agent.status as import('../shared/types').AgentStatus,
+            color: 'gray',
+            mission: agent.prompt,
+            model: agent.model || undefined,
+            parentAgentId: agent.parentAgentId || undefined,
+            orchestrator: agent.orchestrator || undefined,
+            headless: agent.headless || undefined,
+            freeAgentMode: agent.freeAgentMode || undefined,
+          },
+        },
+        agentSpawnedAt: { ...s.agentSpawnedAt, [agent.id]: Date.now() },
+      }));
+    });
+    return () => removeAnnexSpawnListener();
+  }, []);
 
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
