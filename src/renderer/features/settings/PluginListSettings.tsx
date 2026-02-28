@@ -5,6 +5,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { activatePlugin, deactivatePlugin, discoverNewPlugins } from '../../plugins/plugin-loader';
 import type { PluginPermission, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
+import type { CustomMarketplace } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 
 function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
@@ -174,6 +175,192 @@ function PluginRow({
           />
         </button>
       </div>
+    </div>
+  );
+}
+
+function CustomMarketplaceManager() {
+  const [marketplaces, setMarketplaces] = useState<CustomMarketplace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addUrl, setAddUrl] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const loadMarketplaces = async () => {
+    try {
+      const list = await window.clubhouse.marketplace.listCustomMarketplaces();
+      setMarketplaces(list);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMarketplaces();
+  }, []);
+
+  const handleAdd = async () => {
+    if (!addName.trim() || !addUrl.trim()) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      await window.clubhouse.marketplace.addCustomMarketplace({
+        name: addName.trim(),
+        url: addUrl.trim(),
+      });
+      setAddName('');
+      setAddUrl('');
+      await loadMarketplaces();
+    } catch (err: unknown) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add marketplace');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleRemove = async (id: string) => {
+    const m = marketplaces.find((x) => x.id === id);
+    if (!m) return;
+    const confirmed = window.confirm(`Remove custom marketplace "${m.name}"?`);
+    if (!confirmed) return;
+    try {
+      await window.clubhouse.marketplace.removeCustomMarketplace({ id });
+      await loadMarketplaces();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleToggle = async (id: string, enabled: boolean) => {
+    try {
+      await window.clubhouse.marketplace.toggleCustomMarketplace({ id, enabled });
+      await loadMarketplaces();
+    } catch {
+      // ignore
+    }
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="mb-6">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-xs font-semibold text-ctp-subtext1 uppercase tracking-wider cursor-pointer hover:text-ctp-text"
+        data-testid="custom-marketplace-toggle"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        Custom Plugin Stores ({marketplaces.length})
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-ctp-subtext0">
+            Register private or third-party plugin registries for automatic discovery, install, and updates.
+            Each store should host a <code className="text-xs font-mono bg-surface-0 px-1 py-0.5 rounded">registry.json</code> following the Workshop format.
+          </p>
+
+          {/* Existing marketplaces */}
+          {marketplaces.length > 0 && (
+            <div className="space-y-2">
+              {marketplaces.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0"
+                  data-testid={`custom-marketplace-${m.id}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-ctp-text">{m.name}</span>
+                      {!m.enabled && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-subtext0">Disabled</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-ctp-subtext0 truncate mt-0.5" title={m.url}>{m.url}</p>
+                  </div>
+                  <div className="flex items-center gap-2 ml-3">
+                    <button
+                      onClick={() => handleRemove(m.id)}
+                      className="p-1 rounded hover:bg-red-500/10 text-ctp-subtext0 hover:text-red-400 cursor-pointer"
+                      title="Remove marketplace"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleToggle(m.id, !m.enabled)}
+                      className={`
+                        relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
+                        ${m.enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
+                      `}
+                    >
+                      <span
+                        className={`
+                          absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
+                          ${m.enabled ? 'translate-x-4' : 'translate-x-0'}
+                        `}
+                      />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add form */}
+          <div className="p-3 rounded-lg bg-surface-0 border border-surface-1 space-y-2">
+            <p className="text-xs font-medium text-ctp-subtext1">Add Custom Plugin Store</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                placeholder="Store name"
+                className="flex-1 px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder-ctp-subtext0 outline-none focus:border-ctp-accent"
+                data-testid="custom-marketplace-name"
+              />
+              <input
+                type="text"
+                value={addUrl}
+                onChange={(e) => setAddUrl(e.target.value)}
+                placeholder="Registry URL (e.g. https://...registry.json)"
+                className="flex-[2] px-2 py-1.5 rounded bg-ctp-base border border-surface-1 text-xs text-ctp-text placeholder-ctp-subtext0 outline-none focus:border-ctp-accent"
+                data-testid="custom-marketplace-url"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
+              />
+              <button
+                onClick={handleAdd}
+                disabled={adding || !addName.trim() || !addUrl.trim()}
+                className="px-3 py-1.5 rounded bg-ctp-accent text-white text-xs font-medium hover:bg-ctp-accent/90 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="custom-marketplace-add"
+              >
+                {adding ? 'Adding...' : 'Add'}
+              </button>
+            </div>
+            {addError && (
+              <p className="text-xs text-red-400">{addError}</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -409,6 +596,9 @@ export function PluginListSettings() {
             </button>
           </div>
         )}
+
+        {/* Custom marketplace management (app context only) */}
+        {isAppContext && <CustomMarketplaceManager />}
 
         {/* Built-in section */}
         {builtinPlugins.length > 0 && (
