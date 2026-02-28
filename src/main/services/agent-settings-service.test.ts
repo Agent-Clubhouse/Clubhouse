@@ -11,7 +11,12 @@ vi.mock('fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+vi.mock('./log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import * as fs from 'fs';
+import { appLog } from './log-service';
 import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
   readSkillContent, writeSkillContent, deleteSkill,
@@ -739,5 +744,146 @@ describe('orchestrator convention routing', () => {
       (c) => String(c[0]).includes('hooks.json'),
     );
     expect(permWriteCall).toBeDefined();
+  });
+});
+
+// =============================================================================
+// Error logging: catch blocks log warnings instead of silently swallowing
+// =============================================================================
+
+describe('error logging in catch blocks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('readClaudeMd logs warning on read failure', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const result = readClaudeMd(WORKTREE);
+    expect(result).toBe('');
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read CLAUDE.md'),
+      expect.objectContaining({ meta: { error: 'ENOENT' } }),
+    );
+  });
+
+  it('readMcpConfig logs warning on corrupt JSON', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
+    const result = readMcpConfig(WORKTREE);
+    expect(result).toEqual([]);
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to parse MCP config'),
+      expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+    );
+  });
+
+  it('listSkills logs warning on directory read failure', () => {
+    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
+    const result = listSkills(WORKTREE);
+    expect(result).toEqual([]);
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to list skills'),
+      expect.objectContaining({ meta: { error: 'EACCES' } }),
+    );
+  });
+
+  it('listAgentTemplates logs warning on directory read failure', () => {
+    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
+    const result = listAgentTemplates(WORKTREE);
+    expect(result).toEqual([]);
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to list agent templates'),
+      expect.objectContaining({ meta: { error: 'EACCES' } }),
+    );
+  });
+
+  it('readPermissions logs warning on parse failure', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('corrupt json');
+    const result = readPermissions(WORKTREE);
+    expect(result).toEqual({});
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read permissions'),
+      expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+    );
+  });
+
+  it('readSkillContent logs warning on read failure', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const result = readSkillContent(WORKTREE, 'test-skill');
+    expect(result).toBe('');
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read skill content'),
+      expect.objectContaining({ meta: { error: 'ENOENT' } }),
+    );
+  });
+
+  it('readAgentTemplateContent logs warning when both forms fail', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const result = readAgentTemplateContent(WORKTREE, 'missing');
+    expect(result).toBe('');
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read agent template "missing"'),
+      expect.objectContaining({ meta: { error: 'ENOENT' } }),
+    );
+  });
+
+  it('readMcpRawJson logs warning on read failure', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    const result = readMcpRawJson(WORKTREE);
+    expect(JSON.parse(result)).toEqual({ mcpServers: {} });
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read MCP config'),
+      expect.objectContaining({ meta: { error: 'ENOENT' } }),
+    );
+  });
+
+  it('listAgentTemplateFiles logs warning on directory read failure', () => {
+    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
+    const result = listAgentTemplateFiles(WORKTREE);
+    expect(result).toEqual([]);
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to list agent template files'),
+      expect.objectContaining({ meta: { error: 'EACCES' } }),
+    );
+  });
+
+  it('applyAgentDefaults logs warning on invalid MCP JSON', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      defaults: {},
+      quickOverrides: {},
+      agentDefaults: { mcpJson: 'not valid json' },
+    }));
+
+    applyAgentDefaults(WORKTREE, PROJECT);
+
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Skipped invalid MCP JSON'),
+      expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+    );
+  });
+
+  it('writePermissions logs warning when existing settings are corrupt', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('not json');
+
+    writePermissions(WORKTREE, { allow: ['Read'] });
+
+    expect(appLog).toHaveBeenCalledWith(
+      'core:agent-settings', 'warn',
+      expect.stringContaining('Failed to read existing settings'),
+      expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+    );
+    // Should still write permissions despite corrupt existing file
+    expect(fs.writeFileSync).toHaveBeenCalled();
   });
 });
