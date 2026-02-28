@@ -375,6 +375,14 @@ const api = {
       ipcRenderer.on(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED, listener); };
     },
+    listCustomMarketplaces: () =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.LIST_CUSTOM),
+    addCustomMarketplace: (req: { name: string; url: string }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.ADD_CUSTOM, req),
+    removeCustomMarketplace: (req: { id: string }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.REMOVE_CUSTOM, req),
+    toggleCustomMarketplace: (req: { id: string; enabled: boolean }) =>
+      ipcRenderer.invoke(IPC.MARKETPLACE.TOGGLE_CUSTOM, req),
   },
   log: {
     write: (entry: { ts: string; ns: string; level: string; msg: string; projectId?: string; meta?: Record<string, unknown> }) =>
