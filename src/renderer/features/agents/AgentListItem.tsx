@@ -163,6 +163,15 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     const configs = await window.clubhouse.agent.listDurable(activeProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
+      await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
+    }
+  }, [activeProject, agent.status, agent.id, spawnDurableAgent]);
+
+  const handleWakeAndResume = useCallback(async () => {
+    if (!activeProject || agent.status === 'running') return;
+    const configs = await window.clubhouse.agent.listDurable(activeProject.path);
+    const config = configs.find((c: any) => c.id === agent.id);
+    if (config) {
       await spawnDurableAgent(activeProject.id, activeProject.path, config, true);
     }
   }, [activeProject, agent.status, agent.id, spawnDurableAgent]);
@@ -214,6 +223,19 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
         hoverColor: 'hover:text-green-400',
         visible: true,
         handler: handleWake,
+      });
+      list.push({
+        id: 'wake-resume',
+        label: 'Wake & Resume',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 4v6h6" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-green-400',
+        visible: true,
+        handler: handleWakeAndResume,
       });
     }
 
@@ -282,7 +304,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
     }
 
     return list;
-  }, [agent.status, agent.kind, isDurable, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handlePopOut, handleSpawnChild, handleSettings, handleDelete]);
+  }, [agent.status, agent.kind, isDurable, isCreating, onSpawnQuickChild, handleStopOrRemove, handleWake, handleWakeAndResume, handlePopOut, handleSpawnChild, handleSettings, handleDelete]);
 
   // ── Responsive action collapse ─────────────────────────────────
 
