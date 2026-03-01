@@ -6,6 +6,7 @@ import { SpawnAgentParams } from '../../shared/types';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
+import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { appLog } from '../services/log-service';
 
@@ -194,6 +195,44 @@ export function registerAgentHandlers(): void {
     IPC.AGENT.UPDATE_SESSION_NAME,
     (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
       agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
+    }
+  );
+
+  // --- Structured mode handlers ---
+
+  ipcMain.handle(IPC.AGENT.START_STRUCTURED, async (_event, agentId: string, opts: any) => {
+    try {
+      const orchestratorId = agentSystem.getAgentOrchestrator(agentId);
+      const projectPath = agentSystem.getAgentProjectPath(agentId);
+      if (!projectPath) throw new Error(`No project path found for agent ${agentId}`);
+
+      const provider = agentSystem.resolveOrchestrator(projectPath, orchestratorId);
+      if (!provider.createStructuredAdapter) {
+        throw new Error(`${provider.displayName} does not support structured mode`);
+      }
+
+      const adapter = provider.createStructuredAdapter();
+      await structuredManager.startStructuredSession(agentId, adapter, opts);
+    } catch (err) {
+      appLog('core:ipc', 'error', 'Structured session start failed', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+  });
+
+  ipcMain.handle(IPC.AGENT.CANCEL_STRUCTURED, async (_event, agentId: string) => {
+    await structuredManager.cancelSession(agentId);
+  });
+
+  ipcMain.handle(IPC.AGENT.SEND_STRUCTURED_MESSAGE, async (_event, agentId: string, message: string) => {
+    await structuredManager.sendMessage(agentId, message);
+  });
+
+  ipcMain.handle(
+    IPC.AGENT.RESPOND_PERMISSION,
+    async (_event, agentId: string, requestId: string, approved: boolean, reason?: string) => {
+      await structuredManager.respondToPermission(agentId, requestId, approved, reason);
     }
   );
 }

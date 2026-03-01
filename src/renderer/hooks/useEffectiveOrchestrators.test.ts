@@ -10,19 +10,19 @@ const mockOrchestrators: OrchestratorInfo[] = [
     id: 'claude-code',
     displayName: 'Claude Code',
     shortName: 'CC',
-    capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true },
+    capabilities: { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true, structuredMode: false },
   },
   {
     id: 'codex-cli',
     displayName: 'Codex CLI',
     shortName: 'CX',
-    capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false },
+    capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false, structuredMode: false },
   },
   {
     id: 'copilot-cli',
     displayName: 'Copilot CLI',
     shortName: 'CP',
-    capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false },
+    capabilities: { headless: false, structuredOutput: false, hooks: false, sessionResume: false, permissions: false, structuredMode: false },
   },
 ];
 

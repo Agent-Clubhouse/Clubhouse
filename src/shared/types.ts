@@ -6,12 +6,16 @@ export interface ArchInfo {
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
+export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
+
 export interface ProviderCapabilities {
   headless: boolean;
   structuredOutput: boolean;
   hooks: boolean;
   sessionResume: boolean;
   permissions: boolean;
+  structuredMode: boolean;
+  structuredProtocol?: 'sdk' | 'acp' | 'app-server';
 }
 
 export interface OrchestratorInfo {

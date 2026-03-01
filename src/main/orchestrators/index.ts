@@ -1,4 +1,4 @@
-export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, SpawnOpts, HeadlessOpts, NormalizedHookEvent } from './types';
+export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, StructuredAdapter, StructuredSessionOpts } from './types';
 export { ClaudeCodeProvider } from './claude-code-provider';
 export { CopilotCliProvider } from './copilot-cli-provider';
 export { CodexCliProvider } from './codex-cli-provider';

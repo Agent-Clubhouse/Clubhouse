@@ -93,6 +93,8 @@ export class CopilotCliProvider implements OrchestratorProvider {
       hooks: true,
       sessionResume: true,
       permissions: true,
+      structuredMode: false,
+      structuredProtocol: 'acp',
     };
   }
 

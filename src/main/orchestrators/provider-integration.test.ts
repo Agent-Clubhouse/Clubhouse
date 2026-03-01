@@ -799,6 +799,8 @@ describe('Provider integration tests', () => {
         hooks: true,
         sessionResume: true,
         permissions: true,
+        structuredMode: false,
+        structuredProtocol: 'sdk',
       });
     });
 

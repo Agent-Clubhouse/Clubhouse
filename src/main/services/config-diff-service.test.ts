@@ -60,7 +60,7 @@ const mockProvider: OrchestratorProvider = {
   writeInstructions: vi.fn(),
   readInstructions: vi.fn(() => ''),
   getCapabilities: vi.fn(() => ({
-    headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true,
+    headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true, structuredMode: false,
   })),
   checkAvailability: vi.fn(async () => ({ available: true })),
   buildSpawnCommand: vi.fn(async () => ({ binary: 'claude', args: [], env: {} })),
