@@ -74,9 +74,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentIcons: {},
 
   setActiveAgent: (id, projectId?) => {
+    const prev = get().activeAgentId;
     set({ activeAgentId: id, agentSettingsOpenFor: null });
     if (projectId) {
       set((s) => ({ projectActiveAgent: { ...s.projectActiveAgent, [projectId]: id } }));
+    }
+    // Play focus sound when switching to a different agent
+    if (id && id !== prev) {
+      const agent = get().agents[id];
+      // Lazy import to avoid circular dependency
+      import('./soundStore').then(({ useSoundStore }) => {
+        useSoundStore.getState().playSound('agent-focus', agent?.projectId);
+      });
     }
   },
 

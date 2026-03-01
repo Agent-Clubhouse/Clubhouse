@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { SoundSettings, SoundPackInfo, SoundEvent, ALL_SOUND_EVENTS } from '../../shared/types';
+import {
+  SoundSettings,
+  SoundPackInfo,
+  SoundEvent,
+  ALL_SOUND_EVENTS,
+  SlotAssignment,
+} from '../../shared/types';
 
 interface SoundState {
   settings: SoundSettings | null;
@@ -15,13 +21,16 @@ interface SoundState {
 
   /**
    * Play the sound for a given event.
-   * Resolves the active pack (with optional project override), loads the audio
-   * data if not cached, and plays it.
+   * Resolves the per-slot pack assignment (with optional project override),
+   * loads the audio data if not cached, and plays it.
    */
   playSound: (event: SoundEvent, projectId?: string) => Promise<void>;
 
   /** Preview a specific sound from a specific pack. */
   previewSound: (packId: string, event: SoundEvent) => Promise<void>;
+
+  /** Apply all sounds from a single pack to every slot. */
+  applyAllFromPack: (packId: string) => Promise<void>;
 }
 
 /** Active Audio element for stopping previous playback */
@@ -45,6 +54,31 @@ async function loadSoundData(packId: string, event: SoundEvent, cache: Record<st
     cache[cacheKey] = data;
   }
   return data;
+}
+
+/**
+ * Resolve the pack for a given event slot, considering project overrides.
+ */
+function resolveSlotPack(settings: SoundSettings, event: SoundEvent, projectId?: string): string | null {
+  // Check project-level slot override first
+  if (projectId) {
+    const projectSlots = settings.projectOverrides?.[projectId]?.slotAssignments;
+    if (projectSlots?.[event]) {
+      return projectSlots[event]!.packId;
+    }
+  }
+  // Fall back to global slot assignment
+  return settings.slotAssignments[event]?.packId ?? null;
+}
+
+/**
+ * Check if any slot has a custom pack assigned (used for notification silencing).
+ */
+export function hasAnyCustomPack(settings: SoundSettings, projectId?: string): boolean {
+  for (const event of ALL_SOUND_EVENTS) {
+    if (resolveSlotPack(settings, event, projectId) !== null) return true;
+  }
+  return false;
 }
 
 export const useSoundStore = create<SoundState>((set, get) => ({
@@ -90,7 +124,7 @@ export const useSoundStore = create<SoundState>((set, get) => ({
         }
       }
       set({ soundCache: cache });
-      // Refresh pack list and settings
+      // Refresh pack list and settings (deleteSoundPack cleans slot assignments)
       await get().loadPacks();
       await get().loadSettings();
     }
@@ -104,20 +138,17 @@ export const useSoundStore = create<SoundState>((set, get) => ({
     const eventSettings = settings.eventSettings[event];
     if (!eventSettings?.enabled) return;
 
-    // Resolve active pack with project override
-    let activePack = settings.activePack;
-    if (projectId && settings.projectOverrides?.[projectId]?.activePack !== undefined) {
-      activePack = settings.projectOverrides[projectId].activePack ?? null;
-    }
+    // Resolve per-slot pack assignment
+    const packId = resolveSlotPack(settings, event, projectId);
 
-    // No pack selected = use OS default (handled by Electron's silent flag)
-    if (!activePack) return;
+    // No pack assigned for this slot = use OS default (handled by Electron's silent flag)
+    if (!packId) return;
 
-    const data = await loadSoundData(activePack, event, soundCache);
+    const data = await loadSoundData(packId, event, soundCache);
     if (!data) return;
 
     // Update cache in store
-    set({ soundCache: { ...get().soundCache, [`${activePack}:${event}`]: data } });
+    set({ soundCache: { ...get().soundCache, [`${packId}:${event}`]: data } });
 
     stopActiveAudio();
     const audio = new Audio(data);
@@ -149,6 +180,17 @@ export const useSoundStore = create<SoundState>((set, get) => ({
     } catch {
       // Autoplay may be blocked
     }
+  },
+
+  applyAllFromPack: async (packId: string) => {
+    const current = get().settings;
+    if (!current) return;
+
+    const slots: Partial<Record<SoundEvent, SlotAssignment>> = {};
+    for (const event of ALL_SOUND_EVENTS) {
+      slots[event] = { packId };
+    }
+    await get().saveSettings({ slotAssignments: slots });
   },
 }));
 

@@ -231,12 +231,26 @@ export interface NotificationSettings {
 
 // ── Sound pack types ──────────────────────────────────────────────────
 
-export type SoundEvent = 'agent-done' | 'error' | 'permission' | 'notification';
+export type SoundEvent =
+  | 'agent-done'
+  | 'error'
+  | 'permission'
+  | 'permission-granted'
+  | 'permission-denied'
+  | 'agent-wake'
+  | 'agent-sleep'
+  | 'agent-focus'
+  | 'notification';
 
 export const ALL_SOUND_EVENTS: readonly SoundEvent[] = [
   'agent-done',
   'error',
   'permission',
+  'permission-granted',
+  'permission-denied',
+  'agent-wake',
+  'agent-sleep',
+  'agent-focus',
   'notification',
 ] as const;
 
@@ -244,6 +258,11 @@ export const SOUND_EVENT_LABELS: Record<SoundEvent, string> = {
   'agent-done': 'Agent Finished',
   'error': 'Error',
   'permission': 'Permission Request',
+  'permission-granted': 'Permission Granted',
+  'permission-denied': 'Permission Denied',
+  'agent-wake': 'Agent Wake',
+  'agent-sleep': 'Agent Sleep',
+  'agent-focus': 'Agent Focus',
   'notification': 'General Notification',
 };
 
@@ -264,10 +283,22 @@ export interface SoundEventSettings {
   volume: number; // 0-100
 }
 
+/** Per-slot pack assignment: which pack provides the sound for a given event */
+export interface SlotAssignment {
+  packId: string; // which pack provides the sound for this slot
+}
+
 export interface SoundSettings {
-  activePack: string | null; // pack id, null = built-in (OS default)
+  /** @deprecated Use slotAssignments instead. Kept for migration. */
+  activePack?: string | null;
+  /** Per-slot pack assignments. Missing key = no custom sound (OS default). */
+  slotAssignments: Partial<Record<SoundEvent, SlotAssignment>>;
   eventSettings: Record<SoundEvent, SoundEventSettings>;
-  projectOverrides?: Record<string, { activePack?: string | null }>;
+  projectOverrides?: Record<string, {
+    /** @deprecated Use slotAssignments instead. */
+    activePack?: string | null;
+    slotAssignments?: Partial<Record<SoundEvent, SlotAssignment>>;
+  }>;
 }
 
 export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
