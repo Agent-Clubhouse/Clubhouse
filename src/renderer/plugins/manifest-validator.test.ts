@@ -807,7 +807,7 @@ describe('manifest-validator', () => {
     });
 
     it('rejects pack without contributes object', () => {
-      const { contributes, ...rest } = validPack;
+      const { contributes: _contributes, ...rest } = validPack;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors.some((e: string) => e.includes('must contribute at least one of'))).toBe(true);

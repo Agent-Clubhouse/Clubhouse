@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { THEMES, THEME_IDS, registerTheme, unregisterTheme, getTheme, getAllThemeIds, BUILTIN_THEMES, onRegistryChange } from './index';
+import { THEMES, THEME_IDS, registerTheme, unregisterTheme, getTheme, getAllThemeIds, onRegistryChange } from './index';
 import { ThemeId, ThemeDefinition } from '../../shared/types';
 
 /**

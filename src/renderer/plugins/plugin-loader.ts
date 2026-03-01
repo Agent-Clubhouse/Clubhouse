@@ -4,7 +4,7 @@ import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
-import { injectStyles, removeStyles } from './plugin-styles';
+import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';

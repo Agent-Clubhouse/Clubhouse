@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { usePluginStore } from './plugin-store';
 import type { PluginManifest, PluginModule } from '../../shared/plugin-types';
 
