@@ -153,8 +153,10 @@ describe('AgentTerminal', () => {
       expect(window.clubhouse.pty.write).toHaveBeenCalledWith('agent-1', 'test input');
     });
 
-    it('writes PTY data to terminal for matching agentId after buffer replay', () => {
+    it('writes PTY data to terminal for matching agentId after buffer replay', async () => {
       render(<AgentTerminal agentId="agent-1" />);
+      // Flush the getBuffer() microtask so bufferReplayed is set
+      await act(async () => {});
       expect(mockOnDataCallback).toBeTruthy();
       act(() => { mockOnDataCallback!('agent-1', 'hello world'); });
       expect(term().write).toHaveBeenCalledWith('hello world');
