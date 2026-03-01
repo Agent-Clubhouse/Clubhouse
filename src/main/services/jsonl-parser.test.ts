@@ -148,5 +148,87 @@ describe('JsonlParser', () => {
       expect(events[1].type).toBe('content_block');
       expect(events[2].cost_usd).toBe(0.01);
     });
+
+    it('accumulates many small chunks without newlines then emits on newline', () => {
+      const parser = new JsonlParser();
+      const handler = vi.fn();
+      parser.on('line', handler);
+
+      // Feed 20 small chunks without newlines — should not emit
+      const parts = '{"type":"accumulated"}'.split('');
+      for (const ch of parts) {
+        parser.feed(ch);
+      }
+      expect(handler).not.toHaveBeenCalled();
+
+      // Newline triggers emission
+      parser.feed('\n');
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith({ type: 'accumulated' });
+    });
+
+    it('handles a large payload split across many chunks', () => {
+      const parser = new JsonlParser();
+      const events: any[] = [];
+      parser.on('line', (e) => events.push(e));
+
+      const bigText = 'x'.repeat(10_000);
+      const fullLine = JSON.stringify({ type: 'big', data: bigText }) + '\n';
+
+      // Split into 100-byte chunks
+      for (let i = 0; i < fullLine.length; i += 100) {
+        parser.feed(fullLine.substring(i, i + 100));
+      }
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('big');
+      expect(events[0].data).toBe(bigText);
+    });
+
+    it('handles rapid sequential feeds with mixed complete and partial lines', () => {
+      const parser = new JsonlParser();
+      const events: any[] = [];
+      parser.on('line', (e) => events.push(e));
+
+      // 100 rapid feeds, each a complete line
+      for (let i = 0; i < 100; i++) {
+        parser.feed(`{"type":"event","i":${i}}\n`);
+      }
+
+      expect(events).toHaveLength(100);
+      expect(events[0].i).toBe(0);
+      expect(events[99].i).toBe(99);
+    });
+
+    it('correctly handles newline at chunk boundary', () => {
+      const parser = new JsonlParser();
+      const handler = vi.fn();
+      parser.on('line', handler);
+
+      // Newline is the entire chunk
+      parser.feed('{"type":"a"}');
+      parser.feed('\n');
+      parser.feed('{"type":"b"}');
+      parser.feed('\n');
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenCalledWith({ type: 'a' });
+      expect(handler).toHaveBeenCalledWith({ type: 'b' });
+    });
+
+    it('flushes correctly after multiple no-newline chunks', () => {
+      const parser = new JsonlParser();
+      const handler = vi.fn();
+      parser.on('line', handler);
+
+      parser.feed('{"type"');
+      parser.feed(':"flushed"');
+      parser.feed('}');
+      expect(handler).not.toHaveBeenCalled();
+
+      parser.flush();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith({ type: 'flushed' });
+    });
   });
 });
