@@ -58,17 +58,19 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     // Batch PTY data writes using rAF to avoid 100+ DOM renders/sec.
     // Data arriving between frames is concatenated and flushed once per paint.
     let pendingData = '';
+    let flushScheduled = false;
     let flushId = 0;
 
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
         if (id === sessionId) {
           pendingData += data;
-          if (!flushId) {
+          if (!flushScheduled) {
+            flushScheduled = true;
             flushId = requestAnimationFrame(() => {
               const batch = pendingData;
               pendingData = '';
-              flushId = 0;
+              flushScheduled = false;
               term.write(batch);
             });
           }
