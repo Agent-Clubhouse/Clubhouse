@@ -18,38 +18,52 @@ export interface StreamJsonEvent {
 /**
  * Line-buffered JSONL parser for Claude Code's `--output-format stream-json`.
  * Emits 'line' events for each parsed JSON object.
+ *
+ * Uses array-based chunk accumulation and indexOf scanning to avoid
+ * O(n) string reallocation on every chunk and unnecessary re-splitting.
  */
 export class JsonlParser extends EventEmitter {
-  private buffer = '';
+  private chunks: string[] = [];
 
   feed(chunk: string): void {
-    this.buffer += chunk;
-    const lines = this.buffer.split('\n');
-    // Keep the last (potentially incomplete) line in the buffer
-    this.buffer = lines.pop() || '';
+    this.chunks.push(chunk);
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+    // Fast path: no newline in this chunk means no complete line yet
+    if (chunk.indexOf('\n') === -1) return;
+
+    // Join only when we know there's at least one complete line
+    const buffer = this.chunks.join('');
+    let start = 0;
+    let idx: number;
+
+    while ((idx = buffer.indexOf('\n', start)) !== -1) {
+      const line = buffer.substring(start, idx).trim();
+      start = idx + 1;
+      if (!line) continue;
       try {
-        const parsed: StreamJsonEvent = JSON.parse(trimmed);
+        const parsed: StreamJsonEvent = JSON.parse(line);
         this.emit('line', parsed);
       } catch {
         // Skip malformed lines
       }
     }
+
+    // Keep only the unprocessed remainder
+    const remainder = start < buffer.length ? buffer.substring(start) : '';
+    this.chunks = remainder ? [remainder] : [];
   }
 
   flush(): void {
-    if (this.buffer.trim()) {
+    const buffer = this.chunks.join('').trim();
+    if (buffer) {
       try {
-        const parsed: StreamJsonEvent = JSON.parse(this.buffer.trim());
+        const parsed: StreamJsonEvent = JSON.parse(buffer);
         this.emit('line', parsed);
       } catch {
         // Skip
       }
     }
-    this.buffer = '';
+    this.chunks = [];
     this.emit('end');
   }
 }
