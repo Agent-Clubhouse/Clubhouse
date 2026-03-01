@@ -848,12 +848,29 @@ function resolvePath(projectPath: string, relativePath: string): string {
   return normalizedResolved;
 }
 
+/**
+ * Compute the stable, absolute data directory for a plugin.
+ * App-scoped: ~/.clubhouse/plugin-data/{pluginId}/files
+ * Project-scoped: ~/.clubhouse/plugin-data/{pluginId}/files/{projectId}
+ */
+export function computeDataDir(pluginId: string, projectId?: string): string {
+  const home = typeof process !== 'undefined'
+    ? (process.env.HOME || process.env.USERPROFILE)
+    : undefined;
+  const root = home || '/tmp';
+  const base = `${root}/.clubhouse/plugin-data/${pluginId}/files`;
+  return projectId ? `${base}/${projectId}` : base;
+}
+
 /** Global counter for unique file watch subscription IDs. */
 let _watchIdCounter = 0;
 
 /** Creates a FilesAPI scoped to an arbitrary base path (for external roots). forRoot() throws (no nesting). */
 function createFilesAPIForRoot(basePath: string): FilesAPI {
   return {
+    get dataDir(): string {
+      throw new Error('dataDir is not available on external root FilesAPI');
+    },
     async readTree(relativePath = '.', options?: { includeHidden?: boolean; depth?: number }) {
       const fullPath = resolvePath(basePath, relativePath);
       return window.clubhouse.file.readTree(fullPath, options);
@@ -912,6 +929,7 @@ function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI
   }
 
   return {
+    dataDir: computeDataDir(ctx.pluginId, ctx.projectId),
     async readTree(relativePath = '.', options?: { includeHidden?: boolean; depth?: number }) {
       const fullPath = resolvePath(projectPath, relativePath);
       return window.clubhouse.file.readTree(fullPath, options);

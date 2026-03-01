@@ -601,6 +601,8 @@ export interface FileStatInfo {
 }
 
 export interface FilesAPI {
+  /** Absolute path to this plugin's stable, per-plugin data directory. Auto-created before activate(). */
+  readonly dataDir: string;
   readTree(relativePath?: string, options?: { includeHidden?: boolean; depth?: number }): Promise<FileNode[]>;
   readFile(relativePath: string): Promise<string>;
   readBinary(relativePath: string): Promise<string>;
