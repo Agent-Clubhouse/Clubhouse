@@ -95,6 +95,9 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       checkOrchestratorAvailability: async () => ({ available: false }),
       onStatusChange: () => ({ dispose: noop }),
       onAnyChange: () => ({ dispose: noop }),
+      listSessions: async () => [],
+      readSessionTranscript: async () => null,
+      getSessionSummary: async () => null,
     },
     hub: {},
     navigation: {

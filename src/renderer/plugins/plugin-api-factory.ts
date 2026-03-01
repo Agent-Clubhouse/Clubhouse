@@ -657,7 +657,9 @@ function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsA
       if (!projectPath) return null;
       const agent = useAgentStore.getState().agents[agentId];
       try {
-        return await window.clubhouse.agent.readSessionTranscript(projectPath, agentId, sessionId, offset, limit, agent?.orchestrator);
+        const result = await window.clubhouse.agent.readSessionTranscript(projectPath, agentId, sessionId, offset, limit, agent?.orchestrator);
+        // Cast the IPC result to the typed SessionTranscriptPage (event types are normalized on the main process side)
+        return result as import('../../shared/session-types').SessionTranscriptPage | null;
       } catch {
         return null;
       }

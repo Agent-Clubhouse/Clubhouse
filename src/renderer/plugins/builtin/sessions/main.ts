@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
-import type { SessionEvent, SessionSummary, SessionTranscriptPage } from '../../../../shared/session-types';
+import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
 import { sessionsState } from './state';
-import type { SelectedAgent, PlaybackState } from './state';
+import type { PlaybackState } from './state';
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 
