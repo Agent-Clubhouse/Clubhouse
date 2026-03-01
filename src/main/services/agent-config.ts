@@ -2,7 +2,7 @@ import { exec, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
+import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
@@ -143,6 +143,74 @@ export function updateDurableConfig(
 /** Persist the last CLI session ID for a durable agent */
 export function updateSessionId(projectPath: string, agentId: string, sessionId: string | null): void {
   updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
+}
+
+/** Maximum number of sessions to keep in history per agent */
+const MAX_SESSION_HISTORY = 50;
+
+/** Add or update a session entry in the agent's session history */
+export function addSessionEntry(projectPath: string, agentId: string, entry: SessionInfo): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent) return;
+
+  if (!agent.sessionHistory) {
+    agent.sessionHistory = [];
+  }
+
+  // Update existing entry or add new one
+  const idx = agent.sessionHistory.findIndex((s) => s.sessionId === entry.sessionId);
+  if (idx >= 0) {
+    // Preserve existing friendly name if the new entry doesn't have one
+    const existing = agent.sessionHistory[idx];
+    agent.sessionHistory[idx] = {
+      ...entry,
+      friendlyName: entry.friendlyName || existing.friendlyName,
+    };
+  } else {
+    agent.sessionHistory.push(entry);
+  }
+
+  // Trim to max size (keep most recent)
+  if (agent.sessionHistory.length > MAX_SESSION_HISTORY) {
+    agent.sessionHistory.sort((a, b) =>
+      new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+    );
+    agent.sessionHistory = agent.sessionHistory.slice(0, MAX_SESSION_HISTORY);
+  }
+
+  // Also update lastSessionId
+  agent.lastSessionId = entry.sessionId;
+
+  writeAgents(projectPath, agents);
+}
+
+/** Set or clear the friendly name for a session */
+export function updateSessionName(projectPath: string, agentId: string, sessionId: string, friendlyName: string | null): void {
+  const agents = readAgents(projectPath);
+  const agent = agents.find((a) => a.id === agentId);
+  if (!agent?.sessionHistory) return;
+
+  const session = agent.sessionHistory.find((s) => s.sessionId === sessionId);
+  if (!session) return;
+
+  if (friendlyName) {
+    session.friendlyName = friendlyName;
+  } else {
+    delete session.friendlyName;
+  }
+
+  writeAgents(projectPath, agents);
+}
+
+/** Get session history for an agent */
+export function getSessionHistory(projectPath: string, agentId: string): SessionInfo[] {
+  const agent = getDurableConfig(projectPath, agentId);
+  if (!agent?.sessionHistory) return [];
+  // Return sorted by most recently active first
+  return [...agent.sessionHistory].sort((a, b) =>
+    new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+  );
 }
 
 export async function createDurable(
