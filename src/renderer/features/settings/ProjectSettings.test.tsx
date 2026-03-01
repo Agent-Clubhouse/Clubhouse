@@ -71,6 +71,20 @@ describe('ProjectSettings', () => {
       render(<ProjectSettings projectId="nonexistent" />);
       expect(screen.getByText('Select a project')).toBeInTheDocument();
     });
+
+    it('does not crash when project is removed mid-lifecycle (hooks ordering)', () => {
+      // Verifies that useState/useEffect run before the conditional return,
+      // so removing the project doesn't violate Rules of Hooks.
+      resetStores();
+      const { rerender } = render(<ProjectSettings />);
+      expect(screen.getByText('Project Settings')).toBeInTheDocument();
+
+      // Remove the project from the store
+      useProjectStore.setState({ projects: [], activeProjectId: null });
+      // Re-render — must not throw due to hooks ordering
+      rerender(<ProjectSettings />);
+      expect(screen.getByText('Select a project')).toBeInTheDocument();
+    });
   });
 
   describe('rendering', () => {
