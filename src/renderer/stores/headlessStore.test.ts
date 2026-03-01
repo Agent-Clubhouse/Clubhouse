@@ -13,7 +13,7 @@ vi.stubGlobal('window', {
   },
 });
 
-import { useHeadlessStore, SpawnMode } from './headlessStore';
+import { useHeadlessStore } from './headlessStore';
 
 function getState() {
   return useHeadlessStore.getState();
