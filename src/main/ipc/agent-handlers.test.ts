@@ -49,6 +49,13 @@ vi.mock('../services/headless-manager', () => ({
   readTranscriptPage: vi.fn(async () => ({ events: [{ type: 'result' }], totalEvents: 10 })),
 }));
 
+vi.mock('../services/structured-manager', () => ({
+  startStructuredSession: vi.fn(async () => {}),
+  cancelSession: vi.fn(async () => {}),
+  sendMessage: vi.fn(async () => {}),
+  respondToPermission: vi.fn(async () => {}),
+}));
+
 vi.mock('../orchestrators/shared', () => ({
   buildSummaryInstruction: vi.fn(() => 'Summarize the work done.'),
   readQuickSummary: vi.fn(async () => 'Quick summary'),

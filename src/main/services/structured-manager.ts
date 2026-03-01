@@ -3,6 +3,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import type { StructuredEvent } from '../../shared/structured-events';
+import type { AgentHookEvent } from '../../shared/types';
 import type { StructuredAdapter, StructuredSessionOpts } from '../orchestrators/types';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -117,13 +118,7 @@ function broadcastEvent(agentId: string, event: StructuredEvent, logStream: fs.W
  * Map a StructuredEvent to a NormalizedHookEvent for the annex event bus.
  * Only maps events that have meaningful hook equivalents.
  */
-function mapStructuredToHookEvent(event: StructuredEvent): {
-  kind: string;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  message?: string;
-  timestamp: number;
-} | null {
+function mapStructuredToHookEvent(event: StructuredEvent): AgentHookEvent | null {
   switch (event.type) {
     case 'tool_start': {
       const data = event.data as { name: string; input: Record<string, unknown> };
