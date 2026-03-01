@@ -1299,7 +1299,32 @@ describe('plugin-api-factory', () => {
       });
 
       it('rejects when target project does not have the plugin enabled (bilateral consent)', async () => {
-        // proj-3 is not in projectEnabled
+        // proj-3 is not in projectEnabled, and plugin is NOT app-enabled
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({
+          projects: [
+            { id: 'proj-1', name: 'Project A', path: '/projects/project-a' },
+            { id: 'proj-3', name: 'Project C', path: '/projects/project-c' },
+          ] as any,
+        });
+        usePluginStore.setState({
+          plugins: {},
+          projectEnabled: { 'proj-1': ['test-plugin'] },
+          appEnabled: [],
+          modules: {},
+          safeModeActive: false,
+          pluginSettings: {},
+        });
+
+        const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
+
+        await expect(
+          api.agentConfig.injectSkill('x', 'y', { projectId: 'proj-3' }),
+        ).rejects.toThrow(/not enabled in target project/);
+      });
+
+      it('app-enabled plugins bypass project-level bilateral consent check', async () => {
+        // proj-3 is NOT in projectEnabled, but plugin IS in appEnabled
         const { useProjectStore } = await import('../stores/projectStore');
         useProjectStore.setState({
           projects: [
@@ -1318,9 +1343,14 @@ describe('plugin-api-factory', () => {
 
         const api = createPluginAPI(makeCtx(), undefined, crossProjectManifest);
 
-        await expect(
-          api.agentConfig.injectSkill('x', 'y', { projectId: 'proj-3' }),
-        ).rejects.toThrow(/not enabled in target project/);
+        // Should NOT throw — app-enabled plugins are implicitly enabled in all projects
+        await api.agentConfig.injectSkill('buddy-check', '# Check', { projectId: 'proj-3' });
+
+        expect(mockAgentSettings.writeSourceSkillContent).toHaveBeenCalledWith(
+          '/projects/project-c',
+          'plugin-test-plugin-buddy-check',
+          '# Check',
+        );
       });
 
       it('rejects when target project does not exist', async () => {
@@ -3777,6 +3807,25 @@ describe('plugin-api-factory', () => {
       expect(projectApi.projectId).toBe('proj-2');
       expect(projectApi.projectPath).toBe('/projects/other');
       expect(typeof projectApi.readFile).toBe('function');
+    });
+
+    it('workspace.forProject succeeds for app-enabled plugin without project-level enablement', async () => {
+      const { useProjectStore } = await import('../stores/projectStore');
+      useProjectStore.setState({
+        projects: [
+          { id: 'proj-2', name: 'Other Project', path: '/projects/other' },
+        ],
+      });
+      // Plugin is NOT in projectEnabled for proj-2, but IS app-enabled
+      usePluginStore.setState({
+        projectEnabled: {},
+        appEnabled: ['test-plugin'],
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      const projectApi = api.workspace.forProject('proj-2');
+      expect(projectApi).toBeDefined();
+      expect(projectApi.projectId).toBe('proj-2');
+      expect(projectApi.projectPath).toBe('/projects/other');
     });
 
     it('workspace.watch requires workspace.watch permission', () => {

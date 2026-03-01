@@ -1260,13 +1260,16 @@ function createWorkspaceAPI(ctx: PluginContext, manifest?: PluginManifest): Work
       }
 
       // Bilateral consent: target project must have this plugin enabled
-      const { projectEnabled } = usePluginStore.getState();
-      const enabledInTarget = projectEnabled[projectId] || [];
-      if (!enabledInTarget.includes(ctx.pluginId)) {
-        throw new Error(
-          `Plugin '${ctx.pluginId}' is not enabled in target project '${project.name}'. ` +
-          'Cross-project workspace access requires the plugin to be enabled in both projects.',
-        );
+      // App-scoped plugins are implicitly enabled in all projects
+      const { projectEnabled, appEnabled } = usePluginStore.getState();
+      if (!appEnabled.includes(ctx.pluginId)) {
+        const enabledInTarget = projectEnabled[projectId] || [];
+        if (!enabledInTarget.includes(ctx.pluginId)) {
+          throw new Error(
+            `Plugin '${ctx.pluginId}' is not enabled in target project '${project.name}'. ` +
+            'Cross-project workspace access requires the plugin to be enabled in both projects.',
+          );
+        }
       }
 
       const projectRoot = `${project.path}/.clubhouse/plugin-data/${ctx.pluginId}`;
@@ -1431,13 +1434,16 @@ function resolveAgentConfigTarget(
   }
 
   // 3. Bilateral consent: target project must have this plugin enabled
-  const { projectEnabled } = usePluginStore.getState();
-  const enabledInTarget = projectEnabled[opts.projectId] || [];
-  if (!enabledInTarget.includes(pluginId)) {
-    throw new Error(
-      `Plugin '${pluginId}' is not enabled in target project '${project.name}'. ` +
-      'Cross-project agent config requires the plugin to be enabled in both projects.',
-    );
+  // App-scoped plugins are implicitly enabled in all projects
+  const { projectEnabled, appEnabled } = usePluginStore.getState();
+  if (!appEnabled.includes(pluginId)) {
+    const enabledInTarget = projectEnabled[opts.projectId] || [];
+    if (!enabledInTarget.includes(pluginId)) {
+      throw new Error(
+        `Plugin '${pluginId}' is not enabled in target project '${project.name}'. ` +
+        'Cross-project agent config requires the plugin to be enabled in both projects.',
+      );
+    }
   }
 
   return project.path;
