@@ -107,7 +107,10 @@ function broadcastEvent(agentId: string, event: StructuredEvent, logStream: fs.W
   // Send to renderer
   broadcastToAllWindows(IPC.AGENT.STRUCTURED_EVENT, agentId, event);
 
-  // Forward to annex event bus as a hook event for cross-process monitoring
+  // Forward full StructuredEvent to annex for rich iOS rendering
+  annexEventBus.emitStructuredEvent(agentId, event);
+
+  // Also forward as a downgraded hook event for legacy annex clients
   const hookEvent = mapStructuredToHookEvent(event);
   if (hookEvent) {
     annexEventBus.emitHookEvent(agentId, hookEvent);

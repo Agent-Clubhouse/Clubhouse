@@ -10,17 +10,20 @@ import * as ptyManager from './pty-manager';
 import * as themeService from './theme-service';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
+import * as structuredManager from './structured-manager';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent } from './agent-system';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
+import type { StructuredEvent } from '../../shared/structured-events';
 import type {
   AnnexStatus,
   AgentHookEvent,
   AgentDetailedStatus,
   AgentDetailedState,
+  AgentExecutionMode,
   HookEventKind,
   ThemeColors,
 } from '../../shared/types';
@@ -42,6 +45,7 @@ let unsubHookEvent: (() => void) | null = null;
 let unsubPtyExit: (() => void) | null = null;
 let unsubAgentSpawned: (() => void) | null = null;
 let unsubPermissionRequest: (() => void) | null = null;
+let unsubStructuredEvent: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 
 // ---------------------------------------------------------------------------
@@ -98,6 +102,37 @@ function getDetailedStatus(agentId: string): AgentDetailedStatus | null {
     return null;
   }
   return status;
+}
+
+/** Derive a detailed status from a StructuredEvent (for structured mode agents). */
+function structuredEventToDetailedStatus(event: StructuredEvent): AgentDetailedStatus | null {
+  switch (event.type) {
+    case 'tool_start': {
+      const data = event.data as { name: string; displayVerb: string };
+      return { state: 'working', message: data.displayVerb || 'Working', toolName: data.name, timestamp: event.timestamp };
+    }
+    case 'tool_end': {
+      const data = event.data as { name: string };
+      return { state: 'idle', message: 'Thinking', toolName: data.name, timestamp: event.timestamp };
+    }
+    case 'permission_request': {
+      const data = event.data as { toolName: string };
+      return { state: 'needs_permission', message: 'Needs permission', toolName: data.toolName, timestamp: event.timestamp };
+    }
+    case 'error':
+      return { state: 'tool_error', message: (event.data as { message: string }).message, timestamp: event.timestamp };
+    case 'end':
+      return { state: 'idle', message: 'Idle', timestamp: event.timestamp };
+    default:
+      return null; // text_delta, thinking, usage, etc. don't update detailed status
+  }
+}
+
+/** Resolve the execution mode of an agent. */
+export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
+  if (structuredManager.isStructuredSession(agentId)) return 'structured';
+  if (isHeadlessAgent(agentId)) return 'headless';
+  return 'pty';
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +219,7 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 
 function mapDurableAgent(d: ReturnType<typeof agentConfig.listDurable>[number]) {
   const agentId = d.id;
-  const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId);
+  const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
   const status = isRunning ? 'running' : 'sleeping';
 
   return {
@@ -199,6 +234,7 @@ function mapDurableAgent(d: ReturnType<typeof agentConfig.listDurable>[number]) 
     icon: d.icon || null,
     status,
     detailedStatus: isRunning ? getDetailedStatus(agentId) : null,
+    executionMode: isRunning ? getAgentExecutionMode(agentId) : null,
   };
 }
 
@@ -600,6 +636,56 @@ function handlePermissionResponse(
 }
 
 // ---------------------------------------------------------------------------
+// Structured permission response (Issue 396)
+// ---------------------------------------------------------------------------
+
+async function handleStructuredPermissionResponse(
+  res: http.ServerResponse,
+  agentId: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const requestId = body.requestId as string | undefined;
+  const approved = body.approved as boolean | undefined;
+  const reason = body.reason as string | undefined;
+
+  if (!requestId) {
+    sendJson(res, 400, { error: 'missing_request_id' });
+    return;
+  }
+
+  if (typeof approved !== 'boolean') {
+    sendJson(res, 400, { error: 'missing_approved' });
+    return;
+  }
+
+  if (!structuredManager.isStructuredSession(agentId)) {
+    sendJson(res, 404, { error: 'no_structured_session' });
+    return;
+  }
+
+  try {
+    await structuredManager.respondToPermission(agentId, requestId, approved, reason);
+
+    // Broadcast confirmation
+    broadcastAndBuffer('permission:response', {
+      requestId,
+      agentId,
+      decision: approved ? 'allow' : 'deny',
+    });
+
+    // Clear the needs_permission detailed status
+    const current = detailedStatusCache.get(agentId);
+    if (current?.state === 'needs_permission') {
+      detailedStatusCache.delete(agentId);
+    }
+
+    sendJson(res, 200, { ok: true, requestId, approved });
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : 'permission_failed' });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // HTTP request handler
 // ---------------------------------------------------------------------------
 
@@ -780,6 +866,25 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
     return;
   }
 
+  // POST /api/v1/agents/:id/structured-permission
+  const structuredPermMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/structured-permission$/);
+  if (method === 'POST' && structuredPermMatch) {
+    const agentId = decodeURIComponent(structuredPermMatch[1]);
+    readBody(req).then((raw) => {
+      const body = parseJsonBody(raw);
+      if (!body) {
+        sendJson(res, 400, { error: 'invalid_json' });
+        return;
+      }
+      handleStructuredPermissionResponse(res, agentId, body);
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
+    });
+    return;
+  }
+
   sendJson(res, 404, { error: 'not_found' });
 }
 
@@ -885,6 +990,16 @@ export function start(): void {
     broadcastAndBuffer('hook:event', { agentId, event });
   });
 
+  unsubStructuredEvent = annexEventBus.onStructuredEvent((agentId, event) => {
+    // Update detailed status from structured events
+    const status = structuredEventToDetailedStatus(event);
+    if (status) {
+      detailedStatusCache.set(agentId, status);
+    }
+
+    broadcastAndBuffer('structured:event', { agentId, event });
+  });
+
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {
     // Clear detailed status for exited agent
     detailedStatusCache.delete(agentId);
@@ -971,11 +1086,13 @@ export function stop(): void {
   unsubPtyExit?.();
   unsubAgentSpawned?.();
   unsubPermissionRequest?.();
+  unsubStructuredEvent?.();
   unsubPtyData = null;
   unsubHookEvent = null;
   unsubPtyExit = null;
   unsubAgentSpawned = null;
   unsubPermissionRequest = null;
+  unsubStructuredEvent = null;
 
   if (staleEvictionInterval) {
     clearInterval(staleEvictionInterval);

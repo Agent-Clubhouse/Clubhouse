@@ -5,13 +5,16 @@ import {
   emitPtyData,
   emitHookEvent,
   emitPtyExit,
+  emitStructuredEvent,
   onPtyData,
   onHookEvent,
   onPtyExit,
   onAgentSpawned,
+  onStructuredEvent,
   removeAllListeners,
   getListenerCounts,
 } from './annex-event-bus';
+import type { StructuredEvent } from '../../shared/structured-events';
 
 beforeEach(() => {
   setActive(false);
@@ -79,23 +82,52 @@ describe('annex-event-bus', () => {
     expect(isActive()).toBe(false);
   });
 
+  it('emits structured events', () => {
+    const fn = vi.fn();
+    onStructuredEvent(fn);
+    setActive(true);
+    const event: StructuredEvent = { type: 'text_delta', timestamp: Date.now(), data: { text: 'hello' } };
+    emitStructuredEvent('agent1', event);
+    expect(fn).toHaveBeenCalledWith('agent1', event);
+  });
+
+  it('does not emit structured events when inactive', () => {
+    const fn = vi.fn();
+    onStructuredEvent(fn);
+    const event: StructuredEvent = { type: 'text_delta', timestamp: Date.now(), data: { text: 'hello' } };
+    emitStructuredEvent('agent1', event);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribes from structured events correctly', () => {
+    const fn = vi.fn();
+    const unsub = onStructuredEvent(fn);
+    setActive(true);
+    unsub();
+    const event: StructuredEvent = { type: 'text_delta', timestamp: Date.now(), data: { text: 'hello' } };
+    emitStructuredEvent('agent1', event);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
   it('removeAllListeners clears everything', () => {
     const fn = vi.fn();
     onPtyData(fn);
     onHookEvent(fn);
     onPtyExit(fn);
+    onStructuredEvent(fn);
     setActive(true);
     removeAllListeners();
     emitPtyData('a', 'd');
     emitHookEvent('a', { kind: 'stop', timestamp: 0 });
     emitPtyExit('a', 1);
+    emitStructuredEvent('a', { type: 'end', timestamp: 0, data: { reason: 'complete' } });
     expect(fn).not.toHaveBeenCalled();
   });
 
   describe('getListenerCounts', () => {
     it('returns zero counts when no listeners registered', () => {
       const counts = getListenerCounts();
-      expect(counts).toEqual({ ptyData: 0, hookEvent: 0, ptyExit: 0, agentSpawned: 0, total: 0 });
+      expect(counts).toEqual({ ptyData: 0, hookEvent: 0, ptyExit: 0, agentSpawned: 0, structuredEvent: 0, total: 0 });
     });
 
     it('tracks listener counts per type', () => {
@@ -104,13 +136,15 @@ describe('annex-event-bus', () => {
       onHookEvent(vi.fn());
       onPtyExit(vi.fn());
       onAgentSpawned(vi.fn());
+      onStructuredEvent(vi.fn());
 
       const counts = getListenerCounts();
       expect(counts.ptyData).toBe(2);
       expect(counts.hookEvent).toBe(1);
       expect(counts.ptyExit).toBe(1);
       expect(counts.agentSpawned).toBe(1);
-      expect(counts.total).toBe(5);
+      expect(counts.structuredEvent).toBe(1);
+      expect(counts.total).toBe(6);
     });
 
     it('decrements after unsubscribe', () => {
@@ -130,7 +164,8 @@ describe('annex-event-bus', () => {
       onHookEvent(vi.fn());
       onPtyExit(vi.fn());
       onAgentSpawned(vi.fn());
-      expect(getListenerCounts().total).toBe(4);
+      onStructuredEvent(vi.fn());
+      expect(getListenerCounts().total).toBe(5);
 
       removeAllListeners();
       expect(getListenerCounts().total).toBe(0);
