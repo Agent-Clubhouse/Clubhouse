@@ -49,6 +49,12 @@ vi.mock('./agent-system', () => ({
   isHeadlessAgent: vi.fn().mockReturnValue(false),
 }));
 
+// Mock structured-manager
+vi.mock('./structured-manager', () => ({
+  isStructuredSession: vi.fn().mockReturnValue(false),
+  respondToPermission: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock name-generator
 vi.mock('../../shared/name-generator', () => ({
   generateQuickName: vi.fn().mockReturnValue('swift-fox'),
@@ -66,6 +72,7 @@ import * as projectStore from './project-store';
 import * as agentConfigModule from './agent-config';
 import * as ptyManagerModule from './pty-manager';
 import * as agentSystem from './agent-system';
+import * as structuredManagerModule from './structured-manager';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import { generateQuickName } from '../../shared/name-generator';
@@ -118,6 +125,8 @@ describe('annex-server', () => {
     vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
     vi.mocked(agentSystem.spawnAgent).mockResolvedValue(undefined);
     vi.mocked(agentSystem.getAvailableOrchestrators).mockReturnValue([]);
+    vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+    vi.mocked(structuredManagerModule.respondToPermission).mockResolvedValue(undefined);
     vi.mocked(generateQuickName).mockReturnValue('swift-fox');
     mockBonjour.publish.mockReturnValue(mockBonjourService);
     vi.mocked(Bonjour).mockImplementation(() => mockBonjour as any);
@@ -700,6 +709,173 @@ describe('annex-server', () => {
         'core:annex', 'error', 'readBody failed',
         expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
       );
+    });
+
+    it('handles aborted request to structured permission', async () => {
+      const { port, token } = await startAndPair();
+
+      await abortedPost(port, '/api/v1/agents/some-agent/structured-permission', token);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex', 'error', 'readBody failed',
+        expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Issue 396: executionMode in agent status
+  // -------------------------------------------------------------------------
+
+  describe('execution mode', () => {
+    it('includes executionMode=pty for PTY agents', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+      ]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
+      const agents = JSON.parse(res.body);
+      expect(agents[0].status).toBe('running');
+      expect(agents[0].executionMode).toBe('pty');
+    });
+
+    it('includes executionMode=structured for structured agents', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+      ]);
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
+      const agents = JSON.parse(res.body);
+      expect(agents[0].status).toBe('running');
+      expect(agents[0].executionMode).toBe('structured');
+    });
+
+    it('includes executionMode=headless for headless agents', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+      ]);
+      vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
+      const agents = JSON.parse(res.body);
+      expect(agents[0].status).toBe('running');
+      expect(agents[0].executionMode).toBe('headless');
+    });
+
+    it('includes executionMode=null for sleeping agents', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+      ]);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents', undefined, authHeaders(token));
+      const agents = JSON.parse(res.body);
+      expect(agents[0].status).toBe('sleeping');
+      expect(agents[0].executionMode).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Issue 396: Structured permission response
+  // -------------------------------------------------------------------------
+
+  describe('structured permission response', () => {
+    it('POST /api/v1/agents/:id/structured-permission resolves permission', async () => {
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
+        { requestId: 'req-1', approved: true, reason: 'user approved' },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+      expect(body.approved).toBe(true);
+      expect(structuredManagerModule.respondToPermission).toHaveBeenCalledWith(
+        'durable_1', 'req-1', true, 'user approved',
+      );
+    });
+
+    it('POST /api/v1/agents/:id/structured-permission denies permission', async () => {
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
+        { requestId: 'req-2', approved: false },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+      expect(body.approved).toBe(false);
+    });
+
+    it('returns 400 for missing requestId', async () => {
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
+        { approved: true },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toEqual({ error: 'missing_request_id' });
+    });
+
+    it('returns 400 for missing approved field', async () => {
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(true);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
+        { requestId: 'req-1' },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body)).toEqual({ error: 'missing_approved' });
+    });
+
+    it('returns 404 for non-structured agent', async () => {
+      vi.mocked(structuredManagerModule.isStructuredSession).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/structured-permission',
+        { requestId: 'req-1', approved: true },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(404);
+      expect(JSON.parse(res.body)).toEqual({ error: 'no_structured_session' });
     });
   });
 });

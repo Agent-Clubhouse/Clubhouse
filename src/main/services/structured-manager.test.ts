@@ -25,8 +25,10 @@ vi.mock('../util/ipc-broadcast', () => ({
 }));
 
 const mockEmitHookEvent = vi.fn();
+const mockEmitStructuredEvent = vi.fn();
 vi.mock('./annex-event-bus', () => ({
   emitHookEvent: (...args: unknown[]) => mockEmitHookEvent(...args),
+  emitStructuredEvent: (...args: unknown[]) => mockEmitStructuredEvent(...args),
 }));
 
 vi.mock('./log-service', () => ({
@@ -175,6 +177,34 @@ describe('structured-manager', () => {
           expect.objectContaining({ kind: 'stop', message: 'All done' }),
         );
       });
+    });
+
+    it('forwards all events to annex as full structured events', async () => {
+      const events: StructuredEvent[] = [
+        makeEvent('text_delta', { text: 'hello' }),
+        makeEvent('tool_start', { id: 't1', name: 'Read', displayVerb: 'Reading', input: {} }),
+        makeEvent('end', { reason: 'complete' }),
+      ];
+
+      const adapter = createMockAdapter(events);
+      await startStructuredSession('annex-all', adapter, baseOpts);
+
+      await vi.waitFor(() => {
+        expect(mockEmitStructuredEvent).toHaveBeenCalledTimes(3);
+      });
+
+      expect(mockEmitStructuredEvent).toHaveBeenCalledWith(
+        'annex-all',
+        expect.objectContaining({ type: 'text_delta' }),
+      );
+      expect(mockEmitStructuredEvent).toHaveBeenCalledWith(
+        'annex-all',
+        expect.objectContaining({ type: 'tool_start' }),
+      );
+      expect(mockEmitStructuredEvent).toHaveBeenCalledWith(
+        'annex-all',
+        expect.objectContaining({ type: 'end' }),
+      );
     });
 
     it('does not forward text_delta to annex (no hook equivalent)', async () => {
