@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useSoundStore, mapNotificationToSoundEvent } from './soundStore';
+import { useSoundStore, mapNotificationToSoundEvent, hasAnyCustomPack } from './soundStore';
+import { SoundSettings } from '../../shared/types';
 
 // Mock window.clubhouse API
 const mockGetSoundSettings = vi.fn();
@@ -41,12 +42,17 @@ class MockAudio {
 
 vi.stubGlobal('Audio', MockAudio);
 
-const DEFAULT_SETTINGS = {
-  activePack: null,
+const DEFAULT_SETTINGS: SoundSettings = {
+  slotAssignments: {},
   eventSettings: {
     'agent-done': { enabled: true, volume: 80 },
     error: { enabled: true, volume: 80 },
     permission: { enabled: true, volume: 80 },
+    'permission-granted': { enabled: true, volume: 80 },
+    'permission-denied': { enabled: true, volume: 80 },
+    'agent-wake': { enabled: true, volume: 80 },
+    'agent-sleep': { enabled: true, volume: 80 },
+    'agent-focus': { enabled: true, volume: 80 },
     notification: { enabled: true, volume: 80 },
   },
 };
@@ -70,16 +76,20 @@ describe('soundStore', () => {
       useSoundStore.setState({ settings: DEFAULT_SETTINGS });
       mockSaveSoundSettings.mockResolvedValue(undefined);
 
-      await useSoundStore.getState().saveSettings({ activePack: 'test-pack' });
+      await useSoundStore.getState().saveSettings({
+        slotAssignments: { 'agent-done': { packId: 'test-pack' } },
+      });
 
-      expect(useSoundStore.getState().settings?.activePack).toBe('test-pack');
+      expect(useSoundStore.getState().settings?.slotAssignments['agent-done']?.packId).toBe('test-pack');
       expect(mockSaveSoundSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ activePack: 'test-pack' }),
+        expect.objectContaining({
+          slotAssignments: { 'agent-done': { packId: 'test-pack' } },
+        }),
       );
     });
 
     it('does nothing when settings not loaded', async () => {
-      await useSoundStore.getState().saveSettings({ activePack: 'test' });
+      await useSoundStore.getState().saveSettings({ slotAssignments: {} });
       expect(mockSaveSoundSettings).not.toHaveBeenCalled();
     });
   });
@@ -139,7 +149,7 @@ describe('soundStore', () => {
       useSoundStore.setState({
         settings: {
           ...DEFAULT_SETTINGS,
-          activePack: 'test-pack',
+          slotAssignments: { 'agent-done': { packId: 'test-pack' } },
           eventSettings: {
             ...DEFAULT_SETTINGS.eventSettings,
             'agent-done': { enabled: false, volume: 80 },
@@ -151,16 +161,19 @@ describe('soundStore', () => {
       expect(mockGetSoundData).not.toHaveBeenCalled();
     });
 
-    it('does nothing when no pack is active (OS default)', async () => {
+    it('does nothing when no slot assignment exists (OS default)', async () => {
       useSoundStore.setState({ settings: DEFAULT_SETTINGS });
 
       await useSoundStore.getState().playSound('agent-done');
       expect(mockGetSoundData).not.toHaveBeenCalled();
     });
 
-    it('plays sound from active pack', async () => {
+    it('plays sound from assigned slot pack', async () => {
       useSoundStore.setState({
-        settings: { ...DEFAULT_SETTINGS, activePack: 'my-pack' },
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'my-pack' } },
+        },
       });
       mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,test');
 
@@ -170,12 +183,35 @@ describe('soundStore', () => {
       expect(mockPlay).toHaveBeenCalled();
     });
 
-    it('uses project override pack when available', async () => {
+    it('uses per-slot assignment (mix-and-match)', async () => {
       useSoundStore.setState({
         settings: {
           ...DEFAULT_SETTINGS,
-          activePack: 'global-pack',
-          projectOverrides: { 'proj-1': { activePack: 'project-pack' } },
+          slotAssignments: {
+            'agent-done': { packId: 'pack-a' },
+            error: { packId: 'pack-b' },
+          },
+        },
+      });
+      mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,test');
+
+      await useSoundStore.getState().playSound('agent-done');
+      expect(mockGetSoundData).toHaveBeenCalledWith('pack-a', 'agent-done');
+
+      await useSoundStore.getState().playSound('error');
+      expect(mockGetSoundData).toHaveBeenCalledWith('pack-b', 'error');
+    });
+
+    it('uses project override slot assignment when available', async () => {
+      useSoundStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'global-pack' } },
+          projectOverrides: {
+            'proj-1': {
+              slotAssignments: { 'agent-done': { packId: 'project-pack' } },
+            },
+          },
         },
       });
       mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,test');
@@ -185,9 +221,30 @@ describe('soundStore', () => {
       expect(mockGetSoundData).toHaveBeenCalledWith('project-pack', 'agent-done');
     });
 
+    it('falls back to global slot when project has no override for that slot', async () => {
+      useSoundStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'global-pack' } },
+          projectOverrides: {
+            'proj-1': {
+              slotAssignments: { error: { packId: 'project-error-pack' } },
+            },
+          },
+        },
+      });
+      mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,test');
+
+      await useSoundStore.getState().playSound('agent-done', 'proj-1');
+      expect(mockGetSoundData).toHaveBeenCalledWith('global-pack', 'agent-done');
+    });
+
     it('caches sound data after first load', async () => {
       useSoundStore.setState({
-        settings: { ...DEFAULT_SETTINGS, activePack: 'my-pack' },
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'my-pack' } },
+        },
       });
       mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,cached');
 
@@ -196,6 +253,20 @@ describe('soundStore', () => {
 
       // Should only call IPC once (second time uses cache)
       expect(mockGetSoundData).toHaveBeenCalledTimes(1);
+    });
+
+    it('plays new event types', async () => {
+      useSoundStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-wake': { packId: 'my-pack' } },
+        },
+      });
+      mockGetSoundData.mockResolvedValue('data:audio/wav;base64,wake');
+
+      await useSoundStore.getState().playSound('agent-wake');
+      expect(mockGetSoundData).toHaveBeenCalledWith('my-pack', 'agent-wake');
+      expect(mockPlay).toHaveBeenCalled();
     });
   });
 
@@ -208,6 +279,31 @@ describe('soundStore', () => {
 
       expect(mockGetSoundData).toHaveBeenCalledWith('some-pack', 'error');
       expect(mockPlay).toHaveBeenCalled();
+    });
+  });
+
+  describe('applyAllFromPack', () => {
+    it('sets all slots to the same pack', async () => {
+      useSoundStore.setState({ settings: DEFAULT_SETTINGS });
+      mockSaveSoundSettings.mockResolvedValue(undefined);
+
+      await useSoundStore.getState().applyAllFromPack('my-pack');
+
+      const settings = useSoundStore.getState().settings;
+      expect(settings?.slotAssignments['agent-done']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments.error?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments.permission?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments['permission-granted']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments['permission-denied']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments['agent-wake']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments['agent-sleep']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments['agent-focus']?.packId).toBe('my-pack');
+      expect(settings?.slotAssignments.notification?.packId).toBe('my-pack');
+    });
+
+    it('does nothing when settings not loaded', async () => {
+      await useSoundStore.getState().applyAllFromPack('my-pack');
+      expect(mockSaveSoundSettings).not.toHaveBeenCalled();
     });
   });
 });
@@ -232,5 +328,32 @@ describe('mapNotificationToSoundEvent', () => {
   it('returns null for unknown events', () => {
     expect(mapNotificationToSoundEvent('pre_tool')).toBeNull();
     expect(mapNotificationToSoundEvent('post_tool')).toBeNull();
+  });
+});
+
+describe('hasAnyCustomPack', () => {
+  it('returns false when no slots assigned', () => {
+    expect(hasAnyCustomPack(DEFAULT_SETTINGS)).toBe(false);
+  });
+
+  it('returns true when at least one slot is assigned', () => {
+    const settings: SoundSettings = {
+      ...DEFAULT_SETTINGS,
+      slotAssignments: { error: { packId: 'pack-a' } },
+    };
+    expect(hasAnyCustomPack(settings)).toBe(true);
+  });
+
+  it('checks project overrides when projectId provided', () => {
+    const settings: SoundSettings = {
+      ...DEFAULT_SETTINGS,
+      projectOverrides: {
+        'proj-1': {
+          slotAssignments: { 'agent-done': { packId: 'proj-pack' } },
+        },
+      },
+    };
+    expect(hasAnyCustomPack(settings, 'proj-1')).toBe(true);
+    expect(hasAnyCustomPack(settings, 'proj-2')).toBe(false);
   });
 });
