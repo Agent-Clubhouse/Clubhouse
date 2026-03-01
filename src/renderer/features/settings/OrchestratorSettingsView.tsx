@@ -19,8 +19,8 @@ function AppAgentSettings() {
   const loadSettings = useOrchestratorStore((s) => s.loadSettings);
   const setEnabled = useOrchestratorStore((s) => s.setEnabled);
   const checkAllAvailability = useOrchestratorStore((s) => s.checkAllAvailability);
-  const headlessEnabled = useHeadlessStore((s) => s.enabled);
-  const setHeadlessEnabled = useHeadlessStore((s) => s.setEnabled);
+  const defaultMode = useHeadlessStore((s) => s.defaultMode);
+  const setDefaultMode = useHeadlessStore((s) => s.setDefaultMode);
   const clubhouseEnabled = useClubhouseModeStore((s) => s.enabled);
   const setClubhouseEnabled = useClubhouseModeStore((s) => s.setEnabled);
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
@@ -48,32 +48,24 @@ function AppAgentSettings() {
 
   return (
     <>
-      {/* Headless Quick Agents toggle */}
+      {/* Quick Agent Mode dropdown */}
       <div className="space-y-3 mb-6">
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agents</h3>
-        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
-          <div className="flex items-center gap-2.5">
-            <span className="text-ctp-subtext1">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </span>
-            <div>
-              <div className="text-sm text-ctp-text">Headless Mode</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Quick agents run headless by default for faster completion, richer summaries, and no permission prompts
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => setHeadlessEnabled(!headlessEnabled)}
-            className="toggle-track"
-            data-on={String(headlessEnabled)}
+        <div className="space-y-2">
+          <label className="block text-sm text-ctp-text">Default Quick Agent Mode</label>
+          <select
+            value={defaultMode}
+            onChange={(e) => setDefaultMode(e.target.value as SpawnMode)}
+            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
+              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
           >
-            <span className="toggle-knob" />
-          </button>
+            <option value="interactive">Interactive</option>
+            <option value="headless">Headless</option>
+            <option value="structured">Structured</option>
+          </select>
+          <p className="text-xs text-ctp-subtext0">
+            How quick agents run by default. Headless runs faster with richer summaries. Structured enables native UI with tool cards and permissions.
+          </p>
         </div>
       </div>
 
@@ -221,7 +213,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
-  const headlessGlobal = useHeadlessStore((s) => s.enabled);
+  const headlessDefaultMode = useHeadlessStore((s) => s.defaultMode);
   const projectOverrides = useHeadlessStore((s) => s.projectOverrides);
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
@@ -316,12 +308,13 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
             text-ctp-text focus:outline-none focus:border-ctp-accent/50"
         >
-          <option value="global">Global Default ({headlessGlobal ? 'Headless' : 'Interactive'})</option>
-          <option value="headless">Headless</option>
+          <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
           <option value="interactive">Interactive</option>
+          <option value="headless">Headless</option>
+          <option value="structured">Structured</option>
         </select>
         <p className="text-xs text-ctp-subtext0">
-          How quick agents spawn in this project. Headless runs faster with richer summaries.
+          How quick agents spawn in this project. Headless runs faster with richer summaries. Structured enables native UI with tool cards and permissions.
         </p>
       </div>
     </>

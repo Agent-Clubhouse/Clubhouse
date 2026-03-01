@@ -1,9 +1,11 @@
 import { createSettingsStore } from './settings-store';
 
-export type SpawnMode = 'headless' | 'interactive';
+export type SpawnMode = 'headless' | 'interactive' | 'structured';
 
 export interface HeadlessSettings {
-  enabled: boolean;
+  /** @deprecated Use `defaultMode` instead. Kept for migration from older settings. */
+  enabled?: boolean;
+  defaultMode?: SpawnMode;
   projectOverrides?: Record<string, SpawnMode>;
 }
 
@@ -14,12 +16,19 @@ const store = createSettingsStore<HeadlessSettings>('headless-settings.json', {
 export const getSettings = store.get;
 export const saveSettings = store.save;
 
+/** Resolve the effective default mode, migrating legacy `enabled` boolean. */
+function resolveDefaultMode(settings: HeadlessSettings): SpawnMode {
+  if (settings.defaultMode) return settings.defaultMode;
+  // Legacy migration: enabled boolean → mode
+  return settings.enabled !== false ? 'headless' : 'interactive';
+}
+
 export function getSpawnMode(projectPath?: string): SpawnMode {
   const settings = getSettings();
   if (projectPath && settings.projectOverrides?.[projectPath]) {
     return settings.projectOverrides[projectPath];
   }
-  return settings.enabled ? 'headless' : 'interactive';
+  return resolveDefaultMode(settings);
 }
 
 export function setProjectSpawnMode(projectPath: string, mode: SpawnMode): void {
