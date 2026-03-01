@@ -927,14 +927,82 @@ describe('manifest-validator', () => {
       for (const [child, parent] of Object.entries(PERMISSION_HIERARCHY)) {
         // files.external also needs externalRoots
         if (child === 'files.external') continue;
+        // workspace permissions need API >= 0.7
+        const apiVersion = child.startsWith('workspace') ? 0.7 : 0.5;
         const result = validateManifest({
           ...base,
+          engine: { api: apiVersion },
           permissions: [parent, child],
         });
         // Should not have hierarchy errors (may have other unrelated errors like process needing allowedCommands)
         const hierarchyErrors = result.errors.filter((e: string) => e.includes('requires the base'));
         expect(hierarchyErrors).toHaveLength(0);
       }
+    });
+  });
+
+  describe('workspace permission validation', () => {
+    const v07Base = {
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'project',
+      contributes: { help: {} },
+    };
+
+    it('accepts workspace permission on v0.7', () => {
+      const result = validateManifest({
+        ...v07Base,
+        permissions: ['files', 'workspace'],
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects workspace permission on v0.6', () => {
+      const result = validateManifest({
+        ...v07Base,
+        engine: { api: 0.6 },
+        permissions: ['files', 'workspace'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Workspace permissions require API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects workspace sub-permissions on v0.5', () => {
+      const result = validateManifest({
+        ...v07Base,
+        engine: { api: 0.5 },
+        permissions: ['files', 'workspace', 'workspace.watch'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Workspace permissions require API >= 0.7'))).toBe(true);
+    });
+
+    it('enforces hierarchy: workspace.watch requires workspace', () => {
+      const result = validateManifest({
+        ...v07Base,
+        permissions: ['files', 'workspace.watch'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('"workspace.watch" requires the base "workspace"'))).toBe(true);
+    });
+
+    it('enforces hierarchy: workspace.cross-project requires workspace', () => {
+      const result = validateManifest({
+        ...v07Base,
+        permissions: ['files', 'workspace.cross-project'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('"workspace.cross-project" requires the base "workspace"'))).toBe(true);
+    });
+
+    it('accepts all workspace permissions together', () => {
+      const result = validateManifest({
+        ...v07Base,
+        permissions: ['files', 'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project'],
+      });
+      expect(result.valid).toBe(true);
     });
   });
 });

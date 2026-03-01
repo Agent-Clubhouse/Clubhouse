@@ -173,6 +173,20 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       unregisterPack: asyncNoop,
       listPacks: async () => [],
     },
+    workspace: {
+      root: '/tmp/test-plugin-workspace',
+      readFile: async () => '',
+      writeFile: asyncNoop,
+      mkdir: asyncNoop,
+      delete: asyncNoop,
+      stat: async () => ({ size: 0, isDirectory: false, isFile: true, modifiedAt: 0 }),
+      exists: async () => false,
+      listDir: async () => [],
+      readTree: async () => [],
+      watch: () => ({ dispose: noop }),
+      forPlugin: () => { throw new Error('forPlugin not available in test stub'); },
+      forProject: () => { throw new Error('forProject not available in test stub'); },
+    },
     theme: {
       getCurrent: () => ({
         id: 'catppuccin-mocha',
