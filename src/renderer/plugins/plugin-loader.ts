@@ -285,6 +285,15 @@ export async function activatePlugin(
       const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
       const api = createPluginAPI(ctx, activationMode, entry.manifest);
 
+      // Ensure the plugin's data directory exists before activation
+      try {
+        const dataDirRelative = projectId ? `files/${projectId}` : 'files';
+        await window.clubhouse.plugin.mkdir(pluginId, 'global', dataDirRelative);
+      } catch {
+        // Best-effort — don't block activation if mkdir fails
+        rendererLog('core:plugins', 'warn', `Failed to create data directory for plugin "${pluginId}"`);
+      }
+
       // Call activate if it exists
       if (mod.activate) {
         await mod.activate(ctx, api);

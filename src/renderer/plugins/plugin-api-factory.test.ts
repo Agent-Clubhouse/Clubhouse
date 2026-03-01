@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createPluginAPI, _resetEnforcedViolations } from './plugin-api-factory';
+import { createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
@@ -3365,6 +3365,28 @@ describe('plugin-api-factory', () => {
     });
   });
 
+  // ── computeDataDir ──────────────────────────────────────────────────
+
+  describe('computeDataDir', () => {
+    const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+
+    it('returns global path without projectId', () => {
+      expect(computeDataDir('my-plugin')).toBe(`${home}/.clubhouse/plugin-data/my-plugin/files`);
+    });
+
+    it('includes projectId in path when provided', () => {
+      expect(computeDataDir('my-plugin', 'proj-42')).toBe(`${home}/.clubhouse/plugin-data/my-plugin/files/proj-42`);
+    });
+
+    it('uses plugin id for isolation', () => {
+      const a = computeDataDir('plugin-a');
+      const b = computeDataDir('plugin-b');
+      expect(a).not.toBe(b);
+      expect(a).toContain('plugin-a');
+      expect(b).toContain('plugin-b');
+    });
+  });
+
   // ── FilesAPI ────────────────────────────────────────────────────────
 
   describe('files API', () => {
@@ -3444,6 +3466,38 @@ describe('plugin-api-factory', () => {
 
     it('prevents path traversal in rename', async () => {
       await expect(api.files.rename('file.txt', '../../etc/shadow')).rejects.toThrow('traversal');
+    });
+
+    it('exposes dataDir as absolute path for project-scoped plugin', () => {
+      const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+      expect(api.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files/proj-1`);
+    });
+
+    it('dataDir does not include projectId when absent', () => {
+      const projectCtx = makeCtx({ scope: 'project', projectId: undefined, projectPath: '/projects/my-project' });
+      const projectApi = createPluginAPI(projectCtx, undefined, allPermsManifest);
+      const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+      expect(projectApi.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files`);
+    });
+
+    it('dataDir includes projectId when present', () => {
+      const ctx = makeCtx({ projectId: 'my-proj-42' });
+      const projApi = createPluginAPI(ctx, undefined, allPermsManifest);
+      const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
+      expect(projApi.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files/my-proj-42`);
+    });
+
+    it('dataDir throws on external root FilesAPI', () => {
+      // Set up manifest with externalRoots and the required settings
+      usePluginStore.setState({
+        pluginSettings: { 'proj-1:test-plugin': { 'ext-path': '/ext/data' } },
+      });
+      const manifest = makeAllPermsManifest({
+        externalRoots: [{ settingKey: 'ext-path', root: 'external' }],
+      });
+      const extApi = createPluginAPI(makeCtx(), undefined, manifest);
+      const rootFiles = extApi.files.forRoot('external');
+      expect(() => rootFiles.dataDir).toThrow('dataDir is not available on external root FilesAPI');
     });
   });
 
