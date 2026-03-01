@@ -44,7 +44,9 @@ function flushPendingCommand(session: ManagedSession): boolean {
   if (process.platform === 'win32') {
     session.process.write(`${cmd} & exit\r\n`);
   } else {
-    session.process.write(`exec ${cmd}\n`);
+    // printf clears the screen so the terminal driver echo and shell
+    // prompt echo of the exec command are wiped before the agent starts.
+    session.process.write(`printf '\\033[2J\\033[H'; exec ${cmd}\n`);
   }
   return true;
 }

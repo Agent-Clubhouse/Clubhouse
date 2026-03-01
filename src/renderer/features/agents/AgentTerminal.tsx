@@ -66,9 +66,9 @@ export function AgentTerminal({ agentId, focused }: Props) {
       term.focus();
       // Replay buffered output so switching agents restores the terminal
       window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
-        if (buf && terminalRef.current === term) {
-          term.write(buf);
-        }
+        if (terminalRef.current !== term) return;
+        if (buf) term.write(buf);
+        bufferReplayed = true;
       });
     });
 
@@ -80,10 +80,16 @@ export function AgentTerminal({ agentId, focused }: Props) {
       window.clubhouse.pty.write(agentId, data);
     });
 
+    // Gate live PTY data until after the buffer snapshot has been replayed.
+    // Without this, the same output can be written twice: once from the
+    // real-time broadcast and again when getBuffer() resolves, causing
+    // duplicate lines (e.g. the exec command appearing multiple times).
+    let bufferReplayed = false;
+
     // Receive PTY output
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
-        if (id === agentId) {
+        if (id === agentId && bufferReplayed) {
           term.write(data);
         }
       }
