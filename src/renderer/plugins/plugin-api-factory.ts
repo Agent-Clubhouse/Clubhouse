@@ -848,6 +848,9 @@ function resolvePath(projectPath: string, relativePath: string): string {
   return normalizedResolved;
 }
 
+/** Global counter for unique file watch subscription IDs. */
+let _watchIdCounter = 0;
+
 /** Creates a FilesAPI scoped to an arbitrary base path (for external roots). forRoot() throws (no nesting). */
 function createFilesAPIForRoot(basePath: string): FilesAPI {
   return {
@@ -895,6 +898,9 @@ function createFilesAPIForRoot(basePath: string): FilesAPI {
     },
     forRoot(): FilesAPI {
       throw new Error('forRoot() cannot be called on an external root FilesAPI (no nesting)');
+    },
+    watch(): Disposable {
+      throw new Error('watch() is not available on external root FilesAPI');
     },
   };
 }
@@ -980,6 +986,33 @@ function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI
         basePath = `${ctx.projectPath}/${basePath}`;
       }
       return createFilesAPIForRoot(basePath);
+    },
+    watch(glob: string, callback: (events: import('../../shared/plugin-types').FileEvent[]) => void): Disposable {
+      if (!hasPermission(manifest, 'files.watch')) {
+        throw new Error(`Plugin '${ctx.pluginId}' requires 'files.watch' permission to use api.files.watch()`);
+      }
+      const watchId = `plugin:${ctx.pluginId}:${++_watchIdCounter}`;
+      const fullGlob = projectPath ? `${projectPath}/${glob}` : glob;
+
+      // Start the watch on the main process
+      window.clubhouse.file.watchStart(watchId, fullGlob).catch((err: Error) => {
+        rendererLog(ctx.pluginId, 'error', `Failed to start file watch: ${err.message}`);
+      });
+
+      // Listen for events
+      const handler = (_event: unknown, data: { watchId: string; events: import('../../shared/plugin-types').FileEvent[] }) => {
+        if (data.watchId === watchId) {
+          callback(data.events);
+        }
+      };
+      window.clubhouse.file.onWatchEvent(handler);
+
+      return {
+        dispose() {
+          window.clubhouse.file.offWatchEvent(handler);
+          window.clubhouse.file.watchStop(watchId).catch(() => {});
+        },
+      };
     },
   };
 }

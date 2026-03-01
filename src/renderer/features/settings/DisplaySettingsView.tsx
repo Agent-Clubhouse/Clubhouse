@@ -1,6 +1,6 @@
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
-import { THEMES, THEME_IDS } from '../../themes';
+import { getTheme } from '../../themes';
 
 const VIEW_TOGGLES = [
   {
@@ -19,6 +19,7 @@ const VIEW_TOGGLES = [
 export function DisplaySettingsView() {
   const themeId = useThemeStore((s) => s.themeId);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
   const showHome = useUIStore((s) => s.showHome);
   const setShowHome = useUIStore((s) => s.setShowHome);
   const toggleMap = {
@@ -60,8 +61,9 @@ export function DisplaySettingsView() {
         {/* Color theme */}
         <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Color Theme</h3>
         <div className="grid grid-cols-2 gap-3 max-w-lg">
-          {THEME_IDS.map((id) => {
-            const theme = THEMES[id];
+          {availableThemeIds.map((id) => {
+            const theme = getTheme(id);
+            if (!theme) return null;
             const selected = id === themeId;
             return (
               <button
