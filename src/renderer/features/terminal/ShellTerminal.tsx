@@ -55,10 +55,25 @@ export function ShellTerminal({ sessionId, focused }: Props) {
       window.clubhouse.pty.write(sessionId, data);
     });
 
+    // Batch PTY data writes using rAF to avoid 100+ DOM renders/sec.
+    // Data arriving between frames is concatenated and flushed once per paint.
+    let pendingData = '';
+    let flushScheduled = false;
+    let flushId = 0;
+
     const removeDataListener = window.clubhouse.pty.onData(
       (id: string, data: string) => {
         if (id === sessionId) {
-          term.write(data);
+          pendingData += data;
+          if (!flushScheduled) {
+            flushScheduled = true;
+            flushId = requestAnimationFrame(() => {
+              const batch = pendingData;
+              pendingData = '';
+              flushScheduled = false;
+              term.write(batch);
+            });
+          }
         }
       }
     );
@@ -93,6 +108,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      if (flushId) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
