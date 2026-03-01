@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { usePluginStore } from './plugin-store';
 import type { PluginManifest, PluginModule } from '../../shared/plugin-types';
 
@@ -53,6 +53,12 @@ vi.mock('./dynamic-import', () => ({
   dynamicImportModule: vi.fn(),
 }));
 
+// Mock theme registry for pack plugin tests
+vi.mock('../themes', () => ({
+  registerTheme: vi.fn(),
+  unregisterTheme: vi.fn(),
+}));
+
 import {
   initializePluginSystem,
   activatePlugin,
@@ -65,6 +71,7 @@ import {
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
+import { registerTheme, unregisterTheme } from '../themes';
 
 function makeManifest(overrides?: Partial<PluginManifest>): PluginManifest {
   return {
@@ -907,6 +914,124 @@ describe('plugin-loader', () => {
       mockPlugin.discoverCommunity.mockResolvedValue([]);
       const result = await discoverNewPlugins();
       expect(result).toEqual([]);
+    });
+  });
+
+  // ── Pack plugin activation ────────────────────────────────────────────
+
+  describe('pack plugin activation', () => {
+    const mockRegisterTheme = registerTheme as ReturnType<typeof vi.fn>;
+    const mockUnregisterTheme = unregisterTheme as ReturnType<typeof vi.fn>;
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    const packManifest = makeManifest({
+      id: 'spring-themes',
+      name: 'Spring Themes',
+      scope: 'app',
+      kind: 'pack',
+      engine: { api: 0.7 },
+      permissions: undefined,
+      contributes: {
+        themes: [
+          {
+            id: 'cherry-blossom',
+            name: 'Cherry Blossom',
+            type: 'light' as const,
+            colors: { base: '#fef6f8', mantle: '#fceef2', crust: '#fae5ec', text: '#3d2233', subtext0: '#846b78', subtext1: '#6e5462', surface0: '#f5d5df', surface1: '#f0c5d2', surface2: '#e8b3c3', accent: '#d4728a', link: '#c4607a', warning: '#b8892e', error: '#c44d5e', info: '#6b8fb8', success: '#5d9068' },
+            hljs: { keyword: '#b85e8a', string: '#5d9068', number: '#c07838', comment: '#b0a0a8', function: '#6b8fb8', type: '#b8892e', variable: '#3d2233', regexp: '#d4728a', tag: '#6b8fb8', attribute: '#4e9898', symbol: '#b85e8a', meta: '#8b6e9e', addition: '#5d9068', deletion: '#c44d5e', property: '#4e9898', punctuation: '#6e5462' },
+            terminal: { background: '#fef6f8', foreground: '#3d2233', cursor: '#d4728a', cursorAccent: '#fef6f8', selectionBackground: '#f0c5d2', selectionForeground: '#3d2233', black: '#3d2233', red: '#c44d5e', green: '#5d9068', yellow: '#b8892e', blue: '#6b8fb8', magenta: '#b85e8a', cyan: '#4e9898', white: '#fae5ec', brightBlack: '#846b78', brightRed: '#d45e70', brightGreen: '#6ea078', brightYellow: '#c89a40', brightBlue: '#7ba0c8', brightMagenta: '#c86e9a', brightCyan: '#60a8a8', brightWhite: '#fef6f8' },
+          },
+          {
+            id: 'moonlit-garden',
+            name: 'Moonlit Garden',
+            type: 'dark' as const,
+            colors: { base: '#161b28', mantle: '#121722', crust: '#0e121c', text: '#d0d8ea', subtext0: '#8e98b5', subtext1: '#a5aec8', surface0: '#222840', surface1: '#2c3350', surface2: '#363e60', accent: '#a88ed0', link: '#88c0d8', warning: '#d8c070', error: '#e08898', info: '#78b0d0', success: '#78c088' },
+            hljs: { keyword: '#c8a0e0', string: '#78c088', number: '#d8a060', comment: '#586880', function: '#78b0d0', type: '#d8c070', variable: '#d0d8ea', regexp: '#e0a0c0', tag: '#78b0d0', attribute: '#68c8c0', symbol: '#c8a0e0', meta: '#e0a0c0', addition: '#78c088', deletion: '#e08898', property: '#68c8c0', punctuation: '#a5aec8' },
+            terminal: { background: '#161b28', foreground: '#d0d8ea', cursor: '#a88ed0', cursorAccent: '#161b28', selectionBackground: '#363e60', selectionForeground: '#d0d8ea', black: '#222840', red: '#e08898', green: '#78c088', yellow: '#d8c070', blue: '#78b0d0', magenta: '#c8a0e0', cyan: '#68c8c0', white: '#a5aec8', brightBlack: '#586880', brightRed: '#f098a8', brightGreen: '#88d0a0', brightYellow: '#e8d080', brightBlue: '#88c0e0', brightMagenta: '#d8b0f0', brightCyan: '#78d8d0', brightWhite: '#d0d8ea' },
+          },
+        ],
+      },
+    });
+
+    it('activates pack plugin without dynamic import', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+
+      await activatePlugin('spring-themes');
+
+      expect(mockDynamicImport).not.toHaveBeenCalled();
+      expect(usePluginStore.getState().plugins['spring-themes'].status).toBe('activated');
+    });
+
+    it('registers contributed themes on activation', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+
+      await activatePlugin('spring-themes');
+
+      expect(mockRegisterTheme).toHaveBeenCalledTimes(2);
+      expect(mockRegisterTheme).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'plugin:spring-themes:cherry-blossom',
+          name: 'Cherry Blossom',
+          type: 'light',
+        }),
+      );
+      expect(mockRegisterTheme).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'plugin:spring-themes:moonlit-garden',
+          name: 'Moonlit Garden',
+          type: 'dark',
+        }),
+      );
+    });
+
+    it('unregisters themes on deactivation', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+      await activatePlugin('spring-themes');
+
+      await deactivatePlugin('spring-themes');
+
+      expect(mockUnregisterTheme).toHaveBeenCalledTimes(2);
+      expect(mockUnregisterTheme).toHaveBeenCalledWith('plugin:spring-themes:cherry-blossom');
+      expect(mockUnregisterTheme).toHaveBeenCalledWith('plugin:spring-themes:moonlit-garden');
+      expect(usePluginStore.getState().plugins['spring-themes'].status).toBe('deactivated');
+    });
+
+    it('stores a synthetic empty module for pack plugins', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+
+      await activatePlugin('spring-themes');
+
+      const mod = usePluginStore.getState().modules['spring-themes'];
+      expect(mod).toBeDefined();
+      expect(mod).toEqual({});
+    });
+
+    it('does not call createPluginAPI for pack plugins', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+
+      // Pack activation should not throw even though createPluginAPI
+      // might fail without proper window.clubhouse setup for all APIs
+      await activatePlugin('spring-themes');
+
+      expect(usePluginStore.getState().plugins['spring-themes'].status).toBe('activated');
+    });
+
+    it('activates pack plugin with no themes gracefully', async () => {
+      const noThemesManifest = makeManifest({
+        id: 'agent-config-pack',
+        name: 'Agent Config Pack',
+        scope: 'app',
+        kind: 'pack',
+        engine: { api: 0.7 },
+        permissions: undefined,
+        contributes: {},
+      });
+      usePluginStore.getState().registerPlugin(noThemesManifest, 'community', '/plugins/agent-config-pack', 'registered');
+
+      await activatePlugin('agent-config-pack');
+
+      expect(mockRegisterTheme).not.toHaveBeenCalled();
+      expect(usePluginStore.getState().plugins['agent-config-pack'].status).toBe('activated');
     });
   });
 
