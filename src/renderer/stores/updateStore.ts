@@ -157,6 +157,14 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
   },
 }));
 
+/** Clear the dismiss timer. Call in test teardown to avoid leaked timers. */
+export function resetDismissTimer(): void {
+  if (dismissTimer) {
+    clearTimeout(dismissTimer);
+    dismissTimer = null;
+  }
+}
+
 // Listen for status updates from main process
 export function initUpdateListener(): () => void {
   return window.clubhouse.app.onUpdateStatusChanged((status) => {

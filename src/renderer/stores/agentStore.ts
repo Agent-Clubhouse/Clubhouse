@@ -1,14 +1,12 @@
 import { create } from 'zustand';
-import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult, HookEventKind } from '../../shared/types';
+import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
 import { useHeadlessStore } from './headlessStore';
+import { useProjectStore } from './projectStore';
 
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
-
-/** Track agents that were user-cancelled (not naturally completed) */
-const cancelledAgentIds = new Set<string>();
 
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
@@ -22,6 +20,8 @@ interface AgentState {
   agentActivity: Record<string, number>; // agentId -> last data timestamp
   agentSpawnedAt: Record<string, number>; // agentId -> spawn timestamp
   agentDetailedStatus: Record<string, AgentDetailedStatus>;
+  /** Track agents that were user-cancelled (not naturally completed) */
+  cancelledAgentIds: Record<string, true>;
   projectActiveAgent: Record<string, string | null>;
   setActiveAgent: (id: string | null, projectId?: string) => void;
   restoreProjectAgent: (projectId: string) => void;
@@ -69,6 +69,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   agentActivity: {},
   agentSpawnedAt: {},
   agentDetailedStatus: {},
+  cancelledAgentIds: {},
   projectActiveAgent: {},
   agentIcons: {},
 
@@ -435,14 +436,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     // Mark as user-cancelled so exit handler can distinguish from natural completion
     if (agent.kind === 'quick') {
-      cancelledAgentIds.add(id);
+      set((s) => ({ cancelledAgentIds: { ...s.cancelledAgentIds, [id]: true as const } }));
     }
 
     // Resolve projectPath from agent if not provided
     const resolvedPath = projectPath || (() => {
-      const { useProjectStore } = require('./projectStore');
       const project = useProjectStore.getState().projects.find(
-        (p: { id: string; path: string }) => p.id === agent.projectId,
+        (p) => p.id === agent.projectId,
       );
       return project?.path;
     })();
@@ -705,7 +705,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
 /** Check if an agent was user-cancelled (consumes the flag) */
 export function consumeCancelled(agentId: string): boolean {
-  const was = cancelledAgentIds.has(agentId);
-  cancelledAgentIds.delete(agentId);
+  const was = agentId in useAgentStore.getState().cancelledAgentIds;
+  if (was) {
+    useAgentStore.setState((s) => {
+      const { [agentId]: _, ...rest } = s.cancelledAgentIds;
+      return { cancelledAgentIds: rest };
+    });
+  }
   return was;
 }

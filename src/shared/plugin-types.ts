@@ -473,9 +473,9 @@ export interface AgentsAPI {
   onAnyChange(callback: () => void): Disposable;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface HubAPI {
-  // Placeholder for hub integration
-  refresh(): void;
+  // Reserved for future hub integration methods
 }
 
 export interface NavigationAPI {

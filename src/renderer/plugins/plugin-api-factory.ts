@@ -644,11 +644,7 @@ function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsA
 }
 
 function createHubAPI(): HubAPI {
-  return {
-    refresh(): void {
-      // Placeholder — hub refresh will be wired when hub store is available
-    },
-  };
+  return {};
 }
 
 function createNavigationAPI(): NavigationAPI {

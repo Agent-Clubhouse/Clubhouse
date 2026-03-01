@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { Project, Agent, CompletedQuickAgent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
+import { formatDuration } from '../../utils/format';
 
 /* ─── Helpers ─── */
 
@@ -57,12 +58,6 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
-  const minutes = Math.floor(ms / 60_000);
-  const secs = Math.round((ms % 60_000) / 1000);
-  return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
-}
 
 function formatCost(usd: number): string {
   if (usd < 0.01) return '<$0.01';
