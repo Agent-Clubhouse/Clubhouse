@@ -4,6 +4,7 @@ import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { SleepingMascot } from './SleepingMascots';
+import { SessionPickerDialog } from './SessionPickerDialog';
 
 export function SleepingAgent({ agent }: { agent: Agent }) {
   const { spawnDurableAgent } = useAgentStore();
@@ -13,6 +14,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sessionPickerOpen, setSessionPickerOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleWake = useCallback(async () => {
@@ -31,6 +33,23 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
       await spawnDurableAgent(agentProject.id, agentProject.path, config, true);
+    }
+  }, [agentProject, agent.id, spawnDurableAgent]);
+
+  const handleBrowseSessions = useCallback(() => {
+    setDropdownOpen(false);
+    setSessionPickerOpen(true);
+  }, []);
+
+  const handleResumeSession = useCallback(async (sessionId: string) => {
+    if (!agentProject) return;
+    setSessionPickerOpen(false);
+    const configs = await window.clubhouse.agent.listDurable(agentProject.path);
+    const config = configs.find((c: any) => c.id === agent.id);
+    if (config) {
+      // Override lastSessionId for this spawn
+      const configWithSession = { ...config, lastSessionId: sessionId };
+      await spawnDurableAgent(agentProject.id, agentProject.path, configWithSession, true);
     }
   }, [agentProject, agent.id, spawnDurableAgent]);
 
@@ -112,7 +131,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
               {dropdownOpen && (
                 <div
                   data-testid="wake-dropdown-menu"
-                  className="absolute top-full mt-1 left-0 right-0 min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle z-50"
+                  className="absolute top-full mt-1 left-0 right-0 min-w-[180px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle z-50"
                 >
                   <button
                     onClick={handleWakeAndResume}
@@ -120,6 +139,13 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
                     className="w-full px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors cursor-pointer text-left"
                   >
                     Wake &amp; Resume
+                  </button>
+                  <button
+                    onClick={handleBrowseSessions}
+                    data-testid="browse-sessions-option"
+                    className="w-full px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors cursor-pointer text-left"
+                  >
+                    Browse Sessions...
                   </button>
                 </div>
               )}
@@ -133,6 +159,17 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           )}
         </div>
       </div>
+
+      {/* Session picker dialog */}
+      {sessionPickerOpen && agentProject && (
+        <SessionPickerDialog
+          agentId={agent.id}
+          projectPath={agentProject.path}
+          orchestrator={agent.orchestrator}
+          onResume={handleResumeSession}
+          onClose={() => setSessionPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
