@@ -27,18 +27,16 @@ interface MockClientInstance {
   onExit: (code: number | null, signal: string | null) => void;
 }
 
-function collectEvents(
+async function collectEvents(
   iterable: AsyncIterable<StructuredEvent>,
   count: number,
 ): Promise<StructuredEvent[]> {
-  return new Promise<StructuredEvent[]>(async (resolve) => {
-    const events: StructuredEvent[] = [];
-    for await (const event of iterable) {
-      events.push(event);
-      if (events.length >= count) break;
-    }
-    resolve(events);
-  });
+  const events: StructuredEvent[] = [];
+  for await (const event of iterable) {
+    events.push(event);
+    if (events.length >= count) break;
+  }
+  return events;
 }
 
 describe('AcpAdapter', () => {

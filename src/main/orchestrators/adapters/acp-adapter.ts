@@ -189,7 +189,7 @@ export class AcpAdapter implements StructuredAdapter {
           steps: Array.isArray(p.steps)
             ? p.steps.map((s: Record<string, unknown>) => ({
                 description: String(s.description ?? ''),
-                status: (s.status as string) ?? 'pending',
+                status: (s.status as 'pending' | 'in_progress' | 'completed' | 'failed') ?? 'pending',
               }))
             : [],
         });
