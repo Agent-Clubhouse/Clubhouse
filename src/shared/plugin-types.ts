@@ -527,6 +527,12 @@ export interface AgentsAPI {
   onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable;
   /** Subscribe to any change in the agents store (status, detailed status, new/removed agents). */
   onAnyChange(callback: () => void): Disposable;
+  /** List historical sessions for an agent. */
+  listSessions(agentId: string): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>>;
+  /** Read paginated session transcript events. */
+  readSessionTranscript(agentId: string, sessionId: string, offset: number, limit: number): Promise<import('./session-types').SessionTranscriptPage | null>;
+  /** Get aggregated session summary (stats, files, tokens). */
+  getSessionSummary(agentId: string, sessionId: string): Promise<import('./session-types').SessionSummary | null>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
