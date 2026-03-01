@@ -90,7 +90,7 @@ function broadcastStatus(): void {
 
 export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> {
   if (status.checking) {
-    return { updates: status.updates, checkedAt: status.lastCheck || new Date().toISOString() };
+    return { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() };
   }
 
   status = { ...status, checking: true, error: null };
@@ -161,7 +161,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
     appLog('marketplace:updates', 'error', `Plugin update check failed: ${msg}`);
     status = { ...status, checking: false, error: msg };
     broadcastStatus();
-    return { updates: status.updates, checkedAt: status.lastCheck || new Date().toISOString() };
+    return { updates: status.updates, incompatibleUpdates: status.incompatibleUpdates, checkedAt: status.lastCheck || new Date().toISOString() };
   }
 }
 
