@@ -82,6 +82,7 @@ function renderAnsi(text: string): string {
     .replace(/>/g, '&gt;');
 
   // Replace ANSI escape sequences
+  // eslint-disable-next-line no-control-regex
   html = html.replace(/\x1b\[(\d+(?:;\d+)*)m/g, (_match, codes: string) => {
     const parts = codes.split(';').map(Number);
     const classes: string[] = [];
@@ -94,6 +95,7 @@ function renderAnsi(text: string): string {
   });
 
   // Clean up any remaining escape sequences
+  // eslint-disable-next-line no-control-regex
   html = html.replace(/\x1b\[[^m]*m/g, '');
 
   return html;
