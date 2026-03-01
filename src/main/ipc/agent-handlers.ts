@@ -8,6 +8,7 @@ import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
+import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
 
 export function registerAgentHandlers(): void {
@@ -195,6 +196,50 @@ export function registerAgentHandlers(): void {
     IPC.AGENT.UPDATE_SESSION_NAME,
     (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
       agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
+    }
+  );
+
+  // --- Session transcript handlers ---
+
+  ipcMain.handle(
+    IPC.AGENT.READ_SESSION_TRANSCRIPT,
+    async (_event, projectPath: string, agentId: string, sessionId: string, offset: number, limit: number, orchestrator?: string) => {
+      try {
+        const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+        if (!provider.readSessionTranscript) return null;
+        const config = agentConfig.getDurableConfig(projectPath, agentId);
+        const cwd = config?.worktreePath || projectPath;
+        const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
+        if (!rawEvents) return null;
+        const events = normalizeSessionEvents(rawEvents);
+        return paginateEvents(events, offset, limit);
+      } catch (err) {
+        appLog('core:ipc', 'warn', 'Failed to read session transcript', {
+          meta: { agentId, sessionId, error: err instanceof Error ? err.message : String(err) },
+        });
+        return null;
+      }
+    }
+  );
+
+  ipcMain.handle(
+    IPC.AGENT.GET_SESSION_SUMMARY,
+    async (_event, projectPath: string, agentId: string, sessionId: string, orchestrator?: string) => {
+      try {
+        const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+        if (!provider.readSessionTranscript) return null;
+        const config = agentConfig.getDurableConfig(projectPath, agentId);
+        const cwd = config?.worktreePath || projectPath;
+        const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
+        if (!rawEvents) return null;
+        const events = normalizeSessionEvents(rawEvents);
+        return buildSessionSummary(events, provider.id);
+      } catch (err) {
+        appLog('core:ipc', 'warn', 'Failed to get session summary', {
+          meta: { agentId, sessionId, error: err instanceof Error ? err.message : String(err) },
+        });
+        return null;
+      }
     }
   );
 

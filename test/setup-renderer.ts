@@ -77,6 +77,8 @@ vi.stubGlobal('clubhouse', {
     updateSessionName: asyncNoop,
     getTranscriptInfo: asyncNoop,
     readTranscriptPage: asyncNoop,
+    readSessionTranscript: async () => null,
+    getSessionSummary: async () => null,
   },
   git: {
     info: asyncNoop,

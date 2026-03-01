@@ -320,10 +320,11 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       try {
         const entries = await fsp.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+          if (!entry.isFile() || (!entry.name.endsWith('.json') && !entry.name.endsWith('.jsonl'))) continue;
 
           // Session ID is the filename without extension
-          const sessionId = path.basename(entry.name, '.json');
+          const ext = path.extname(entry.name);
+          const sessionId = path.basename(entry.name, ext);
           // Skip non-UUID-like filenames (avoid config files)
           if (!/^[0-9a-f-]{8,}$/i.test(sessionId)) continue;
           if (seenIds.has(sessionId)) continue;
@@ -348,6 +349,86 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     // Sort by most recently active first
     sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
     return sessions;
+  }
+
+  /**
+   * Read a historical session transcript from Claude Code's JSONL storage.
+   * Returns raw StreamJsonEvent[] or null if session not found.
+   */
+  async readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    profileEnv?: Record<string, string>,
+  ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
+    const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
+    const projectsDir = path.join(configDir, 'projects');
+
+    if (!fs.existsSync(projectsDir)) return null;
+
+    const absCwd = path.resolve(cwd);
+    const encodedPath = absCwd.replace(/[/\\]/g, '-');
+    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
+
+    let projectDir: string | null = null;
+    for (const candidate of candidates) {
+      const dir = path.join(projectsDir, candidate);
+      if (fs.existsSync(dir)) {
+        projectDir = dir;
+        break;
+      }
+    }
+
+    if (!projectDir) return null;
+
+    // Search for JSONL file in common locations
+    const searchPaths = [
+      path.join(projectDir, 'sessions', `${sessionId}.jsonl`),
+      path.join(projectDir, `${sessionId}.jsonl`),
+    ];
+
+    let jsonlPath: string | null = null;
+    for (const p of searchPaths) {
+      if (fs.existsSync(p)) {
+        jsonlPath = p;
+        break;
+      }
+    }
+
+    // Also check for directory-style sessions
+    if (!jsonlPath) {
+      const dirPath = path.join(projectDir, sessionId);
+      if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+        try {
+          const entries = await fsp.readdir(dirPath);
+          const jsonlFile = entries.find((e) => e.endsWith('.jsonl'));
+          if (jsonlFile) {
+            jsonlPath = path.join(dirPath, jsonlFile);
+          }
+        } catch {
+          // Skip unreadable
+        }
+      }
+    }
+
+    if (!jsonlPath) return null;
+
+    // Parse JSONL line-by-line
+    try {
+      const content = await fsp.readFile(jsonlPath, 'utf-8');
+      const events: import('../services/jsonl-parser').StreamJsonEvent[] = [];
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          events.push(JSON.parse(trimmed));
+        } catch {
+          // Skip malformed lines
+        }
+      }
+      return events.length > 0 ? events : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

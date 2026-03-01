@@ -163,6 +163,41 @@ const api = {
     updateSessionName: (projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_SESSION_NAME, projectPath, agentId, sessionId, friendlyName),
 
+    readSessionTranscript: (projectPath: string, agentId: string, sessionId: string, offset: number, limit: number, orchestrator?: string): Promise<{
+      events: Array<{
+        id: string;
+        timestamp: number;
+        type: string;
+        toolName?: string;
+        toolInput?: Record<string, unknown>;
+        text?: string;
+        filePath?: string;
+        usage?: { inputTokens: number; outputTokens: number };
+        costUsd?: number;
+        durationMs?: number;
+        model?: string;
+      }>;
+      totalEvents: number;
+    } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_SESSION_TRANSCRIPT, projectPath, agentId, sessionId, offset, limit, orchestrator),
+
+    getSessionSummary: (projectPath: string, agentId: string, sessionId: string, orchestrator?: string): Promise<{
+      summary: string | null;
+      filesModified: string[];
+      totalToolCalls: number;
+      toolsUsed: string[];
+      totalCostUsd: number;
+      totalDurationMs: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+      model: string | null;
+      orchestrator: string | null;
+      eventCount: number;
+      startedAt: string | null;
+      lastActiveAt: string | null;
+    } | null> =>
+      ipcRenderer.invoke(IPC.AGENT.GET_SESSION_SUMMARY, projectPath, agentId, sessionId, orchestrator),
+
     // Structured mode
     startStructured: (agentId: string, opts: {
       mission: string;

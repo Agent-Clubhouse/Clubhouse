@@ -92,6 +92,8 @@ export const IPC = {
     PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
     LIST_SESSIONS: 'agent:list-sessions',
     UPDATE_SESSION_NAME: 'agent:update-session-name',
+    READ_SESSION_TRANSCRIPT: 'agent:read-session-transcript',
+    GET_SESSION_SUMMARY: 'agent:get-session-summary',
     // Structured mode channels
     STRUCTURED_EVENT: 'agent:structured-event',                // Main → Renderer
     START_STRUCTURED: 'agent:start-structured',                // Renderer → Main
