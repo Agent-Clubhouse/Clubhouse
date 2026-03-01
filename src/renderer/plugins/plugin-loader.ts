@@ -1,4 +1,5 @@
-import type { PluginContext, PluginModule, PluginManifest } from '../../shared/plugin-types';
+import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
+import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI } from './plugin-api-factory';
@@ -7,8 +8,38 @@ import { injectStyles, removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
 import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
+import { registerTheme, unregisterTheme } from '../themes';
 
 const activeContexts = new Map<string, PluginContext>();
+
+// ── Pack plugin helpers ───────────────────────────────────────────────
+
+/** Build a namespaced theme ID for a plugin-contributed theme. */
+function packThemeId(pluginId: string, themeId: string): string {
+  return `plugin:${pluginId}:${themeId}`;
+}
+
+/** Convert a plugin theme declaration to a ThemeDefinition and register it. */
+function registerPackThemes(pluginId: string, themes: PluginThemeDeclaration[]): void {
+  for (const decl of themes) {
+    const def: ThemeDefinition = {
+      id: packThemeId(pluginId, decl.id),
+      name: decl.name,
+      type: decl.type,
+      colors: decl.colors as ThemeColors,
+      hljs: decl.hljs as HljsColors,
+      terminal: decl.terminal as TerminalColors,
+    };
+    registerTheme(def);
+  }
+}
+
+/** Unregister all themes contributed by a plugin. */
+function unregisterPackThemes(pluginId: string, themes: PluginThemeDeclaration[]): void {
+  for (const decl of themes) {
+    unregisterTheme(packThemeId(pluginId, decl.id));
+  }
+}
 
 /** Returns IDs of built-in plugins that should be auto-enabled per project. */
 export function getBuiltinProjectPluginIds(): string[] {
@@ -189,8 +220,22 @@ export async function activatePlugin(
 
   try {
     let mod: PluginModule;
+    const isPack = entry.manifest.kind === 'pack';
 
-    if (entry.source === 'builtin') {
+    if (isPack) {
+      // Pack plugins have no main.js — use an empty synthetic module.
+      mod = {};
+      store.setPluginModule(pluginId, mod);
+
+      // Register pack contributions
+      if (entry.manifest.contributes?.themes) {
+        registerPackThemes(pluginId, entry.manifest.contributes.themes);
+      }
+
+      rendererLog('core:plugins', 'info', `Pack plugin "${pluginId}" activated`, {
+        meta: { pluginId, themes: entry.manifest.contributes?.themes?.length ?? 0 },
+      });
+    } else if (entry.source === 'builtin') {
       // Built-in plugins already have their module set during registration
       mod = store.modules[pluginId];
       if (!mod) {
@@ -235,32 +280,34 @@ export async function activatePlugin(
       store.setPluginModule(pluginId, mod);
     }
 
-    // Create the API — for dual plugins activated at app level, set mode explicitly
-    const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
-    const api = createPluginAPI(ctx, activationMode, entry.manifest);
+    if (!isPack) {
+      // Create the API — for dual plugins activated at app level, set mode explicitly
+      const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
+      const api = createPluginAPI(ctx, activationMode, entry.manifest);
 
-    // Call activate if it exists
-    if (mod.activate) {
-      await mod.activate(ctx, api);
-    }
+      // Call activate if it exists
+      if (mod.activate) {
+        await mod.activate(ctx, api);
+      }
 
-    // Auto-register manifest-declared command hotkeys (v0.6+)
-    const commands = entry.manifest.contributes?.commands;
-    if (commands) {
-      for (const cmd of commands) {
-        if (cmd.defaultBinding) {
-          const fullCmdId = `${pluginId}:${cmd.id}`;
-          // Only register if the plugin didn't already register via registerWithHotkey()
-          if (!pluginHotkeyRegistry.getBinding(pluginId, cmd.id)) {
-            const existing = (await import('./plugin-commands')).pluginCommandRegistry;
-            if (existing.has(fullCmdId)) {
-              // Command handler was registered but no hotkey yet — add the hotkey
-              pluginHotkeyRegistry.register(
-                pluginId, cmd.id, cmd.title,
-                (...args: unknown[]) => existing.execute(fullCmdId, ...args),
-                cmd.defaultBinding,
-                { global: cmd.global },
-              );
+      // Auto-register manifest-declared command hotkeys (v0.6+)
+      const commands = entry.manifest.contributes?.commands;
+      if (commands) {
+        for (const cmd of commands) {
+          if (cmd.defaultBinding) {
+            const fullCmdId = `${pluginId}:${cmd.id}`;
+            // Only register if the plugin didn't already register via registerWithHotkey()
+            if (!pluginHotkeyRegistry.getBinding(pluginId, cmd.id)) {
+              const existing = (await import('./plugin-commands')).pluginCommandRegistry;
+              if (existing.has(fullCmdId)) {
+                // Command handler was registered but no hotkey yet — add the hotkey
+                pluginHotkeyRegistry.register(
+                  pluginId, cmd.id, cmd.title,
+                  (...args: unknown[]) => existing.execute(fullCmdId, ...args),
+                  cmd.defaultBinding,
+                  { global: cmd.global },
+                );
+              }
             }
           }
         }
@@ -312,22 +359,31 @@ export async function deactivatePlugin(pluginId: string, projectId?: string): Pr
   );
 
   if (!hasRemainingContexts) {
-    // Call deactivate on the module only when all contexts are gone
-    const mod = store.modules[pluginId];
-    if (mod?.deactivate) {
-      try {
-        await mod.deactivate();
-      } catch (err) {
-        rendererLog('core:plugins', 'error', `Error in deactivate for ${pluginId}`, {
-          meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
-        });
+    const entry = store.plugins[pluginId];
+    const isPack = entry?.manifest.kind === 'pack';
+
+    if (isPack) {
+      // Unregister pack contributions
+      if (entry?.manifest.contributes?.themes) {
+        unregisterPackThemes(pluginId, entry.manifest.contributes.themes);
+      }
+    } else {
+      // Call deactivate on the module only when all contexts are gone
+      const mod = store.modules[pluginId];
+      if (mod?.deactivate) {
+        try {
+          await mod.deactivate();
+        } catch (err) {
+          rendererLog('core:plugins', 'error', `Error in deactivate for ${pluginId}`, {
+            meta: { pluginId, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
       }
     }
 
     // Clean up hotkeys and styles
     pluginHotkeyRegistry.clearPlugin(pluginId);
     removeStyles(pluginId);
-    const entry = store.plugins[pluginId];
     if (entry?.source !== 'builtin') {
       store.removePluginModule(pluginId);
     }
