@@ -59,21 +59,15 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
     saveAppSettings({ [key]: value });
   };
 
-  const handleProjectToggle = (key: keyof ResolvedBadgeSettings, value: boolean | undefined) => {
+  const handleProjectToggle = async (key: keyof ResolvedBadgeSettings, value: boolean | undefined) => {
     if (!projectId) return;
     if (value === undefined) {
       // Remove this key from overrides
       const current = projectOverrides[projectId] ?? {};
       const { [key]: _, ...rest } = current;
-      if (Object.keys(rest).length === 0) {
-        clearProjectOverride(projectId);
-      } else {
-        // Rewrite the override without this key
-        clearProjectOverride(projectId).then(() => {
-          if (Object.keys(rest).length > 0) {
-            setProjectOverride(projectId, rest);
-          }
-        });
+      await clearProjectOverride(projectId);
+      if (Object.keys(rest).length > 0) {
+        setProjectOverride(projectId, rest);
       }
     } else {
       setProjectOverride(projectId, { [key]: value });
