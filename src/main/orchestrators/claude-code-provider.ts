@@ -84,6 +84,8 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       hooks: true,
       sessionResume: true,
       permissions: true,
+      structuredMode: false, // adapter not yet implemented
+      structuredProtocol: 'sdk',
     };
   }
 

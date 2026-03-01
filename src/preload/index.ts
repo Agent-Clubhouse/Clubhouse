@@ -162,6 +162,40 @@ const api = {
 
     updateSessionName: (projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) =>
       ipcRenderer.invoke(IPC.AGENT.UPDATE_SESSION_NAME, projectPath, agentId, sessionId, friendlyName),
+
+    // Structured mode
+    startStructured: (agentId: string, opts: {
+      mission: string;
+      systemPrompt?: string;
+      model?: string;
+      cwd: string;
+      env?: Record<string, string>;
+      sessionId?: string;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+      freeAgentMode?: boolean;
+    }) =>
+      ipcRenderer.invoke(IPC.AGENT.START_STRUCTURED, agentId, opts),
+
+    cancelStructured: (agentId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.CANCEL_STRUCTURED, agentId),
+
+    sendStructuredMessage: (agentId: string, message: string) =>
+      ipcRenderer.invoke(IPC.AGENT.SEND_STRUCTURED_MESSAGE, agentId, message),
+
+    respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
+      ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
+
+    onStructuredEvent: (callback: (agentId: string, event: {
+      type: string;
+      timestamp: number;
+      data: unknown;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, structuredEvent: any) =>
+        callback(agentId, structuredEvent);
+      ipcRenderer.on(IPC.AGENT.STRUCTURED_EVENT, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.STRUCTURED_EVENT, listener); };
+    },
   },
   git: {
     info: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.INFO, dirPath),

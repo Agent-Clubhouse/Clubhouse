@@ -1,4 +1,8 @@
+import type { StructuredEvent } from '../../shared/structured-events';
+
 export type OrchestratorId = 'claude-code' | (string & {});
+
+export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
 
 export interface SpawnOpts {
   cwd: string;
@@ -61,6 +65,8 @@ export interface ProviderCapabilities {
   hooks: boolean;
   sessionResume: boolean;
   permissions: boolean;
+  structuredMode: boolean;
+  structuredProtocol?: 'sdk' | 'acp' | 'app-server';
 }
 
 export interface OrchestratorProvider {
@@ -109,4 +115,39 @@ export interface OrchestratorProvider {
   // Session ID extraction (optional)
   /** Extract session ID from PTY buffer output, if recognizable */
   extractSessionId?(ptyBuffer: string): string | null;
+
+  // Structured mode adapter (optional — absence means structured mode not supported)
+  /** Create a structured adapter for this provider */
+  createStructuredAdapter?(): StructuredAdapter;
+}
+
+// ── Structured Mode ─────────────────────────────────────────────────────────
+
+export interface StructuredSessionOpts {
+  mission: string;
+  systemPrompt?: string;
+  model?: string;
+  cwd: string;
+  env?: Record<string, string>;
+  sessionId?: string; // for resume
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  freeAgentMode?: boolean;
+}
+
+export interface StructuredAdapter {
+  /** Start a structured session. Returns an async iterable of StructuredEvents. */
+  start(opts: StructuredSessionOpts): AsyncIterable<StructuredEvent>;
+
+  /** Send a follow-up user message mid-session */
+  sendMessage(message: string): Promise<void>;
+
+  /** Respond to a permission request */
+  respondToPermission(requestId: string, approved: boolean, reason?: string): Promise<void>;
+
+  /** Cancel the running session */
+  cancel(): Promise<void>;
+
+  /** Cleanup resources */
+  dispose(): void;
 }

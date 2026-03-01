@@ -96,6 +96,7 @@ export class CodexCliProvider implements OrchestratorProvider {
       hooks: false,
       sessionResume: true,
       permissions: true,
+      structuredMode: false,
     };
   }
 

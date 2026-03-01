@@ -153,7 +153,7 @@ describe('Zustand selector safety — getter method stability', () => {
 
   describe('orchestratorStore.getCapabilities', () => {
     it('returns same ref on repeated calls without mutations', () => {
-      const caps = { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true };
+      const caps = { headless: true, structuredOutput: true, hooks: true, sessionResume: true, permissions: true, structuredMode: false };
       useOrchestratorStore.setState({
         allOrchestrators: [{ id: 'claude-code', displayName: 'Claude Code', capabilities: caps }],
       });
