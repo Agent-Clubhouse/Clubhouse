@@ -118,7 +118,7 @@ function cleanupSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number) => void): void {
+export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void): void {
   if (sessions.has(agentId)) {
     const existing = sessions.get(agentId)!;
     try { existing.process.kill(); } catch {}
@@ -204,13 +204,14 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
-    const ptyBuffer = current.outputChunks.join('').slice(-500);
+    const fullBuffer = current.outputChunks.join('');
+    const ptyBuffer = fullBuffer.slice(-500);
     appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
     });
 
     cleanupSession(agentId);
-    onExit?.(agentId, exitCode);
+    onExit?.(agentId, exitCode, fullBuffer);
     // Include last PTY output so the renderer can show diagnostics on early exit
     broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode, ptyBuffer);
     annexEventBus.emitPtyExit(agentId, exitCode);

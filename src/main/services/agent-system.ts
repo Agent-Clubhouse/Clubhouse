@@ -9,7 +9,7 @@ import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
-import { getDurableConfig } from './agent-config';
+import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
@@ -235,8 +235,30 @@ async function spawnPtyAgent(
     });
   }
 
-  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId) => {
+  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
+
+    // Capture session ID for durable agents
+    if (params.kind === 'durable' && buffer && provider.extractSessionId) {
+      try {
+        const sessionId = provider.extractSessionId(buffer);
+        if (sessionId) {
+          const now = new Date().toISOString();
+          addSessionEntry(params.projectPath, exitAgentId, {
+            sessionId,
+            startedAt: now,
+            lastActiveAt: now,
+          });
+          appLog('core:agent', 'info', 'Captured session ID on exit', {
+            meta: { agentId: exitAgentId, sessionId },
+          });
+        }
+      } catch (err) {
+        appLog('core:agent', 'warn', 'Failed to capture session ID', {
+          meta: { agentId: exitAgentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
   });
 }
 
