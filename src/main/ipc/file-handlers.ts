@@ -1,6 +1,7 @@
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as fileService from '../services/file-service';
+import { startWatch, stopWatch } from '../services/file-watch-service';
 
 export function registerFileHandlers(): void {
   ipcMain.handle(IPC.FILE.READ_TREE, async (_event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
@@ -41,5 +42,13 @@ export function registerFileHandlers(): void {
 
   ipcMain.handle(IPC.FILE.STAT, async (_event, filePath: string) => {
     return fileService.stat(filePath);
+  });
+
+  ipcMain.handle(IPC.FILE.WATCH_START, (event, watchId: string, glob: string) => {
+    startWatch(watchId, glob, event.sender);
+  });
+
+  ipcMain.handle(IPC.FILE.WATCH_STOP, (_event, watchId: string) => {
+    stopWatch(watchId);
   });
 }
