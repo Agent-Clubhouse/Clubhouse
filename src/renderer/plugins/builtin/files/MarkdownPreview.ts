@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { marked } from 'marked';
+import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
 import hljs from 'highlight.js/lib/core';
 
 // Register languages selectively to keep bundle small
@@ -97,6 +98,7 @@ function injectHljsStyle(): void {
 
 export function MarkdownPreview({ content }: { content: string }) {
   injectHljsStyle();
+  const handleClick = useSafeMarkdownLinks();
 
   const html = useMemo(() => {
     return marked.parse(content) as string;
@@ -105,5 +107,6 @@ export function MarkdownPreview({ content }: { content: string }) {
   return React.createElement('div', {
     className: 'help-content p-4 overflow-auto h-full',
     dangerouslySetInnerHTML: { __html: html },
+    onClick: handleClick,
   });
 }

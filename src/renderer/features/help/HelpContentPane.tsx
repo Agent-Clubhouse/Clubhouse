@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { marked } from 'marked';
+import { useSafeMarkdownLinks } from '../../utils/safe-markdown-links';
 
 interface HelpContentPaneProps {
   markdown: string | null;
 }
 
 export function HelpContentPane({ markdown }: HelpContentPaneProps) {
+  const handleClick = useSafeMarkdownLinks();
   const html = useMemo(() => {
     if (!markdown) return null;
     return marked.parse(markdown, { async: false }) as string;
@@ -24,6 +26,7 @@ export function HelpContentPane({ markdown }: HelpContentPaneProps) {
       <div
         className="help-content max-w-3xl"
         dangerouslySetInnerHTML={{ __html: html }}
+        onClick={handleClick}
       />
     </div>
   );
