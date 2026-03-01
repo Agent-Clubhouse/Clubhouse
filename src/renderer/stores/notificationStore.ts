@@ -5,7 +5,7 @@ import { useUIStore } from './uiStore';
 import { useProjectStore } from './projectStore';
 import { getProjectHubStore, useAppHubStore } from '../plugins/builtin/hub/main';
 import { collectLeaves } from '../plugins/builtin/hub/pane-tree';
-import { useSoundStore, mapNotificationToSoundEvent } from './soundStore';
+import { useSoundStore, mapNotificationToSoundEvent, hasAnyCustomPack } from './soundStore';
 
 function isAgentVisible(agentId: string, projectId: string): boolean {
   if (!document.hasFocus()) return false;
@@ -83,20 +83,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       return;
     }
 
-    // When a custom sound pack is active, always silence the OS notification sound
-    // and play our custom sound instead
+    // When a custom sound is assigned for this event, silence the OS notification
+    // sound and play our custom sound instead
     const soundEvent = mapNotificationToSoundEvent(eventKind);
     const soundSettings = useSoundStore.getState().settings;
-    const hasCustomPack = (() => {
-      if (!soundSettings) return false;
-      let activePack = soundSettings.activePack;
-      if (projectId && soundSettings.projectOverrides?.[projectId]?.activePack !== undefined) {
-        activePack = soundSettings.projectOverrides[projectId].activePack ?? null;
-      }
-      return activePack !== null;
-    })();
+    const hasCustom = soundSettings ? hasAnyCustomPack(soundSettings, projectId) : false;
 
-    const effectiveSilent = hasCustomPack ? true : silent;
+    const effectiveSilent = hasCustom ? true : silent;
     window.clubhouse.app.sendNotification(title, body, effectiveSilent, agentId, projectId);
 
     // Play custom sound
