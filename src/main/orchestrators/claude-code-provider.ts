@@ -85,7 +85,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       sessionResume: true,
       permissions: true,
       structuredMode: false, // adapter not yet implemented
-      structuredProtocol: 'sdk',
+      structuredProtocol: 'acp',
     };
   }
 

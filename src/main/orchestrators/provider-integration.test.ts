@@ -800,7 +800,7 @@ describe('Provider integration tests', () => {
         sessionResume: true,
         permissions: true,
         structuredMode: false,
-        structuredProtocol: 'sdk',
+        structuredProtocol: 'acp',
       });
     });
 

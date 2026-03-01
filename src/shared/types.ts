@@ -15,7 +15,7 @@ export interface ProviderCapabilities {
   sessionResume: boolean;
   permissions: boolean;
   structuredMode: boolean;
-  structuredProtocol?: 'sdk' | 'acp' | 'app-server';
+  structuredProtocol?: 'acp';
 }
 
 export interface OrchestratorInfo {

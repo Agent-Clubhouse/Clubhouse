@@ -88,7 +88,6 @@ export class OpenCodeProvider implements OrchestratorProvider {
       sessionResume: true,
       permissions: false,
       structuredMode: false,
-      structuredProtocol: 'app-server',
     };
   }
 
