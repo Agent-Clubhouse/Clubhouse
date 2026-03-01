@@ -65,6 +65,8 @@ export interface Agent {
   parentAgentId?: string;
   orchestrator?: OrchestratorId;
   headless?: boolean;
+  /** Execution mode: 'pty' (terminal), 'headless' (feed), or 'structured' (rich UI) */
+  executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
   resuming?: boolean;
