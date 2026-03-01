@@ -23,7 +23,8 @@ import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
 import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
-import type { AgentHookEvent, AgentStatus, HubMutation } from '../shared/types';
+import type { AgentHookEvent, AgentStatus, HubMutation, SoundEvent } from '../shared/types';
+import { useSoundStore } from './stores/soundStore';
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
@@ -259,13 +260,30 @@ function initPtyExitListener(): () => void {
 }
 
 function initHookEventListener(): () => void {
+  // Track previous detailed status per agent to detect permission resolution
+  const prevDetailedState: Record<string, string | undefined> = {};
+
   const removeHookListener = window.clubhouse.agent.onHookEvent(
     (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
+      // Capture previous detailed state before handleHookEvent updates it
+      const prevState = useAgentStore.getState().agentDetailedStatus[agentId]?.state;
+
       useAgentStore.getState().handleHookEvent(agentId, event as AgentHookEvent);
       const agent = useAgentStore.getState().agents[agentId];
       if (!agent) return;
       const name = agent.name;
       useNotificationStore.getState().checkAndNotify(name, event.kind, event.toolName, agentId, agent.projectId);
+
+      // Detect permission resolution: needs_permission → something else
+      if (prevState === 'needs_permission' && event.kind !== 'permission_request') {
+        // pre_tool means permission was granted (tool is running)
+        // anything else means permission was denied or skipped
+        const soundEvent = event.kind === 'pre_tool' ? 'permission-granted' : 'permission-denied';
+        useSoundStore.getState().playSound(soundEvent as SoundEvent, agent.projectId);
+      }
+
+      // Track for next iteration
+      prevDetailedState[agentId] = useAgentStore.getState().agentDetailedStatus[agentId]?.state;
 
       // Emit plugin events for agent lifecycle
       if (event.kind === 'stop') {
@@ -362,6 +380,13 @@ function initAgentStatusEmitter(): () => void {
           prevStatus: prevStatuses[id],
           name: agent.name,
         });
+
+        // Play wake/sleep sounds on status transitions
+        if (agent.status === 'running' && prevStatuses[id] === 'sleeping') {
+          useSoundStore.getState().playSound('agent-wake', agent.projectId);
+        } else if (agent.status === 'sleeping' && prevStatuses[id] === 'running') {
+          useSoundStore.getState().playSound('agent-sleep', agent.projectId);
+        }
       }
     }
     prevStatuses = next;
