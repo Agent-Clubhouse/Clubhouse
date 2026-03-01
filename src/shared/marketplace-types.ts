@@ -68,10 +68,21 @@ export interface PluginUpdateInfo {
   assetUrl: string;
   sha256: string;
   size: number;
+  api: number;
+}
+
+/** An update exists but requires an API version the host app doesn't support. */
+export interface IncompatiblePluginUpdate {
+  pluginId: string;
+  pluginName: string;
+  currentVersion: string;
+  latestVersion: string;
+  requiredApi: number;
 }
 
 export interface PluginUpdateCheckResult {
   updates: PluginUpdateInfo[];
+  incompatibleUpdates: IncompatiblePluginUpdate[];
   checkedAt: string;
 }
 
@@ -88,6 +99,8 @@ export interface PluginUpdateResult {
 
 export interface PluginUpdatesStatus {
   updates: PluginUpdateInfo[];
+  /** Updates that require an API version the host app doesn't support. */
+  incompatibleUpdates: IncompatiblePluginUpdate[];
   checking: boolean;
   lastCheck: string | null;
   /** pluginId -> 'downloading' | 'installing' | 'reloading' */
@@ -97,6 +110,9 @@ export interface PluginUpdatesStatus {
 
 /** The registry schema version the client understands. */
 export const SUPPORTED_REGISTRY_VERSION = 1;
+
+/** Plugin API versions the host app can load. */
+export const SUPPORTED_PLUGIN_API_VERSIONS = [0.5, 0.6, 0.7];
 
 // ── Custom marketplace types ─────────────────────────────────────────
 

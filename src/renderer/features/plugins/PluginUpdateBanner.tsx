@@ -2,6 +2,7 @@ import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 
 export function PluginUpdateBanner() {
   const updates = usePluginUpdateStore((s) => s.updates);
+  const incompatibleUpdates = usePluginUpdateStore((s) => s.incompatibleUpdates);
   const dismissed = usePluginUpdateStore((s) => s.dismissed);
   const updating = usePluginUpdateStore((s) => s.updating);
   const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
@@ -12,9 +13,10 @@ export function PluginUpdateBanner() {
 
   const hasErrors = Object.keys(updateErrors).length > 0;
   const isUpdating = Object.keys(updating).length > 0;
+  const hasIncompatible = incompatibleUpdates.length > 0;
 
-  // Show banner if there are updates available OR if there are unresolved errors
-  if ((updates.length === 0 && !hasErrors) || dismissed) return null;
+  // Show banner if there are updates available, incompatible updates, or unresolved errors
+  if ((updates.length === 0 && !hasErrors && !hasIncompatible) || dismissed) return null;
 
   const pluginNames = updates.map((u) => u.pluginName);
 
@@ -58,6 +60,41 @@ export function PluginUpdateBanner() {
     );
   }
 
+  // Incompatible-only banner (no compatible updates, no errors)
+  if (updates.length === 0 && !hasErrors && hasIncompatible) {
+    const incompatibleNames = incompatibleUpdates.map((u) => u.pluginName);
+    const incompatibleMsg =
+      incompatibleUpdates.length === 1
+        ? `${incompatibleNames[0]} v${incompatibleUpdates[0].latestVersion} requires a newer version of Clubhouse (API ${incompatibleUpdates[0].requiredApi})`
+        : `${incompatibleUpdates.length} plugin updates require a newer version of Clubhouse`;
+
+    return (
+      <div
+        className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-overlay0/10 border-b border-ctp-overlay0/20 text-ctp-subtext0 text-sm"
+        data-testid="plugin-update-banner"
+      >
+        {/* Info icon */}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+
+        <span className="flex-1" data-testid="plugin-update-message">
+          {incompatibleMsg}
+        </span>
+
+        <button
+          onClick={dismiss}
+          className="text-ctp-overlay0/50 hover:text-ctp-subtext0 transition-colors cursor-pointer px-1"
+          data-testid="plugin-update-dismiss-btn"
+        >
+          x
+        </button>
+      </div>
+    );
+  }
+
   const message =
     updates.length === 1
       ? `Plugin update available: ${pluginNames[0]} v${updates[0].latestVersion}`
@@ -81,6 +118,11 @@ export function PluginUpdateBanner() {
         {hasErrors && (
           <span className="text-ctp-peach ml-2">
             ({Object.keys(updateErrors).length} failed to reload)
+          </span>
+        )}
+        {hasIncompatible && (
+          <span className="text-ctp-subtext0 ml-2" data-testid="plugin-incompatible-note">
+            ({incompatibleUpdates.length} more need a newer Clubhouse)
           </span>
         )}
       </span>

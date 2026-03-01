@@ -418,8 +418,9 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.CHECK_PLUGIN_UPDATES),
     updatePlugin: (req: { pluginId: string }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.UPDATE_PLUGIN, req),
-    getPluginUpdatesStatus: (): { updates: any[]; checking: boolean; lastCheck: string | null; updating: Record<string, string>; error: string | null } => ({
+    getPluginUpdatesStatus: (): { updates: any[]; incompatibleUpdates: any[]; checking: boolean; lastCheck: string | null; updating: Record<string, string>; error: string | null } => ({
       updates: [],
+      incompatibleUpdates: [],
       checking: false,
       lastCheck: null,
       updating: {},
@@ -427,6 +428,7 @@ const api = {
     }),
     onPluginUpdatesChanged: (callback: (status: {
       updates: any[];
+      incompatibleUpdates: any[];
       checking: boolean;
       lastCheck: string | null;
       updating: Record<string, string>;

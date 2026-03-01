@@ -1,7 +1,9 @@
 import type { PluginManifest } from '../../shared/plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from '../../shared/plugin-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 
-export const SUPPORTED_API_VERSIONS = [0.5, 0.6, 0.7];
+/** @deprecated Use SUPPORTED_PLUGIN_API_VERSIONS from shared/marketplace-types instead. */
+export const SUPPORTED_API_VERSIONS = SUPPORTED_PLUGIN_API_VERSIONS;
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
