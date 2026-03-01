@@ -215,6 +215,12 @@ export function validateManifest(raw: unknown): ValidationResult {
         errors.push(`"${child}" requires the base "${parent}" permission`);
       }
     }
+
+    // Workspace permissions require API >= 0.7
+    const workspacePerms = permissions.filter((p: string) => p === 'workspace' || p.startsWith('workspace.'));
+    if (workspacePerms.length > 0 && apiVersion < 0.7) {
+      errors.push('Workspace permissions require API >= 0.7');
+    }
   }
 
   // Validate command declarations with defaultBinding (v0.6+ feature)
