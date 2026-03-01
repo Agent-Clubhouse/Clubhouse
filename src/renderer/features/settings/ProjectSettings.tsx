@@ -8,16 +8,20 @@ import { ImageCropDialog } from '../../components/ImageCropDialog';
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
   const project = projects.find((p) => p.id === projectId);
-  if (!project) return null;
 
-  const currentName = project.displayName || project.name;
+  const currentName = project ? (project.displayName || project.name) : '';
   const [value, setValue] = useState(currentName);
-  const dirty = value.trim() !== currentName;
 
   // Sync if project changes externally
   useEffect(() => {
-    setValue(project.displayName || project.name);
-  }, [project.displayName, project.name]);
+    if (project) {
+      setValue(project.displayName || project.name);
+    }
+  }, [project?.displayName, project?.name]);
+
+  if (!project) return null;
+
+  const dirty = value.trim() !== currentName;
 
   const save = () => {
     const trimmed = value.trim();
