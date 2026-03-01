@@ -574,6 +574,8 @@ describe('§2 Per-version manifest validation', () => {
           permissions.unshift('agents');
         } else if (perm === 'files.watch') {
           permissions.unshift('files');
+        } else if (perm.startsWith('workspace.')) {
+          permissions.unshift('workspace');
         } else if (requiresBase.includes(perm)) {
           permissions.unshift('agent-config');
         }
@@ -1551,6 +1553,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
+      'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

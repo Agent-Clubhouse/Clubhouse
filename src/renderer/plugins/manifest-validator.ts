@@ -217,7 +217,7 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
 
     // Workspace permissions require API >= 0.7
-    const workspacePerms = permissions.filter((p: string) => p === 'workspace' || p.startsWith('workspace.'));
+    const workspacePerms = permissions.filter((p: unknown) => typeof p === 'string' && (p === 'workspace' || p.startsWith('workspace.')));
     if (workspacePerms.length > 0 && apiVersion < 0.7) {
       errors.push('Workspace permissions require API >= 0.7');
     }

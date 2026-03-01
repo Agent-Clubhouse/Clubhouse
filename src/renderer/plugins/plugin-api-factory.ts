@@ -1133,10 +1133,10 @@ function createWorkspaceAPI(ctx: PluginContext, manifest?: PluginManifest): Work
     async listDir(relativePath = '.'): Promise<DirectoryEntry[]> {
       const fullPath = resolvePath(workspaceRoot, relativePath);
       return window.clubhouse.file.readTree(fullPath, { depth: 1 }).then(
-        (nodes) => nodes.map((n) => ({
+        (nodes: import('../../shared/types').FileNode[]) => nodes.map((n) => ({
           name: n.name,
           path: n.path,
-          isDirectory: n.type === 'directory',
+          isDirectory: n.isDirectory,
         })),
       );
     },
@@ -1196,10 +1196,10 @@ function createWorkspaceAPI(ctx: PluginContext, manifest?: PluginManifest): Work
         async listDir(relativePath = '.'): Promise<DirectoryEntry[]> {
           const fullPath = resolvePath(targetRoot, relativePath);
           return window.clubhouse.file.readTree(fullPath, { depth: 1 }).then(
-            (nodes) => nodes.map((n) => ({
+            (nodes: import('../../shared/types').FileNode[]) => nodes.map((n) => ({
               name: n.name,
               path: n.path,
-              isDirectory: n.type === 'directory',
+              isDirectory: n.isDirectory,
             })),
           );
         },
@@ -1262,10 +1262,10 @@ function createWorkspaceAPI(ctx: PluginContext, manifest?: PluginManifest): Work
         async listDir(relativePath = '.'): Promise<DirectoryEntry[]> {
           const fullPath = resolvePath(projectRoot, relativePath);
           return window.clubhouse.file.readTree(fullPath, { depth: 1 }).then(
-            (nodes) => nodes.map((n) => ({
+            (nodes: import('../../shared/types').FileNode[]) => nodes.map((n) => ({
               name: n.name,
               path: n.path,
-              isDirectory: n.type === 'directory',
+              isDirectory: n.isDirectory,
             })),
           );
         },

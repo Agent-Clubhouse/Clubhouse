@@ -3745,9 +3745,9 @@ describe('plugin-api-factory', () => {
       expect(() => api.workspace.forProject('proj-2')).toThrow('workspace.cross-project');
     });
 
-    it('workspace.forProject requires bilateral consent (plugin enabled in target)', () => {
+    it('workspace.forProject requires bilateral consent (plugin enabled in target)', async () => {
       // Set up a project store with a target project
-      const { useProjectStore } = require('../stores/projectStore');
+      const { useProjectStore } = await import('../stores/projectStore');
       useProjectStore.setState({
         projects: [
           { id: 'proj-2', name: 'Other Project', path: '/projects/other' },
@@ -3761,8 +3761,8 @@ describe('plugin-api-factory', () => {
       expect(() => api.workspace.forProject('proj-2')).toThrow('not enabled in target project');
     });
 
-    it('workspace.forProject succeeds with bilateral consent', () => {
-      const { useProjectStore } = require('../stores/projectStore');
+    it('workspace.forProject succeeds with bilateral consent', async () => {
+      const { useProjectStore } = await import('../stores/projectStore');
       useProjectStore.setState({
         projects: [
           { id: 'proj-2', name: 'Other Project', path: '/projects/other' },
