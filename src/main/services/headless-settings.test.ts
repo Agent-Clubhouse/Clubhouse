@@ -94,6 +94,40 @@ describe('headless-settings', () => {
       expect(getSpawnMode('/project-c')).toBe('headless');
       expect(getSpawnMode('/project-d')).toBe('interactive'); // no override → global (enabled: false)
     });
+
+    it('returns defaultMode when set', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultMode: 'structured' }));
+      expect(getSpawnMode('/project')).toBe('structured');
+    });
+
+    it('defaultMode takes precedence over legacy enabled', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        enabled: true,
+        defaultMode: 'structured',
+      }));
+      expect(getSpawnMode('/project')).toBe('structured');
+    });
+
+    it('project override structured overrides global headless', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaultMode: 'headless',
+        projectOverrides: { '/my/project': 'structured' },
+      }));
+      expect(getSpawnMode('/my/project')).toBe('structured');
+    });
+
+    it('handles mixed modes across projects', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        defaultMode: 'interactive',
+        projectOverrides: {
+          '/project-a': 'headless',
+          '/project-b': 'structured',
+        },
+      }));
+      expect(getSpawnMode('/project-a')).toBe('headless');
+      expect(getSpawnMode('/project-b')).toBe('structured');
+      expect(getSpawnMode('/project-c')).toBe('interactive'); // global default
+    });
   });
 
   // ============================================================
