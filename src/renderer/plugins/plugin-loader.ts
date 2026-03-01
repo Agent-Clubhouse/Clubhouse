@@ -2,7 +2,7 @@ import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaratio
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
-import { createPluginAPI } from './plugin-api-factory';
+import { createPluginAPI, computeDataDir } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
@@ -284,6 +284,15 @@ export async function activatePlugin(
       // Create the API — for dual plugins activated at app level, set mode explicitly
       const activationMode = (!projectId && entry.manifest.scope === 'dual') ? 'app' as const : undefined;
       const api = createPluginAPI(ctx, activationMode, entry.manifest);
+
+      // Ensure the plugin's data directory exists before activation
+      try {
+        const dataDirRelative = projectId ? `files/${projectId}` : 'files';
+        await window.clubhouse.plugin.mkdir(pluginId, 'global', dataDirRelative);
+      } catch {
+        // Best-effort — don't block activation if mkdir fails
+        rendererLog('core:plugins', 'warn', `Failed to create data directory for plugin "${pluginId}"`);
+      }
 
       // Call activate if it exists
       if (mod.activate) {
