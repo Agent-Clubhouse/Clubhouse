@@ -405,4 +405,35 @@ describe('ClaudeCodeProvider', () => {
       );
     });
   });
+
+  describe('extractSessionId', () => {
+    it('extracts UUID from "session: <uuid>" pattern', () => {
+      const buffer = 'some output\nsession: a1b2c3d4-e5f6-7890-abcd-ef1234567890\nmore output';
+      const result = provider.extractSessionId!(buffer);
+      expect(result).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+    });
+
+    it('extracts UUID from "Session: <uuid>" (capitalized)', () => {
+      const buffer = 'Session: 12345678-abcd-ef01-2345-678901234567';
+      const result = provider.extractSessionId!(buffer);
+      expect(result).toBe('12345678-abcd-ef01-2345-678901234567');
+    });
+
+    it('extracts UUID from "resume: <uuid>" pattern', () => {
+      const buffer = 'resume: fedcba98-7654-3210-fedc-ba9876543210';
+      const result = provider.extractSessionId!(buffer);
+      expect(result).toBe('fedcba98-7654-3210-fedc-ba9876543210');
+    });
+
+    it('returns null when no session ID found', () => {
+      const buffer = 'some output without any session info';
+      const result = provider.extractSessionId!(buffer);
+      expect(result).toBeNull();
+    });
+
+    it('returns null for empty buffer', () => {
+      const result = provider.extractSessionId!('');
+      expect(result).toBeNull();
+    });
+  });
 });

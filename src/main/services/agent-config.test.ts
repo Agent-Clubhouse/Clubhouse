@@ -40,6 +40,9 @@ import {
   getDurableConfig,
   updateDurableConfig,
   updateSessionId,
+  addSessionEntry,
+  updateSessionName,
+  getSessionHistory,
   ensureGitignore,
   saveAgentIcon,
 } from './agent-config';
@@ -956,6 +959,161 @@ describe('updateSessionId', () => {
     const result = getDurableConfig(PROJECT_PATH, 'durable_clr');
     expect(result).not.toBeNull();
     expect(result!.lastSessionId).toBeUndefined();
+  });
+});
+
+describe('addSessionEntry', () => {
+  function setupWritableAgents(agents: any[]) {
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    return writtenData;
+  }
+
+  it('adds a new session entry to an agent with no history', () => {
+    setupWritableAgents([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    addSessionEntry(PROJECT_PATH, 'durable_1', {
+      sessionId: 'sess-001',
+      startedAt: '2024-06-01T00:00:00Z',
+      lastActiveAt: '2024-06-01T01:00:00Z',
+    });
+
+    const config = getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(config!.sessionHistory).toHaveLength(1);
+    expect(config!.sessionHistory![0].sessionId).toBe('sess-001');
+    expect(config!.lastSessionId).toBe('sess-001');
+  });
+
+  it('updates existing session entry and preserves friendly name', () => {
+    setupWritableAgents([
+      {
+        id: 'durable_2', name: 'agent-2', color: 'indigo', createdAt: '2024-01-01',
+        sessionHistory: [
+          { sessionId: 'sess-001', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T01:00:00Z', friendlyName: 'My Session' },
+        ],
+      },
+    ]);
+
+    addSessionEntry(PROJECT_PATH, 'durable_2', {
+      sessionId: 'sess-001',
+      startedAt: '2024-06-01T00:00:00Z',
+      lastActiveAt: '2024-06-02T00:00:00Z',
+    });
+
+    const config = getDurableConfig(PROJECT_PATH, 'durable_2');
+    expect(config!.sessionHistory).toHaveLength(1);
+    expect(config!.sessionHistory![0].lastActiveAt).toBe('2024-06-02T00:00:00Z');
+    expect(config!.sessionHistory![0].friendlyName).toBe('My Session');
+  });
+
+  it('does nothing for unknown agent', () => {
+    setupWritableAgents([]);
+    addSessionEntry(PROJECT_PATH, 'nonexistent', {
+      sessionId: 'sess-001',
+      startedAt: '2024-06-01T00:00:00Z',
+      lastActiveAt: '2024-06-01T01:00:00Z',
+    });
+    // Should not throw
+  });
+});
+
+describe('updateSessionName', () => {
+  it('sets a friendly name on an existing session', () => {
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify([
+      {
+        id: 'durable_n1', name: 'agent-n1', color: 'indigo', createdAt: '2024-01-01',
+        sessionHistory: [
+          { sessionId: 'sess-001', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T01:00:00Z' },
+        ],
+      },
+    ]);
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData[String(p)] = String(data); });
+
+    updateSessionName(PROJECT_PATH, 'durable_n1', 'sess-001', 'Bug Fix Session');
+
+    const config = getDurableConfig(PROJECT_PATH, 'durable_n1');
+    expect(config!.sessionHistory![0].friendlyName).toBe('Bug Fix Session');
+  });
+
+  it('clears a friendly name when null', () => {
+    const writtenData: Record<string, string> = {};
+    const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+    writtenData[agentsJsonPath] = JSON.stringify([
+      {
+        id: 'durable_n2', name: 'agent-n2', color: 'indigo', createdAt: '2024-01-01',
+        sessionHistory: [
+          { sessionId: 'sess-002', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T01:00:00Z', friendlyName: 'Old Name' },
+        ],
+      },
+    ]);
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => writtenData[String(p)] || '[]');
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData[String(p)] = String(data); });
+
+    updateSessionName(PROJECT_PATH, 'durable_n2', 'sess-002', null);
+
+    const config = getDurableConfig(PROJECT_PATH, 'durable_n2');
+    expect(config!.sessionHistory![0].friendlyName).toBeUndefined();
+  });
+});
+
+describe('getSessionHistory', () => {
+  it('returns sessions sorted by most recently active', () => {
+    const agents = [
+      {
+        id: 'durable_h1', name: 'agent-h1', color: 'indigo', createdAt: '2024-01-01',
+        sessionHistory: [
+          { sessionId: 'old', startedAt: '2024-01-01T00:00:00Z', lastActiveAt: '2024-01-01T01:00:00Z' },
+          { sessionId: 'new', startedAt: '2024-06-01T00:00:00Z', lastActiveAt: '2024-06-01T01:00:00Z' },
+          { sessionId: 'mid', startedAt: '2024-03-01T00:00:00Z', lastActiveAt: '2024-03-01T01:00:00Z' },
+        ],
+      },
+    ];
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    const history = getSessionHistory(PROJECT_PATH, 'durable_h1');
+    expect(history).toHaveLength(3);
+    expect(history[0].sessionId).toBe('new');
+    expect(history[1].sessionId).toBe('mid');
+    expect(history[2].sessionId).toBe('old');
+  });
+
+  it('returns empty array for agent without session history', () => {
+    const agents = [
+      { id: 'durable_h2', name: 'agent-h2', color: 'indigo', createdAt: '2024-01-01' },
+    ];
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    const history = getSessionHistory(PROJECT_PATH, 'durable_h2');
+    expect(history).toEqual([]);
+  });
+
+  it('returns empty array for unknown agent', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue('[]');
+
+    const history = getSessionHistory(PROJECT_PATH, 'nonexistent');
+    expect(history).toEqual([]);
   });
 });
 

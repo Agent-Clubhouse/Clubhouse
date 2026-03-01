@@ -11,6 +11,15 @@ vi.mock('./SleepingMascots', () => ({
   ),
 }));
 
+vi.mock('./SessionPickerDialog', () => ({
+  SessionPickerDialog: ({ onResume, onClose }: { onResume: (id: string) => void; onClose: () => void }) => (
+    <div data-testid="session-picker-dialog">
+      <button data-testid="mock-resume" onClick={() => onResume('test-session-123')}>Resume Mock</button>
+      <button data-testid="mock-close" onClick={onClose}>Close Mock</button>
+    </div>
+  ),
+}));
+
 const baseAgent: Agent = {
   id: 'agent-1',
   projectId: 'proj-1',
@@ -223,6 +232,49 @@ describe('SleepingAgent', () => {
       expect(screen.getByTestId('wake-dropdown-menu')).toBeInTheDocument();
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.queryByTestId('wake-dropdown-menu')).toBeNull();
+    });
+
+    it('dropdown contains Browse Sessions option', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      expect(screen.getByTestId('browse-sessions-option')).toBeInTheDocument();
+    });
+
+    it('opens session picker when Browse Sessions is clicked', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      fireEvent.click(screen.getByTestId('browse-sessions-option'));
+      expect(screen.getByTestId('session-picker-dialog')).toBeInTheDocument();
+    });
+
+    it('resumes specific session from session picker', async () => {
+      const durableConfig = { id: 'agent-1', name: 'bold-falcon' };
+      window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([durableConfig]);
+
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      fireEvent.click(screen.getByTestId('browse-sessions-option'));
+
+      fireEvent.click(screen.getByTestId('mock-resume'));
+
+      await waitFor(() => {
+        expect(mockSpawnDurableAgent).toHaveBeenCalledWith(
+          'proj-1',
+          '/projects/test',
+          { ...durableConfig, lastSessionId: 'test-session-123' },
+          true,
+        );
+      });
+    });
+
+    it('closes session picker when close is clicked', () => {
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('wake-dropdown-toggle'));
+      fireEvent.click(screen.getByTestId('browse-sessions-option'));
+      expect(screen.getByTestId('session-picker-dialog')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('mock-close'));
+      expect(screen.queryByTestId('session-picker-dialog')).toBeNull();
     });
   });
 });
