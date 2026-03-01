@@ -84,9 +84,6 @@ describe('SessionPickerDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('session-picker-dialog')).toBeInTheDocument();
     });
-    // Close button is the X in the header
-    const closeButtons = screen.getByText('Resume Session').closest('div')?.querySelectorAll('button');
-    // Use Escape instead — more reliable
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
