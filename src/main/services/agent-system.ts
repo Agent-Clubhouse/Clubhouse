@@ -9,7 +9,7 @@ import * as headlessManager from './headless-manager';
 import * as headlessSettings from './headless-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
-import { getDurableConfig } from './agent-config';
+import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
@@ -235,8 +235,30 @@ async function spawnPtyAgent(
     });
   }
 
-  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId) => {
+  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
+
+    // Capture session ID for durable agents
+    if (params.kind === 'durable' && buffer && provider.extractSessionId) {
+      try {
+        const sessionId = provider.extractSessionId(buffer);
+        if (sessionId) {
+          const now = new Date().toISOString();
+          addSessionEntry(params.projectPath, exitAgentId, {
+            sessionId,
+            startedAt: now,
+            lastActiveAt: now,
+          });
+          appLog('core:agent', 'info', 'Captured session ID on exit', {
+            meta: { agentId: exitAgentId, sessionId },
+          });
+        }
+      } catch (err) {
+        appLog('core:agent', 'warn', 'Failed to capture session ID', {
+          meta: { agentId: exitAgentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
   });
 }
 
@@ -287,6 +309,64 @@ export function resolveProfileEnv(projectPath: string, orchestratorId: string): 
   }
 
   return resolved;
+}
+
+/**
+ * List available sessions for a durable agent.
+ * Merges provider-discovered sessions with Clubhouse-tracked history.
+ */
+export async function listSessions(
+  projectPath: string,
+  agentId: string,
+  orchestratorId?: OrchestratorId,
+): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>> {
+  const { getDurableConfig, getSessionHistory } = await import('./agent-config');
+  const config = getDurableConfig(projectPath, agentId);
+  if (!config) return [];
+
+  const provider = resolveOrchestrator(projectPath, orchestratorId || config.orchestrator);
+  const cwd = config.worktreePath || projectPath;
+
+  // Get Clubhouse-tracked session history (includes friendly names)
+  const clubhouseHistory = getSessionHistory(projectPath, agentId);
+  const nameMap = new Map(
+    clubhouseHistory
+      .filter((s) => s.friendlyName)
+      .map((s) => [s.sessionId, s.friendlyName!])
+  );
+
+  // Try to get provider-discovered sessions
+  let providerSessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
+  if (provider.listSessions) {
+    try {
+      const profileEnv = resolveProfileEnv(projectPath, provider.id);
+      providerSessions = await provider.listSessions(cwd, profileEnv);
+    } catch (err) {
+      appLog('core:agent', 'warn', 'Failed to list provider sessions', {
+        meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
+  // Merge: provider sessions take priority for timestamps, Clubhouse adds names
+  const merged = new Map<string, { sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>();
+
+  // Add provider sessions first
+  for (const s of providerSessions) {
+    merged.set(s.sessionId, { ...s, friendlyName: nameMap.get(s.sessionId) });
+  }
+
+  // Add Clubhouse-only sessions (not found by provider)
+  for (const s of clubhouseHistory) {
+    if (!merged.has(s.sessionId)) {
+      merged.set(s.sessionId, s);
+    }
+  }
+
+  // Sort by most recently active
+  const result = Array.from(merged.values());
+  result.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
+  return result;
 }
 
 export function getAvailableOrchestrators() {

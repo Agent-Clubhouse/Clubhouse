@@ -146,6 +146,18 @@ export interface ProjectAgentDefaults {
   profileId?: string;
 }
 
+/** A recorded CLI session for a durable agent */
+export interface SessionInfo {
+  /** CLI session ID (provider-specific format, e.g. UUID for Claude Code) */
+  sessionId: string;
+  /** When this session was first started */
+  startedAt: string;
+  /** When this session was last active */
+  lastActiveAt: string;
+  /** User-assigned friendly name for easy identification */
+  friendlyName?: string;
+}
+
 export interface DurableAgentConfig {
   id: string;
   name: string;
@@ -161,6 +173,8 @@ export interface DurableAgentConfig {
   clubhouseModeOverride?: boolean;
   /** Last CLI session ID, used to resume previous session on wake */
   lastSessionId?: string;
+  /** History of CLI sessions for this agent */
+  sessionHistory?: SessionInfo[];
 }
 
 export interface ClubhouseModeSettings {

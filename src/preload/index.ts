@@ -150,6 +150,17 @@ const api = {
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
     },
+
+    listSessions: (projectPath: string, agentId: string, orchestrator?: string): Promise<Array<{
+      sessionId: string;
+      startedAt: string;
+      lastActiveAt: string;
+      friendlyName?: string;
+    }>> =>
+      ipcRenderer.invoke(IPC.AGENT.LIST_SESSIONS, projectPath, agentId, orchestrator),
+
+    updateSessionName: (projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) =>
+      ipcRenderer.invoke(IPC.AGENT.UPDATE_SESSION_NAME, projectPath, agentId, sessionId, friendlyName),
   },
   git: {
     info: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.INFO, dirPath),
@@ -296,6 +307,7 @@ const api = {
       propagatedCount: number;
     }> =>
       ipcRenderer.invoke(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, projectPath, agentId, selectedItemIds),
+
   },
   file: {
     readTree: (dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => ipcRenderer.invoke(IPC.FILE.READ_TREE, dirPath, options),

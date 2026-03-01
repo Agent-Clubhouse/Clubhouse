@@ -180,4 +180,20 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, (_event, agentId: string) => {
     return agentSystem.isHeadlessAgent(agentId);
   });
+
+  // --- Session management handlers ---
+
+  ipcMain.handle(
+    IPC.AGENT.LIST_SESSIONS,
+    async (_event, projectPath: string, agentId: string, orchestrator?: string) => {
+      return agentSystem.listSessions(projectPath, agentId, orchestrator);
+    }
+  );
+
+  ipcMain.handle(
+    IPC.AGENT.UPDATE_SESSION_NAME,
+    (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
+      agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
+    }
+  );
 }
