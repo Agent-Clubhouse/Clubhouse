@@ -22,10 +22,11 @@ function getState() {
 describe('headlessStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetHeadlessSettings.mockResolvedValue({ enabled: false });
+    mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'interactive' });
     mockSaveHeadlessSettings.mockResolvedValue(undefined);
     useHeadlessStore.setState({
       enabled: false,
+      defaultMode: 'interactive',
       projectOverrides: {},
     });
   });
@@ -34,30 +35,55 @@ describe('headlessStore', () => {
   // loadSettings
   // ============================================================
   describe('loadSettings', () => {
-    it('loads enabled state from backend', async () => {
+    it('loads defaultMode from backend', async () => {
+      mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'headless' });
+
+      await getState().loadSettings();
+
+      expect(getState().defaultMode).toBe('headless');
+      expect(getState().enabled).toBe(true); // backwards compat
+    });
+
+    it('loads structured mode from backend', async () => {
+      mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'structured' });
+
+      await getState().loadSettings();
+
+      expect(getState().defaultMode).toBe('structured');
+    });
+
+    it('migrates legacy enabled boolean', async () => {
       mockGetHeadlessSettings.mockResolvedValue({ enabled: true });
 
       await getState().loadSettings();
 
-      expect(getState().enabled).toBe(true);
+      expect(getState().defaultMode).toBe('headless');
+    });
+
+    it('migrates legacy enabled=false to interactive', async () => {
+      mockGetHeadlessSettings.mockResolvedValue({ enabled: false });
+
+      await getState().loadSettings();
+
+      expect(getState().defaultMode).toBe('interactive');
     });
 
     it('loads projectOverrides from backend', async () => {
       mockGetHeadlessSettings.mockResolvedValue({
-        enabled: false,
-        projectOverrides: { '/project-a': 'headless', '/project-b': 'interactive' },
+        defaultMode: 'interactive',
+        projectOverrides: { '/project-a': 'headless', '/project-b': 'structured' },
       });
 
       await getState().loadSettings();
 
       expect(getState().projectOverrides).toEqual({
         '/project-a': 'headless',
-        '/project-b': 'interactive',
+        '/project-b': 'structured',
       });
     });
 
     it('defaults projectOverrides to empty object when not present', async () => {
-      mockGetHeadlessSettings.mockResolvedValue({ enabled: true });
+      mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'headless' });
 
       await getState().loadSettings();
 
@@ -69,7 +95,7 @@ describe('headlessStore', () => {
 
       await getState().loadSettings();
 
-      expect(getState().enabled).toBe(true);
+      expect(getState().defaultMode).toBe('headless');
       expect(getState().projectOverrides).toEqual({});
     });
 
@@ -78,28 +104,39 @@ describe('headlessStore', () => {
 
       await getState().loadSettings();
 
-      // Should keep current state (set to false in beforeEach)
-      expect(getState().enabled).toBe(false);
+      // Should keep current state (set to interactive in beforeEach)
+      expect(getState().defaultMode).toBe('interactive');
       expect(getState().projectOverrides).toEqual({});
     });
   });
 
   // ============================================================
-  // setEnabled
+  // setDefaultMode
   // ============================================================
-  describe('setEnabled', () => {
-    it('updates enabled state optimistically', async () => {
-      await getState().setEnabled(true);
-      expect(getState().enabled).toBe(true);
+  describe('setDefaultMode', () => {
+    it('updates defaultMode optimistically', async () => {
+      await getState().setDefaultMode('headless');
+      expect(getState().defaultMode).toBe('headless');
     });
 
-    it('persists enabled state with current projectOverrides', async () => {
+    it('updates enabled for backwards compatibility', async () => {
+      await getState().setDefaultMode('headless');
+      expect(getState().enabled).toBe(true);
+
+      await getState().setDefaultMode('interactive');
+      expect(getState().enabled).toBe(false);
+
+      await getState().setDefaultMode('structured');
+      expect(getState().enabled).toBe(false);
+    });
+
+    it('persists defaultMode with current projectOverrides', async () => {
       useHeadlessStore.setState({ projectOverrides: { '/p': 'headless' } });
 
-      await getState().setEnabled(true);
+      await getState().setDefaultMode('structured');
 
       expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
-        enabled: true,
+        defaultMode: 'structured',
         projectOverrides: { '/p': 'headless' },
       });
     });
@@ -107,11 +144,24 @@ describe('headlessStore', () => {
     it('rolls back on save failure', async () => {
       mockSaveHeadlessSettings.mockRejectedValue(new Error('save failed'));
 
-      useHeadlessStore.setState({ enabled: false });
-      await getState().setEnabled(true);
+      useHeadlessStore.setState({ defaultMode: 'interactive' });
+      await getState().setDefaultMode('headless');
 
-      // Should roll back to false
-      expect(getState().enabled).toBe(false);
+      // Should roll back to interactive
+      expect(getState().defaultMode).toBe('interactive');
+    });
+  });
+
+  // ============================================================
+  // setEnabled (legacy)
+  // ============================================================
+  describe('setEnabled', () => {
+    it('delegates to setDefaultMode', async () => {
+      await getState().setEnabled(true);
+      expect(getState().defaultMode).toBe('headless');
+
+      await getState().setEnabled(false);
+      expect(getState().defaultMode).toBe('interactive');
     });
   });
 
@@ -119,49 +169,62 @@ describe('headlessStore', () => {
   // getProjectMode
   // ============================================================
   describe('getProjectMode', () => {
-    it('returns interactive when global disabled and no project override', () => {
-      useHeadlessStore.setState({ enabled: false, projectOverrides: {} });
+    it('returns interactive when global is interactive and no project override', () => {
+      useHeadlessStore.setState({ defaultMode: 'interactive', projectOverrides: {} });
       expect(getState().getProjectMode('/some/project')).toBe('interactive');
     });
 
-    it('returns headless when global enabled and no project override', () => {
-      useHeadlessStore.setState({ enabled: true, projectOverrides: {} });
+    it('returns headless when global is headless and no project override', () => {
+      useHeadlessStore.setState({ defaultMode: 'headless', projectOverrides: {} });
       expect(getState().getProjectMode('/some/project')).toBe('headless');
     });
 
-    it('project override headless overrides global disabled', () => {
+    it('returns structured when global is structured and no project override', () => {
+      useHeadlessStore.setState({ defaultMode: 'structured', projectOverrides: {} });
+      expect(getState().getProjectMode('/some/project')).toBe('structured');
+    });
+
+    it('project override headless overrides global interactive', () => {
       useHeadlessStore.setState({
-        enabled: false,
+        defaultMode: 'interactive',
         projectOverrides: { '/my/project': 'headless' },
       });
       expect(getState().getProjectMode('/my/project')).toBe('headless');
     });
 
-    it('project override interactive overrides global enabled', () => {
+    it('project override interactive overrides global headless', () => {
       useHeadlessStore.setState({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '/my/project': 'interactive' },
       });
       expect(getState().getProjectMode('/my/project')).toBe('interactive');
     });
 
+    it('project override structured overrides global headless', () => {
+      useHeadlessStore.setState({
+        defaultMode: 'headless',
+        projectOverrides: { '/my/project': 'structured' },
+      });
+      expect(getState().getProjectMode('/my/project')).toBe('structured');
+    });
+
     it('falls back to global for projects without override', () => {
       useHeadlessStore.setState({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '/other/project': 'interactive' },
       });
       expect(getState().getProjectMode('/my/project')).toBe('headless');
     });
 
     it('returns global default when projectPath is undefined', () => {
-      useHeadlessStore.setState({ enabled: true, projectOverrides: {} });
+      useHeadlessStore.setState({ defaultMode: 'headless', projectOverrides: {} });
       expect(getState().getProjectMode(undefined)).toBe('headless');
       expect(getState().getProjectMode()).toBe('headless');
     });
 
     it('handles empty projectPath string', () => {
       useHeadlessStore.setState({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '': 'interactive' },
       });
       // Empty string is falsy, so should fall back to global
@@ -176,6 +239,11 @@ describe('headlessStore', () => {
     it('sets project override optimistically', async () => {
       await getState().setProjectMode('/my/project', 'headless');
       expect(getState().projectOverrides).toEqual({ '/my/project': 'headless' });
+    });
+
+    it('supports structured as project override', async () => {
+      await getState().setProjectMode('/my/project', 'structured');
+      expect(getState().projectOverrides).toEqual({ '/my/project': 'structured' });
     });
 
     it('preserves existing overrides when adding new one', async () => {
@@ -196,18 +264,18 @@ describe('headlessStore', () => {
         projectOverrides: { '/my/project': 'headless' },
       });
 
-      await getState().setProjectMode('/my/project', 'interactive');
+      await getState().setProjectMode('/my/project', 'structured');
 
-      expect(getState().projectOverrides).toEqual({ '/my/project': 'interactive' });
+      expect(getState().projectOverrides).toEqual({ '/my/project': 'structured' });
     });
 
-    it('persists to backend with current enabled state', async () => {
-      useHeadlessStore.setState({ enabled: true });
+    it('persists to backend with current defaultMode', async () => {
+      useHeadlessStore.setState({ defaultMode: 'headless' });
 
       await getState().setProjectMode('/my/project', 'headless');
 
       expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '/my/project': 'headless' },
       });
     });
@@ -241,21 +309,21 @@ describe('headlessStore', () => {
 
     it('persists to backend without the cleared project', async () => {
       useHeadlessStore.setState({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '/my/project': 'headless' },
       });
 
       await getState().clearProjectMode('/my/project');
 
       expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: {},
       });
     });
 
     it('falls back to global after clearing', async () => {
       useHeadlessStore.setState({
-        enabled: true,
+        defaultMode: 'headless',
         projectOverrides: { '/my/project': 'interactive' },
       });
 
@@ -299,7 +367,7 @@ describe('headlessStore', () => {
   // ============================================================
   describe('integration', () => {
     it('getProjectMode reflects setProjectMode changes', async () => {
-      useHeadlessStore.setState({ enabled: false });
+      useHeadlessStore.setState({ defaultMode: 'interactive' });
 
       expect(getState().getProjectMode('/my/project')).toBe('interactive');
 
@@ -308,13 +376,21 @@ describe('headlessStore', () => {
       expect(getState().getProjectMode('/my/project')).toBe('headless');
     });
 
-    it('setEnabled + getProjectMode: override takes priority over global', async () => {
+    it('setDefaultMode + getProjectMode: override takes priority over global', async () => {
       await getState().setProjectMode('/my/project', 'interactive');
-      await getState().setEnabled(true);
+      await getState().setDefaultMode('headless');
 
       // Global is headless, but project override is interactive
       expect(getState().getProjectMode('/my/project')).toBe('interactive');
       // Other projects use global
+      expect(getState().getProjectMode('/other/project')).toBe('headless');
+    });
+
+    it('structured override overrides headless global', async () => {
+      await getState().setDefaultMode('headless');
+      await getState().setProjectMode('/my/project', 'structured');
+
+      expect(getState().getProjectMode('/my/project')).toBe('structured');
       expect(getState().getProjectMode('/other/project')).toBe('headless');
     });
   });

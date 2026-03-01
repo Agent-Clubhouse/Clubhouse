@@ -31,9 +31,11 @@ function resetStores() {
   });
   useHeadlessStore.setState({
     enabled: true,
+    defaultMode: 'headless' as const,
     projectOverrides: {},
     loadSettings: vi.fn().mockResolvedValue(undefined),
     setEnabled: vi.fn(),
+    setDefaultMode: vi.fn(),
     setProjectMode: vi.fn(),
     clearProjectMode: vi.fn(),
   });
@@ -64,17 +66,25 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText(/Centrally manage agent/)).toBeInTheDocument();
     });
 
-    it('renders Headless Mode toggle', () => {
+    it('renders Default Quick Agent Mode dropdown', () => {
       render(<OrchestratorSettingsView />);
-      expect(screen.getByText('Headless Mode')).toBeInTheDocument();
+      expect(screen.getByText('Default Quick Agent Mode')).toBeInTheDocument();
     });
 
-    it('renders Headless Mode before Clubhouse Mode', () => {
+    it('renders Quick Agent Mode dropdown with all three options', () => {
       render(<OrchestratorSettingsView />);
-      const headless = screen.getByText('Headless Mode');
-      const clubhouse = screen.getByText('Clubhouse Mode');
-      // Headless should appear before Clubhouse in the DOM
-      expect(headless.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const dropdown = screen.getByDisplayValue('Headless');
+      expect(dropdown).toBeInTheDocument();
+      const options = dropdown.querySelectorAll('option');
+      const optionValues = Array.from(options).map((o) => o.getAttribute('value'));
+      expect(optionValues).toEqual(['interactive', 'headless', 'structured']);
+    });
+
+    it('renders Quick Agents section before Clubhouse Mode', () => {
+      render(<OrchestratorSettingsView />);
+      const quickAgents = screen.getByText('Quick Agents');
+      const clubhouse = screen.getByText('Durable Agents');
+      expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('renders Orchestrators section', () => {
