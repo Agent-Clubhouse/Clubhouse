@@ -377,7 +377,8 @@ export interface LoggingSettings {
   minLogLevel: LogLevel;
 }
 
-export type ThemeId =
+/** Built-in theme IDs. Plugin themes use arbitrary string IDs prefixed with `plugin:`. */
+export type BuiltinThemeId =
   | 'catppuccin-mocha'
   | 'catppuccin-latte'
   | 'solarized-dark'
@@ -386,6 +387,9 @@ export type ThemeId =
   | 'dracula'
   | 'tokyo-night'
   | 'gruvbox-dark';
+
+/** Theme IDs — builtin themes plus any plugin-contributed themes. */
+export type ThemeId = BuiltinThemeId | (string & {});
 
 export interface ThemeColors {
   base: string;

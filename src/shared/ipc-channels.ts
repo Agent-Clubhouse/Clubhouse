@@ -102,6 +102,9 @@ export const IPC = {
     RENAME: 'file:rename',
     COPY: 'file:copy',
     STAT: 'file:stat',
+    WATCH_START: 'file:watch-start',
+    WATCH_STOP: 'file:watch-stop',
+    WATCH_EVENT: 'file:watch-event',
   },
   GIT: {
     INFO: 'git:info',
