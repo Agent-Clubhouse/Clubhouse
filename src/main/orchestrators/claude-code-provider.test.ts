@@ -406,6 +406,24 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('getCapabilities', () => {
+    it('reports structuredMode as true', () => {
+      expect(provider.getCapabilities().structuredMode).toBe(true);
+    });
+  });
+
+  describe('createStructuredAdapter', () => {
+    it('returns a StructuredAdapter with required methods', () => {
+      const adapter = provider.createStructuredAdapter!();
+      expect(adapter).toBeDefined();
+      expect(typeof adapter.start).toBe('function');
+      expect(typeof adapter.sendMessage).toBe('function');
+      expect(typeof adapter.respondToPermission).toBe('function');
+      expect(typeof adapter.cancel).toBe('function');
+      expect(typeof adapter.dispose).toBe('function');
+    });
+  });
+
   describe('extractSessionId', () => {
     it('extracts UUID from "session: <uuid>" pattern', () => {
       const buffer = 'some output\nsession: a1b2c3d4-e5f6-7890-abcd-ef1234567890\nmore output';

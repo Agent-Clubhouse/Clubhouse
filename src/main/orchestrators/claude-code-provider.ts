@@ -9,7 +9,9 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
+  StructuredAdapter,
 } from './types';
+import { StreamJsonAdapter } from './adapters/stream-json-adapter';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -84,7 +86,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
       hooks: true,
       sessionResume: true,
       permissions: true,
-      structuredMode: false, // adapter not yet implemented
+      structuredMode: true,
       structuredProtocol: 'acp',
     };
   }
@@ -262,6 +264,14 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     }
 
     return { binary, args, outputKind: 'stream-json' };
+  }
+
+  createStructuredAdapter(): StructuredAdapter {
+    return new StreamJsonAdapter({
+      binary: findClaudeBinary(),
+      baseArgs: ['--no-session-persistence'],
+      toolVerbs: TOOL_VERBS,
+    });
   }
 
   /**
