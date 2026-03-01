@@ -34,6 +34,7 @@ import type {
   AgentConfigAPI,
   SoundsAPI,
   ThemeAPI,
+  WorkspaceAPI,
   PluginContextInfo,
   PluginManifest,
   PluginPermission,
@@ -111,13 +112,18 @@ const SOUNDS_API_METHODS: (keyof SoundsAPI)[] = ['registerPack', 'unregisterPack
 
 const THEME_API_METHODS: (keyof ThemeAPI)[] = ['getCurrent', 'onDidChange', 'getColor'];
 
+const WORKSPACE_API_METHODS: (keyof WorkspaceAPI)[] = [
+  'root', 'readFile', 'writeFile', 'mkdir', 'delete', 'stat', 'exists',
+  'listDir', 'readTree', 'watch', 'forPlugin', 'forProject',
+];
+
 const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'projectPath'];
 
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -568,6 +574,8 @@ describe('§2 Per-version manifest validation', () => {
           permissions.unshift('agents');
         } else if (perm === 'files.watch') {
           permissions.unshift('files');
+        } else if (perm.startsWith('workspace.')) {
+          permissions.unshift('workspace');
         } else if (requiresBase.includes(perm)) {
           permissions.unshift('agent-config');
         }
@@ -943,6 +951,61 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
     });
   });
 
+  describe('workspace permission hierarchy', () => {
+    it('accepts workspace permission on v0.7 manifest', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace'],
+      }));
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts workspace.watch with base workspace permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace', 'workspace.watch'],
+      }));
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects workspace.watch WITHOUT base workspace permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace.watch'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('requires the base "workspace" permission'))).toBe(true);
+    });
+
+    it('rejects workspace.cross-plugin WITHOUT base workspace permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace.cross-plugin'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('requires the base "workspace" permission'))).toBe(true);
+    });
+
+    it('rejects workspace.cross-project WITHOUT base workspace permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace.cross-project'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('requires the base "workspace" permission'))).toBe(true);
+    });
+
+    it('rejects workspace permissions on API < 0.7', () => {
+      const result = validateManifest(minimalV06Manifest({
+        permissions: ['files', 'workspace'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Workspace permissions require API >= 0.7'))).toBe(true);
+    });
+
+    it('accepts all workspace sub-permissions together', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project'],
+      }));
+      expect(result.valid).toBe(true);
+    });
+  });
+
   describe('v0.7 minimal manifest validation', () => {
     it('accepts a minimal valid v0.7 manifest', () => {
       const result = validateManifest(minimalV07Manifest());
@@ -1145,6 +1208,14 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
     for (const method of THEME_API_METHODS) {
       it(`api.theme.${method} exists and is callable`, () => {
         expect(typeof api.theme[method]).toBe('function');
+      });
+    }
+  });
+
+  describe('api.workspace surface', () => {
+    for (const method of WORKSPACE_API_METHODS) {
+      it(`api.workspace.${method} exists`, () => {
+        expect(api.workspace[method]).toBeDefined();
       });
     }
   });
@@ -1482,6 +1553,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
+      'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

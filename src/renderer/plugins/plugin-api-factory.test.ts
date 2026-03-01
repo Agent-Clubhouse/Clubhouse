@@ -3613,4 +3613,187 @@ describe('plugin-api-factory', () => {
       expect(violations[0].apiName).toBe('terminal');
     });
   });
+
+  // ── Workspace API ──────────────────────────────────────────────────
+
+  describe('workspace API', () => {
+    const workspaceManifest: PluginManifest = {
+      id: 'test-plugin',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'app',
+      permissions: [...ALL_PLUGIN_PERMISSIONS],
+      contributes: { help: {} },
+    };
+
+    beforeEach(() => {
+      _resetEnforcedViolations();
+    });
+
+    it('workspace API is gated by workspace permission', () => {
+      const manifest: PluginManifest = {
+        ...workspaceManifest,
+        permissions: ['files'],
+      };
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, manifest);
+      expect(() => api.workspace.readFile('test.txt')).toThrow('workspace');
+    });
+
+    it('workspace API is available when permission is granted', () => {
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      expect(api.workspace).toBeDefined();
+      expect(api.workspace.root).toContain('.clubhouse/plugin-data/test-plugin/workspace');
+    });
+
+    it('workspace.readFile delegates to file IPC', async () => {
+      mockFile.read.mockResolvedValue('hello');
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      const result = await api.workspace.readFile('test.txt');
+      expect(result).toBe('hello');
+      expect(mockFile.read).toHaveBeenCalledWith(expect.stringContaining('workspace/test.txt'));
+    });
+
+    it('workspace.writeFile delegates to file IPC', async () => {
+      mockFile.write.mockResolvedValue(undefined);
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      await api.workspace.writeFile('test.txt', 'content');
+      expect(mockFile.write).toHaveBeenCalledWith(expect.stringContaining('workspace/test.txt'), 'content');
+    });
+
+    it('workspace.exists returns true when stat succeeds', async () => {
+      mockFile.stat.mockResolvedValue({ size: 10, isDirectory: false, isFile: true, modifiedAt: 0 });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      expect(await api.workspace.exists('test.txt')).toBe(true);
+    });
+
+    it('workspace.exists returns false when stat fails', async () => {
+      mockFile.stat.mockRejectedValue(new Error('ENOENT'));
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      expect(await api.workspace.exists('test.txt')).toBe(false);
+    });
+
+    it('workspace blocks path traversal', async () => {
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      await expect(api.workspace.readFile('../../../etc/passwd')).rejects.toThrow('Path traversal');
+    });
+
+    it('workspace.forPlugin throws without cross-plugin permission', () => {
+      const manifest: PluginManifest = {
+        ...workspaceManifest,
+        permissions: ['workspace'],
+      };
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, manifest);
+      expect(() => api.workspace.forPlugin('other-plugin')).toThrow('workspace.cross-plugin');
+    });
+
+    it('workspace.forPlugin requires target to have workspace.shared', () => {
+      // Register the target plugin WITHOUT workspace.shared
+      usePluginStore.setState({
+        plugins: {
+          'other-plugin': {
+            manifest: {
+              id: 'other-plugin',
+              name: 'Other Plugin',
+              version: '1.0.0',
+              engine: { api: 0.7 },
+              scope: 'app',
+              permissions: ['workspace'],
+            },
+            status: 'activated',
+            source: 'community',
+            pluginPath: '/plugins/other-plugin',
+          },
+        },
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      expect(() => api.workspace.forPlugin('other-plugin')).toThrow('workspace.shared');
+    });
+
+    it('workspace.forPlugin succeeds with bilateral consent', () => {
+      // Register the target plugin WITH workspace.shared
+      usePluginStore.setState({
+        plugins: {
+          'other-plugin': {
+            manifest: {
+              id: 'other-plugin',
+              name: 'Other Plugin',
+              version: '1.0.0',
+              engine: { api: 0.7 },
+              scope: 'app',
+              permissions: ['workspace', 'workspace.shared'],
+            },
+            status: 'activated',
+            source: 'community',
+            pluginPath: '/plugins/other-plugin',
+          },
+        },
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      const readonlyApi = api.workspace.forPlugin('other-plugin');
+      expect(readonlyApi).toBeDefined();
+      expect(readonlyApi.root).toContain('other-plugin/workspace');
+      expect(typeof readonlyApi.readFile).toBe('function');
+    });
+
+    it('workspace.forProject throws without cross-project permission', () => {
+      const manifest: PluginManifest = {
+        ...workspaceManifest,
+        permissions: ['workspace'],
+      };
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, manifest);
+      expect(() => api.workspace.forProject('proj-2')).toThrow('workspace.cross-project');
+    });
+
+    it('workspace.forProject requires bilateral consent (plugin enabled in target)', async () => {
+      // Set up a project store with a target project
+      const { useProjectStore } = await import('../stores/projectStore');
+      useProjectStore.setState({
+        projects: [
+          { id: 'proj-2', name: 'Other Project', path: '/projects/other' },
+        ],
+      });
+      // Plugin is NOT enabled in the target project
+      usePluginStore.setState({
+        projectEnabled: {},
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      expect(() => api.workspace.forProject('proj-2')).toThrow('not enabled in target project');
+    });
+
+    it('workspace.forProject succeeds with bilateral consent', async () => {
+      const { useProjectStore } = await import('../stores/projectStore');
+      useProjectStore.setState({
+        projects: [
+          { id: 'proj-2', name: 'Other Project', path: '/projects/other' },
+        ],
+      });
+      usePluginStore.setState({
+        projectEnabled: { 'proj-2': ['test-plugin'] },
+      });
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, workspaceManifest);
+      const projectApi = api.workspace.forProject('proj-2');
+      expect(projectApi).toBeDefined();
+      expect(projectApi.projectId).toBe('proj-2');
+      expect(projectApi.projectPath).toBe('/projects/other');
+      expect(typeof projectApi.readFile).toBe('function');
+    });
+
+    it('workspace.watch requires workspace.watch permission', () => {
+      const manifest: PluginManifest = {
+        ...workspaceManifest,
+        permissions: ['workspace'],
+      };
+      const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, manifest);
+      expect(() => api.workspace.watch('**/*.json', () => {})).toThrow('workspace.watch');
+    });
+
+    it('workspace is available for all scopes (project, app, dual)', () => {
+      for (const scope of ['project', 'app', 'dual'] as const) {
+        const ctx = makeCtx({ scope, projectId: scope === 'app' ? undefined : 'proj-1', projectPath: scope === 'app' ? undefined : '/projects/my-project' });
+        const api = createPluginAPI(ctx, undefined, { ...workspaceManifest, scope });
+        expect(api.workspace.root).toContain('workspace');
+      }
+    });
+  });
 });

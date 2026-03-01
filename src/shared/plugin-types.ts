@@ -52,7 +52,12 @@ export type PluginPermission =
   | 'agents.free-agent-mode'
   | 'agent-config.mcp'
   | 'sounds'
-  | 'theme';
+  | 'theme'
+  | 'workspace'
+  | 'workspace.watch'
+  | 'workspace.cross-plugin'
+  | 'workspace.shared'
+  | 'workspace.cross-project';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -78,6 +83,11 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'agent-config.mcp',
   'sounds',
   'theme',
+  'workspace',
+  'workspace.watch',
+  'workspace.cross-plugin',
+  'workspace.shared',
+  'workspace.cross-project',
 ] as const;
 
 // ── Permission risk levels ────────────────────────────────────────────
@@ -96,6 +106,10 @@ export const PERMISSION_HIERARCHY: Readonly<Partial<Record<PluginPermission, Plu
   'agent-config.permissions': 'agent-config',
   'agent-config.mcp': 'agent-config',
   'agents.free-agent-mode': 'agents',
+  'workspace.watch': 'workspace',
+  'workspace.cross-plugin': 'workspace',
+  'workspace.shared': 'workspace',
+  'workspace.cross-project': 'workspace',
 };
 
 /**
@@ -130,9 +144,16 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   'agent-config.cross-project': 'elevated',
   'agent-config.mcp': 'elevated',
 
+  // elevated — workspace access
+  workspace: 'elevated',
+  'workspace.watch': 'elevated',
+  'workspace.cross-plugin': 'elevated',
+  'workspace.shared': 'elevated',
+
   // dangerous — bypasses security boundaries
   'agent-config.permissions': 'dangerous',
   'agents.free-agent-mode': 'dangerous',
+  'workspace.cross-project': 'dangerous',
 };
 
 /** Display labels for risk levels. */
@@ -191,6 +212,11 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'agent-config.mcp': 'Inject MCP server configurations into project agents (elevated)',
   sounds: 'Register and manage custom notification sound packs',
   theme: 'Read the current theme and subscribe to theme changes',
+  workspace: 'Read and write files in the plugin workspace directory',
+  'workspace.watch': 'Watch workspace files and directories for changes',
+  'workspace.cross-plugin': 'Read another plugin\'s workspace (requires target to declare workspace.shared)',
+  'workspace.shared': 'Allow other plugins with workspace.cross-plugin to read this plugin\'s workspace',
+  'workspace.cross-project': 'Access workspace data scoped to other projects where the plugin is enabled',
 };
 
 export interface PluginHelpTopic {
@@ -622,6 +648,42 @@ export interface FilesAPI {
   watch(glob: string, callback: (events: FileEvent[]) => void): Disposable;
 }
 
+// ── Workspace API (v0.7+) ─────────────────────────────────────────────
+
+export interface WorkspaceAPI {
+  readonly root: string;
+  readFile(relativePath: string): Promise<string>;
+  writeFile(relativePath: string, content: string): Promise<void>;
+  mkdir(relativePath: string): Promise<void>;
+  delete(relativePath: string): Promise<void>;
+  stat(relativePath: string): Promise<FileStatInfo>;
+  exists(relativePath: string): Promise<boolean>;
+  listDir(relativePath?: string): Promise<DirectoryEntry[]>;
+  readTree(relativePath?: string, opts?: { depth?: number }): Promise<FileNode[]>;
+  watch(glob: string, cb: (events: FileEvent[]) => void): Disposable;
+  forPlugin(pluginId: string): WorkspaceReadonlyAPI;
+  forProject(projectId: string): WorkspaceProjectAPI;
+}
+
+export interface WorkspaceReadonlyAPI {
+  readonly root: string;
+  readFile(relativePath: string): Promise<string>;
+  stat(relativePath: string): Promise<FileStatInfo>;
+  exists(relativePath: string): Promise<boolean>;
+  listDir(relativePath?: string): Promise<DirectoryEntry[]>;
+  watch(glob: string, cb: (events: FileEvent[]) => void): Disposable;
+}
+
+export interface WorkspaceProjectAPI {
+  readonly projectPath: string;
+  readonly projectId: string;
+  readFile(relativePath: string): Promise<string>;
+  writeFile(relativePath: string, content: string): Promise<void>;
+  exists(relativePath: string): Promise<boolean>;
+  listDir(relativePath?: string): Promise<DirectoryEntry[]>;
+  watch(glob: string, cb: (events: FileEvent[]) => void): Disposable;
+}
+
 // ── Agent Config API (v0.6+) ──────────────────────────────────────────
 
 /**
@@ -784,6 +846,7 @@ export interface PluginAPI {
   agentConfig: AgentConfigAPI;
   sounds: SoundsAPI;
   theme: ThemeAPI;
+  workspace: WorkspaceAPI;
   context: PluginContextInfo;
 }
 

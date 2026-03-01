@@ -2,7 +2,7 @@ import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaratio
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
-import { createPluginAPI } from './plugin-api-factory';
+import { createPluginAPI, computeWorkspaceRoot } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
@@ -292,6 +292,16 @@ export async function activatePlugin(
       } catch {
         // Best-effort — don't block activation if mkdir fails
         rendererLog('core:plugins', 'warn', `Failed to create data directory for plugin "${pluginId}"`);
+      }
+
+      // Ensure the workspace directory exists if the plugin has workspace permission
+      if (entry.manifest.permissions?.includes('workspace')) {
+        try {
+          const workspaceDir = computeWorkspaceRoot(pluginId);
+          await window.clubhouse.file.mkdir(workspaceDir);
+        } catch {
+          rendererLog('core:plugins', 'warn', `Failed to create workspace directory for plugin "${pluginId}"`);
+        }
       }
 
       // Call activate if it exists
