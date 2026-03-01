@@ -5,6 +5,7 @@ import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { attachClipboardHandlers } from '../terminal/clipboard';
+import { useFileDrop } from '../terminal/useFileDrop';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
@@ -198,8 +199,20 @@ export function AgentTerminal({ agentId, focused }: Props) {
     terminalRef.current?.focus();
   }, []);
 
+  const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
+    useCallback((data: string) => {
+      window.clubhouse.pty.write(agentId, data);
+      terminalRef.current?.focus();
+    }, [agentId])
+  );
+
   return (
-    <div className="relative w-full h-full">
+    <div
+      className="relative w-full h-full"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div
         ref={containerRef}
         data-testid="agent-terminal"
@@ -214,6 +227,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
         >
           <div className="w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin mb-3" />
           <span className="text-sm text-ctp-subtext0">Resuming session...</span>
+        </div>
+      )}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none z-10">
+          <span className="text-white/90 text-sm font-medium">Drop to insert path</span>
         </div>
       )}
     </div>

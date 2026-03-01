@@ -116,3 +116,6 @@ clubhouse/
 
 # Playwright
 test-results/
+
+# Git worktrees
+.worktrees/
