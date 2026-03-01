@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useFileDrop } from './useFileDrop';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
@@ -146,13 +147,32 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     terminalRef.current?.focus();
   }, []);
 
+  const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
+    useCallback((data: string) => {
+      window.clubhouse.pty.write(sessionId, data);
+      terminalRef.current?.focus();
+    }, [sessionId])
+  );
+
   return (
     <div
-      ref={containerRef}
-      data-testid="shell-terminal"
-      className="w-full h-full overflow-hidden"
-      style={{ padding: '8px' }}
-      onMouseDown={handleMouseDown}
-    />
+      className="relative w-full h-full"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div
+        ref={containerRef}
+        data-testid="shell-terminal"
+        className="w-full h-full overflow-hidden"
+        style={{ padding: '8px' }}
+        onMouseDown={handleMouseDown}
+      />
+      {isDragOver && (
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none z-10">
+          <span className="text-white/90 text-sm font-medium">Drop to insert path</span>
+        </div>
+      )}
+    </div>
   );
 }

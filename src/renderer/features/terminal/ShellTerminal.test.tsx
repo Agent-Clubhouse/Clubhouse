@@ -248,9 +248,9 @@ describe('ShellTerminal', () => {
     });
 
     it('re-focuses terminal on mousedown for focus recovery', () => {
-      const { container } = render(<ShellTerminal sessionId="shell-1" focused={true} />);
+      const { getByTestId } = render(<ShellTerminal sessionId="shell-1" focused={true} />);
       term().focus.mockClear();
-      fireEvent.mouseDown(container.firstElementChild as HTMLElement);
+      fireEvent.mouseDown(getByTestId('shell-terminal'));
       expect(term().focus).toHaveBeenCalled();
     });
   });
@@ -271,9 +271,8 @@ describe('ShellTerminal', () => {
 
   describe('container rendering', () => {
     it('renders a container div with padding', () => {
-      const { container } = render(<ShellTerminal sessionId="shell-1" />);
-      const div = container.firstElementChild as HTMLElement;
-      expect(div.style.padding).toBe('8px');
+      const { getByTestId } = render(<ShellTerminal sessionId="shell-1" />);
+      expect(getByTestId('shell-terminal').style.padding).toBe('8px');
     });
   });
 
