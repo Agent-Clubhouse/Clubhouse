@@ -8,7 +8,6 @@ import {
   SoundEvent,
   ALL_SOUND_EVENTS,
   SUPPORTED_SOUND_EXTENSIONS,
-  SlotAssignment,
 } from '../../shared/types';
 
 // ── Settings persistence ──────────────────────────────────────────────
@@ -39,7 +38,7 @@ const defaultSettings: SoundSettings = {
  * in `eventSettings` for users upgrading from older versions.
  */
 function migrateSettings(raw: Record<string, unknown>): SoundSettings {
-  const settings = raw as SoundSettings & { activePack?: string | null };
+  const settings = raw as unknown as SoundSettings & { activePack?: string | null };
 
   // Ensure slotAssignments exists
   if (!settings.slotAssignments) {

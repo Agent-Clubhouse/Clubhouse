@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
-import * as path from 'path';
 
 // Mock electron before importing
 vi.mock('electron', () => ({
@@ -18,10 +17,6 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('fs');
-vi.mock('path', async () => {
-  const actual = await vi.importActual<typeof import('path')>('path');
-  return { ...actual };
-});
 
 import {
   getSettings,

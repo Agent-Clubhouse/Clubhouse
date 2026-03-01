@@ -490,9 +490,13 @@ const api = {
     getSoundSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_SOUND_SETTINGS),
     saveSoundSettings: (settings: {
-      activePack: string | null;
+      activePack?: string | null;
+      slotAssignments: Partial<Record<string, { packId: string }>>;
       eventSettings: Record<string, { enabled: boolean; volume: number }>;
-      projectOverrides?: Record<string, { activePack?: string | null }>;
+      projectOverrides?: Record<string, {
+        activePack?: string | null;
+        slotAssignments?: Partial<Record<string, { packId: string }>>;
+      }>;
     }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_SOUND_SETTINGS, settings),
     listSoundPacks: (): Promise<Array<{
