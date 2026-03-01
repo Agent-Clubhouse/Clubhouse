@@ -715,6 +715,188 @@ describe('manifest-validator', () => {
     });
   });
 
+  // --- v0.7 pack plugins ---
+
+  describe('v0.7 pack plugins', () => {
+    const validPack = {
+      id: 'spring-themes',
+      name: 'Spring Themes',
+      version: '0.1.0',
+      engine: { api: 0.7 },
+      kind: 'pack',
+      scope: 'app',
+      contributes: {
+        themes: [
+          {
+            id: 'cherry-blossom',
+            name: 'Cherry Blossom',
+            type: 'light',
+            colors: { base: '#fff' },
+            hljs: { keyword: '#f00' },
+            terminal: { background: '#fff' },
+          },
+        ],
+      },
+    };
+
+    it('0.7 is in SUPPORTED_API_VERSIONS', () => {
+      expect(SUPPORTED_API_VERSIONS).toContain(0.7);
+    });
+
+    it('accepts a valid pack manifest', () => {
+      const result = validateManifest(validPack);
+      expect(result.valid).toBe(true);
+    });
+
+    it('pack plugins do not require permissions array', () => {
+      const result = validateManifest(validPack);
+      expect(result.valid).toBe(true);
+      // No permission-related errors
+      expect(result.errors.filter((e: string) => e.includes('permissions'))).toHaveLength(0);
+    });
+
+    it('pack plugins do not require contributes.help', () => {
+      const result = validateManifest(validPack);
+      expect(result.valid).toBe(true);
+      expect(result.errors.filter((e: string) => e.includes('help'))).toHaveLength(0);
+    });
+
+    it('rejects pack with API < 0.7', () => {
+      const result = validateManifest({ ...validPack, engine: { api: 0.6 } });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Pack plugins require API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects pack with main entry', () => {
+      const result = validateManifest({ ...validPack, main: 'main.js' });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must not specify a "main" entry'))).toBe(true);
+    });
+
+    it('rejects pack with settingsPanel', () => {
+      const result = validateManifest({ ...validPack, settingsPanel: 'declarative' });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must not specify a "settingsPanel"'))).toBe(true);
+    });
+
+    it('rejects pack with tab contribution', () => {
+      const result = validateManifest({
+        ...validPack,
+        contributes: { ...validPack.contributes, tab: { label: 'Tab' } },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('cannot contribute a tab'))).toBe(true);
+    });
+
+    it('rejects pack with railItem contribution', () => {
+      const result = validateManifest({
+        ...validPack,
+        contributes: { ...validPack.contributes, railItem: { label: 'Rail' } },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('cannot contribute a railItem'))).toBe(true);
+    });
+
+    it('rejects pack without any pack contribution', () => {
+      const result = validateManifest({
+        ...validPack,
+        contributes: {},
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must contribute at least one of'))).toBe(true);
+    });
+
+    it('rejects pack without contributes object', () => {
+      const { contributes, ...rest } = validPack;
+      const result = validateManifest(rest);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must contribute at least one of'))).toBe(true);
+    });
+
+    it('rejects invalid kind value', () => {
+      const result = validateManifest({ ...validPack, kind: 'addon' });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Invalid kind'))).toBe(true);
+    });
+
+    it('accepts kind: "plugin" explicitly', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.7 },
+        kind: 'plugin',
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  // --- v0.7 contributes.themes validation ---
+
+  describe('v0.7 contributes.themes', () => {
+    const v07Base = {
+      id: 'theme-plugin',
+      name: 'Theme Plugin',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'app',
+      permissions: [],
+      contributes: { help: {} },
+    };
+
+    it('rejects contributes.themes on API < 0.7', () => {
+      const result = validateManifest({
+        ...validManifest,
+        engine: { api: 0.6 },
+        contributes: {
+          help: {},
+          themes: [{ id: 'test', name: 'Test', type: 'dark', colors: {}, hljs: {}, terminal: {} }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('requires API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects non-array contributes.themes', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: { help: {}, themes: 'bad' },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must be an array'))).toBe(true);
+    });
+
+    it('validates theme entries have required fields', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{ id: '', name: '', type: 'invalid', colors: null, hljs: null, terminal: null }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('themes[0].id'))).toBe(true);
+      expect(result.errors.some((e: string) => e.includes('themes[0].name'))).toBe(true);
+      expect(result.errors.some((e: string) => e.includes('themes[0].type'))).toBe(true);
+    });
+
+    it('accepts valid contributes.themes', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+          }],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
+
   // --- hierarchy-driven validation ---
 
   describe('PERMISSION_HIERARCHY enforcement', () => {

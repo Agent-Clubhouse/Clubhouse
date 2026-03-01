@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { THEMES, THEME_IDS } from './index';
-import { ThemeId } from '../../shared/types';
+import { describe, it, expect, afterEach } from 'vitest';
+import { THEMES, THEME_IDS, registerTheme, unregisterTheme, getTheme, getAllThemeIds, BUILTIN_THEMES, onRegistryChange } from './index';
+import { ThemeId, ThemeDefinition } from '../../shared/types';
 
 /**
  * Convert a hex color (#rrggbb) to its WCAG relative luminance.
@@ -157,6 +157,63 @@ describe('theme registry', () => {
         });
       });
     }
+  });
+
+  describe('dynamic theme registry', () => {
+    const pluginTheme: ThemeDefinition = {
+      id: 'plugin:test:cherry-blossom',
+      name: 'Cherry Blossom',
+      type: 'light',
+      colors: { base: '#fef6f8', mantle: '#fceef2', crust: '#fae5ec', text: '#3d2233', subtext0: '#846b78', subtext1: '#6e5462', surface0: '#f5d5df', surface1: '#f0c5d2', surface2: '#e8b3c3', accent: '#d4728a', link: '#c4607a', warning: '#b8892e', error: '#c44d5e', info: '#6b8fb8', success: '#5d9068' },
+      hljs: { keyword: '#b85e8a', string: '#5d9068', number: '#c07838', comment: '#b0a0a8', function: '#6b8fb8', type: '#b8892e', variable: '#3d2233', regexp: '#d4728a', tag: '#6b8fb8', attribute: '#4e9898', symbol: '#b85e8a', meta: '#8b6e9e', addition: '#5d9068', deletion: '#c44d5e', property: '#4e9898', punctuation: '#6e5462' },
+      terminal: { background: '#fef6f8', foreground: '#3d2233', cursor: '#d4728a', cursorAccent: '#fef6f8', selectionBackground: '#f0c5d2', selectionForeground: '#3d2233', black: '#3d2233', red: '#c44d5e', green: '#5d9068', yellow: '#b8892e', blue: '#6b8fb8', magenta: '#b85e8a', cyan: '#4e9898', white: '#fae5ec', brightBlack: '#846b78', brightRed: '#d45e70', brightGreen: '#6ea078', brightYellow: '#c89a40', brightBlue: '#7ba0c8', brightMagenta: '#c86e9a', brightCyan: '#60a8a8', brightWhite: '#fef6f8' },
+    };
+
+    afterEach(() => {
+      // Clean up any registered plugin themes
+      unregisterTheme('plugin:test:cherry-blossom');
+    });
+
+    it('registerTheme adds a plugin theme to the registry', () => {
+      registerTheme(pluginTheme);
+      expect(getTheme('plugin:test:cherry-blossom')).toBeDefined();
+      expect(getTheme('plugin:test:cherry-blossom')?.name).toBe('Cherry Blossom');
+    });
+
+    it('unregisterTheme removes a plugin theme', () => {
+      registerTheme(pluginTheme);
+      unregisterTheme('plugin:test:cherry-blossom');
+      expect(getTheme('plugin:test:cherry-blossom')).toBeUndefined();
+    });
+
+    it('unregisterTheme does not remove builtin themes', () => {
+      unregisterTheme('catppuccin-mocha');
+      expect(getTheme('catppuccin-mocha')).toBeDefined();
+    });
+
+    it('getAllThemeIds includes plugin themes', () => {
+      registerTheme(pluginTheme);
+      const ids = getAllThemeIds();
+      expect(ids).toContain('plugin:test:cherry-blossom');
+      expect(ids).toContain('catppuccin-mocha');
+    });
+
+    it('onRegistryChange fires when a theme is registered', () => {
+      let called = false;
+      const sub = onRegistryChange(() => { called = true; });
+      registerTheme(pluginTheme);
+      expect(called).toBe(true);
+      sub.dispose();
+    });
+
+    it('onRegistryChange fires when a theme is unregistered', () => {
+      registerTheme(pluginTheme);
+      let called = false;
+      const sub = onRegistryChange(() => { called = true; });
+      unregisterTheme('plugin:test:cherry-blossom');
+      expect(called).toBe(true);
+      sub.dispose();
+    });
   });
 
   describe('catppuccin-mocha default values match original hardcoded values', () => {
