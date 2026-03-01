@@ -128,6 +128,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       fatal: noop,
     },
     files: {
+      dataDir: '/tmp/test-plugin-data',
       readTree: async () => [],
       readFile: async () => '',
       readBinary: async () => '',

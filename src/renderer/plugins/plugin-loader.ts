@@ -2,7 +2,7 @@ import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaratio
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
-import { createPluginAPI, computeDataDir } from './plugin-api-factory';
+import { createPluginAPI } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';

@@ -3473,10 +3473,7 @@ describe('plugin-api-factory', () => {
       expect(api.files.dataDir).toBe(`${home}/.clubhouse/plugin-data/test-plugin/files/proj-1`);
     });
 
-    it('dataDir does not include projectId for app-scoped plugin in dual mode', () => {
-      const dualCtx = makeCtx({ scope: 'dual', projectId: undefined, projectPath: '/projects/my-project' });
-      const dualApi = createPluginAPI(dualCtx, 'app', allPermsManifest);
-      // files is unavailable in app mode (no project path scope), so we test via project mode without projectId
+    it('dataDir does not include projectId when absent', () => {
       const projectCtx = makeCtx({ scope: 'project', projectId: undefined, projectPath: '/projects/my-project' });
       const projectApi = createPluginAPI(projectCtx, undefined, allPermsManifest);
       const home = process.env.HOME || process.env.USERPROFILE || '/tmp';
