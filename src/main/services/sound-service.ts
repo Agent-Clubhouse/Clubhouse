@@ -8,6 +8,7 @@ import {
   SoundEvent,
   ALL_SOUND_EVENTS,
   SUPPORTED_SOUND_EXTENSIONS,
+  SlotAssignment,
 } from '../../shared/types';
 
 // ── Settings persistence ──────────────────────────────────────────────
@@ -18,16 +19,70 @@ const DEFAULT_EVENT_SETTINGS = {
 };
 
 const defaultSettings: SoundSettings = {
-  activePack: null,
+  slotAssignments: {},
   eventSettings: {
     'agent-done': { ...DEFAULT_EVENT_SETTINGS },
     'error': { ...DEFAULT_EVENT_SETTINGS },
     'permission': { ...DEFAULT_EVENT_SETTINGS },
+    'permission-granted': { ...DEFAULT_EVENT_SETTINGS },
+    'permission-denied': { ...DEFAULT_EVENT_SETTINGS },
+    'agent-wake': { ...DEFAULT_EVENT_SETTINGS },
+    'agent-sleep': { ...DEFAULT_EVENT_SETTINGS },
+    'agent-focus': { ...DEFAULT_EVENT_SETTINGS },
     'notification': { ...DEFAULT_EVENT_SETTINGS },
   },
 };
 
-const store = createSettingsStore<SoundSettings>('sound-settings.json', defaultSettings);
+/**
+ * Migrate legacy settings that used a single `activePack` to the new
+ * per-slot `slotAssignments` model.  Also ensures new event keys exist
+ * in `eventSettings` for users upgrading from older versions.
+ */
+function migrateSettings(raw: Record<string, unknown>): SoundSettings {
+  const settings = raw as SoundSettings & { activePack?: string | null };
+
+  // Ensure slotAssignments exists
+  if (!settings.slotAssignments) {
+    settings.slotAssignments = {};
+  }
+
+  // Migrate legacy activePack → slotAssignments
+  if (settings.activePack && Object.keys(settings.slotAssignments).length === 0) {
+    for (const event of ALL_SOUND_EVENTS) {
+      settings.slotAssignments[event] = { packId: settings.activePack };
+    }
+  }
+  delete settings.activePack;
+
+  // Migrate project overrides
+  if (settings.projectOverrides) {
+    for (const [pid, override] of Object.entries(settings.projectOverrides)) {
+      if (override.activePack && !override.slotAssignments) {
+        override.slotAssignments = {};
+        for (const event of ALL_SOUND_EVENTS) {
+          override.slotAssignments[event] = { packId: override.activePack };
+        }
+        delete override.activePack;
+        settings.projectOverrides[pid] = override;
+      }
+    }
+  }
+
+  // Ensure all event keys exist in eventSettings
+  if (!settings.eventSettings) {
+    settings.eventSettings = { ...defaultSettings.eventSettings };
+  } else {
+    for (const event of ALL_SOUND_EVENTS) {
+      if (!settings.eventSettings[event]) {
+        settings.eventSettings[event] = { ...DEFAULT_EVENT_SETTINGS };
+      }
+    }
+  }
+
+  return settings;
+}
+
+const store = createSettingsStore<SoundSettings>('sound-settings.json', defaultSettings, migrateSettings);
 
 export const getSettings = store.get;
 export const saveSettings = store.save;
@@ -217,10 +272,36 @@ export function deleteSoundPack(packId: string): boolean {
 
   fs.rmSync(packDir, { recursive: true, force: true });
 
-  // If the deleted pack was active, reset to default
+  // Remove this pack from any slot assignments
   const settings = getSettings();
-  if (settings.activePack === packId) {
-    saveSettings({ ...settings, activePack: null });
+  let changed = false;
+  const slots = { ...settings.slotAssignments };
+  for (const [event, assignment] of Object.entries(slots)) {
+    if (assignment?.packId === packId) {
+      delete slots[event as SoundEvent];
+      changed = true;
+    }
+  }
+
+  // Also clean up project overrides
+  const overrides = settings.projectOverrides ? { ...settings.projectOverrides } : undefined;
+  if (overrides) {
+    for (const [pid, override] of Object.entries(overrides)) {
+      if (override.slotAssignments) {
+        const pSlots = { ...override.slotAssignments };
+        for (const [event, assignment] of Object.entries(pSlots)) {
+          if (assignment?.packId === packId) {
+            delete pSlots[event as SoundEvent];
+            changed = true;
+          }
+        }
+        overrides[pid] = { ...override, slotAssignments: pSlots };
+      }
+    }
+  }
+
+  if (changed) {
+    saveSettings({ ...settings, slotAssignments: slots, projectOverrides: overrides });
   }
 
   return true;
@@ -278,12 +359,35 @@ function getPluginSoundsDir(pluginId: string): string | null {
 }
 
 /**
- * Resolve the active pack for a given project, considering project overrides.
+ * Resolve the pack for a specific sound slot, considering project overrides.
+ */
+export function resolveSlotPack(event: SoundEvent, projectId?: string): string | null {
+  const settings = getSettings();
+
+  // Check project-level slot override first
+  if (projectId) {
+    const projectSlots = settings.projectOverrides?.[projectId]?.slotAssignments;
+    if (projectSlots?.[event]) {
+      return projectSlots[event]!.packId;
+    }
+  }
+
+  // Fall back to global slot assignment
+  return settings.slotAssignments[event]?.packId ?? null;
+}
+
+/**
+ * @deprecated Use resolveSlotPack instead. Kept for backward compatibility.
  */
 export function resolveActivePack(projectId?: string): string | null {
   const settings = getSettings();
-  if (projectId && settings.projectOverrides?.[projectId]?.activePack !== undefined) {
-    return settings.projectOverrides[projectId].activePack ?? null;
+  // Find any assigned pack (take the first one found)
+  for (const event of ALL_SOUND_EVENTS) {
+    if (projectId) {
+      const projectSlots = settings.projectOverrides?.[projectId]?.slotAssignments;
+      if (projectSlots?.[event]) return projectSlots[event]!.packId;
+    }
+    if (settings.slotAssignments[event]) return settings.slotAssignments[event]!.packId;
   }
-  return settings.activePack;
+  return null;
 }

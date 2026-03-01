@@ -10,13 +10,15 @@ export interface SettingsStore<T> {
 export function createSettingsStore<T>(
   filename: string,
   defaults: T,
+  migrate?: (raw: Record<string, unknown>) => T,
 ): SettingsStore<T> {
   const filePath = path.join(app.getPath('userData'), filename);
   return {
     get() {
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
-        return { ...defaults, ...JSON.parse(raw) };
+        const parsed = { ...defaults, ...JSON.parse(raw) };
+        return migrate ? migrate(parsed) : parsed;
       } catch (err) {
         // Use console.warn here — cannot use appLog because log-settings itself
         // depends on this store, and calling appLog would create infinite recursion.
