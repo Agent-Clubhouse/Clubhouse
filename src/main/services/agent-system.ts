@@ -13,6 +13,7 @@ import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults } from './agent-settings-service';
+import * as structuredManager from './structured-manager';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -24,6 +25,8 @@ const agentOrchestratorMap = new Map<string, OrchestratorId>();
 const agentNonceMap = new Map<string, string>();
 /** Track which agents are running in headless mode */
 const headlessAgentSet = new Set<string>();
+/** Track which agents are running in structured mode */
+const structuredAgentSet = new Set<string>();
 
 export function getAgentProjectPath(agentId: string): string | undefined {
   return agentProjectMap.get(agentId);
@@ -42,6 +45,7 @@ export function untrackAgent(agentId: string): void {
   agentOrchestratorMap.delete(agentId);
   agentNonceMap.delete(agentId);
   headlessAgentSet.delete(agentId);
+  structuredAgentSet.delete(agentId);
 }
 
 /** Read the project-level orchestrator setting from .clubhouse/settings.json */
@@ -102,6 +106,10 @@ export function isHeadlessAgent(agentId: string): boolean {
   return headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId);
 }
 
+export function isStructuredAgent(agentId: string): boolean {
+  return structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId);
+}
+
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const provider = resolveOrchestrator(params.projectPath, params.orchestrator);
 
@@ -144,8 +152,24 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   const allowedTools = params.allowedTools
     || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
-  // Try headless path for quick agents when enabled
+  // Try structured path when enabled and provider supports it
   const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
+  if (spawnMode === 'structured' && params.kind === 'quick' && provider.createStructuredAdapter) {
+    const adapter = provider.createStructuredAdapter();
+    structuredAgentSet.add(params.agentId);
+    await structuredManager.startStructuredSession(params.agentId, adapter, {
+      mission: params.mission || '',
+      systemPrompt: params.systemPrompt,
+      model: params.model,
+      cwd: params.cwd,
+      env: profileEnv,
+      allowedTools,
+      freeAgentMode: params.freeAgentMode,
+    });
+    return;
+  }
+
+  // Try headless path for quick agents when enabled
   if (spawnMode === 'headless' && params.kind === 'quick' && provider.buildHeadlessCommand) {
     const headlessResult = await provider.buildHeadlessCommand({
       cwd: params.cwd,
@@ -264,6 +288,11 @@ async function spawnPtyAgent(
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
+  if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
+    await structuredManager.cancelSession(agentId);
+    structuredAgentSet.delete(agentId);
+    return;
+  }
   if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
     headlessManager.kill(agentId);
     headlessAgentSet.delete(agentId);
