@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import { discoverCommunityPlugins, uninstallPlugin } from './plugin-discovery';
 
 const PLUGINS_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugins');
+const PLUGIN_DATA_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugin-data');
 
 describe('plugin-discovery', () => {
   beforeEach(() => {
@@ -234,13 +235,18 @@ describe('plugin-discovery', () => {
         isSymbolicLink: () => true,
       } as any);
       vi.mocked(fs.promises.unlink).mockResolvedValue(undefined);
+      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
 
       await uninstallPlugin('linked-plugin');
 
       expect(fs.promises.unlink).toHaveBeenCalledWith(
         path.join(PLUGINS_DIR, 'linked-plugin'),
       );
-      expect(fs.promises.rm).not.toHaveBeenCalled();
+      // rm is still called for data dir cleanup
+      expect(fs.promises.rm).toHaveBeenCalledWith(
+        path.join(PLUGIN_DATA_DIR, 'linked-plugin'),
+        { recursive: true, force: true },
+      );
     });
 
     it('does nothing when plugin path does not exist', async () => {
@@ -252,6 +258,34 @@ describe('plugin-discovery', () => {
 
       expect(fs.promises.rm).not.toHaveBeenCalled();
       expect(fs.promises.unlink).not.toHaveBeenCalled();
+    });
+
+    it('cleans up plugin data directory on uninstall', async () => {
+      vi.mocked(fs.promises.lstat).mockResolvedValue({
+        isSymbolicLink: () => false,
+      } as any);
+      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+
+      await uninstallPlugin('my-plugin');
+
+      expect(fs.promises.rm).toHaveBeenCalledWith(
+        path.join(PLUGIN_DATA_DIR, 'my-plugin'),
+        { recursive: true, force: true },
+      );
+    });
+
+    it('does not fail if data directory cleanup throws', async () => {
+      vi.mocked(fs.promises.lstat).mockResolvedValue({
+        isSymbolicLink: () => false,
+      } as any);
+      let callCount = 0;
+      vi.mocked(fs.promises.rm).mockImplementation(async () => {
+        callCount++;
+        if (callCount === 2) throw new Error('ENOENT');
+      });
+
+      // Should not throw even if data dir rm fails
+      await expect(uninstallPlugin('my-plugin')).resolves.toBeUndefined();
     });
   });
 });
