@@ -153,11 +153,34 @@ describe('AgentTerminal', () => {
       expect(window.clubhouse.pty.write).toHaveBeenCalledWith('agent-1', 'test input');
     });
 
-    it('writes PTY data to terminal for matching agentId', () => {
+    it('writes PTY data to terminal for matching agentId after buffer replay', () => {
       render(<AgentTerminal agentId="agent-1" />);
       expect(mockOnDataCallback).toBeTruthy();
       act(() => { mockOnDataCallback!('agent-1', 'hello world'); });
       expect(term().write).toHaveBeenCalledWith('hello world');
+    });
+
+    it('gates onData until buffer replay completes to prevent double-display', async () => {
+      // Simulate getBuffer returning data with a delay
+      let resolveBuffer: (val: string) => void;
+      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
+        new Promise<string>((r) => { resolveBuffer = r; })
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Send data via onData BEFORE buffer resolves — should be gated
+      act(() => { mockOnDataCallback!('agent-1', 'live data'); });
+      expect(term().write).not.toHaveBeenCalledWith('live data');
+
+      // Now resolve the buffer
+      await act(async () => { resolveBuffer!('buffered output'); });
+      expect(term().write).toHaveBeenCalledWith('buffered output');
+
+      // Data arriving AFTER buffer replay should pass through
+      act(() => { mockOnDataCallback!('agent-1', 'new data'); });
+      expect(term().write).toHaveBeenCalledWith('new data');
     });
 
     it('ignores PTY data for other agentIds', () => {

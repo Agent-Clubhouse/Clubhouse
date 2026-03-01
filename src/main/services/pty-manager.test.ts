@@ -172,6 +172,22 @@ describe('pty-manager', () => {
         expect.stringContaining('exec ')
       );
     });
+
+    it('prefixes exec with screen-clear on Unix to suppress echo noise', () => {
+      if (process.platform === 'win32') return; // Unix-only behavior
+
+      spawn('agent_clear', '/test', '/usr/local/bin/claude', []);
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('shell ready');
+
+      // The written command should include a printf clear before exec
+      const writeCall = mockProcess.write.mock.calls.find(
+        (c: string[]) => typeof c[0] === 'string' && c[0].includes('exec ')
+      );
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).toContain("printf '\\033[2J\\033[H'");
+      expect(writeCall![0]).toContain("exec '/usr/local/bin/claude'");
+    });
   });
 
   describe('spawnShell', () => {
