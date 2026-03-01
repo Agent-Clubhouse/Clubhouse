@@ -220,6 +220,176 @@ describe('plugin-update-service', () => {
       expect(result.updates).toHaveLength(0);
     });
 
+    it('includes api field in PluginUpdateInfo', async () => {
+      vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'my-plugin', isDirectory: () => true } as any,
+      ]);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
+      );
+
+      const result = await checkForPluginUpdates();
+
+      expect(result.updates).toHaveLength(1);
+      expect(result.updates[0].api).toBe(0.5);
+    });
+
+    it('skips updates with unsupported API versions', async () => {
+      const incompatiblePlugin = {
+        id: 'future-plugin',
+        name: 'Future Plugin',
+        description: 'Needs a new API',
+        author: 'Test',
+        official: false,
+        repo: 'https://github.com/test/future',
+        path: 'plugins/future',
+        tags: [],
+        latest: '2.0.0',
+        releases: {
+          '2.0.0': {
+            api: 9.0, // Unsupported API version
+            asset: 'https://example.com/future-2.0.0.zip',
+            sha256: 'zzz',
+            permissions: [],
+            size: 512,
+          },
+        },
+      };
+
+      vi.mocked(fetchAllRegistries).mockResolvedValue({
+        official: {
+          registry: { version: 1, updated: '2025-01-01T00:00:00Z', plugins: [incompatiblePlugin] },
+          featured: null,
+        },
+        custom: [],
+        allPlugins: [incompatiblePlugin],
+      } as any);
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'future-plugin', isDirectory: () => true } as any,
+      ]);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' })
+      );
+
+      const result = await checkForPluginUpdates();
+
+      // Should NOT appear in compatible updates
+      expect(result.updates).toHaveLength(0);
+      // Should appear in incompatible updates
+      expect(result.incompatibleUpdates).toHaveLength(1);
+      expect(result.incompatibleUpdates[0].pluginId).toBe('future-plugin');
+      expect(result.incompatibleUpdates[0].requiredApi).toBe(9.0);
+      expect(result.incompatibleUpdates[0].latestVersion).toBe('2.0.0');
+    });
+
+    it('tracks incompatible updates in status', async () => {
+      const incompatiblePlugin = {
+        id: 'future-plugin',
+        name: 'Future Plugin',
+        description: 'Needs a new API',
+        author: 'Test',
+        official: false,
+        repo: 'https://github.com/test/future',
+        path: 'plugins/future',
+        tags: [],
+        latest: '2.0.0',
+        releases: {
+          '2.0.0': {
+            api: 9.0,
+            asset: 'https://example.com/future-2.0.0.zip',
+            sha256: 'zzz',
+            permissions: [],
+            size: 512,
+          },
+        },
+      };
+
+      vi.mocked(fetchAllRegistries).mockResolvedValue({
+        official: {
+          registry: { version: 1, updated: '2025-01-01T00:00:00Z', plugins: [incompatiblePlugin] },
+          featured: null,
+        },
+        custom: [],
+        allPlugins: [incompatiblePlugin],
+      } as any);
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'future-plugin', isDirectory: () => true } as any,
+      ]);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' })
+      );
+
+      await checkForPluginUpdates();
+
+      const status = getPluginUpdatesStatus();
+      expect(status.incompatibleUpdates).toHaveLength(1);
+      expect(status.incompatibleUpdates[0].pluginId).toBe('future-plugin');
+    });
+
+    it('separates compatible and incompatible updates', async () => {
+      const mixedPlugins = [
+        ...samplePlugins,
+        {
+          id: 'future-plugin',
+          name: 'Future Plugin',
+          description: 'Needs a new API',
+          author: 'Test',
+          official: false,
+          repo: 'https://github.com/test/future',
+          path: 'plugins/future',
+          tags: [],
+          latest: '2.0.0',
+          releases: {
+            '2.0.0': {
+              api: 9.0,
+              asset: 'https://example.com/future-2.0.0.zip',
+              sha256: 'zzz',
+              permissions: [],
+              size: 512,
+            },
+          },
+        },
+      ];
+
+      vi.mocked(fetchAllRegistries).mockResolvedValue({
+        official: {
+          registry: { version: 1, updated: '2025-01-01T00:00:00Z', plugins: mixedPlugins },
+          featured: null,
+        },
+        custom: [],
+        allPlugins: mixedPlugins,
+      } as any);
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'my-plugin', isDirectory: () => true },
+        { name: 'future-plugin', isDirectory: () => true },
+      ] as any);
+      vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s.includes('my-plugin')) return JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' });
+        if (s.includes('future-plugin')) return JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' });
+        return '{}';
+      });
+
+      const result = await checkForPluginUpdates();
+
+      // my-plugin uses API 0.5 (supported) → compatible
+      expect(result.updates).toHaveLength(1);
+      expect(result.updates[0].pluginId).toBe('my-plugin');
+
+      // future-plugin uses API 9.0 (unsupported) → incompatible
+      expect(result.incompatibleUpdates).toHaveLength(1);
+      expect(result.incompatibleUpdates[0].pluginId).toBe('future-plugin');
+    });
+
     it('detects multiple updates', async () => {
       const thirdPlugin = {
         id: 'third-plugin',
@@ -362,6 +532,7 @@ describe('plugin-update-service', () => {
     it('returns initial status', () => {
       const status = getPluginUpdatesStatus();
       expect(status.updates).toEqual([]);
+      expect(status.incompatibleUpdates).toEqual([]);
       expect(status.checking).toBe(false);
       expect(status.lastCheck).toBeNull();
       expect(status.updating).toEqual({});
