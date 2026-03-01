@@ -606,6 +606,26 @@ export interface AgentDetailedStatus {
   timestamp: number;
 }
 
+// ── Agent execution mode ───────────────────────────────────────────────
+
+export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
+
+// ── Annex structured event forwarding ──────────────────────────────────
+
+export interface AnnexStructuredMessage {
+  type: 'structured_event';
+  agentId: string;
+  event: import('./structured-events').StructuredEvent;
+}
+
+export interface AnnexApprovalResponse {
+  type: 'permission_response';
+  agentId: string;
+  requestId: string;
+  approved: boolean;
+  reason?: string;
+}
+
 export interface WorktreeStatus {
   isValid: boolean;
   branch: string;
