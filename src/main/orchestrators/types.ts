@@ -101,4 +101,12 @@ export interface OrchestratorProvider {
 
   // Headless mode (optional — absence means headless not supported)
   buildHeadlessCommand?(opts: HeadlessOpts): Promise<HeadlessCommandResult | null>;
+
+  // Session listing (optional — absence means session listing not supported)
+  /** List available CLI sessions for the given project directory */
+  listSessions?(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
+
+  // Session ID extraction (optional)
+  /** Extract session ID from PTY buffer output, if recognizable */
+  extractSessionId?(ptyBuffer: string): string | null;
 }

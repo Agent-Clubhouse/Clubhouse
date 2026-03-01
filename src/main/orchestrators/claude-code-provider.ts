@@ -262,6 +262,102 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     return { binary, args, outputKind: 'stream-json' };
   }
 
+  /**
+   * List available CLI sessions by scanning Claude Code's project session storage.
+   *
+   * Claude Code stores sessions under ~/.claude/projects/<encoded-path>/.
+   * The encoded path replaces path separators with dashes.
+   */
+  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
+    const projectsDir = path.join(configDir, 'projects');
+
+    if (!fs.existsSync(projectsDir)) return [];
+
+    // Claude Code encodes project path by replacing separators with dashes
+    const absCwd = path.resolve(cwd);
+    const encodedPath = absCwd.replace(/[/\\]/g, '-');
+
+    // Try candidate directory names (with and without leading dash)
+    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
+
+    let projectDir: string | null = null;
+    for (const candidate of candidates) {
+      const dir = path.join(projectsDir, candidate);
+      if (fs.existsSync(dir)) {
+        projectDir = dir;
+        break;
+      }
+    }
+
+    if (!projectDir) return [];
+
+    // Look for session files. Claude Code may store them in various
+    // subdirectory structures; check common locations.
+    const sessionLocations = [
+      path.join(projectDir, 'sessions'),
+      projectDir,
+    ];
+
+    const sessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
+    const seenIds = new Set<string>();
+
+    for (const dir of sessionLocations) {
+      if (!fs.existsSync(dir)) continue;
+
+      try {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+
+          // Session ID is the filename without extension
+          const sessionId = path.basename(entry.name, '.json');
+          // Skip non-UUID-like filenames (avoid config files)
+          if (!/^[0-9a-f-]{8,}$/i.test(sessionId)) continue;
+          if (seenIds.has(sessionId)) continue;
+          seenIds.add(sessionId);
+
+          try {
+            const stat = await fsp.stat(path.join(dir, entry.name));
+            sessions.push({
+              sessionId,
+              startedAt: stat.birthtime.toISOString(),
+              lastActiveAt: stat.mtime.toISOString(),
+            });
+          } catch {
+            // Skip unreadable files
+          }
+        }
+      } catch {
+        // Skip unreadable directories
+      }
+    }
+
+    // Sort by most recently active first
+    sessions.sort((a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime());
+    return sessions;
+  }
+
+  /**
+   * Extract session ID from PTY buffer output.
+   * Looks for UUID patterns that Claude Code uses as session identifiers.
+   */
+  extractSessionId(ptyBuffer: string): string | null {
+    // Claude Code session IDs are UUIDs. Match the first UUID in the output.
+    // Look specifically for session-related context first.
+    const sessionPatterns = [
+      /session[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      /resume[:\s]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    ];
+
+    for (const pattern of sessionPatterns) {
+      const match = ptyBuffer.match(pattern);
+      if (match) return match[1];
+    }
+
+    return null;
+  }
+
   getProfileEnvKeys(): string[] {
     return ['CLAUDE_CONFIG_DIR'];
   }
