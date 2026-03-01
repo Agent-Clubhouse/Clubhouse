@@ -31,6 +31,7 @@ describe('permission hierarchy', () => {
 
     it('contains the expected parent-child relationships', () => {
       expect(PERMISSION_HIERARCHY['files.external']).toBe('files');
+      expect(PERMISSION_HIERARCHY['files.watch']).toBe('files');
       expect(PERMISSION_HIERARCHY['agent-config.cross-project']).toBe('agent-config');
       expect(PERMISSION_HIERARCHY['agent-config.permissions']).toBe('agent-config');
       expect(PERMISSION_HIERARCHY['agent-config.mcp']).toBe('agent-config');
@@ -72,6 +73,7 @@ describe('permission hierarchy', () => {
 
     it('classifies elevated permissions correctly', () => {
       expect(PERMISSION_RISK_LEVELS['files']).toBe('elevated');
+      expect(PERMISSION_RISK_LEVELS['files.watch']).toBe('elevated');
       expect(PERMISSION_RISK_LEVELS['terminal']).toBe('elevated');
       expect(PERMISSION_RISK_LEVELS['process']).toBe('elevated');
     });
@@ -90,6 +92,7 @@ describe('permission hierarchy', () => {
   describe('getParentPermission', () => {
     it('returns parent for child permissions', () => {
       expect(getParentPermission('files.external')).toBe('files');
+      expect(getParentPermission('files.watch')).toBe('files');
       expect(getParentPermission('agent-config.cross-project')).toBe('agent-config');
       expect(getParentPermission('agent-config.permissions')).toBe('agent-config');
       expect(getParentPermission('agent-config.mcp')).toBe('agent-config');
@@ -114,6 +117,7 @@ describe('permission hierarchy', () => {
 
     it('returns single parent for direct child permissions', () => {
       expect(getRequiredParentPermissions('files.external')).toEqual(['files']);
+      expect(getRequiredParentPermissions('files.watch')).toEqual(['files']);
       expect(getRequiredParentPermissions('agents.free-agent-mode')).toEqual(['agents']);
       expect(getRequiredParentPermissions('agent-config.cross-project')).toEqual(['agent-config']);
     });

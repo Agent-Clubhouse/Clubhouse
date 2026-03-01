@@ -92,7 +92,7 @@ const LOGGING_API_METHODS: (keyof LoggingAPI)[] = ['debug', 'info', 'warn', 'err
 
 const FILES_API_METHODS: (keyof FilesAPI)[] = [
   'readTree', 'readFile', 'readBinary', 'writeFile', 'stat',
-  'rename', 'copy', 'mkdir', 'delete', 'showInFolder', 'forRoot',
+  'rename', 'copy', 'mkdir', 'delete', 'showInFolder', 'forRoot', 'watch',
 ];
 
 const PROCESS_API_METHODS: (keyof ProcessAPI)[] = ['exec'];
@@ -198,6 +198,74 @@ function fullV06Manifest(): Record<string, unknown> {
   };
 }
 
+function minimalV07Manifest(overrides?: Partial<PluginManifest>): Record<string, unknown> {
+  return {
+    id: 'test-plugin',
+    name: 'Test Plugin',
+    version: '1.0.0',
+    engine: { api: 0.7 },
+    scope: 'project',
+    permissions: ['files'],
+    contributes: { help: {} },
+    ...overrides,
+  };
+}
+
+function minimalPackManifest(overrides?: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: 'test-pack',
+    name: 'Test Sound Pack',
+    version: '1.0.0',
+    engine: { api: 0.7 },
+    kind: 'pack',
+    scope: 'app',
+    contributes: {
+      sounds: { name: 'Test Sounds', sounds: { 'agent-done': 'sounds/done.mp3' } },
+    },
+    ...overrides,
+  };
+}
+
+function themePackManifest(): Record<string, unknown> {
+  return {
+    id: 'monokai-pack',
+    name: 'Monokai Theme Pack',
+    version: '1.0.0',
+    engine: { api: 0.7 },
+    kind: 'pack',
+    scope: 'app',
+    contributes: {
+      themes: [
+        {
+          id: 'monokai',
+          name: 'Monokai',
+          type: 'dark',
+          colors: { base: '#272822' },
+          hljs: { keyword: '#f92672' },
+          terminal: { background: '#272822' },
+        },
+      ],
+    },
+  };
+}
+
+function agentConfigPackManifest(): Record<string, unknown> {
+  return {
+    id: 'config-pack',
+    name: 'Config Pack',
+    version: '1.0.0',
+    engine: { api: 0.7 },
+    kind: 'pack',
+    scope: 'project',
+    contributes: {
+      agentConfig: {
+        skills: { 'my-skill': '# My Skill\nDo the thing.' },
+        mcpServers: { 'my-server': { command: 'npx', args: ['my-mcp'] } },
+      },
+    },
+  };
+}
+
 // =============================================================================
 // § 1. SUPPORTED_API_VERSIONS integrity
 // =============================================================================
@@ -210,8 +278,8 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.5, 0.6]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6]);
+  it('contains exactly [0.5, 0.6, 0.7]', () => {
+    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {
@@ -226,7 +294,7 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
 
   it('does NOT contain v1.0 or higher (not yet released)', () => {
     expect(SUPPORTED_API_VERSIONS).not.toContain(1.0);
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.7);
+    expect(SUPPORTED_API_VERSIONS).not.toContain(0.8);
   });
 });
 
@@ -487,7 +555,7 @@ describe('§2 Per-version manifest validation', () => {
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
       // Skip sub-permissions that require base permissions
-      const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode'];
+      const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode', 'files.watch'];
       const needsExternalRoots = perm === 'files.external';
       const needsAllowedCommands = perm === 'process';
 
@@ -498,6 +566,8 @@ describe('§2 Per-version manifest validation', () => {
         // Add base permission if this is a sub-permission
         if (perm === 'agents.free-agent-mode') {
           permissions.unshift('agents');
+        } else if (perm === 'files.watch') {
+          permissions.unshift('files');
         } else if (requiresBase.includes(perm)) {
           permissions.unshift('agent-config');
         }
@@ -511,7 +581,7 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        const result = validateManifest(minimalV06Manifest({
+        const result = validateManifest(minimalV07Manifest({
           permissions,
           ...extras,
         }));
@@ -623,6 +693,266 @@ describe('§2 Per-version manifest validation', () => {
         expect(result.valid).toBe(false);
         expect(result.errors.some(e => e.includes('path separators'))).toBe(true);
       }
+    });
+  });
+});
+
+// =============================================================================
+// § 2b. v0.7 Pack plugins and new contributions
+// =============================================================================
+
+describe('§2b v0.7 pack plugins and new contributions', () => {
+  describe('pack plugin validation', () => {
+    it('accepts a valid sound pack manifest', () => {
+      const result = validateManifest(minimalPackManifest());
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts a valid theme pack manifest', () => {
+      const result = validateManifest(themePackManifest());
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts a valid agent config pack manifest', () => {
+      const result = validateManifest(agentConfigPackManifest());
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects pack with kind but API < 0.7', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        engine: { api: 0.6 },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Pack plugins require API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects pack with main entry', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        main: './dist/main.js',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('must not specify a "main"'))).toBe(true);
+    });
+
+    it('rejects pack with settingsPanel', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        settingsPanel: 'declarative',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('must not specify a "settingsPanel"'))).toBe(true);
+    });
+
+    it('rejects pack with tab contribution', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        contributes: {
+          tab: { label: 'My Tab' },
+          sounds: { name: 'Test', sounds: { 'agent-done': 'done.mp3' } },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Pack plugins cannot contribute a tab'))).toBe(true);
+    });
+
+    it('rejects pack with railItem contribution', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        scope: 'app',
+        contributes: {
+          railItem: { label: 'My Rail' },
+          sounds: { name: 'Test', sounds: { 'agent-done': 'done.mp3' } },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Pack plugins cannot contribute a railItem'))).toBe(true);
+    });
+
+    it('rejects pack with globalDialog contribution', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        contributes: {
+          globalDialog: { label: 'My Dialog' },
+          sounds: { name: 'Test', sounds: { 'agent-done': 'done.mp3' } },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Pack plugins cannot contribute a globalDialog'))).toBe(true);
+    });
+
+    it('rejects pack without any pack contributions', () => {
+      const result = validateManifest({
+        id: 'empty-pack',
+        name: 'Empty Pack',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        kind: 'pack',
+        scope: 'app',
+        contributes: {},
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('must contribute at least one of'))).toBe(true);
+    });
+
+    it('pack plugins do not require permissions array', () => {
+      const result = validateManifest(minimalPackManifest());
+      // No permissions field — should still pass
+      expect(result.valid).toBe(true);
+    });
+
+    it('pack plugins do not require contributes.help', () => {
+      const result = validateManifest(minimalPackManifest());
+      // No help field — should still pass (help is optional for packs)
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects invalid kind value', () => {
+      const result = validateManifest({
+        ...minimalPackManifest(),
+        kind: 'invalid',
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('Invalid kind'))).toBe(true);
+    });
+  });
+
+  describe('contributes.themes validation', () => {
+    it('accepts valid themes contribution', () => {
+      const result = validateManifest(themePackManifest());
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects themes on API < 0.7', () => {
+      const result = validateManifest(minimalV06Manifest({
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'test', name: 'Test', type: 'dark',
+            colors: {}, hljs: {}, terminal: {},
+          }],
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('contributes.themes requires API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects themes when not an array', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          themes: 'not-an-array',
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('contributes.themes must be an array'))).toBe(true);
+    });
+
+    it('rejects theme entry missing required fields', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          themes: [{ id: '', name: '', type: 'invalid' }],
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('themes[0].id must be a non-empty string'))).toBe(true);
+      expect(result.errors.some(e => e.includes('themes[0].name must be a non-empty string'))).toBe(true);
+      expect(result.errors.some(e => e.includes('themes[0].type must be "dark" or "light"'))).toBe(true);
+    });
+  });
+
+  describe('contributes.agentConfig validation', () => {
+    it('accepts valid agentConfig contribution', () => {
+      const result = validateManifest(agentConfigPackManifest());
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects agentConfig on API < 0.7', () => {
+      const result = validateManifest(minimalV06Manifest({
+        contributes: {
+          help: {},
+          agentConfig: { skills: {} },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('contributes.agentConfig requires API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects agentConfig.skills when not an object', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          agentConfig: { skills: 'not-an-object' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('agentConfig.skills must be an object'))).toBe(true);
+    });
+  });
+
+  describe('contributes.globalDialog validation', () => {
+    it('accepts valid globalDialog contribution', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          globalDialog: { label: 'My Dialog', icon: '<svg/>', defaultBinding: 'Meta+Shift+B' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects globalDialog on API < 0.7', () => {
+      const result = validateManifest(minimalV06Manifest({
+        contributes: {
+          help: {},
+          globalDialog: { label: 'Dialog' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('contributes.globalDialog requires API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects globalDialog without label', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          globalDialog: { icon: '<svg/>' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('globalDialog.label must be a non-empty string'))).toBe(true);
+    });
+  });
+
+  describe('files.watch permission hierarchy', () => {
+    it('accepts files.watch with base files permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files', 'files.watch'],
+      }));
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects files.watch WITHOUT base files permission', () => {
+      const result = validateManifest(minimalV07Manifest({
+        permissions: ['files.watch'],
+      }));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('requires the base "files" permission'))).toBe(true);
+    });
+  });
+
+  describe('v0.7 minimal manifest validation', () => {
+    it('accepts a minimal valid v0.7 manifest', () => {
+      const result = validateManifest(minimalV07Manifest());
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('kind: "plugin" is accepted as default', () => {
+      const result = validateManifest(minimalV07Manifest({ kind: 'plugin' } as Record<string, unknown>));
+      expect(result.valid).toBe(true);
     });
   });
 });
@@ -982,6 +1312,11 @@ describe('§4 Mock API safe return values', () => {
     expect(api.theme.getColor('nonexistent')).toBeNull();
   });
 
+  it('api.files.watch() returns disposable', () => {
+    const d = api.files.watch('**/*.ts', () => {});
+    expect(typeof d.dispose).toBe('function');
+  });
+
   it('api.context has expected default values', () => {
     expect(api.context.mode).toBe('project');
     expect(api.context.projectId).toBe('test-project');
@@ -1142,7 +1477,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
   it('contains every PluginPermission value', () => {
     // This is the exhaustive list from the type definition
     const expected: PluginPermission[] = [
-      'files', 'files.external', 'git', 'terminal', 'agents',
+      'files', 'files.external', 'files.watch', 'git', 'terminal', 'agents',
       'notifications', 'storage', 'navigation', 'projects', 'commands',
       'events', 'widgets', 'logging', 'process', 'badges',
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
@@ -1199,11 +1534,47 @@ describe('§8 Cross-version backward compatibility', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('v0.5 manifest still validates identically after v0.6 was added', () => {
+  it('v0.5 manifest still validates identically after v0.6 and v0.7 were added', () => {
     // Core v0.5 validation rules must not regress
     const result = validateManifest(minimalV05Manifest());
     expect(result.valid).toBe(true);
     expect(result.manifest).toBeDefined();
     expect(result.manifest!.engine.api).toBe(0.5);
+  });
+
+  it('v0.6 manifest still validates identically after v0.7 was added', () => {
+    const result = validateManifest(minimalV06Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.manifest).toBeDefined();
+    expect(result.manifest!.engine.api).toBe(0.6);
+  });
+
+  it('v0.7 features work on v0.7 manifests', () => {
+    const result = validateManifest({
+      id: 'v07-compat',
+      name: 'v0.7 Compat',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'project',
+      permissions: ['files', 'files.watch'],
+      contributes: {
+        help: {},
+        themes: [{
+          id: 'custom', name: 'Custom', type: 'dark',
+          colors: { base: '#000' }, hljs: { keyword: '#f00' }, terminal: { background: '#000' },
+        }],
+        globalDialog: { label: 'My Dialog', defaultBinding: 'Meta+Shift+D' },
+        agentConfig: { skills: { 'test-skill': '# Test' } },
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('v0.7 pack plugins validate correctly', () => {
+    const result = validateManifest(minimalPackManifest());
+    expect(result.valid).toBe(true);
+    expect(result.manifest).toBeDefined();
+    expect(result.manifest!.kind).toBe('pack');
   });
 });

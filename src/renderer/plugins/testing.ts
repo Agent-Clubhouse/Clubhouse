@@ -139,6 +139,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       delete: asyncNoop,
       showInFolder: asyncNoop,
       forRoot: () => { throw new Error('forRoot not available in test stub'); },
+      watch: () => ({ dispose: noop }),
     },
     process: {
       exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),

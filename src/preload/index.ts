@@ -315,6 +315,14 @@ const api = {
       ipcRenderer.invoke(IPC.FILE.COPY, src, dest),
     stat: (filePath: string) =>
       ipcRenderer.invoke(IPC.FILE.STAT, filePath),
+    watchStart: (watchId: string, glob: string) =>
+      ipcRenderer.invoke(IPC.FILE.WATCH_START, watchId, glob),
+    watchStop: (watchId: string) =>
+      ipcRenderer.invoke(IPC.FILE.WATCH_STOP, watchId),
+    onWatchEvent: (callback: (...args: unknown[]) => void) =>
+      ipcRenderer.on(IPC.FILE.WATCH_EVENT, callback),
+    offWatchEvent: (callback: (...args: unknown[]) => void) =>
+      ipcRenderer.removeListener(IPC.FILE.WATCH_EVENT, callback),
   },
   plugin: {
     discoverCommunity: () =>

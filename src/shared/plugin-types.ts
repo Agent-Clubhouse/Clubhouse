@@ -1,4 +1,4 @@
-import type { FileNode } from './types';
+import type { FileNode, ThemeColors, HljsColors, TerminalColors } from './types';
 
 // ── Disposable ──────────────────────────────────────────────────────────
 export interface Disposable {
@@ -32,6 +32,7 @@ export interface PluginStorageDeclaration {
 export type PluginPermission =
   | 'files'
   | 'files.external'
+  | 'files.watch'
   | 'git'
   | 'terminal'
   | 'agents'
@@ -56,6 +57,7 @@ export type PluginPermission =
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
   'files.external',
+  'files.watch',
   'git',
   'terminal',
   'agents',
@@ -89,6 +91,7 @@ export type PermissionRiskLevel = 'safe' | 'elevated' | 'dangerous';
  */
 export const PERMISSION_HIERARCHY: Readonly<Partial<Record<PluginPermission, PluginPermission>>> = {
   'files.external': 'files',
+  'files.watch': 'files',
   'agent-config.cross-project': 'agent-config',
   'agent-config.permissions': 'agent-config',
   'agent-config.mcp': 'agent-config',
@@ -118,6 +121,7 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   // elevated — write access or system integration
   files: 'elevated',
   'files.external': 'elevated',
+  'files.watch': 'elevated',
   terminal: 'elevated',
   agents: 'elevated',
   projects: 'elevated',
@@ -166,6 +170,7 @@ export interface PluginExternalRoot {
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   files: 'Read and write files within the project directory',
   'files.external': 'Access files outside the project directory',
+  'files.watch': 'Watch files and directories for changes',
   git: 'Read git status, log, branch, and diffs',
   terminal: 'Spawn and control terminal sessions',
   agents: 'Spawn, monitor, and manage AI agents',
@@ -208,6 +213,44 @@ export interface PluginSoundPackDeclaration {
   sounds: Record<string, string>;
 }
 
+/** Declare a color theme that ships with this plugin (v0.7+). */
+export interface PluginThemeDeclaration {
+  /** Unique theme ID (will be prefixed with `plugin:{pluginId}:` on registration). */
+  id: string;
+  /** Display name for the theme. */
+  name: string;
+  /** Whether this is a dark or light theme. */
+  type: 'dark' | 'light';
+  /** Core UI colors. */
+  colors: ThemeColors;
+  /** Syntax highlighting colors. */
+  hljs: HljsColors;
+  /** Terminal colors. */
+  terminal: TerminalColors;
+}
+
+/** Declare agent configuration that is auto-injected on plugin registration (v0.7+). */
+export interface PluginAgentConfigDeclaration {
+  /** Skills to inject — mapping of skill name to markdown content. */
+  skills?: Record<string, string>;
+  /** MCP server configurations to inject. */
+  mcpServers?: Record<string, unknown>;
+  /** Agent templates to inject — mapping of template name to markdown content. */
+  agentTemplates?: Record<string, string>;
+}
+
+/** Declare a global dialog action (v0.7+). */
+export interface PluginGlobalDialogDeclaration {
+  /** Display label for the dialog in command palette / menus. */
+  label: string;
+  /** SVG icon string or icon name. */
+  icon?: string;
+  /** Default keyboard binding (e.g. "Meta+Shift+B"). */
+  defaultBinding?: string;
+  /** Command ID to register for opening this dialog (auto-generated if not specified). */
+  commandId?: string;
+}
+
 export interface PluginContributes {
   tab?: {
     label: string;
@@ -225,7 +268,16 @@ export interface PluginContributes {
   help?: PluginHelpContribution;
   /** Declare a sound pack that ships with this plugin. */
   sounds?: PluginSoundPackDeclaration;
+  /** Declare color themes that ship with this plugin (v0.7+). */
+  themes?: PluginThemeDeclaration[];
+  /** Declare agent configuration to auto-inject (v0.7+). */
+  agentConfig?: PluginAgentConfigDeclaration;
+  /** Declare a global dialog action (v0.7+). */
+  globalDialog?: PluginGlobalDialogDeclaration;
 }
+
+/** Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only). */
+export type PluginKind = 'plugin' | 'pack';
 
 export interface PluginManifest {
   id: string;
@@ -234,11 +286,13 @@ export interface PluginManifest {
   description?: string;
   author?: string;
   engine: { api: number };
+  /** Plugin kind: 'plugin' (default) or 'pack' (headless, no main module). */
+  kind?: PluginKind;
   scope: 'project' | 'app' | 'dual';
   main?: string;                     // path to main module relative to plugin dir
   contributes?: PluginContributes;
   settingsPanel?: 'declarative' | 'custom';
-  permissions?: PluginPermission[];         // required for v0.5+
+  permissions?: PluginPermission[];         // required for v0.5+ plugins (optional for packs)
   externalRoots?: PluginExternalRoot[];     // requires 'files.external' permission
   allowedCommands?: string[];              // requires 'process' permission
 }
@@ -285,6 +339,8 @@ export interface PluginModule {
   SidebarPanel?: React.ComponentType<{ api: PluginAPI }>;
   HubPanel?: React.ComponentType<HubPanelProps>;
   SettingsPanel?: React.ComponentType<{ api: PluginAPI }>;
+  /** Global dialog panel rendered as a modal overlay (v0.7+). */
+  DialogPanel?: React.ComponentType<{ api: PluginAPI; onClose: () => void }>;
 }
 
 export interface HubPanelProps {
@@ -557,6 +613,11 @@ export interface FilesAPI {
   showInFolder(relativePath: string): Promise<void>;
   /** Returns a FilesAPI scoped to an external root directory (requires files.external permission). */
   forRoot(rootName: string): FilesAPI;
+  /**
+   * Watch files matching a glob pattern for changes (v0.7+, requires files.watch permission).
+   * Callback receives batched file events. Returns a Disposable to stop watching.
+   */
+  watch(glob: string, callback: (events: FileEvent[]) => void): Disposable;
 }
 
 // ── Agent Config API (v0.6+) ──────────────────────────────────────────
