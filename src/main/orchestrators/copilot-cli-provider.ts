@@ -11,7 +11,9 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
+  StructuredAdapter,
 } from './types';
+import { AcpAdapter } from './adapters';
 import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
@@ -93,9 +95,17 @@ export class CopilotCliProvider implements OrchestratorProvider {
       hooks: true,
       sessionResume: true,
       permissions: true,
-      structuredMode: false,
+      structuredMode: true,
       structuredProtocol: 'acp',
     };
+  }
+
+  createStructuredAdapter(): StructuredAdapter {
+    return new AcpAdapter({
+      binary: findCopilotBinary(),
+      args: ['--acp', '--stdio'],
+      toolVerbs: TOOL_VERBS,
+    });
   }
 
   readonly conventions: OrchestratorConventions = {
