@@ -35,7 +35,7 @@ async function ensurePluginDataLocalGitignored(projectPath: string): Promise<voi
   }
 }
 
-function getGlobalPluginDataDir(): string {
+export function getGlobalPluginDataDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugin-data');
 }
 

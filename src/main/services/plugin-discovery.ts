@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { PluginManifest } from '../../shared/plugin-types';
+import { getGlobalPluginDataDir } from './plugin-storage';
 
 function getCommunityPluginsDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
@@ -69,5 +70,13 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
     await fs.promises.unlink(pluginDir);
   } else {
     await fs.promises.rm(pluginDir, { recursive: true, force: true });
+  }
+
+  // Clean up the plugin's data directory (storage + files dataDir)
+  const dataDir = path.join(getGlobalPluginDataDir(), pluginId);
+  try {
+    await fs.promises.rm(dataDir, { recursive: true, force: true });
+  } catch {
+    // Best-effort — data dir may not exist
   }
 }
