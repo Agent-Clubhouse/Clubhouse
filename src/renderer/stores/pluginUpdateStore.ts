@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { PluginUpdateInfo, PluginUpdatesStatus } from '../../shared/marketplace-types';
+import type { PluginUpdateInfo, IncompatiblePluginUpdate, PluginUpdatesStatus } from '../../shared/marketplace-types';
 import { hotReloadPlugin } from '../plugins/plugin-loader';
 
 export const DISMISS_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
@@ -8,6 +8,7 @@ let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 interface PluginUpdateStoreState {
   updates: PluginUpdateInfo[];
+  incompatibleUpdates: IncompatiblePluginUpdate[];
   checking: boolean;
   lastCheck: string | null;
   updating: Record<string, string>; // pluginId -> phase
@@ -25,6 +26,7 @@ interface PluginUpdateStoreState {
 
 const DEFAULT_STATUS: PluginUpdatesStatus = {
   updates: [],
+  incompatibleUpdates: [],
   checking: false,
   lastCheck: null,
   updating: {},
@@ -42,6 +44,7 @@ export const usePluginUpdateStore = create<PluginUpdateStoreState>((set, get) =>
       const result = await window.clubhouse.marketplace.checkPluginUpdates();
       set({
         updates: result.updates,
+        incompatibleUpdates: result.incompatibleUpdates ?? [],
         checking: false,
         lastCheck: result.checkedAt,
         dismissed: false, // Show banner when new updates found
@@ -169,6 +172,7 @@ export function initPluginUpdateListener(): () => void {
     const hasLocalUpdates = Object.keys(store.updating).length > 0;
     usePluginUpdateStore.setState({
       updates: status.updates,
+      incompatibleUpdates: status.incompatibleUpdates ?? [],
       checking: status.checking,
       lastCheck: status.lastCheck,
       updating: hasLocalUpdates ? store.updating : status.updating,

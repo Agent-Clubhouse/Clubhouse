@@ -9,10 +9,12 @@ import { listCustomMarketplaces } from './custom-marketplace-service';
 import { isNewerVersion } from './auto-update-service';
 import type {
   PluginUpdateInfo,
+  IncompatiblePluginUpdate,
   PluginUpdateCheckResult,
   PluginUpdatesStatus,
   PluginUpdateResult,
 } from '../../shared/marketplace-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS } from '../../shared/marketplace-types';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -27,6 +29,7 @@ const STARTUP_DELAY_MS = 60_000; // 1 minute after startup
 
 let status: PluginUpdatesStatus = {
   updates: [],
+  incompatibleUpdates: [],
   checking: false,
   lastCheck: null,
   updating: {},
@@ -100,6 +103,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
     const { allPlugins } = await fetchAllRegistries(customMarketplaces);
     const installed = getInstalledPlugins();
     const updates: PluginUpdateInfo[] = [];
+    const incompatibleUpdates: IncompatiblePluginUpdate[] = [];
 
     for (const regPlugin of allPlugins) {
       const local = installed.get(regPlugin.id);
@@ -111,6 +115,19 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
       const release = regPlugin.releases[latestVersion];
       if (!release) continue; // No release artifact for latest version
 
+      // Guard: skip updates that require an API version the host app doesn't support
+      if (!SUPPORTED_PLUGIN_API_VERSIONS.includes(release.api)) {
+        incompatibleUpdates.push({
+          pluginId: regPlugin.id,
+          pluginName: regPlugin.name,
+          currentVersion: local.version,
+          latestVersion,
+          requiredApi: release.api,
+        });
+        appLog('marketplace:updates', 'info', `Skipping update for ${regPlugin.id}: requires API ${release.api}, supported: ${SUPPORTED_PLUGIN_API_VERSIONS.join(', ')}`);
+        continue;
+      }
+
       updates.push({
         pluginId: regPlugin.id,
         pluginName: regPlugin.name,
@@ -119,6 +136,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
         assetUrl: release.asset,
         sha256: release.sha256,
         size: release.size,
+        api: release.api,
       });
     }
 
@@ -126,17 +144,18 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
     status = {
       ...status,
       updates,
+      incompatibleUpdates,
       checking: false,
       lastCheck: checkedAt,
       error: null,
     };
     broadcastStatus();
 
-    appLog('marketplace:updates', 'info', `Plugin update check complete: ${updates.length} update(s) available`, {
-      meta: { pluginIds: updates.map((u) => u.pluginId), checkedAt },
+    appLog('marketplace:updates', 'info', `Plugin update check complete: ${updates.length} update(s) available, ${incompatibleUpdates.length} incompatible`, {
+      meta: { pluginIds: updates.map((u) => u.pluginId), incompatibleIds: incompatibleUpdates.map((u) => u.pluginId), checkedAt },
     });
 
-    return { updates, checkedAt };
+    return { updates, incompatibleUpdates, checkedAt };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     appLog('marketplace:updates', 'error', `Plugin update check failed: ${msg}`);
@@ -248,6 +267,7 @@ export function stopPeriodicPluginUpdateChecks(): void {
 export function _resetState(): void {
   status = {
     updates: [],
+    incompatibleUpdates: [],
     checking: false,
     lastCheck: null,
     updating: {},
