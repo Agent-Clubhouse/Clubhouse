@@ -90,6 +90,8 @@ export const IPC = {
     DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
     COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
     PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
+    LIST_SESSIONS: 'agent:list-sessions',
+    UPDATE_SESSION_NAME: 'agent:update-session-name',
   },
   FILE: {
     READ_TREE: 'file:read-tree',
