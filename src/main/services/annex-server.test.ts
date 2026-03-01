@@ -248,6 +248,7 @@ describe('annex-server', () => {
         icon: null,
         status: 'sleeping',
         detailedStatus: null,
+        executionMode: null,
       });
     });
 

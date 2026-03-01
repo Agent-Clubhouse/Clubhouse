@@ -606,10 +606,6 @@ export interface AgentDetailedStatus {
   timestamp: number;
 }
 
-// ── Agent execution mode ───────────────────────────────────────────────
-
-export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
-
 // ── Annex structured event forwarding ──────────────────────────────────
 
 export interface AnnexStructuredMessage {
