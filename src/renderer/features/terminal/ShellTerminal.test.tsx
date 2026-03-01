@@ -68,7 +68,8 @@ describe('ShellTerminal', () => {
       disconnect = mockDisconnect;
       unobserve = vi.fn();
     });
-    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => { cb(); return 0; });
+    vi.stubGlobal('requestAnimationFrame', (cb: () => void) => { cb(); return 1; });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
 
     window.clubhouse.pty.write = vi.fn();
     window.clubhouse.pty.resize = vi.fn();
@@ -294,6 +295,110 @@ describe('ShellTerminal', () => {
       // write should not have been called with empty string
       const writeCalls = term().write.mock.calls.filter((c: string[]) => c[0] === '');
       expect(writeCalls).toHaveLength(0);
+    });
+  });
+
+  describe('write batching', () => {
+    // Use a deferred rAF mock so we can control when flushes happen
+    let rafQueue: Array<{ id: number; cb: () => void }> = [];
+    let nextRafId: number;
+
+    function flushRAF() {
+      const current = [...rafQueue];
+      rafQueue = [];
+      current.forEach(({ cb }) => cb());
+    }
+
+    beforeEach(() => {
+      rafQueue = [];
+      nextRafId = 1;
+      // Override the sync rAF mock with a deferred one for batching tests
+      vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+        const id = nextRafId++;
+        rafQueue.push({ id, cb });
+        return id;
+      });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+        rafQueue = rafQueue.filter((entry) => entry.id !== id);
+      });
+    });
+
+    it('batches multiple data chunks into a single term.write call', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      // Flush mount rAF (fit/resize/focus/buffer)
+      flushRAF();
+      term().write.mockClear();
+
+      // Simulate 5 rapid data chunks arriving before next frame
+      act(() => {
+        mockOnDataCallback!('shell-1', 'chunk1');
+        mockOnDataCallback!('shell-1', 'chunk2');
+        mockOnDataCallback!('shell-1', 'chunk3');
+        mockOnDataCallback!('shell-1', 'chunk4');
+        mockOnDataCallback!('shell-1', 'chunk5');
+      });
+
+      // No writes yet — still waiting for rAF
+      expect(term().write).not.toHaveBeenCalled();
+
+      // Now flush the animation frame
+      act(() => { flushRAF(); });
+
+      // All 5 chunks delivered in a single write
+      expect(term().write).toHaveBeenCalledTimes(1);
+      expect(term().write).toHaveBeenCalledWith('chunk1chunk2chunk3chunk4chunk5');
+    });
+
+    it('allows subsequent batches after a flush', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      flushRAF();
+      term().write.mockClear();
+
+      // First batch
+      act(() => {
+        mockOnDataCallback!('shell-1', 'a');
+        mockOnDataCallback!('shell-1', 'b');
+      });
+      act(() => { flushRAF(); });
+      expect(term().write).toHaveBeenCalledWith('ab');
+
+      term().write.mockClear();
+
+      // Second batch
+      act(() => {
+        mockOnDataCallback!('shell-1', 'c');
+        mockOnDataCallback!('shell-1', 'd');
+      });
+      act(() => { flushRAF(); });
+      expect(term().write).toHaveBeenCalledWith('cd');
+    });
+
+    it('cancels pending flush on unmount', () => {
+      const { unmount } = render(<ShellTerminal sessionId="shell-1" />);
+      flushRAF();
+      term().write.mockClear();
+
+      // Queue data but don't flush
+      act(() => { mockOnDataCallback!('shell-1', 'pending'); });
+      expect(rafQueue.length).toBeGreaterThan(0);
+
+      // Unmount should cancel the pending rAF
+      unmount();
+
+      // Flushing after unmount should not write
+      flushRAF();
+      expect(term().write).not.toHaveBeenCalled();
+    });
+
+    it('does not schedule rAF for non-matching session IDs', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      flushRAF();
+      const queueLengthAfterMount = rafQueue.length;
+
+      act(() => { mockOnDataCallback!('shell-2', 'other data'); });
+
+      // No new rAF scheduled
+      expect(rafQueue.length).toBe(queueLengthAfterMount);
     });
   });
 });
