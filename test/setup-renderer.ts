@@ -67,6 +67,16 @@ vi.stubGlobal('clubhouse', {
     readTranscript: async () => null,
     isHeadlessAgent: async () => false,
     onHookEvent: () => noop,
+    // Structured mode
+    startStructured: asyncNoop,
+    cancelStructured: asyncNoop,
+    sendStructuredMessage: asyncNoop,
+    respondPermission: asyncNoop,
+    onStructuredEvent: () => noop,
+    listSessions: async () => [],
+    updateSessionName: asyncNoop,
+    getTranscriptInfo: asyncNoop,
+    readTranscriptPage: asyncNoop,
   },
   git: {
     info: asyncNoop,

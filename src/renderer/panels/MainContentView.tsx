@@ -6,6 +6,7 @@ import { useProjectStore } from '../stores/projectStore';
 import { AgentTerminal } from '../features/agents/AgentTerminal';
 import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
+import { StructuredAgentView } from '../features/agents/structured/StructuredAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
@@ -86,6 +87,11 @@ export function MainContentView() {
 
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
       return <SleepingAgent agent={activeAgent} />;
+    }
+
+    // Structured mode gets the rich interactive UI
+    if (activeAgent.executionMode === 'structured') {
+      return <StructuredAgentView agentId={activeAgent.id} />;
     }
 
     // Headless running agents get the animated clubhouse view instead of a terminal
