@@ -274,6 +274,37 @@ export function validateManifest(raw: unknown): ValidationResult {
             if (!theme.terminal || typeof theme.terminal !== 'object') {
               errors.push(`contributes.themes[${i}].terminal must be an object`);
             }
+            // Optional fonts object
+            if (theme.fonts !== undefined) {
+              if (!theme.fonts || typeof theme.fonts !== 'object') {
+                errors.push(`contributes.themes[${i}].fonts must be an object`);
+              } else {
+                const fonts = theme.fonts as Record<string, unknown>;
+                if (fonts.ui !== undefined && typeof fonts.ui !== 'string') {
+                  errors.push(`contributes.themes[${i}].fonts.ui must be a string`);
+                }
+                if (fonts.mono !== undefined && typeof fonts.mono !== 'string') {
+                  errors.push(`contributes.themes[${i}].fonts.mono must be a string`);
+                }
+              }
+            }
+            // Optional gradients object
+            if (theme.gradients !== undefined) {
+              if (!theme.gradients || typeof theme.gradients !== 'object') {
+                errors.push(`contributes.themes[${i}].gradients must be an object`);
+              } else {
+                const grads = theme.gradients as Record<string, unknown>;
+                if (grads.background !== undefined && typeof grads.background !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.background must be a string`);
+                }
+                if (grads.surface !== undefined && typeof grads.surface !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.surface must be a string`);
+                }
+                if (grads.accent !== undefined && typeof grads.accent !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.accent must be a string`);
+                }
+              }
+            }
           }
         }
       }
