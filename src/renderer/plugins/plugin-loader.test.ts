@@ -948,6 +948,8 @@ describe('plugin-loader', () => {
             colors: { base: '#161b28', mantle: '#121722', crust: '#0e121c', text: '#d0d8ea', subtext0: '#8e98b5', subtext1: '#a5aec8', surface0: '#222840', surface1: '#2c3350', surface2: '#363e60', accent: '#a88ed0', link: '#88c0d8', warning: '#d8c070', error: '#e08898', info: '#78b0d0', success: '#78c088' },
             hljs: { keyword: '#c8a0e0', string: '#78c088', number: '#d8a060', comment: '#586880', function: '#78b0d0', type: '#d8c070', variable: '#d0d8ea', regexp: '#e0a0c0', tag: '#78b0d0', attribute: '#68c8c0', symbol: '#c8a0e0', meta: '#e0a0c0', addition: '#78c088', deletion: '#e08898', property: '#68c8c0', punctuation: '#a5aec8' },
             terminal: { background: '#161b28', foreground: '#d0d8ea', cursor: '#a88ed0', cursorAccent: '#161b28', selectionBackground: '#363e60', selectionForeground: '#d0d8ea', black: '#222840', red: '#e08898', green: '#78c088', yellow: '#d8c070', blue: '#78b0d0', magenta: '#c8a0e0', cyan: '#68c8c0', white: '#a5aec8', brightBlack: '#586880', brightRed: '#f098a8', brightGreen: '#88d0a0', brightYellow: '#e8d080', brightBlue: '#88c0e0', brightMagenta: '#d8b0f0', brightCyan: '#78d8d0', brightWhite: '#d0d8ea' },
+            fonts: { ui: 'Inter, sans-serif', mono: "'JetBrains Mono', monospace" },
+            gradients: { background: 'linear-gradient(135deg, #161b28, #222840)' },
           },
         ],
       },
@@ -982,6 +984,27 @@ describe('plugin-loader', () => {
           type: 'dark',
         }),
       );
+    });
+
+    it('passes fonts and gradients through to registerTheme', async () => {
+      usePluginStore.getState().registerPlugin(packManifest, 'community', '/plugins/spring-themes', 'registered');
+
+      await activatePlugin('spring-themes');
+
+      expect(mockRegisterTheme).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'plugin:spring-themes:moonlit-garden',
+          fonts: { ui: 'Inter, sans-serif', mono: "'JetBrains Mono', monospace" },
+          gradients: { background: 'linear-gradient(135deg, #161b28, #222840)' },
+        }),
+      );
+      // Cherry blossom has no fonts/gradients — should not include them
+      const cherryCall = mockRegisterTheme.mock.calls.find(
+        (call: unknown[]) => (call[0] as { id: string }).id === 'plugin:spring-themes:cherry-blossom',
+      );
+      expect(cherryCall).toBeDefined();
+      expect((cherryCall![0] as Record<string, unknown>).fonts).toBeUndefined();
+      expect((cherryCall![0] as Record<string, unknown>).gradients).toBeUndefined();
     });
 
     it('unregisters themes on deactivation', async () => {
