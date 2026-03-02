@@ -71,13 +71,20 @@ describe('OrchestratorSettingsView', () => {
       expect(screen.getByText('Default Quick Agent Mode')).toBeInTheDocument();
     });
 
-    it('renders Quick Agent Mode dropdown with all three options', () => {
+    it('renders Quick Agent Mode dropdown with interactive and headless options', () => {
       render(<OrchestratorSettingsView />);
       const dropdown = screen.getByDisplayValue('Headless');
       expect(dropdown).toBeInTheDocument();
       const options = dropdown.querySelectorAll('option');
       const optionValues = Array.from(options).map((o) => o.getAttribute('value'));
-      expect(optionValues).toEqual(['interactive', 'headless', 'structured']);
+      expect(optionValues).toEqual(['interactive', 'headless']);
+    });
+
+    it('does not offer structured mode as a Quick Agent Mode option', () => {
+      render(<OrchestratorSettingsView />);
+      const dropdown = screen.getByDisplayValue('Headless');
+      const options = Array.from(dropdown.querySelectorAll('option'));
+      expect(options.every((o) => o.getAttribute('value') !== 'structured')).toBe(true);
     });
 
     it('renders Quick Agents section before Clubhouse Mode', () => {

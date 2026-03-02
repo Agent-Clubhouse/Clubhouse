@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { PluginManifest, PluginModule } from '../../../shared/plugin-types';
 import { validateBuiltinPlugin, validateAllBuiltinPlugins } from './builtin-plugin-testing';
-import { getBuiltinPlugins, type BuiltinPlugin } from './index';
+import { getBuiltinPlugins, getDefaultEnabledIds, type BuiltinPlugin } from './index';
 
 const validManifest: PluginManifest = {
   id: 'test-builtin',
@@ -90,5 +90,16 @@ describe('getBuiltinPlugins catch-all', () => {
     const result = validateAllBuiltinPlugins(plugins);
     expect(result.errors).toEqual([]);
     expect(result.valid).toBe(true);
+  });
+
+  it('does not include the sessions plugin (hidden for stable release)', () => {
+    const plugins = getBuiltinPlugins();
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).not.toContain('sessions');
+  });
+
+  it('does not auto-enable the sessions plugin', () => {
+    const defaultIds = getDefaultEnabledIds();
+    expect(defaultIds.has('sessions')).toBe(false);
   });
 });
