@@ -61,10 +61,9 @@ function AppAgentSettings() {
           >
             <option value="interactive">Interactive</option>
             <option value="headless">Headless</option>
-            <option value="structured">Structured</option>
           </select>
           <p className="text-xs text-ctp-subtext0">
-            How quick agents run by default. Headless runs faster with richer summaries. Structured enables native UI with tool cards and permissions.
+            How quick agents run by default. Headless runs faster with richer summaries.
           </p>
         </div>
       </div>
@@ -311,10 +310,9 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
           <option value="interactive">Interactive</option>
           <option value="headless">Headless</option>
-          <option value="structured">Structured</option>
         </select>
         <p className="text-xs text-ctp-subtext0">
-          How quick agents spawn in this project. Headless runs faster with richer summaries. Structured enables native UI with tool cards and permissions.
+          How quick agents spawn in this project. Headless runs faster with richer summaries.
         </p>
       </div>
     </>

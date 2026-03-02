@@ -5,9 +5,6 @@ import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
 import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
-import { manifest as sessionsManifest } from './sessions/manifest';
-import * as sessionsModule from './sessions/main';
-
 export interface BuiltinPlugin {
   manifest: PluginManifest;
   module: PluginModule;
@@ -18,7 +15,6 @@ const DEFAULT_ENABLED_IDS: ReadonlySet<string> = new Set([
   'hub',
   'terminal',
   'files',
-  'sessions',
 ]);
 
 export function getBuiltinPlugins(): BuiltinPlugin[] {
@@ -26,7 +22,6 @@ export function getBuiltinPlugins(): BuiltinPlugin[] {
     { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
-    { manifest: sessionsManifest, module: sessionsModule },
   ];
 }
 
