@@ -505,6 +505,24 @@ export interface TerminalColors {
   brightWhite: string;
 }
 
+/** Font family overrides for different UI contexts. */
+export interface ThemeFonts {
+  /** Font family for the general UI (sidebar, headers, labels). */
+  ui?: string;
+  /** Monospace font family for code blocks, editors, and the terminal. */
+  mono?: string;
+}
+
+/** Optional CSS gradient decorations layered on top of solid theme colors. */
+export interface ThemeGradients {
+  /** CSS gradient applied to the app background (e.g. `linear-gradient(135deg, #1a1a2e, #16213e)`). */
+  background?: string;
+  /** CSS gradient applied to panel/card surfaces. */
+  surface?: string;
+  /** CSS gradient applied to accent elements (buttons, highlights). */
+  accent?: string;
+}
+
 export interface ThemeDefinition {
   id: ThemeId;
   name: string;
@@ -512,7 +530,12 @@ export interface ThemeDefinition {
   colors: ThemeColors;
   hljs: HljsColors;
   terminal: TerminalColors;
+  /** @deprecated Use `fonts.mono` instead. Kept for backward compat with the Terminal theme. */
   fontOverride?: string;
+  /** Font family overrides (v0.7+). */
+  fonts?: ThemeFonts;
+  /** CSS gradient decorations (v0.7+). */
+  gradients?: ThemeGradients;
 }
 
 export interface GitStatusFile {

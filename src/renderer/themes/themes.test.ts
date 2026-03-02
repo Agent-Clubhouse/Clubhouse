@@ -66,10 +66,16 @@ describe('theme registry', () => {
     expect(THEMES['terminal'].fontOverride).toBeTruthy();
   });
 
-  it('non-terminal themes do not have fontOverride', () => {
+  it('terminal theme has fonts.ui and fonts.mono', () => {
+    expect(THEMES['terminal'].fonts?.ui).toBeTruthy();
+    expect(THEMES['terminal'].fonts?.mono).toBeTruthy();
+  });
+
+  it('non-terminal themes do not have fontOverride or fonts', () => {
     for (const id of THEME_IDS) {
       if (id !== 'terminal') {
         expect(THEMES[id].fontOverride).toBeUndefined();
+        expect(THEMES[id].fonts).toBeUndefined();
       }
     }
   });

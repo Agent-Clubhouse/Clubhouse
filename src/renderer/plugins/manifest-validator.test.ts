@@ -895,6 +895,124 @@ describe('manifest-validator', () => {
       });
       expect(result.valid).toBe(true);
     });
+
+    it('accepts themes with optional fonts object', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            fonts: { ui: 'Inter, sans-serif', mono: "'Fira Code', monospace" },
+          }],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts themes with optional gradients object', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            gradients: { background: 'linear-gradient(#000, #111)', accent: 'linear-gradient(#f00, #0f0)' },
+          }],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects fonts with non-string values', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            fonts: { ui: 123 },
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('fonts.ui must be a string'))).toBe(true);
+    });
+
+    it('rejects gradients with non-string values', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            gradients: { background: 42 },
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('gradients.background must be a string'))).toBe(true);
+    });
+
+    it('rejects non-object fonts value', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            fonts: 'bad',
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('fonts must be an object'))).toBe(true);
+    });
+
+    it('rejects non-object gradients value', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            gradients: 'bad',
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('gradients must be an object'))).toBe(true);
+    });
   });
 
   // --- hierarchy-driven validation ---

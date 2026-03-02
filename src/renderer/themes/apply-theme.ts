@@ -62,13 +62,51 @@ export function applyTheme(theme: ThemeDefinition): void {
     cache[varName] = hex;
   }
 
-  // Font override (Terminal theme)
-  if (theme.fontOverride) {
+  // Font overrides — new `fonts` field takes precedence over legacy `fontOverride`
+  const uiFont = theme.fonts?.ui;
+  const monoFont = theme.fonts?.mono ?? theme.fontOverride;
+
+  if (uiFont) {
+    s.setProperty('--theme-font-ui', uiFont);
+    document.documentElement.classList.add('theme-font-ui');
+    cache['--theme-font-ui'] = uiFont;
+  } else {
+    s.removeProperty('--theme-font-ui');
+    document.documentElement.classList.remove('theme-font-ui');
+  }
+
+  if (monoFont) {
+    s.setProperty('--theme-font-mono', monoFont);
+    document.documentElement.classList.add('theme-font-mono');
+    cache['--theme-font-mono'] = monoFont;
+  } else {
+    s.removeProperty('--theme-font-mono');
+    document.documentElement.classList.remove('theme-font-mono');
+  }
+
+  // Legacy class — maintained for backward compat (both ui + mono = full override)
+  if (uiFont && monoFont) {
     document.documentElement.classList.add('theme-mono');
-    localStorage.setItem('clubhouse-theme-font', theme.fontOverride);
+    localStorage.setItem('clubhouse-theme-font', monoFont);
   } else {
     document.documentElement.classList.remove('theme-mono');
     localStorage.removeItem('clubhouse-theme-font');
+  }
+
+  // Gradient decorations
+  const gradientMap: Record<string, string | undefined> = {
+    '--theme-gradient-bg': theme.gradients?.background,
+    '--theme-gradient-surface': theme.gradients?.surface,
+    '--theme-gradient-accent': theme.gradients?.accent,
+  };
+
+  for (const [varName, value] of Object.entries(gradientMap)) {
+    if (value) {
+      s.setProperty(varName, value);
+      cache[varName] = value;
+    } else {
+      s.removeProperty(varName);
+    }
   }
 
   // Cache to localStorage for flash prevention
