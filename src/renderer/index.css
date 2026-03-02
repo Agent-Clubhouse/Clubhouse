@@ -70,7 +70,19 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Theme mono font override (Terminal theme) */
+  /* Theme font overrides (v0.7+) */
+  .theme-font-ui {
+    font-family: var(--theme-font-ui) !important;
+  }
+
+  .theme-font-mono pre,
+  .theme-font-mono code,
+  .theme-font-mono .xterm,
+  .theme-font-mono .xterm * {
+    font-family: var(--theme-font-mono) !important;
+  }
+
+  /* Legacy full-override class (both ui + mono set) — backward compat with Terminal theme */
   .theme-mono,
   .theme-mono * {
     font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace !important;
