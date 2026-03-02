@@ -1,4 +1,4 @@
-import type { FileNode, ThemeColors, HljsColors, TerminalColors } from './types';
+import type { FileNode, ThemeColors, HljsColors, TerminalColors, ThemeFonts, ThemeGradients } from './types';
 
 // ── Disposable ──────────────────────────────────────────────────────────
 export interface Disposable {
@@ -253,6 +253,10 @@ export interface PluginThemeDeclaration {
   hljs: HljsColors;
   /** Terminal colors. */
   terminal: TerminalColors;
+  /** Font family overrides. */
+  fonts?: ThemeFonts;
+  /** CSS gradient decorations layered on top of solid colors. */
+  gradients?: ThemeGradients;
 }
 
 /** Declare agent configuration that is auto-injected on plugin registration (v0.7+). */
@@ -819,6 +823,10 @@ export interface ThemeInfo {
   colors: Record<string, string>;
   hljs: Record<string, string>;
   terminal: Record<string, string>;
+  /** Font family overrides (v0.7+). */
+  fonts?: ThemeFonts;
+  /** CSS gradient decorations (v0.7+). */
+  gradients?: ThemeGradients;
 }
 
 export interface ThemeAPI {
