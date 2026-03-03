@@ -12,6 +12,7 @@ const mockPlugin = {
   storageWrite: vi.fn(),
   storageDelete: vi.fn(),
   storageList: vi.fn(),
+  registerManifest: vi.fn(),
 };
 const mockFile = { read: vi.fn(), write: vi.fn(), delete: vi.fn(), readTree: vi.fn() };
 const mockGit = { info: vi.fn(), diff: vi.fn() };
