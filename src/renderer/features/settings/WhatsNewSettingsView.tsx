@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { marked } from 'marked';
 import { useUpdateStore } from '../../stores/updateStore';
+import { renderMarkdownSafe } from '../../utils/safe-markdown';
 
 export function WhatsNewSettingsView() {
   const markdown = useUpdateStore((s) => s.versionHistoryMarkdown);
@@ -14,7 +14,7 @@ export function WhatsNewSettingsView() {
 
   const html = useMemo(() => {
     if (!markdown) return null;
-    return marked.parse(markdown, { async: false }) as string;
+    return renderMarkdownSafe(markdown);
   }, [markdown]);
 
   return (

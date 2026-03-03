@@ -125,6 +125,19 @@ describe('WhatsNewSettingsView', () => {
     expect(screen.queryByTestId('whats-new-empty')).not.toBeInTheDocument();
   });
 
+  it('sanitizes XSS payloads in version history markdown', () => {
+    resetStore({
+      versionHistoryMarkdown:
+        '# Release\n\n<img src=x onerror="alert(1)"><script>alert(2)</script>',
+      versionHistoryLoading: false,
+    });
+    render(<WhatsNewSettingsView />);
+    const content = screen.getByTestId('whats-new-content');
+    expect(content.innerHTML).not.toContain('<script');
+    expect(content.innerHTML).not.toContain('onerror');
+    expect(content.textContent).toContain('Release');
+  });
+
   it('calls loadVersionHistory on mount', () => {
     render(<WhatsNewSettingsView />);
     expect(noopLoad).toHaveBeenCalled();

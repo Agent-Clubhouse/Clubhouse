@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useCallback } from 'react';
-import { marked } from 'marked';
 import { useUpdateStore } from '../../stores/updateStore';
+import { renderMarkdownSafe } from '../../utils/safe-markdown';
 
 export function WhatsNewDialog() {
   const whatsNew = useUpdateStore((s) => s.whatsNew);
@@ -9,7 +9,7 @@ export function WhatsNewDialog() {
 
   const html = useMemo(() => {
     if (!whatsNew?.releaseNotes) return null;
-    return marked.parse(whatsNew.releaseNotes, { async: false }) as string;
+    return renderMarkdownSafe(whatsNew.releaseNotes);
   }, [whatsNew?.releaseNotes]);
 
   const handleDismiss = useCallback(() => {
