@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { marked } from 'marked';
 import { useSafeMarkdownLinks } from '../../utils/safe-markdown-links';
+import { renderMarkdownSafe } from '../../utils/safe-markdown';
 
 interface HelpContentPaneProps {
   markdown: string | null;
@@ -10,7 +10,7 @@ export function HelpContentPane({ markdown }: HelpContentPaneProps) {
   const handleClick = useSafeMarkdownLinks();
   const html = useMemo(() => {
     if (!markdown) return null;
-    return marked.parse(markdown, { async: false }) as string;
+    return renderMarkdownSafe(markdown);
   }, [markdown]);
 
   if (!html) {
