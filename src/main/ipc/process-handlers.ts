@@ -2,12 +2,12 @@ import { ipcMain, app } from 'electron';
 import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
+import { getAllowedCommands } from '../services/plugin-manifest-registry';
 
 interface ProcessExecRequest {
   pluginId: string;
   command: string;
   args: string[];
-  allowedCommands: string[];
   projectPath?: string;
   options?: { timeout?: number };
 }
@@ -18,7 +18,12 @@ const DEFAULT_TIMEOUT = 15000;
 
 export function registerProcessHandlers(): void {
   ipcMain.handle(IPC.PROCESS.EXEC, (_event, req: ProcessExecRequest) => {
-    const { command, args, allowedCommands, projectPath, options } = req;
+    const { pluginId, command, args, projectPath, options } = req;
+
+    // Reject requests without a pluginId
+    if (!pluginId) {
+      return { stdout: '', stderr: 'Missing pluginId', exitCode: 1 };
+    }
 
     // Validate command is a bare name (no path separators or traversal)
     if (
@@ -30,9 +35,11 @@ export function registerProcessHandlers(): void {
       return { stdout: '', stderr: `Invalid command: "${command}"`, exitCode: 1 };
     }
 
-    // Validate command is in the manifest's allowedCommands
-    if (!Array.isArray(allowedCommands) || !allowedCommands.includes(command)) {
-      return { stdout: '', stderr: `Command "${command}" is not in allowedCommands`, exitCode: 1 };
+    // Look up allowed commands from the server-side manifest registry
+    // — never trust renderer-supplied allowedCommands
+    const allowedCommands = getAllowedCommands(pluginId);
+    if (!allowedCommands.includes(command)) {
+      return { stdout: '', stderr: `Command "${command}" not allowed for plugin "${pluginId}"`, exitCode: 1 };
     }
 
     // Clamp timeout

@@ -192,6 +192,7 @@ export const IPC = {
     STARTUP_MARKER_CLEAR: 'plugin:startup-marker-clear',
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
+    REGISTER_MANIFEST: 'plugin:register-manifest',
   },
   LOG: {
     LOG_WRITE: 'log:write',

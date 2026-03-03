@@ -4,6 +4,7 @@ import * as pluginStorage from '../services/plugin-storage';
 import * as pluginDiscovery from '../services/plugin-discovery';
 import * as gitignoreManager from '../services/gitignore-manager';
 import * as safeMode from '../services/safe-mode';
+import * as pluginManifestRegistry from '../services/plugin-manifest-registry';
 
 export function registerPluginHandlers(): void {
   // ── Discovery ────────────────────────────────────────────────────────
@@ -82,5 +83,10 @@ export function registerPluginHandlers(): void {
 
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, async (_event, pluginId: string) => {
     await pluginDiscovery.uninstallPlugin(pluginId);
+  });
+
+  // ── Manifest Registry ─────────────────────────────────────────────────
+  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, manifest: any) => {
+    pluginManifestRegistry.registerManifest(pluginId, manifest);
   });
 }

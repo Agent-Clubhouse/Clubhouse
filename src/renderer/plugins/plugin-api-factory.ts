@@ -1801,16 +1801,14 @@ function createThemeAPI(ctx: PluginContext): ThemeAPI {
   };
 }
 
-function createProcessAPI(ctx: PluginContext, manifest?: PluginManifest): ProcessAPI {
+function createProcessAPI(ctx: PluginContext, _manifest?: PluginManifest): ProcessAPI {
   const { pluginId } = ctx;
-  const allowedCommands = manifest?.allowedCommands ?? [];
   return {
     async exec(command, args, options?) {
       return window.clubhouse.process.exec({
         pluginId,
         command,
         args,
-        allowedCommands,
         projectPath: ctx.projectPath,
         options,
       });

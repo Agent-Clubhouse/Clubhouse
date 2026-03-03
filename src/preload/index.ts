@@ -443,6 +443,8 @@ const api = {
       ipcRenderer.invoke(IPC.PLUGIN.MKDIR, pluginId, scope, relativePath, projectPath),
     uninstall: (pluginId: string) =>
       ipcRenderer.invoke(IPC.PLUGIN.UNINSTALL, pluginId),
+    registerManifest: (pluginId: string, manifest: any) =>
+      ipcRenderer.invoke(IPC.PLUGIN.REGISTER_MANIFEST, pluginId, manifest),
   },
   marketplace: {
     fetchRegistry: () =>
@@ -499,7 +501,6 @@ const api = {
       pluginId: string;
       command: string;
       args: string[];
-      allowedCommands: string[];
       projectPath?: string;
       options?: { timeout?: number };
     }) => ipcRenderer.invoke(IPC.PROCESS.EXEC, req),

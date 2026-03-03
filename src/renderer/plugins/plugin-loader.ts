@@ -75,6 +75,8 @@ export async function initializePluginSystem(): Promise<void> {
   const defaults = getDefaultEnabledIds();
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
+    // Register manifest in main-process registry for server-side policy enforcement
+    window.clubhouse.plugin.registerManifest(manifest.id, manifest);
     store.setPluginModule(manifest.id, mod);
     // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
     if (defaults.has(manifest.id)) {
@@ -104,6 +106,8 @@ export async function initializePluginSystem(): Promise<void> {
       const result = validateManifest(rawManifest);
       if (result.valid && result.manifest) {
         store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+        // Register manifest in main-process registry for server-side policy enforcement
+        window.clubhouse.plugin.registerManifest(result.manifest.id, result.manifest);
       } else {
         rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
           meta: { pluginPath, errors: result.errors },
@@ -546,12 +550,16 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     // Register the updated manifest but set status to pending-approval
     // so the plugin doesn't activate until the user approves.
     store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'pending-approval');
+    // Update main-process manifest registry for server-side policy enforcement
+    window.clubhouse.plugin.registerManifest(validation.manifest.id, validation.manifest);
     store.setPendingPermissions(pluginId, escalatedPerms);
     return;
   }
 
   // 5. Re-register with updated manifest (preserve original source)
   store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
+  // Update main-process manifest registry for server-side policy enforcement
+  window.clubhouse.plugin.registerManifest(validation.manifest.id, validation.manifest);
 
   // 6. Re-activate in all enabled scopes. We use the snapshotted enabled
   //    state rather than just activeContexts, so project-scoped contexts
@@ -667,6 +675,8 @@ export async function discoverNewPlugins(): Promise<string[]> {
     const result = validateManifest(rawManifest);
     if (result.valid && result.manifest) {
       store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+      // Register manifest in main-process registry for server-side policy enforcement
+      window.clubhouse.plugin.registerManifest(result.manifest.id, result.manifest);
       newPluginIds.push(result.manifest.id);
       rendererLog('core:plugins', 'info', `Discovered new plugin: ${result.manifest.id}`, {
         meta: { pluginPath, source },
