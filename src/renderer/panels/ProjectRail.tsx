@@ -312,9 +312,9 @@ export function ProjectRail() {
     >
       <div
         className={`
-          flex flex-col py-3 gap-2 bg-ctp-mantle border-r border-surface-0 h-full
+          flex flex-col py-3 gap-2 bg-ctp-mantle rounded-xl h-full
           transition-[width] duration-200 ease-in-out overflow-hidden pl-[14px] pr-[14px]
-          ${overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
+          ${overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20 rounded-xl' : 'shadow-md shadow-black/10'}
         `}
         style={{ width: expanded ? 200 : collapsedWidth }}
       >

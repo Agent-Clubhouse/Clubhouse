@@ -122,6 +122,19 @@
   -webkit-app-region: no-drag;
 }
 
+/* Floating card panel system — depth-based UI with rounded cards and shadows */
+.floating-panel {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.floating-panel-pill {
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
 /* Reserve space for Windows title bar overlay controls (min/max/close) */
 .win-overlay-padding {
   padding-right: 138px;

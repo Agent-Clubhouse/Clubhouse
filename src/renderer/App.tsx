@@ -134,20 +134,22 @@ export function App() {
       : tabLabel;
 
   const isWin = window.clubhouse.platform === 'win32';
-  const titleBarClass = `h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center${isWin ? ' win-overlay-padding' : ''}`;
+  const titleBarClass = `h-[38px] flex-shrink-0 drag-region bg-ctp-crust flex items-center justify-center${isWin ? ' win-overlay-padding' : ''}`;
 
   if (isHome) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden bg-ctp-crust text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr] gap-2 px-2 pb-2" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
-          <Dashboard />
+          <div className="floating-panel bg-ctp-base min-h-0">
+            <Dashboard />
+          </div>
         </div>
         <CommandPalette />
         <QuickAgentDialog />
@@ -161,16 +163,18 @@ export function App() {
   if (isAppPlugin) {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden bg-ctp-crust text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr] gap-2 px-2 pb-2" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
-          <PluginContentView pluginId={appPluginId} mode="app" />
+          <div className="floating-panel bg-ctp-base min-h-0">
+            <PluginContentView pluginId={appPluginId} mode="app" />
+          </div>
         </div>
         <CommandPalette />
         <QuickAgentDialog />
@@ -183,16 +187,18 @@ export function App() {
 
   if (isHelp) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden bg-ctp-crust text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
+        <div className="flex-1 min-h-0 grid grid-rows-[1fr] gap-2 px-2 pb-2" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
           <ProjectRail />
-          <HelpView />
+          <div className="floating-panel bg-ctp-base min-h-0">
+            <HelpView />
+          </div>
         </div>
         <CommandPalette />
         <QuickAgentDialog />
@@ -204,7 +210,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+    <div className="h-screen w-screen overflow-hidden bg-ctp-crust text-ctp-text flex flex-col">
       {/* Title bar */}
       <div className={titleBarClass}>
         <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
@@ -218,11 +224,11 @@ export function App() {
       {/* Git banner */}
       <GitBanner />
       {/* Main content grid */}
-      <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
+      <div className="flex-1 min-h-0 grid grid-rows-[1fr] gap-2 px-2 pb-2" style={{ gridTemplateColumns: 'var(--rail-width, 68px) 1fr' }}>
         <ProjectRail />
         <div className="flex flex-row min-h-0 min-w-0">
           {!explorerCollapsed && (
-            <div style={{ width: explorerWidth }} className="flex-shrink-0 min-h-0">
+            <div style={{ width: explorerWidth }} className="flex-shrink-0 min-h-0 floating-panel-pill bg-ctp-mantle">
               <ExplorerRail />
             </div>
           )}
@@ -233,7 +239,7 @@ export function App() {
             collapseDirection="left"
           />
           {!isFullWidth && !accessoryCollapsed && (
-            <div style={{ width: accessoryWidth }} className="flex-shrink-0 min-h-0">
+            <div style={{ width: accessoryWidth }} className="flex-shrink-0 min-h-0 floating-panel-pill bg-ctp-mantle">
               <AccessoryPanel />
             </div>
           )}
@@ -245,7 +251,7 @@ export function App() {
               collapseDirection="left"
             />
           )}
-          <div className="flex-1 min-w-0 min-h-0">
+          <div className="flex-1 min-w-0 min-h-0 floating-panel bg-ctp-base">
             <MainContentView />
           </div>
         </div>

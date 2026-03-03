@@ -50,19 +50,20 @@ export function ResizeDivider({ onResize, onToggleCollapse, collapsed, collapseD
   return (
     <div
       className="relative flex-shrink-0 group"
-      style={{ width: 5, cursor: 'col-resize' }}
+      style={{ width: 10, cursor: 'col-resize' }}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       data-testid="resize-divider"
     >
-      {/* Visible line */}
+      {/* Visible line — hidden by default, appears on hover */}
       <div
-        className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 transition-colors duration-100"
+        className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 transition-all duration-150"
         style={{
-          width: 1,
-          backgroundColor: hovered ? 'rgb(var(--ctp-accent) / 0.6)' : 'rgb(var(--ctp-surface2) / 1)',
+          width: hovered ? 2 : 0,
+          backgroundColor: hovered ? 'rgb(var(--ctp-accent) / 0.4)' : 'transparent',
+          borderRadius: 1,
         }}
       />
       {/* Collapse chevron button */}
@@ -71,7 +72,7 @@ export function ResizeDivider({ onResize, onToggleCollapse, collapsed, collapseD
           className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10
             w-4 h-4 rounded-full bg-ctp-mantle border border-surface-2
             flex items-center justify-center text-[8px] text-ctp-subtext0
-            hover:bg-surface-1 hover:text-ctp-text transition-colors"
+            hover:bg-surface-1 hover:text-ctp-text transition-colors shadow-sm"
           onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
           data-testid="collapse-button"
         >
