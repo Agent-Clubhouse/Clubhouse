@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { marked } from 'marked';
 import { useSafeMarkdownLinks } from '../../../utils/safe-markdown-links';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import hljs from 'highlight.js/lib/core';
