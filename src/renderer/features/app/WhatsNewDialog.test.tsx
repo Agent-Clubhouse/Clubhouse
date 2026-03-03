@@ -147,6 +147,25 @@ describe('WhatsNewDialog', () => {
     expect(state.showWhatsNew).toBe(false);
   });
 
+  it('sanitizes XSS payloads in release notes', () => {
+    useUpdateStore.setState({
+      showWhatsNew: true,
+      whatsNew: {
+        version: '0.27.0',
+        releaseNotes:
+          '## Notes\n\n<img src=x onerror="alert(1)"><script>alert(2)</script>',
+      },
+    });
+
+    render(<WhatsNewDialog />);
+
+    const content = screen.getByTestId('whats-new-dialog');
+    const html = content.innerHTML;
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('onerror');
+    expect(html).toContain('Notes');
+  });
+
   it('clicking inside the dialog does not dismiss', () => {
     useUpdateStore.setState({
       showWhatsNew: true,
