@@ -305,4 +305,29 @@ describe('PluginListSettings', () => {
       expect(screen.getByText(/Update failed: Module syntax error/)).toBeInTheDocument();
     });
   });
+
+  describe('permission approval UI', () => {
+    it('shows pending-approval badge and approve/reject buttons', () => {
+      usePluginStore.setState({
+        plugins: {
+          'pending-plug': {
+            manifest: { id: 'pending-plug', name: 'Pending Plugin', version: '2.0.0', engine: { api: 0.5 }, scope: 'app', permissions: ['storage', 'process'] },
+            status: 'pending-approval' as const,
+            source: 'community',
+            pluginPath: '/plugins/pending-plug',
+            pendingPermissions: ['process'] as any,
+          },
+        },
+        appEnabled: ['pending-plug'],
+        externalPluginsEnabled: true,
+      } as any);
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('pending-badge-pending-plug')).toBeInTheDocument();
+      expect(screen.getByText('New permissions')).toBeInTheDocument();
+      expect(screen.getByTestId('pending-approval-pending-plug')).toBeInTheDocument();
+      expect(screen.getByTestId('approve-btn-pending-plug')).toBeInTheDocument();
+      expect(screen.getByTestId('reject-btn-pending-plug')).toBeInTheDocument();
+      expect(screen.getByText('process')).toBeInTheDocument();
+    });
+  });
 });

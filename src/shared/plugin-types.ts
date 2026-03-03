@@ -338,7 +338,8 @@ export type PluginStatus =
   | 'deactivated'
   | 'disabled'
   | 'errored'
-  | 'incompatible';
+  | 'incompatible'
+  | 'pending-approval';
 
 export type PluginSource = 'builtin' | 'community' | 'marketplace';
 
@@ -348,6 +349,8 @@ export interface PluginRegistryEntry {
   error?: string;
   source: PluginSource;
   pluginPath: string;
+  /** New permissions added by an update that require user approval before re-activation. */
+  pendingPermissions?: PluginPermission[];
 }
 
 // ── Plugin context (per-activation) ────────────────────────────────────

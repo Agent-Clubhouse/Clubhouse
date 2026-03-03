@@ -48,6 +48,7 @@ interface PluginState {
   removePlugin: (pluginId: string) => void;
   recordPermissionViolation: (violation: PermissionViolation) => void;
   clearPermissionViolation: (pluginId: string) => void;
+  setPendingPermissions: (pluginId: string, permissions: PluginPermission[] | undefined) => void;
 }
 
 export const usePluginStore = create<PluginState>((set) => ({
@@ -195,4 +196,16 @@ export const usePluginStore = create<PluginState>((set) => ({
     set((s) => ({
       permissionViolations: s.permissionViolations.filter((v) => v.pluginId !== pluginId),
     })),
+
+  setPendingPermissions: (pluginId, permissions) =>
+    set((s) => {
+      const entry = s.plugins[pluginId];
+      if (!entry) return s;
+      return {
+        plugins: {
+          ...s.plugins,
+          [pluginId]: { ...entry, pendingPermissions: permissions },
+        },
+      };
+    }),
 }));

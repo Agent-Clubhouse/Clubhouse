@@ -3,7 +3,7 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
-import { activatePlugin, deactivatePlugin, discoverNewPlugins } from '../../plugins/plugin-loader';
+import { activatePlugin, deactivatePlugin, discoverNewPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
@@ -139,10 +139,11 @@ function PluginRow({
 }) {
   const isIncompatible = entry.status === 'incompatible';
   const isErrored = entry.status === 'errored';
+  const isPendingApproval = entry.status === 'pending-approval';
   const isUpdating = !!updatePhase;
 
   return (
-    <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-ctp-mantle border border-surface-0">
+    <div className={`flex items-center justify-between py-3 px-4 rounded-lg bg-ctp-mantle border ${isPendingApproval ? 'border-ctp-peach/40' : 'border-surface-0'}`}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
@@ -155,6 +156,11 @@ function PluginRow({
           )}
           {isErrored && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
+          )}
+          {isPendingApproval && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
+              New permissions
+            </span>
           )}
           {updateVersion && !isUpdating && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
@@ -189,6 +195,46 @@ function PluginRow({
             </div>
           );
         })()}
+        {isPendingApproval && entry.pendingPermissions && (
+          <div className="mt-2 p-2 rounded bg-ctp-peach/5 border border-ctp-peach/20" data-testid={`pending-approval-${entry.manifest.id}`}>
+            <p className="text-xs text-ctp-peach font-medium mb-1">
+              This update requires new permissions:
+            </p>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {entry.pendingPermissions.map((perm) => {
+                const risk = PERMISSION_RISK_LEVELS[perm];
+                return (
+                  <span
+                    key={perm}
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                      risk === 'dangerous'
+                        ? 'bg-red-500/20 text-red-400'
+                        : 'bg-yellow-500/20 text-yellow-400'
+                    }`}
+                  >
+                    {perm}
+                  </span>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => approvePluginPermissions(entry.manifest.id)}
+                className="text-[11px] px-2 py-1 rounded bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer"
+                data-testid={`approve-btn-${entry.manifest.id}`}
+              >
+                Approve & Activate
+              </button>
+              <button
+                onClick={() => rejectPluginPermissions(entry.manifest.id)}
+                className="text-[11px] px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 cursor-pointer"
+                data-testid={`reject-btn-${entry.manifest.id}`}
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2 ml-3">
         {onUpdate && updateVersion && !isUpdating && (
