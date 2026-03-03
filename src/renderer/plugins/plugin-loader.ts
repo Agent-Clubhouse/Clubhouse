@@ -451,7 +451,8 @@ export function getActiveContext(pluginId: string, projectId?: string): PluginCo
  * Hot-reload a community plugin after its files have been updated on disk.
  * This tears down the running plugin instance (all contexts), re-reads the
  * manifest, clears the cached module, and re-activates the plugin in all
- * scopes where it was previously active.
+ * scopes where it was enabled — preserving app/project enabled state and
+ * plugin settings across the reload.
  *
  * Built-in plugins cannot be hot-reloaded.
  */
@@ -471,32 +472,46 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
 
   rendererLog('core:plugins', 'info', `Hot-reloading plugin: ${pluginId}`);
 
-  // 1. Collect all active contexts for this plugin so we can re-activate them
-  const contextsToRestore: Array<{ projectId?: string; projectPath?: string }> = [];
-  for (const [key, ctx] of activeContexts.entries()) {
-    if (key === pluginId || key.startsWith(`${pluginId}:`)) {
-      contextsToRestore.push({
-        projectId: ctx.projectId,
-        projectPath: ctx.projectPath,
-      });
+  // 1. Snapshot the full enabled state BEFORE deactivation so we can restore
+  //    all scopes — not just the ones that happened to be active in memory.
+  const wasAppEnabled = store.appEnabled.includes(pluginId);
+  const enabledProjectIds: Array<{ projectId: string; projectPath?: string }> = [];
+  for (const [projectId, enabledIds] of Object.entries(store.projectEnabled)) {
+    if (enabledIds.includes(pluginId)) {
+      // Try to get the project path from the active context if available
+      const ctxKey = `${pluginId}:${projectId}`;
+      const ctx = activeContexts.get(ctxKey);
+      enabledProjectIds.push({ projectId, projectPath: ctx?.projectPath });
     }
   }
 
-  // 2. Deactivate all contexts for this plugin
-  for (const ctx of contextsToRestore) {
-    await deactivatePlugin(pluginId, ctx.projectId);
+  // 2. Deactivate all active contexts for this plugin
+  const activeKeys = [...activeContexts.keys()].filter(
+    (key) => key === pluginId || key.startsWith(`${pluginId}:`)
+  );
+  for (const key of activeKeys) {
+    const ctx = activeContexts.get(key);
+    await deactivatePlugin(pluginId, ctx?.projectId);
   }
 
-  // If the plugin had no active contexts, ensure full deactivation and module cleanup
-  if (contextsToRestore.length === 0) {
+  // If the plugin had no active contexts, ensure module cleanup
+  if (activeKeys.length === 0) {
     store.removePluginModule(pluginId);
   }
 
-  // 3. Re-read manifest from disk
-  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
-  const discovered = communityPlugins.find(
-    (p: { pluginPath: string }) => p.pluginPath === entry.pluginPath
-  );
+  // 3. Re-read manifest from disk (with retry for in-flight file writes)
+  let discovered: { manifest: unknown; pluginPath: string; fromMarketplace: boolean } | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+    discovered = communityPlugins.find(
+      (p: { pluginPath: string }) => p.pluginPath === entry.pluginPath
+    );
+    if (discovered) break;
+    // Brief pause before retry in case files are still being written
+    if (attempt === 0) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
 
   if (!discovered) {
     rendererLog('core:plugins', 'error', `Plugin ${pluginId} no longer found at ${entry.pluginPath}`);
@@ -516,33 +531,35 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
   // 4. Re-register with updated manifest (preserve original source)
   store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
 
-  // 5. Re-activate in all contexts where it was previously active.
-  //    activatePlugin catches its own errors internally and sets status to
-  //    'errored', so we check the plugin status after each attempt rather
-  //    than using try/catch.  We continue through all contexts so that a
-  //    failure in one doesn't prevent the others from being restored.
+  // 5. Re-activate in all enabled scopes. We use the snapshotted enabled
+  //    state rather than just activeContexts, so project-scoped contexts
+  //    that were enabled but not yet activated also get restored.
   const activationErrors: string[] = [];
-  for (const ctx of contextsToRestore) {
-    await activatePlugin(pluginId, ctx.projectId, ctx.projectPath);
+
+  // Helper to attempt activation and track errors
+  const tryActivate = async (projectId?: string, projectPath?: string) => {
+    await activatePlugin(pluginId, projectId, projectPath);
     const postEntry = usePluginStore.getState().plugins[pluginId];
     if (postEntry?.status === 'errored') {
-      const label = ctx.projectId ? `project ${ctx.projectId}` : 'app';
+      const label = projectId ? `project ${projectId}` : 'app';
       activationErrors.push(`${label}: ${postEntry.error || 'unknown error'}`);
-      // Reset status to 'registered' so the next context attempt isn't skipped
-      // (activatePlugin skips plugins with 'errored' status).
+      // Reset status so subsequent activations aren't skipped
       usePluginStore.getState().setPluginStatus(pluginId, 'registered');
     }
+  };
+
+  // Re-activate app-level context if it was enabled
+  const updatedManifest = validation.manifest;
+  if (wasAppEnabled && (updatedManifest.scope === 'app' || updatedManifest.scope === 'dual')) {
+    await tryActivate();
   }
 
-  // If the plugin had no project contexts but was app-enabled, re-activate at app level
-  if (contextsToRestore.length === 0 && store.appEnabled.includes(pluginId)) {
-    const updatedEntry = usePluginStore.getState().plugins[pluginId];
-    if (updatedEntry && (updatedEntry.manifest.scope === 'app' || updatedEntry.manifest.scope === 'dual')) {
-      await activatePlugin(pluginId);
-      const postEntry = usePluginStore.getState().plugins[pluginId];
-      if (postEntry?.status === 'errored') {
-        activationErrors.push(`app: ${postEntry.error || 'unknown error'}`);
-      }
+  // Re-activate project-level contexts for all projects where the plugin was enabled
+  if (updatedManifest.scope === 'project' || updatedManifest.scope === 'dual') {
+    for (const { projectId, projectPath } of enabledProjectIds) {
+      // Only activate if still app-enabled (app-first gate)
+      if (!wasAppEnabled) continue;
+      await tryActivate(projectId, projectPath);
     }
   }
 

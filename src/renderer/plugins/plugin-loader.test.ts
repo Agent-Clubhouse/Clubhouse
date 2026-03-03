@@ -1112,6 +1112,9 @@ describe('plugin-loader', () => {
 
       const manifest = makeManifest({ id: 'multi-ctx', scope: 'project' });
       usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/multi-ctx', 'registered');
+      usePluginStore.getState().enableApp('multi-ctx');
+      usePluginStore.getState().enableForProject('proj-1', 'multi-ctx');
+      usePluginStore.getState().enableForProject('proj-2', 'multi-ctx');
 
       // Activate in two projects
       await activatePlugin('multi-ctx', 'proj-1', '/p1');
@@ -1200,6 +1203,107 @@ describe('plugin-loader', () => {
 
       expect(getActiveContext('app-reactivate')).toBeDefined();
       expect(usePluginStore.getState().plugins['app-reactivate'].status).toBe('activated');
+    });
+
+    it('restores project-enabled contexts from store state, not just active contexts', async () => {
+      const mod: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // Set up a dual-scoped plugin enabled at app and project level
+      const manifest = makeManifest({ id: 'dual-reload', scope: 'dual' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/dual-reload', 'registered');
+      usePluginStore.getState().enableApp('dual-reload');
+      usePluginStore.getState().enableForProject('proj-1', 'dual-reload');
+
+      // Activate at both levels
+      await activatePlugin('dual-reload');
+      await activatePlugin('dual-reload', 'proj-1', '/path/to/proj-1');
+      expect(getActiveContext('dual-reload')).toBeDefined();
+      expect(getActiveContext('dual-reload', 'proj-1')).toBeDefined();
+
+      // Mock re-discovery
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'dual-reload', scope: 'dual', version: '2.0.0' }), pluginPath: '/plugins/dual-reload', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('dual-reload');
+
+      // Both app and project contexts should be restored
+      expect(getActiveContext('dual-reload')).toBeDefined();
+      expect(getActiveContext('dual-reload', 'proj-1')).toBeDefined();
+      expect(usePluginStore.getState().plugins['dual-reload'].manifest.version).toBe('2.0.0');
+    });
+
+    it('preserves plugin settings across hot-reload', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'settings-persist', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/settings-persist', 'registered');
+      usePluginStore.getState().enableApp('settings-persist');
+      usePluginStore.getState().setPluginSetting('app', 'settings-persist', 'theme', 'dark');
+
+      await activatePlugin('settings-persist');
+
+      // Mock re-discovery
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'settings-persist', scope: 'app', version: '2.0.0' }), pluginPath: '/plugins/settings-persist', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('settings-persist');
+
+      // Settings should still be in the store
+      const settings = usePluginStore.getState().pluginSettings['app:settings-persist'];
+      expect(settings).toEqual({ theme: 'dark' });
+    });
+
+    it('retries discovery when plugin not found on first attempt', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'retry-discover', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/retry-discover', 'registered');
+      usePluginStore.getState().enableApp('retry-discover');
+      await activatePlugin('retry-discover');
+
+      // First call returns empty (files still being written), second succeeds
+      mockPlugin.discoverCommunity
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          { manifest: makeManifest({ id: 'retry-discover', scope: 'app', version: '2.0.0' }), pluginPath: '/plugins/retry-discover', fromMarketplace: false },
+        ]);
+
+      await hotReloadPlugin('retry-discover');
+
+      // Should have retried and succeeded
+      expect(mockPlugin.discoverCommunity).toHaveBeenCalledTimes(2);
+      expect(getActiveContext('retry-discover')).toBeDefined();
+      expect(usePluginStore.getState().plugins['retry-discover'].manifest.version).toBe('2.0.0');
+    });
+
+    it('preserves app-enabled and project-enabled lists across hot-reload', async () => {
+      const mod: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'enabled-persist', scope: 'dual' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/enabled-persist', 'registered');
+      usePluginStore.getState().enableApp('enabled-persist');
+      usePluginStore.getState().enableForProject('proj-a', 'enabled-persist');
+      usePluginStore.getState().enableForProject('proj-b', 'enabled-persist');
+
+      await activatePlugin('enabled-persist');
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'enabled-persist', scope: 'dual', version: '3.0.0' }), pluginPath: '/plugins/enabled-persist', fromMarketplace: false },
+      ]);
+
+      await hotReloadPlugin('enabled-persist');
+
+      // Enabled lists should be preserved
+      const store = usePluginStore.getState();
+      expect(store.appEnabled).toContain('enabled-persist');
+      expect(store.projectEnabled['proj-a']).toContain('enabled-persist');
+      expect(store.projectEnabled['proj-b']).toContain('enabled-persist');
     });
   });
 });

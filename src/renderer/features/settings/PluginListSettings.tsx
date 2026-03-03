@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, discoverNewPlugins } from '../../plugins/plugin-loader';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
@@ -106,23 +107,39 @@ function SourceBadge({ entry }: { entry: PluginRegistryEntry }) {
   return null;
 }
 
+/** Phase label for inline update progress. */
+const UPDATE_PHASE_LABELS: Record<string, string> = {
+  downloading: 'Downloading...',
+  installing: 'Installing...',
+  reloading: 'Reloading...',
+};
+
 function PluginRow({
   entry,
   enabled,
   onToggle,
   onOpenSettings,
   onUninstall,
+  onUpdate,
   hasSettings,
+  updateVersion,
+  updatePhase,
+  updateError,
 }: {
   entry: PluginRegistryEntry;
   enabled: boolean;
   onToggle: () => void;
   onOpenSettings: () => void;
   onUninstall?: () => void;
+  onUpdate?: () => void;
   hasSettings: boolean;
+  updateVersion?: string;
+  updatePhase?: string;
+  updateError?: string;
 }) {
   const isIncompatible = entry.status === 'incompatible';
   const isErrored = entry.status === 'errored';
+  const isUpdating = !!updatePhase;
 
   return (
     <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-ctp-mantle border border-surface-0">
@@ -139,9 +156,22 @@ function PluginRow({
           {isErrored && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
           )}
+          {updateVersion && !isUpdating && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
+              v{updateVersion} available
+            </span>
+          )}
+          {isUpdating && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
+              {UPDATE_PHASE_LABELS[updatePhase] || 'Updating...'}
+            </span>
+          )}
         </div>
         {entry.manifest.description && (
           <p className="text-xs text-ctp-subtext0 mt-0.5 truncate">{entry.manifest.description}</p>
+        )}
+        {updateError && (
+          <p className="text-xs text-ctp-peach mt-0.5">Update failed: {updateError}</p>
         )}
         {entry.error && (() => {
           const newlineIdx = entry.error.indexOf('\n');
@@ -161,6 +191,16 @@ function PluginRow({
         })()}
       </div>
       <div className="flex items-center gap-2 ml-3">
+        {onUpdate && updateVersion && !isUpdating && (
+          <button
+            onClick={onUpdate}
+            className="text-[11px] px-2 py-1 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30 cursor-pointer"
+            title={`Update to v${updateVersion}`}
+            data-testid={`update-btn-${entry.manifest.id}`}
+          >
+            Update
+          </button>
+        )}
         {enabled && hasSettings && (
           <button
             onClick={onOpenSettings}
@@ -407,6 +447,16 @@ export function PluginListSettings() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
 
+  // Plugin update state
+  const updates = usePluginUpdateStore((s) => s.updates);
+  const updating = usePluginUpdateStore((s) => s.updating);
+  const updateErrors = usePluginUpdateStore((s) => s.updateErrors);
+  const checking = usePluginUpdateStore((s) => s.checking);
+  const lastCheck = usePluginUpdateStore((s) => s.lastCheck);
+  const checkForUpdates = usePluginUpdateStore((s) => s.checkForUpdates);
+  const updatePlugin = usePluginUpdateStore((s) => s.updatePlugin);
+  const updateAll = usePluginUpdateStore((s) => s.updateAll);
+
   const [restartHint, setRestartHint] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -568,19 +618,30 @@ export function PluginListSettings() {
     return !!(entry.manifest.settingsPanel || (entry.manifest.contributes?.settings && entry.manifest.contributes.settings.length > 0));
   };
 
+  const getUpdateInfo = (pluginId: string) => updates.find((u) => u.pluginId === pluginId);
+
   const renderPluginList = (entries: PluginRegistryEntry[], showUninstall: boolean) => (
     <div className="space-y-2">
-      {entries.map((entry) => (
-        <PluginRow
-          key={entry.manifest.id}
-          entry={entry}
-          enabled={isEnabled(entry.manifest.id)}
-          onToggle={() => handleToggle(entry.manifest.id)}
-          onOpenSettings={() => openPluginSettings(entry.manifest.id)}
-          onUninstall={showUninstall ? () => handleUninstall(entry.manifest.id) : undefined}
-          hasSettings={hasSettings(entry)}
-        />
-      ))}
+      {entries.map((entry) => {
+        const updateInfo = getUpdateInfo(entry.manifest.id);
+        const phase = updating[entry.manifest.id];
+        const error = updateErrors[entry.manifest.id];
+        return (
+          <PluginRow
+            key={entry.manifest.id}
+            entry={entry}
+            enabled={isEnabled(entry.manifest.id)}
+            onToggle={() => handleToggle(entry.manifest.id)}
+            onOpenSettings={() => openPluginSettings(entry.manifest.id)}
+            onUninstall={showUninstall ? () => handleUninstall(entry.manifest.id) : undefined}
+            onUpdate={updateInfo ? () => updatePlugin(entry.manifest.id) : undefined}
+            hasSettings={hasSettings(entry)}
+            updateVersion={updateInfo?.latestVersion}
+            updatePhase={phase}
+            updateError={error}
+          />
+        );
+      })}
     </div>
   );
 
@@ -665,7 +726,25 @@ export function PluginListSettings() {
               {restartHint && (
                 <p className="text-xs text-ctp-peach mb-3">Restart Clubhouse for this change to take full effect.</p>
               )}
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <button
+                  onClick={checkForUpdates}
+                  disabled={checking}
+                  className="text-[11px] px-2 py-1 rounded border border-ctp-success/30 text-ctp-success hover:bg-ctp-success/10 cursor-pointer disabled:opacity-50"
+                  data-testid="check-updates-button"
+                >
+                  {checking ? 'Checking...' : 'Check for Updates'}
+                </button>
+                {updates.length > 1 && (
+                  <button
+                    onClick={updateAll}
+                    disabled={Object.keys(updating).length > 0}
+                    className="text-[11px] px-2 py-1 rounded border border-ctp-success/30 text-ctp-success hover:bg-ctp-success/10 cursor-pointer disabled:opacity-50"
+                    data-testid="update-all-button"
+                  >
+                    Update All ({updates.length})
+                  </button>
+                )}
                 <button
                   onClick={handleScanNewPlugins}
                   disabled={scanning}
@@ -683,6 +762,11 @@ export function PluginListSettings() {
                   </button>
                 )}
               </div>
+              {lastCheck && (
+                <p className="text-[10px] text-ctp-subtext0/70 mb-2" data-testid="last-check-time">
+                  Last checked: {new Date(lastCheck).toLocaleString()}
+                </p>
+              )}
               {scanResult && (
                 <p className="text-xs text-ctp-subtext0 mb-3">{scanResult}</p>
               )}

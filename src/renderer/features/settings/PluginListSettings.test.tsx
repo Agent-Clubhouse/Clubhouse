@@ -4,6 +4,7 @@ import { PluginListSettings } from './PluginListSettings';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 
 // Mock plugin-loader to avoid side effects
 const mockDiscoverNewPlugins = vi.fn(async () => [] as string[]);
@@ -55,6 +56,17 @@ beforeEach(() => {
     activeProjectId: null,
     projects: [],
   } as any);
+
+  usePluginUpdateStore.setState({
+    updates: [],
+    incompatibleUpdates: [],
+    checking: false,
+    lastCheck: null,
+    updating: {},
+    error: null,
+    updateErrors: {},
+    dismissed: false,
+  });
 });
 
 describe('PluginListSettings', () => {
@@ -174,5 +186,123 @@ describe('PluginListSettings', () => {
     fireEvent.click(screen.getByTestId('scan-plugins-button'));
 
     await screen.findByText('No new plugins found.');
+  });
+
+  describe('check for updates UI', () => {
+    it('renders "Check for Updates" button in app context with external plugins enabled', () => {
+      usePluginStore.setState({
+        externalPluginsEnabled: true,
+      } as any);
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('check-updates-button')).toBeInTheDocument();
+      expect(screen.getByText('Check for Updates')).toBeInTheDocument();
+    });
+
+    it('shows "Checking..." when check is in progress', () => {
+      usePluginStore.setState({
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({ checking: true });
+      render(<PluginListSettings />);
+      expect(screen.getByText('Checking...')).toBeInTheDocument();
+    });
+
+    it('shows last check time when available', () => {
+      usePluginStore.setState({
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({ lastCheck: '2026-03-01T12:00:00Z' });
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('last-check-time')).toBeInTheDocument();
+    });
+
+    it('shows "Update All" button when multiple updates available', () => {
+      usePluginStore.setState({
+        plugins: {
+          'plug-a': {
+            manifest: { id: 'plug-a', name: 'Plugin A', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            status: 'activated', source: 'community', pluginPath: '/plugins/plug-a',
+          },
+          'plug-b': {
+            manifest: { id: 'plug-b', name: 'Plugin B', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            status: 'activated', source: 'community', pluginPath: '/plugins/plug-b',
+          },
+        },
+        appEnabled: ['plug-a', 'plug-b'],
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({
+        updates: [
+          { pluginId: 'plug-a', pluginName: 'Plugin A', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+          { pluginId: 'plug-b', pluginName: 'Plugin B', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+        ],
+      });
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('update-all-button')).toBeInTheDocument();
+    });
+
+    it('shows per-plugin update badge and button when update available', () => {
+      usePluginStore.setState({
+        plugins: {
+          'updatable': {
+            manifest: { id: 'updatable', name: 'Updatable Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            status: 'activated', source: 'marketplace', pluginPath: '/plugins/updatable',
+          },
+        },
+        appEnabled: ['updatable'],
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({
+        updates: [
+          { pluginId: 'updatable', pluginName: 'Updatable Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+        ],
+      });
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('update-badge-updatable')).toBeInTheDocument();
+      expect(screen.getByTestId('update-btn-updatable')).toBeInTheDocument();
+      expect(screen.getByText('v2.0.0 available')).toBeInTheDocument();
+    });
+
+    it('shows update phase badge when plugin is being updated', () => {
+      usePluginStore.setState({
+        plugins: {
+          'updating-plug': {
+            manifest: { id: 'updating-plug', name: 'Updating Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            status: 'activated', source: 'community', pluginPath: '/plugins/updating-plug',
+          },
+        },
+        appEnabled: ['updating-plug'],
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({
+        updates: [
+          { pluginId: 'updating-plug', pluginName: 'Updating Plugin', currentVersion: '1.0.0', latestVersion: '2.0.0', assetUrl: '', sha256: '', size: 0, api: 0.5 },
+        ],
+        updating: { 'updating-plug': 'downloading' },
+      });
+      render(<PluginListSettings />);
+      expect(screen.getByTestId('update-phase-updating-plug')).toBeInTheDocument();
+      expect(screen.getByText('Downloading...')).toBeInTheDocument();
+      // Update button should be hidden during update
+      expect(screen.queryByTestId('update-btn-updating-plug')).not.toBeInTheDocument();
+    });
+
+    it('shows update error inline on the plugin row', () => {
+      usePluginStore.setState({
+        plugins: {
+          'error-plug': {
+            manifest: { id: 'error-plug', name: 'Error Plugin', version: '1.0.0', engine: { api: 0.5 }, scope: 'app' },
+            status: 'activated', source: 'community', pluginPath: '/plugins/error-plug',
+          },
+        },
+        appEnabled: ['error-plug'],
+        externalPluginsEnabled: true,
+      } as any);
+      usePluginUpdateStore.setState({
+        updateErrors: { 'error-plug': 'Module syntax error' },
+      });
+      render(<PluginListSettings />);
+      expect(screen.getByText(/Update failed: Module syntax error/)).toBeInTheDocument();
+    });
   });
 });
