@@ -34,6 +34,10 @@ vi.mock('../services/safe-mode', () => ({
   clearMarker: vi.fn(),
 }));
 
+vi.mock('../services/plugin-manifest-registry', () => ({
+  registerManifest: vi.fn(),
+}));
+
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerPluginHandlers } from './plugin-handlers';
@@ -41,6 +45,7 @@ import * as pluginStorage from '../services/plugin-storage';
 import * as pluginDiscovery from '../services/plugin-discovery';
 import * as gitignoreManager from '../services/gitignore-manager';
 import * as safeMode from '../services/safe-mode';
+import * as pluginManifestRegistry from '../services/plugin-manifest-registry';
 
 describe('plugin-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -64,6 +69,7 @@ describe('plugin-handlers', () => {
       IPC.PLUGIN.GITIGNORE_ADD, IPC.PLUGIN.GITIGNORE_REMOVE, IPC.PLUGIN.GITIGNORE_CHECK,
       IPC.PLUGIN.STARTUP_MARKER_READ, IPC.PLUGIN.STARTUP_MARKER_WRITE, IPC.PLUGIN.STARTUP_MARKER_CLEAR,
       IPC.PLUGIN.MKDIR, IPC.PLUGIN.UNINSTALL,
+      IPC.PLUGIN.REGISTER_MANIFEST,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -192,5 +198,12 @@ describe('plugin-handlers', () => {
     const handler = handlers.get(IPC.PLUGIN.UNINSTALL)!;
     await handler({}, 'p1');
     expect(pluginDiscovery.uninstallPlugin).toHaveBeenCalledWith('p1');
+  });
+
+  it('REGISTER_MANIFEST delegates to pluginManifestRegistry.registerManifest', async () => {
+    const manifest = { id: 'p1', name: 'Test', version: '1.0.0', engine: { api: 0.5 }, scope: 'project' };
+    const handler = handlers.get(IPC.PLUGIN.REGISTER_MANIFEST)!;
+    await handler({}, 'p1', manifest);
+    expect(pluginManifestRegistry.registerManifest).toHaveBeenCalledWith('p1', manifest);
   });
 });
