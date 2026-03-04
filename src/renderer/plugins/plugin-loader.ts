@@ -1,4 +1,5 @@
-import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
+import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration, PluginPermission } from '../../shared/plugin-types';
+import { PERMISSION_RISK_LEVELS } from '../../shared/plugin-types';
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
@@ -175,7 +176,7 @@ export async function activatePlugin(
     return;
   }
 
-  if (entry.status === 'incompatible' || entry.status === 'errored' || entry.status === 'disabled') {
+  if (entry.status === 'incompatible' || entry.status === 'errored' || entry.status === 'disabled' || entry.status === 'pending-approval') {
     rendererLog('core:plugins', 'warn', `Skipping activation of ${pluginId}: ${entry.status}`, {
       meta: { pluginId, status: entry.status, error: entry.error },
     });
@@ -528,10 +529,31 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     return;
   }
 
-  // 4. Re-register with updated manifest (preserve original source)
+  // 4. Check for permission escalation — new elevated/dangerous permissions
+  //    require user approval before re-activation.
+  const oldPerms = new Set(entry.manifest.permissions || []);
+  const newPerms = validation.manifest.permissions || [];
+  const addedPerms = newPerms.filter((p) => !oldPerms.has(p));
+  const escalatedPerms = addedPerms.filter(
+    (p) => PERMISSION_RISK_LEVELS[p] === 'elevated' || PERMISSION_RISK_LEVELS[p] === 'dangerous'
+  );
+
+  if (escalatedPerms.length > 0) {
+    rendererLog('core:plugins', 'warn', `Plugin ${pluginId} update requires new permissions`, {
+      meta: { pluginId, newVersion: validation.manifest.version, addedPermissions: escalatedPerms },
+    });
+
+    // Register the updated manifest but set status to pending-approval
+    // so the plugin doesn't activate until the user approves.
+    store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'pending-approval');
+    store.setPendingPermissions(pluginId, escalatedPerms);
+    return;
+  }
+
+  // 5. Re-register with updated manifest (preserve original source)
   store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
 
-  // 5. Re-activate in all enabled scopes. We use the snapshotted enabled
+  // 6. Re-activate in all enabled scopes. We use the snapshotted enabled
   //    state rather than just activeContexts, so project-scoped contexts
   //    that were enabled but not yet activated also get restored.
   const activationErrors: string[] = [];
@@ -575,6 +597,56 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
   rendererLog('core:plugins', 'info', `Plugin ${pluginId} hot-reloaded successfully`, {
     meta: { newVersion: finalEntry?.manifest.version, status: finalEntry?.status },
   });
+}
+
+/**
+ * Approve pending permissions for a plugin that was updated with new
+ * elevated/dangerous permissions. This clears the pending-approval state
+ * and activates the plugin in all enabled scopes.
+ */
+export async function approvePluginPermissions(pluginId: string): Promise<void> {
+  const store = usePluginStore.getState();
+  const entry = store.plugins[pluginId];
+
+  if (!entry || entry.status !== 'pending-approval') {
+    rendererLog('core:plugins', 'warn', `Cannot approve permissions for ${pluginId}: not pending`);
+    return;
+  }
+
+  store.setPendingPermissions(pluginId, undefined);
+  store.setPluginStatus(pluginId, 'registered');
+
+  rendererLog('core:plugins', 'info', `Permissions approved for ${pluginId}, activating`);
+
+  // Activate in all enabled scopes
+  const wasAppEnabled = store.appEnabled.includes(pluginId);
+  if (wasAppEnabled && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {
+    await activatePlugin(pluginId);
+  }
+
+  if (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') {
+    for (const [projectId, enabledIds] of Object.entries(store.projectEnabled)) {
+      if (enabledIds.includes(pluginId) && wasAppEnabled) {
+        await activatePlugin(pluginId, projectId);
+      }
+    }
+  }
+}
+
+/**
+ * Reject pending permissions for a plugin that was updated with new
+ * elevated/dangerous permissions. This disables the plugin.
+ */
+export function rejectPluginPermissions(pluginId: string): void {
+  const store = usePluginStore.getState();
+  const entry = store.plugins[pluginId];
+
+  if (!entry || entry.status !== 'pending-approval') return;
+
+  store.setPendingPermissions(pluginId, undefined);
+  store.setPluginStatus(pluginId, 'disabled', 'New permissions were not approved');
+
+  rendererLog('core:plugins', 'info', `Permissions rejected for ${pluginId}, plugin disabled`);
 }
 
 /**

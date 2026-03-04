@@ -67,6 +67,8 @@ import {
   getActiveContext,
   discoverNewPlugins,
   hotReloadPlugin,
+  approvePluginPermissions,
+  rejectPluginPermissions,
   _resetActiveContexts,
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
@@ -1304,6 +1306,143 @@ describe('plugin-loader', () => {
       expect(store.appEnabled).toContain('enabled-persist');
       expect(store.projectEnabled['proj-a']).toContain('enabled-persist');
       expect(store.projectEnabled['proj-b']).toContain('enabled-persist');
+    });
+
+    it('blocks activation when update adds elevated permissions', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // Original plugin with only safe permissions
+      const manifest = makeManifest({ id: 'perm-escalate', scope: 'app', permissions: ['storage', 'commands'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/perm-escalate', 'registered');
+      usePluginStore.getState().enableApp('perm-escalate');
+      await activatePlugin('perm-escalate');
+
+      // Update adds 'process' (elevated) and 'terminal' (elevated)
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: makeManifest({
+            id: 'perm-escalate', scope: 'app', version: '2.0.0',
+            permissions: ['storage', 'commands', 'process', 'terminal'],
+            allowedCommands: ['node'],
+          }),
+          pluginPath: '/plugins/perm-escalate',
+          fromMarketplace: false,
+        },
+      ]);
+
+      await hotReloadPlugin('perm-escalate');
+
+      // Plugin should be in pending-approval state, NOT activated
+      const entry = usePluginStore.getState().plugins['perm-escalate'];
+      expect(entry.status).toBe('pending-approval');
+      expect(entry.pendingPermissions).toEqual(['process', 'terminal']);
+      expect(getActiveContext('perm-escalate')).toBeUndefined();
+    });
+
+    it('allows activation when update only adds safe permissions', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'safe-update', scope: 'app', permissions: ['storage'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/safe-update', 'registered');
+      usePluginStore.getState().enableApp('safe-update');
+      await activatePlugin('safe-update');
+
+      // Update adds only safe permissions
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: makeManifest({
+            id: 'safe-update', scope: 'app', version: '2.0.0',
+            permissions: ['storage', 'commands', 'events'],
+          }),
+          pluginPath: '/plugins/safe-update',
+          fromMarketplace: false,
+        },
+      ]);
+
+      await hotReloadPlugin('safe-update');
+
+      // Should proceed without blocking
+      const entry = usePluginStore.getState().plugins['safe-update'];
+      expect(entry.status).toBe('activated');
+      expect(entry.pendingPermissions).toBeUndefined();
+    });
+
+    it('blocks on dangerous permissions', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'danger-update', scope: 'app', permissions: ['agents'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/danger-update', 'registered');
+      usePluginStore.getState().enableApp('danger-update');
+      await activatePlugin('danger-update');
+
+      // Update adds 'agents.free-agent-mode' (dangerous)
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        {
+          manifest: makeManifest({
+            id: 'danger-update', scope: 'app', version: '2.0.0',
+            permissions: ['agents', 'agents.free-agent-mode'],
+          }),
+          pluginPath: '/plugins/danger-update',
+          fromMarketplace: false,
+        },
+      ]);
+
+      await hotReloadPlugin('danger-update');
+
+      const entry = usePluginStore.getState().plugins['danger-update'];
+      expect(entry.status).toBe('pending-approval');
+      expect(entry.pendingPermissions).toContain('agents.free-agent-mode');
+    });
+  });
+
+  // ── approvePluginPermissions / rejectPluginPermissions ─────────────
+
+  describe('approvePluginPermissions()', () => {
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    it('activates plugin after approval', async () => {
+      const mod: PluginModule = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      const manifest = makeManifest({ id: 'approve-me', scope: 'app', permissions: ['process'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/approve-me', 'pending-approval');
+      usePluginStore.getState().enableApp('approve-me');
+      usePluginStore.getState().setPendingPermissions('approve-me', ['process']);
+
+      await approvePluginPermissions('approve-me');
+
+      const entry = usePluginStore.getState().plugins['approve-me'];
+      expect(entry.status).toBe('activated');
+      expect(entry.pendingPermissions).toBeUndefined();
+      expect(getActiveContext('approve-me')).toBeDefined();
+    });
+
+    it('does nothing for non-pending plugin', async () => {
+      const manifest = makeManifest({ id: 'not-pending', scope: 'app' });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/not-pending', 'activated');
+
+      await approvePluginPermissions('not-pending');
+
+      // Status unchanged
+      expect(usePluginStore.getState().plugins['not-pending'].status).toBe('activated');
+    });
+  });
+
+  describe('rejectPluginPermissions()', () => {
+    it('disables plugin on rejection', () => {
+      const manifest = makeManifest({ id: 'reject-me', scope: 'app', permissions: ['process'] });
+      usePluginStore.getState().registerPlugin(manifest, 'community', '/plugins/reject-me', 'pending-approval');
+      usePluginStore.getState().setPendingPermissions('reject-me', ['process']);
+
+      rejectPluginPermissions('reject-me');
+
+      const entry = usePluginStore.getState().plugins['reject-me'];
+      expect(entry.status).toBe('disabled');
+      expect(entry.error).toContain('not approved');
+      expect(entry.pendingPermissions).toBeUndefined();
     });
   });
 });
