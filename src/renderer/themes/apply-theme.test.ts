@@ -147,21 +147,17 @@ describe('applyTheme', () => {
   });
 
   describe('font override (legacy)', () => {
-    it('adds theme-mono class and stores font when fontOverride is set', () => {
+    it('sets --theme-font-mono CSS variable when fontOverride is set', () => {
       const theme = makeTheme({ fontOverride: 'JetBrains Mono' });
       applyTheme(theme);
 
-      // Legacy fontOverride sets mono font but not theme-mono (needs both ui+mono for that)
-      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-mono');
       expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', 'JetBrains Mono');
     });
 
-    it('removes font classes and clears font when no fontOverride', () => {
+    it('removes theme-mono class and clears font when no fontOverride', () => {
       applyTheme(makeTheme());
 
       expect(mockClassList.remove).toHaveBeenCalledWith('theme-mono');
-      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-ui');
-      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-mono');
       expect(mockLocalStorage.has('clubhouse-theme-font')).toBe(false);
     });
 
@@ -177,18 +173,16 @@ describe('applyTheme', () => {
   });
 
   describe('fonts (v0.7)', () => {
-    it('sets --theme-font-ui and adds class when fonts.ui is set', () => {
+    it('sets --theme-font-ui CSS variable when fonts.ui is set', () => {
       applyTheme(makeTheme({ fonts: { ui: 'Inter, sans-serif' } }));
 
       expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-ui', 'Inter, sans-serif');
-      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-ui');
     });
 
-    it('sets --theme-font-mono and adds class when fonts.mono is set', () => {
+    it('sets --theme-font-mono CSS variable when fonts.mono is set', () => {
       applyTheme(makeTheme({ fonts: { mono: "'JetBrains Mono', monospace" } }));
 
       expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', "'JetBrains Mono', monospace");
-      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-mono');
     });
 
     it('adds theme-mono class when both ui and mono fonts are set', () => {
@@ -223,8 +217,14 @@ describe('applyTheme', () => {
 
       expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-ui');
       expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
-      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-ui');
-      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-mono');
+    });
+
+    it('caches font variables to localStorage', () => {
+      applyTheme(makeTheme({ fonts: { ui: 'Georgia, serif', mono: 'Fira Code' } }));
+
+      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
+      expect(cached['--theme-font-ui']).toBe('Georgia, serif');
+      expect(cached['--theme-font-mono']).toBe('Fira Code');
     });
   });
 

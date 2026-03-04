@@ -65,27 +65,30 @@
 
   body {
     background-color: rgb(var(--ctp-base));
+    background-image: var(--theme-gradient-bg, none);
     color: rgb(var(--ctp-text));
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--theme-font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
     -webkit-font-smoothing: antialiased;
   }
 
-  /* Theme font overrides (v0.7+) */
-  .theme-font-ui {
-    font-family: var(--theme-font-ui) !important;
+  /* Monospace elements use theme mono font with fallback */
+  pre, code, kbd, samp {
+    font-family: var(--theme-font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace);
   }
 
-  .theme-font-mono pre,
-  .theme-font-mono code,
-  .theme-font-mono .xterm,
-  .theme-font-mono .xterm * {
-    font-family: var(--theme-font-mono) !important;
-  }
-
-  /* Legacy full-override class (both ui + mono set) — backward compat with Terminal theme */
+  /* Full-mono override: theme sets both ui + mono, apply mono everywhere */
   .theme-mono,
   .theme-mono * {
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace !important;
+    font-family: var(--theme-font-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace) !important;
+  }
+
+  /* Theme gradient overlays for surface and accent elements */
+  .theme-gradient-surface {
+    background-image: var(--theme-gradient-surface, none);
+  }
+
+  .theme-gradient-accent {
+    background-image: var(--theme-gradient-accent, none);
   }
 
   /* Scrollbar styling — auto-hide: invisible by default, visible on hover */
@@ -401,7 +404,7 @@
   background-color: rgb(var(--ctp-surface0));
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
-  font-family: 'SF Mono', 'Fira Code', Menlo, monospace;
+  font-family: var(--theme-font-mono, 'SF Mono', 'Fira Code', Menlo, monospace);
   font-size: 0.8125rem;
 }
 

@@ -16,6 +16,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const monoFont = useThemeStore((s) => s.theme.fonts?.mono ?? s.theme.fontOverride);
   const clipboardCompat = useClipboardSettingsStore((s) => s.clipboardCompat);
   const loadClipboard = useClipboardSettingsStore((s) => s.loadSettings);
 
@@ -24,9 +25,10 @@ export function ShellTerminal({ sessionId, focused }: Props) {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const DEFAULT_MONO = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace';
     const term = new Terminal({
       theme: terminalColors,
-      fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
+      fontFamily: monoFont || DEFAULT_MONO,
       fontSize: 13,
       lineHeight: 1.3,
       cursorBlink: true,
@@ -136,6 +138,13 @@ export function ShellTerminal({ sessionId, focused }: Props) {
       terminalRef.current.options.theme = terminalColors;
     }
   }, [terminalColors]);
+
+  useEffect(() => {
+    if (terminalRef.current) {
+      const DEFAULT_MONO = '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace';
+      terminalRef.current.options.fontFamily = monoFont || DEFAULT_MONO;
+    }
+  }, [monoFont]);
 
   useEffect(() => {
     if (focused && terminalRef.current) {

@@ -62,29 +62,27 @@ export function applyTheme(theme: ThemeDefinition): void {
     cache[varName] = hex;
   }
 
-  // Font overrides — new `fonts` field takes precedence over legacy `fontOverride`
+  // Font overrides — new `fonts` field takes precedence over legacy `fontOverride`.
+  // CSS variables are consumed directly via var() fallbacks in index.css, so we only
+  // need to set/remove the variables (no class toggling for individual font overrides).
   const uiFont = theme.fonts?.ui;
   const monoFont = theme.fonts?.mono ?? theme.fontOverride;
 
   if (uiFont) {
     s.setProperty('--theme-font-ui', uiFont);
-    document.documentElement.classList.add('theme-font-ui');
     cache['--theme-font-ui'] = uiFont;
   } else {
     s.removeProperty('--theme-font-ui');
-    document.documentElement.classList.remove('theme-font-ui');
   }
 
   if (monoFont) {
     s.setProperty('--theme-font-mono', monoFont);
-    document.documentElement.classList.add('theme-font-mono');
     cache['--theme-font-mono'] = monoFont;
   } else {
     s.removeProperty('--theme-font-mono');
-    document.documentElement.classList.remove('theme-font-mono');
   }
 
-  // Legacy class — maintained for backward compat (both ui + mono = full override)
+  // Full-mono class: when both ui + mono are set, apply mono everywhere
   if (uiFont && monoFont) {
     document.documentElement.classList.add('theme-mono');
     localStorage.setItem('clubhouse-theme-font', monoFont);
