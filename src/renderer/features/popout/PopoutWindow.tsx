@@ -143,14 +143,14 @@ export function PopoutWindow() {
   const params = window.clubhouse.window?.getPopoutParams();
   if (!params) {
     return (
-      <div className="h-screen w-screen bg-ctp-base text-ctp-text flex items-center justify-center">
+      <div className="h-screen w-screen text-ctp-text flex items-center justify-center">
         <span className="text-ctp-subtext0 text-sm">Invalid pop-out configuration</span>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col" data-testid="popout-window">
+    <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col" data-testid="popout-window">
       {/* Title bar drag region */}
       <div className="h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center" data-testid="popout-title-bar">
         <span className="text-xs text-ctp-subtext0 select-none" data-testid="popout-title">

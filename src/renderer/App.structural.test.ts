@@ -299,7 +299,26 @@ describe('App.tsx – project switch handling', () => {
   });
 });
 
-// ─── 7. Import Verification ───────────────────────────────────────────────
+// ─── 7. Gradient Transparency ────────────────────────────────────────────
+
+describe('App.tsx – root wrapper must not occlude body gradient', () => {
+  const blocks = getJsxReturnBlocks();
+
+  it('should NOT use bg-ctp-base on root wrapper divs (body provides the background)', () => {
+    for (const { block, label } of blocks) {
+      // The first <div in each return block is the root wrapper
+      const firstDivMatch = block.match(/<div\s+className="([^"]+)"/);
+      expect(firstDivMatch, `${label}: could not find root wrapper div`).toBeTruthy();
+      const className = firstDivMatch![1];
+      expect(
+        className,
+        `${label} root wrapper has bg-ctp-base which occludes body gradient — remove it`,
+      ).not.toContain('bg-ctp-base');
+    }
+  });
+});
+
+// ─── 8. Import Verification ───────────────────────────────────────────────
 
 describe('App.tsx – required imports', () => {
   it('should import initApp and initAppEventBridge', () => {

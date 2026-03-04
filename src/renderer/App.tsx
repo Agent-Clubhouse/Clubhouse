@@ -138,7 +138,7 @@ export function App() {
 
   if (isHome) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
@@ -161,7 +161,7 @@ export function App() {
   if (isAppPlugin) {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
@@ -183,7 +183,7 @@ export function App() {
 
   if (isHelp) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
         <div className={titleBarClass}>
           <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
         </div>
@@ -204,7 +204,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+    <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
       {/* Title bar */}
       <div className={titleBarClass}>
         <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
