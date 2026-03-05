@@ -180,18 +180,30 @@ describe.skipIf(process.platform !== 'win32')('Windows update script execution (
     tmpDirs.length = 0;
   });
 
-  /** Create a temp dir with a mock installer batch file and script path. */
+  /**
+   * Create a temp dir with a mock installer .exe and script path.
+   *
+   * IMPORTANT: Mock installers must be real .exe files, not .cmd/.bat.
+   * Batch scripts that call another .cmd without `call` transfer control
+   * permanently (never return), causing the rest of the script to never
+   * execute.  In production, the installer is a Squirrel .exe.  We copy
+   * a small system executable (hostname.exe) as the mock to match this.
+   */
   async function createWinTestEnv() {
     const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-update-test-'));
     tmpDirs.push(tmpDir);
 
-    // Mock installer: a batch file that exits 0
-    const installerPath = path.join(tmpDir, 'mock-installer.cmd');
-    await fsp.writeFile(installerPath, '@echo off\r\nexit /b 0\r\n');
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
 
-    // Mock Update.exe: a batch file that exits 0
-    const updateExePath = path.join(tmpDir, 'Update.cmd');
-    await fsp.writeFile(updateExePath, '@echo off\r\nexit /b 0\r\n');
+    // Mock installer: copy hostname.exe — it prints the hostname, ignores
+    // extra args, and exits 0.  This mirrors production where the installer
+    // is a real .exe that returns control to the batch script.
+    const installerPath = path.join(tmpDir, 'mock-installer.exe');
+    await fsp.copyFile(path.join(systemRoot, 'System32', 'hostname.exe'), installerPath);
+
+    // Mock Update.exe: same approach
+    const updateExePath = path.join(tmpDir, 'Update.exe');
+    await fsp.copyFile(path.join(systemRoot, 'System32', 'hostname.exe'), updateExePath);
 
     const scriptPath = path.join(tmpDir, 'clubhouse-update.cmd');
 
@@ -258,8 +270,10 @@ describe.skipIf(process.platform !== 'win32')('Windows update script execution (
   it('log file reports non-zero exit code when installer fails', async () => {
     const env = await createWinTestEnv();
 
-    // Replace mock installer with one that exits non-zero
-    await fsp.writeFile(env.installerPath, '@echo off\r\nexit /b 1\r\n');
+    // Replace mock installer with where.exe — it returns non-zero when
+    // given `--silent` (not a valid search target), simulating a failed install
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+    await fsp.copyFile(path.join(systemRoot, 'System32', 'where.exe'), env.installerPath);
 
     const script = buildWindowsQuitUpdateScript(env.installerPath);
     await fsp.writeFile(env.scriptPath, script);
