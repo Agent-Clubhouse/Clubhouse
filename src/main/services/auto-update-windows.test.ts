@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript } from './auto-update-service';
+import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript, buildWindowsVbsLauncher } from './auto-update-service';
 
 describe('auto-update-service: Windows batch script builders', () => {
   const downloadPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-updates\\Clubhouse-0.26.0.exe';
@@ -128,6 +128,38 @@ describe('auto-update-service: Windows batch script builders', () => {
       const updateScript = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
       const quitScript = buildWindowsQuitUpdateScript(downloadPath);
       expect(quitScript.split('\r\n').length).toBe(updateScript.split('\r\n').length - 1);
+    });
+  });
+
+  describe('buildWindowsVbsLauncher', () => {
+    const cmdPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-update.cmd';
+
+    it('creates a WScript.Shell object', () => {
+      const vbs = buildWindowsVbsLauncher(cmdPath);
+      expect(vbs).toContain('CreateObject("WScript.Shell")');
+    });
+
+    it('runs cmd.exe with hidden window style (0)', () => {
+      const vbs = buildWindowsVbsLauncher(cmdPath);
+      // The second argument to WshShell.Run is the window style: 0 = hidden
+      expect(vbs).toContain(', 0, True');
+    });
+
+    it('invokes the batch script via cmd.exe /c', () => {
+      const vbs = buildWindowsVbsLauncher(cmdPath);
+      expect(vbs).toContain('cmd.exe /c');
+      expect(vbs).toContain(cmdPath);
+    });
+
+    it('self-deletes the VBS file after completion', () => {
+      const vbs = buildWindowsVbsLauncher(cmdPath);
+      expect(vbs).toContain('DeleteFile WScript.ScriptFullName');
+    });
+
+    it('uses CRLF line endings', () => {
+      const vbs = buildWindowsVbsLauncher(cmdPath);
+      const lines = vbs.split('\r\n');
+      expect(lines.length).toBe(3);
     });
   });
 });
