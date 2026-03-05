@@ -6,6 +6,7 @@ export function UpdateSettingsView() {
   const saveSettings = useUpdateStore((s) => s.saveSettings);
   const status = useUpdateStore((s) => s.status);
   const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
+  const openUpdateDownload = useUpdateStore((s) => s.openUpdateDownload);
 
   const stateLabel: Record<string, string> = {
     idle: 'Up to date',
@@ -14,6 +15,8 @@ export function UpdateSettingsView() {
     ready: 'Update ready',
     error: 'Error',
   };
+
+  const showManualDownload = status.artifactUrl && (status.state === 'ready' || status.state === 'error');
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -63,15 +66,27 @@ export function UpdateSettingsView() {
                 {status.state === 'error' && status.error && ` — ${status.error}`}
               </div>
             </div>
-            <button
-              onClick={checkForUpdates}
-              disabled={status.state === 'checking' || status.state === 'downloading'}
-              className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
-                transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
-                text-ctp-subtext1 hover:text-ctp-text"
-            >
-              {status.state === 'checking' ? 'Checking...' : 'Check now'}
-            </button>
+            <div className="flex items-center gap-2">
+              {showManualDownload && (
+                <button
+                  onClick={openUpdateDownload}
+                  className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                    transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
+                  data-testid="settings-manual-download-btn"
+                >
+                  Download manually
+                </button>
+              )}
+              <button
+                onClick={checkForUpdates}
+                disabled={status.state === 'checking' || status.state === 'downloading'}
+                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                  transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+                  text-ctp-subtext1 hover:text-ctp-text"
+              >
+                {status.state === 'checking' ? 'Checking...' : 'Check now'}
+              </button>
+            </div>
           </div>
         </div>
 

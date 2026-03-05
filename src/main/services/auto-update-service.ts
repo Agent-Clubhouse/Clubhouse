@@ -48,6 +48,8 @@ let status: UpdateStatus = {
   downloadProgress: 0,
   error: null,
   downloadPath: null,
+  artifactUrl: null,
+  applyAttempted: false,
 };
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
@@ -373,6 +375,11 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   }
 }
 
+/** Exported for manual download fallback — returns the artifact URL if available. */
+export function getArtifactUrl(): string | null {
+  return status.artifactUrl;
+}
+
 async function downloadUpdate(
   version: string,
   releaseNotes: string | null,
@@ -392,7 +399,7 @@ async function downloadUpdate(
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
-        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
+        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -400,6 +407,7 @@ async function downloadUpdate(
           downloadProgress: 100,
           downloadPath: destPath,
           error: null,
+          artifactUrl: artifact.url,
         });
         return;
       }
@@ -417,6 +425,7 @@ async function downloadUpdate(
     releaseMessage,
     downloadProgress: 0,
     error: null,
+    artifactUrl: artifact.url,
   });
 
   try {
@@ -434,11 +443,12 @@ async function downloadUpdate(
     }
 
     appLog('update:download', 'info', 'Update verified and ready to install');
-    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
+    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
       error: null,
+      artifactUrl: artifact.url,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -457,6 +467,8 @@ export async function applyUpdate(): Promise<void> {
   }
 
   const downloadPath = status.downloadPath!;
+  const savedVersion = status.availableVersion;
+  const savedArtifactUrl = status.artifactUrl;
 
   // Persist release notes for the What's New dialog after restart
   if (status.availableVersion && status.releaseNotes) {
@@ -467,6 +479,13 @@ export async function applyUpdate(): Promise<void> {
   }
 
   clearPendingUpdateInfo();
+
+  // Record apply attempt so we can detect silent failures on next launch
+  writeApplyAttempt({
+    version: savedVersion!,
+    artifactUrl: savedArtifactUrl,
+    attemptedAt: new Date().toISOString(),
+  });
 
   appLog('update:apply', 'info', 'Applying update', {
     meta: { version: status.availableVersion, downloadPath },
@@ -479,6 +498,7 @@ export async function applyUpdate(): Promise<void> {
     downloadProgress: 0,
     downloadPath: null,
     error: null,
+    artifactUrl: null,
   });
 
   if (process.platform === 'darwin') {
@@ -526,7 +546,13 @@ export async function applyUpdate(): Promise<void> {
         return;
       }
     } catch (err) {
-      appLog('update:apply', 'error', `Failed to apply update: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
+      setState('error', {
+        error: `Update failed: ${msg}`,
+        availableVersion: savedVersion,
+        artifactUrl: savedArtifactUrl,
+      });
       throw err;
     }
   } else if (process.platform === 'win32') {
@@ -561,7 +587,13 @@ export async function applyUpdate(): Promise<void> {
         return;
       }
     } catch (err) {
-      appLog('update:apply', 'error', `Failed to apply Windows update: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      appLog('update:apply', 'error', `Failed to apply Windows update: ${msg}`);
+      setState('error', {
+        error: `Update failed: ${msg}`,
+        availableVersion: savedVersion,
+        artifactUrl: savedArtifactUrl,
+      });
       throw err;
     }
   }
@@ -591,6 +623,13 @@ export function applyUpdateOnQuit(): void {
   }
 
   clearPendingUpdateInfo();
+
+  // Record apply attempt so we can detect silent failures on next launch
+  writeApplyAttempt({
+    version: status.availableVersion!,
+    artifactUrl: status.artifactUrl,
+    attemptedAt: new Date().toISOString(),
+  });
 
   appLog('update:apply-on-quit', 'info', 'Applying update on quit (silent)', {
     meta: { version: status.availableVersion, downloadPath },
@@ -675,6 +714,7 @@ export function dismissUpdate(): void {
     downloadProgress: 0,
     downloadPath: null,
     error: null,
+    artifactUrl: null,
   });
 }
 
@@ -687,6 +727,7 @@ interface PendingUpdateInfo {
   downloadPath: string;
   releaseNotes: string | null;
   releaseMessage: string | null;
+  artifactUrl?: string | null;
 }
 
 function pendingUpdateInfoPath(): string {
@@ -713,6 +754,45 @@ export function readPendingUpdateInfo(): PendingUpdateInfo | null {
 export function clearPendingUpdateInfo(): void {
   try {
     fs.unlinkSync(pendingUpdateInfoPath());
+  } catch {
+    // File may not exist
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Apply attempt tracking (detect silent update failures across restarts)
+// ---------------------------------------------------------------------------
+
+interface ApplyAttempt {
+  version: string;
+  artifactUrl: string | null;
+  attemptedAt: string;
+}
+
+function applyAttemptPath(): string {
+  return path.join(app.getPath('userData'), 'update-apply-attempt.json');
+}
+
+export function writeApplyAttempt(attempt: ApplyAttempt): void {
+  try {
+    fs.writeFileSync(applyAttemptPath(), JSON.stringify(attempt), 'utf-8');
+  } catch {
+    // Non-critical
+  }
+}
+
+export function readApplyAttempt(): ApplyAttempt | null {
+  try {
+    const data = fs.readFileSync(applyAttemptPath(), 'utf-8');
+    return JSON.parse(data) as ApplyAttempt;
+  } catch {
+    return null;
+  }
+}
+
+export function clearApplyAttempt(): void {
+  try {
+    fs.unlinkSync(applyAttemptPath());
   } catch {
     // File may not exist
   }
@@ -847,11 +927,30 @@ export function startPeriodicChecks(): void {
     saveSettings({ ...settings, dismissedVersion: null });
   }
 
+  // Detect previous apply attempt that failed silently (app restarted but
+  // version didn't change).  If found, flag it so the UI shows manual download.
+  const attempt = readApplyAttempt();
+  const currentVersion = app.getVersion();
+  let previousAttemptFailed = false;
+
+  if (attempt) {
+    if (isNewerVersion(attempt.version, currentVersion)) {
+      // We tried to apply this version but we're still on the old one
+      appLog('update:apply-detect', 'warn', 'Previous update apply attempt did not succeed', {
+        meta: { attemptedVersion: attempt.version, currentVersion, attemptedAt: attempt.attemptedAt },
+      });
+      previousAttemptFailed = true;
+      // Keep the marker — it will be cleared when we successfully update
+    } else {
+      // Update succeeded (or we moved past that version) — clean up
+      clearApplyAttempt();
+    }
+  }
+
   // Restore ready state immediately if a pending update was downloaded in a
   // previous session and the file is still on disk.
   const pending = readPendingUpdateInfo();
   if (pending && fs.existsSync(pending.downloadPath)) {
-    const currentVersion = app.getVersion();
     if (isNewerVersion(pending.version, currentVersion)) {
       appLog('update:restore', 'info', 'Restoring pending update from previous session', {
         meta: { version: pending.version },
@@ -863,11 +962,22 @@ export function startPeriodicChecks(): void {
         downloadProgress: 100,
         downloadPath: pending.downloadPath,
         error: null,
+        artifactUrl: pending.artifactUrl || null,
+        applyAttempted: previousAttemptFailed,
       });
     } else {
       // The pending update is for a version we already have (or older) — clean up
       clearPendingUpdateInfo();
     }
+  } else if (previousAttemptFailed && attempt) {
+    // No pending download file but we know a previous apply failed —
+    // show error state with manual download fallback
+    setState('error', {
+      availableVersion: attempt.version,
+      error: 'Previous update attempt did not complete',
+      artifactUrl: attempt.artifactUrl,
+      applyAttempted: true,
+    });
   }
 
   if (!settings.autoUpdate) return;

@@ -616,6 +616,8 @@ const api = {
       downloadProgress: number;
       error: string | null;
       downloadPath: string | null;
+      artifactUrl: string | null;
+      applyAttempted: boolean;
     }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
       ipcRenderer.on(IPC.APP.UPDATE_STATUS_CHANGED, listener);

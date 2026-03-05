@@ -39,6 +39,8 @@ function resetStore(overrides?: Partial<ReturnType<typeof useUpdateStore.getStat
       downloadProgress: 0,
       error: null,
       downloadPath: null,
+      artifactUrl: null,
+      applyAttempted: false,
     },
     settings: {
       autoUpdate: true,
