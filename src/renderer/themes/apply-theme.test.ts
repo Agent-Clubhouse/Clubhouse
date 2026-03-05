@@ -146,12 +146,12 @@ describe('applyTheme', () => {
     });
   });
 
-  describe('font override (legacy)', () => {
-    it('sets --theme-font-mono CSS variable when fontOverride is set', () => {
-      const theme = makeTheme({ fontOverride: 'JetBrains Mono' });
-      applyTheme(theme);
+  describe('font override', () => {
+    it('adds theme-mono class and stores font when fontOverride is set', () => {
+      applyTheme(makeTheme({ fontOverride: 'Fira Code' }));
 
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', 'JetBrains Mono');
+      expect(mockClassList.add).toHaveBeenCalledWith('theme-mono');
+      expect(mockLocalStorage.get('clubhouse-theme-font')).toBe('Fira Code');
     });
 
     it('removes theme-mono class and clears font when no fontOverride', () => {
@@ -159,120 +159,6 @@ describe('applyTheme', () => {
 
       expect(mockClassList.remove).toHaveBeenCalledWith('theme-mono');
       expect(mockLocalStorage.has('clubhouse-theme-font')).toBe(false);
-    });
-
-    it('clears previous font override when switching to theme without one', () => {
-      // First apply with override
-      applyTheme(makeTheme({ fontOverride: 'Fira Code' }));
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', 'Fira Code');
-
-      // Then apply without override
-      applyTheme(makeTheme());
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
-    });
-  });
-
-  describe('fonts (v0.7)', () => {
-    it('sets --theme-font-ui CSS variable when fonts.ui is set', () => {
-      applyTheme(makeTheme({ fonts: { ui: 'Inter, sans-serif' } }));
-
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-ui', 'Inter, sans-serif');
-    });
-
-    it('sets --theme-font-mono CSS variable when fonts.mono is set', () => {
-      applyTheme(makeTheme({ fonts: { mono: "'JetBrains Mono', monospace" } }));
-
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', "'JetBrains Mono', monospace");
-    });
-
-    it('adds theme-mono class when both ui and mono fonts are set', () => {
-      applyTheme(makeTheme({
-        fonts: { ui: 'Inter', mono: 'Fira Code' },
-      }));
-
-      expect(mockClassList.add).toHaveBeenCalledWith('theme-mono');
-      expect(mockLocalStorage.get('clubhouse-theme-font')).toBe('Fira Code');
-    });
-
-    it('does not add theme-mono class when only mono font is set', () => {
-      applyTheme(makeTheme({ fonts: { mono: 'Fira Code' } }));
-
-      expect(mockClassList.remove).toHaveBeenCalledWith('theme-mono');
-    });
-
-    it('fonts.mono takes precedence over legacy fontOverride', () => {
-      applyTheme(makeTheme({
-        fontOverride: 'Legacy Font',
-        fonts: { mono: 'New Font' },
-      }));
-
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', 'New Font');
-    });
-
-    it('removes font vars when switching to theme without fonts', () => {
-      applyTheme(makeTheme({ fonts: { ui: 'Inter', mono: 'Fira Code' } }));
-      vi.clearAllMocks();
-
-      applyTheme(makeTheme());
-
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-ui');
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
-    });
-
-    it('caches font variables to localStorage', () => {
-      applyTheme(makeTheme({ fonts: { ui: 'Georgia, serif', mono: 'Fira Code' } }));
-
-      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
-      expect(cached['--theme-font-ui']).toBe('Georgia, serif');
-      expect(cached['--theme-font-mono']).toBe('Fira Code');
-    });
-  });
-
-  describe('gradients (v0.7)', () => {
-    it('sets gradient CSS variables when gradients are provided', () => {
-      applyTheme(makeTheme({
-        gradients: {
-          background: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-          surface: 'linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%)',
-          accent: 'linear-gradient(90deg, #89b4fa, #cba6f7)',
-        },
-      }));
-
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-bg', 'linear-gradient(135deg, #1a1a2e, #16213e)');
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-surface', 'linear-gradient(180deg, #2a2a3e 0%, #1a1a2e 100%)');
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-accent', 'linear-gradient(90deg, #89b4fa, #cba6f7)');
-    });
-
-    it('caches gradient variables to localStorage', () => {
-      applyTheme(makeTheme({
-        gradients: { background: 'linear-gradient(#000, #111)' },
-      }));
-
-      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
-      expect(cached['--theme-gradient-bg']).toBe('linear-gradient(#000, #111)');
-    });
-
-    it('removes gradient vars when switching to theme without gradients', () => {
-      applyTheme(makeTheme({
-        gradients: { background: 'linear-gradient(#000, #111)' },
-      }));
-      vi.clearAllMocks();
-
-      applyTheme(makeTheme());
-
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-bg');
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-surface');
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-accent');
-    });
-
-    it('only sets provided gradient keys', () => {
-      applyTheme(makeTheme({
-        gradients: { accent: 'linear-gradient(#89b4fa, #cba6f7)' },
-      }));
-
-      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-accent', 'linear-gradient(#89b4fa, #cba6f7)');
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-bg');
-      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-surface');
     });
   });
 
@@ -305,15 +191,6 @@ describe('applyTheme', () => {
     it('sets exactly 31 CSS variables for a plain theme (15 colors + 16 hljs)', () => {
       applyTheme(makeTheme());
       expect(mockSetProperty).toHaveBeenCalledTimes(31);
-    });
-
-    it('sets 36 CSS variables when fonts and gradients are all provided', () => {
-      applyTheme(makeTheme({
-        fonts: { ui: 'Inter', mono: 'Fira Code' },
-        gradients: { background: 'g1', surface: 'g2', accent: 'g3' },
-      }));
-      // 15 colors + 16 hljs + 2 fonts + 3 gradients = 36
-      expect(mockSetProperty).toHaveBeenCalledTimes(36);
     });
   });
 });

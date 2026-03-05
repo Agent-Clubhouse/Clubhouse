@@ -1752,8 +1752,6 @@ function buildThemeInfo(): ThemeInfo {
     colors: { ...theme.colors },
     hljs: { ...theme.hljs },
     terminal: { ...theme.terminal },
-    ...(theme.fonts && { fonts: { ...theme.fonts } }),
-    ...(theme.gradients && { gradients: { ...theme.gradients } }),
   };
 }
 
@@ -1766,7 +1764,7 @@ function createThemeAPI(ctx: PluginContext): ThemeAPI {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { useThemeStore } = require('../stores/themeStore');
       let prevId = useThemeStore.getState().themeId;
-      const unsub = useThemeStore.subscribe((state: { themeId: string; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string>; fonts?: { ui?: string; mono?: string }; gradients?: { background?: string; surface?: string; accent?: string } } }) => {
+      const unsub = useThemeStore.subscribe((state: { themeId: string; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string> } }) => {
         if (state.themeId !== prevId) {
           prevId = state.themeId;
           callback({
@@ -1776,8 +1774,6 @@ function createThemeAPI(ctx: PluginContext): ThemeAPI {
             colors: { ...state.theme.colors },
             hljs: { ...state.theme.hljs },
             terminal: { ...state.theme.terminal },
-            ...(state.theme.fonts && { fonts: { ...state.theme.fonts } }),
-            ...(state.theme.gradients && { gradients: { ...state.theme.gradients } }),
           });
         }
       });
