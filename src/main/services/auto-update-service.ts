@@ -140,10 +140,17 @@ export function buildWindowsUpdateScript(
   updateExePath: string,
   appExeName: string,
 ): string {
+  // Use `ping` instead of `timeout` for the delay — `timeout` requires a
+  // real console handle and fails silently when spawned with windowsHide:true
+  // (CREATE_NO_WINDOW).  `ping -n 4` = 3 intervals ~3 seconds.
+  const logFile = '%TEMP%\\clubhouse-update.log';
   return [
     '@echo off',
-    'timeout /t 2 /nobreak >nul',
+    'ping -n 4 127.0.0.1 >nul',
+    `echo [%date% %time%] Running installer: "${downloadPath}" >> "${logFile}"`,
     `"${downloadPath}" --silent`,
+    `echo [%date% %time%] Installer exit code: %ERRORLEVEL% >> "${logFile}"`,
+    `IF %ERRORLEVEL% NEQ 0 echo [%date% %time%] Installer FAILED >> "${logFile}"`,
     `"${updateExePath}" --processStart "${appExeName}"`,
     `del /f "${downloadPath}" 2>nul`,
     `del "%~f0"`,
@@ -155,10 +162,14 @@ export function buildWindowsUpdateScript(
  * Squirrel installer silently, and cleans up — no relaunch.
  */
 export function buildWindowsQuitUpdateScript(downloadPath: string): string {
+  const logFile = '%TEMP%\\clubhouse-update.log';
   return [
     '@echo off',
-    'timeout /t 2 /nobreak >nul',
+    'ping -n 4 127.0.0.1 >nul',
+    `echo [%date% %time%] Running installer (quit): "${downloadPath}" >> "${logFile}"`,
     `"${downloadPath}" --silent`,
+    `echo [%date% %time%] Installer exit code: %ERRORLEVEL% >> "${logFile}"`,
+    `IF %ERRORLEVEL% NEQ 0 echo [%date% %time%] Installer FAILED >> "${logFile}"`,
     `del /f "${downloadPath}" 2>nul`,
     `del "%~f0"`,
   ].join('\r\n');
@@ -530,6 +541,13 @@ export async function applyUpdate(): Promise<void> {
         const script = path.join(app.getPath('temp'), 'clubhouse-update.cmd');
         const updateExe = path.resolve(path.dirname(app.getPath('exe')), '..', 'Update.exe');
         const appExeName = path.basename(app.getPath('exe'));
+
+        // Pre-flight: verify Update.exe exists before writing the batch script
+        if (!fs.existsSync(updateExe)) {
+          const msg = `Squirrel Update.exe not found at ${updateExe}`;
+          appLog('update:apply', 'error', msg);
+          throw new Error(msg);
+        }
 
         fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
 

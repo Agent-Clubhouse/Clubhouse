@@ -12,9 +12,10 @@ describe('auto-update-service: Windows batch script builders', () => {
       expect(script.startsWith('@echo off')).toBe(true);
     });
 
-    it('waits before running installer to avoid file-lock contention', () => {
+    it('uses ping for delay instead of timeout (works without a console)', () => {
       const script = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
-      expect(script).toContain('timeout /t 2 /nobreak >nul');
+      expect(script).toContain('ping -n 4 127.0.0.1 >nul');
+      expect(script).not.toContain('timeout');
     });
 
     it('runs the installer silently', () => {
@@ -40,18 +41,34 @@ describe('auto-update-service: Windows batch script builders', () => {
     it('uses CRLF line endings', () => {
       const script = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
       const lines = script.split('\r\n');
-      expect(lines.length).toBe(6);
+      expect(lines.length).toBe(9);
     });
 
-    it('executes steps in correct order: wait, install, relaunch, cleanup', () => {
+    it('logs installer execution and exit code', () => {
+      const script = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
+      expect(script).toContain('Running installer:');
+      expect(script).toContain('Installer exit code: %ERRORLEVEL%');
+      expect(script).toContain('clubhouse-update.log');
+    });
+
+    it('logs a failure message when installer returns non-zero', () => {
+      const script = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
+      expect(script).toContain('IF %ERRORLEVEL% NEQ 0');
+      expect(script).toContain('Installer FAILED');
+    });
+
+    it('executes steps in correct order: wait, log, install, log, check, relaunch, cleanup', () => {
       const script = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
       const lines = script.split('\r\n');
       expect(lines[0]).toBe('@echo off');
-      expect(lines[1]).toContain('timeout');
-      expect(lines[2]).toContain('--silent');
-      expect(lines[3]).toContain('--processStart');
-      expect(lines[4]).toContain('del /f');
-      expect(lines[5]).toContain('del "%~f0"');
+      expect(lines[1]).toContain('ping');
+      expect(lines[2]).toContain('Running installer');
+      expect(lines[3]).toContain('--silent');
+      expect(lines[4]).toContain('exit code');
+      expect(lines[5]).toContain('IF %ERRORLEVEL%');
+      expect(lines[6]).toContain('--processStart');
+      expect(lines[7]).toContain('del /f');
+      expect(lines[8]).toContain('del "%~f0"');
     });
   });
 
@@ -61,9 +78,10 @@ describe('auto-update-service: Windows batch script builders', () => {
       expect(script.startsWith('@echo off')).toBe(true);
     });
 
-    it('waits before running installer to avoid file-lock contention', () => {
+    it('uses ping for delay instead of timeout (works without a console)', () => {
       const script = buildWindowsQuitUpdateScript(downloadPath);
-      expect(script).toContain('timeout /t 2 /nobreak >nul');
+      expect(script).toContain('ping -n 4 127.0.0.1 >nul');
+      expect(script).not.toContain('timeout');
     });
 
     it('runs the installer silently', () => {
@@ -90,7 +108,20 @@ describe('auto-update-service: Windows batch script builders', () => {
     it('uses CRLF line endings', () => {
       const script = buildWindowsQuitUpdateScript(downloadPath);
       const lines = script.split('\r\n');
-      expect(lines.length).toBe(5);
+      expect(lines.length).toBe(8);
+    });
+
+    it('logs installer execution and exit code', () => {
+      const script = buildWindowsQuitUpdateScript(downloadPath);
+      expect(script).toContain('Running installer (quit):');
+      expect(script).toContain('Installer exit code: %ERRORLEVEL%');
+      expect(script).toContain('clubhouse-update.log');
+    });
+
+    it('logs a failure message when installer returns non-zero', () => {
+      const script = buildWindowsQuitUpdateScript(downloadPath);
+      expect(script).toContain('IF %ERRORLEVEL% NEQ 0');
+      expect(script).toContain('Installer FAILED');
     });
 
     it('has one fewer line than the update script (no relaunch)', () => {
