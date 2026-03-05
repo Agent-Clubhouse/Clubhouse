@@ -458,6 +458,47 @@ async function downloadUpdate(
 }
 
 // ---------------------------------------------------------------------------
+// Windows pre-flight validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate prerequisites for applying a Windows update via Squirrel.
+ * Throws with an actionable error message if any check fails.
+ */
+export function validateWindowsUpdatePrerequisites(opts: {
+  downloadPath: string;
+  scriptPath: string;
+  updateExePath?: string;
+}): void {
+  // Validate Update.exe exists (needed for relaunch after install)
+  if (opts.updateExePath && !fs.existsSync(opts.updateExePath)) {
+    appLog('update:apply', 'error', 'Update.exe not found — Squirrel installation may be corrupted', {
+      meta: { expectedPath: opts.updateExePath },
+    });
+    throw new Error('Cannot apply update: Update.exe not found. Please reinstall the app manually.');
+  }
+
+  // Validate downloaded installer still exists (AV could quarantine it)
+  if (!fs.existsSync(opts.downloadPath)) {
+    appLog('update:apply', 'error', 'Downloaded installer missing — may have been quarantined by antivirus', {
+      meta: { expectedPath: opts.downloadPath },
+    });
+    throw new Error('Update file was removed. Please check your antivirus settings and try again.');
+  }
+
+  // Validate temp directory is writable
+  try {
+    fs.writeFileSync(opts.scriptPath, '');
+    fs.unlinkSync(opts.scriptPath);
+  } catch (err) {
+    appLog('update:apply', 'error', 'Cannot write to temp directory', {
+      meta: { scriptPath: opts.scriptPath, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw new Error('Cannot write to temp directory. Please check disk space and permissions.');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Apply update (quit, replace, relaunch)
 // ---------------------------------------------------------------------------
 
@@ -562,30 +603,29 @@ export async function applyUpdate(): Promise<void> {
     // waits for the old process to fully exit, runs the installer, then
     // relaunches the app via Squirrel's Update.exe.
     try {
-      if (fs.existsSync(downloadPath)) {
-        const { spawn } = require('child_process');
-        const script = path.join(app.getPath('temp'), 'clubhouse-update.cmd');
-        const updateExe = path.resolve(path.dirname(app.getPath('exe')), '..', 'Update.exe');
-        const appExeName = path.basename(app.getPath('exe'));
+      const { spawn } = require('child_process');
+      const script = path.join(app.getPath('temp'), 'clubhouse-update.cmd');
+      const updateExe = path.resolve(path.dirname(app.getPath('exe')), '..', 'Update.exe');
+      const appExeName = path.basename(app.getPath('exe'));
 
-        // Pre-flight: verify Update.exe exists before writing the batch script
-        if (!fs.existsSync(updateExe)) {
-          const msg = `Squirrel Update.exe not found at ${updateExe}`;
-          appLog('update:apply', 'error', msg);
-          throw new Error(msg);
-        }
+      // Pre-flight validation: ensure all prerequisites are met before
+      // writing and spawning the batch script (see #432)
+      validateWindowsUpdatePrerequisites({
+        downloadPath,
+        scriptPath: script,
+        updateExePath: updateExe,
+      });
 
-        fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
+      fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
 
-        spawn('cmd.exe', ['/c', script], {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-        }).unref();
+      spawn('cmd.exe', ['/c', script], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref();
 
-        app.exit(0);
-        return;
-      }
+      app.exit(0);
+      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLog('update:apply', 'error', `Failed to apply Windows update: ${msg}`);
@@ -679,18 +719,22 @@ export function applyUpdateOnQuit(): void {
     // fully exit before running the installer to avoid file-lock hangs.
     // No relaunch step since the user chose to quit.
     try {
-      if (fs.existsSync(downloadPath)) {
-        const { spawn } = require('child_process');
-        const script = path.join(app.getPath('temp'), 'clubhouse-update-quit.cmd');
+      const { spawn } = require('child_process');
+      const script = path.join(app.getPath('temp'), 'clubhouse-update-quit.cmd');
 
-        fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
+      // Pre-flight validation (no Update.exe needed — no relaunch)
+      validateWindowsUpdatePrerequisites({
+        downloadPath,
+        scriptPath: script,
+      });
 
-        spawn('cmd.exe', ['/c', script], {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-        }).unref();
-      }
+      fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
+
+      spawn('cmd.exe', ['/c', script], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref();
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }
