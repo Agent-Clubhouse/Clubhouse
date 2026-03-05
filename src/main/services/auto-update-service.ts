@@ -134,6 +134,21 @@ export function isNewerVersion(a: string, b: string): boolean {
 }
 
 /**
+ * Build the PowerShell arguments to launch a batch script with a completely
+ * hidden window.  PowerShell's `-WindowStyle Hidden` prevents any console
+ * flash, and `Start-Process -Wait -WindowStyle Hidden` keeps the child
+ * hidden too.  PowerShell is guaranteed on Windows 10+.
+ */
+export function buildPowershellLauncherArgs(cmdScriptPath: string): string[] {
+  return [
+    '-NoProfile',
+    '-WindowStyle', 'Hidden',
+    '-Command',
+    `Start-Process -FilePath cmd.exe -ArgumentList '/c','${cmdScriptPath.replace(/'/g, "''")}' -WindowStyle Hidden -Wait`,
+  ];
+}
+
+/**
  * Build a Windows batch script that waits for the app to exit, runs the
  * Squirrel installer silently, relaunches the updated app, and cleans up.
  */
@@ -618,7 +633,9 @@ export async function applyUpdate(): Promise<void> {
 
       fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
 
-      spawn('cmd.exe', ['/c', script], {
+      // Launch via PowerShell with -WindowStyle Hidden so no console
+      // window is visible.  PowerShell is guaranteed on Windows 10+.
+      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
@@ -730,7 +747,8 @@ export function applyUpdateOnQuit(): void {
 
       fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
 
-      spawn('cmd.exe', ['/c', script], {
+      // Launch via PowerShell with -WindowStyle Hidden — no visible console
+      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,

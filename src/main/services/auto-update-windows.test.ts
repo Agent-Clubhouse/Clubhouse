@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript } from './auto-update-service';
+import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript, buildPowershellLauncherArgs } from './auto-update-service';
 
 describe('auto-update-service: Windows batch script builders', () => {
   const downloadPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-updates\\Clubhouse-0.26.0.exe';
@@ -128,6 +128,46 @@ describe('auto-update-service: Windows batch script builders', () => {
       const updateScript = buildWindowsUpdateScript(downloadPath, updateExePath, appExeName);
       const quitScript = buildWindowsQuitUpdateScript(downloadPath);
       expect(quitScript.split('\r\n').length).toBe(updateScript.split('\r\n').length - 1);
+    });
+  });
+
+  describe('buildPowershellLauncherArgs', () => {
+    const cmdPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-update.cmd';
+
+    it('includes -NoProfile to skip user profile loading', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      expect(args).toContain('-NoProfile');
+    });
+
+    it('includes -WindowStyle Hidden to prevent console flash', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const idx = args.indexOf('-WindowStyle');
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(args[idx + 1]).toBe('Hidden');
+    });
+
+    it('uses Start-Process with -Wait and -WindowStyle Hidden for the child', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain('Start-Process');
+      expect(cmd).toContain('-WindowStyle Hidden');
+      expect(cmd).toContain('-Wait');
+    });
+
+    it('invokes cmd.exe /c with the script path', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain('cmd.exe');
+      expect(cmd).toContain('/c');
+      expect(cmd).toContain(cmdPath);
+    });
+
+    it('escapes single quotes in the path', () => {
+      const pathWithQuote = "C:\\Users\\test's\\Temp\\script.cmd";
+      const args = buildPowershellLauncherArgs(pathWithQuote);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain("test''s");
+      expect(cmd).not.toContain("test's\\");
     });
   });
 });
