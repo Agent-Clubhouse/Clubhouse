@@ -177,6 +177,51 @@ export function buildWindowsQuitUpdateScript(downloadPath: string): string {
   ].join('\r\n');
 }
 
+/**
+ * Build a macOS shell script that waits for the app to exit, replaces the
+ * old .app bundle with the extracted update, relaunches it, and cleans up.
+ */
+export function buildMacUpdateScript(
+  appBundlePath: string,
+  newAppPath: string,
+  tmpExtract: string,
+  downloadPath: string,
+  scriptPath: string,
+): string {
+  return [
+    '#!/bin/bash',
+    'sleep 1',
+    `rm -rf "${appBundlePath}"`,
+    `mv "${newAppPath}" "${appBundlePath}"`,
+    `open "${appBundlePath}"`,
+    `rm -rf "${tmpExtract}"`,
+    `rm -f "${downloadPath}"`,
+    `rm -f "${scriptPath}"`,
+  ].join('\n');
+}
+
+/**
+ * Build a macOS shell script that waits for the app to exit, replaces the
+ * old .app bundle with the extracted update, and cleans up — no relaunch.
+ */
+export function buildMacQuitUpdateScript(
+  appBundlePath: string,
+  newAppPath: string,
+  tmpExtract: string,
+  downloadPath: string,
+  scriptPath: string,
+): string {
+  return [
+    '#!/bin/bash',
+    'sleep 1',
+    `rm -rf "${appBundlePath}"`,
+    `mv "${newAppPath}" "${appBundlePath}"`,
+    `rm -rf "${tmpExtract}"`,
+    `rm -f "${downloadPath}"`,
+    `rm -f "${scriptPath}"`,
+  ].join('\n');
+}
+
 function broadcastStatus(): void {
   const wins = BrowserWindow.getAllWindows();
   for (const win of wins) {
@@ -528,16 +573,7 @@ export async function applyUpdate(): Promise<void> {
         // Replace: remove old, move new
         // Use a small shell script that runs after the app quits
         const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        fs.writeFileSync(script, [
-          '#!/bin/bash',
-          'sleep 1',
-          `rm -rf "${appBundlePath}"`,
-          `mv "${newAppPath}" "${appBundlePath}"`,
-          `open "${appBundlePath}"`,
-          `rm -rf "${tmpExtract}"`,
-          `rm -f "${downloadPath}"`,
-          `rm -f "${script}"`,
-        ].join('\n'), { mode: 0o755 });
+        fs.writeFileSync(script, buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
 
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
@@ -658,15 +694,7 @@ export function applyUpdateOnQuit(): void {
 
         // Shell script replaces the app bundle after quit — NO relaunch
         const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        fs.writeFileSync(script, [
-          '#!/bin/bash',
-          'sleep 1',
-          `rm -rf "${appBundlePath}"`,
-          `mv "${newAppPath}" "${appBundlePath}"`,
-          `rm -rf "${tmpExtract}"`,
-          `rm -f "${downloadPath}"`,
-          `rm -f "${script}"`,
-        ].join('\n'), { mode: 0o755 });
+        fs.writeFileSync(script, buildMacQuitUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
 
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();

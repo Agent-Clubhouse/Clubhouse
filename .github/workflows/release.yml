@@ -118,9 +118,27 @@ jobs:
             echo "RELEASE_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
+  validate-update-scripts:
+    name: Validate Update Scripts (${{ matrix.os }})
+    needs: verify-tag
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run update script integration tests
+        run: npx vitest run --project main -- auto-update-apply
+
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    needs: verify-tag
+    needs: [verify-tag, validate-update-scripts]
     runs-on: ${{ matrix.runner }}
     environment: release
     strategy:
@@ -214,7 +232,7 @@ jobs:
 
   build-windows:
     name: Build Windows (${{ matrix.arch }})
-    needs: verify-tag
+    needs: [verify-tag, validate-update-scripts]
     runs-on: windows-latest
     environment: release
     strategy:
