@@ -66,6 +66,7 @@ function resetStores() {
       error: null,
       downloadPath: null,
       artifactUrl: null,
+      applyAttempted: false,
     },
     settings: {
       autoUpdate: true,
@@ -414,6 +415,7 @@ describe('UpdateBanner', () => {
         error: null,
         downloadPath: '/tmp/update.zip',
         artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: false,
       },
     });
 
@@ -454,6 +456,7 @@ describe('UpdateBanner', () => {
         error: 'Update failed: No .app found in update archive',
         downloadPath: null,
         artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: false,
       },
     });
 
@@ -497,6 +500,7 @@ describe('UpdateBanner', () => {
         error: null,
         downloadPath: '/tmp/update.zip',
         artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: false,
       },
     });
 
@@ -520,6 +524,7 @@ describe('UpdateBanner', () => {
         error: 'Update failed',
         downloadPath: null,
         artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: false,
       },
     });
 
@@ -530,5 +535,54 @@ describe('UpdateBanner', () => {
     fireEvent.click(screen.getByTestId('update-dismiss-btn'));
 
     expect(screen.queryByTestId('update-banner')).toBeNull();
+  });
+
+  // --- Apply attempt detection tests ---
+
+  it('shows warning banner with "Download manually" primary when applyAttempted is true', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: true,
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.getByTestId('update-retry-message')).toBeInTheDocument();
+    expect(screen.getByText(/did not apply successfully/)).toBeInTheDocument();
+    // Manual download should be the primary button
+    expect(screen.getByTestId('update-manual-download-btn')).toBeInTheDocument();
+    // "Try again" should be the secondary action
+    expect(screen.getByTestId('update-restart-btn')).toBeInTheDocument();
+    expect(screen.getByText('Try again')).toBeInTheDocument();
+  });
+
+  it('does not show retry message when applyAttempted is false', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        applyAttempted: false,
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.queryByTestId('update-retry-message')).toBeNull();
+    expect(screen.getByText('Restart to update')).toBeInTheDocument();
   });
 });

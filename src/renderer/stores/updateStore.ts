@@ -35,6 +35,7 @@ const DEFAULT_STATUS: UpdateStatus = {
   error: null,
   downloadPath: null,
   artifactUrl: null,
+  applyAttempted: false,
 };
 
 const DEFAULT_SETTINGS: UpdateSettings = {

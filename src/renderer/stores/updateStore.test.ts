@@ -49,6 +49,7 @@ describe('updateStore', () => {
         error: null,
         downloadPath: null,
         artifactUrl: null,
+        applyAttempted: false,
       },
       settings: {
         autoUpdate: true,
@@ -107,6 +108,7 @@ describe('updateStore', () => {
         error: null,
         downloadPath: '/tmp/update.zip',
         artifactUrl: 'https://cdn.example.com/update.zip',
+        applyAttempted: false,
       });
 
       await useUpdateStore.getState().loadSettings();
@@ -272,6 +274,7 @@ describe('updateStore', () => {
           error: null,
           downloadPath: '/tmp/update.zip',
           artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+          applyAttempted: false,
         },
       });
 
@@ -416,6 +419,7 @@ describe('updateStore', () => {
         error: null,
         downloadPath: '/tmp/update.zip',
         artifactUrl: 'https://cdn.example.com/update.zip',
+        applyAttempted: false,
       });
 
       const state = useUpdateStore.getState();

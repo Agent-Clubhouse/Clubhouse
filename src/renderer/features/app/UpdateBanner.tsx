@@ -16,6 +16,10 @@ export function UpdateBanner() {
   const isApplyError = status.state === 'error' && !!status.artifactUrl;
   if ((!isReady && !isApplyError) || dismissed) return null;
 
+  // A previous apply attempt was detected on startup — auto-update may be broken
+  const hasFailedBefore = isReady && status.applyAttempted;
+  const useWarningStyle = isApplyError || hasFailedBefore;
+
   const runningAgents = Object.values(agents).filter((a) => a.status === 'running');
   const hasRunningAgents = runningAgents.length > 0;
 
@@ -31,13 +35,11 @@ export function UpdateBanner() {
     setConfirming(false);
   };
 
+  const colorBase = useWarningStyle ? 'ctp-peach' : 'ctp-info';
+
   return (
     <div
-      className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 ${
-        isApplyError
-          ? 'bg-ctp-peach/10 border-b border-ctp-peach/20 text-ctp-peach'
-          : 'bg-ctp-info/10 border-b border-ctp-info/20 text-ctp-info'
-      } text-sm`}
+      className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-${colorBase}/10 border-b border-${colorBase}/20 text-${colorBase} text-sm`}
       data-testid="update-banner"
     >
       {/* Info icon */}
@@ -56,11 +58,15 @@ export function UpdateBanner() {
         <span className="flex-1" data-testid="update-confirm-message">
           {runningAgents.length} running agent{runningAgents.length !== 1 ? 's' : ''} will be stopped. Continue?
         </span>
+      ) : hasFailedBefore ? (
+        <span className="flex-1" data-testid="update-retry-message">
+          Update v{status.availableVersion} did not apply successfully
+        </span>
       ) : (
         <span className="flex-1">
           Update v{status.availableVersion} is ready
           {status.releaseMessage ? (
-            <span className="text-ctp-info/60 ml-1" data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
+            <span className={`text-${colorBase}/60 ml-1`} data-testid="update-release-message">&mdash; {status.releaseMessage}</span>
           ) : '.'}
         </span>
       )}
@@ -69,15 +75,14 @@ export function UpdateBanner() {
         <>
           <button
             onClick={openUpdateDownload}
-            className="px-3 py-1 text-xs rounded bg-ctp-peach/20 hover:bg-ctp-peach/30
-              transition-colors cursor-pointer"
+            className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`}
             data-testid="update-manual-download-btn"
           >
             Download manually
           </button>
           <button
             onClick={dismiss}
-            className="text-ctp-peach/50 hover:text-ctp-peach transition-colors cursor-pointer px-1"
+            className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`}
             data-testid="update-dismiss-btn"
           >
             x
@@ -87,25 +92,49 @@ export function UpdateBanner() {
         <>
           <button
             onClick={handleRestart}
-            className="px-3 py-1 text-xs rounded bg-ctp-info/20 hover:bg-ctp-info/30
-              transition-colors cursor-pointer"
+            className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`}
             data-testid="update-confirm-restart"
           >
             Restart anyway
           </button>
           <button
             onClick={handleCancel}
-            className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-2 text-xs"
+            className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-2 text-xs`}
           >
             Cancel
+          </button>
+        </>
+      ) : hasFailedBefore ? (
+        <>
+          {status.artifactUrl && (
+            <button
+              onClick={openUpdateDownload}
+              className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`}
+              data-testid="update-manual-download-btn"
+            >
+              Download manually
+            </button>
+          )}
+          <button
+            onClick={handleRestart}
+            className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-2 text-xs`}
+            data-testid="update-restart-btn"
+          >
+            Try again
+          </button>
+          <button
+            onClick={dismiss}
+            className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`}
+            data-testid="update-dismiss-btn"
+          >
+            x
           </button>
         </>
       ) : (
         <>
           <button
             onClick={handleRestart}
-            className="px-3 py-1 text-xs rounded bg-ctp-info/20 hover:bg-ctp-info/30
-              transition-colors cursor-pointer"
+            className={`px-3 py-1 text-xs rounded bg-${colorBase}/20 hover:bg-${colorBase}/30 transition-colors cursor-pointer`}
             data-testid="update-restart-btn"
           >
             Restart to update
@@ -113,7 +142,7 @@ export function UpdateBanner() {
           {status.artifactUrl && (
             <button
               onClick={openUpdateDownload}
-              className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-2 text-xs"
+              className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-2 text-xs`}
               data-testid="update-manual-download-btn"
             >
               Download manually
@@ -121,7 +150,7 @@ export function UpdateBanner() {
           )}
           <button
             onClick={dismiss}
-            className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-1"
+            className={`text-${colorBase}/50 hover:text-${colorBase} transition-colors cursor-pointer px-1`}
             data-testid="update-dismiss-btn"
           >
             x

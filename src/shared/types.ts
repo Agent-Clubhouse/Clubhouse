@@ -365,6 +365,8 @@ export interface UpdateStatus {
   error: string | null;
   downloadPath: string | null;
   artifactUrl: string | null;
+  /** True when a previous apply attempt for this version was detected on startup */
+  applyAttempted: boolean;
 }
 
 export interface UpdateSettings {
