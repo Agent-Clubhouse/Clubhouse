@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as path from 'path';
 import { getSquirrelReleasesUrl, getSquirrelUpdateExePath } from './auto-update-service';
 
 describe('auto-update-service: Squirrel native update helpers', () => {
@@ -33,12 +34,10 @@ describe('auto-update-service: Squirrel native update helpers', () => {
     });
 
     it('resolves to one directory above the exe directory', () => {
-      // Update.exe lives at the Squirrel app root, one level above
-      // the app-<version>/ directory that contains the main exe
       const p = getSquirrelUpdateExePath();
-      // The path should contain ".." relative to the exe dir
-      // (path.resolve normalizes it, so just verify it ends correctly)
-      expect(p).toContain('Update.exe');
+      const exeDir = path.dirname(process.execPath);
+      const expected = path.resolve(exeDir, '..', 'Update.exe');
+      expect(p).toBe(expected);
     });
   });
 });

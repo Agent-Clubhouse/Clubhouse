@@ -8,7 +8,7 @@ import * as crypto from 'crypto';
 import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry, VersionHistory } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
-import { appLog } from './log-service';
+import { appLog, flush as flushLogs } from './log-service';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -570,6 +570,7 @@ export async function applyUpdate(): Promise<void> {
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
 
+        flushLogs();
         app.exit(0);
         return;
       }
@@ -595,21 +596,59 @@ export async function applyUpdate(): Promise<void> {
 
       const settings = getSettings();
       const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
+      const appExeName = path.basename(process.execPath);
 
       appLog('update:apply', 'info', 'Applying via Squirrel Update.exe', {
-        meta: { releasesUrl, version: savedVersion },
+        meta: { updateExe, releasesUrl, version: savedVersion, appExeName },
       });
 
       const { execFileSync } = require('child_process');
-      execFileSync(updateExe, ['--update', releasesUrl], { timeout: 120_000 });
+      let stdout: string;
+      try {
+        const result = execFileSync(updateExe, ['--update', releasesUrl], {
+          timeout: 300_000,
+          encoding: 'utf-8',
+          windowsHide: true,
+        });
+        stdout = (result || '').trim();
+      } catch (execErr: unknown) {
+        // execFileSync attaches stdout/stderr to the error on failure
+        const e = execErr as { stdout?: string; stderr?: string; status?: number; message?: string };
+        appLog('update:apply', 'error', 'Update.exe --update failed', {
+          meta: {
+            exitCode: e.status ?? null,
+            stdout: (e.stdout || '').trim().slice(0, 2000),
+            stderr: (e.stderr || '').trim().slice(0, 2000),
+            message: e.message,
+          },
+        });
+        throw execErr;
+      }
 
-      appLog('update:apply', 'info', 'Squirrel update applied, relaunching');
-      app.relaunch();
+      appLog('update:apply', 'info', 'Update.exe --update completed', {
+        meta: { stdout: stdout.slice(0, 2000) },
+      });
+
+      // Relaunch via Update.exe --processStart to start the LATEST version.
+      // app.relaunch() would restart the current (old) exe.
+      appLog('update:apply', 'info', 'Relaunching via Update.exe --processStart', {
+        meta: { appExeName },
+      });
+      flushLogs();
+
+      const { spawn } = require('child_process');
+      spawn(updateExe, ['--processStart', appExeName], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref();
+
       app.exit(0);
       return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLog('update:apply', 'error', `Failed to apply Windows update: ${msg}`);
+      flushLogs();
       setState('error', {
         error: `Update failed: ${msg}`,
         availableVersion: savedVersion,
@@ -691,19 +730,49 @@ export function applyUpdateOnQuit(): void {
     // Squirrel native update — no relaunch since the user chose to quit
     try {
       const updateExe = getSquirrelUpdateExePath();
-      if (!fs.existsSync(updateExe)) return;
+      if (!fs.existsSync(updateExe)) {
+        appLog('update:apply-on-quit', 'warn', 'Update.exe not found, skipping quit-update', {
+          meta: { expectedPath: updateExe },
+        });
+        return;
+      }
 
       const settings = getSettings();
       const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
 
       appLog('update:apply-on-quit', 'info', 'Applying via Squirrel Update.exe (no relaunch)', {
-        meta: { releasesUrl },
+        meta: { updateExe, releasesUrl },
       });
 
       const { execFileSync } = require('child_process');
-      execFileSync(updateExe, ['--update', releasesUrl], { timeout: 120_000 });
+      let stdout: string;
+      try {
+        const result = execFileSync(updateExe, ['--update', releasesUrl], {
+          timeout: 300_000,
+          encoding: 'utf-8',
+          windowsHide: true,
+        });
+        stdout = (result || '').trim();
+      } catch (execErr: unknown) {
+        const e = execErr as { stdout?: string; stderr?: string; status?: number; message?: string };
+        appLog('update:apply-on-quit', 'error', 'Update.exe --update failed', {
+          meta: {
+            exitCode: e.status ?? null,
+            stdout: (e.stdout || '').trim().slice(0, 2000),
+            stderr: (e.stderr || '').trim().slice(0, 2000),
+            message: e.message,
+          },
+        });
+        throw execErr;
+      }
+
+      appLog('update:apply-on-quit', 'info', 'Update.exe --update completed (quit)', {
+        meta: { stdout: stdout.slice(0, 2000) },
+      });
+      flushLogs();
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
+      flushLogs();
     }
   }
   // Linux: no-op — manual install expected
