@@ -9,7 +9,7 @@ import type { CompletedQuickAgent } from '../../shared/types';
 
 // Mock child components to isolate MainContentView logic
 vi.mock('../features/agents/AgentTerminal', () => ({
-  AgentTerminal: () => <div data-testid="agent-terminal" />,
+  AgentTerminal: (props: any) => <div data-testid="agent-terminal" data-focused={String(!!props.focused)} />,
 }));
 vi.mock('../features/agents/SleepingAgent', () => ({
   SleepingAgent: () => <div data-testid="sleeping-agent" />,
@@ -181,5 +181,87 @@ describe('MainContentView selectedCompleted derivation', () => {
     rerender(<MainContentView />);
     // selectedCompletedId still set but no matching record => no-active-agent
     expect(screen.getByTestId('no-active-agent')).toBeInTheDocument();
+  });
+});
+
+describe('MainContentView terminal focus', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it('passes focused=true to AgentTerminal when on agents tab', async () => {
+    useAgentStore.setState({
+      agents: { 'a-1': { id: 'a-1', projectId: 'proj-1', status: 'running', kind: 'durable' } as any },
+      activeAgentId: 'a-1',
+    });
+
+    render(<MainContentView />);
+
+    // Allow the useEffect + rAF to settle
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toHaveAttribute('data-focused', 'true');
+  });
+
+  it('passes focused=false when switching away from agents tab', async () => {
+    useAgentStore.setState({
+      agents: { 'a-1': { id: 'a-1', projectId: 'proj-1', status: 'running', kind: 'durable' } as any },
+      activeAgentId: 'a-1',
+    });
+
+    const { rerender } = render(<MainContentView />);
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toHaveAttribute('data-focused', 'true');
+
+    // Switch to settings tab
+    act(() => {
+      useUIStore.setState({ explorerTab: 'settings' });
+    });
+
+    rerender(<MainContentView />);
+
+    // AgentTerminal should no longer be rendered at all
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+  });
+
+  it('re-focuses terminal after project switch', async () => {
+    useAgentStore.setState({
+      agents: {
+        'a-1': { id: 'a-1', projectId: 'proj-1', status: 'running', kind: 'durable' } as any,
+        'a-2': { id: 'a-2', projectId: 'proj-2', status: 'running', kind: 'durable' } as any,
+      },
+      activeAgentId: 'a-1',
+    });
+
+    const { rerender } = render(<MainContentView />);
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toHaveAttribute('data-focused', 'true');
+
+    // Switch to project 2
+    act(() => {
+      useProjectStore.setState({ activeProjectId: 'proj-2' });
+      useAgentStore.setState({ activeAgentId: 'a-2' });
+    });
+
+    rerender(<MainContentView />);
+
+    // The effect sets focused=false first, then rAF sets true
+    // After rAF settles, focused should be true again
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toHaveAttribute('data-focused', 'true');
   });
 });

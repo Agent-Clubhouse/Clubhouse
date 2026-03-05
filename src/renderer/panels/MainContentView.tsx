@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
@@ -37,6 +37,32 @@ export function MainContentView() {
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+
+  // Track whether the agent terminal should receive focus.
+  // Must transition false→true to trigger AgentTerminal's focus useEffect,
+  // including on project switches where explorerTab stays 'agents'.
+  const isAgentView = explorerTab === 'agents';
+  const [terminalFocused, setTerminalFocused] = useState(false);
+  const prevProjectIdRef = useRef(activeProjectId);
+
+  useEffect(() => {
+    if (!isAgentView) {
+      setTerminalFocused(false);
+      return;
+    }
+
+    const projectChanged = prevProjectIdRef.current !== activeProjectId;
+    prevProjectIdRef.current = activeProjectId;
+
+    if (projectChanged) {
+      // Force a false→true transition so AgentTerminal re-focuses
+      setTerminalFocused(false);
+      const raf = requestAnimationFrame(() => setTerminalFocused(true));
+      return () => cancelAnimationFrame(raf);
+    }
+
+    setTerminalFocused(true);
+  }, [isAgentView, activeProjectId]);
 
   const selectedCompleted = useMemo(() => {
     if (!selectedCompletedId) return null;
@@ -95,7 +121,7 @@ export function MainContentView() {
 
     return (
       <div className="h-full bg-ctp-base" data-testid="agent-terminal-view">
-        <AgentTerminal agentId={activeAgentId!} />
+        <AgentTerminal agentId={activeAgentId!} focused={terminalFocused} />
       </div>
     );
   }
