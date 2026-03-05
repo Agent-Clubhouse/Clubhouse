@@ -5,10 +5,6 @@ export const terminalTheme: ThemeDefinition = {
   name: 'Terminal',
   type: 'dark',
   fontOverride: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-  fonts: {
-    ui: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-    mono: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
-  },
   colors: {
     base: '#0a0a0a',
     mantle: '#050505',

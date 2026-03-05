@@ -62,49 +62,13 @@ export function applyTheme(theme: ThemeDefinition): void {
     cache[varName] = hex;
   }
 
-  // Font overrides — new `fonts` field takes precedence over legacy `fontOverride`.
-  // CSS variables are consumed directly via var() fallbacks in index.css, so we only
-  // need to set/remove the variables (no class toggling for individual font overrides).
-  const uiFont = theme.fonts?.ui;
-  const monoFont = theme.fonts?.mono ?? theme.fontOverride;
-
-  if (uiFont) {
-    s.setProperty('--theme-font-ui', uiFont);
-    cache['--theme-font-ui'] = uiFont;
-  } else {
-    s.removeProperty('--theme-font-ui');
-  }
-
-  if (monoFont) {
-    s.setProperty('--theme-font-mono', monoFont);
-    cache['--theme-font-mono'] = monoFont;
-  } else {
-    s.removeProperty('--theme-font-mono');
-  }
-
-  // Full-mono class: when both ui + mono are set, apply mono everywhere
-  if (uiFont && monoFont) {
+  // Font override (Terminal theme)
+  if (theme.fontOverride) {
     document.documentElement.classList.add('theme-mono');
-    localStorage.setItem('clubhouse-theme-font', monoFont);
+    localStorage.setItem('clubhouse-theme-font', theme.fontOverride);
   } else {
     document.documentElement.classList.remove('theme-mono');
     localStorage.removeItem('clubhouse-theme-font');
-  }
-
-  // Gradient decorations
-  const gradientMap: Record<string, string | undefined> = {
-    '--theme-gradient-bg': theme.gradients?.background,
-    '--theme-gradient-surface': theme.gradients?.surface,
-    '--theme-gradient-accent': theme.gradients?.accent,
-  };
-
-  for (const [varName, value] of Object.entries(gradientMap)) {
-    if (value) {
-      s.setProperty(varName, value);
-      cache[varName] = value;
-    } else {
-      s.removeProperty(varName);
-    }
   }
 
   // Cache to localStorage for flash prevention

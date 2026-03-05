@@ -30,8 +30,6 @@ function registerPackThemes(pluginId: string, themes: PluginThemeDeclaration[]):
       colors: decl.colors as ThemeColors,
       hljs: decl.hljs as HljsColors,
       terminal: decl.terminal as TerminalColors,
-      ...(decl.fonts && { fonts: decl.fonts }),
-      ...(decl.gradients && { gradients: decl.gradients }),
     };
     registerTheme(def);
   }
