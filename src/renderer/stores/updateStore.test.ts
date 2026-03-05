@@ -11,6 +11,7 @@ const mockOnUpdateStatusChanged = vi.fn();
 const mockGetVersion = vi.fn();
 const mockGetPendingReleaseNotes = vi.fn();
 const mockClearPendingReleaseNotes = vi.fn();
+const mockOpenExternalUrl = vi.fn();
 
 Object.defineProperty(globalThis, 'window', {
   value: {
@@ -25,6 +26,7 @@ Object.defineProperty(globalThis, 'window', {
         getVersion: mockGetVersion,
         getPendingReleaseNotes: mockGetPendingReleaseNotes,
         clearPendingReleaseNotes: mockClearPendingReleaseNotes,
+        openExternalUrl: mockOpenExternalUrl,
       },
     },
   },
@@ -46,6 +48,7 @@ describe('updateStore', () => {
         downloadProgress: 0,
         error: null,
         downloadPath: null,
+        artifactUrl: null,
       },
       settings: {
         autoUpdate: true,
@@ -80,6 +83,11 @@ describe('updateStore', () => {
       expect(whatsNew).toBeNull();
       expect(showWhatsNew).toBe(false);
     });
+
+    it('defaults artifactUrl to null', () => {
+      const { status } = useUpdateStore.getState();
+      expect(status.artifactUrl).toBeNull();
+    });
   });
 
   describe('loadSettings', () => {
@@ -98,6 +106,7 @@ describe('updateStore', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/update.zip',
       });
 
       await useUpdateStore.getState().loadSettings();
@@ -109,6 +118,7 @@ describe('updateStore', () => {
       expect(state.status.state).toBe('ready');
       expect(state.status.availableVersion).toBe('0.27.0');
       expect(state.status.releaseMessage).toBe('Bug Fixes & More');
+      expect(state.status.artifactUrl).toBe('https://cdn.example.com/update.zip');
     });
 
     it('keeps defaults on API error', async () => {
@@ -162,6 +172,7 @@ describe('updateStore', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/update.zip',
       };
       mockCheckForUpdates.mockResolvedValue(newStatus);
 
@@ -183,6 +194,7 @@ describe('updateStore', () => {
         downloadProgress: 0,
         error: null,
         downloadPath: null,
+        artifactUrl: null,
       });
 
       await useUpdateStore.getState().checkForUpdates();
@@ -245,6 +257,48 @@ describe('updateStore', () => {
       await useUpdateStore.getState().applyUpdate();
 
       expect(mockApplyUpdate).toHaveBeenCalled();
+    });
+  });
+
+  describe('openUpdateDownload', () => {
+    it('calls openExternalUrl with artifact URL', () => {
+      useUpdateStore.setState({
+        status: {
+          state: 'ready',
+          availableVersion: '0.26.0',
+          releaseNotes: null,
+          releaseMessage: null,
+          downloadProgress: 100,
+          error: null,
+          downloadPath: '/tmp/update.zip',
+          artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+        },
+      });
+
+      useUpdateStore.getState().openUpdateDownload();
+
+      expect(mockOpenExternalUrl).toHaveBeenCalledWith(
+        'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+      );
+    });
+
+    it('does nothing when artifactUrl is null', () => {
+      useUpdateStore.setState({
+        status: {
+          state: 'ready',
+          availableVersion: '0.26.0',
+          releaseNotes: null,
+          releaseMessage: null,
+          downloadProgress: 100,
+          error: null,
+          downloadPath: '/tmp/update.zip',
+          artifactUrl: null,
+        },
+      });
+
+      useUpdateStore.getState().openUpdateDownload();
+
+      expect(mockOpenExternalUrl).not.toHaveBeenCalled();
     });
   });
 
@@ -361,11 +415,13 @@ describe('updateStore', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/update.zip',
       });
 
       const state = useUpdateStore.getState();
       expect(state.status.state).toBe('ready');
       expect(state.status.availableVersion).toBe('0.26.0');
+      expect(state.status.artifactUrl).toBe('https://cdn.example.com/update.zip');
     });
 
     it('un-dismisses when status becomes ready', () => {
@@ -387,6 +443,7 @@ describe('updateStore', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       });
 
       expect(useUpdateStore.getState().dismissed).toBe(false);

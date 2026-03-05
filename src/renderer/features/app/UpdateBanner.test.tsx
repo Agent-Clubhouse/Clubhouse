@@ -65,6 +65,7 @@ function resetStores() {
       downloadProgress: 0,
       error: null,
       downloadPath: null,
+      artifactUrl: null,
     },
     settings: {
       autoUpdate: true,
@@ -100,6 +101,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 0,
         error: null,
         downloadPath: null,
+        artifactUrl: null,
       },
     });
     const { container } = render(<UpdateBanner />);
@@ -116,6 +118,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 50,
         error: null,
         downloadPath: null,
+        artifactUrl: null,
       },
     });
     const { container } = render(<UpdateBanner />);
@@ -132,6 +135,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
 
@@ -153,6 +157,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
 
@@ -172,6 +177,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
 
@@ -190,6 +196,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
       dismissed: true,
     });
@@ -208,6 +215,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
 
@@ -231,6 +239,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
 
@@ -252,6 +261,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
     useAgentStore.setState({
@@ -287,6 +297,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
     useAgentStore.setState({
@@ -322,6 +333,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
     useAgentStore.setState({
@@ -361,6 +373,7 @@ describe('UpdateBanner', () => {
         downloadProgress: 100,
         error: null,
         downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
       },
     });
     useAgentStore.setState({
@@ -386,5 +399,136 @@ describe('UpdateBanner', () => {
 
     // Should show 2 running agents (agent-3 is sleeping)
     expect(screen.getByText(/2 running agents/)).toBeInTheDocument();
+  });
+
+  // --- Manual download fallback tests ---
+
+  it('shows "Download manually" button when update is ready and artifactUrl is available', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.getByTestId('update-manual-download-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('update-restart-btn')).toBeInTheDocument();
+  });
+
+  it('does not show "Download manually" when artifactUrl is null', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+        artifactUrl: null,
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.queryByTestId('update-manual-download-btn')).toBeNull();
+    expect(screen.getByTestId('update-restart-btn')).toBeInTheDocument();
+  });
+
+  it('shows error banner with manual download when apply fails', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'error',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 0,
+        error: 'Update failed: No .app found in update archive',
+        downloadPath: null,
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    const banner = screen.getByTestId('update-banner');
+    expect(banner).toBeInTheDocument();
+    expect(screen.getByTestId('update-error-message')).toBeInTheDocument();
+    expect(screen.getByText(/failed to install/)).toBeInTheDocument();
+    expect(screen.getByTestId('update-manual-download-btn')).toBeInTheDocument();
+    // Should NOT show restart button in error state
+    expect(screen.queryByTestId('update-restart-btn')).toBeNull();
+  });
+
+  it('does not show banner for error state without artifactUrl', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'error',
+        availableVersion: null,
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 0,
+        error: 'Download failed: HTTP 404',
+        downloadPath: null,
+        artifactUrl: null,
+      },
+    });
+
+    const { container } = render(<UpdateBanner />);
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('manual download button calls openExternalUrl with artifact URL', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'ready',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 100,
+        error: null,
+        downloadPath: '/tmp/update.zip',
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    fireEvent.click(screen.getByTestId('update-manual-download-btn'));
+
+    expect(vi.mocked(window.clubhouse.app.openExternalUrl)).toHaveBeenCalledWith(
+      'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+    );
+  });
+
+  it('error banner can be dismissed', () => {
+    useUpdateStore.setState({
+      status: {
+        state: 'error',
+        availableVersion: '0.26.0',
+        releaseNotes: null,
+        releaseMessage: null,
+        downloadProgress: 0,
+        error: 'Update failed',
+        downloadPath: null,
+        artifactUrl: 'https://cdn.example.com/Clubhouse-0.26.0-Setup.exe',
+      },
+    });
+
+    render(<UpdateBanner />);
+
+    expect(screen.getByTestId('update-banner')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('update-dismiss-btn'));
+
+    expect(screen.queryByTestId('update-banner')).toBeNull();
   });
 });

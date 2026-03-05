@@ -35,6 +35,7 @@ function resetStore() {
       downloadProgress: 0,
       error: null,
       downloadPath: null,
+      artifactUrl: null,
     },
     settings: {
       autoUpdate: true,

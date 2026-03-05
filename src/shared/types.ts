@@ -364,6 +364,7 @@ export interface UpdateStatus {
   downloadProgress: number;  // 0-100
   error: string | null;
   downloadPath: string | null;
+  artifactUrl: string | null;
 }
 
 export interface UpdateSettings {

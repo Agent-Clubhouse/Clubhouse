@@ -19,6 +19,7 @@ interface UpdateStoreState {
   saveSettings: (settings: UpdateSettings) => Promise<void>;
   checkForUpdates: () => Promise<void>;
   applyUpdate: () => Promise<void>;
+  openUpdateDownload: () => void;
   dismiss: () => void;
   checkWhatsNew: () => Promise<void>;
   dismissWhatsNew: () => Promise<void>;
@@ -33,6 +34,7 @@ const DEFAULT_STATUS: UpdateStatus = {
   downloadProgress: 0,
   error: null,
   downloadPath: null,
+  artifactUrl: null,
 };
 
 const DEFAULT_SETTINGS: UpdateSettings = {
@@ -91,7 +93,15 @@ export const useUpdateStore = create<UpdateStoreState>((set, get) => ({
     try {
       await window.clubhouse.app.applyUpdate();
     } catch {
-      // Error handled in main process
+      // On failure, main process sets error state with artifactUrl preserved
+      // via the UPDATE_STATUS_CHANGED broadcast — no extra action needed here.
+    }
+  },
+
+  openUpdateDownload: () => {
+    const { status: s } = get();
+    if (s.artifactUrl) {
+      window.clubhouse.app.openExternalUrl(s.artifactUrl);
     }
   },
 

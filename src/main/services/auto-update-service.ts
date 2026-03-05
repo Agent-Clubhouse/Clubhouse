@@ -48,6 +48,7 @@ let status: UpdateStatus = {
   downloadProgress: 0,
   error: null,
   downloadPath: null,
+  artifactUrl: null,
 };
 
 let checkTimer: ReturnType<typeof setInterval> | null = null;
@@ -362,6 +363,11 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   }
 }
 
+/** Exported for manual download fallback — returns the artifact URL if available. */
+export function getArtifactUrl(): string | null {
+  return status.artifactUrl;
+}
+
 async function downloadUpdate(
   version: string,
   releaseNotes: string | null,
@@ -381,7 +387,7 @@ async function downloadUpdate(
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
-        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
+        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -389,6 +395,7 @@ async function downloadUpdate(
           downloadProgress: 100,
           downloadPath: destPath,
           error: null,
+          artifactUrl: artifact.url,
         });
         return;
       }
@@ -406,6 +413,7 @@ async function downloadUpdate(
     releaseMessage,
     downloadProgress: 0,
     error: null,
+    artifactUrl: artifact.url,
   });
 
   try {
@@ -423,11 +431,12 @@ async function downloadUpdate(
     }
 
     appLog('update:download', 'info', 'Update verified and ready to install');
-    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage });
+    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
       error: null,
+      artifactUrl: artifact.url,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -446,6 +455,8 @@ export async function applyUpdate(): Promise<void> {
   }
 
   const downloadPath = status.downloadPath!;
+  const savedVersion = status.availableVersion;
+  const savedArtifactUrl = status.artifactUrl;
 
   // Persist release notes for the What's New dialog after restart
   if (status.availableVersion && status.releaseNotes) {
@@ -468,6 +479,7 @@ export async function applyUpdate(): Promise<void> {
     downloadProgress: 0,
     downloadPath: null,
     error: null,
+    artifactUrl: null,
   });
 
   if (process.platform === 'darwin') {
@@ -515,7 +527,13 @@ export async function applyUpdate(): Promise<void> {
         return;
       }
     } catch (err) {
-      appLog('update:apply', 'error', `Failed to apply update: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      appLog('update:apply', 'error', `Failed to apply update: ${msg}`);
+      setState('error', {
+        error: `Update failed: ${msg}`,
+        availableVersion: savedVersion,
+        artifactUrl: savedArtifactUrl,
+      });
       throw err;
     }
   } else if (process.platform === 'win32') {
@@ -543,7 +561,13 @@ export async function applyUpdate(): Promise<void> {
         return;
       }
     } catch (err) {
-      appLog('update:apply', 'error', `Failed to apply Windows update: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      appLog('update:apply', 'error', `Failed to apply Windows update: ${msg}`);
+      setState('error', {
+        error: `Update failed: ${msg}`,
+        availableVersion: savedVersion,
+        artifactUrl: savedArtifactUrl,
+      });
       throw err;
     }
   }
@@ -657,6 +681,7 @@ export function dismissUpdate(): void {
     downloadProgress: 0,
     downloadPath: null,
     error: null,
+    artifactUrl: null,
   });
 }
 
@@ -669,6 +694,7 @@ interface PendingUpdateInfo {
   downloadPath: string;
   releaseNotes: string | null;
   releaseMessage: string | null;
+  artifactUrl?: string | null;
 }
 
 function pendingUpdateInfoPath(): string {
@@ -845,6 +871,7 @@ export function startPeriodicChecks(): void {
         downloadProgress: 100,
         downloadPath: pending.downloadPath,
         error: null,
+        artifactUrl: pending.artifactUrl || null,
       });
     } else {
       // The pending update is for a version we already have (or older) — clean up

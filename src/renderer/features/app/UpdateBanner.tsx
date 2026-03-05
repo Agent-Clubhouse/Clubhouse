@@ -7,11 +7,14 @@ export function UpdateBanner() {
   const dismissed = useUpdateStore((s) => s.dismissed);
   const dismiss = useUpdateStore((s) => s.dismiss);
   const applyUpdate = useUpdateStore((s) => s.applyUpdate);
+  const openUpdateDownload = useUpdateStore((s) => s.openUpdateDownload);
   const agents = useAgentStore((s) => s.agents);
   const [confirming, setConfirming] = useState(false);
 
-  // Only show when update is ready and not dismissed
-  if (status.state !== 'ready' || dismissed) return null;
+  // Show when update is ready, or when apply failed with a manual download fallback
+  const isReady = status.state === 'ready';
+  const isApplyError = status.state === 'error' && !!status.artifactUrl;
+  if ((!isReady && !isApplyError) || dismissed) return null;
 
   const runningAgents = Object.values(agents).filter((a) => a.status === 'running');
   const hasRunningAgents = runningAgents.length > 0;
@@ -30,7 +33,11 @@ export function UpdateBanner() {
 
   return (
     <div
-      className="flex-shrink-0 flex items-center gap-3 px-4 py-2 bg-ctp-info/10 border-b border-ctp-info/20 text-ctp-info text-sm"
+      className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 ${
+        isApplyError
+          ? 'bg-ctp-peach/10 border-b border-ctp-peach/20 text-ctp-peach'
+          : 'bg-ctp-info/10 border-b border-ctp-info/20 text-ctp-info'
+      } text-sm`}
       data-testid="update-banner"
     >
       {/* Info icon */}
@@ -40,7 +47,12 @@ export function UpdateBanner() {
         <line x1="12" y1="8" x2="12.01" y2="8" />
       </svg>
 
-      {confirming ? (
+      {isApplyError ? (
+        <span className="flex-1" data-testid="update-error-message">
+          Update{status.availableVersion ? ` v${status.availableVersion}` : ''} failed to install
+          {status.error ? <span className="opacity-60 ml-1">&mdash; {status.error}</span> : ''}
+        </span>
+      ) : confirming ? (
         <span className="flex-1" data-testid="update-confirm-message">
           {runningAgents.length} running agent{runningAgents.length !== 1 ? 's' : ''} will be stopped. Continue?
         </span>
@@ -53,7 +65,25 @@ export function UpdateBanner() {
         </span>
       )}
 
-      {confirming ? (
+      {isApplyError ? (
+        <>
+          <button
+            onClick={openUpdateDownload}
+            className="px-3 py-1 text-xs rounded bg-ctp-peach/20 hover:bg-ctp-peach/30
+              transition-colors cursor-pointer"
+            data-testid="update-manual-download-btn"
+          >
+            Download manually
+          </button>
+          <button
+            onClick={dismiss}
+            className="text-ctp-peach/50 hover:text-ctp-peach transition-colors cursor-pointer px-1"
+            data-testid="update-dismiss-btn"
+          >
+            x
+          </button>
+        </>
+      ) : confirming ? (
         <>
           <button
             onClick={handleRestart}
@@ -80,6 +110,15 @@ export function UpdateBanner() {
           >
             Restart to update
           </button>
+          {status.artifactUrl && (
+            <button
+              onClick={openUpdateDownload}
+              className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-2 text-xs"
+              data-testid="update-manual-download-btn"
+            >
+              Download manually
+            </button>
+          )}
           <button
             onClick={dismiss}
             className="text-ctp-info/50 hover:text-ctp-info transition-colors cursor-pointer px-1"
