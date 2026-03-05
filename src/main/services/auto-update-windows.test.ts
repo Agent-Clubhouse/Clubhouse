@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript, buildWindowsVbsLauncher } from './auto-update-service';
+import { buildWindowsUpdateScript, buildWindowsQuitUpdateScript, buildPowershellLauncherArgs } from './auto-update-service';
 
 describe('auto-update-service: Windows batch script builders', () => {
   const downloadPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-updates\\Clubhouse-0.26.0.exe';
@@ -131,35 +131,43 @@ describe('auto-update-service: Windows batch script builders', () => {
     });
   });
 
-  describe('buildWindowsVbsLauncher', () => {
+  describe('buildPowershellLauncherArgs', () => {
     const cmdPath = 'C:\\Users\\test\\AppData\\Local\\Temp\\clubhouse-update.cmd';
 
-    it('creates a WScript.Shell object', () => {
-      const vbs = buildWindowsVbsLauncher(cmdPath);
-      expect(vbs).toContain('CreateObject("WScript.Shell")');
+    it('includes -NoProfile to skip user profile loading', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      expect(args).toContain('-NoProfile');
     });
 
-    it('runs cmd.exe with hidden window style (0)', () => {
-      const vbs = buildWindowsVbsLauncher(cmdPath);
-      // The second argument to WshShell.Run is the window style: 0 = hidden
-      expect(vbs).toContain(', 0, True');
+    it('includes -WindowStyle Hidden to prevent console flash', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const idx = args.indexOf('-WindowStyle');
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(args[idx + 1]).toBe('Hidden');
     });
 
-    it('invokes the batch script via cmd.exe /c', () => {
-      const vbs = buildWindowsVbsLauncher(cmdPath);
-      expect(vbs).toContain('cmd.exe /c');
-      expect(vbs).toContain(cmdPath);
+    it('uses Start-Process with -Wait and -WindowStyle Hidden for the child', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain('Start-Process');
+      expect(cmd).toContain('-WindowStyle Hidden');
+      expect(cmd).toContain('-Wait');
     });
 
-    it('self-deletes the VBS file after completion', () => {
-      const vbs = buildWindowsVbsLauncher(cmdPath);
-      expect(vbs).toContain('DeleteFile WScript.ScriptFullName');
+    it('invokes cmd.exe /c with the script path', () => {
+      const args = buildPowershellLauncherArgs(cmdPath);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain('cmd.exe');
+      expect(cmd).toContain('/c');
+      expect(cmd).toContain(cmdPath);
     });
 
-    it('uses CRLF line endings', () => {
-      const vbs = buildWindowsVbsLauncher(cmdPath);
-      const lines = vbs.split('\r\n');
-      expect(lines.length).toBe(3);
+    it('escapes single quotes in the path', () => {
+      const pathWithQuote = "C:\\Users\\test's\\Temp\\script.cmd";
+      const args = buildPowershellLauncherArgs(pathWithQuote);
+      const cmd = args[args.indexOf('-Command') + 1];
+      expect(cmd).toContain("test''s");
+      expect(cmd).not.toContain("test's\\");
     });
   });
 });

@@ -134,18 +134,18 @@ export function isNewerVersion(a: string, b: string): boolean {
 }
 
 /**
- * Build a VBScript launcher that runs a batch script with a completely hidden
- * window. `wscript.exe` is a GUI host (no console window), and
- * `WScript.Shell.Run(cmd, 0, True)` keeps the child hidden too.
- * The VBS self-deletes after the batch completes.
+ * Build the PowerShell arguments to launch a batch script with a completely
+ * hidden window.  PowerShell's `-WindowStyle Hidden` prevents any console
+ * flash, and `Start-Process -Wait -WindowStyle Hidden` keeps the child
+ * hidden too.  PowerShell is guaranteed on Windows 10+.
  */
-export function buildWindowsVbsLauncher(cmdScriptPath: string): string {
+export function buildPowershellLauncherArgs(cmdScriptPath: string): string[] {
   return [
-    'Set WshShell = CreateObject("WScript.Shell")',
-    `WshShell.Run "cmd.exe /c """"${cmdScriptPath}""""""", 0, True`,
-    // Self-delete the VBS launcher
-    'CreateObject("Scripting.FileSystemObject").DeleteFile WScript.ScriptFullName',
-  ].join('\r\n');
+    '-NoProfile',
+    '-WindowStyle', 'Hidden',
+    '-Command',
+    `Start-Process -FilePath cmd.exe -ArgumentList '/c','${cmdScriptPath.replace(/'/g, "''")}' -WindowStyle Hidden -Wait`,
+  ];
 }
 
 /**
@@ -633,14 +633,12 @@ export async function applyUpdate(): Promise<void> {
 
       fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
 
-      // Launch via a VBScript shim so no console window is visible.
-      // wscript.exe is a GUI host — it never creates a console.
-      const vbsLauncher = path.join(app.getPath('temp'), 'clubhouse-update-launcher.vbs');
-      fs.writeFileSync(vbsLauncher, buildWindowsVbsLauncher(script));
-
-      spawn('wscript.exe', [vbsLauncher], {
+      // Launch via PowerShell with -WindowStyle Hidden so no console
+      // window is visible.  PowerShell is guaranteed on Windows 10+.
+      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
         detached: true,
         stdio: 'ignore',
+        windowsHide: true,
       }).unref();
 
       app.exit(0);
@@ -749,13 +747,11 @@ export function applyUpdateOnQuit(): void {
 
       fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
 
-      // Launch via VBScript shim — no visible console window
-      const vbsLauncher = path.join(app.getPath('temp'), 'clubhouse-update-quit-launcher.vbs');
-      fs.writeFileSync(vbsLauncher, buildWindowsVbsLauncher(script));
-
-      spawn('wscript.exe', [vbsLauncher], {
+      // Launch via PowerShell with -WindowStyle Hidden — no visible console
+      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
         detached: true,
         stdio: 'ignore',
+        windowsHide: true,
       }).unref();
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
