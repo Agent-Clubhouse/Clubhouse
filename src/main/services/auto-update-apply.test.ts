@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -7,8 +7,6 @@ import { spawn } from 'child_process';
 import {
   buildMacUpdateScript,
   buildMacQuitUpdateScript,
-  buildWindowsUpdateScript,
-  buildWindowsQuitUpdateScript,
 } from './auto-update-service';
 
 // ---------------------------------------------------------------------------
@@ -29,20 +27,6 @@ async function waitForFileRemoval(filePath: string, timeoutMs = SCRIPT_TIMEOUT_M
     }
   }
   throw new Error(`Timed out waiting for ${filePath} to be removed (${timeoutMs}ms)`);
-}
-
-/** Poll until a file appears on disk. */
-async function waitForFile(filePath: string, timeoutMs = SCRIPT_TIMEOUT_MS): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      await fsp.access(filePath);
-      return;
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-  throw new Error(`Timed out waiting for ${filePath} to appear (${timeoutMs}ms)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,138 +140,6 @@ describe.skipIf(process.platform !== 'darwin')('macOS update script execution (i
     // Cleanup should still complete
     expect(fs.existsSync(env.tmpExtract)).toBe(false);
     expect(fs.existsSync(env.downloadPath)).toBe(false);
-  }, SCRIPT_TIMEOUT_MS);
-});
-
-// ---------------------------------------------------------------------------
-// Windows integration tests — actually execute the generated batch scripts
-// ---------------------------------------------------------------------------
-
-describe.skipIf(process.platform !== 'win32')('Windows update script execution (integration)', () => {
-  const tmpDirs: string[] = [];
-  const logFile = path.join(os.tmpdir(), 'clubhouse-update.log');
-
-  beforeEach(async () => {
-    // Clean the shared log file before each test
-    await fsp.unlink(logFile).catch(() => {});
-  });
-
-  afterEach(async () => {
-    await fsp.unlink(logFile).catch(() => {});
-    for (const dir of tmpDirs) {
-      await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
-    }
-    tmpDirs.length = 0;
-  });
-
-  /**
-   * Create a temp dir with a mock installer .exe and script path.
-   *
-   * IMPORTANT: Mock installers must be real .exe files, not .cmd/.bat.
-   * Batch scripts that call another .cmd without `call` transfer control
-   * permanently (never return), causing the rest of the script to never
-   * execute.  In production, the installer is a Squirrel .exe.  We copy
-   * a small system executable (hostname.exe) as the mock to match this.
-   */
-  async function createWinTestEnv() {
-    const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'clubhouse-update-test-'));
-    tmpDirs.push(tmpDir);
-
-    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-
-    // Mock installer: copy hostname.exe — it prints the hostname, ignores
-    // extra args, and exits 0.  This mirrors production where the installer
-    // is a real .exe that returns control to the batch script.
-    const installerPath = path.join(tmpDir, 'mock-installer.exe');
-    await fsp.copyFile(path.join(systemRoot, 'System32', 'hostname.exe'), installerPath);
-
-    // Mock Update.exe: same approach
-    const updateExePath = path.join(tmpDir, 'Update.exe');
-    await fsp.copyFile(path.join(systemRoot, 'System32', 'hostname.exe'), updateExePath);
-
-    const scriptPath = path.join(tmpDir, 'clubhouse-update.cmd');
-
-    return { tmpDir, installerPath, updateExePath, scriptPath };
-  }
-
-  it('update script writes to the log file and cleans up', async () => {
-    const env = await createWinTestEnv();
-
-    const script = buildWindowsUpdateScript(
-      env.installerPath, env.updateExePath, 'Clubhouse.exe',
-    );
-    await fsp.writeFile(env.scriptPath, script);
-
-    // Spawn with the exact same flags as production
-    spawn('cmd.exe', ['/c', env.scriptPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    }).unref();
-
-    // Wait for the log file to appear (proves the delay mechanism worked)
-    await waitForFile(logFile);
-
-    // Wait for the script to self-delete (proves it ran to completion)
-    await waitForFileRemoval(env.scriptPath);
-
-    // Log file should contain expected entries
-    const log = await fsp.readFile(logFile, 'utf-8');
-    expect(log).toContain('Running installer:');
-    expect(log).toContain(env.installerPath);
-    expect(log).toContain('Installer exit code:');
-
-    // The mock installer should have been deleted
-    expect(fs.existsSync(env.installerPath)).toBe(false);
-  }, SCRIPT_TIMEOUT_MS);
-
-  it('quit script writes to the log file and cleans up without relaunching', async () => {
-    const env = await createWinTestEnv();
-
-    const script = buildWindowsQuitUpdateScript(env.installerPath);
-    await fsp.writeFile(env.scriptPath, script);
-
-    // Spawn with the exact same flags as production
-    spawn('cmd.exe', ['/c', env.scriptPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    }).unref();
-
-    await waitForFile(logFile);
-    await waitForFileRemoval(env.scriptPath);
-
-    // Log file should contain expected entries
-    const log = await fsp.readFile(logFile, 'utf-8');
-    expect(log).toContain('Running installer (quit):');
-    expect(log).toContain(env.installerPath);
-    expect(log).toContain('Installer exit code:');
-
-    // The mock installer should have been deleted
-    expect(fs.existsSync(env.installerPath)).toBe(false);
-  }, SCRIPT_TIMEOUT_MS);
-
-  it('log file reports non-zero exit code when installer fails', async () => {
-    const env = await createWinTestEnv();
-
-    // Replace mock installer with where.exe — it returns non-zero when
-    // given `--silent` (not a valid search target), simulating a failed install
-    const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-    await fsp.copyFile(path.join(systemRoot, 'System32', 'where.exe'), env.installerPath);
-
-    const script = buildWindowsQuitUpdateScript(env.installerPath);
-    await fsp.writeFile(env.scriptPath, script);
-
-    spawn('cmd.exe', ['/c', env.scriptPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
-    }).unref();
-
-    await waitForFileRemoval(env.scriptPath);
-
-    const log = await fsp.readFile(logFile, 'utf-8');
-    expect(log).toContain('Installer FAILED');
   }, SCRIPT_TIMEOUT_MS);
 });
 

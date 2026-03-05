@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, validateWindowsUpdatePrerequisites } from './auto-update-service';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { isNewerVersion, parseVersion, verifySHA256 } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -164,95 +164,6 @@ describe('auto-update-service', () => {
       const url = 'https://example.com/artifacts/Clubhouse';
       const ext = path.extname(new URL(url).pathname) || '.zip';
       expect(ext).toBe('.zip');
-    });
-  });
-
-  describe('validateWindowsUpdatePrerequisites', () => {
-    let tmpDir: string;
-
-    beforeEach(() => {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'update-preflight-'));
-    });
-
-    afterEach(() => {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    });
-
-    it('passes when all prerequisites are met (with updateExePath)', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const updateExePath = path.join(tmpDir, 'Update.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-
-      fs.writeFileSync(downloadPath, 'installer');
-      fs.writeFileSync(updateExePath, 'updater');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath, updateExePath }),
-      ).not.toThrow();
-    });
-
-    it('passes when all prerequisites are met (without updateExePath)', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-
-      fs.writeFileSync(downloadPath, 'installer');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath }),
-      ).not.toThrow();
-    });
-
-    it('throws when Update.exe is missing', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-      const updateExePath = path.join(tmpDir, 'Update.exe');
-
-      fs.writeFileSync(downloadPath, 'installer');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath, updateExePath }),
-      ).toThrow(/Update\.exe not found/);
-    });
-
-    it('throws when downloaded installer is missing', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath }),
-      ).toThrow(/Update file was removed/);
-    });
-
-    it('throws when temp directory is not writable', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'nonexistent-dir', 'nested', 'update.cmd');
-
-      fs.writeFileSync(downloadPath, 'installer');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath }),
-      ).toThrow(/Cannot write to temp directory/);
-    });
-
-    it('checks Update.exe before download path', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-      const updateExePath = path.join(tmpDir, 'Update.exe');
-
-      expect(() =>
-        validateWindowsUpdatePrerequisites({ downloadPath, scriptPath, updateExePath }),
-      ).toThrow(/Update\.exe not found/);
-    });
-
-    it('does not leave temp files after writable check', () => {
-      const downloadPath = path.join(tmpDir, 'Setup.exe');
-      const scriptPath = path.join(tmpDir, 'update.cmd');
-
-      fs.writeFileSync(downloadPath, 'installer');
-
-      validateWindowsUpdatePrerequisites({ downloadPath, scriptPath });
-
-      expect(fs.existsSync(scriptPath)).toBe(false);
     });
   });
 

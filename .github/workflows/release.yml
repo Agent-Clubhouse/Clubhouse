@@ -312,6 +312,22 @@ jobs:
           $exe = Get-ChildItem -Path out/make -Recurse -Filter "*Setup*.exe" | Select-Object -First 1
           Copy-Item $exe.FullName "dist/Clubhouse-${version}-win32-${arch}-Setup.exe"
 
+          # Copy Squirrel update files (nupkg + RELEASES) for native Update.exe
+          # Use arch-specific subdirectory to avoid collisions when artifacts merge
+          $squirrelDir = Get-ChildItem -Path "out/make/squirrel.windows" -Directory | Select-Object -First 1
+          if ($squirrelDir) {
+            $squirrelDist = "dist/squirrel-win32-${arch}"
+            New-Item -ItemType Directory -Force -Path $squirrelDist | Out-Null
+            Copy-Item "$($squirrelDir.FullName)/RELEASES" "$squirrelDist/RELEASES"
+            Get-ChildItem $squirrelDir.FullName -Filter "*.nupkg" | ForEach-Object {
+              Copy-Item $_.FullName "$squirrelDist/$($_.Name)"
+            }
+            Write-Host "Squirrel files for ${arch}:"
+            Get-ChildItem $squirrelDist | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+          } else {
+            Write-Warning "No Squirrel output directory found"
+          }
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -558,6 +574,46 @@ jobs:
                 exit 1
               fi
               sleep 2
+            done
+          done
+
+      - name: Upload Squirrel native update files
+        run: |
+          SLOT="${{ needs.verify-tag.outputs.is_preview == 'true' && 'preview' || 'stable' }}"
+          ACCOUNT="stclubhousereleases"
+          CONTAINER="releases"
+
+          for WIN_ARCH in x64 arm64; do
+            SQUIRREL_SRC="artifacts/squirrel-win32-${WIN_ARCH}"
+            SQUIRREL_DEST="squirrel/${SLOT}/win32-${WIN_ARCH}"
+
+            if [ ! -d "$SQUIRREL_SRC" ]; then
+              echo "::warning::No Squirrel files for win32-${WIN_ARCH}"
+              continue
+            fi
+
+            echo "Uploading Squirrel files for win32-${WIN_ARCH} to ${SQUIRREL_DEST}/"
+
+            # Upload RELEASES file
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "${SQUIRREL_DEST}/RELEASES" \
+              --file "${SQUIRREL_SRC}/RELEASES" \
+              --overwrite \
+              --auth-mode login
+
+            # Upload nupkg files
+            for nupkg in "${SQUIRREL_SRC}"/*.nupkg; do
+              [ -f "$nupkg" ] || continue
+              echo "  Uploading $(basename "$nupkg")"
+              az storage blob upload \
+                --account-name "$ACCOUNT" \
+                --container-name "$CONTAINER" \
+                --name "${SQUIRREL_DEST}/$(basename "$nupkg")" \
+                --file "$nupkg" \
+                --overwrite \
+                --auth-mode login
             done
           done
 

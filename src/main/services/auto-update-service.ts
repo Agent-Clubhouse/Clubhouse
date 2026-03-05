@@ -17,6 +17,7 @@ import { appLog } from './log-service';
 const UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/latest.json';
 const PREVIEW_UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/preview.json';
 const HISTORY_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/history.json';
+const SQUIRREL_BASE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/squirrel';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MAX_HISTORY_VERSIONS = 5;
 const MAX_HISTORY_MONTHS = 3;
@@ -60,6 +61,21 @@ let checkTimer: ReturnType<typeof setInterval> | null = null;
 
 function platformKey(): string {
   return `${process.platform}-${process.arch}`;
+}
+
+/**
+ * Build the Squirrel releases URL for the current platform and channel.
+ * Convention: {SQUIRREL_BASE_URL}/{channel}/{platform-arch}/
+ * e.g. https://.../squirrel/stable/win32-x64/
+ */
+export function getSquirrelReleasesUrl(previewChannel: boolean): string {
+  const channel = previewChannel ? 'preview' : 'stable';
+  return `${SQUIRREL_BASE_URL}/${channel}/${platformKey()}`;
+}
+
+/** Path to Squirrel's Update.exe — one directory above the app exe. */
+export function getSquirrelUpdateExePath(): string {
+  return path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
 }
 
 /**
@@ -131,65 +147,6 @@ export function isNewerVersion(a: string, b: string): boolean {
     return va.prereleaseNum > vb.prereleaseNum;
   }
   return false;
-}
-
-/**
- * Build the PowerShell arguments to launch a batch script with a completely
- * hidden window.  PowerShell's `-WindowStyle Hidden` prevents any console
- * flash, and `Start-Process -Wait -WindowStyle Hidden` keeps the child
- * hidden too.  PowerShell is guaranteed on Windows 10+.
- */
-export function buildPowershellLauncherArgs(cmdScriptPath: string): string[] {
-  return [
-    '-NoProfile',
-    '-WindowStyle', 'Hidden',
-    '-Command',
-    `Start-Process -FilePath cmd.exe -ArgumentList '/c','${cmdScriptPath.replace(/'/g, "''")}' -WindowStyle Hidden -Wait`,
-  ];
-}
-
-/**
- * Build a Windows batch script that waits for the app to exit, runs the
- * Squirrel installer silently, relaunches the updated app, and cleans up.
- */
-export function buildWindowsUpdateScript(
-  downloadPath: string,
-  updateExePath: string,
-  appExeName: string,
-): string {
-  // Use `ping` instead of `timeout` for the delay — `timeout` requires a
-  // real console handle and fails silently when spawned with windowsHide:true
-  // (CREATE_NO_WINDOW).  `ping -n 4` = 3 intervals ~3 seconds.
-  const logFile = '%TEMP%\\clubhouse-update.log';
-  return [
-    '@echo off',
-    'ping -n 4 127.0.0.1 >nul',
-    `echo [%date% %time%] Running installer: "${downloadPath}" >> "${logFile}"`,
-    `"${downloadPath}" --silent`,
-    `echo [%date% %time%] Installer exit code: %ERRORLEVEL% >> "${logFile}"`,
-    `IF %ERRORLEVEL% NEQ 0 echo [%date% %time%] Installer FAILED >> "${logFile}"`,
-    `"${updateExePath}" --processStart "${appExeName}"`,
-    `del /f "${downloadPath}" 2>nul`,
-    `del "%~f0"`,
-  ].join('\r\n');
-}
-
-/**
- * Build a Windows batch script that waits for the app to exit, runs the
- * Squirrel installer silently, and cleans up — no relaunch.
- */
-export function buildWindowsQuitUpdateScript(downloadPath: string): string {
-  const logFile = '%TEMP%\\clubhouse-update.log';
-  return [
-    '@echo off',
-    'ping -n 4 127.0.0.1 >nul',
-    `echo [%date% %time%] Running installer (quit): "${downloadPath}" >> "${logFile}"`,
-    `"${downloadPath}" --silent`,
-    `echo [%date% %time%] Installer exit code: %ERRORLEVEL% >> "${logFile}"`,
-    `IF %ERRORLEVEL% NEQ 0 echo [%date% %time%] Installer FAILED >> "${logFile}"`,
-    `del /f "${downloadPath}" 2>nul`,
-    `del "%~f0"`,
-  ].join('\r\n');
 }
 
 /**
@@ -422,8 +379,28 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
       meta: { currentVersion, newVersion: manifest.version },
     });
 
-    // Start download
     saveSettings({ ...settings, lastCheck: new Date().toISOString(), dismissedVersion: null });
+
+    // On Windows, use Squirrel native update — skip our own download.
+    // Update.exe will download the nupkg when we apply.
+    if (process.platform === 'win32') {
+      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
+      appLog('update:check', 'info', 'Windows: Squirrel native update ready', {
+        meta: { releasesUrl },
+      });
+      setState('ready', {
+        availableVersion: manifest.version,
+        releaseNotes: manifest.releaseNotes || null,
+        releaseMessage: manifest.releaseMessage || null,
+        downloadProgress: 100,
+        downloadPath: '',
+        error: null,
+        artifactUrl: artifact.url,
+      });
+      return status;
+    }
+
+    // macOS/Linux: download the artifact ourselves
     await downloadUpdate(manifest.version, manifest.releaseNotes || null, manifest.releaseMessage || null, artifact);
 
     return status;
@@ -518,56 +495,15 @@ async function downloadUpdate(
 }
 
 // ---------------------------------------------------------------------------
-// Windows pre-flight validation
-// ---------------------------------------------------------------------------
-
-/**
- * Validate prerequisites for applying a Windows update via Squirrel.
- * Throws with an actionable error message if any check fails.
- */
-export function validateWindowsUpdatePrerequisites(opts: {
-  downloadPath: string;
-  scriptPath: string;
-  updateExePath?: string;
-}): void {
-  // Validate Update.exe exists (needed for relaunch after install)
-  if (opts.updateExePath && !fs.existsSync(opts.updateExePath)) {
-    appLog('update:apply', 'error', 'Update.exe not found — Squirrel installation may be corrupted', {
-      meta: { expectedPath: opts.updateExePath },
-    });
-    throw new Error('Cannot apply update: Update.exe not found. Please reinstall the app manually.');
-  }
-
-  // Validate downloaded installer still exists (AV could quarantine it)
-  if (!fs.existsSync(opts.downloadPath)) {
-    appLog('update:apply', 'error', 'Downloaded installer missing — may have been quarantined by antivirus', {
-      meta: { expectedPath: opts.downloadPath },
-    });
-    throw new Error('Update file was removed. Please check your antivirus settings and try again.');
-  }
-
-  // Validate temp directory is writable
-  try {
-    fs.writeFileSync(opts.scriptPath, '');
-    fs.unlinkSync(opts.scriptPath);
-  } catch (err) {
-    appLog('update:apply', 'error', 'Cannot write to temp directory', {
-      meta: { scriptPath: opts.scriptPath, error: err instanceof Error ? err.message : String(err) },
-    });
-    throw new Error('Cannot write to temp directory. Please check disk space and permissions.');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Apply update (quit, replace, relaunch)
 // ---------------------------------------------------------------------------
 
 export async function applyUpdate(): Promise<void> {
-  if (status.state !== 'ready' || !status.downloadPath) {
+  if (status.state !== 'ready') {
     throw new Error('No update ready to apply');
   }
 
-  const downloadPath = status.downloadPath!;
+  const downloadPath = status.downloadPath;
   const savedVersion = status.availableVersion;
   const savedArtifactUrl = status.artifactUrl;
 
@@ -648,35 +584,27 @@ export async function applyUpdate(): Promise<void> {
       throw err;
     }
   } else if (process.platform === 'win32') {
-    // On Windows, use a batch script to apply the Squirrel update.
-    // Directly spawning Setup.exe while the app is still exiting causes
-    // ~10 second hangs due to file-lock contention.  The batch script
-    // waits for the old process to fully exit, runs the installer, then
-    // relaunches the app via Squirrel's Update.exe.
+    // Squirrel native update: Update.exe downloads the nupkg and applies
+    // it in-place. No batch scripts, no console windows, no installer UI.
     try {
-      const { spawn } = require('child_process');
-      const script = path.join(app.getPath('temp'), 'clubhouse-update.cmd');
-      const updateExe = path.resolve(path.dirname(app.getPath('exe')), '..', 'Update.exe');
-      const appExeName = path.basename(app.getPath('exe'));
+      const updateExe = getSquirrelUpdateExePath();
 
-      // Pre-flight validation: ensure all prerequisites are met before
-      // writing and spawning the batch script (see #432)
-      validateWindowsUpdatePrerequisites({
-        downloadPath,
-        scriptPath: script,
-        updateExePath: updateExe,
+      if (!fs.existsSync(updateExe)) {
+        throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
+      }
+
+      const settings = getSettings();
+      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
+
+      appLog('update:apply', 'info', 'Applying via Squirrel Update.exe', {
+        meta: { releasesUrl, version: savedVersion },
       });
 
-      fs.writeFileSync(script, buildWindowsUpdateScript(downloadPath, updateExe, appExeName));
+      const { execFileSync } = require('child_process');
+      execFileSync(updateExe, ['--update', releasesUrl], { timeout: 120_000 });
 
-      // Launch via PowerShell with -WindowStyle Hidden so no console
-      // window is visible.  PowerShell is guaranteed on Windows 10+.
-      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      }).unref();
-
+      appLog('update:apply', 'info', 'Squirrel update applied, relaunching');
+      app.relaunch();
       app.exit(0);
       return;
     } catch (err) {
@@ -701,7 +629,7 @@ export async function applyUpdate(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function applyUpdateOnQuit(): void {
-  if (status.state !== 'ready' || !status.downloadPath) {
+  if (status.state !== 'ready') {
     return; // No update ready — nothing to do
   }
 
@@ -760,27 +688,20 @@ export function applyUpdateOnQuit(): void {
       appLog('update:apply-on-quit', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else if (process.platform === 'win32') {
-    // Same batch-script approach as applyUpdate() — wait for the app to
-    // fully exit before running the installer to avoid file-lock hangs.
-    // No relaunch step since the user chose to quit.
+    // Squirrel native update — no relaunch since the user chose to quit
     try {
-      const { spawn } = require('child_process');
-      const script = path.join(app.getPath('temp'), 'clubhouse-update-quit.cmd');
+      const updateExe = getSquirrelUpdateExePath();
+      if (!fs.existsSync(updateExe)) return;
 
-      // Pre-flight validation (no Update.exe needed — no relaunch)
-      validateWindowsUpdatePrerequisites({
-        downloadPath,
-        scriptPath: script,
+      const settings = getSettings();
+      const releasesUrl = getSquirrelReleasesUrl(settings.previewChannel);
+
+      appLog('update:apply-on-quit', 'info', 'Applying via Squirrel Update.exe (no relaunch)', {
+        meta: { releasesUrl },
       });
 
-      fs.writeFileSync(script, buildWindowsQuitUpdateScript(downloadPath));
-
-      // Launch via PowerShell with -WindowStyle Hidden — no visible console
-      spawn('powershell.exe', buildPowershellLauncherArgs(script), {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-      }).unref();
+      const { execFileSync } = require('child_process');
+      execFileSync(updateExe, ['--update', releasesUrl], { timeout: 120_000 });
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1040,7 +961,13 @@ export function startPeriodicChecks(): void {
   // Restore ready state immediately if a pending update was downloaded in a
   // previous session and the file is still on disk.
   const pending = readPendingUpdateInfo();
-  if (pending && fs.existsSync(pending.downloadPath)) {
+  // On Windows, Update.exe handles downloads so downloadPath is empty.
+  // On macOS, the downloaded file must still exist on disk.
+  const pendingReady = pending && (
+    process.platform === 'win32' ||
+    (pending.downloadPath && fs.existsSync(pending.downloadPath))
+  );
+  if (pending && pendingReady) {
     if (isNewerVersion(pending.version, currentVersion)) {
       appLog('update:restore', 'info', 'Restoring pending update from previous session', {
         meta: { version: pending.version },
