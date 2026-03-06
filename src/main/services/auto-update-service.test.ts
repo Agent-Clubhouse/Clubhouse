@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams } from './auto-update-service';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams, isTransientError, withRetry } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -192,6 +192,107 @@ describe('auto-update-service', () => {
       // pathname-based extension parsing should still yield .exe
       const ext = path.extname(new URL(result).pathname);
       expect(ext).toBe('.exe');
+    });
+  });
+
+  describe('isTransientError', () => {
+    it('returns true for ETIMEDOUT', () => {
+      expect(isTransientError(new Error('read ETIMEDOUT'))).toBe(true);
+    });
+
+    it('returns true for ECONNRESET', () => {
+      expect(isTransientError(new Error('socket hang up ECONNRESET'))).toBe(true);
+    });
+
+    it('returns true for ECONNREFUSED', () => {
+      expect(isTransientError(new Error('connect ECONNREFUSED 127.0.0.1:443'))).toBe(true);
+    });
+
+    it('returns true for ENOTFOUND', () => {
+      expect(isTransientError(new Error('getaddrinfo ENOTFOUND example.com'))).toBe(true);
+    });
+
+    it('returns true for "Request timed out"', () => {
+      expect(isTransientError(new Error('Request timed out'))).toBe(true);
+    });
+
+    it('returns true for "Download timed out"', () => {
+      expect(isTransientError(new Error('Download timed out'))).toBe(true);
+    });
+
+    it('returns false for HTTP 404', () => {
+      expect(isTransientError(new Error('HTTP 404 fetching ...'))).toBe(false);
+    });
+
+    it('returns false for checksum failure', () => {
+      expect(isTransientError(new Error('SHA-256 checksum verification failed'))).toBe(false);
+    });
+
+    it('handles non-Error values', () => {
+      expect(isTransientError('ETIMEDOUT')).toBe(true);
+      expect(isTransientError('some other error')).toBe(false);
+    });
+  });
+
+  describe('withRetry', () => {
+    it('returns result on first success', async () => {
+      const fn = vi.fn().mockResolvedValue('ok');
+      const result = await withRetry(fn, { retries: 3, baseDelayMs: 1 });
+      expect(result).toBe('ok');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries on transient error and succeeds', async () => {
+      const fn = vi.fn()
+        .mockRejectedValueOnce(new Error('read ETIMEDOUT'))
+        .mockResolvedValueOnce('ok');
+      const result = await withRetry(fn, { retries: 3, baseDelayMs: 1 });
+      expect(result).toBe('ok');
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws immediately on non-transient error', async () => {
+      const fn = vi.fn().mockRejectedValue(new Error('HTTP 404'));
+      await expect(withRetry(fn, { retries: 3, baseDelayMs: 1 })).rejects.toThrow('HTTP 404');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws after all retries exhausted', async () => {
+      const fn = vi.fn().mockRejectedValue(new Error('read ETIMEDOUT'));
+      await expect(
+        withRetry(fn, { retries: 2, baseDelayMs: 1 }),
+      ).rejects.toThrow('read ETIMEDOUT');
+      expect(fn).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    });
+
+    it('uses exponential backoff delays', async () => {
+      vi.useFakeTimers();
+      try {
+        const fn = vi.fn()
+          .mockRejectedValueOnce(new Error('ECONNRESET'))
+          .mockRejectedValueOnce(new Error('ECONNRESET'))
+          .mockResolvedValueOnce('ok');
+
+        const promise = withRetry(fn, { retries: 3, baseDelayMs: 1000 });
+
+        // First retry delay: 1000 * 2^0 = 1000ms
+        expect(fn).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(999);
+        expect(fn).toHaveBeenCalledTimes(1); // not yet
+        await vi.advanceTimersByTimeAsync(1);
+        expect(fn).toHaveBeenCalledTimes(2);
+
+        // Second retry delay: 1000 * 2^1 = 2000ms
+        await vi.advanceTimersByTimeAsync(1999);
+        expect(fn).toHaveBeenCalledTimes(2); // not yet
+        await vi.advanceTimersByTimeAsync(1);
+        expect(fn).toHaveBeenCalledTimes(3);
+
+        const result = await promise;
+        expect(result).toBe('ok');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

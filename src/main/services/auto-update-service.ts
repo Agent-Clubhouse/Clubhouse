@@ -24,6 +24,54 @@ const SQUIRREL_BASE_URL = 'https://stclubhousereleases.blob.core.windows.net/rel
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MAX_HISTORY_VERSIONS = 5;
 const MAX_HISTORY_MONTHS = 3;
+const RETRY_COUNT = 3;
+const RETRY_BASE_DELAY_MS = 5_000; // 5s, 10s, 20s with exponential backoff
+
+// ---------------------------------------------------------------------------
+// Retry helpers
+// ---------------------------------------------------------------------------
+
+const TRANSIENT_ERROR_CODES = [
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ECONNABORTED',
+];
+
+export function isTransientError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (TRANSIENT_ERROR_CODES.some((code) => msg.includes(code))) return true;
+  if (/timed?\s*out/i.test(msg)) return true;
+  return false;
+}
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseDelayMs?: number; label?: string } = {},
+): Promise<T> {
+  const { retries = RETRY_COUNT, baseDelayMs = RETRY_BASE_DELAY_MS, label = 'request' } = opts;
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries && isTransientError(err)) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        appLog('update:retry', 'info', `${label} attempt ${attempt + 1}/${retries + 1} failed, retrying in ${Math.round(delay / 1000)}s`, {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
 
 // ---------------------------------------------------------------------------
 // Settings persistence
@@ -370,7 +418,10 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   });
 
   try {
-    const { manifest, sourceUrl } = await fetchBestManifest(settings.previewChannel);
+    const { manifest, sourceUrl } = await withRetry(
+      () => fetchBestManifest(settings.previewChannel),
+      { label: 'manifest fetch' },
+    );
     const currentVersion = app.getVersion();
 
     appLog('update:check', 'info', 'Fetched manifest', {
@@ -497,10 +548,19 @@ async function downloadUpdate(
   });
 
   try {
-    await downloadFile(appendTelemetryParams(artifact.url), destPath, artifact.size, (percent) => {
-      status = { ...status, downloadProgress: percent };
-      broadcastStatus();
-    });
+    await withRetry(
+      async () => {
+        // Clean up partial file from a previous failed attempt
+        try { await fsp.unlink(destPath); } catch { /* may not exist */ }
+        status = { ...status, downloadProgress: 0 };
+        broadcastStatus();
+        await downloadFile(appendTelemetryParams(artifact.url), destPath, artifact.size, (percent) => {
+          status = { ...status, downloadProgress: percent };
+          broadcastStatus();
+        });
+      },
+      { label: 'artifact download' },
+    );
 
     appLog('update:download', 'info', 'Download complete, verifying checksum');
 
