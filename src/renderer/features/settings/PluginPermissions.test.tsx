@@ -193,8 +193,9 @@ describe('PluginListSettings — PermissionInfoPopup', () => {
 
     // Should NOT contain the original bilateral consent wording
     expect(screen.queryByText(/where the plugin is also enabled/)).toBeNull();
-    // Should contain the rewritten description
-    expect(screen.getByText(/across all projects \(app-scoped/)).toBeInTheDocument();
+    // Should contain the rewritten descriptions (one per cross-project permission)
+    const rewrittenDescs = screen.getAllByText(/across all projects \(app-scoped/);
+    expect(rewrittenDescs.length).toBeGreaterThanOrEqual(1);
   });
 
   it('flips popup above button when near viewport bottom', () => {
