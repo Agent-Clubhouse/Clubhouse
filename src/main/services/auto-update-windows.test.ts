@@ -14,16 +14,24 @@ describe('auto-update-service: Squirrel native update helpers', () => {
       expect(url).toContain('/squirrel/preview/');
     });
 
-    it('includes the platform-arch in the URL', () => {
+    it('includes the platform-arch in the URL path', () => {
       const url = getSquirrelReleasesUrl(false);
-      // On CI/local this will be darwin-arm64 or darwin-x64, but the
-      // important thing is the pattern includes platform-arch
-      expect(url).toMatch(/\/(darwin|win32|linux)-(x64|arm64)$/);
+      // The path segment should include platform-arch (query params follow)
+      const urlPath = new URL(url).pathname;
+      expect(urlPath).toMatch(/\/(darwin|win32|linux)-(x64|arm64)$/);
     });
 
     it('uses the correct base URL', () => {
       const url = getSquirrelReleasesUrl(false);
       expect(url.startsWith('https://stclubhousereleases.blob.core.windows.net/releases/squirrel/')).toBe(true);
+    });
+
+    it('includes telemetry query params', () => {
+      const url = getSquirrelReleasesUrl(false);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.has('v')).toBe(true);
+      expect(parsed.searchParams.get('os')).toBe(process.platform);
+      expect(parsed.searchParams.get('arch')).toBe(process.arch);
     });
   });
 
