@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -413,17 +413,17 @@ function ProjectCard({ project }: { project: Project }) {
       {agents.length > 0 && (
         <div className="border-t border-surface-0 px-2 py-1.5">
           {durableAgents.map((a) => (
-            <AgentRow key={a.id} agent={a} navigateToAgent={navigateToAgent} />
+            <AgentRow key={a.id} agent={a} project={project} navigateToAgent={navigateToAgent} />
           ))}
           {quickAgents.length > 0 && durableAgents.length > 0 && quickAgents.length <= 3 && (
             quickAgents.map((a) => (
-              <AgentRow key={a.id} agent={a} navigateToAgent={navigateToAgent} />
+              <AgentRow key={a.id} agent={a} project={project} navigateToAgent={navigateToAgent} />
             ))
           )}
           {quickAgents.length > 0 && (durableAgents.length === 0 || quickAgents.length > 3) && (
             quickAgents.length <= 3 ? (
               quickAgents.map((a) => (
-                <AgentRow key={a.id} agent={a} navigateToAgent={navigateToAgent} />
+                <AgentRow key={a.id} agent={a} project={project} navigateToAgent={navigateToAgent} />
               ))
             ) : (
               <div className="px-3 py-2 text-xs text-ctp-subtext0">
@@ -451,47 +451,253 @@ const STATUS_CONFIG: Record<string, { label: string }> = {
   error: { label: 'Error' },
 };
 
-function AgentRow({ agent, navigateToAgent }: { agent: Agent; navigateToAgent: (projectId: string, agentId: string) => void }) {
+interface AgentActionDef {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  hoverColor: string;
+  handler: (e?: React.MouseEvent) => void;
+}
+
+function AgentRowContextMenu({ actions, position, onClose }: {
+  actions: AgentActionDef[];
+  position: { x: number; y: number };
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  const style = useMemo(() => {
+    const menuWidth = 160;
+    const menuHeight = actions.length * 32 + 8;
+    const x = Math.min(position.x, window.innerWidth - menuWidth - 8);
+    const y = Math.min(position.y, window.innerHeight - menuHeight - 8);
+    return { left: x, top: y };
+  }, [position, actions.length]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
+      style={style}
+      data-testid="dashboard-agent-context-menu"
+    >
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors cursor-pointer"
+          onClick={(e) => { e.stopPropagation(); action.handler(e); onClose(); }}
+          data-testid={`dashboard-ctx-${action.id}`}
+        >
+          <span className="flex-shrink-0">{action.icon}</span>
+          <span>{action.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AgentRow({ agent, project, navigateToAgent }: {
+  agent: Agent;
+  project: Project;
+  navigateToAgent: (projectId: string, agentId: string) => void;
+}) {
   const detailedStatus = useAgentStore((s) => s.agentDetailedStatus);
+  const killAgent = useAgentStore((s) => s.killAgent);
+  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
+  const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const detailed = detailedStatus[agent.id];
 
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
   const hasDetailed = agent.status === 'running' && detailed;
   const statusLabel = hasDetailed ? detailed.message : statusInfo.label;
+  const isDurable = agent.kind === 'durable';
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleStop = useCallback(async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    await killAgent(agent.id);
+  }, [agent.id, killAgent]);
+
+  const handleWake = useCallback(async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (agent.status === 'running') return;
+    const configs = await window.clubhouse.agent.listDurable(project.path);
+    const config = configs.find((c: any) => c.id === agent.id);
+    if (config) {
+      await spawnDurableAgent(project.id, project.path, config, false);
+    }
+  }, [agent.id, agent.status, project.id, project.path, spawnDurableAgent]);
+
+  const handleWakeAndResume = useCallback(async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (agent.status === 'running') return;
+    const configs = await window.clubhouse.agent.listDurable(project.path);
+    const config = configs.find((c: any) => c.id === agent.id);
+    if (config) {
+      await spawnDurableAgent(project.id, project.path, config, true);
+    }
+  }, [agent.id, agent.status, project.id, project.path, spawnDurableAgent]);
+
+  const handleSettings = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    navigateToAgent(agent.projectId, agent.id);
+    openAgentSettings(agent.id);
+  }, [agent.id, agent.projectId, navigateToAgent, openAgentSettings]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const contextActions = useMemo(() => {
+    const list: AgentActionDef[] = [];
+
+    if (agent.status === 'running') {
+      list.push({
+        id: 'stop',
+        label: 'Stop',
+        icon: <span>{'\u25A0'}</span>,
+        hoverColor: 'hover:text-yellow-400',
+        handler: handleStop,
+      });
+    } else if (isDurable && (agent.status === 'sleeping' || agent.status === 'error')) {
+      list.push({
+        id: 'wake',
+        label: 'Wake',
+        icon: <span>{'\u25B6'}</span>,
+        hoverColor: 'hover:text-green-400',
+        handler: handleWake,
+      });
+      list.push({
+        id: 'wake-resume',
+        label: 'Wake & Resume',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 4v6h6" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-green-400',
+        handler: handleWakeAndResume,
+      });
+    }
+
+    if (isDurable) {
+      list.push({
+        id: 'settings',
+        label: 'Settings',
+        icon: (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        ),
+        hoverColor: 'hover:text-ctp-blue',
+        handler: handleSettings,
+      });
+    }
+
+    return list;
+  }, [agent.status, isDurable, handleStop, handleWake, handleWakeAndResume, handleSettings]);
+
+  // Inline buttons: primary action + settings
+  const primaryAction = agent.status === 'running'
+    ? { id: 'stop', title: 'Stop', icon: <span>{'\u25A0'}</span>, hoverColor: 'hover:text-yellow-400', handler: handleStop }
+    : isDurable && (agent.status === 'sleeping' || agent.status === 'error')
+      ? { id: 'wake', title: 'Wake', icon: <span>{'\u25B6'}</span>, hoverColor: 'hover:text-green-400', handler: handleWake }
+      : null;
 
   return (
-    <button
-      onClick={() => navigateToAgent(agent.projectId, agent.id)}
-      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-1/60 transition-colors cursor-pointer text-left w-full"
-    >
-      <AgentAvatar agent={agent} size="md" />
-
-      <span className="text-sm text-ctp-text font-medium truncate min-w-0">{agent.name}</span>
-
-      <span
-        className={`text-xs truncate flex-shrink-0 ${
-          hasDetailed && detailed.state === 'needs_permission'
-            ? 'text-orange-400'
-            : hasDetailed && detailed.state === 'tool_error'
-              ? 'text-red-400'
-              : 'text-ctp-subtext0'
-        }`}
+    <>
+      <div
+        onClick={() => navigateToAgent(agent.projectId, agent.id)}
+        onContextMenu={handleContextMenu}
+        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-1/60 transition-colors cursor-pointer text-left w-full group"
+        data-testid={`dashboard-agent-row-${agent.id}`}
       >
-        {statusLabel}
-      </span>
+        <AgentAvatar agent={agent} size="md" />
 
-      {agent.branch && (
-        <span className="text-xs text-ctp-subtext0 truncate flex-shrink-0 ml-auto max-w-[140px]" title={agent.branch}>
-          <svg className="inline w-3 h-3 mr-0.5 -mt-px" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="6" y1="3" x2="6" y2="15" />
-            <circle cx="18" cy="6" r="3" />
-            <circle cx="6" cy="18" r="3" />
-            <path d="M18 9a9 9 0 0 1-9 9" />
-          </svg>
-          {agent.branch}
+        <span className="text-sm text-ctp-text font-medium truncate min-w-0">{agent.name}</span>
+
+        <span
+          className={`text-xs truncate flex-shrink-0 ${
+            hasDetailed && detailed.state === 'needs_permission'
+              ? 'text-orange-400'
+              : hasDetailed && detailed.state === 'tool_error'
+                ? 'text-red-400'
+                : 'text-ctp-subtext0'
+          }`}
+        >
+          {statusLabel}
         </span>
+
+        {agent.branch && (
+          <span className="text-xs text-ctp-subtext0 truncate flex-shrink-0 ml-auto max-w-[140px]" title={agent.branch}>
+            <svg className="inline w-3 h-3 mr-0.5 -mt-px" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            {agent.branch}
+          </span>
+        )}
+
+        {/* Inline action buttons */}
+        <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" data-testid="dashboard-agent-actions">
+          {primaryAction && (
+            <button
+              onClick={(e) => { e.stopPropagation(); primaryAction.handler(e); }}
+              title={primaryAction.title}
+              className={`w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 ${primaryAction.hoverColor} hover:bg-surface-1 transition-colors cursor-pointer`}
+              data-testid={`dashboard-action-${primaryAction.id}`}
+            >
+              {primaryAction.icon}
+            </button>
+          )}
+          {isDurable && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleSettings(e); }}
+              title="Settings"
+              className="w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:text-ctp-blue hover:bg-surface-1 transition-colors cursor-pointer"
+              data-testid="dashboard-action-settings"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {contextMenu && (
+        <AgentRowContextMenu
+          actions={contextActions}
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+        />
       )}
-    </button>
+    </>
   );
 }
 
