@@ -525,6 +525,50 @@ describe('pty-manager', () => {
     });
   });
 
+  describe('command prefix', () => {
+    it('prepends command prefix to pending command on Unix', () => {
+      if (process.platform === 'win32') return;
+
+      spawn('agent_prefix', '/test', '/usr/local/bin/claude', ['--model', 'opus'], undefined, undefined, '. ./init.sh');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('shell ready');
+
+      const writeCall = mockProcess.write.mock.calls.find(
+        (c: string[]) => typeof c[0] === 'string' && c[0].includes('exec ')
+      );
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).toContain('. ./init.sh && ');
+      expect(writeCall![0]).toContain("exec '/usr/local/bin/claude' '--model' 'opus'");
+    });
+
+    it('prepends command prefix to pending command on Windows', () => {
+      if (process.platform !== 'win32') return;
+
+      spawn('agent_prefix_win', '/test', 'C:\\path\\to\\claude.cmd', [], undefined, undefined, '. .\\init.ps1');
+      resize('agent_prefix_win', 120, 30);
+
+      const writeCall = mockProcess.write.mock.calls.find(
+        (c: string[]) => typeof c[0] === 'string' && c[0].includes('& exit')
+      );
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).toContain('. .\\init.ps1 & ');
+    });
+
+    it('does not alter command when prefix is undefined', () => {
+      if (process.platform === 'win32') return;
+
+      spawn('agent_no_prefix', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined);
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('shell ready');
+
+      const writeCall = mockProcess.write.mock.calls.find(
+        (c: string[]) => typeof c[0] === 'string' && c[0].includes('exec ')
+      );
+      expect(writeCall).toBeDefined();
+      expect(writeCall![0]).not.toContain('&&');
+    });
+  });
+
   describe('spawn with extraEnv', () => {
     it('passes extraEnv to pty spawn', async () => {
       const pty = await import('node-pty');

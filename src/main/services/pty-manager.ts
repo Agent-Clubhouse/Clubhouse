@@ -46,7 +46,7 @@ function flushPendingCommand(session: ManagedSession): boolean {
   } else {
     // printf clears the screen so the terminal driver echo and shell
     // prompt echo of the exec command are wiped before the agent starts.
-    session.process.write(`printf '\\033[2J\\033[H'; exec ${cmd}\n`);
+    session.process.write(`printf '\\033[2J\\033[H'; ${cmd}\n`);
   }
   return true;
 }
@@ -156,7 +156,9 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     } else {
       const shellCmd = [binary, ...args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const shell = process.env.SHELL || '/bin/zsh';
-      pendingCommand = commandPrefix ? `${commandPrefix} && ${shellCmd}` : shellCmd;
+      pendingCommand = commandPrefix
+        ? `${commandPrefix} && exec ${shellCmd}`
+        : `exec ${shellCmd}`;
 
       proc = pty.spawn(shell, ['-il'], {
         name: 'xterm-256color',

@@ -128,6 +128,28 @@ describe('StreamJsonAdapter', () => {
     expect(args).toContain('Bash');
   });
 
+  it('wraps spawn via shell when commandPrefix is set', () => {
+    const adapter = new StreamJsonAdapter({ binary: '/usr/bin/claude' });
+    adapter.start({ ...defaultSessionOpts, commandPrefix: '. ./init.sh' });
+
+    const [binary, args] = mockSpawn.mock.calls[0];
+    expect(binary).toBe('sh');
+    expect(args[0]).toBe('-c');
+    expect(args[1]).toBe('. ./init.sh && exec "$@"');
+    expect(args[2]).toBe('_');
+    expect(args[3]).toBe('/usr/bin/claude');
+    expect(args).toContain('-p');
+    expect(args).toContain('Fix the bug');
+  });
+
+  it('spawns directly when commandPrefix is undefined', () => {
+    const adapter = new StreamJsonAdapter({ binary: '/usr/bin/claude' });
+    adapter.start({ ...defaultSessionOpts, commandPrefix: undefined });
+
+    const [binary] = mockSpawn.mock.calls[0];
+    expect(binary).toBe('/usr/bin/claude');
+  });
+
   it('includes system prompt flag', () => {
     const adapter = new StreamJsonAdapter({ binary: 'claude' });
     adapter.start({ ...defaultSessionOpts, systemPrompt: 'Be helpful' });

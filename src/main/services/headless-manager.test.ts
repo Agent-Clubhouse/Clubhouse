@@ -1216,4 +1216,59 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(true);
     });
   });
+
+  // ============================================================
+  // command prefix
+  // ============================================================
+  describe('command prefix', () => {
+    it('wraps spawn via shell with prefix on Unix', () => {
+      if (process.platform === 'win32') return;
+
+      spawnHeadless(
+        'test-agent', '/project', '/usr/local/bin/claude',
+        ['-p', 'test'], undefined, 'stream-json', undefined,
+        '. ./init.sh',
+      );
+
+      expect(mockCpSpawn).toHaveBeenCalledWith(
+        'sh',
+        ['-c', '. ./init.sh && exec "$@"', '_', '/usr/local/bin/claude', '-p', 'test'],
+        expect.objectContaining({
+          cwd: '/project',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }),
+      );
+    });
+
+    it('prepends prefix in cmd.exe command line on Windows', () => {
+      if (process.platform !== 'win32') return;
+
+      spawnHeadless(
+        'test-agent', '/project', 'C:\\path\\claude.cmd',
+        ['-p', 'test'], undefined, 'stream-json', undefined,
+        '. .\\init.ps1',
+      );
+
+      const callArgs = mockCpSpawn.mock.calls[0];
+      expect(callArgs[0]).toBe('cmd.exe');
+      const cmdLine = callArgs[1][3] as string;
+      expect(cmdLine).toContain('. .\\init.ps1 & ');
+    });
+
+    it('spawns directly when no prefix is set', () => {
+      if (process.platform === 'win32') return;
+
+      spawnHeadless(
+        'test-agent', '/project', '/usr/local/bin/claude',
+        ['-p', 'test'], undefined, 'stream-json', undefined,
+        undefined,
+      );
+
+      expect(mockCpSpawn).toHaveBeenCalledWith(
+        '/usr/local/bin/claude',
+        ['-p', 'test'],
+        expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
+      );
+    });
+  });
 });

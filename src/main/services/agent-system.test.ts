@@ -208,6 +208,7 @@ describe('agent-system', () => {
           CLUBHOUSE_HOOK_NONCE: nonce,
         }),
         expect.any(Function),
+        undefined, // commandPrefix
       );
     });
 
@@ -248,6 +249,54 @@ describe('agent-system', () => {
           kind: 'durable',
         })
       ).rejects.toThrowError('OPENAI_API_KEY is not set');
+    });
+
+    it('passes commandPrefix from project settings to ptyManager.spawn', async () => {
+      // Mock readFileSync: called 3 times — readProjectOrchestrator,
+      // resolveProfileEnv (readProjectAgentDefaults), and readProjectAgentDefaults
+      const settingsWithPrefix = JSON.stringify({ agentDefaults: { commandPrefix: '. ./init.sh' } });
+      vi.mocked(fs.readFileSync)
+        .mockReturnValueOnce(JSON.stringify({}))   // readProjectOrchestrator
+        .mockReturnValueOnce(settingsWithPrefix)    // resolveProfileEnv → readProjectAgentDefaults
+        .mockReturnValueOnce(settingsWithPrefix);   // readProjectAgentDefaults (direct)
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // The 7th argument to ptyManager.spawn should be the command prefix
+      expect(mockPtySpawn).toHaveBeenCalledWith(
+        'agent-1',
+        '/project',
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Object),
+        expect.any(Function),
+        '. ./init.sh',
+      );
+    });
+
+    it('passes undefined commandPrefix when not configured', async () => {
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // The 7th argument should be undefined
+      expect(mockPtySpawn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Object),
+        expect.any(Function),
+        undefined,
+      );
     });
 
     it('does not spawn PTY when pre-flight check fails', async () => {

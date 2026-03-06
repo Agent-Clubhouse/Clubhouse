@@ -198,6 +198,66 @@ describe('ProjectAgentDefaultsSection', () => {
     });
   });
 
+  describe('command prefix', () => {
+    it('renders the Command Prefix input', async () => {
+      renderSection();
+      expect(await screen.findByText('Command Prefix')).toBeInTheDocument();
+    });
+
+    it('loads and displays existing command prefix', async () => {
+      window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
+        commandPrefix: '. ./init.sh',
+      });
+      renderSection();
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('. ./init.sh')).toBeInTheDocument();
+      });
+    });
+
+    it('marks dirty when command prefix changes', async () => {
+      renderSection();
+      await screen.findByText('Command Prefix');
+
+      const input = screen.getByPlaceholderText('. ./init.sh');
+      fireEvent.change(input, { target: { value: '. ./setup.sh' } });
+
+      expect(screen.getByText('Save Defaults')).not.toBeDisabled();
+    });
+
+    it('saves commandPrefix when set', async () => {
+      renderSection();
+      await screen.findByText('Command Prefix');
+
+      const input = screen.getByPlaceholderText('. ./init.sh');
+      fireEvent.change(input, { target: { value: '. ./setup.sh' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        expect(window.clubhouse.agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+          '/project',
+          expect.objectContaining({
+            commandPrefix: '. ./setup.sh',
+          }),
+        );
+      });
+    });
+
+    it('omits commandPrefix when empty', async () => {
+      renderSection();
+      await screen.findByText('Default Instructions');
+
+      // Change instructions to enable save
+      const textarea = screen.getByDisplayValue('Default instructions');
+      fireEvent.change(textarea, { target: { value: 'Changed' } });
+      fireEvent.click(screen.getByText('Save Defaults'));
+
+      await waitFor(() => {
+        const call = (window.clubhouse.agentSettings.writeProjectAgentDefaults as ReturnType<typeof vi.fn>).mock.calls[0];
+        expect(call[1].commandPrefix).toBeUndefined();
+      });
+    });
+  });
+
   describe('reset to defaults', () => {
     it('renders the Reset to Defaults button', async () => {
       renderSection();
