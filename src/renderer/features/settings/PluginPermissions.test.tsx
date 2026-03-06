@@ -32,6 +32,24 @@ const v05Manifest: PluginManifest = {
   ],
 };
 
+const appScopedCrossProjectManifest: PluginManifest = {
+  id: 'app-cross',
+  name: 'App Cross Plugin',
+  version: '1.0.0',
+  engine: { api: 0.5 },
+  scope: 'app',
+  permissions: ['agent-config', 'agent-config.cross-project', 'workspace', 'workspace.cross-project'],
+};
+
+const projectScopedCrossProjectManifest: PluginManifest = {
+  id: 'proj-cross',
+  name: 'Proj Cross Plugin',
+  version: '1.0.0',
+  engine: { api: 0.5 },
+  scope: 'project',
+  permissions: ['agent-config', 'agent-config.cross-project'],
+};
+
 function resetStores() {
   usePluginStore.setState({
     plugins: {
@@ -129,6 +147,89 @@ describe('PluginListSettings — PermissionInfoPopup', () => {
     const popup = screen.getByTestId('permission-popup');
     expect(popup.className).toContain('fixed');
     expect(popup.className).not.toContain('absolute');
+  });
+
+  it('shows app-scope cross-project note for app-scoped plugins with cross-project permissions', () => {
+    usePluginStore.setState({
+      plugins: {
+        'app-cross': makeEntry(appScopedCrossProjectManifest),
+      },
+      appEnabled: ['app-cross'],
+    });
+    render(<PluginListSettings />);
+    const infoButton = screen.getAllByTitle('View permissions')[0];
+    fireEvent.click(infoButton);
+
+    expect(screen.getByTestId('app-scope-cross-project-note')).toBeInTheDocument();
+    expect(screen.getByTestId('app-scope-cross-project-note').textContent).toContain(
+      'cross-project access is implicit',
+    );
+  });
+
+  it('does not show app-scope note for project-scoped plugins with cross-project permissions', () => {
+    usePluginStore.setState({
+      plugins: {
+        'proj-cross': makeEntry(projectScopedCrossProjectManifest),
+      },
+      appEnabled: ['proj-cross'],
+    });
+    render(<PluginListSettings />);
+    const infoButton = screen.getAllByTitle('View permissions')[0];
+    fireEvent.click(infoButton);
+
+    expect(screen.queryByTestId('app-scope-cross-project-note')).toBeNull();
+  });
+
+  it('rewrites cross-project permission descriptions for app-scoped plugins', () => {
+    usePluginStore.setState({
+      plugins: {
+        'app-cross': makeEntry(appScopedCrossProjectManifest),
+      },
+      appEnabled: ['app-cross'],
+    });
+    render(<PluginListSettings />);
+    const infoButton = screen.getAllByTitle('View permissions')[0];
+    fireEvent.click(infoButton);
+
+    // Should NOT contain the original bilateral consent wording
+    expect(screen.queryByText(/where the plugin is also enabled/)).toBeNull();
+    // Should contain the rewritten description
+    expect(screen.getByText(/across all projects \(app-scoped/)).toBeInTheDocument();
+  });
+
+  it('flips popup above button when near viewport bottom', () => {
+    usePluginStore.setState({
+      plugins: {
+        'ext-plugin': makeEntry(v05Manifest),
+      },
+      appEnabled: ['ext-plugin'],
+    });
+    render(<PluginListSettings />);
+    const infoButton = screen.getAllByTitle('View permissions')[0];
+
+    // Mock getBoundingClientRect to return a position near the bottom of the viewport
+    const originalGetBCR = infoButton.getBoundingClientRect;
+    infoButton.getBoundingClientRect = () => ({
+      top: window.innerHeight - 30,
+      bottom: window.innerHeight - 10,
+      left: 100,
+      right: 120,
+      width: 20,
+      height: 20,
+      x: 100,
+      y: window.innerHeight - 30,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(infoButton);
+
+    const popup = screen.getByTestId('permission-popup');
+    // When flipped, popup should have a `bottom` style (not `top`)
+    expect(popup.style.bottom).toBeTruthy();
+    expect(popup.style.top).toBeFalsy();
+
+    // Restore
+    infoButton.getBoundingClientRect = originalGetBCR;
   });
 });
 
