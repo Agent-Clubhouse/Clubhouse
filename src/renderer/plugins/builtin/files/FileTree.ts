@@ -179,7 +179,7 @@ interface TreeNodeProps {
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }
 
-function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
+const TreeNode: React.MemoExoticComponent<React.FC<TreeNodeProps>> = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
   const isExpanded = expanded.has(node.path);
   const isSelected = selected === node.path;
   const isFocused = focused === node.path;
@@ -245,7 +245,25 @@ function TreeNode({ node, depth, expanded, onToggle, onSelect, selected, focused
   }
 
   return React.createElement(React.Fragment, null, ...elements);
-}
+}, (prev, next) => {
+  if (prev.node !== next.node || prev.depth !== next.depth || prev.projectPath !== next.projectPath) return false;
+
+  const wasExpanded = prev.expanded.has(prev.node.path);
+  const isExpanded = next.expanded.has(next.node.path);
+  if (wasExpanded !== isExpanded) return false;
+
+  if ((prev.selected === prev.node.path) !== (next.selected === next.node.path)) return false;
+  if ((prev.focused === prev.node.path) !== (next.focused === next.node.path)) return false;
+
+  const prevRel = getRelativePath(prev.node.path, prev.projectPath);
+  if (prev.gitMap.get(prevRel) !== next.gitMap.get(prevRel)) return false;
+
+  // Expanded nodes must re-render when collections change (children may be affected)
+  if (isExpanded && (prev.expanded !== next.expanded || prev.gitMap !== next.gitMap
+    || prev.selected !== next.selected || prev.focused !== next.focused)) return false;
+
+  return true;
+});
 
 // ── Context menu ──────────────────────────────────────────────────────
 
@@ -311,7 +329,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
   expandedRef.current = expanded;
 
   const projectPath = api.context.projectPath || '';
-  const showHidden = api.settings.get<boolean>('showHiddenFiles') ?? true;
+  const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
+  const loadVersionRef = useRef(0);
 
   // Collect all visible nodes for keyboard navigation
   const getVisibleNodes = useCallback((): FileNode[] => {
@@ -328,14 +347,17 @@ export function FileTree({ api }: { api: PluginAPI }) {
     return result;
   }, [tree, expanded]);
 
-  // Load tree from API — merges with existing tree to preserve expanded folder children
+  // Load tree from API — fetches root + expanded children, then applies a single setTree
   const loadTree = useCallback(async () => {
+    const version = ++loadVersionRef.current;
     try {
       const nodes = await api.files.readTree(rootPath, { includeHidden: showHidden, depth: 1 });
-      setTree(prev => mergeTreePreservingChildren(prev, nodes));
+      if (loadVersionRef.current !== version) return;
 
       // Re-fetch children for currently expanded folders so content stays fresh
       const currentExpanded = expandedRef.current;
+      let expandedResults: Array<{ dirPath: string; children: FileNode[] }> = [];
+
       if (currentExpanded.size > 0) {
         const results = await Promise.all(
           Array.from(currentExpanded).map(async (dirPath) => {
@@ -348,18 +370,20 @@ export function FileTree({ api }: { api: PluginAPI }) {
             }
           }),
         );
-
-        setTree(prev => {
-          let updated = prev;
-          for (const result of results) {
-            if (result) {
-              updated = updateNodeChildren(updated, result.dirPath, result.children);
-            }
-          }
-          return updated;
-        });
+        if (loadVersionRef.current !== version) return;
+        expandedResults = results.filter((r): r is { dirPath: string; children: FileNode[] } => r !== null);
       }
+
+      // Single setTree — merge root and expanded children together to avoid double render
+      setTree(prev => {
+        let merged = mergeTreePreservingChildren(prev, nodes);
+        for (const result of expandedResults) {
+          merged = updateNodeChildren(merged, result.dirPath, result.children);
+        }
+        return merged;
+      });
     } catch {
+      if (loadVersionRef.current !== version) return;
       setTree([]);
     }
   }, [api, showHidden, rootPath, projectPath]);
@@ -387,6 +411,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
       setCurrentBranch('');
     }
   }, [api, rootPath]);
+
+  // Stable refs for load functions — used inside effects to avoid re-registration
+  const loadTreeRef = useRef(loadTree);
+  loadTreeRef.current = loadTree;
+  const loadGitStatusRef = useRef(loadGitStatus);
+  loadGitStatusRef.current = loadGitStatus;
+  const loadBranchRef = useRef(loadBranch);
+  loadBranchRef.current = loadBranch;
 
   // Load worktree list
   const loadWorktrees = useCallback(async () => {
@@ -423,13 +455,13 @@ export function FileTree({ api }: { api: PluginAPI }) {
     return () => { cancelled = true; };
   }, [api, projectPath]);
 
-  // Initial load
+  // Load when meaningful dependencies change (rootPath, showHidden, api)
   useEffect(() => {
-    loadTree();
-    loadGitStatus();
-    loadBranch();
+    loadTreeRef.current();
+    loadGitStatusRef.current();
+    loadBranchRef.current();
     loadWorktrees();
-  }, [loadTree, loadGitStatus, loadBranch, loadWorktrees]);
+  }, [rootPath, showHidden, loadWorktrees]);
 
   // Subscribe to fileState refresh signals
   const lastRefreshRef = useRef(fileState.refreshCount);
@@ -442,38 +474,39 @@ export function FileTree({ api }: { api: PluginAPI }) {
       // Only reload tree when an explicit refresh was triggered
       if (fileState.refreshCount !== lastRefreshRef.current) {
         lastRefreshRef.current = fileState.refreshCount;
-        loadTree();
-        loadGitStatus();
-        loadBranch();
+        loadTreeRef.current();
+        loadGitStatusRef.current();
+        loadBranchRef.current();
       }
     });
-  }, [loadTree, loadGitStatus, loadBranch, projectPath]);
+  }, [projectPath]);
 
-  // Subscribe to settings changes
+  // Subscribe to settings changes — updates state, which triggers reload via effect deps
   useEffect(() => {
     const disposable = api.settings.onChange((key) => {
       if (key === 'showHiddenFiles') {
-        loadTree();
+        setShowHidden(api.settings.get<boolean>('showHiddenFiles') ?? true);
       }
     });
     return () => disposable.dispose();
-  }, [api, loadTree]);
+  }, [api]);
 
   // File watching — auto-refresh tree on external changes
+  // Uses refs so the watcher doesn't re-register when callbacks change
   useEffect(() => {
     const disposable = api.files.watch('**/*', () => {
       if (watchDebounceRef.current) clearTimeout(watchDebounceRef.current);
       watchDebounceRef.current = setTimeout(() => {
-        loadTree();
-        loadGitStatus();
-        loadBranch();
+        loadTreeRef.current();
+        loadGitStatusRef.current();
+        loadBranchRef.current();
       }, 500);
     });
     return () => {
       if (watchDebounceRef.current) clearTimeout(watchDebounceRef.current);
       disposable.dispose();
     };
-  }, [api, loadTree, loadGitStatus, loadBranch]);
+  }, [api]);
 
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
