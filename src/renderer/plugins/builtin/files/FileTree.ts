@@ -127,6 +127,43 @@ function collectAllDirPaths(nodes: FileNode[]): Set<string> {
   return dirs;
 }
 
+/** Merge a new shallow tree with the old tree, preserving lazily-loaded children */
+function mergeTreePreservingChildren(oldNodes: FileNode[], newNodes: FileNode[]): FileNode[] {
+  const oldMap = new Map<string, FileNode>();
+  for (const n of oldNodes) {
+    oldMap.set(n.path, n);
+  }
+
+  return newNodes.map(newNode => {
+    const oldNode = oldMap.get(newNode.path);
+    if (!oldNode || !newNode.isDirectory || !oldNode.isDirectory) {
+      return newNode;
+    }
+    if (oldNode.children && !newNode.children) {
+      // Shallow load lost children — preserve old lazily-loaded children
+      return { ...newNode, children: oldNode.children };
+    }
+    if (oldNode.children && newNode.children) {
+      // Both have children — recursively merge
+      return { ...newNode, children: mergeTreePreservingChildren(oldNode.children, newNode.children) };
+    }
+    return newNode;
+  });
+}
+
+/** Update children of a specific directory node in the tree */
+function updateNodeChildren(nodes: FileNode[], dirPath: string, children: FileNode[]): FileNode[] {
+  return nodes.map(n => {
+    if (n.path === dirPath) {
+      return { ...n, children };
+    }
+    if (n.isDirectory && n.children) {
+      return { ...n, children: updateNodeChildren(n.children, dirPath, children) };
+    }
+    return n;
+  });
+}
+
 // ── Tree Node ─────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -270,6 +307,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const [currentBranch, setCurrentBranch] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
   const watchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expandedRef = useRef<Set<string>>(expanded);
+  expandedRef.current = expanded;
 
   const projectPath = api.context.projectPath || '';
   const showHidden = api.settings.get<boolean>('showHiddenFiles') ?? true;
@@ -289,15 +328,41 @@ export function FileTree({ api }: { api: PluginAPI }) {
     return result;
   }, [tree, expanded]);
 
-  // Load tree from API
+  // Load tree from API — merges with existing tree to preserve expanded folder children
   const loadTree = useCallback(async () => {
     try {
       const nodes = await api.files.readTree(rootPath, { includeHidden: showHidden, depth: 1 });
-      setTree(nodes);
+      setTree(prev => mergeTreePreservingChildren(prev, nodes));
+
+      // Re-fetch children for currently expanded folders so content stays fresh
+      const currentExpanded = expandedRef.current;
+      if (currentExpanded.size > 0) {
+        const results = await Promise.all(
+          Array.from(currentExpanded).map(async (dirPath) => {
+            const relPath = getRelativePath(dirPath, projectPath);
+            try {
+              const children = await api.files.readTree(relPath, { includeHidden: showHidden, depth: 1 });
+              return { dirPath, children };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        setTree(prev => {
+          let updated = prev;
+          for (const result of results) {
+            if (result) {
+              updated = updateNodeChildren(updated, result.dirPath, result.children);
+            }
+          }
+          return updated;
+        });
+      }
     } catch {
       setTree([]);
     }
-  }, [api, showHidden, rootPath]);
+  }, [api, showHidden, rootPath, projectPath]);
 
   // Load git status
   const loadGitStatus = useCallback(async () => {
@@ -426,20 +491,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
     const relPath = getRelativePath(dirPath, projectPath);
     try {
       const children = await api.files.readTree(relPath, { includeHidden: showHidden, depth: 1 });
-      setTree((prevTree) => {
-        const updateNode = (nodes: FileNode[]): FileNode[] => {
-          return nodes.map((n) => {
-            if (n.path === dirPath) {
-              return { ...n, children };
-            }
-            if (n.isDirectory && n.children) {
-              return { ...n, children: updateNode(n.children) };
-            }
-            return n;
-          });
-        };
-        return updateNode(prevTree);
-      });
+      setTree(prev => updateNodeChildren(prev, dirPath, children));
     } catch {
       // ignore
     }
