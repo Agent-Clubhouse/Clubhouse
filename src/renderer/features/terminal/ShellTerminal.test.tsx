@@ -17,6 +17,7 @@ vi.mock('@xterm/xterm', () => {
     focus = vi.fn();
     dispose = vi.fn();
     onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+    attachCustomKeyEventHandler = vi.fn();
     options: Record<string, any> = {};
     cols = 80;
     rows = 24;
@@ -266,6 +267,57 @@ describe('ShellTerminal', () => {
       useClipboardSettingsStore.setState({ clipboardCompat: false });
       render(<ShellTerminal sessionId="shell-1" />);
       expect(g.__testAttachClipboard).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Shift+Enter / Ctrl+Enter newline insertion', () => {
+    function getKeyHandler() {
+      return term().attachCustomKeyEventHandler.mock.calls[0][0] as (ev: Partial<KeyboardEvent>) => boolean;
+    }
+
+    it('registers a custom key event handler on mount', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      expect(term().attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);
+      expect(typeof getKeyHandler()).toBe('function');
+    });
+
+    it('writes newline to PTY on Shift+Enter and returns false', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const handler = getKeyHandler();
+      const result = handler({ type: 'keydown', key: 'Enter', shiftKey: true, ctrlKey: false });
+      expect(result).toBe(false);
+      expect(window.clubhouse.pty.write).toHaveBeenCalledWith('shell-1', '\n');
+    });
+
+    it('writes newline to PTY on Ctrl+Enter and returns false', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const handler = getKeyHandler();
+      const result = handler({ type: 'keydown', key: 'Enter', shiftKey: false, ctrlKey: true });
+      expect(result).toBe(false);
+      expect(window.clubhouse.pty.write).toHaveBeenCalledWith('shell-1', '\n');
+    });
+
+    it('returns true for plain Enter (no modifier)', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const handler = getKeyHandler();
+      const result = handler({ type: 'keydown', key: 'Enter', shiftKey: false, ctrlKey: false });
+      expect(result).toBe(true);
+    });
+
+    it('returns true for non-Enter keys with Shift', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const handler = getKeyHandler();
+      const result = handler({ type: 'keydown', key: 'a', shiftKey: true, ctrlKey: false });
+      expect(result).toBe(true);
+    });
+
+    it('ignores keyup events for Shift+Enter', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const handler = getKeyHandler();
+      (window.clubhouse.pty.write as ReturnType<typeof vi.fn>).mockClear();
+      const result = handler({ type: 'keyup', key: 'Enter', shiftKey: true, ctrlKey: false });
+      expect(result).toBe(true);
+      expect(window.clubhouse.pty.write).not.toHaveBeenCalledWith('shell-1', '\n');
     });
   });
 

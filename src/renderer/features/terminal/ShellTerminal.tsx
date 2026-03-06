@@ -52,6 +52,18 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
+    // Intercept Shift+Enter and Ctrl+Enter to insert a newline instead of
+    // executing the command.  We write a literal newline (\n) to the PTY —
+    // most shells (zsh, bash, fish) treat this as a line continuation when
+    // the input is incomplete, and PSReadLine on Windows handles it natively.
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type === 'keydown' && ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey)) {
+        window.clubhouse.pty.write(sessionId, '\n');
+        return false; // prevent xterm from emitting \r
+      }
+      return true;
+    });
+
     const inputDisposable = term.onData((data) => {
       window.clubhouse.pty.write(sessionId, data);
     });
