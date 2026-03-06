@@ -1,4 +1,3 @@
-import React from 'react';
 import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
 
 export function createMockContext(overrides?: Partial<PluginContext>): PluginContext {

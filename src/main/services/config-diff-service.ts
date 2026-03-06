@@ -1,6 +1,4 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { ConfigDiffItem, ConfigDiffResult, DurableAgentConfig } from '../../shared/types';
+import { ConfigDiffItem, ConfigDiffResult } from '../../shared/types';
 import { replaceWildcards, unreplaceWildcards } from '../../shared/wildcard-replacer';
 import { OrchestratorProvider } from '../orchestrators/types';
 import {

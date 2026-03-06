@@ -490,7 +490,7 @@ export function PluginListSettings() {
   const setExternalPluginsEnabled = usePluginStore((s) => s.setExternalPluginsEnabled);
   const openPluginSettings = useUIStore((s) => s.openPluginSettings);
   const settingsContext = useUIStore((s) => s.settingsContext);
-  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const _activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
 
   // Plugin update state

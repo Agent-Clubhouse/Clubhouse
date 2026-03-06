@@ -274,7 +274,7 @@ test.describe('Pop-out Window Creation', () => {
 test.describe('Pop-out Lifecycle', () => {
   test('newly created pop-out appears in listPopouts', async () => {
     const projectId = await getProjectId();
-    const { page, windowId } = await createPopout({
+    const { page: _page, windowId } = await createPopout({
       type: 'agent',
       agentId: 'popout_agent_1',
       projectId,
@@ -294,7 +294,7 @@ test.describe('Pop-out Lifecycle', () => {
 
   test('closing a pop-out removes it from listPopouts', async () => {
     const projectId = await getProjectId();
-    const { page, windowId } = await createPopout({
+    const { page: _page, windowId } = await createPopout({
       type: 'agent',
       agentId: 'popout_agent_1',
       projectId,

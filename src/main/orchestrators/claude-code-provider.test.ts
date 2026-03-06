@@ -16,7 +16,7 @@ vi.mock('fs/promises', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
-  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: Function) => cb(new Error('not found'), '', '')),
+  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => cb(new Error('not found'), '', '')),
 }));
 
 vi.mock('../util/shell', () => ({

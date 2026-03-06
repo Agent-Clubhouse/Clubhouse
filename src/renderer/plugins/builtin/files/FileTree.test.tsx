@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileTree } from './FileTree';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createMockContext, createMockAPI } from './testing';
-import type { PluginContext, PluginAPI } from '../../shared/plugin-types';
+
 
 describe('testing utilities', () => {
   describe('createMockContext', () => {

@@ -1,6 +1,5 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { AgentPicker } from './AgentPicker';
 import { createMockAPI } from '../../testing';
 import type { AgentInfo } from '../../../../shared/plugin-types';

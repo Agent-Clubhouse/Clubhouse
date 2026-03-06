@@ -159,12 +159,12 @@ describe('AgentList completed selector stability', () => {
   });
 
   it('does not re-render when unrelated store state changes', () => {
-    const renderCount = vi.fn();
+    const _renderCount = vi.fn();
     const OriginalAgentList = AgentList;
 
     // Render the component
     const { rerender } = render(<OriginalAgentList />);
-    const initialContent = screen.getByTestId('agent-list').innerHTML;
+    const _initialContent = screen.getByTestId('agent-list').innerHTML;
 
     // Mutate an unrelated part of the quick agent store (different project)
     act(() => {

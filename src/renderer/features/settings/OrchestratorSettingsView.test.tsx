@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -270,7 +270,7 @@ describe('OrchestratorSettingsView', () => {
     });
 
     it('returns null for invalid project', () => {
-      const { container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
+      const { container: _container } = render(<OrchestratorSettingsView projectId="nonexistent" />);
       // Should still render the outer wrapper but ProjectAgentSettings returns null
       expect(screen.getByText('Orchestrators & Agents')).toBeInTheDocument();
       expect(screen.queryByText('Clubhouse Mode')).not.toBeInTheDocument();

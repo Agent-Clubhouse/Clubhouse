@@ -513,6 +513,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (!resolvedErrorMessage) {
             // Extract meaningful diagnostic from PTY output (strip ANSI codes)
             const cleanOutput = lastOutput
+              // eslint-disable-next-line no-control-regex
               ?.replace(/\x1B\[[0-9;]*[A-Za-z]/g, '')
               .trim()
               .split('\n')

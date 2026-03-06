@@ -88,7 +88,7 @@ export function resolvePermission(requestId: string, decision: PermissionDecisio
 
 /** Get all pending permissions. */
 export function listPending(): PendingPermission[] {
-  return Array.from(pending.values()).map(({ resolve, timer, ...info }) => info);
+  return Array.from(pending.values()).map(({ resolve: _resolve, timer: _timer, ...info }) => info);
 }
 
 /** Get pending permissions for a specific agent. */

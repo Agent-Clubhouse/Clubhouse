@@ -73,7 +73,7 @@ import * as agentConfigModule from './agent-config';
 import * as ptyManagerModule from './pty-manager';
 import * as agentSystem from './agent-system';
 import * as structuredManagerModule from './structured-manager';
-import * as eventReplay from './annex-event-replay';
+import * as _eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import { generateQuickName } from '../../shared/name-generator';
 import { appLog } from './log-service';

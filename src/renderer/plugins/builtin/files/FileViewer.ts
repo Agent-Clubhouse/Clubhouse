@@ -94,7 +94,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const loadFile = useCallback(async (relativePath: string) => {
     setLoading(true);
     const ext = getExtension(relativePath);
-    const fileName = getFileName(relativePath);
+    const _fileName = getFileName(relativePath);
 
     try {
       // Binary check

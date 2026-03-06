@@ -177,7 +177,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId });
   dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const HubPaneComponent = useCallback(({ pane, focused, canClose }: PaneComponentProps) => {
     const d = dataRef.current;
     const picker = d.isAppMode

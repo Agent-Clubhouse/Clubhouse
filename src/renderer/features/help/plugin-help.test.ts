@@ -68,7 +68,7 @@ describe('plugin-help', () => {
   });
 
   it('handles manifest without author', () => {
-    const { author, ...noAuthor } = baseManifest;
+    const { author: _author, ...noAuthor } = baseManifest;
     const topics = getPluginHelpTopics(noAuthor as PluginManifest);
     expect(topics[0].content).not.toContain('Author');
   });

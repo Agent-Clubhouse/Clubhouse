@@ -204,7 +204,7 @@ export function spawnHeadless(
   const transcript: StreamJsonEvent[] = [];
   const transcriptEventSizes: number[] = [];
   let stdoutBytes = 0;
-  let stderrChunks: string[] = [];
+  const stderrChunks: string[] = [];
 
   const session: HeadlessSession = {
     process: proc,

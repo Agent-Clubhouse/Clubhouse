@@ -171,7 +171,7 @@ interface ContextMenuProps {
   onAction: (action: string) => void;
 }
 
-function ContextMenu({ x, y, node, onClose, onAction }: ContextMenuProps) {
+function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

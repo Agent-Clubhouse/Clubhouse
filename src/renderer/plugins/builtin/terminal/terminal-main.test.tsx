@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MainPanel, SidebarPanel, activate, deactivate } from './main';
 import { terminalState } from './state';
 import { createMockAPI, createMockContext } from '../../testing';
@@ -405,7 +405,7 @@ describe('Terminal cross-panel integration', () => {
     const { api } = createSidebarAPI([DURABLE_AGENT]);
 
     // Render both panels (as the plugin host would)
-    const { container: sidebarContainer } = render(<SidebarPanel api={api} />);
+    const { container: _sidebarContainer } = render(<SidebarPanel api={api} />);
     render(<MainPanel api={api} />);
 
     // Wait for MainPanel to spawn project terminal

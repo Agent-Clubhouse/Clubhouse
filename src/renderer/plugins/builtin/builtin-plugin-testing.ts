@@ -1,4 +1,3 @@
-import type { PluginModule } from '../../../shared/plugin-types';
 import { validateManifest } from '../manifest-validator';
 import type { BuiltinPlugin } from './index';
 

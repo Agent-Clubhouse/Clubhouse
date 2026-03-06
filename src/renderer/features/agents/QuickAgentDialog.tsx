@@ -42,7 +42,7 @@ export function QuickAgentDialog() {
       // Focus the text input after a tick
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

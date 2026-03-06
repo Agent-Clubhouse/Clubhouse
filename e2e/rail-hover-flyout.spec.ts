@@ -85,7 +85,7 @@ test.describe('Rail Hover Flyout', () => {
       expect(w).toBeGreaterThanOrEqual(190);
     }).toPass({ timeout: 5_000 });
 
-    const expandedWidth = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
+    const _expandedWidth = await innerRail.evaluate((el) => el.getBoundingClientRect().width);
 
     // Move mouse away to collapse
     await window.locator('[data-testid="title-bar"]').hover();

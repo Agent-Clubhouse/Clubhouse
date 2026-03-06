@@ -471,7 +471,7 @@ describe('materialization-service', () => {
       ensureDefaultTemplates('/project');
 
       // Should not write settings.json (defaults already exist)
-      const settingsWriteCalls = vi.mocked(fs.writeFileSync).mock.calls.filter(
+      const _settingsWriteCalls = vi.mocked(fs.writeFileSync).mock.calls.filter(
         (call) => (call[0] as string).endsWith('settings.json'),
       );
       // Only the skills settings.json write (for defaultSkillsPath), not agent defaults

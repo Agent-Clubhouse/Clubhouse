@@ -87,7 +87,6 @@ export function PluginContentView({ pluginId, mode }: { pluginId: string; mode?:
   // storage ref → reloaded the old pane tree from disk before the debounced save.
   const api = useMemo(
     () => ctx ? createPluginAPI(ctx, mode, entry?.manifest) : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ctx, mode],
   );
 

@@ -20,7 +20,7 @@ describe('scrollbar auto-hide CSS', () => {
     // Match the base ::-webkit-scrollbar-thumb rule (not nested inside :hover)
     // The rule should set background: transparent
     const thumbRule = css.match(
-      /(?<!\:hover\s*)::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/,
+      /(?<!:hover\s*)::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/,
     );
     expect(thumbRule).not.toBeNull();
   });

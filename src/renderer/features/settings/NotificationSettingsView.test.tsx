@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotificationSettingsView } from './NotificationSettingsView';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useBadgeSettingsStore } from '../../stores/badgeSettingsStore';
-import { useBadgeStore } from '../../stores/badgeStore';
 
 vi.mock('../../stores/badgeStore', () => ({
   useBadgeStore: Object.assign(vi.fn((sel: any) => sel({

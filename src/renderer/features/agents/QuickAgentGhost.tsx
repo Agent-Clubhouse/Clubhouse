@@ -216,7 +216,7 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
 }
 
 /** Compact ghost card for use in the sidebar AgentList */
-export function QuickAgentGhostCompact({ completed, onDismiss, onDelete, onSelect, isNested }: Props & { onSelect?: () => void; isNested?: boolean }) {
+export function QuickAgentGhostCompact({ completed, onDismiss, onDelete: _onDelete, onSelect, isNested }: Props & { onSelect?: () => void; isNested?: boolean }) {
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   return (
     <div
