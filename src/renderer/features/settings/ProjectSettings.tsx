@@ -5,7 +5,6 @@ import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
-import { Toggle } from '../../components/Toggle';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
