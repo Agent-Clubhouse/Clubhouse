@@ -218,7 +218,9 @@ function fetchJSON<T = UpdateManifest>(url: string): Promise<T> {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.get(url, { timeout: 15_000 }, (res) => {
       if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}`));
+        const err = new Error(`HTTP ${res.statusCode} fetching ${url}`);
+        appLog('update:fetch', 'error', err.message);
+        reject(err);
         res.resume();
         return;
       }
@@ -319,13 +321,18 @@ async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResul
     return { manifest: await fetchJSON(UPDATE_URL), sourceUrl: UPDATE_URL };
   }
 
-  // Fetch both in parallel; preview may not exist yet so we tolerate failure.
+  // Fetch both in parallel; either may be missing (e.g. v2/latest.json
+  // didn't exist until the first stable release after the v2 migration).
   const [stable, preview] = await Promise.all([
-    fetchJSON(UPDATE_URL),
+    fetchJSON(UPDATE_URL).catch(() => null as UpdateManifest | null),
     fetchJSON(PREVIEW_UPDATE_URL).catch(() => null as UpdateManifest | null),
   ]);
 
-  if (!preview) return { manifest: stable, sourceUrl: UPDATE_URL };
+  if (!stable && !preview) {
+    throw new Error('Both stable and preview manifests unavailable');
+  }
+  if (!preview) return { manifest: stable!, sourceUrl: UPDATE_URL };
+  if (!stable) return { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL };
 
   // Pick whichever is newer. isNewerVersion handles prerelease suffixes
   // (rc, -beta.N) and considers a stable release newer than its prerelease.

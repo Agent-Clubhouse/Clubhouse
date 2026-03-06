@@ -517,6 +517,25 @@ jobs:
               --content-type "application/json" \
               --auth-mode login
 
+            # Seed v2/latest.json from the legacy path if it doesn't exist yet.
+            # This is needed because no stable release may have shipped since the
+            # v2 migration, and clients check both manifests in parallel.
+            EXISTS=$(az storage blob exists \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/v2/latest.json" \
+              --auth-mode login \
+              --query "exists" --output tsv)
+            if [ "$EXISTS" != "true" ]; then
+              echo "Seeding v2/latest.json from legacy latest.json"
+              az storage blob copy start \
+                --account-name "$ACCOUNT" \
+                --destination-container "$CONTAINER" \
+                --destination-blob "updates/v2/latest.json" \
+                --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/updates/latest.json" \
+                --auth-mode login
+            fi
+
             # Copy installers to the preview/ slot (constantly overwritten)
             SLOT="preview"
           else
