@@ -179,7 +179,7 @@ interface TreeNodeProps {
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }
 
-const TreeNode: React.MemoExoticComponent<React.FC<TreeNodeProps>> = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
+const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
   const isExpanded = expanded.has(node.path);
   const isSelected = selected === node.path;
   const isFocused = focused === node.path;
