@@ -23,6 +23,7 @@ import { useUpdateStore } from './stores/updateStore';
 import { initUpdateListener } from './stores/updateStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initPluginUpdateListener } from './stores/pluginUpdateStore';
+import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { initializePluginSystem } from './plugins/plugin-loader';
 
@@ -36,6 +37,7 @@ function loadAllSettings(): void {
   useLoggingStore.getState().loadSettings();
   useHeadlessStore.getState().loadSettings();
   useBadgeSettingsStore.getState().loadSettings();
+  useSessionSettingsStore.getState().loadSettings();
   useUpdateStore.getState().loadSettings();
   initBadgeSideEffects();
 }

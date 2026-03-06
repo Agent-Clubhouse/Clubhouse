@@ -55,6 +55,9 @@ interface AgentState {
   clearResuming: (id: string) => void;
   /** Register a placeholder agent in 'creating' state while worktree is set up. Returns temp ID. */
   registerCreatingAgent: (projectId: string, name: string, color: string, orchestrator?: string, freeAgentMode?: boolean) => string;
+  /** Agent ID that should be prompted for a session name (set on quit if setting enabled) */
+  sessionNamePromptFor: string | null;
+  setSessionNamePrompt: (agentId: string | null) => void;
 }
 
 let quickCounter = 0;
@@ -72,6 +75,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   cancelledAgentIds: {},
   projectActiveAgent: {},
   agentIcons: {},
+  sessionNamePromptFor: null,
 
   setActiveAgent: (id, projectId?) => {
     const prev = get().activeAgentId;
@@ -691,6 +695,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       return { agents: { ...s.agents, [id]: { ...agent, resuming: undefined } } };
     });
   },
+
+  setSessionNamePrompt: (agentId) => set({ sessionNamePromptFor: agentId }),
 
   registerCreatingAgent: (projectId, name, color, orchestrator, freeAgentMode) => {
     const tempId = `creating_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;

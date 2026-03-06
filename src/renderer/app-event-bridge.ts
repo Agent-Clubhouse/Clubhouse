@@ -25,6 +25,7 @@ import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
 import type { AgentHookEvent, AgentStatus, HubMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
+import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
@@ -386,6 +387,14 @@ function initAgentStatusEmitter(): () => void {
           useSoundStore.getState().playSound('agent-wake', agent.projectId);
         } else if (agent.status === 'sleeping' && prevStatuses[id] === 'running') {
           useSoundStore.getState().playSound('agent-sleep', agent.projectId);
+
+          // Prompt for session name if the setting is enabled for this project
+          if (agent.kind === 'durable') {
+            const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
+            if (project && useSessionSettingsStore.getState().shouldPrompt(project.path)) {
+              useAgentStore.getState().setSessionNamePrompt(id);
+            }
+          }
         }
       }
     }

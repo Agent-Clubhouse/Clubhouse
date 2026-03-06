@@ -578,6 +578,10 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_CLIPBOARD_SETTINGS),
     saveClipboardSettings: (settings: { clipboardCompat: boolean }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLIPBOARD_SETTINGS, settings),
+    getSessionSettings: () =>
+      ipcRenderer.invoke(IPC.APP.GET_SESSION_SETTINGS),
+    saveSessionSettings: (settings: { promptForName: boolean; projectOverrides?: Record<string, boolean> }) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_SESSION_SETTINGS, settings),
     getClubhouseModeSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS),
     saveClubhouseModeSettings: (settings: { enabled: boolean; projectOverrides?: Record<string, boolean>; sourceControlProvider?: 'github' | 'azure-devops' }, projectPath?: string) =>

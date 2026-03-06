@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, RefObject } from 'react';
+
+const RECENT_COUNT = 5;
 
 interface SessionEntry {
   sessionId: string;
@@ -28,6 +30,89 @@ function formatRelativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   if (diffDay < 7) return `${diffDay}d ago`;
   return date.toLocaleDateString();
+}
+
+function SessionRow({
+  session, idx, isLatest, editingId, editValue, editInputRef,
+  setEditValue, handleRename, setEditingId, startEditing, onResume,
+}: {
+  session: SessionEntry;
+  idx: number;
+  isLatest: boolean;
+  editingId: string | null;
+  editValue: string;
+  editInputRef: RefObject<HTMLInputElement | null>;
+  setEditValue: (v: string) => void;
+  handleRename: (sessionId: string) => void;
+  setEditingId: (id: string | null) => void;
+  startEditing: (session: SessionEntry) => void;
+  onResume: (sessionId: string) => void;
+}) {
+  return (
+    <div
+      data-testid={`session-entry-${idx}`}
+      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-1 group transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        {editingId === session.sessionId ? (
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleRename(session.sessionId); }}
+            className="flex items-center gap-2"
+          >
+            <input
+              ref={editInputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              placeholder="Enter a name..."
+              className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus:outline-none focus:border-indigo-500"
+              onBlur={() => handleRename(session.sessionId)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { setEditingId(null); } }}
+            />
+          </form>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-ctp-text truncate">
+                {session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`}
+              </span>
+              {isLatest && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
+                  latest
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-ctp-subtext0 mt-0.5">
+              {formatRelativeTime(session.lastActiveAt)}
+              <span className="mx-1 opacity-50">·</span>
+              <span className="font-mono opacity-60">{session.sessionId.slice(0, 12)}...</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {editingId !== session.sessionId && (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button
+            onClick={() => startEditing(session)}
+            title="Rename"
+            className="p-1 rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-2 cursor-pointer transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onResume(session.sessionId)}
+            data-testid={`resume-session-${idx}`}
+            className="px-2.5 py-1 text-xs rounded bg-indigo-500 text-white hover:bg-indigo-600 cursor-pointer transition-colors font-medium"
+          >
+            Resume
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResume, onClose }: SessionPickerDialogProps) {
@@ -134,74 +219,55 @@ export function SessionPickerDialog({ agentId, projectPath, orchestrator, onResu
             </div>
           )}
 
-          {!loading && sessions.map((session, idx) => (
-            <div
-              key={session.sessionId}
-              data-testid={`session-entry-${idx}`}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-1 group transition-colors"
-            >
-              {/* Session info */}
-              <div className="flex-1 min-w-0">
-                {editingId === session.sessionId ? (
-                  <form
-                    onSubmit={(e) => { e.preventDefault(); handleRename(session.sessionId); }}
-                    className="flex items-center gap-2"
-                  >
-                    <input
-                      ref={editInputRef}
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      placeholder="Enter a name..."
-                      className="flex-1 bg-surface-1 border border-surface-2 rounded px-2 py-1 text-xs text-ctp-text focus:outline-none focus:border-indigo-500"
-                      onBlur={() => handleRename(session.sessionId)}
-                      onKeyDown={(e) => { if (e.key === 'Escape') { setEditingId(null); } }}
-                    />
-                  </form>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-ctp-text truncate">
-                        {session.friendlyName || `Session ${session.sessionId.slice(0, 8)}`}
-                      </span>
-                      {idx === 0 && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 shrink-0">
-                          latest
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-ctp-subtext0 mt-0.5">
-                      {formatRelativeTime(session.lastActiveAt)}
-                      <span className="mx-1 opacity-50">·</span>
-                      <span className="font-mono opacity-60">{session.sessionId.slice(0, 12)}...</span>
-                    </div>
-                  </>
-                )}
+          {/* Recent sessions section */}
+          {!loading && sessions.length > 0 && (
+            <>
+              <div className="px-3 pt-1 pb-1">
+                <span className="text-[10px] uppercase tracking-wider text-ctp-subtext0 font-medium">Recent</span>
               </div>
+              {sessions.slice(0, RECENT_COUNT).map((session, idx) => (
+                <SessionRow
+                  key={session.sessionId}
+                  session={session}
+                  idx={idx}
+                  isLatest={idx === 0}
+                  editingId={editingId}
+                  editValue={editValue}
+                  editInputRef={editInputRef}
+                  setEditValue={setEditValue}
+                  handleRename={handleRename}
+                  setEditingId={setEditingId}
+                  startEditing={startEditing}
+                  onResume={onResume}
+                />
+              ))}
+            </>
+          )}
 
-              {/* Actions */}
-              {editingId !== session.sessionId && (
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button
-                    onClick={() => startEditing(session)}
-                    title="Rename"
-                    className="p-1 rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-2 cursor-pointer transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => onResume(session.sessionId)}
-                    data-testid={`resume-session-${idx}`}
-                    className="px-2.5 py-1 text-xs rounded bg-indigo-500 text-white hover:bg-indigo-600 cursor-pointer transition-colors font-medium"
-                  >
-                    Resume
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+          {/* Older sessions section */}
+          {!loading && sessions.length > RECENT_COUNT && (
+            <>
+              <div className="px-3 pt-3 pb-1">
+                <span className="text-[10px] uppercase tracking-wider text-ctp-subtext0 font-medium">Older</span>
+              </div>
+              {sessions.slice(RECENT_COUNT).map((session, idx) => (
+                <SessionRow
+                  key={session.sessionId}
+                  session={session}
+                  idx={idx + RECENT_COUNT}
+                  isLatest={false}
+                  editingId={editingId}
+                  editValue={editValue}
+                  editInputRef={editInputRef}
+                  setEditValue={setEditValue}
+                  handleRename={handleRename}
+                  setEditingId={setEditingId}
+                  startEditing={startEditing}
+                  onResume={onResume}
+                />
+              ))}
+            </>
+          )}
         </div>
 
         {/* Footer with manual entry */}
