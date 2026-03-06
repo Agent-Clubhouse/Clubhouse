@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { createHubStore, resetHubIdCounter, type HubInstanceData } from './useHubStore';
-import { resetPaneCounter, collectLeaves, type PaneNode, type LeafPane, type SplitPane } from './pane-tree';
+import { resetPaneCounter, collectLeaves, type LeafPane, type SplitPane } from './pane-tree';
 
 function createMockStorage(): ScopedStorage & { data: Map<string, unknown> } {
   const data = new Map<string, unknown>();

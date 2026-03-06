@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { applyHubMutation, broadcastHubState } from './hub-sync';
 import { createHubStore } from './useHubStore';
 import type { HubMutation } from '../../../../shared/types';
-import { createLeaf, resetPaneCounter } from './pane-tree';
+import { resetPaneCounter } from './pane-tree';
 import { resetHubIdCounter } from './useHubStore';
 
 describe('hub-sync', () => {

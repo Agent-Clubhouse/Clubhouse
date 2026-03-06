@@ -90,7 +90,7 @@ export function start(): Promise<number> {
               // from the Annex client. The hook script (curl) blocks until we respond.
               if (normalized.kind === 'permission_request') {
                 const toolName = normalized.toolName || 'unknown';
-                const { requestId, decision } = permissionQueue.createPermission(
+                const { requestId: _requestId, decision } = permissionQueue.createPermission(
                   agentId,
                   toolName,
                   normalized.toolInput,

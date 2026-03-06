@@ -12,7 +12,7 @@ import { PERMISSION_DESCRIPTIONS } from '../../../shared/plugin-types';
 
 export function PluginDetailSettings() {
   const pluginSettingsId = useUIStore((s) => s.pluginSettingsId);
-  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const _setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const settingsContext = useUIStore((s) => s.settingsContext);
   const plugins = usePluginStore((s) => s.plugins);
   const modules = usePluginStore((s) => s.modules);

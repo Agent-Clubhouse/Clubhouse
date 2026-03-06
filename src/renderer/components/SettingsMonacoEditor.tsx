@@ -101,7 +101,6 @@ export function SettingsMonacoEditor({
         editorRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorKey, language]);
 
   // React to theme changes

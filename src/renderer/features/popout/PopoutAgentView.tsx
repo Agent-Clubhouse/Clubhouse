@@ -32,7 +32,7 @@ export function PopoutAgentView({ agentId, projectId }: PopoutAgentViewProps) {
     } else if (agent.status === 'running') {
       setStatus('running');
     }
-  }, [agent?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [agent?.status]);
 
   useEffect(() => {
     if (!agentId) return;

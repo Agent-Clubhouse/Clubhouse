@@ -212,7 +212,7 @@ describe('ProjectSettings', () => {
 
     it('shows check mark on selected color', () => {
       resetStores({ color: 'indigo' });
-      const { container } = render(<ProjectSettings />);
+      render(<ProjectSettings />);
       const indigoBtn = screen.getByTitle('Indigo');
       const svg = indigoBtn.querySelector('svg');
       expect(svg).toBeTruthy();
@@ -220,7 +220,7 @@ describe('ProjectSettings', () => {
 
     it('defaults to indigo when no color is set', () => {
       resetStores({ color: undefined });
-      const indigoBtn = render(<ProjectSettings />);
+      const _indigoBtn = render(<ProjectSettings />);
       // Indigo should show check when no color set
       const svg = screen.getByTitle('Indigo').querySelector('svg');
       expect(svg).toBeTruthy();

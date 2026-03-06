@@ -728,16 +728,16 @@ function createWidgetsAPI(): WidgetsAPI {
 
   // Lazy imports to avoid circular deps — these are only needed when a plugin renders widgets.
   // Wrapped in try/catch for test environments where these modules may not be available.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let AgentTerminalComponent: React.ComponentType<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let SleepingAgentComponent: React.ComponentType<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let AgentAvatarComponent: React.ComponentType<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let QuickAgentGhostComponent: React.ComponentType<any>;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let AgentAvatarWithRingComponent: React.ComponentType<any>;
 
   try {
@@ -748,7 +748,7 @@ function createWidgetsAPI(): WidgetsAPI {
     QuickAgentGhostComponent = require('../features/agents/QuickAgentGhost').QuickAgentGhost;
   } catch {
     // In test environments, return stub components
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const stub = ((): null => null) as unknown as React.ComponentType<any>;
     _widgetsCache = {
       AgentTerminal: stub,
@@ -792,7 +792,7 @@ function createTerminalAPI(ctx: PluginContext): TerminalAPI {
     return `${prefix}${sessionId}`;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   let ShellTerminalComponent: React.ComponentType<any> | null = null;
 
   try {
@@ -1318,7 +1318,7 @@ function createWorkspaceAPI(ctx: PluginContext, manifest?: PluginManifest): Work
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let _badgeStoreCache: any = null;
 
 function getBadgeStore() {
@@ -1741,7 +1741,7 @@ function createSoundsAPI(ctx: PluginContext): SoundsAPI {
 
 function buildThemeInfo(): ThemeInfo {
   // Lazy import to avoid circular deps — only needed when a plugin uses the theme API
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const { useThemeStore } = require('../stores/themeStore');
   const state = useThemeStore.getState();
   const theme = state.theme;
@@ -1761,7 +1761,7 @@ function createThemeAPI(ctx: PluginContext): ThemeAPI {
       return buildThemeInfo();
     },
     onDidChange(callback: (theme: ThemeInfo) => void): Disposable {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       const { useThemeStore } = require('../stores/themeStore');
       let prevId = useThemeStore.getState().themeId;
       const unsub = useThemeStore.subscribe((state: { themeId: string; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string> } }) => {

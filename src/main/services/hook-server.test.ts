@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as http from 'http';
-import * as os from 'os';
-import * as path from 'path';
 
 // Track what gets sent to BrowserWindow
 const mockSend = vi.fn();

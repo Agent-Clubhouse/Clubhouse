@@ -1,4 +1,4 @@
-import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration, PluginPermission } from '../../shared/plugin-types';
+import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
 import { PERMISSION_RISK_LEVELS } from '../../shared/plugin-types';
 import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
 import { usePluginStore } from './plugin-store';

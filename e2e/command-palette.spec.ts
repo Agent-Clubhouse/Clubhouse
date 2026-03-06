@@ -432,7 +432,7 @@ test.describe('Command Palette – Recent Commands', () => {
     await window.keyboard.type('>help');
     await window.waitForTimeout(200);
 
-    const firstOptionText = await paletteOptions().first().textContent();
+    const _firstOptionText = await paletteOptions().first().textContent();
     await window.keyboard.press('Enter');
 
     // Wait for palette to close

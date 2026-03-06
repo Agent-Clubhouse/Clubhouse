@@ -191,7 +191,6 @@ export function ExplorerRail() {
           ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
           : PLUGIN_FALLBACK_ICON,
       }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pluginTabKey]);
 
   const rawTabs: TabEntry[] = useMemo(

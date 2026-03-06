@@ -48,7 +48,7 @@ async function evalStore<T>(expression: string): Promise<T> {
 }
 
 /** Get the current explorer tab from the UI store. */
-async function getExplorerTab(): Promise<string> {
+async function _getExplorerTab(): Promise<string> {
   return evalStore<string>(
     `window.__zustand_uiStore?.getState?.()?.explorerTab ?? document.querySelector('[data-testid="title-bar"]')?.textContent ?? ''`,
   );
@@ -267,10 +267,10 @@ test.describe('Per-Project Tab Persistence', () => {
 test.describe('Cross-Project Agent Guard', () => {
   test('agent from project-a is not shown when project-b is active', async () => {
     // Inject a fake agent for project-a into the agent store via renderer evaluate
-    const projAId = await window.evaluate(() => {
+    const _projAId = await window.evaluate(() => {
       // Find project-a's ID from the project store
       // @ts-ignore - accessing Zustand store from window context
-      const stores = (window as any).__zustand_stores;
+      const _stores = (window as any).__zustand_stores;
       // Fallback: read from the DOM or just return a placeholder
       return null;
     });

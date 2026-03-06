@@ -43,7 +43,7 @@ hljs.registerLanguage('cpp', cpp);
 
 // Configure marked with highlight.js via renderer
 const renderer = new marked.Renderer();
-const originalCode = renderer.code;
+const _originalCode = renderer.code;
 renderer.code = function (args: { text: string; lang?: string; escaped?: boolean }) {
   const lang = args.lang || '';
   const code = args.text;

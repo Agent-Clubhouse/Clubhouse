@@ -18,7 +18,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import type { PaneNode } from '../../plugins/builtin/hub/pane-tree';
 import { syncCounterToTree } from '../../plugins/builtin/hub/pane-tree';
-import type { HubMutation, AgentDetailedStatus, CompletedQuickAgent, Agent } from '../../../shared/types';
+import type { HubMutation, CompletedQuickAgent } from '../../../shared/types';
 
 interface PopoutHubViewProps {
   hubId?: string;
@@ -180,7 +180,6 @@ export function PopoutHubView({ hubId, projectId }: PopoutHubViewProps) {
     zoomedPaneId, dismissCompleted,
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const PaneComponent = useCallback(({ pane, focused, canClose }: PaneComponentProps) => {
     const d = dataRef.current;
     return React.createElement(PopoutHubPane, {

@@ -25,7 +25,7 @@ const TOOL_VERBS: Record<string, string> = {
   grep: 'Searching code',
 };
 
-const MODEL_OPTIONS = [
+const _MODEL_OPTIONS = [
   { id: 'default', label: 'Default' },
   { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },

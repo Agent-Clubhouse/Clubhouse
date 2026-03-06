@@ -11,7 +11,7 @@ vi.mock('fs', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
-  execFile: vi.fn((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+  execFile: vi.fn((_cmd: string, args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
     // Support --version for checkAvailability validation
     if (args && args[0] === '--version') {
       return cb(null, '1.0.0', '');

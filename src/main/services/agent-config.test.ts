@@ -5,7 +5,7 @@ import * as path from 'path';
 // exec is used by async createDurable (via execGitAsync); execSync by other functions
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
-  exec: vi.fn((_cmd: string, _opts: any, cb: Function) => {
+  exec: vi.fn((_cmd: string, _opts: any, cb: (...args: unknown[]) => void) => {
     cb(null, '', '');
     return {};
   }),
@@ -43,7 +43,7 @@ import {
   addSessionEntry,
   updateSessionName,
   getSessionHistory,
-  ensureGitignore,
+  ensureGitignore as _ensureGitignore,
   saveAgentIcon,
 } from './agent-config';
 

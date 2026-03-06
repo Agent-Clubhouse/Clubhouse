@@ -67,7 +67,7 @@ describe('manifest-validator', () => {
     });
 
     it('rejects missing id', () => {
-      const { id, ...rest } = validManifest;
+      const { id: _id, ...rest } = validManifest;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Missing required field: id');
@@ -100,14 +100,14 @@ describe('manifest-validator', () => {
     });
 
     it('rejects missing name', () => {
-      const { name, ...rest } = validManifest;
+      const { name: _name, ...rest } = validManifest;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Missing required field: name');
     });
 
     it('rejects missing version', () => {
-      const { version, ...rest } = validManifest;
+      const { version: _version, ...rest } = validManifest;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Missing required field: version');
@@ -116,7 +116,7 @@ describe('manifest-validator', () => {
     // --- Engine checks ---
 
     it('rejects missing engine', () => {
-      const { engine, ...rest } = validManifest;
+      const { engine: _engine, ...rest } = validManifest;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors).toContain('Missing required field: engine');
@@ -362,7 +362,7 @@ describe('manifest-validator', () => {
     });
 
     it('rejects v0.5 without permissions array', () => {
-      const { permissions, ...rest } = v05Base;
+      const { permissions: _permissions, ...rest } = v05Base;
       const result = validateManifest(rest);
       expect(result.valid).toBe(false);
       expect(result.errors[0]).toContain('permissions array');

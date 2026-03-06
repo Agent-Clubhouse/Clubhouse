@@ -69,7 +69,7 @@ function SettingsCategoryNav() {
 function PluginSidebarPanel({ pluginId }: { pluginId: string }) {
   const mod = usePluginStore((s) => s.modules[pluginId]);
   const entry = usePluginStore((s) => s.plugins[pluginId]);
-  const contextRevision = usePluginStore((s) => s.contextRevision);
+  const _contextRevision = usePluginStore((s) => s.contextRevision);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   if (!mod?.SidebarPanel) return null;

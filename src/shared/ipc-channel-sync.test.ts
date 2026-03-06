@@ -33,7 +33,7 @@ function readAllHandlerFiles(): string {
  * Extract all IPC channel string values from ipc-channels.ts.
  * Matches patterns like: KEY: 'namespace:action'
  */
-function extractChannelEntries(source: string): Array<{ key: string; value: string }> {
+function _extractChannelEntries(source: string): Array<{ key: string; value: string }> {
   const entries: Array<{ key: string; value: string }> = [];
   // Match lines like:   SOME_KEY: 'namespace:action',
   const re = /^\s+(\w+)\s*:\s*'([^']+)'/gm;
@@ -115,7 +115,7 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
  * Channels where the renderer sends to main AND main also broadcasts back.
  * These need main-side handling (ipcMain.on) but are also used as events.
  */
-const BIDIRECTIONAL_CHANNELS = new Set([
+const _BIDIRECTIONAL_CHANNELS = new Set([
   'IPC.WINDOW.HUB_STATE_CHANGED',
 ]);
 
@@ -161,7 +161,7 @@ describe('IPC Channel Sync', () => {
   });
 
   describe('handler files only reference channels that exist in ipc-channels.ts', () => {
-    const allChannelValues = new Set(channelMap.values());
+    const _allChannelValues = new Set(channelMap.values());
     const allDottedPaths = new Set(channelMap.keys());
 
     it('no phantom channel references in handler files', () => {
@@ -208,7 +208,7 @@ describe('IPC Channel Sync', () => {
 
   describe('channel string values are unique (no duplicates)', () => {
     it('every channel string is unique', () => {
-      const values = Array.from(channelMap.values());
+      const _values = Array.from(channelMap.values());
       const seen = new Map<string, string>();
       const dupes: string[] = [];
 

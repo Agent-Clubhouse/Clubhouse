@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { SettingsMonacoEditor } from '../../components/SettingsMonacoEditor';
+
 import type { SourceControlProvider } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
 import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
@@ -24,7 +24,7 @@ interface Props {
 }
 
 export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Props) {
-  const [defaults, setDefaults] = useState<ProjectAgentDefaults>({});
+  const [_defaults, setDefaults] = useState<ProjectAgentDefaults>({});
   const [instructions, setInstructions] = useState('');
   const [permAllow, setPermAllow] = useState('');
   const [permDeny, setPermDeny] = useState('');

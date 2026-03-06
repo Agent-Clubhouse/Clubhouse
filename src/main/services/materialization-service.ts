@@ -333,7 +333,7 @@ export function previewMaterialization(params: {
     lintCommand: defaults.lintCommand,
   };
   const ctx = buildWildcardContext(agent, projectPath, scp, commands);
-  const conv = provider.conventions;
+  const _conv = provider.conventions;
 
   const instructions = defaults.instructions
     ? replaceWildcards(defaults.instructions, ctx)

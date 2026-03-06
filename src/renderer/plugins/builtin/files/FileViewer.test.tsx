@@ -9,7 +9,7 @@ let lastOnSave: ((content: string) => void) | null = null;
 
 // Mock MonacoEditor and MarkdownPreview to avoid themes/require issues in jsdom
 vi.mock('./MonacoEditor', () => ({
-  MonacoEditor: ({ value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void }) => {
+  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void }) => {
     lastOnSave = onSave || null;
     return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
   },
