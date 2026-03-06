@@ -4,6 +4,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { app } from 'electron';
 import { getShellEnvironment } from '../util/shell';
+import type { LaunchWrapperConfig } from '../../shared/types';
 
 /** Cached binary lookup results keyed by the first binary name */
 const binaryCache = new Map<string, { path: string; ts: number }>();
@@ -110,6 +111,45 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   throw new Error(
     `Could not find any of [${names.join(', ')}] on PATH. Make sure it is installed.`
   );
+}
+
+/**
+ * Transform a provider's spawn command to go through a launch wrapper.
+ *
+ * Replaces binary → inserts subcommand → inserts --mcp per ID → inserts separator → appends original args.
+ *
+ * Example:
+ *   applyLaunchWrapper(config, "claude-code", "claude", ["--model", "opus"], ["ado", "kusto"])
+ *   → { binary: "agency", args: ["claude", "--mcp", "ado", "--mcp", "kusto", "--", "--model", "opus"] }
+ */
+export function applyLaunchWrapper(
+  config: LaunchWrapperConfig,
+  orchestratorId: string,
+  _originalBinary: string,
+  originalArgs: string[],
+  mcpIds: string[],
+): { binary: string; args: string[] } {
+  const mapping = config.orchestratorMap[orchestratorId];
+  if (!mapping) {
+    throw new Error(
+      `Launch wrapper has no mapping for orchestrator "${orchestratorId}". ` +
+      `Available: [${Object.keys(config.orchestratorMap).join(', ')}]`
+    );
+  }
+
+  const args: string[] = [mapping.subcommand];
+
+  for (const id of mcpIds) {
+    args.push('--mcp', id);
+  }
+
+  if (config.separator) {
+    args.push(config.separator);
+  }
+
+  args.push(...originalArgs);
+
+  return { binary: config.binary, args };
 }
 
 /** Common home-relative path builder */

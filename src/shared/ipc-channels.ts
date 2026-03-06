@@ -23,6 +23,12 @@ export const IPC = {
     SAVE_CROPPED_ICON: 'project:save-cropped-icon',
     LIST_CLUBHOUSE_FILES: 'project:list-clubhouse-files',
     RESET_PROJECT: 'project:reset-project',
+    READ_LAUNCH_WRAPPER: 'project:read-launch-wrapper',
+    WRITE_LAUNCH_WRAPPER: 'project:write-launch-wrapper',
+    READ_MCP_CATALOG: 'project:read-mcp-catalog',
+    WRITE_MCP_CATALOG: 'project:write-mcp-catalog',
+    READ_DEFAULT_MCPS: 'project:read-default-mcps',
+    WRITE_DEFAULT_MCPS: 'project:write-default-mcps',
   },
   AGENT: {
     CREATE_DURABLE: 'agent:create-durable',

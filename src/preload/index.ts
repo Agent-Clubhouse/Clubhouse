@@ -51,12 +51,24 @@ const api = {
       ipcRenderer.invoke(IPC.PROJECT.LIST_CLUBHOUSE_FILES, projectPath),
     resetProject: (projectPath: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.PROJECT.RESET_PROJECT, projectPath),
+    readLaunchWrapper: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_LAUNCH_WRAPPER, projectPath),
+    writeLaunchWrapper: (projectPath: string, wrapper: any) =>
+      ipcRenderer.invoke(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, projectPath, wrapper),
+    readMcpCatalog: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_MCP_CATALOG, projectPath),
+    writeMcpCatalog: (projectPath: string, catalog: any[]) =>
+      ipcRenderer.invoke(IPC.PROJECT.WRITE_MCP_CATALOG, projectPath, catalog),
+    readDefaultMcps: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.PROJECT.READ_DEFAULT_MCPS, projectPath),
+    writeDefaultMcps: (projectPath: string, mcpIds: string[]) =>
+      ipcRenderer.invoke(IPC.PROJECT.WRITE_DEFAULT_MCPS, projectPath, mcpIds),
   },
   agent: {
     listDurable: (projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.LIST_DURABLE, projectPath),
-    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean) =>
-      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode),
+    createDurable: (projectPath: string, name: string, color: string, model?: string, useWorktree?: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) =>
+      ipcRenderer.invoke(IPC.AGENT.CREATE_DURABLE, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds),
     deleteDurable: (projectPath: string, agentId: string) =>
       ipcRenderer.invoke(IPC.AGENT.DELETE_DURABLE, projectPath, agentId),
     renameDurable: (projectPath: string, agentId: string, newName: string) =>

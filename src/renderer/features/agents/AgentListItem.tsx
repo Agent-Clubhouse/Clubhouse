@@ -432,6 +432,13 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
                 Free
               </span>
             )}
+            {agent.mcpIds && agent.mcpIds.length > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded truncate"
+                style={{ backgroundColor: 'rgba(168,85,247,0.15)', color: '#d8b4fe' }}
+                title={agent.mcpIds.join(', ')}>
+                {agent.mcpIds.length} MCP{agent.mcpIds.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
           <span className={`text-xs truncate block mt-0.5 ${
             hasDetailed && detailed.state === 'needs_permission' ? 'text-orange-400' :

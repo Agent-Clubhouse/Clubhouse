@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults } from '../../shared/types';
+import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 
 const LOG_NS = 'core:agent-settings';
@@ -34,6 +34,9 @@ interface ProjectSettings {
   defaultSkillsPath?: string;
   defaultAgentsPath?: string;
   agentDefaults?: ProjectAgentDefaults;
+  launchWrapper?: LaunchWrapperConfig;
+  mcpCatalog?: McpCatalogEntry[];
+  defaultMcps?: string[];
 }
 
 export function readClaudeMd(worktreePath: string): string {
@@ -589,4 +592,63 @@ export function applyAgentDefaults(
       appLog(LOG_NS, 'warn', 'Skipped invalid MCP JSON in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
   }
+}
+
+/**
+ * Read the launch wrapper config from .clubhouse/settings.json.
+ * Returns undefined when no wrapper is configured.
+ */
+export function readLaunchWrapper(projectPath: string): LaunchWrapperConfig | undefined {
+  const settings = readSettings(projectPath);
+  return settings.launchWrapper;
+}
+
+/**
+ * Read the MCP catalog from .clubhouse/settings.json.
+ * Returns an empty array when no catalog is configured.
+ */
+export function readMcpCatalog(projectPath: string): McpCatalogEntry[] {
+  const settings = readSettings(projectPath);
+  return settings.mcpCatalog || [];
+}
+
+/**
+ * Read the project default MCP IDs from .clubhouse/settings.json.
+ * Returns an empty array when no defaults are configured.
+ */
+export function readDefaultMcps(projectPath: string): string[] {
+  const settings = readSettings(projectPath);
+  return settings.defaultMcps || [];
+}
+
+/**
+ * Write the launch wrapper config to .clubhouse/settings.json.
+ * Pass undefined to remove the wrapper.
+ */
+export function writeLaunchWrapper(projectPath: string, wrapper: LaunchWrapperConfig | undefined): void {
+  const settings = readSettings(projectPath);
+  if (wrapper) {
+    settings.launchWrapper = wrapper;
+  } else {
+    delete settings.launchWrapper;
+  }
+  writeSettings(projectPath, settings);
+}
+
+/**
+ * Write the MCP catalog to .clubhouse/settings.json.
+ */
+export function writeMcpCatalog(projectPath: string, catalog: McpCatalogEntry[]): void {
+  const settings = readSettings(projectPath);
+  settings.mcpCatalog = catalog;
+  writeSettings(projectPath, settings);
+}
+
+/**
+ * Write project default MCP IDs to .clubhouse/settings.json.
+ */
+export function writeDefaultMcps(projectPath: string, mcpIds: string[]): void {
+  const settings = readSettings(projectPath);
+  settings.defaultMcps = mcpIds;
+  writeSettings(projectPath, settings);
 }
