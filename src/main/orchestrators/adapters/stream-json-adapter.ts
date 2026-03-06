@@ -83,11 +83,17 @@ export class StreamJsonAdapter implements StructuredAdapter {
       // Already using --dangerously-skip-permissions above
     }
 
-    const proc = cpSpawn(this.opts.binary, args, {
-      cwd: sessionOpts.cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const proc = sessionOpts.commandPrefix
+      ? cpSpawn('sh', ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args], {
+          cwd: sessionOpts.cwd,
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+      : cpSpawn(this.opts.binary, args, {
+          cwd: sessionOpts.cwd,
+          env,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
     this.proc = proc;
 
     // Close stdin immediately — -p mode uses CLI arg, not stdin

@@ -118,6 +118,10 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // config directory when a profile is active.
   const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
 
+  // Read project-level command prefix for shell environment setup
+  const projectDefaults = readProjectAgentDefaults(params.projectPath);
+  const commandPrefix = projectDefaults?.commandPrefix || undefined;
+
   // Pre-flight: verify the orchestrator CLI is available before spawning.
   // This catches missing binaries and auth issues early with clear errors,
   // rather than letting the PTY start and exit immediately.
@@ -165,6 +169,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       env: profileEnv,
       allowedTools,
       freeAgentMode: params.freeAgentMode,
+      commandPrefix,
     });
     return;
   }
@@ -195,13 +200,14 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         (exitAgentId) => {
           configPipeline.restoreForAgent(exitAgentId);
         },
+        commandPrefix,
       );
       return;
     }
   }
 
   // Fall back to PTY mode
-  await spawnPtyAgent(params, provider, allowedTools, profileEnv);
+  await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix);
 }
 
 async function spawnPtyAgent(
@@ -209,6 +215,7 @@ async function spawnPtyAgent(
   provider: OrchestratorProvider,
   allowedTools: string[] | undefined,
   profileEnv: Record<string, string> | undefined,
+  commandPrefix?: string,
 ): Promise<void> {
   const nonce = randomUUID();
   agentNonceMap.set(params.agentId, nonce);
@@ -248,6 +255,7 @@ async function spawnPtyAgent(
       model: params.model,
       hookConfigPath: hookConfigPath || 'none',
       allowedTools: allowedTools?.join(',') || 'none',
+      commandPrefix: commandPrefix || 'none',
     },
   });
 
@@ -283,7 +291,7 @@ async function spawnPtyAgent(
         });
       }
     }
-  });
+  }, commandPrefix);
 }
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {

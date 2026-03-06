@@ -153,6 +153,7 @@ export function spawnHeadless(
   extraEnv?: Record<string, string>,
   outputKind: HeadlessOutputKind = 'stream-json',
   onExit?: (agentId: string, exitCode: number) => void,
+  commandPrefix?: string,
 ): void {
   // Clean up any existing session
   if (sessions.has(agentId)) {
@@ -175,18 +176,31 @@ export function spawnHeadless(
   // On Windows, .cmd/.ps1 shims need to be run through cmd.exe.
   // Using windowsVerbatimArguments avoids Node.js double-escaping the
   // arguments which can mangle mission text and long system prompts.
-  const proc = isWin
-    ? cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${[binary, ...args].map(a => winQuoteHeadlessArg(a)).join(' ')}"`], {
-        cwd,
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsVerbatimArguments: true,
-      })
-    : cpSpawn(binary, args, {
-        cwd,
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+  let proc: ChildProcess;
+  if (isWin) {
+    const cmdLine = [binary, ...args].map(a => winQuoteHeadlessArg(a)).join(' ');
+    const fullCmd = commandPrefix ? `${commandPrefix} & ${cmdLine}` : cmdLine;
+    proc = cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsVerbatimArguments: true,
+    });
+  } else if (commandPrefix) {
+    // Wrap in shell so the prefix (e.g. ". ./init.sh") runs first,
+    // then exec replaces the shell with the agent binary.
+    proc = cpSpawn('sh', ['-c', `${commandPrefix} && exec "$@"`, '_', binary, ...args], {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } else {
+    proc = cpSpawn(binary, args, {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
 
   // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.
   // An open stdin pipe can cause Claude Code to wait for input.

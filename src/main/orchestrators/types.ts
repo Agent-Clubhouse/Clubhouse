@@ -143,6 +143,8 @@ export interface StructuredSessionOpts {
   allowedTools?: string[];
   disallowedTools?: string[];
   freeAgentMode?: boolean;
+  /** Shell command prefix prepended before the CLI binary */
+  commandPrefix?: string;
 }
 
 export interface StructuredAdapter {

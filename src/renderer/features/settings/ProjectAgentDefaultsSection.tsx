@@ -16,6 +16,7 @@ interface ProjectAgentDefaults {
   testCommand?: string;
   lintCommand?: string;
   profileId?: string;
+  commandPrefix?: string;
 }
 
 interface Props {
@@ -35,6 +36,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [testCommand, setTestCommand] = useState('');
   const [lintCommand, setLintCommand] = useState('');
   const [profileId, setProfileId] = useState<string | undefined>(undefined);
+  const [commandPrefix, setCommandPrefix] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -58,6 +60,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
       setTestCommand(d.testCommand || '');
       setLintCommand(d.lintCommand || '');
       setProfileId(d.profileId);
+      setCommandPrefix(d.commandPrefix || '');
       setLoaded(true);
       setDirty(false);
     } catch {
@@ -89,6 +92,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     if (testCommand.trim()) newDefaults.testCommand = testCommand.trim();
     if (lintCommand.trim()) newDefaults.lintCommand = lintCommand.trim();
     if (profileId) newDefaults.profileId = profileId;
+    if (commandPrefix.trim()) newDefaults.commandPrefix = commandPrefix.trim();
 
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
@@ -232,6 +236,21 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             </div>
           );
         })()}
+
+        {/* Command Prefix */}
+        <div>
+          <label className="block text-xs text-ctp-subtext0 mb-1">Command Prefix</label>
+          <input
+            value={commandPrefix}
+            onChange={(e) => { setCommandPrefix(e.target.value); setDirty(true); }}
+            placeholder=". ./init.sh"
+            className="w-full bg-surface-0 border border-surface-1 rounded px-2 py-1.5 text-sm font-mono text-ctp-text focus:outline-none focus:border-ctp-blue"
+            spellCheck={false}
+          />
+          <p className="text-[10px] text-ctp-subtext0/60 mt-1">
+            Shell command prepended before the agent CLI binary. Use this to source environment setup scripts (e.g. <code className="bg-surface-0 px-0.5 rounded">. ./init.ps1</code>). Runs in the same shell so exported variables and PATH changes are inherited by the agent.
+          </p>
+        </div>
 
         {/* Build / Test / Lint Commands */}
         <div>

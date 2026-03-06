@@ -44,9 +44,15 @@ export class AcpAdapter implements StructuredAdapter {
       args.push('--model', sessionOpts.model);
     }
 
+    // When a command prefix is set, wrap via shell so the prefix runs first
+    const spawnBinary = sessionOpts.commandPrefix ? 'sh' : this.opts.binary;
+    const spawnArgs = sessionOpts.commandPrefix
+      ? ['-c', `${sessionOpts.commandPrefix} && exec "$@"`, '_', this.opts.binary, ...args]
+      : args;
+
     this.client = new AcpClient({
-      binary: this.opts.binary,
-      args,
+      binary: spawnBinary,
+      args: spawnArgs,
       cwd: sessionOpts.cwd,
       env,
       onNotification: (method, params) => {

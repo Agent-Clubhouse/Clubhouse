@@ -150,6 +150,8 @@ export interface ProjectAgentDefaults {
   lintCommand?: string;
   /** Default profile to use for agents in this project */
   profileId?: string;
+  /** Shell command prefix prepended before the CLI binary (e.g. ". ./init.ps1 &&") */
+  commandPrefix?: string;
 }
 
 /** A recorded CLI session for a durable agent */

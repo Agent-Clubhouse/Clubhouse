@@ -320,6 +320,7 @@ const api = {
       testCommand?: string;
       lintCommand?: string;
       profileId?: string;
+      commandPrefix?: string;
     }> =>
       ipcRenderer.invoke(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, projectPath),
     writeProjectAgentDefaults: (projectPath: string, defaults: {
@@ -332,6 +333,7 @@ const api = {
       testCommand?: string;
       lintCommand?: string;
       profileId?: string;
+      commandPrefix?: string;
     }) =>
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
     resetProjectAgentDefaults: (projectPath: string): Promise<void> =>
