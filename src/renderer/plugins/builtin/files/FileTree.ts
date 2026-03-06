@@ -44,6 +44,41 @@ const ChevronDown = React.createElement('svg', {
   className: 'flex-shrink-0',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
+const NewFileIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+   React.createElement('polyline', { points: '14 2 14 8 20 8' }),
+   React.createElement('line', { x1: 12, y1: 18, x2: 12, y2: 12 }),
+   React.createElement('line', { x1: 9, y1: 15, x2: 15, y2: 15 }));
+
+const NewFolderIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
+   React.createElement('line', { x1: 12, y1: 11, x2: 12, y2: 17 }),
+   React.createElement('line', { x1: 9, y1: 14, x2: 15, y2: 14 }));
+
+const ExpandAllIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('polyline', { points: '6 6 12 12 18 6' }),
+   React.createElement('polyline', { points: '6 12 12 18 18 12' }));
+
+const CollapseAllIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('polyline', { points: '6 18 12 12 18 18' }),
+   React.createElement('polyline', { points: '6 12 12 6 18 12' }));
+
+const GitBranchIcon = React.createElement('svg', {
+  width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('line', { x1: 6, y1: 3, x2: 6, y2: 15 }),
+   React.createElement('circle', { cx: 18, cy: 6, r: 3 }),
+   React.createElement('circle', { cx: 6, cy: 18, r: 3 }),
+   React.createElement('path', { d: 'M18 9a9 9 0 0 1-9 9' }));
+
 // ── Git status badge ───────────────────────────────────────────────────
 
 function GitBadge({ status }: { status: string }) {
@@ -76,6 +111,20 @@ function getRelativePath(fullPath: string, projectPath: string): string {
 function getExtension(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
+function collectAllDirPaths(nodes: FileNode[]): Set<string> {
+  const dirs = new Set<string>();
+  const walk = (items: FileNode[]) => {
+    for (const n of items) {
+      if (n.isDirectory) {
+        dirs.add(n.path);
+        if (n.children) walk(n.children);
+      }
+    }
+  };
+  walk(nodes);
+  return dirs;
 }
 
 // ── Tree Node ─────────────────────────────────────────────────────────
@@ -216,10 +265,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [gitMap, setGitMap] = useState<Map<string, string>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: FileNode } | null>(null);
+  const [rootPath, setRootPath] = useState<string>('.');
+  const [worktrees, setWorktrees] = useState<string[]>([]);
+  const [currentBranch, setCurrentBranch] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
+  const watchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const projectPath = api.context.projectPath || '';
-  const showHidden = api.settings.get<boolean>('showHiddenFiles') || false;
+  const showHidden = api.settings.get<boolean>('showHiddenFiles') ?? true;
 
   // Collect all visible nodes for keyboard navigation
   const getVisibleNodes = useCallback((): FileNode[] => {
@@ -239,12 +292,12 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Load tree from API
   const loadTree = useCallback(async () => {
     try {
-      const nodes = await api.files.readTree('.', { includeHidden: showHidden, depth: 1 });
+      const nodes = await api.files.readTree(rootPath, { includeHidden: showHidden, depth: 1 });
       setTree(nodes);
     } catch {
       setTree([]);
     }
-  }, [api, showHidden]);
+  }, [api, showHidden, rootPath]);
 
   // Load git status
   const loadGitStatus = useCallback(async () => {
@@ -260,27 +313,76 @@ export function FileTree({ api }: { api: PluginAPI }) {
     }
   }, [api]);
 
-  // Initial load + refresh subscription
+  // Load current branch
+  const loadBranch = useCallback(async () => {
+    try {
+      const branch = await api.git.currentBranch();
+      setCurrentBranch(branch);
+    } catch {
+      setCurrentBranch('');
+    }
+  }, [api]);
+
+  // Load worktree list
+  const loadWorktrees = useCallback(async () => {
+    try {
+      const entries = await api.files.readTree('.clubhouse/agents', { depth: 1 });
+      setWorktrees(entries.filter((e) => e.isDirectory).map((e) => e.name));
+    } catch {
+      setWorktrees([]);
+    }
+  }, [api]);
+
+  // Restore persisted state on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function restore() {
+      try {
+        const [savedPath, savedRoot] = await Promise.all([
+          api.storage.project.read('files:lastSelectedPath'),
+          api.storage.project.read('files:lastRootPath'),
+        ]);
+        if (cancelled) return;
+        if (typeof savedRoot === 'string' && savedRoot) {
+          setRootPath(savedRoot);
+        }
+        if (typeof savedPath === 'string' && savedPath) {
+          setSelectedPath(`${projectPath}/${savedPath}`);
+          fileState.setSelectedPath(savedPath);
+        }
+      } catch {
+        // Fresh start
+      }
+    }
+    restore();
+    return () => { cancelled = true; };
+  }, [api, projectPath]);
+
+  // Initial load
   useEffect(() => {
     loadTree();
     loadGitStatus();
-  }, [loadTree, loadGitStatus]);
+    loadBranch();
+    loadWorktrees();
+  }, [loadTree, loadGitStatus, loadBranch, loadWorktrees]);
 
   // Subscribe to fileState refresh signals
   const lastRefreshRef = useRef(fileState.refreshCount);
   useEffect(() => {
     return fileState.subscribe(() => {
-      // Sync selected path on every notification
-      setSelectedPath(fileState.selectedPath);
+      // Sync selected path — convert relative to absolute for tree highlighting
+      const relPath = fileState.selectedPath;
+      setSelectedPath(relPath ? `${projectPath}/${relPath}` : null);
 
       // Only reload tree when an explicit refresh was triggered
       if (fileState.refreshCount !== lastRefreshRef.current) {
         lastRefreshRef.current = fileState.refreshCount;
         loadTree();
         loadGitStatus();
+        loadBranch();
       }
     });
-  }, [loadTree, loadGitStatus]);
+  }, [loadTree, loadGitStatus, loadBranch, projectPath]);
 
   // Subscribe to settings changes
   useEffect(() => {
@@ -291,6 +393,22 @@ export function FileTree({ api }: { api: PluginAPI }) {
     });
     return () => disposable.dispose();
   }, [api, loadTree]);
+
+  // File watching — auto-refresh tree on external changes
+  useEffect(() => {
+    const disposable = api.files.watch('**/*', () => {
+      if (watchDebounceRef.current) clearTimeout(watchDebounceRef.current);
+      watchDebounceRef.current = setTimeout(() => {
+        loadTree();
+        loadGitStatus();
+        loadBranch();
+      }, 500);
+    });
+    return () => {
+      if (watchDebounceRef.current) clearTimeout(watchDebounceRef.current);
+      disposable.dispose();
+    };
+  }, [api, loadTree, loadGitStatus, loadBranch]);
 
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
@@ -330,10 +448,112 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Select file
   const selectFile = useCallback((path: string) => {
     setSelectedPath(path);
-    fileState.setSelectedPath(getRelativePath(path, projectPath));
-  }, [projectPath]);
+    const relPath = getRelativePath(path, projectPath);
+    fileState.setSelectedPath(relPath);
+    api.storage.project.write('files:lastSelectedPath', relPath).catch(() => {});
+  }, [projectPath, api]);
 
-  // File operations
+  // Handle root path change (worktree selector)
+  const handleRootChange = useCallback((newRoot: string) => {
+    setRootPath(newRoot);
+    setExpanded(new Set());
+    setSelectedPath(null);
+    setFocusedPath(null);
+    fileState.setSelectedPath(null);
+    api.storage.project.write('files:lastRootPath', newRoot).catch(() => {});
+    api.storage.project.write('files:lastSelectedPath', '').catch(() => {});
+  }, [api]);
+
+  // Expand all directories
+  const expandAll = useCallback(async () => {
+    try {
+      const fullTree = await api.files.readTree(rootPath, { includeHidden: showHidden, depth: 10 });
+      setTree(fullTree);
+      setExpanded(collectAllDirPaths(fullTree));
+    } catch {
+      // ignore
+    }
+  }, [api, rootPath, showHidden]);
+
+  // Collapse all directories
+  const collapseAll = useCallback(() => {
+    setExpanded(new Set());
+  }, []);
+
+  // New file at root or selected directory
+  const handleNewFile = useCallback(async () => {
+    const name = await api.ui.showInput('File name');
+    if (!name) return;
+
+    let dir = rootPath === '.' ? '' : rootPath;
+    if (selectedPath) {
+      const relSelected = getRelativePath(selectedPath, projectPath);
+      // Check if the tree node at selectedPath is a directory
+      const findNode = (nodes: FileNode[]): FileNode | undefined => {
+        for (const n of nodes) {
+          if (n.path === selectedPath) return n;
+          if (n.children) {
+            const found = findNode(n.children);
+            if (found) return found;
+          }
+        }
+        return undefined;
+      };
+      const node = findNode(tree);
+      if (node?.isDirectory) {
+        dir = relSelected;
+      } else {
+        dir = relSelected.replace(/\/[^/]+$/, '') || (rootPath === '.' ? '' : rootPath);
+      }
+    }
+
+    const newPath = dir ? `${dir}/${name}` : name;
+    try {
+      await api.files.writeFile(newPath, '');
+      loadTree();
+      loadGitStatus();
+    } catch (err) {
+      api.ui.showError(`Failed to create file: ${err}`);
+    }
+  }, [api, rootPath, selectedPath, projectPath, tree, loadTree, loadGitStatus]);
+
+  // New folder at root or selected directory
+  const handleNewFolder = useCallback(async () => {
+    const name = await api.ui.showInput('Folder name');
+    if (!name) return;
+
+    let dir = rootPath === '.' ? '' : rootPath;
+    if (selectedPath) {
+      const relSelected = getRelativePath(selectedPath, projectPath);
+      const findNode = (nodes: FileNode[]): FileNode | undefined => {
+        for (const n of nodes) {
+          if (n.path === selectedPath) return n;
+          if (n.children) {
+            const found = findNode(n.children);
+            if (found) return found;
+          }
+        }
+        return undefined;
+      };
+      const node = findNode(tree);
+      if (node?.isDirectory) {
+        dir = relSelected;
+      } else {
+        dir = relSelected.replace(/\/[^/]+$/, '') || (rootPath === '.' ? '' : rootPath);
+      }
+    }
+
+    const newPath = dir ? `${dir}/${name}` : name;
+    try {
+      await api.files.mkdir(newPath);
+      loadTree();
+      loadGitStatus();
+    } catch (err) {
+      api.ui.showError(`Failed to create folder: ${err}`);
+    }
+  }, [api, rootPath, selectedPath, projectPath, tree, loadTree, loadGitStatus]);
+
+  // File operations (context menu)
   const handleContextAction = useCallback(async (action: string, node: FileNode) => {
     const parentDir = node.isDirectory
       ? getRelativePath(node.path, projectPath)
@@ -436,6 +656,9 @@ export function FileTree({ api }: { api: PluginAPI }) {
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   }, []);
 
+  // Compute display label for worktree selector
+  const rootLabel = rootPath === '.' ? '/ (root)' : rootPath.replace('.clubhouse/agents/', '');
+
   return React.createElement('div', {
     ref: containerRef,
     className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none',
@@ -444,14 +667,81 @@ export function FileTree({ api }: { api: PluginAPI }) {
   },
     // Header
     React.createElement('div', {
-      className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 flex-shrink-0',
+      className: 'flex flex-col border-b border-ctp-surface0 flex-shrink-0',
     },
-      React.createElement('span', { className: 'text-xs font-medium' }, 'Files'),
-      React.createElement('button', {
-        className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
-        onClick: () => { loadTree(); loadGitStatus(); },
-        title: 'Refresh',
-      }, RefreshIcon),
+      // Row 1: Branch + Worktree selector
+      React.createElement('div', {
+        className: 'flex items-center gap-2 px-3 py-1',
+      },
+        // Branch indicator
+        currentBranch
+          ? React.createElement('div', {
+              className: 'flex items-center gap-1 text-[10px] text-ctp-subtext0 flex-shrink-0',
+              title: `Branch: ${currentBranch}`,
+            },
+              GitBranchIcon,
+              React.createElement('span', { className: 'truncate max-w-[80px]' }, currentBranch),
+            )
+          : null,
+
+        // Worktree selector
+        worktrees.length > 0
+          ? React.createElement('select', {
+              className: 'flex-1 min-w-0 text-[10px] bg-ctp-surface0 text-ctp-text border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none',
+              value: rootPath,
+              onChange: (e: React.ChangeEvent<HTMLSelectElement>) => handleRootChange(e.target.value),
+              title: 'Switch worktree root',
+            },
+              React.createElement('option', { value: '.' }, '/ (root)'),
+              ...worktrees.map((wt) =>
+                React.createElement('option', {
+                  key: wt,
+                  value: `.clubhouse/agents/${wt}`,
+                }, wt),
+              ),
+            )
+          : React.createElement('span', { className: 'flex-1 text-xs font-medium' }, 'Files'),
+      ),
+
+      // Row 2: Toolbar buttons
+      React.createElement('div', {
+        className: 'flex items-center justify-end gap-0.5 px-2 pb-1',
+      },
+        // New File
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: handleNewFile,
+          title: 'New File',
+        }, NewFileIcon),
+        // New Folder
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: handleNewFolder,
+          title: 'New Folder',
+        }, NewFolderIcon),
+        // Separator
+        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        // Expand All
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: expandAll,
+          title: 'Expand All',
+        }, ExpandAllIcon),
+        // Collapse All
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: collapseAll,
+          title: 'Collapse All',
+        }, CollapseAllIcon),
+        // Separator
+        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        // Refresh
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: () => { loadTree(); loadGitStatus(); loadBranch(); },
+          title: 'Refresh',
+        }, RefreshIcon),
+      ),
     ),
 
     // Tree
@@ -473,15 +763,6 @@ export function FileTree({ api }: { api: PluginAPI }) {
               onContextMenu: handleContextMenu,
             }),
           ),
-    ),
-
-    // Footer
-    React.createElement('div', {
-      className: 'px-3 py-1 border-t border-ctp-surface0 flex-shrink-0',
-    },
-      React.createElement('span', {
-        className: 'text-[10px] text-ctp-subtext0',
-      }, 'Changes made outside Clubhouse won\'t appear automatically'),
     ),
 
     // Context menu

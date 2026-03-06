@@ -21,9 +21,9 @@ describe('files plugin', () => {
 
     it('declares required permissions', () => {
       expect(manifest.permissions).toEqual(
-        expect.arrayContaining(['files', 'git', 'commands', 'notifications']),
+        expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage']),
       );
-      expect(manifest.permissions).toHaveLength(4);
+      expect(manifest.permissions).toHaveLength(6);
     });
 
     it('is project-scoped', () => {
@@ -41,9 +41,9 @@ describe('files plugin', () => {
       );
     });
 
-    it('contributes showHiddenFiles setting', () => {
+    it('contributes showHiddenFiles setting defaulting to true', () => {
       expect(manifest.contributes?.settings).toContainEqual(
-        expect.objectContaining({ key: 'showHiddenFiles', type: 'boolean' }),
+        expect.objectContaining({ key: 'showHiddenFiles', type: 'boolean', default: true }),
       );
     });
 

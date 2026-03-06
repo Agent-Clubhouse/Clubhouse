@@ -21,11 +21,11 @@ describe('files plugin manifest', () => {
     expect(manifest.engine.api).toBe(0.6);
   });
 
-  it('declares required permissions', () => {
+  it('declares required permissions including files.watch and storage', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['files', 'git', 'commands', 'notifications']),
+      expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage']),
     );
-    expect(manifest.permissions).toHaveLength(4);
+    expect(manifest.permissions).toHaveLength(6);
   });
 
   it('contributes help topics', () => {
@@ -58,5 +58,13 @@ describe('files plugin manifest', () => {
 
   it('uses declarative settings panel', () => {
     expect(manifest.settingsPanel).toBe('declarative');
+  });
+
+  it('defaults showHiddenFiles to true', () => {
+    const settings = manifest.contributes?.settings;
+    expect(settings).toBeDefined();
+    const hiddenSetting = settings!.find((s) => s.key === 'showHiddenFiles');
+    expect(hiddenSetting).toBeDefined();
+    expect(hiddenSetting!.default).toBe(true);
   });
 });
