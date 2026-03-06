@@ -216,6 +216,70 @@ describe('FileTree', () => {
     });
   });
 
+  it('shows worktree branch when an agent worktree is selected', async () => {
+    const currentBranch = vi.fn(async (subPath?: string) => {
+      if (subPath === '.clubhouse/agents/my-agent') return 'my-agent/standby';
+      return 'main';
+    });
+    const readTree = vi.fn(async (path: string) => {
+      if (path === '.clubhouse/agents') {
+        return [{ name: 'my-agent', path: '/project/.clubhouse/agents/my-agent', isDirectory: true }];
+      }
+      if (path === '.' || path === '.clubhouse/agents/my-agent') return MOCK_TREE;
+      return [];
+    });
+    const api = createFilesAPI({
+      files: { ...createMockAPI().files, readTree },
+      git: { ...createMockAPI().git, currentBranch, status: vi.fn(async () => []) },
+    });
+
+    render(<FileTree api={api} />);
+
+    // Wait for worktree selector to appear, then switch to agent worktree
+    await waitFor(() => {
+      expect(screen.getByTitle('Switch worktree root')).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTitle('Switch worktree root'), {
+      target: { value: '.clubhouse/agents/my-agent' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('my-agent/standby')).toBeInTheDocument();
+    });
+    expect(currentBranch).toHaveBeenCalledWith('.clubhouse/agents/my-agent');
+  });
+
+  it('shows "No Worktree" when agent directory has no git info', async () => {
+    const currentBranch = vi.fn(async (subPath?: string) => {
+      if (subPath === '.clubhouse/agents/no-wt-agent') return '';
+      return 'main';
+    });
+    const readTree = vi.fn(async (path: string) => {
+      if (path === '.clubhouse/agents') {
+        return [{ name: 'no-wt-agent', path: '/project/.clubhouse/agents/no-wt-agent', isDirectory: true }];
+      }
+      if (path === '.' || path === '.clubhouse/agents/no-wt-agent') return MOCK_TREE;
+      return [];
+    });
+    const api = createFilesAPI({
+      files: { ...createMockAPI().files, readTree },
+      git: { ...createMockAPI().git, currentBranch, status: vi.fn(async () => []) },
+    });
+
+    render(<FileTree api={api} />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle('Switch worktree root')).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTitle('Switch worktree root'), {
+      target: { value: '.clubhouse/agents/no-wt-agent' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('No Worktree')).toBeInTheDocument();
+    });
+  });
+
   it('persists selected path to storage on file select', async () => {
     const write = vi.fn(async () => {});
     const api = createFilesAPI({

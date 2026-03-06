@@ -492,7 +492,7 @@ export interface ProjectsAPI {
 export interface GitAPI {
   status(): Promise<GitStatus[]>;
   log(limit?: number): Promise<GitCommit[]>;
-  currentBranch(): Promise<string>;
+  currentBranch(subPath?: string): Promise<string>;
   diff(filePath: string, staged?: boolean): Promise<string>;
 }
 

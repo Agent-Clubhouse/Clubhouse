@@ -35,7 +35,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     git: {
       status: async () => [],
       log: async () => [],
-      currentBranch: async () => 'main',
+      currentBranch: async (_subPath?: string) => 'main',
       diff: async () => '',
     },
     storage: {

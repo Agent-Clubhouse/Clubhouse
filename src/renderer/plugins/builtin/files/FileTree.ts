@@ -378,15 +378,15 @@ export function FileTree({ api }: { api: PluginAPI }) {
     }
   }, [api]);
 
-  // Load current branch
+  // Load current branch — when viewing a worktree, resolve branch from that directory
   const loadBranch = useCallback(async () => {
     try {
-      const branch = await api.git.currentBranch();
+      const branch = await api.git.currentBranch(rootPath !== '.' ? rootPath : undefined);
       setCurrentBranch(branch);
     } catch {
       setCurrentBranch('');
     }
-  }, [api]);
+  }, [api, rootPath]);
 
   // Load worktree list
   const loadWorktrees = useCallback(async () => {
@@ -722,14 +722,15 @@ export function FileTree({ api }: { api: PluginAPI }) {
       React.createElement('div', {
         className: 'flex items-center gap-2 px-3 py-1',
       },
-        // Branch indicator
-        currentBranch
+        // Branch indicator — show worktree branch or "No Worktree" for agent dirs without one
+        (currentBranch || rootPath !== '.')
           ? React.createElement('div', {
               className: 'flex items-center gap-1 text-[10px] text-ctp-subtext0 flex-shrink-0',
-              title: `Branch: ${currentBranch}`,
+              title: currentBranch ? `Branch: ${currentBranch}` : 'No worktree',
             },
               GitBranchIcon,
-              React.createElement('span', { className: 'truncate max-w-[80px]' }, currentBranch),
+              React.createElement('span', { className: 'truncate max-w-[80px]' },
+                currentBranch || 'No Worktree'),
             )
           : null,
 

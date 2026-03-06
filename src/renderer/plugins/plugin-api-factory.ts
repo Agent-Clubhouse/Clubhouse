@@ -271,8 +271,9 @@ function createGitAPI(ctx: PluginContext): GitAPI {
         date: e.date,
       }));
     },
-    async currentBranch(): Promise<string> {
-      const info = await window.clubhouse.git.info(projectPath);
+    async currentBranch(subPath?: string): Promise<string> {
+      const dirPath = subPath && subPath !== '.' ? `${projectPath}/${subPath}` : projectPath;
+      const info = await window.clubhouse.git.info(dirPath);
       return info.branch;
     },
     async diff(filePath: string, staged = false): Promise<string> {
