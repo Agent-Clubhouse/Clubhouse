@@ -313,7 +313,7 @@ export function ProjectRail() {
       <div
         className={`
           flex flex-col py-3 gap-2 bg-ctp-mantle border-r border-surface-0 h-full
-          transition-[width] duration-200 ease-in-out overflow-hidden pl-[14px] pr-[14px]
+          transition-[width] duration-200 ease-in-out overflow-hidden pl-[14px] pr-[10px]
           ${overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
         `}
         style={{ width: expanded ? 200 : collapsedWidth }}
@@ -367,7 +367,7 @@ export function ProjectRail() {
           <div className="border-t border-surface-2 my-1 flex-shrink-0" />
         )}
 
-        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2">
+        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
           {projects.map((p, i) => (
             <div
               key={p.id}
