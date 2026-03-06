@@ -172,6 +172,8 @@ export const IPC = {
     IMPORT_SOUND_PACK: 'app:import-sound-pack',
     DELETE_SOUND_PACK: 'app:delete-sound-pack',
     GET_SOUND_DATA: 'app:get-sound-data',
+    GET_SESSION_SETTINGS: 'app:get-session-settings',
+    SAVE_SESSION_SETTINGS: 'app:save-session-settings',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

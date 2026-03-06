@@ -5,9 +5,10 @@ import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { SleepingMascot } from './SleepingMascots';
 import { SessionPickerDialog } from './SessionPickerDialog';
+import { SessionNamePromptDialog } from './SessionNamePromptDialog';
 
 export function SleepingAgent({ agent }: { agent: Agent }) {
-  const { spawnDurableAgent } = useAgentStore();
+  const { spawnDurableAgent, sessionNamePromptFor, setSessionNamePrompt } = useAgentStore();
   const { projects } = useProjectStore();
   // Use the agent's own project, not the globally-active project
   const agentProject = projects.find((p) => p.id === agent.projectId);
@@ -168,6 +169,15 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
           orchestrator={agent.orchestrator}
           onResume={handleResumeSession}
           onClose={() => setSessionPickerOpen(false)}
+        />
+      )}
+
+      {/* Session name prompt dialog (shown after agent stops if setting enabled) */}
+      {sessionNamePromptFor === agent.id && agentProject && (
+        <SessionNamePromptDialog
+          agentId={agent.id}
+          projectPath={agentProject.path}
+          onDone={() => setSessionNamePrompt(null)}
         />
       )}
     </div>

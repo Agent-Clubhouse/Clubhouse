@@ -11,6 +11,7 @@ import * as badgeSettings from '../services/badge-settings';
 import * as clipboardSettings from '../services/clipboard-settings';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
+import * as sessionSettings from '../services/session-settings';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
 import { ClipboardSettings, ClubhouseModeSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
@@ -200,6 +201,15 @@ export function registerAppHandlers(): void {
 
   ipcMain.handle(IPC.APP.GET_SOUND_DATA, (_event, packId: string, event: SoundEvent) => {
     return soundService.getSoundData(packId, event);
+  });
+
+  // --- Session Settings ---
+  ipcMain.handle(IPC.APP.GET_SESSION_SETTINGS, () => {
+    return sessionSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_SESSION_SETTINGS, (_event, settings: sessionSettings.SessionSettings) => {
+    sessionSettings.saveSettings(settings);
   });
 
   // --- Clubhouse Mode ---

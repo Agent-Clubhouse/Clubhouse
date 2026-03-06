@@ -213,6 +213,8 @@ vi.stubGlobal('clubhouse', {
     getVersionHistory: async () => [],
     getClipboardSettings: async () => ({ clipboardCompat: false }),
     saveClipboardSettings: asyncNoop,
+    getSessionSettings: async () => ({ promptForName: false, projectOverrides: {} }),
+    saveSessionSettings: asyncNoop,
     getClubhouseModeSettings: async () => ({ enabled: false }),
     saveClubhouseModeSettings: asyncNoop,
     onUpdateStatusChanged: () => noop,

@@ -20,6 +20,14 @@ vi.mock('./SessionPickerDialog', () => ({
   ),
 }));
 
+vi.mock('./SessionNamePromptDialog', () => ({
+  SessionNamePromptDialog: ({ onDone }: { onDone: () => void }) => (
+    <div data-testid="session-name-prompt-dialog">
+      <button data-testid="mock-prompt-done" onClick={onDone}>Done Mock</button>
+    </div>
+  ),
+}));
+
 const baseAgent: Agent = {
   id: 'agent-1',
   projectId: 'proj-1',
@@ -275,6 +283,37 @@ describe('SleepingAgent', () => {
 
       fireEvent.click(screen.getByTestId('mock-close'));
       expect(screen.queryByTestId('session-picker-dialog')).toBeNull();
+    });
+  });
+
+  describe('session name prompt', () => {
+    it('shows session name prompt when sessionNamePromptFor matches agent', () => {
+      useAgentStore.setState({
+        sessionNamePromptFor: 'agent-1',
+        setSessionNamePrompt: vi.fn(),
+      });
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      expect(screen.getByTestId('session-name-prompt-dialog')).toBeInTheDocument();
+    });
+
+    it('does not show session name prompt when sessionNamePromptFor does not match', () => {
+      useAgentStore.setState({
+        sessionNamePromptFor: 'other-agent',
+        setSessionNamePrompt: vi.fn(),
+      });
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      expect(screen.queryByTestId('session-name-prompt-dialog')).toBeNull();
+    });
+
+    it('clears prompt when done', () => {
+      const mockSetSessionNamePrompt = vi.fn();
+      useAgentStore.setState({
+        sessionNamePromptFor: 'agent-1',
+        setSessionNamePrompt: mockSetSessionNamePrompt,
+      });
+      renderComponent({ kind: 'durable', status: 'sleeping' });
+      fireEvent.click(screen.getByTestId('mock-prompt-done'));
+      expect(mockSetSessionNamePrompt).toHaveBeenCalledWith(null);
     });
   });
 });
