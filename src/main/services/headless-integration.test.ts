@@ -192,6 +192,7 @@ describe('Headless integration', () => {
         }),
         'stream-json',
         expect.any(Function),
+        undefined, // commandPrefix
       );
     });
 
@@ -337,6 +338,7 @@ describe('Headless integration', () => {
         expect.any(Object),
         'stream-json',
         expect.any(Function),
+        undefined, // commandPrefix
       );
     });
 
@@ -361,6 +363,7 @@ describe('Headless integration', () => {
         expect.any(Object),
         'text',
         expect.any(Function),
+        undefined, // commandPrefix
       );
     });
 
@@ -385,6 +388,7 @@ describe('Headless integration', () => {
         expect.any(Object),
         'stream-json',
         expect.any(Function),
+        undefined, // commandPrefix
       );
     });
   });
