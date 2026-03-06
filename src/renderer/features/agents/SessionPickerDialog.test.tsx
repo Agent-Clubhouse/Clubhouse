@@ -115,4 +115,53 @@ describe('SessionPickerDialog', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onResume).toHaveBeenCalledWith('manual-sess-id');
   });
+
+  describe('Recent / Older sections', () => {
+    it('shows "Recent" label when sessions exist', async () => {
+      renderDialog();
+      await waitFor(() => {
+        expect(screen.getByText('Recent')).toBeInTheDocument();
+      });
+    });
+
+    it('does not show "Older" label when sessions <= 5', async () => {
+      renderDialog();
+      await waitFor(() => {
+        expect(screen.getByText('Feature Work')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Older')).toBeNull();
+    });
+
+    it('shows "Older" label when sessions > 5', async () => {
+      const manySessions = Array.from({ length: 7 }, (_, i) => ({
+        sessionId: `sess-${i}`,
+        startedAt: `2024-06-${15 - i}T10:00:00Z`,
+        lastActiveAt: `2024-06-${15 - i}T12:00:00Z`,
+        friendlyName: `Session ${i}`,
+      }));
+      window.clubhouse.agent.listSessions = vi.fn().mockResolvedValue(manySessions);
+
+      renderDialog();
+      await waitFor(() => {
+        expect(screen.getByText('Recent')).toBeInTheDocument();
+        expect(screen.getByText('Older')).toBeInTheDocument();
+      });
+
+      // First 5 should be in Recent, last 2 in Older
+      expect(screen.getByTestId('session-entry-0')).toBeInTheDocument();
+      expect(screen.getByTestId('session-entry-4')).toBeInTheDocument();
+      expect(screen.getByTestId('session-entry-5')).toBeInTheDocument();
+      expect(screen.getByTestId('session-entry-6')).toBeInTheDocument();
+    });
+
+    it('does not show section labels when no sessions', async () => {
+      window.clubhouse.agent.listSessions = vi.fn().mockResolvedValue([]);
+      renderDialog();
+      await waitFor(() => {
+        expect(screen.getByText('No sessions found')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('Recent')).toBeNull();
+      expect(screen.queryByText('Older')).toBeNull();
+    });
+  });
 });
