@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { isNewerVersion, parseVersion, verifySHA256 } from './auto-update-service';
+import { isNewerVersion, parseVersion, verifySHA256, appendTelemetryParams } from './auto-update-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -164,6 +164,34 @@ describe('auto-update-service', () => {
       const url = 'https://example.com/artifacts/Clubhouse';
       const ext = path.extname(new URL(url).pathname) || '.zip';
       expect(ext).toBe('.zip');
+    });
+  });
+
+  describe('appendTelemetryParams', () => {
+    it('appends v, os, and arch query params to a plain URL', () => {
+      const result = appendTelemetryParams('https://example.com/latest.json');
+      expect(result).toMatch(/^https:\/\/example\.com\/latest\.json\?v=.+&os=.+&arch=.+$/);
+    });
+
+    it('uses & separator when URL already has query params', () => {
+      const result = appendTelemetryParams('https://example.com/latest.json?foo=bar');
+      expect(result).toMatch(/\?foo=bar&v=.+&os=.+&arch=.+$/);
+      // Should not have double ?
+      expect(result.split('?').length).toBe(2);
+    });
+
+    it('includes the current platform and arch', () => {
+      const result = appendTelemetryParams('https://example.com/file');
+      expect(result).toContain(`os=${process.platform}`);
+      expect(result).toContain(`arch=${process.arch}`);
+    });
+
+    it('does not alter the URL pathname (extension parsing still works)', () => {
+      const url = 'https://example.com/artifacts/Clubhouse-1.0.0-Setup.exe';
+      const result = appendTelemetryParams(url);
+      // pathname-based extension parsing should still yield .exe
+      const ext = path.extname(new URL(result).pathname);
+      expect(ext).toBe('.exe');
     });
   });
 

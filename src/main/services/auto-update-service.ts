@@ -67,13 +67,25 @@ function platformKey(): string {
 }
 
 /**
+ * Append telemetry query params (version, os, arch) to a URL.
+ * Azure Blob Storage ignores unknown params but Log Analytics captures
+ * the full request URI, enabling stale-client monitoring.
+ */
+export function appendTelemetryParams(url: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  const version = app.getVersion();
+  return `${url}${separator}v=${encodeURIComponent(version)}&os=${encodeURIComponent(process.platform)}&arch=${encodeURIComponent(process.arch)}`;
+}
+
+/**
  * Build the Squirrel releases URL for the current platform and channel.
  * Convention: {SQUIRREL_BASE_URL}/{channel}/{platform-arch}/
  * e.g. https://.../squirrel/stable/win32-x64/
  */
 export function getSquirrelReleasesUrl(previewChannel: boolean): string {
   const channel = previewChannel ? 'preview' : 'stable';
-  return `${SQUIRREL_BASE_URL}/${channel}/${platformKey()}`;
+  const base = `${SQUIRREL_BASE_URL}/${channel}/${platformKey()}`;
+  return appendTelemetryParams(base);
 }
 
 /** Path to Squirrel's Update.exe — one directory above the app exe. */
@@ -318,14 +330,14 @@ interface ManifestResult {
 
 async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResult> {
   if (!previewChannel) {
-    return { manifest: await fetchJSON(UPDATE_URL), sourceUrl: UPDATE_URL };
+    return { manifest: await fetchJSON(appendTelemetryParams(UPDATE_URL)), sourceUrl: UPDATE_URL };
   }
 
   // Fetch both in parallel; either may be missing (e.g. v2/latest.json
   // didn't exist until the first stable release after the v2 migration).
   const [stable, preview] = await Promise.all([
-    fetchJSON(UPDATE_URL).catch(() => null as UpdateManifest | null),
-    fetchJSON(PREVIEW_UPDATE_URL).catch(() => null as UpdateManifest | null),
+    fetchJSON(appendTelemetryParams(UPDATE_URL)).catch(() => null as UpdateManifest | null),
+    fetchJSON(appendTelemetryParams(PREVIEW_UPDATE_URL)).catch(() => null as UpdateManifest | null),
   ]);
 
   if (!stable && !preview) {
@@ -485,7 +497,7 @@ async function downloadUpdate(
   });
 
   try {
-    await downloadFile(artifact.url, destPath, artifact.size, (percent) => {
+    await downloadFile(appendTelemetryParams(artifact.url), destPath, artifact.size, (percent) => {
       status = { ...status, downloadProgress: percent };
       broadcastStatus();
     });
@@ -987,7 +999,7 @@ export async function getVersionHistory(): Promise<{ markdown: string; entries: 
   appLog('update:history', 'info', 'Fetching version history', { meta: { currentVersion, historyUrl: HISTORY_URL } });
 
   try {
-    const entries = await fetchJSON<VersionHistoryEntry[]>(HISTORY_URL);
+    const entries = await fetchJSON<VersionHistoryEntry[]>(appendTelemetryParams(HISTORY_URL));
     if (!Array.isArray(entries)) {
       appLog('update:history', 'warn', 'Invalid history.json format');
       return { markdown: '', entries: [] };
