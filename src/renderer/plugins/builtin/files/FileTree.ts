@@ -220,7 +220,7 @@ interface ContextMenuProps {
   onAction: (action: string) => void;
 }
 
-function ContextMenu({ x, y, node, onClose, onAction }: ContextMenuProps) {
+function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -655,9 +655,6 @@ export function FileTree({ api }: { api: PluginAPI }) {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   }, []);
-
-  // Compute display label for worktree selector
-  const rootLabel = rootPath === '.' ? '/ (root)' : rootPath.replace('.clubhouse/agents/', '');
 
   return React.createElement('div', {
     ref: containerRef,

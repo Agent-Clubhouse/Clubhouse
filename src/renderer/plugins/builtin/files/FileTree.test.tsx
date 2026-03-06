@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileTree } from './FileTree';
 import { fileState } from './state';
 import { createMockAPI } from '../../testing';
@@ -19,29 +19,49 @@ const MOCK_TREE: FileNode[] = [
   { name: 'package.json', path: '/project/package.json', isDirectory: false },
 ];
 
+/** Creates a readTree mock that returns MOCK_TREE for root and [] for other paths (like worktree listing). */
+function mockReadTree(overrideFn?: (...args: unknown[]) => Promise<FileNode[]>) {
+  return vi.fn(async (path: string, _opts?: unknown) => {
+    if (overrideFn) return overrideFn(path, _opts);
+    // Return tree only for root path, empty for worktree listing
+    if (path === '.' || path === '/project') return MOCK_TREE;
+    return [];
+  });
+}
+
 function createFilesAPI(overrides?: Partial<ReturnType<typeof createMockAPI>>) {
+  const base = createMockAPI();
   return createMockAPI({
     files: {
-      ...createMockAPI().files,
-      readTree: vi.fn(async () => MOCK_TREE),
+      ...base.files,
+      readTree: mockReadTree(),
+      ...overrides?.files,
     },
     git: {
-      ...createMockAPI().git,
+      ...base.git,
       status: vi.fn(async () => [
         { path: 'src/index.ts', status: 'M', staged: false },
         { path: 'README.md', status: '?', staged: false },
         { path: 'deleted.ts', status: 'D', staged: true },
       ]),
+      currentBranch: vi.fn(async () => 'main'),
+      ...overrides?.git,
     },
     context: {
       mode: 'project',
       projectId: 'test-project',
       projectPath: '/project',
+      ...overrides?.context,
     },
     settings: {
       get: () => false,
       getAll: () => ({}),
       onChange: () => ({ dispose: () => {} }),
+      ...overrides?.settings,
+    },
+    storage: {
+      ...base.storage,
+      ...overrides?.storage,
     },
     ...overrides,
   });
@@ -88,7 +108,7 @@ describe('FileTree', () => {
   });
 
   it('refresh button calls api.files.readTree()', async () => {
-    const readTree = vi.fn(async () => MOCK_TREE);
+    const readTree = mockReadTree();
     const api = createFilesAPI({
       files: { ...createMockAPI().files, readTree },
     });
@@ -99,9 +119,10 @@ describe('FileTree', () => {
     const refreshBtn = screen.getByTitle('Refresh');
     fireEvent.click(refreshBtn);
 
-    // readTree is called once on mount and once on refresh
+    // readTree is called on mount (root + worktrees) and on refresh
     await waitFor(() => {
-      expect(readTree).toHaveBeenCalledTimes(2);
+      const rootCalls = readTree.mock.calls.filter((c: unknown[]) => c[0] === '.');
+      expect(rootCalls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -123,7 +144,7 @@ describe('FileTree', () => {
     const writeFile = vi.fn(async () => {});
     const showInput = vi.fn(async () => 'newfile.ts');
     const api = createFilesAPI({
-      files: { ...createMockAPI().files, readTree: vi.fn(async () => MOCK_TREE), writeFile },
+      files: { ...createMockAPI().files, readTree: mockReadTree(), writeFile },
       ui: { ...createMockAPI().ui, showInput },
     });
 
@@ -149,7 +170,7 @@ describe('FileTree', () => {
     const deleteFn = vi.fn(async () => {});
     const showConfirm = vi.fn(async () => true);
     const api = createFilesAPI({
-      files: { ...createMockAPI().files, readTree: vi.fn(async () => MOCK_TREE), delete: deleteFn },
+      files: { ...createMockAPI().files, readTree: mockReadTree(), delete: deleteFn },
       ui: { ...createMockAPI().ui, showConfirm },
     });
 
@@ -184,5 +205,57 @@ describe('FileTree', () => {
       const focused = container.querySelector('[class*="bg-ctp-surface0"]');
       expect(focused).not.toBeNull();
     });
+  });
+
+  it('shows branch indicator', async () => {
+    const api = createFilesAPI();
+    render(<FileTree api={api} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('main')).toBeInTheDocument();
+    });
+  });
+
+  it('persists selected path to storage on file select', async () => {
+    const write = vi.fn(async () => {});
+    const api = createFilesAPI({
+      storage: {
+        ...createMockAPI().storage,
+        project: {
+          ...createMockAPI().storage.project,
+          write,
+        },
+      },
+    });
+
+    render(<FileTree api={api} />);
+    const readme = await screen.findByText('README.md');
+    fireEvent.click(readme);
+
+    await waitFor(() => {
+      expect(write).toHaveBeenCalledWith('files:lastSelectedPath', 'README.md');
+    });
+  });
+
+  it('shows toolbar buttons (new file, new folder, expand all, collapse all)', async () => {
+    const api = createFilesAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    expect(screen.getByTitle('New File')).toBeInTheDocument();
+    expect(screen.getByTitle('New Folder')).toBeInTheDocument();
+    expect(screen.getByTitle('Expand All')).toBeInTheDocument();
+    expect(screen.getByTitle('Collapse All')).toBeInTheDocument();
+    expect(screen.getByTitle('Refresh')).toBeInTheDocument();
+  });
+
+  it('does not show the "changes won\'t appear" footer', async () => {
+    const api = createFilesAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    expect(screen.queryByText(/changes made outside/i)).not.toBeInTheDocument();
   });
 });
