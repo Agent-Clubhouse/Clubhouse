@@ -309,9 +309,14 @@ export function verifySHA256(filePath: string, expectedHash: string): Promise<bo
  * fetch both the stable and preview manifests and pick whichever reports the
  * newer version (stable wins on a tie).
  */
-async function fetchBestManifest(previewChannel: boolean): Promise<UpdateManifest> {
+interface ManifestResult {
+  manifest: UpdateManifest;
+  sourceUrl: string;
+}
+
+async function fetchBestManifest(previewChannel: boolean): Promise<ManifestResult> {
   if (!previewChannel) {
-    return fetchJSON(UPDATE_URL);
+    return { manifest: await fetchJSON(UPDATE_URL), sourceUrl: UPDATE_URL };
   }
 
   // Fetch both in parallel; preview may not exist yet so we tolerate failure.
@@ -320,14 +325,14 @@ async function fetchBestManifest(previewChannel: boolean): Promise<UpdateManifes
     fetchJSON(PREVIEW_UPDATE_URL).catch(() => null as UpdateManifest | null),
   ]);
 
-  if (!preview) return stable;
+  if (!preview) return { manifest: stable, sourceUrl: UPDATE_URL };
 
   // Pick whichever is newer. isNewerVersion handles prerelease suffixes
   // (rc, -beta.N) and considers a stable release newer than its prerelease.
   if (isNewerVersion(preview.version, stable.version)) {
-    return preview;
+    return { manifest: preview, sourceUrl: PREVIEW_UPDATE_URL };
   }
-  return stable;
+  return { manifest: stable, sourceUrl: UPDATE_URL };
 }
 
 export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
@@ -346,8 +351,12 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
   });
 
   try {
-    const manifest = await fetchBestManifest(settings.previewChannel);
+    const { manifest, sourceUrl } = await fetchBestManifest(settings.previewChannel);
     const currentVersion = app.getVersion();
+
+    appLog('update:check', 'info', 'Fetched manifest', {
+      meta: { sourceUrl, manifestVersion: manifest.version },
+    });
 
     if (!isNewerVersion(manifest.version, currentVersion)) {
       appLog('update:check', 'info', 'App is up to date', {
@@ -968,7 +977,7 @@ export function composeVersionHistoryMarkdown(entries: VersionHistoryEntry[]): s
 
 export async function getVersionHistory(): Promise<{ markdown: string; entries: VersionHistoryEntry[] }> {
   const currentVersion = app.getVersion();
-  appLog('update:history', 'info', 'Fetching version history', { meta: { currentVersion } });
+  appLog('update:history', 'info', 'Fetching version history', { meta: { currentVersion, historyUrl: HISTORY_URL } });
 
   try {
     const entries = await fetchJSON<VersionHistoryEntry[]>(HISTORY_URL);
