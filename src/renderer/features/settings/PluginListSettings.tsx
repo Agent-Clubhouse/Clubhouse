@@ -25,8 +25,16 @@ function sortPermissionsByRisk(perms: PluginPermission[]): PluginPermission[] {
   });
 }
 
+const CROSS_PROJECT_PERMISSIONS: readonly PluginPermission[] = [
+  'agent-config.cross-project',
+  'workspace.cross-project',
+];
+
+const POPUP_ESTIMATED_HEIGHT = 200;
+
 function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const [open, setOpen] = useState(false);
+  const [flipAbove, setFlipAbove] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
@@ -44,14 +52,31 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
   const permissions = entry.manifest.permissions;
   if (!permissions || permissions.length === 0) return null;
 
+  const isAppScoped = entry.manifest.scope === 'app';
+  const hasCrossProjectPerm = permissions.some((p) => CROSS_PROJECT_PERMISSIONS.includes(p));
+
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setFlipAbove(rect.bottom + POPUP_ESTIMATED_HEIGHT > window.innerHeight);
+    }
+    setOpen(!open);
+  };
+
   const rect = btnRef.current?.getBoundingClientRect();
   const sorted = sortPermissionsByRisk(permissions);
+
+  const popupStyle: React.CSSProperties | undefined = rect
+    ? flipAbove
+      ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }
+      : { top: rect.bottom + 4, right: window.innerWidth - rect.right }
+    : undefined;
 
   return (
     <div className="relative" ref={ref}>
       <button
         ref={btnRef}
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         className="flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-semibold text-ctp-subtext0 hover:text-ctp-text bg-surface-1 hover:bg-surface-2 cursor-pointer"
         title="View permissions"
       >
@@ -61,12 +86,18 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
         <div
           data-testid="permission-popup"
           className="fixed z-50 w-72 p-3 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg"
-          style={rect ? { top: rect.bottom + 4, right: window.innerWidth - rect.right } : undefined}
+          style={popupStyle}
         >
           <p className="text-xs font-semibold text-ctp-subtext1 mb-2">Permissions</p>
+          {isAppScoped && hasCrossProjectPerm && (
+            <p className="text-[10px] text-ctp-peach mb-2" data-testid="app-scope-cross-project-note">
+              This is an app-scoped plugin — cross-project access is implicit and does not require per-project enablement.
+            </p>
+          )}
           <div className="space-y-1.5">
             {sorted.map((perm: PluginPermission) => {
               const risk = PERMISSION_RISK_LEVELS[perm];
+              const isCrossProject = CROSS_PROJECT_PERMISSIONS.includes(perm);
               return (
                 <div key={perm}>
                   <div className="flex items-center gap-1.5">
@@ -77,7 +108,14 @@ function PermissionInfoPopup({ entry }: { entry: PluginRegistryEntry }) {
                       </span>
                     )}
                   </div>
-                  <p className="text-[10px] text-ctp-subtext0">{PERMISSION_DESCRIPTIONS[perm]}</p>
+                  <p className="text-[10px] text-ctp-subtext0">
+                    {isAppScoped && isCrossProject
+                      ? PERMISSION_DESCRIPTIONS[perm].replace(
+                          /where the plugin is (?:also )?enabled/,
+                          'across all projects (app-scoped — no bilateral consent required)',
+                        )
+                      : PERMISSION_DESCRIPTIONS[perm]}
+                  </p>
                 </div>
               );
             })}
