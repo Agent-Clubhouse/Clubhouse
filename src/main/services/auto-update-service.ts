@@ -14,9 +14,12 @@ import { appLog, flush as flushLogs } from './log-service';
 // Config
 // ---------------------------------------------------------------------------
 
-const UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/latest.json';
-const PREVIEW_UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/preview.json';
-const HISTORY_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/history.json';
+// Manifest paths moved to v2/ to decouple from legacy clients (≤v0.34.0) whose
+// Windows update scripts are broken.  The old updates/*.json paths will be pinned
+// with a static "reinstall" message (see #458).
+const UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/v2/latest.json';
+const PREVIEW_UPDATE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/v2/preview.json';
+const HISTORY_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/updates/v2/history.json';
 const SQUIRREL_BASE_URL = 'https://stclubhousereleases.blob.core.windows.net/releases/squirrel';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
 const MAX_HISTORY_VERSIONS = 5;

@@ -445,7 +445,7 @@ jobs:
           az storage blob download \
             --account-name "$ACCOUNT" \
             --container-name "$CONTAINER" \
-            --name "updates/history.json" \
+            --name "updates/v2/history.json" \
             --file history-existing.json \
             --auth-mode login 2>/dev/null || echo '[]' > history-existing.json
 
@@ -495,7 +495,19 @@ jobs:
           done
 
           if [ "$IS_PREVIEW" = "true" ]; then
-            # Preview release: upload preview.json manifest
+            # Preview release: upload preview.json manifest to v2 path
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/v2/preview.json" \
+              --file artifacts/preview.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
+
+            # Dual-publish to legacy path so clients on old URLs can bridge
+            # to this version, which knows how to check v2 paths.
+            # Remove this once legacy paths are pinned with static message (#458).
             az storage blob upload \
               --account-name "$ACCOUNT" \
               --container-name "$CONTAINER" \
@@ -508,7 +520,28 @@ jobs:
             # Copy installers to the preview/ slot (constantly overwritten)
             SLOT="preview"
           else
-            # Stable release: upload latest.json and history.json
+            # Stable release: upload latest.json and history.json to v2 paths
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/v2/latest.json" \
+              --file artifacts/latest.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
+
+            az storage blob upload \
+              --account-name "$ACCOUNT" \
+              --container-name "$CONTAINER" \
+              --name "updates/v2/history.json" \
+              --file artifacts/history.json \
+              --overwrite \
+              --content-type "application/json" \
+              --auth-mode login
+
+            # Dual-publish to legacy paths so clients on old URLs can bridge
+            # to this version, which knows how to check v2 paths.
+            # Remove this once legacy paths are pinned with static message (#458).
             az storage blob upload \
               --account-name "$ACCOUNT" \
               --container-name "$CONTAINER" \
