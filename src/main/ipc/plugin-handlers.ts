@@ -85,6 +85,18 @@ export function registerPluginHandlers(): void {
     await pluginDiscovery.uninstallPlugin(pluginId);
   });
 
+  ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, (_event, pluginId: string, projectPath: string) => {
+    return pluginDiscovery.listProjectPluginInjections(pluginId, projectPath);
+  });
+
+  ipcMain.handle(IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS, async (_event, pluginId: string, projectPath: string) => {
+    await pluginDiscovery.cleanupProjectPluginInjections(pluginId, projectPath);
+  });
+
+  ipcMain.handle(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, (_event, projectPath: string, knownPluginIds: string[]) => {
+    return pluginDiscovery.listOrphanedPluginIds(projectPath, knownPluginIds);
+  });
+
   // ── Manifest Registry ─────────────────────────────────────────────────
   ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, manifest: any) => {
     pluginManifestRegistry.registerManifest(pluginId, manifest);

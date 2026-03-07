@@ -445,6 +445,19 @@ const api = {
       ipcRenderer.invoke(IPC.PLUGIN.MKDIR, pluginId, scope, relativePath, projectPath),
     uninstall: (pluginId: string) =>
       ipcRenderer.invoke(IPC.PLUGIN.UNINSTALL, pluginId),
+    listProjectInjections: (pluginId: string, projectPath: string): Promise<{
+      skills: string[];
+      agentTemplates: string[];
+      hasInstructions: boolean;
+      permissionAllowCount: number;
+      permissionDenyCount: number;
+      mcpServerNames: string[];
+    }> =>
+      ipcRenderer.invoke(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, pluginId, projectPath),
+    cleanupProjectInjections: (pluginId: string, projectPath: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS, pluginId, projectPath),
+    listOrphanedPluginIds: (projectPath: string, knownPluginIds: string[]): Promise<string[]> =>
+      ipcRenderer.invoke(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, projectPath, knownPluginIds),
     registerManifest: (pluginId: string, manifest: any) =>
       ipcRenderer.invoke(IPC.PLUGIN.REGISTER_MANIFEST, pluginId, manifest),
   },

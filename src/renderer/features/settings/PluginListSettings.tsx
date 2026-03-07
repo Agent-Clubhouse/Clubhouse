@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -152,6 +152,207 @@ const UPDATE_PHASE_LABELS: Record<string, string> = {
   reloading: 'Reloading...',
 };
 
+/** What a plugin has injected into a specific project. */
+interface ProjectInjections {
+  skills: string[];
+  agentTemplates: string[];
+  hasInstructions: boolean;
+  permissionAllowCount: number;
+  permissionDenyCount: number;
+  mcpServerNames: string[];
+}
+
+function hasAnyInjections(inj: ProjectInjections): boolean {
+  return (
+    inj.skills.length > 0 ||
+    inj.agentTemplates.length > 0 ||
+    inj.hasInstructions ||
+    inj.permissionAllowCount > 0 ||
+    inj.permissionDenyCount > 0 ||
+    inj.mcpServerNames.length > 0
+  );
+}
+
+/**
+ * Banner shown in project context when orphaned injections from uninstalled plugins
+ * are detected. Provides a one-click cleanup for each orphaned plugin.
+ */
+function OrphanInjectionsBanner({
+  projectPath,
+  knownPluginIds,
+}: {
+  projectPath: string;
+  knownPluginIds: string[];
+}) {
+  const [orphans, setOrphans] = useState<string[] | null>(null);
+  const [cleaning, setCleaning] = useState<string | null>(null);
+
+  const knownPluginIdsSerialized = JSON.stringify(knownPluginIds.slice().sort());
+  const load = useCallback(async () => {
+    try {
+      const ids = await window.clubhouse.plugin.listOrphanedPluginIds(projectPath, knownPluginIds);
+      setOrphans(ids);
+    } catch {
+      setOrphans([]);
+    }
+  }, [projectPath, knownPluginIdsSerialized]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!orphans || orphans.length === 0) return null;
+
+  const handleClean = async (pluginId: string) => {
+    setCleaning(pluginId);
+    try {
+      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
+      await load();
+    } catch {
+      // ignore
+    } finally {
+      setCleaning(null);
+    }
+  };
+
+  const handleCleanAll = async () => {
+    for (const id of orphans) {
+      setCleaning(id);
+      try {
+        await window.clubhouse.plugin.cleanupProjectInjections(id, projectPath);
+      } catch { /* ignore */ }
+    }
+    setCleaning(null);
+    await load();
+  };
+
+  return (
+    <div
+      className="mb-4 p-3 rounded-lg bg-ctp-peach/5 border border-ctp-peach/30"
+      data-testid="orphan-injections-banner"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-ctp-peach mb-1">
+            Orphaned plugin injections detected
+          </p>
+          <p className="text-[11px] text-ctp-subtext0 mb-2">
+            The following uninstalled plugins left injections (skills, instructions, permissions, or MCP servers) in this project:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {orphans.map((id) => (
+              <div key={id} className="flex items-center gap-1">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
+                <button
+                  onClick={() => handleClean(id)}
+                  disabled={cleaning !== null}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+                  data-testid={`clean-orphan-btn-${id}`}
+                >
+                  {cleaning === id ? 'Cleaning…' : 'Clean up'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+        {orphans.length > 1 && (
+          <button
+            onClick={handleCleanAll}
+            disabled={cleaning !== null}
+            className="shrink-0 text-[11px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+            data-testid="clean-all-orphans-btn"
+          >
+            {cleaning ? 'Cleaning…' : 'Clean all'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PluginInjectionsPanel({
+  pluginId,
+  projectPath,
+  onCleaned,
+}: {
+  pluginId: string;
+  projectPath: string;
+  onCleaned?: () => void;
+}) {
+  const [injections, setInjections] = useState<ProjectInjections | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanError, setCleanError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await window.clubhouse.plugin.listProjectInjections(pluginId, projectPath);
+      setInjections(data);
+    } catch {
+      setInjections(null);
+    }
+  }, [pluginId, projectPath]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!injections || !hasAnyInjections(injections)) return null;
+
+  const handleClean = async () => {
+    setCleaning(true);
+    setCleanError(null);
+    try {
+      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
+      await load();
+      onCleaned?.();
+    } catch (err) {
+      setCleanError(err instanceof Error ? err.message : 'Cleanup failed');
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  return (
+    <div
+      className="mt-2 p-2 rounded bg-surface-0 border border-surface-1 text-[11px] text-ctp-subtext0"
+      data-testid={`injections-panel-${pluginId}`}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-medium text-ctp-subtext1">Active injections in this project</span>
+        <button
+          onClick={handleClean}
+          disabled={cleaning}
+          className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50"
+          data-testid={`clean-injections-btn-${pluginId}`}
+        >
+          {cleaning ? 'Cleaning...' : 'Remove all'}
+        </button>
+      </div>
+      {cleanError && (
+        <p className="text-[10px] text-red-400 mb-1">{cleanError}</p>
+      )}
+      <ul className="space-y-0.5 list-disc list-inside">
+        {injections.skills.map((s) => (
+          <li key={`skill-${s}`}>Skill: <span className="font-mono text-ctp-text">{s}</span></li>
+        ))}
+        {injections.agentTemplates.map((t) => (
+          <li key={`tpl-${t}`}>Agent template: <span className="font-mono text-ctp-text">{t}</span></li>
+        ))}
+        {injections.hasInstructions && <li>Agent instructions block</li>}
+        {injections.permissionAllowCount > 0 && (
+          <li>{injections.permissionAllowCount} allow permission rule{injections.permissionAllowCount !== 1 ? 's' : ''}</li>
+        )}
+        {injections.permissionDenyCount > 0 && (
+          <li>{injections.permissionDenyCount} deny permission rule{injections.permissionDenyCount !== 1 ? 's' : ''}</li>
+        )}
+        {injections.mcpServerNames.map((m) => (
+          <li key={`mcp-${m}`}>MCP server: <span className="font-mono text-ctp-text">{m}</span></li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function PluginRow({
   entry,
   enabled,
@@ -163,6 +364,7 @@ function PluginRow({
   updateVersion,
   updatePhase,
   updateError,
+  projectPath,
 }: {
   entry: PluginRegistryEntry;
   enabled: boolean;
@@ -174,6 +376,8 @@ function PluginRow({
   updateVersion?: string;
   updatePhase?: string;
   updateError?: string;
+  /** When set, shows the injections panel for this project */
+  projectPath?: string;
 }) {
   const isIncompatible = entry.status === 'incompatible';
   const isErrored = entry.status === 'errored';
@@ -181,151 +385,159 @@ function PluginRow({
   const isUpdating = !!updatePhase;
 
   return (
-    <div className={`flex items-center justify-between py-3 px-4 rounded-lg bg-ctp-mantle border ${isPendingApproval ? 'border-ctp-peach/40' : 'border-surface-0'}`}>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
-          <span className="text-xs text-ctp-subtext0">v{entry.manifest.version}</span>
-          <SourceBadge entry={entry} />
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
-          <PermissionInfoPopup entry={entry} />
-          {isIncompatible && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+    <div className={`py-3 px-4 rounded-lg bg-ctp-mantle border ${isPendingApproval ? 'border-ctp-peach/40' : 'border-surface-0'}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-ctp-text">{entry.manifest.name}</span>
+            <span className="text-xs text-ctp-subtext0">v{entry.manifest.version}</span>
+            <SourceBadge entry={entry} />
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-1 text-ctp-overlay1">API {entry.manifest.engine.api}</span>
+            <PermissionInfoPopup entry={entry} />
+            {isIncompatible && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+            )}
+            {isErrored && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
+            )}
+            {isPendingApproval && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
+                New permissions
+              </span>
+            )}
+            {updateVersion && !isUpdating && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
+                v{updateVersion} available
+              </span>
+            )}
+            {isUpdating && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
+                {UPDATE_PHASE_LABELS[updatePhase] || 'Updating...'}
+              </span>
+            )}
+          </div>
+          {entry.manifest.description && (
+            <p className="text-xs text-ctp-subtext0 mt-0.5 truncate">{entry.manifest.description}</p>
           )}
-          {isErrored && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
+          {updateError && (
+            <p className="text-xs text-ctp-peach mt-0.5">Update failed: {updateError}</p>
           )}
-          {isPendingApproval && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach" data-testid={`pending-badge-${entry.manifest.id}`}>
-              New permissions
-            </span>
-          )}
-          {updateVersion && !isUpdating && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-success/20 text-ctp-success" data-testid={`update-badge-${entry.manifest.id}`}>
-              v{updateVersion} available
-            </span>
-          )}
-          {isUpdating && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-ctp-accent/20 text-ctp-accent animate-pulse" data-testid={`update-phase-${entry.manifest.id}`}>
-              {UPDATE_PHASE_LABELS[updatePhase] || 'Updating...'}
-            </span>
+          {entry.error && (() => {
+            const newlineIdx = entry.error.indexOf('\n');
+            const message = newlineIdx >= 0 ? entry.error.slice(0, newlineIdx) : entry.error;
+            const stack = newlineIdx >= 0 ? entry.error.slice(newlineIdx + 1) : null;
+            return (
+              <div className="mt-1">
+                <p className="text-xs text-red-400">{message}</p>
+                {stack && (
+                  <details className="mt-1">
+                    <summary className="text-[10px] text-red-400/70 cursor-pointer">View details</summary>
+                    <pre className="text-[10px] text-red-400/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
+                  </details>
+                )}
+              </div>
+            );
+          })()}
+          {isPendingApproval && entry.pendingPermissions && (
+            <div className="mt-2 p-2 rounded bg-ctp-peach/5 border border-ctp-peach/20" data-testid={`pending-approval-${entry.manifest.id}`}>
+              <p className="text-xs text-ctp-peach font-medium mb-1">
+                This update requires new permissions:
+              </p>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {entry.pendingPermissions.map((perm) => {
+                  const risk = PERMISSION_RISK_LEVELS[perm];
+                  return (
+                    <span
+                      key={perm}
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                        risk === 'dangerous'
+                          ? 'bg-red-500/20 text-red-400'
+                          : 'bg-yellow-500/20 text-yellow-400'
+                      }`}
+                    >
+                      {perm}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => approvePluginPermissions(entry.manifest.id)}
+                  className="text-[11px] px-2 py-1 rounded bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer"
+                  data-testid={`approve-btn-${entry.manifest.id}`}
+                >
+                  Approve & Activate
+                </button>
+                <button
+                  onClick={() => rejectPluginPermissions(entry.manifest.id)}
+                  className="text-[11px] px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 cursor-pointer"
+                  data-testid={`reject-btn-${entry.manifest.id}`}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
           )}
         </div>
-        {entry.manifest.description && (
-          <p className="text-xs text-ctp-subtext0 mt-0.5 truncate">{entry.manifest.description}</p>
-        )}
-        {updateError && (
-          <p className="text-xs text-ctp-peach mt-0.5">Update failed: {updateError}</p>
-        )}
-        {entry.error && (() => {
-          const newlineIdx = entry.error.indexOf('\n');
-          const message = newlineIdx >= 0 ? entry.error.slice(0, newlineIdx) : entry.error;
-          const stack = newlineIdx >= 0 ? entry.error.slice(newlineIdx + 1) : null;
-          return (
-            <div className="mt-1">
-              <p className="text-xs text-red-400">{message}</p>
-              {stack && (
-                <details className="mt-1">
-                  <summary className="text-[10px] text-red-400/70 cursor-pointer">View details</summary>
-                  <pre className="text-[10px] text-red-400/70 bg-surface-0 p-2 rounded mt-1 overflow-auto max-h-32 whitespace-pre-wrap">{stack}</pre>
-                </details>
-              )}
-            </div>
-          );
-        })()}
-        {isPendingApproval && entry.pendingPermissions && (
-          <div className="mt-2 p-2 rounded bg-ctp-peach/5 border border-ctp-peach/20" data-testid={`pending-approval-${entry.manifest.id}`}>
-            <p className="text-xs text-ctp-peach font-medium mb-1">
-              This update requires new permissions:
-            </p>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {entry.pendingPermissions.map((perm) => {
-                const risk = PERMISSION_RISK_LEVELS[perm];
-                return (
-                  <span
-                    key={perm}
-                    className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                      risk === 'dangerous'
-                        ? 'bg-red-500/20 text-red-400'
-                        : 'bg-yellow-500/20 text-yellow-400'
-                    }`}
-                  >
-                    {perm}
-                  </span>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => approvePluginPermissions(entry.manifest.id)}
-                className="text-[11px] px-2 py-1 rounded bg-ctp-accent/20 text-ctp-accent hover:bg-ctp-accent/30 cursor-pointer"
-                data-testid={`approve-btn-${entry.manifest.id}`}
-              >
-                Approve & Activate
-              </button>
-              <button
-                onClick={() => rejectPluginPermissions(entry.manifest.id)}
-                className="text-[11px] px-2 py-1 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 cursor-pointer"
-                data-testid={`reject-btn-${entry.manifest.id}`}
-              >
-                Reject
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2 ml-3">
-        {onUpdate && updateVersion && !isUpdating && (
+        <div className="flex items-center gap-2 ml-3 shrink-0">
+          {onUpdate && updateVersion && !isUpdating && (
+            <button
+              onClick={onUpdate}
+              className="text-[11px] px-2 py-1 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30 cursor-pointer"
+              title={`Update to v${updateVersion}`}
+              data-testid={`update-btn-${entry.manifest.id}`}
+            >
+              Update
+            </button>
+          )}
+          {enabled && hasSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="p-1.5 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
+              title="Plugin settings"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          )}
+          {onUninstall && (
+            <button
+              onClick={onUninstall}
+              className="p-1.5 rounded hover:bg-red-500/10 text-ctp-subtext0 hover:text-red-400 cursor-pointer"
+              title="Uninstall plugin"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+            </button>
+          )}
           <button
-            onClick={onUpdate}
-            className="text-[11px] px-2 py-1 rounded bg-ctp-success/20 text-ctp-success hover:bg-ctp-success/30 cursor-pointer"
-            title={`Update to v${updateVersion}`}
-            data-testid={`update-btn-${entry.manifest.id}`}
-          >
-            Update
-          </button>
-        )}
-        {enabled && hasSettings && (
-          <button
-            onClick={onOpenSettings}
-            className="p-1.5 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text cursor-pointer"
-            title="Plugin settings"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        )}
-        {onUninstall && (
-          <button
-            onClick={onUninstall}
-            className="p-1.5 rounded hover:bg-red-500/10 text-ctp-subtext0 hover:text-red-400 cursor-pointer"
-            title="Uninstall plugin"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
-        )}
-        <button
-          onClick={onToggle}
-          disabled={isIncompatible}
-          className={`
-            relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
-            ${isIncompatible ? 'opacity-50 cursor-not-allowed' : ''}
-            ${enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
-          `}
-        >
-          <span
+            onClick={onToggle}
+            disabled={isIncompatible}
             className={`
-              absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
-              ${enabled ? 'translate-x-4' : 'translate-x-0'}
+              relative w-9 h-5 rounded-full transition-colors duration-200 cursor-pointer
+              ${isIncompatible ? 'opacity-50 cursor-not-allowed' : ''}
+              ${enabled ? 'bg-ctp-accent' : 'bg-surface-2'}
             `}
-          />
-        </button>
+          >
+            <span
+              className={`
+                absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform duration-200
+                ${enabled ? 'translate-x-4' : 'translate-x-0'}
+              `}
+            />
+          </button>
+        </div>
       </div>
+      {projectPath && (
+        <PluginInjectionsPanel
+          pluginId={entry.manifest.id}
+          projectPath={projectPath}
+        />
+      )}
     </div>
   );
 }
@@ -639,12 +851,21 @@ export function PluginListSettings() {
   const handleUninstall = async (pluginId: string) => {
     const entry = usePluginStore.getState().plugins[pluginId];
     if (!entry || entry.source === 'builtin') return;
-    const confirmed = window.confirm(`Uninstall "${entry.manifest.name}"? This will delete the plugin from disk.`);
+    const confirmed = window.confirm(`Uninstall "${entry.manifest.name}"? This will delete the plugin and clean up all its project injections.`);
     if (!confirmed) return;
     // Deactivate first if active
     await deactivatePlugin(pluginId);
     disableApp(pluginId);
-    // Delete from disk
+    // Clean up project-level injections across all known projects (best-effort)
+    const allProjects = useProjectStore.getState().projects;
+    for (const proj of allProjects) {
+      if (proj.path) {
+        try {
+          await window.clubhouse.plugin.cleanupProjectInjections(pluginId, proj.path);
+        } catch { /* ignore */ }
+      }
+    }
+    // Delete plugin from disk
     await window.clubhouse.plugin.uninstall(pluginId);
     // Remove from store
     usePluginStore.getState().removePlugin(pluginId);
@@ -662,11 +883,20 @@ export function PluginListSettings() {
 
   const handleUninstallAll = async () => {
     if (externalPlugins.length === 0) return;
-    const confirmed = window.confirm(`Uninstall all ${externalPlugins.length} external plugin(s)? This will delete them from disk.`);
+    const confirmed = window.confirm(`Uninstall all ${externalPlugins.length} external plugin(s)? This will delete them from disk and clean up their project injections.`);
     if (!confirmed) return;
+    const allProjects = useProjectStore.getState().projects;
     for (const entry of externalPlugins) {
       await deactivatePlugin(entry.manifest.id);
       disableApp(entry.manifest.id);
+      // Clean up project-level injections across all known projects (best-effort)
+      for (const proj of allProjects) {
+        if (proj.path) {
+          try {
+            await window.clubhouse.plugin.cleanupProjectInjections(entry.manifest.id, proj.path);
+          } catch { /* ignore */ }
+        }
+      }
       await window.clubhouse.plugin.uninstall(entry.manifest.id);
       usePluginStore.getState().removePlugin(entry.manifest.id);
     }
@@ -723,6 +953,7 @@ export function PluginListSettings() {
             updateVersion={updateInfo?.latestVersion}
             updatePhase={phase}
             updateError={error}
+            projectPath={!isAppContext && project?.path ? project.path : undefined}
           />
         );
       })}
@@ -771,6 +1002,14 @@ export function PluginListSettings() {
 
         {/* Custom marketplace management (app context only) */}
         {isAppContext && <CustomMarketplaceManager />}
+
+        {/* Orphaned injection banner (project context only) */}
+        {!isAppContext && project?.path && (
+          <OrphanInjectionsBanner
+            projectPath={project.path}
+            knownPluginIds={Object.keys(plugins)}
+          />
+        )}
 
         {/* Built-in section */}
         {builtinPlugins.length > 0 && (
