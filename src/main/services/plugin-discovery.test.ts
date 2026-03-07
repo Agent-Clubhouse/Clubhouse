@@ -15,8 +15,24 @@ vi.mock('fs', () => ({
   },
 }));
 
+vi.mock('./agent-settings-service', () => ({
+  listSourceSkills: vi.fn(() => []),
+  listSourceAgentTemplates: vi.fn(() => []),
+  deleteSourceSkill: vi.fn(),
+  deleteSourceAgentTemplate: vi.fn(),
+  readProjectAgentDefaults: vi.fn(() => ({})),
+  writeProjectAgentDefaults: vi.fn(),
+}));
+
 import * as fs from 'fs';
-import { discoverCommunityPlugins, uninstallPlugin } from './plugin-discovery';
+import * as agentSettings from './agent-settings-service';
+import {
+  discoverCommunityPlugins,
+  uninstallPlugin,
+  listProjectPluginInjections,
+  cleanupProjectPluginInjections,
+  listOrphanedPluginIds,
+} from './plugin-discovery';
 
 const PLUGINS_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugins');
 const PLUGIN_DATA_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'plugin-data');
@@ -286,6 +302,244 @@ describe('plugin-discovery', () => {
 
       // Should not throw even if data dir rm fails
       await expect(uninstallPlugin('my-plugin')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('listProjectPluginInjections', () => {
+    const PROJECT_PATH = '/my/project';
+
+    it('returns empty result when no injections exist', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result).toEqual({
+        skills: [],
+        agentTemplates: [],
+        hasInstructions: false,
+        permissionAllowCount: 0,
+        permissionDenyCount: 0,
+        mcpServerNames: [],
+      });
+    });
+
+    it('returns injected skills (stripping prefix)', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([
+        { name: 'plugin-my-plugin-skill-one', path: '/p', hasReadme: false },
+        { name: 'plugin-my-plugin-skill-two', path: '/p', hasReadme: false },
+        { name: 'other-skill', path: '/p', hasReadme: false },
+      ]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result.skills).toEqual(['skill-one', 'skill-two']);
+    });
+
+    it('returns injected agent templates (stripping prefix)', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([
+        { name: 'plugin-my-plugin-my-template', path: '/p', hasReadme: false },
+      ]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result.agentTemplates).toEqual(['my-template']);
+    });
+
+    it('detects instructions block', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        instructions: '<!-- plugin:my-plugin:start -->\nHello\n<!-- plugin:my-plugin:end -->',
+      });
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result.hasInstructions).toBe(true);
+    });
+
+    it('counts permission rules', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        permissions: {
+          allow: ['Bash(read:**) /* plugin:my-plugin */'],
+          deny: ['Bash(write:/etc/**) /* plugin:my-plugin */', 'Bash(rm:**) /* plugin:my-plugin */'],
+        },
+      });
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result.permissionAllowCount).toBe(1);
+      expect(result.permissionDenyCount).toBe(2);
+    });
+
+    it('lists MCP server names (stripping prefix)', () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        mcpJson: JSON.stringify({ mcpServers: { 'plugin-my-plugin-server': {}, 'other-server': {} } }),
+      });
+
+      const result = listProjectPluginInjections('my-plugin', PROJECT_PATH);
+      expect(result.mcpServerNames).toEqual(['server']);
+    });
+  });
+
+  describe('cleanupProjectPluginInjections', () => {
+    const PROJECT_PATH = '/my/project';
+
+    beforeEach(() => {
+      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+    });
+
+    it('deletes source skills with the plugin prefix', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([
+        { name: 'plugin-my-plugin-skill', path: '/p', hasReadme: false },
+        { name: 'other-skill', path: '/p', hasReadme: false },
+      ]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(agentSettings.deleteSourceSkill).toHaveBeenCalledWith(PROJECT_PATH, 'plugin-my-plugin-skill');
+      expect(agentSettings.deleteSourceSkill).not.toHaveBeenCalledWith(PROJECT_PATH, 'other-skill');
+    });
+
+    it('strips instruction block and writes back defaults', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        instructions: 'Before\n\n<!-- plugin:my-plugin:start -->\nContent\n<!-- plugin:my-plugin:end -->',
+      });
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        expect.objectContaining({ instructions: 'Before' }),
+      );
+    });
+
+    it('removes tagged permission rules', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        permissions: {
+          allow: ['Bash(read:**) /* plugin:my-plugin */', 'Manual(rule)'],
+          deny: [],
+        },
+      });
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        expect.objectContaining({
+          permissions: { allow: ['Manual(rule)'], deny: [] },
+        }),
+      );
+    });
+
+    it('removes MCP servers with plugin prefix', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        mcpJson: JSON.stringify({ mcpServers: { 'plugin-my-plugin-srv': {}, 'keep-me': {} } }),
+      });
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(agentSettings.writeProjectAgentDefaults).toHaveBeenCalledWith(
+        PROJECT_PATH,
+        expect.objectContaining({
+          mcpJson: JSON.stringify({ mcpServers: { 'keep-me': {} } }, null, 2),
+        }),
+      );
+    });
+
+    it('removes the _agentconfig storage directory', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(fs.promises.rm).toHaveBeenCalledWith(
+        path.join(PROJECT_PATH, '.clubhouse', 'plugin-data', '_agentconfig:my-plugin'),
+        { recursive: true, force: true },
+      );
+    });
+
+    it('does not write defaults when nothing changed', async () => {
+      vi.mocked(agentSettings.listSourceSkills).mockReturnValue([]);
+      vi.mocked(agentSettings.listSourceAgentTemplates).mockReturnValue([]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        instructions: 'No plugin markers here',
+      });
+
+      await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
+
+      expect(agentSettings.writeProjectAgentDefaults).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listOrphanedPluginIds', () => {
+    const PROJECT_PATH = '/my/project';
+
+    it('returns empty array when no plugin-data dir exists', () => {
+      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      const result = listOrphanedPluginIds(PROJECT_PATH, ['plugin-a']);
+      expect(result).toEqual([]);
+    });
+
+    it('finds orphaned _agentconfig directories', () => {
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: '_agentconfig:orphan-plugin', isDirectory: () => true } as any,
+        { name: '_agentconfig:known-plugin', isDirectory: () => true } as any,
+        { name: 'other-dir', isDirectory: () => true } as any,
+      ]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({});
+
+      const result = listOrphanedPluginIds(PROJECT_PATH, ['known-plugin']);
+      expect(result).toContain('orphan-plugin');
+      expect(result).not.toContain('known-plugin');
+    });
+
+    it('finds orphaned plugin IDs from instruction markers', () => {
+      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        instructions: '<!-- plugin:ghost-plugin:start -->\nHello\n<!-- plugin:ghost-plugin:end -->',
+      });
+
+      const result = listOrphanedPluginIds(PROJECT_PATH, ['other-plugin']);
+      expect(result).toContain('ghost-plugin');
+    });
+
+    it('finds orphaned plugin IDs from permission rule comments', () => {
+      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        permissions: { allow: ['Bash(read:**) /* plugin:ghost-plugin */'] },
+      });
+
+      const result = listOrphanedPluginIds(PROJECT_PATH, ['other-plugin']);
+      expect(result).toContain('ghost-plugin');
+    });
+
+    it('does not flag known plugins as orphans', () => {
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: '_agentconfig:known-plugin', isDirectory: () => true } as any,
+      ]);
+      vi.mocked(agentSettings.readProjectAgentDefaults).mockReturnValue({
+        instructions: '<!-- plugin:known-plugin:start -->\nHello\n<!-- plugin:known-plugin:end -->',
+        permissions: { allow: ['Bash(read:**) /* plugin:known-plugin */'] },
+      });
+
+      const result = listOrphanedPluginIds(PROJECT_PATH, ['known-plugin']);
+      expect(result).toEqual([]);
     });
   });
 });

@@ -195,6 +195,9 @@ export const IPC = {
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
     REGISTER_MANIFEST: 'plugin:register-manifest',
+    CLEANUP_PROJECT_INJECTIONS: 'plugin:cleanup-project-injections',
+    LIST_PROJECT_INJECTIONS: 'plugin:list-project-injections',
+    LIST_ORPHANED_PLUGIN_IDS: 'plugin:list-orphaned-plugin-ids',
   },
   LOG: {
     LOG_WRITE: 'log:write',

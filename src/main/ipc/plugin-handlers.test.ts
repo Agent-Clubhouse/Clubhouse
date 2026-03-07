@@ -20,6 +20,16 @@ vi.mock('../services/plugin-storage', () => ({
 vi.mock('../services/plugin-discovery', () => ({
   discoverCommunityPlugins: vi.fn(async () => []),
   uninstallPlugin: vi.fn(),
+  listProjectPluginInjections: vi.fn(() => ({
+    skills: [],
+    agentTemplates: [],
+    hasInstructions: false,
+    permissionAllowCount: 0,
+    permissionDenyCount: 0,
+    mcpServerNames: [],
+  })),
+  cleanupProjectPluginInjections: vi.fn(async () => {}),
+  listOrphanedPluginIds: vi.fn(() => []),
 }));
 
 vi.mock('../services/gitignore-manager', () => ({
@@ -70,6 +80,9 @@ describe('plugin-handlers', () => {
       IPC.PLUGIN.STARTUP_MARKER_READ, IPC.PLUGIN.STARTUP_MARKER_WRITE, IPC.PLUGIN.STARTUP_MARKER_CLEAR,
       IPC.PLUGIN.MKDIR, IPC.PLUGIN.UNINSTALL,
       IPC.PLUGIN.REGISTER_MANIFEST,
+      IPC.PLUGIN.LIST_PROJECT_INJECTIONS,
+      IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS,
+      IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -205,5 +218,25 @@ describe('plugin-handlers', () => {
     const handler = handlers.get(IPC.PLUGIN.REGISTER_MANIFEST)!;
     await handler({}, 'p1', manifest);
     expect(pluginManifestRegistry.registerManifest).toHaveBeenCalledWith('p1', manifest);
+  });
+
+  it('LIST_PROJECT_INJECTIONS delegates to pluginDiscovery.listProjectPluginInjections', async () => {
+    const handler = handlers.get(IPC.PLUGIN.LIST_PROJECT_INJECTIONS)!;
+    const result = await handler({}, 'my-plugin', '/project/path');
+    expect(pluginDiscovery.listProjectPluginInjections).toHaveBeenCalledWith('my-plugin', '/project/path');
+    expect(result).toMatchObject({ skills: [], hasInstructions: false });
+  });
+
+  it('CLEANUP_PROJECT_INJECTIONS delegates to pluginDiscovery.cleanupProjectPluginInjections', async () => {
+    const handler = handlers.get(IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS)!;
+    await handler({}, 'my-plugin', '/project/path');
+    expect(pluginDiscovery.cleanupProjectPluginInjections).toHaveBeenCalledWith('my-plugin', '/project/path');
+  });
+
+  it('LIST_ORPHANED_PLUGIN_IDS delegates to pluginDiscovery.listOrphanedPluginIds', async () => {
+    const handler = handlers.get(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS)!;
+    const result = await handler({}, '/project/path', ['plugin-a']);
+    expect(pluginDiscovery.listOrphanedPluginIds).toHaveBeenCalledWith('/project/path', ['plugin-a']);
+    expect(result).toEqual([]);
   });
 });
