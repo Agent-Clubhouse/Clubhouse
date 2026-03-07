@@ -808,3 +808,106 @@ describe('FileTree — file structure rendering', () => {
     });
   });
 });
+
+// ── Flicker prevention ────────────────────────────────────────────────
+
+describe('FileTree — flicker prevention', () => {
+  beforeEach(() => {
+    fileState.reset();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('selection is preserved across file watcher refreshes', async () => {
+    let watchCallback: (() => void) | null = null;
+    const watch = vi.fn((_pattern: string, cb: () => void) => {
+      watchCallback = cb;
+      return { dispose: () => {} };
+    });
+
+    const readTree = realisticReadTree();
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree, watch },
+    });
+    render(<FileTree api={api} />);
+
+    // Select a file
+    const readme = await screen.findByText('README.md');
+    fireEvent.click(readme);
+    expect(fileState.selectedPath).toBe('README.md');
+
+    // Trigger file watcher
+    watchCallback!();
+    await vi.advanceTimersByTimeAsync(600);
+
+    // Selection should be preserved
+    await waitFor(() => {
+      expect(fileState.selectedPath).toBe('README.md');
+      // The selected node should still have the selected background
+      const selected = document.querySelector('[data-path="/project/README.md"]');
+      expect(selected?.className).toContain('bg-ctp-surface1');
+    });
+  });
+
+  it('file watcher does not re-register when expanded state changes', async () => {
+    const watch = vi.fn((_pattern: string, _cb: () => void) => {
+      return { dispose: vi.fn() };
+    });
+
+    const readTree = realisticReadTree();
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree, watch },
+    });
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+    const initialWatchCalls = watch.mock.calls.length;
+
+    // Expand/collapse folders — should NOT re-register the watcher
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('docs'));
+    await waitFor(() => expect(screen.getByText('guide.md')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
+
+    // Watch should only have been called once (on mount)
+    expect(watch.mock.calls.length).toBe(initialWatchCalls);
+  });
+
+  it('concurrent loadTree calls discard stale results', async () => {
+    let callCount = 0;
+    const readTree = vi.fn(async (path: string) => {
+      callCount++;
+      const currentCall = callCount;
+      if (path === '.' || path === '/project') {
+        // First call is slow, second call is fast
+        if (currentCall === 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        return SHALLOW_ROOT;
+      }
+      if (path === '.clubhouse/agents') return [];
+      return [];
+    });
+
+    const api = createRealisticAPI({ files: { ...createMockAPI().files, readTree } });
+    render(<FileTree api={api} />);
+
+    // Trigger a second load before the first completes (via refresh button)
+    await vi.advanceTimersByTimeAsync(100);
+    fireEvent.click(screen.getByTitle('Refresh'));
+
+    // Advance past both loads
+    await vi.advanceTimersByTimeAsync(600);
+
+    // Tree should still render correctly (stale first load discarded)
+    await waitFor(() => {
+      expect(screen.getByText('src')).toBeInTheDocument();
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+  });
+});
