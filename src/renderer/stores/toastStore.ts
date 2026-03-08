@@ -6,8 +6,6 @@ export interface Toast {
   type: 'error' | 'info';
 }
 
-let nextId = 1;
-
 interface ToastStoreState {
   toasts: Toast[];
   addToast: (message: string, type: Toast['type']) => void;
@@ -17,8 +15,11 @@ interface ToastStoreState {
 export const useToastStore = create<ToastStoreState>((set) => ({
   toasts: [],
   addToast: (message, type) => {
-    const id = String(nextId++);
-    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
+    set((s) => {
+      if (s.toasts.some((t) => t.message === message && t.type === type)) return s;
+      const id = crypto.randomUUID();
+      return { toasts: [...s.toasts, { id, message, type }] };
+    });
   },
   removeToast: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));

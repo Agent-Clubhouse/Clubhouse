@@ -50,4 +50,16 @@ describe('toastStore', () => {
     useToastStore.getState().removeToast('nonexistent');
     expect(useToastStore.getState().toasts).toHaveLength(1);
   });
+
+  it('addToast deduplicates by message and type', () => {
+    useToastStore.getState().addToast('Duplicate msg', 'error');
+    useToastStore.getState().addToast('Duplicate msg', 'error');
+    expect(useToastStore.getState().toasts).toHaveLength(1);
+  });
+
+  it('addToast allows same message with different type', () => {
+    useToastStore.getState().addToast('Same msg', 'error');
+    useToastStore.getState().addToast('Same msg', 'info');
+    expect(useToastStore.getState().toasts).toHaveLength(2);
+  });
 });
