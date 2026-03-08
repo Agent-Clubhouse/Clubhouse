@@ -46,25 +46,31 @@ interface UnsavedDialogProps {
 
 function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogProps) {
   return React.createElement('div', {
-    className: 'absolute inset-0 z-40 flex items-center justify-center bg-ctp-base/80',
+    className: 'absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm',
   },
     React.createElement('div', {
-      className: 'bg-ctp-mantle border border-ctp-surface0 rounded-lg shadow-lg p-4 max-w-sm mx-4',
+      className: 'bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[360px] flex flex-col',
+      onClick: (e: React.MouseEvent) => e.stopPropagation(),
     },
-      React.createElement('p', { className: 'text-sm text-ctp-text mb-4' },
-        `"${fileName}" has unsaved changes.`,
+      // Header
+      React.createElement('div', { className: 'px-4 py-3 border-b border-ctp-surface0' },
+        React.createElement('h3', { className: 'text-sm font-semibold text-ctp-text' }, 'Unsaved Changes'),
+        React.createElement('p', { className: 'text-xs text-ctp-subtext0 mt-1' },
+          `"${fileName}" has unsaved changes.`,
+        ),
       ),
-      React.createElement('div', { className: 'flex gap-2 justify-end' },
+      // Actions
+      React.createElement('div', { className: 'flex items-center justify-end gap-2 px-4 py-3' },
         React.createElement('button', {
-          className: 'px-3 py-1 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 cursor-pointer transition-colors',
           onClick: onCancel,
         }, 'Cancel'),
         React.createElement('button', {
-          className: 'px-3 py-1 text-xs text-ctp-red hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-red hover:bg-ctp-surface0 cursor-pointer transition-colors',
           onClick: onDiscard,
         }, 'Discard'),
         React.createElement('button', {
-          className: 'px-3 py-1 text-xs bg-ctp-accent text-ctp-base rounded hover:opacity-90 transition-colors',
+          className: 'px-4 py-1.5 text-xs rounded-lg bg-ctp-accent text-ctp-base hover:opacity-90 cursor-pointer transition-colors font-medium',
           onClick: onSave,
         }, 'Save'),
       ),
