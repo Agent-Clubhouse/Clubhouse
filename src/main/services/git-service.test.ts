@@ -358,7 +358,7 @@ describe('stage/unstage', () => {
     vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = stage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 
   it('unstage returns ok:true on success', () => {
@@ -373,7 +373,7 @@ describe('stage/unstage', () => {
     vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = unstage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 });
 
@@ -395,7 +395,7 @@ describe('stageAll/unstageAll', () => {
     vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = stageAll(DIR);
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 
   it('unstageAll runs git reset HEAD', () => {
@@ -411,7 +411,7 @@ describe('stageAll/unstageAll', () => {
     vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = unstageAll(DIR);
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 });
 
@@ -680,7 +680,7 @@ describe('checkout', () => {
     vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = checkout(DIR, 'nonexistent-branch');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('pathspec');
   });
 
   it('returns ok:false with message when checkout fails due to uncommitted changes', () => {
