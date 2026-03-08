@@ -118,13 +118,16 @@ export function cleanupWatchesForWindow(win: BrowserWindow): void {
   }
 }
 
+/** @internal Exported for tests only. */
+export { activeWatches as _activeWatches };
+
 /**
  * Extract the base directory from a glob pattern.
  * Handles both POSIX and Windows path separators.
  * e.g., "/home/user/project/src/**\/*.ts" → "/home/user/project/src"
  *      "C:\Users\project\src\**\*.ts"    → "C:/Users/project/src"
  */
-function extractBaseDir(glob: string): string {
+export function extractBaseDir(glob: string): string {
   // Normalize backslashes to forward slashes for consistent splitting.
   // Windows fs APIs accept forward slashes, so we can safely keep them.
   const normalized = glob.replace(/\\/g, '/');

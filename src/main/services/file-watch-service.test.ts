@@ -1,14 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock electron BrowserWindow
+// --- Mocks ----------------------------------------------------------------
+
+const mockWatcherClose = vi.fn();
+let watchCallback: ((eventType: string, filename: string | null) => void) | null =
+  null;
+
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
+  watch: vi.fn(),
+}));
+
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
 }));
 
-// Mock IPC channels
 vi.mock('../../shared/ipc-channels', () => ({
   IPC: {
     FILE: {
@@ -17,15 +23,25 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow } from './file-watch-service';
+import * as fs from 'fs';
 import type { BrowserWindow } from 'electron';
+import {
+  startWatch,
+  stopWatch,
+  stopAllWatches,
+  cleanupWatchesForWindow,
+  extractBaseDir,
+  _activeWatches,
+} from './file-watch-service';
+
+// --- Helpers ---------------------------------------------------------------
 
 function makeSender(id = 1) {
   return {
     id,
-    isDestroyed: vi.fn().mockReturnValue(false),
     send: vi.fn(),
-  };
+    isDestroyed: vi.fn().mockReturnValue(false),
+  } as unknown as Electron.WebContents;
 }
 
 function makeWindow(webContentsId = 1) {
@@ -34,143 +50,400 @@ function makeWindow(webContentsId = 1) {
   } as unknown as BrowserWindow;
 }
 
-describe('file-watch-service', () => {
-  let tmpDir: string;
+// --- Tests -----------------------------------------------------------------
 
+describe('file-watch-service', () => {
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'file-watch-test-'));
     vi.useFakeTimers();
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.watch).mockImplementation((_path, _opts, cb) => {
+      watchCallback = cb as (eventType: string, filename: string | null) => void;
+      return { close: mockWatcherClose } as unknown as fs.FSWatcher;
+    });
   });
 
   afterEach(() => {
     stopAllWatches();
     vi.useRealTimers();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.clearAllMocks();
+    watchCallback = null;
   });
+
+  // ─── extractBaseDir ────────────────────────────────────────────────────────
+
+  describe('extractBaseDir', () => {
+    it('extracts directory before ** wildcard', () => {
+      expect(extractBaseDir('/home/user/project/src/**/*.ts')).toBe(
+        '/home/user/project/src',
+      );
+    });
+
+    it('extracts directory before * wildcard', () => {
+      expect(extractBaseDir('/tmp/logs/*.log')).toBe('/tmp/logs');
+    });
+
+    it('extracts directory before ? wildcard', () => {
+      expect(extractBaseDir('/data/file?.txt')).toBe('/data');
+    });
+
+    it('extracts directory before brace expansion', () => {
+      expect(extractBaseDir('/src/{a,b}/*.ts')).toBe('/src');
+    });
+
+    it('extracts directory before bracket expression', () => {
+      expect(extractBaseDir('/src/[abc]/file.ts')).toBe('/src');
+    });
+
+    it('returns entire path when no glob characters', () => {
+      expect(extractBaseDir('/home/user/project/src')).toBe(
+        '/home/user/project/src',
+      );
+    });
+
+    it('returns "." for glob-only pattern', () => {
+      expect(extractBaseDir('**/*.ts')).toBe('.');
+    });
+
+    it('returns "." for wildcard-only pattern', () => {
+      expect(extractBaseDir('*.ts')).toBe('.');
+    });
+
+    it('handles relative paths', () => {
+      expect(extractBaseDir('src/components/**/*.tsx')).toBe('src/components');
+    });
+
+    it('normalizes Windows backslashes', () => {
+      expect(extractBaseDir('C:\\Users\\project\\src\\**\\*.ts')).toBe(
+        'C:/Users/project/src',
+      );
+    });
+
+    it('handles mixed separators', () => {
+      expect(extractBaseDir('C:\\Users/project\\src/**/*.ts')).toBe(
+        'C:/Users/project/src',
+      );
+    });
+
+    it('handles trailing slash before glob', () => {
+      expect(extractBaseDir('/project/src/**')).toBe('/project/src');
+    });
+  });
+
+  // ─── startWatch ────────────────────────────────────────────────────────────
 
   describe('startWatch', () => {
-    it('throws if base directory does not exist', () => {
+    it('creates a watcher and registers it', () => {
       const sender = makeSender();
-      expect(() =>
-        startWatch('w1', path.join(tmpDir, 'nonexistent', '**', '*.ts'), sender as any),
-      ).toThrow('Watch directory does not exist');
+      startWatch('w1', '/tmp/**/*.ts', sender);
+
+      expect(fs.watch).toHaveBeenCalledWith(
+        '/tmp',
+        { recursive: true },
+        expect.any(Function),
+      );
+      expect(_activeWatches.has('w1')).toBe(true);
     });
 
-    it('starts a watch and registers in activeWatches (stopWatch succeeds)', () => {
+    it('throws when base directory does not exist', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
       const sender = makeSender();
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
-      // If watch is active, stopWatch should not throw
-      expect(() => stopWatch('w1')).not.toThrow();
+
+      expect(() => startWatch('w1', '/nonexistent/**', sender)).toThrow(
+        'Watch directory does not exist: /nonexistent',
+      );
+      expect(_activeWatches.has('w1')).toBe(false);
     });
 
-    it('replaces existing watch with same ID', () => {
-      const sender1 = makeSender(1);
-      const sender2 = makeSender(2);
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
-      // Re-registering same watchId replaces the old one without error
-      expect(() =>
-        startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender2 as any),
-      ).not.toThrow();
-      stopWatch('w1');
+    it('cleans up existing watch with same ID before creating new one', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**/*.ts', sender);
+      startWatch('w1', '/tmp/**/*.js', sender);
+
+      expect(mockWatcherClose).toHaveBeenCalledTimes(1);
+      expect(_activeWatches.size).toBe(1);
+    });
+
+    it('wraps fs.watch errors in descriptive message', () => {
+      vi.mocked(fs.watch).mockImplementation(() => {
+        throw new Error('EACCES: permission denied');
+      });
+      const sender = makeSender();
+
+      expect(() => startWatch('w1', '/tmp/**', sender)).toThrow(
+        'Failed to start file watcher: EACCES: permission denied',
+      );
+    });
+
+    it('stores webContentsId from sender', () => {
+      const sender = makeSender(42);
+      startWatch('w1', '/tmp/**', sender);
+
+      const entry = _activeWatches.get('w1');
+      expect(entry!.webContentsId).toBe(42);
     });
   });
 
+  // ─── event type mapping ────────────────────────────────────────────────────
+
+  describe('event type mapping', () => {
+    it('ignores events with null filename', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', null);
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+
+    it('maps "change" event to "modified"', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'file.txt');
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).toHaveBeenCalledWith('file:watch-event', {
+        watchId: 'w1',
+        events: [{ type: 'modified', path: '/tmp/file.txt' }],
+      });
+    });
+
+    it('maps "rename" to "created" when file exists', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      // existsSync already returns true from beforeEach
+      watchCallback!('rename', 'new.txt');
+      vi.advanceTimersByTime(300);
+
+      const payload = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      expect(payload.events[0].type).toBe('created');
+    });
+
+    it('maps "rename" to "deleted" when file does not exist', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      // For the rename check, file should not exist
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      watchCallback!('rename', 'gone.txt');
+      vi.advanceTimersByTime(300);
+
+      const payload = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      expect(payload.events[0].type).toBe('deleted');
+    });
+
+    it('constructs full path by joining base dir and filename', () => {
+      const sender = makeSender();
+      startWatch('w1', '/project/src/**/*.ts', sender);
+
+      watchCallback!('change', 'utils/helper.ts');
+      vi.advanceTimersByTime(300);
+
+      const payload = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      expect(payload.events[0].path).toBe('/project/src/utils/helper.ts');
+    });
+  });
+
+  // ─── debounce & batching ───────────────────────────────────────────────────
+
+  describe('debounce and event batching', () => {
+    it('batches multiple events within debounce window', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt');
+      watchCallback!('change', 'b.txt');
+      watchCallback!('change', 'c.txt');
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).toHaveBeenCalledTimes(1);
+      const payload = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      expect(payload.events).toHaveLength(3);
+    });
+
+    it('resets debounce timer on each new event', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt');
+      vi.advanceTimersByTime(150);
+      watchCallback!('change', 'b.txt'); // resets the 200ms timer
+      vi.advanceTimersByTime(150); // 150ms since reset — not yet
+      expect(sender.send).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(100); // 250ms since reset — fires
+      expect(sender.send).toHaveBeenCalledTimes(1);
+      const payload = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      expect(payload.events).toHaveLength(2);
+    });
+
+    it('sends separate batches for events after debounce fires', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt');
+      vi.advanceTimersByTime(300);
+      expect(sender.send).toHaveBeenCalledTimes(1);
+
+      watchCallback!('change', 'b.txt');
+      vi.advanceTimersByTime(300);
+      expect(sender.send).toHaveBeenCalledTimes(2);
+
+      // Each batch should have exactly one event
+      const batch1 = (sender.send as ReturnType<typeof vi.fn>).mock.calls[0][1];
+      const batch2 = (sender.send as ReturnType<typeof vi.fn>).mock.calls[1][1];
+      expect(batch1.events).toHaveLength(1);
+      expect(batch2.events).toHaveLength(1);
+    });
+
+    it('does not send when no events are pending', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      // Only null-filename events (ignored), no pending events
+      watchCallback!('change', null);
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── sender lifecycle ──────────────────────────────────────────────────────
+
+  describe('sender lifecycle', () => {
+    it('stops watch when sender is destroyed', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt');
+      (sender.isDestroyed as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).not.toHaveBeenCalled();
+      expect(_activeWatches.has('w1')).toBe(false);
+    });
+
+    it('stops watch when sender.send throws', () => {
+      const sender = makeSender();
+      (sender.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        throw new Error('Object has been destroyed');
+      });
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt');
+      vi.advanceTimersByTime(300);
+
+      expect(_activeWatches.has('w1')).toBe(false);
+    });
+  });
+
+  // ─── stopWatch ─────────────────────────────────────────────────────────────
+
   describe('stopWatch', () => {
-    it('is a no-op for unknown watchId', () => {
+    it('closes watcher and removes from active watches', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+      stopWatch('w1');
+
+      expect(mockWatcherClose).toHaveBeenCalledTimes(1);
+      expect(_activeWatches.has('w1')).toBe(false);
+    });
+
+    it('clears pending debounce timer so events are not sent', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
+
+      watchCallback!('change', 'a.txt'); // starts debounce timer
+      stopWatch('w1');
+      vi.advanceTimersByTime(300);
+
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op for unknown watch ID', () => {
       expect(() => stopWatch('nonexistent')).not.toThrow();
     });
 
-    it('stops an active watch and clears pending debounce timer', () => {
+    it('handles watcher.close() throwing gracefully', () => {
+      mockWatcherClose.mockImplementation(() => {
+        throw new Error('Already closed');
+      });
       const sender = makeSender();
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w1', '/tmp/**', sender);
+
+      expect(() => stopWatch('w1')).not.toThrow();
+      expect(_activeWatches.has('w1')).toBe(false);
+    });
+
+    it('second stop on same ID is a no-op', () => {
+      const sender = makeSender();
+      startWatch('w1', '/tmp/**', sender);
       stopWatch('w1');
-      // Second stop is a no-op
       expect(() => stopWatch('w1')).not.toThrow();
     });
   });
+
+  // ─── stopAllWatches ────────────────────────────────────────────────────────
 
   describe('stopAllWatches', () => {
     it('stops all active watches', () => {
       const sender = makeSender();
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
-      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+      startWatch('w1', '/tmp/**', sender);
+      startWatch('w2', '/tmp/**', sender);
+      startWatch('w3', '/tmp/**', sender);
+
+      stopAllWatches();
+
+      expect(_activeWatches.size).toBe(0);
+      expect(mockWatcherClose).toHaveBeenCalledTimes(3);
+    });
+
+    it('is safe to call when no watches exist', () => {
       expect(() => stopAllWatches()).not.toThrow();
-      // All watches should be gone — double-stop is a no-op
-      expect(() => stopWatch('w1')).not.toThrow();
-      expect(() => stopWatch('w2')).not.toThrow();
     });
   });
+
+  // ─── cleanupWatchesForWindow ───────────────────────────────────────────────
 
   describe('cleanupWatchesForWindow', () => {
-    it('stops watches belonging to the given window', () => {
+    it('stops only watches belonging to the given window', () => {
       const sender1 = makeSender(10);
       const sender2 = makeSender(20);
-      startWatch('w10', path.join(tmpDir, '**', '*.ts'), sender1 as any);
-      startWatch('w20', path.join(tmpDir, '**', '*.js'), sender2 as any);
+      startWatch('w1', '/tmp/**', sender1);
+      startWatch('w2', '/tmp/**', sender2);
 
-      const win = makeWindow(10);
-      cleanupWatchesForWindow(win);
+      cleanupWatchesForWindow(makeWindow(10));
 
-      // w10 should be gone; stopping it again is a no-op (no throw)
-      expect(() => stopWatch('w10')).not.toThrow();
-      // w20 should still be active — stop it cleanly
-      expect(() => stopWatch('w20')).not.toThrow();
+      expect(_activeWatches.has('w1')).toBe(false);
+      expect(_activeWatches.has('w2')).toBe(true);
     });
 
-    it('does nothing when no watches exist for the window', () => {
-      const sender = makeSender(99);
-      startWatch('w99', path.join(tmpDir, '**', '*.ts'), sender as any);
+    it('does not stop watches for other windows', () => {
+      const sender = makeSender(10);
+      startWatch('w1', '/tmp/**', sender);
 
-      const win = makeWindow(1); // different webContentsId
-      expect(() => cleanupWatchesForWindow(win)).not.toThrow();
+      cleanupWatchesForWindow(makeWindow(99));
 
-      // w99 should still be active
-      stopWatch('w99');
-    });
-  });
-
-  describe('debounce behaviour', () => {
-    it('stops the watch and does not send if sender is destroyed', () => {
-      const sender = makeSender();
-      sender.isDestroyed.mockReturnValue(true);
-
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
-
-      // Manually trigger the watcher callback by writing a file
-      // (we rely on fake timers to control the debounce)
-      // Simulate the debounce timer firing
-      vi.runAllTimers();
-
-      // sender.send should NOT have been called because isDestroyed returns true
-      expect(sender.send).not.toHaveBeenCalled();
+      expect(_activeWatches.has('w1')).toBe(true);
     });
 
-    it('sends batched events when sender is alive', () => {
-      const sender = makeSender();
-      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
-
-      // We don't have direct access to trigger the watcher callback in unit tests,
-      // so we verify the send is NOT called before timers fire and the
-      // isDestroyed guard is correctly checked.
-      vi.runAllTimers();
-      // No events pending, so send should not be called
-      expect(sender.send).not.toHaveBeenCalled();
+    it('handles case with no active watches', () => {
+      expect(() => cleanupWatchesForWindow(makeWindow(1))).not.toThrow();
     });
-  });
 
-  describe('webContentsId stored in entry', () => {
-    it('associates a watch with the correct webContents ID for cleanup', () => {
-      const senderA = makeSender(100);
-      const senderB = makeSender(200);
+    it('handles multiple watches for the same window', () => {
+      const sender = makeSender(10);
+      startWatch('w1', '/tmp/**', sender);
+      startWatch('w2', '/tmp/**', sender);
+      startWatch('w3', '/tmp/**', makeSender(20));
 
-      startWatch('wA', path.join(tmpDir, '**', '*.ts'), senderA as any);
-      startWatch('wB', path.join(tmpDir, '**', '*.ts'), senderB as any);
+      cleanupWatchesForWindow(makeWindow(10));
 
-      // Cleanup for window with id 100 should only remove wA
-      cleanupWatchesForWindow(makeWindow(100));
-
-      // wB should still be cleanly stoppable
-      expect(() => stopWatch('wB')).not.toThrow();
+      expect(_activeWatches.has('w1')).toBe(false);
+      expect(_activeWatches.has('w2')).toBe(false);
+      expect(_activeWatches.has('w3')).toBe(true);
     });
   });
 });
