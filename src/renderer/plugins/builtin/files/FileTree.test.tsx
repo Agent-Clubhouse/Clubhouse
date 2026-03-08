@@ -280,24 +280,19 @@ describe('FileTree', () => {
     });
   });
 
-  it('persists selected path to storage on file select', async () => {
-    const write = vi.fn(async () => {});
-    const api = createFilesAPI({
-      storage: {
-        ...createMockAPI().storage,
-        project: {
-          ...createMockAPI().storage.project,
-          write,
-        },
-      },
-    });
+  it('opens preview tab on file select', async () => {
+    const api = createFilesAPI();
 
     render(<FileTree api={api} />);
     const readme = await screen.findByText('README.md');
     fireEvent.click(readme);
 
+    // Should open a preview tab in fileState
     await waitFor(() => {
-      expect(write).toHaveBeenCalledWith('files:lastSelectedPath', 'README.md');
+      const tab = fileState.getTabByPath('README.md');
+      expect(tab).toBeDefined();
+      expect(tab!.isPreview).toBe(true);
+      expect(fileState.activeTabId).toBe(tab!.id);
     });
   });
 

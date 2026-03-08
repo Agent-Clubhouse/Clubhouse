@@ -13,6 +13,12 @@ vi.mock('./MonacoEditor', () => ({
     lastOnSave = onSave || null;
     return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
   },
+  disposeModel: vi.fn(),
+  disposeAllModels: vi.fn(),
+  updateSavedContent: vi.fn(),
+  getModelContent: vi.fn(() => 'console.log("updated")'),
+  isModelDirty: vi.fn(() => false),
+  getOrCreateModel: vi.fn(),
 }));
 
 vi.mock('./MarkdownPreview', () => ({
@@ -43,13 +49,19 @@ function createViewerAPI() {
       ...createMockAPI().ui,
       showError: vi.fn(),
     },
+    storage: {
+      project: {
+        read: vi.fn(async () => null),
+        write: vi.fn(async () => {}),
+      },
+    },
   });
 }
 
-/** Select a file after the component has mounted and subscribed */
+/** Open a file via the tab system */
 function selectFile(path: string) {
   act(() => {
-    fileState.setSelectedPath(path);
+    fileState.openTab(path, { preview: true });
   });
 }
 

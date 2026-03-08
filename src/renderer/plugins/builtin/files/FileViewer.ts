@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
-import { MonacoEditor } from './MonacoEditor';
+import type { Tab, ScrollState } from './state';
+import { TabBar } from './TabBar';
+import { MonacoEditor, disposeModel, updateSavedContent, getModelContent } from './MonacoEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, EXT_TO_LANG } from './file-icons';
 
@@ -22,6 +24,16 @@ function getLanguage(ext: string): string {
 
 const MAX_TEXT_SIZE = 1_000_000; // 1 MB
 const MAX_IMAGE_SIZE = 10_000_000; // 10 MB
+
+type FileType = 'text' | 'binary' | 'image' | 'svg' | 'markdown' | 'none' | 'too-large';
+
+// Per-tab loaded file data (cached to avoid reloading on tab switch)
+interface LoadedFile {
+  filePath: string;
+  content: string;
+  binaryData: string;
+  fileType: FileType;
+}
 
 // ── Unsaved Changes Dialog ────────────────────────────────────────────
 
@@ -72,186 +84,240 @@ function OpenInFinderButton({ api, relativePath }: { api: PluginAPI; relativePat
 // ── FileViewer (MainPanel) ────────────────────────────────────────────
 
 export function FileViewer({ api }: { api: PluginAPI }) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(fileState.selectedPath);
-  const [content, setContent] = useState<string>('');
-  const [binaryData, setBinaryData] = useState<string>('');
-  const [fileType, setFileType] = useState<'text' | 'binary' | 'image' | 'svg' | 'markdown' | 'none' | 'too-large'>('none');
+  const [activeTab, setActiveTab] = useState<Tab | undefined>(fileState.getActiveTab());
+  const [loadedFile, setLoadedFile] = useState<LoadedFile | null>(null);
   const [previewMode, setPreviewMode] = useState<'preview' | 'source'>('preview');
-  const [isDirty, setIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [unsavedDialog, setUnsavedDialog] = useState<{ pendingPath: string } | null>(null);
+  const [unsavedDialog, setUnsavedDialog] = useState<{ tabId: string; pendingAction: () => void } | null>(null);
 
-  const contentRef = useRef(content);
-  contentRef.current = content;
+  // Cache of loaded file data per path to avoid reloading on tab switch
+  const fileCache = useRef<Map<string, LoadedFile>>(new Map());
 
-  const isDirtyRef = useRef(isDirty);
-  isDirtyRef.current = isDirty;
+  // ── Subscribe to tab state changes ────────────────────────────────
 
-  const selectedPathRef = useRef(selectedPath);
-  selectedPathRef.current = selectedPath;
-
-  // Load file content
-  const loadFile = useCallback(async (relativePath: string) => {
-    setLoading(true);
-    const ext = getExtension(relativePath);
-    const _fileName = getFileName(relativePath);
-
-    try {
-      // Binary check
-      if (BINARY_EXTENSIONS.has(ext)) {
-        setFileType('binary');
-        setContent('');
-        setBinaryData('');
-        setLoading(false);
-        return;
-      }
-
-      // Image check
-      if (IMAGE_EXTENSIONS.has(ext)) {
-        const stat = await api.files.stat(relativePath);
-        if (stat.size > MAX_IMAGE_SIZE) {
-          setFileType('too-large');
-          setContent('');
-          setBinaryData('');
-          setLoading(false);
-          return;
-        }
-        const data = await api.files.readBinary(relativePath);
-        setBinaryData(data);
-        setContent('');
-        setFileType('image');
-        setLoading(false);
-        return;
-      }
-
-      // SVG
-      if (ext === 'svg') {
-        const text = await api.files.readFile(relativePath);
-        setContent(text);
-        setFileType('svg');
-        // Generate base64 for preview
-        const b64 = btoa(unescape(encodeURIComponent(text)));
-        setBinaryData(`data:image/svg+xml;base64,${b64}`);
-        setPreviewMode('preview');
-        setLoading(false);
-        return;
-      }
-
-      // Markdown
-      if (ext === 'md' || ext === 'mdx') {
-        const text = await api.files.readFile(relativePath);
-        setContent(text);
-        setFileType('markdown');
-        setBinaryData('');
-        setPreviewMode('preview');
-        setLoading(false);
-        return;
-      }
-
-      // Text file — size check
-      const stat = await api.files.stat(relativePath);
-      if (stat.size > MAX_TEXT_SIZE) {
-        setFileType('too-large');
-        setContent('');
-        setBinaryData('');
-        setLoading(false);
-        return;
-      }
-
-      const text = await api.files.readFile(relativePath);
-      setContent(text);
-      setBinaryData('');
-      setFileType('text');
-    } catch {
-      setContent('');
-      setFileType('none');
-    }
-
-    setLoading(false);
-  }, [api]);
-
-  // Handle file selection with unsaved changes check
-  const switchToFile = useCallback((newPath: string | null) => {
-    if (!newPath) {
-      setSelectedPath(null);
-      setFileType('none');
-      return;
-    }
-
-    if (isDirtyRef.current && selectedPathRef.current) {
-      setUnsavedDialog({ pendingPath: newPath });
-      return;
-    }
-
-    setSelectedPath(newPath);
-    selectedPathRef.current = newPath;
-    setIsDirty(false);
-    fileState.setDirty(false);
-    loadFile(newPath);
-  }, [loadFile]);
-
-  // Subscribe to fileState changes
   useEffect(() => {
     return fileState.subscribe(() => {
-      const newPath = fileState.selectedPath;
-      if (newPath !== selectedPathRef.current) {
-        switchToFile(newPath);
-      }
+      const newActiveTab = fileState.getActiveTab();
+      setActiveTab(newActiveTab ? { ...newActiveTab } : undefined);
     });
-  }, [switchToFile]);
-
-  // Save file
-  const saveFile = useCallback(async () => {
-    if (!selectedPath) return;
-    try {
-      await api.files.writeFile(selectedPath, contentRef.current);
-      setIsDirty(false);
-      fileState.setDirty(false);
-    } catch (err) {
-      api.ui.showError(`Failed to save: ${err}`);
-    }
-  }, [api, selectedPath]);
-
-  // Handle dirty change from Monaco
-  const handleDirtyChange = useCallback((dirty: boolean) => {
-    setIsDirty(dirty);
-    fileState.setDirty(dirty);
   }, []);
 
-  // Handle save from Monaco (Cmd+S)
-  const handleSave = useCallback(async (newContent: string) => {
-    if (!selectedPath) return;
+  // ── Load file when active tab changes ─────────────────────────────
+
+  const loadFile = useCallback(async (relativePath: string): Promise<LoadedFile> => {
+    // Check cache first
+    const cached = fileCache.current.get(relativePath);
+    if (cached) return cached;
+
+    const ext = getExtension(relativePath);
+    const result: LoadedFile = {
+      filePath: relativePath,
+      content: '',
+      binaryData: '',
+      fileType: 'none',
+    };
+
     try {
-      setContent(newContent);
-      await api.files.writeFile(selectedPath, newContent);
-      setIsDirty(false);
-      fileState.setDirty(false);
+      if (BINARY_EXTENSIONS.has(ext)) {
+        result.fileType = 'binary';
+      } else if (IMAGE_EXTENSIONS.has(ext)) {
+        const stat = await api.files.stat(relativePath);
+        if (stat.size > MAX_IMAGE_SIZE) {
+          result.fileType = 'too-large';
+        } else {
+          result.binaryData = await api.files.readBinary(relativePath);
+          result.fileType = 'image';
+        }
+      } else if (ext === 'svg') {
+        const text = await api.files.readFile(relativePath);
+        result.content = text;
+        result.fileType = 'svg';
+        const b64 = btoa(unescape(encodeURIComponent(text)));
+        result.binaryData = `data:image/svg+xml;base64,${b64}`;
+      } else if (ext === 'md' || ext === 'mdx') {
+        result.content = await api.files.readFile(relativePath);
+        result.fileType = 'markdown';
+      } else {
+        const stat = await api.files.stat(relativePath);
+        if (stat.size > MAX_TEXT_SIZE) {
+          result.fileType = 'too-large';
+        } else {
+          result.content = await api.files.readFile(relativePath);
+          result.fileType = 'text';
+        }
+      }
+    } catch {
+      result.fileType = 'none';
+    }
+
+    fileCache.current.set(relativePath, result);
+    return result;
+  }, [api]);
+
+  // Load file when active tab changes
+  useEffect(() => {
+    if (!activeTab) {
+      setLoadedFile(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    loadFile(activeTab.filePath).then((result) => {
+      if (!cancelled) {
+        setLoadedFile(result);
+        // Reset preview mode for markdown/svg
+        if (result.fileType === 'markdown' || result.fileType === 'svg') {
+          setPreviewMode('preview');
+        }
+        setLoading(false);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [activeTab?.filePath, loadFile]);
+
+  // ── Persist tab state ─────────────────────────────────────────────
+
+  useEffect(() => {
+    const persist = () => {
+      const data = fileState.serialize();
+      api.storage.project.write('files:tabState', JSON.stringify(data)).catch(() => {});
+    };
+
+    return fileState.subscribe(persist);
+  }, [api]);
+
+  // Restore tabs on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function restore() {
+      try {
+        const raw = await api.storage.project.read('files:tabState');
+        if (cancelled || !raw || typeof raw !== 'string') return;
+        const data = JSON.parse(raw);
+        if (data && data.tabs && Array.isArray(data.tabs)) {
+          fileState.restore(data);
+        }
+      } catch {
+        // Fresh start — no persisted tabs
+      }
+    }
+    restore();
+    return () => { cancelled = true; };
+  }, [api]);
+
+  // ── Tab close handler (with dirty check) ──────────────────────────
+
+  const handleCloseTab = useCallback(async (tabId: string) => {
+    const tab = fileState.getTab(tabId);
+    if (!tab) return;
+
+    // If pinned, unpin first (don't close)
+    if (tab.isPinned) {
+      fileState.unpinTab(tabId);
+      return;
+    }
+
+    if (tab.isDirty) {
+      setUnsavedDialog({
+        tabId,
+        pendingAction: () => {
+          // Dispose the Monaco model for this file
+          disposeModel(tab.filePath);
+          fileCache.current.delete(tab.filePath);
+          fileState.closeTab(tabId);
+        },
+      });
+      return;
+    }
+
+    disposeModel(tab.filePath);
+    fileCache.current.delete(tab.filePath);
+    fileState.closeTab(tabId);
+  }, []);
+
+  // ── Save file ─────────────────────────────────────────────────────
+
+  const saveFile = useCallback(async (filePath: string) => {
+    const content = getModelContent(filePath);
+    if (content === null) return;
+    try {
+      await api.files.writeFile(filePath, content);
+      updateSavedContent(filePath, content);
+      const tab = fileState.getTabByPath(filePath);
+      if (tab) {
+        fileState.setTabDirty(tab.id, false);
+      }
     } catch (err) {
       api.ui.showError(`Failed to save: ${err}`);
     }
-  }, [api, selectedPath]);
+  }, [api]);
 
-  // Unsaved dialog handlers
+  // ── Dirty change handler ──────────────────────────────────────────
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    if (!activeTab) return;
+    fileState.setTabDirty(activeTab.id, dirty);
+  }, [activeTab?.id]);
+
+  // ── Save from Monaco (Cmd+S) ─────────────────────────────────────
+
+  const handleSave = useCallback(async (newContent: string) => {
+    if (!activeTab) return;
+    try {
+      await api.files.writeFile(activeTab.filePath, newContent);
+      updateSavedContent(activeTab.filePath, newContent);
+      fileState.setTabDirty(activeTab.id, false);
+      // Update cache
+      const cached = fileCache.current.get(activeTab.filePath);
+      if (cached) {
+        cached.content = newContent;
+      }
+    } catch (err) {
+      api.ui.showError(`Failed to save: ${err}`);
+    }
+  }, [api, activeTab?.id, activeTab?.filePath]);
+
+  // ── Scroll state handler ──────────────────────────────────────────
+
+  const handleScrollStateChange = useCallback((scrollState: ScrollState) => {
+    if (!activeTab) return;
+    fileState.setTabScrollState(activeTab.id, scrollState);
+  }, [activeTab?.id]);
+
+  // ── Reveal in tree ────────────────────────────────────────────────
+
+  const handleRevealInTree = useCallback((filePath: string) => {
+    // The FileTree listens to selectedPath changes
+    fileState.selectedPath = filePath;
+    fileState.notify();
+  }, []);
+
+  // ── Unsaved dialog handlers ───────────────────────────────────────
+
   const handleDialogSave = useCallback(async () => {
     if (!unsavedDialog) return;
-    await saveFile();
-    const pendingPath = unsavedDialog.pendingPath;
+    const tab = fileState.getTab(unsavedDialog.tabId);
+    if (tab) {
+      await saveFile(tab.filePath);
+    }
+    const action = unsavedDialog.pendingAction;
     setUnsavedDialog(null);
-    setSelectedPath(pendingPath);
-    setIsDirty(false);
-    fileState.setDirty(false);
-    loadFile(pendingPath);
-  }, [unsavedDialog, saveFile, loadFile]);
+    action();
+  }, [unsavedDialog, saveFile]);
 
   const handleDialogDiscard = useCallback(() => {
     if (!unsavedDialog) return;
-    const pendingPath = unsavedDialog.pendingPath;
+    const tab = fileState.getTab(unsavedDialog.tabId);
+    if (tab) {
+      fileState.setTabDirty(unsavedDialog.tabId, false);
+    }
+    const action = unsavedDialog.pendingAction;
     setUnsavedDialog(null);
-    setSelectedPath(pendingPath);
-    setIsDirty(false);
-    fileState.setDirty(false);
-    loadFile(pendingPath);
-  }, [unsavedDialog, loadFile]);
+    action();
+  }, [unsavedDialog]);
 
   const handleDialogCancel = useCallback(() => {
     setUnsavedDialog(null);
@@ -259,40 +325,54 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   // ── Render ──────────────────────────────────────────────────────────
 
-  if (!selectedPath || fileType === 'none') {
+  // No tabs open — empty state
+  if (!activeTab || !loadedFile) {
     return React.createElement('div', {
-      className: 'flex flex-col items-center justify-center h-full text-ctp-subtext0',
+      className: 'flex flex-col h-full bg-ctp-base',
     },
-      React.createElement('svg', {
-        width: 40, height: 40, viewBox: '0 0 24 24', fill: 'none',
-        stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round',
-        className: 'mb-3 opacity-50',
+      // Still show tab bar if there are tabs (loading state)
+      fileState.openTabs.length > 0
+        ? React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree })
+        : null,
+      React.createElement('div', {
+        className: 'flex flex-col items-center justify-center flex-1 text-ctp-subtext0',
       },
-        React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
-        React.createElement('polyline', { points: '14 2 14 8 20 8' }),
+        React.createElement('svg', {
+          width: 40, height: 40, viewBox: '0 0 24 24', fill: 'none',
+          stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round',
+          className: 'mb-3 opacity-50',
+        },
+          React.createElement('path', { d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' }),
+          React.createElement('polyline', { points: '14 2 14 8 20 8' }),
+        ),
+        React.createElement('p', { className: 'text-xs' }, 'Select a file to view'),
+        React.createElement('p', { className: 'text-[10px] mt-1 opacity-60' }, 'Click a file in the sidebar'),
       ),
-      React.createElement('p', { className: 'text-xs' }, 'Select a file to view'),
-      React.createElement('p', { className: 'text-[10px] mt-1 opacity-60' }, 'Click a file in the sidebar'),
     );
   }
 
   if (loading) {
     return React.createElement('div', {
-      className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
-    }, 'Loading...');
+      className: 'flex flex-col h-full bg-ctp-base',
+    },
+      React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree }),
+      React.createElement('div', {
+        className: 'flex items-center justify-center flex-1 text-ctp-subtext0 text-xs',
+      }, 'Loading...'),
+    );
   }
 
-  const fileName = getFileName(selectedPath);
-  const ext = getExtension(selectedPath);
+  const fileName = getFileName(activeTab.filePath);
+  const ext = getExtension(activeTab.filePath);
   const lang = getLanguage(ext);
 
-  // File header
+  // File header (below tab bar)
   const header = React.createElement('div', {
     className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
   },
     React.createElement('div', { className: 'flex items-center gap-2 min-w-0' },
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text truncate' }, fileName),
-      isDirty
+      activeTab.isDirty
         ? React.createElement('span', {
             className: 'w-2 h-2 rounded-full bg-ctp-peach flex-shrink-0',
             title: 'Unsaved changes',
@@ -306,7 +386,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     ),
     React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
       // Preview/Source toggle for markdown and SVG
-      (fileType === 'markdown' || fileType === 'svg')
+      (loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg')
         ? React.createElement('div', { className: 'flex items-center bg-ctp-surface0 rounded text-[10px]' },
             React.createElement('button', {
               className: `px-2 py-0.5 rounded ${previewMode === 'preview' ? 'bg-ctp-surface1 text-ctp-text' : 'text-ctp-subtext0'}`,
@@ -320,39 +400,39 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         : null,
       React.createElement('span', {
         className: 'text-[10px] text-ctp-subtext0 truncate max-w-[200px]',
-        title: selectedPath,
-      }, selectedPath),
-      React.createElement(OpenInFinderButton, { api, relativePath: selectedPath }),
+        title: activeTab.filePath,
+      }, activeTab.filePath),
+      React.createElement(OpenInFinderButton, { api, relativePath: activeTab.filePath }),
     ),
   );
 
   let body: React.ReactElement;
 
-  switch (fileType) {
+  switch (loadedFile.fileType) {
     case 'binary':
       body = React.createElement('div', {
-        className: 'flex flex-col items-center justify-center h-full text-ctp-subtext0 gap-3',
+        className: 'flex flex-col items-center justify-center flex-1 text-ctp-subtext0 gap-3',
       },
         React.createElement('p', { className: 'text-xs' }, 'Cannot display binary file'),
-        React.createElement(OpenInFinderButton, { api, relativePath: selectedPath }),
+        React.createElement(OpenInFinderButton, { api, relativePath: activeTab.filePath }),
       );
       break;
 
     case 'too-large':
       body = React.createElement('div', {
-        className: 'flex flex-col items-center justify-center h-full text-ctp-subtext0 gap-3',
+        className: 'flex flex-col items-center justify-center flex-1 text-ctp-subtext0 gap-3',
       },
         React.createElement('p', { className: 'text-xs' }, 'File too large to display'),
-        React.createElement(OpenInFinderButton, { api, relativePath: selectedPath }),
+        React.createElement(OpenInFinderButton, { api, relativePath: activeTab.filePath }),
       );
       break;
 
     case 'image':
       body = React.createElement('div', {
-        className: 'flex items-center justify-center h-full p-4 overflow-auto',
+        className: 'flex items-center justify-center flex-1 p-4 overflow-auto',
       },
         React.createElement('img', {
-          src: binaryData,
+          src: loadedFile.binaryData,
           alt: fileName,
           className: 'max-w-full max-h-full object-contain',
         }),
@@ -362,10 +442,10 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     case 'svg':
       if (previewMode === 'preview') {
         body = React.createElement('div', {
-          className: 'flex items-center justify-center h-full p-4 overflow-auto',
+          className: 'flex items-center justify-center flex-1 p-4 overflow-auto',
         },
           React.createElement('img', {
-            src: binaryData,
+            src: loadedFile.binaryData,
             alt: fileName,
             className: 'max-w-full max-h-full object-contain',
           }),
@@ -373,11 +453,14 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            value: content,
+            key: activeTab.filePath,
+            value: loadedFile.content,
             language: 'xml',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: selectedPath,
+            filePath: activeTab.filePath,
+            initialScrollState: activeTab.scrollState,
+            onScrollStateChange: handleScrollStateChange,
           }),
         );
       }
@@ -386,16 +469,19 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     case 'markdown':
       if (previewMode === 'preview') {
         body = React.createElement('div', { className: 'flex-1 min-h-0 overflow-auto' },
-          React.createElement(MarkdownPreview, { content }),
+          React.createElement(MarkdownPreview, { content: loadedFile.content }),
         );
       } else {
         body = React.createElement('div', { className: 'flex-1 min-h-0' },
           React.createElement(MonacoEditor, {
-            value: content,
+            key: activeTab.filePath,
+            value: loadedFile.content,
             language: 'markdown',
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
-            filePath: selectedPath,
+            filePath: activeTab.filePath,
+            initialScrollState: activeTab.scrollState,
+            onScrollStateChange: handleScrollStateChange,
           }),
         );
       }
@@ -404,25 +490,33 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     default: // text
       body = React.createElement('div', { className: 'flex-1 min-h-0' },
         React.createElement(MonacoEditor, {
-          value: content,
+          key: activeTab.filePath,
+          value: loadedFile.content,
           language: lang,
           onSave: handleSave,
           onDirtyChange: handleDirtyChange,
-          filePath: selectedPath,
+          filePath: activeTab.filePath,
+          initialScrollState: activeTab.scrollState,
+          onScrollStateChange: handleScrollStateChange,
         }),
       );
       break;
   }
 
+  const dialogFileName = unsavedDialog
+    ? getFileName(fileState.getTab(unsavedDialog.tabId)?.filePath || '')
+    : '';
+
   return React.createElement('div', {
     className: 'flex flex-col h-full bg-ctp-base relative',
   },
+    React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree }),
     header,
     body,
     // Unsaved changes dialog
     unsavedDialog
       ? React.createElement(UnsavedDialog, {
-          fileName,
+          fileName: dialogFileName,
           onSave: handleDialogSave,
           onDiscard: handleDialogDiscard,
           onCancel: handleDialogCancel,
