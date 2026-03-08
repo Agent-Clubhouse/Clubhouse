@@ -224,7 +224,6 @@ export function MonacoEditor({
       }
     };
   // Only recreate editor on mount/unmount — model swapping handles file changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Swap model when filePath changes (tab switch)

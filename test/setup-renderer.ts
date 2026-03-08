@@ -1,5 +1,19 @@
 import '@testing-library/jest-dom';
 
+// jsdom doesn't have ResizeObserver — provide a no-op polyfill for tests
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as any;
+}
+
+// jsdom doesn't implement scrollIntoView — provide a no-op polyfill
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = function () {};
+}
+
 // Baseline window.clubhouse mock — same shape as the preload bridge (src/preload/index.ts).
 // Individual tests can override specific methods via vi.mocked() or vi.spyOn().
 //

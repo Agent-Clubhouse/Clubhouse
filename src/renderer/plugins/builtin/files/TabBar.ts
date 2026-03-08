@@ -28,7 +28,7 @@ function FileIconSvg({ color }: { color: string }) {
   );
 }
 
-function PinIcon() {
+function _PinIcon() {
   return React.createElement('svg', {
     width: 10, height: 10, viewBox: '0 0 24 24', fill: 'none',
     stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
@@ -236,7 +236,7 @@ interface TabBarProps {
   onRevealInTree: (filePath: string) => void;
 }
 
-export function TabBar({ api, onCloseTab, onRevealInTree }: TabBarProps) {
+export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
   const [tabs, setTabs] = useState<Tab[]>(fileState.getOrderedTabs());
   const [activeTabId, setActiveTabId] = useState<string | null>(fileState.activeTabId);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; tab: Tab } | null>(null);
@@ -282,7 +282,7 @@ export function TabBar({ api, onCloseTab, onRevealInTree }: TabBarProps) {
     if (!activeTabId || !scrollContainerRef.current) return;
     const el = scrollContainerRef.current;
     const tabEl = el.querySelector(`[data-tab-id="${activeTabId}"]`) as HTMLElement | null;
-    if (tabEl) {
+    if (tabEl && tabEl.scrollIntoView) {
       tabEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
     }
   }, [activeTabId]);

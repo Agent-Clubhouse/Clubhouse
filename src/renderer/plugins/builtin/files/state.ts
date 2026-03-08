@@ -31,8 +31,6 @@ export function generateTabId(): string {
   return `tab-${nextId++}-${Date.now()}`;
 }
 
-const DEFAULT_SCROLL: ScrollState = { scrollTop: 0, scrollLeft: 0, cursorLine: 1, cursorColumn: 1 };
-
 // ── Serialization types (for persistence) ────────────────────────────
 
 export interface PersistedTabState {
@@ -65,7 +63,7 @@ export const fileState = {
   // ── Tab queries ──────────────────────────────────────────────────
 
   getTab(tabId: string): Tab | undefined {
-    return this.openTabs.find(t => t.id === tabId);
+    return this.openTabs.find((t: Tab) => t.id === tabId);
   },
 
   getActiveTab(): Tab | undefined {
@@ -73,16 +71,16 @@ export const fileState = {
   },
 
   getTabByPath(filePath: string): Tab | undefined {
-    return this.openTabs.find(t => t.filePath === filePath);
+    return this.openTabs.find((t: Tab) => t.filePath === filePath);
   },
 
   getPreviewTab(): Tab | undefined {
-    return this.openTabs.find(t => t.isPreview);
+    return this.openTabs.find((t: Tab) => t.isPreview);
   },
 
   getOrderedTabs(): Tab[] {
     // Return tabs in tabOrder sequence
-    const map = new Map(this.openTabs.map(t => [t.id, t]));
+    const map = new Map<string, Tab>(this.openTabs.map((t: Tab) => [t.id, t] as [string, Tab]));
     const ordered: Tab[] = [];
     for (const id of this.tabOrder) {
       const tab = map.get(id);
@@ -98,7 +96,7 @@ export const fileState = {
   },
 
   hasDirtyTabs(): boolean {
-    return this.openTabs.some(t => t.isDirty);
+    return this.openTabs.some((t: Tab) => t.isDirty);
   },
 
   // ── Tab mutations ────────────────────────────────────────────────
@@ -166,7 +164,7 @@ export const fileState = {
    * Caller should handle dirty confirmation before calling this.
    */
   closeTab(tabId: string): boolean {
-    const idx = this.openTabs.findIndex(t => t.id === tabId);
+    const idx = this.openTabs.findIndex((t: Tab) => t.id === tabId);
     if (idx === -1) return false;
 
     const tab = this.openTabs[idx];
@@ -179,7 +177,7 @@ export const fileState = {
 
     // Remove from arrays
     this.openTabs.splice(idx, 1);
-    this.tabOrder = this.tabOrder.filter(id => id !== tabId);
+    this.tabOrder = this.tabOrder.filter((id: string) => id !== tabId);
 
     // If we closed the active tab, activate an adjacent one
     if (this.activeTabId === tabId) {
@@ -226,7 +224,7 @@ export const fileState = {
 
   closeTabsToRight(tabId: string): void {
     const orderedTabs = this.getOrderedTabs();
-    const idx = orderedTabs.findIndex(t => t.id === tabId);
+    const idx = orderedTabs.findIndex((t: Tab) => t.id === tabId);
     if (idx === -1) return;
 
     const toClose = orderedTabs.slice(idx + 1);
@@ -239,9 +237,9 @@ export const fileState = {
       this.recentlyClosed = this.recentlyClosed.slice(-20);
     }
 
-    const keepIds = new Set(orderedTabs.slice(0, idx + 1).map(t => t.id));
-    this.openTabs = this.openTabs.filter(t => keepIds.has(t.id));
-    this.tabOrder = this.tabOrder.filter(id => keepIds.has(id));
+    const keepIds = new Set(orderedTabs.slice(0, idx + 1).map((t: Tab) => t.id));
+    this.openTabs = this.openTabs.filter((t: Tab) => keepIds.has(t.id));
+    this.tabOrder = this.tabOrder.filter((id: string) => keepIds.has(id));
 
     // If active tab was closed, switch to the kept tab
     if (this.activeTabId && !keepIds.has(this.activeTabId)) {
@@ -323,8 +321,8 @@ export const fileState = {
     tab.isPreview = false;
 
     // Move pinned tabs to the front of tabOrder
-    this.tabOrder = this.tabOrder.filter(id => id !== tabId);
-    const lastPinnedIdx = this.tabOrder.findIndex(id => {
+    this.tabOrder = this.tabOrder.filter((id: string) => id !== tabId);
+    const lastPinnedIdx = this.tabOrder.findIndex((id: string) => {
       const t = this.getTab(id);
       return t && !t.isPinned;
     });
@@ -362,7 +360,7 @@ export const fileState = {
     if (!tab) return;
 
     const orderedTabs = this.getOrderedTabs();
-    const firstUnpinnedIdx = orderedTabs.findIndex(t => !t.isPinned);
+    const firstUnpinnedIdx = orderedTabs.findIndex((t: Tab) => !t.isPinned);
     const lastPinnedIdx = firstUnpinnedIdx > 0 ? firstUnpinnedIdx - 1 : -1;
 
     if (tab.isPinned && newIndex > lastPinnedIdx + 1) {
@@ -422,7 +420,7 @@ export const fileState = {
 
   serialize(): PersistedTabState {
     return {
-      tabs: this.getOrderedTabs().map(t => ({
+      tabs: this.getOrderedTabs().map((t: Tab) => ({
         id: t.id,
         filePath: t.filePath,
         isPinned: t.isPinned,
@@ -433,15 +431,15 @@ export const fileState = {
   },
 
   restore(data: PersistedTabState): void {
-    this.openTabs = data.tabs.map(t => ({
+    this.openTabs = data.tabs.map((t): Tab => ({
       id: t.id,
       filePath: t.filePath,
       isDirty: false,
-      scrollState: null,
+      scrollState: null as ScrollState | null,
       isPinned: t.isPinned,
       isPreview: t.isPreview,
     }));
-    this.tabOrder = data.tabs.map(t => t.id);
+    this.tabOrder = data.tabs.map((t) => t.id);
     this.activeTabId = data.activeTabId;
 
     const activeTab = this.getActiveTab();
