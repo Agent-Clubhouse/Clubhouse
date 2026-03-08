@@ -21,6 +21,8 @@ const FEATURED_URL =
   'https://raw.githubusercontent.com/Agent-Clubhouse/Clubhouse-Workshop/main/registry/featured.json';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const FETCH_TIMEOUT_MS = 30_000; // 30 seconds for registry/metadata fetches
+const DOWNLOAD_TIMEOUT_MS = 60_000; // 60 seconds for plugin zip downloads
 
 let registryCache: { data: MarketplaceFetchResult; fetchedAt: number } | null = null;
 
@@ -45,7 +47,7 @@ export async function fetchRegistry(): Promise<MarketplaceFetchResult> {
 
   appLog('marketplace', 'info', 'Fetching plugin registry');
 
-  const registryRes = await fetch(REGISTRY_URL);
+  const registryRes = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!registryRes.ok) {
     throw new Error(`Failed to fetch registry: ${registryRes.status} ${registryRes.statusText}`);
   }
@@ -53,7 +55,7 @@ export async function fetchRegistry(): Promise<MarketplaceFetchResult> {
 
   let featured: MarketplaceFeatured | null = null;
   try {
-    const featuredRes = await fetch(FEATURED_URL);
+    const featuredRes = await fetch(FEATURED_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (featuredRes.ok) {
       featured = await featuredRes.json();
     }
@@ -86,7 +88,7 @@ export async function fetchCustomRegistry(marketplace: CustomMarketplace): Promi
 
   appLog('marketplace', 'info', `Fetching custom registry: ${marketplace.name} (${marketplace.url})`);
 
-  const registryRes = await fetch(marketplace.url);
+  const registryRes = await fetch(marketplace.url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!registryRes.ok) {
     throw new Error(`Failed to fetch custom registry "${marketplace.name}": ${registryRes.status} ${registryRes.statusText}`);
   }
@@ -101,7 +103,7 @@ export async function fetchCustomRegistry(marketplace: CustomMarketplace): Promi
   try {
     const baseUrl = marketplace.url.replace(/\/[^/]*$/, '');
     const featuredUrl = `${baseUrl}/featured.json`;
-    const featuredRes = await fetch(featuredUrl);
+    const featuredRes = await fetch(featuredUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (featuredRes.ok) {
       featured = await featuredRes.json();
     }
@@ -201,7 +203,7 @@ export async function installPlugin(req: MarketplaceInstallRequest): Promise<Mar
 
   try {
     // 1. Download the zip
-    const res = await fetch(assetUrl);
+    const res = await fetch(assetUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
     if (!res.ok) {
       return { success: false, error: `Download failed: ${res.status} ${res.statusText}` };
     }
