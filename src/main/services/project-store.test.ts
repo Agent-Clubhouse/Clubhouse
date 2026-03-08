@@ -628,7 +628,7 @@ describe('sequential update correctness (no lost updates)', () => {
     expect(result.projects[0].id).toBe('proj_b');
   });
 
-  it('update() does not mutate the original projects array passed to the callback', () => {
+  it('update() does not mutate the projects array read from disk', () => {
     const initial = {
       version: 1,
       projects: [

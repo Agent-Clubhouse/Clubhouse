@@ -287,18 +287,16 @@ export function remove(id: string): void {
 }
 
 export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
-  // Perform filesystem side effects before the state transform
-  if (updates.icon === '') {
-    removeIconFile(id);
-  }
+  let shouldRemoveIcon = false;
 
-  return updateProjects((projects) => {
+  const result = updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== id) return p;
 
       const next = { ...p };
 
       if (updates.icon === '') {
+        shouldRemoveIcon = true;
         delete next.icon;
       } else if (updates.icon !== undefined) {
         next.icon = updates.icon;
@@ -331,6 +329,13 @@ export function update(id: string, updates: Partial<Pick<Project, 'color' | 'ico
       return next;
     });
   });
+
+  // Perform filesystem side effect after the state write succeeds
+  if (shouldRemoveIcon) {
+    removeIconFile(id);
+  }
+
+  return result;
 }
 
 export function setIcon(projectId: string, sourcePath: string): string {
