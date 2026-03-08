@@ -146,7 +146,7 @@ export function getActiveWatchCount(): number {
  * e.g., "/home/user/project/src/**\/*.ts" → "/home/user/project/src"
  *      "C:\Users\project\src\**\*.ts"    → "C:/Users/project/src"
  */
-function extractBaseDir(glob: string): string {
+export function extractBaseDir(glob: string): string {
   // Normalize backslashes to forward slashes for consistent splitting.
   // Windows fs APIs accept forward slashes, so we can safely keep them.
   const normalized = glob.replace(/\\/g, '/');
@@ -159,5 +159,8 @@ function extractBaseDir(glob: string): string {
     baseParts.push(part);
   }
   const base = baseParts.join('/');
+  if (!base && !glob.startsWith('*') && !glob.startsWith('?') && !glob.startsWith('{') && !glob.startsWith('[')) {
+    console.warn(`extractBaseDir: Could not extract base from glob "${glob}", falling back to '.'`);
+  }
   return base || '.';
 }
