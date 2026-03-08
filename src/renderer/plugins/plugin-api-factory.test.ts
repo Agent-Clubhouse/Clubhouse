@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act } from '@testing-library/react';
 import { createPluginAPI, _resetEnforcedViolations, computeDataDir } from './plugin-api-factory';
 import { pluginEventBus } from './plugin-events';
 import { pluginCommandRegistry } from './plugin-commands';
@@ -618,17 +619,56 @@ describe('plugin-api-factory', () => {
       spy.mockRestore();
     });
 
-    it('showConfirm delegates to window.confirm', async () => {
-      (window as any).confirm = vi.fn(() => true);
-      const result = await api.ui.showConfirm('Are you sure?');
-      expect(result).toBe(true);
-      expect((window as any).confirm).toHaveBeenCalledWith('Are you sure?');
+    it('showConfirm renders a themed dialog and returns a promise', async () => {
+      let promise: Promise<boolean>;
+      act(() => {
+        promise = api.ui.showConfirm('Are you sure?');
+      });
+      expect(promise!).toBeInstanceOf(Promise);
+      // Dialog should be mounted in the DOM
+      expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeTruthy();
+      // Clean up by clicking cancel
+      act(() => {
+        const cancelBtn = document.querySelector('[data-testid="plugin-dialog-cancel"]') as HTMLElement;
+        cancelBtn?.click();
+      });
+      const result = await promise!;
+      expect(result).toBe(false);
+    });
+
+    it('showConfirm registers cleanup disposable on context subscriptions', async () => {
+      const ctx = makeCtx();
+      const localApi = createPluginAPI(ctx, undefined, allPermsManifest);
+
+      const subsBefore = ctx.subscriptions.length;
+      let promise: Promise<boolean>;
+      act(() => {
+        promise = localApi.ui.showConfirm('Test?');
+      });
+      expect(ctx.subscriptions.length).toBe(subsBefore + 1);
+
+      // Disposing should clean up and resolve with false
+      act(() => {
+        ctx.subscriptions[ctx.subscriptions.length - 1].dispose();
+      });
+      const result = await promise!;
+      expect(result).toBe(false);
     });
 
     it('showInput returns a promise', async () => {
-      // showInput now renders a DOM-based modal; in test env verify it returns a promise
-      const promise = api.ui.showInput('Enter name:', 'default');
-      expect(promise).toBeInstanceOf(Promise);
+      let promise: Promise<string | null>;
+      act(() => {
+        promise = api.ui.showInput('Enter name:', 'default');
+      });
+      expect(promise!).toBeInstanceOf(Promise);
+      // Dialog should be mounted in the DOM
+      expect(document.querySelector('[data-plugin-dialog="input"]')).toBeTruthy();
+      // Clean up
+      act(() => {
+        const cancelBtn = document.querySelector('[data-testid="plugin-dialog-cancel"]') as HTMLElement;
+        cancelBtn?.click();
+      });
+      await promise!;
     });
 
     it('showInput registers cleanup disposable on context subscriptions', async () => {
@@ -638,15 +678,20 @@ describe('plugin-api-factory', () => {
       // Before calling showInput, subscriptions should be empty
       const subsBefore = ctx.subscriptions.length;
 
-      const promise = localApi.ui.showInput('Test prompt', 'val');
-      expect(promise).toBeInstanceOf(Promise);
+      let promise: Promise<string | null>;
+      act(() => {
+        promise = localApi.ui.showInput('Test prompt', 'val');
+      });
+      expect(promise!).toBeInstanceOf(Promise);
 
       // After calling showInput, a cleanup disposable should have been added
       expect(ctx.subscriptions.length).toBe(subsBefore + 1);
 
       // Disposing should clean up and resolve the promise with null
-      ctx.subscriptions[ctx.subscriptions.length - 1].dispose();
-      const result = await promise;
+      act(() => {
+        ctx.subscriptions[ctx.subscriptions.length - 1].dispose();
+      });
+      const result = await promise!;
       expect(result).toBeNull();
     });
   });

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { fireEvent, screen, act } from '@testing-library/react';
 import { showInputDialog, showConfirmDialog } from './PluginDialog';
 
 // Cleanup any leftover dialog containers after each test
