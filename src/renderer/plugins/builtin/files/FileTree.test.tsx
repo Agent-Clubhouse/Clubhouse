@@ -200,9 +200,9 @@ describe('FileTree', () => {
     const treeContainer = container.querySelector('[tabindex="0"]')!;
     fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
 
-    // Focus should move to the first item
+    // Focus should move to the first item with the visible focus indicator
     await waitFor(() => {
-      const focused = container.querySelector('[class*="bg-ctp-surface0"]');
+      const focused = container.querySelector('[class*="ring-ctp-blue"]');
       expect(focused).not.toBeNull();
     });
   });
@@ -903,6 +903,331 @@ describe('FileTree — flicker prevention', () => {
     await waitFor(() => {
       expect(screen.getByText('src')).toBeInTheDocument();
       expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+  });
+});
+
+// ── Keyboard navigation ───────────────────────────────────────────────
+
+describe('FileTree — keyboard navigation', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('onFocus initializes focusedPath to first visible node', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+    fireEvent.focus(treeContainer);
+
+    // After focus, first ArrowDown should move to the second item (docs)
+    // because focus was initialized to the first item (src)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      const docsNode = container.querySelector('[data-path="/project/docs"]');
+      expect(docsNode?.className).toContain('ring-ctp-blue');
+    });
+  });
+
+  it('onFocus initializes focusedPath to selected item when one exists', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    // Click to select README.md
+    const readme = await screen.findByText('README.md');
+    fireEvent.click(readme);
+
+    // Clear focus by blurring, then refocus
+    const treeContainer = container.querySelector('[role="tree"]')!;
+    fireEvent.blur(treeContainer);
+    // Reset focusedPath — simulate losing focus state
+    fireEvent.keyDown(treeContainer, { key: 'Escape' }); // no-op key, just so handleFocus triggers fresh
+
+    fireEvent.focus(treeContainer);
+
+    // ArrowDown from selected README.md should move to package.json (next item)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      const pkgNode = container.querySelector('[data-path="/project/package.json"]');
+      expect(pkgNode?.className).toContain('ring-ctp-blue');
+    });
+  });
+
+  it('ArrowDown wraps around to first item at end of list', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Move to last item: src, docs, README.md, package.json (4 items)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → docs
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → README.md
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → package.json
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → wraps to src
+
+    await waitFor(() => {
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      expect(srcNode?.className).toContain('ring-ctp-blue');
+    });
+  });
+
+  it('ArrowUp wraps around to last item at beginning of list', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Move focus to first item, then up to wrap
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowUp' });   // → wraps to package.json
+
+    await waitFor(() => {
+      const pkgNode = container.querySelector('[data-path="/project/package.json"]');
+      expect(pkgNode?.className).toContain('ring-ctp-blue');
+    });
+  });
+
+  it('ArrowRight expands a collapsed directory', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Focus on src (first item)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    // ArrowRight should expand src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowRight' });
+
+    await waitFor(() => {
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
+    });
+  });
+
+  it('ArrowLeft collapses an expanded directory', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Focus on src and expand it
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+    fireEvent.keyDown(treeContainer, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    // ArrowLeft should collapse src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowLeft' });
+
+    await waitFor(() => {
+      expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
+    });
+  });
+
+  it('ArrowRight does nothing on an already expanded directory', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Focus on src and expand it
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+    fireEvent.keyDown(treeContainer, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    // ArrowRight again should do nothing (already expanded)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowRight' });
+
+    // Still expanded, children visible
+    expect(screen.getByText('index.ts')).toBeInTheDocument();
+  });
+
+  it('ArrowLeft does nothing on a collapsed directory', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Focus on src (collapsed by default)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    // ArrowLeft should do nothing (already collapsed)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowLeft' });
+
+    expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
+  });
+
+  it('Space key opens preview tab for focused file', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Navigate to README.md (3rd item: src, docs, README.md)
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → docs
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → README.md
+
+    // Space should open preview tab
+    fireEvent.keyDown(treeContainer, { key: ' ' });
+
+    await waitFor(() => {
+      const tab = fileState.getTabByPath('README.md');
+      expect(tab).toBeDefined();
+      expect(tab!.isPreview).toBe(true);
+    });
+  });
+
+  it('focus indicator is visually distinct from hover style', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Focus on src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      // Focus uses ring-ctp-blue, not just bg-ctp-surface0
+      expect(srcNode?.className).toContain('ring-ctp-blue');
+      expect(srcNode?.className).toContain('bg-ctp-surface1/60');
+    });
+
+    // Non-focused items should NOT have the focus ring
+    const docsNode = container.querySelector('[data-path="/project/docs"]');
+    expect(docsNode?.className).not.toContain('ring-ctp-blue');
+  });
+});
+
+// ── ARIA and accessibility ────────────────────────────────────────────
+
+describe('FileTree — accessibility', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('container has role="tree" and tabIndex', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]');
+    expect(treeContainer).not.toBeNull();
+    expect(treeContainer?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('container has focus ring classes', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const treeContainer = container.querySelector('[role="tree"]');
+    expect(treeContainer?.className).toContain('focus:ring-1');
+    expect(treeContainer?.className).toContain('focus:ring-ctp-blue/50');
+  });
+
+  it('tree items have role="treeitem" and aria attributes', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // Check directory node
+    const srcNode = container.querySelector('[data-path="/project/src"]');
+    expect(srcNode?.getAttribute('role')).toBe('treeitem');
+    expect(srcNode?.getAttribute('tabindex')).toBe('-1');
+    expect(srcNode?.getAttribute('aria-expanded')).toBe('false');
+    expect(srcNode?.getAttribute('aria-level')).toBe('1');
+    expect(srcNode?.getAttribute('aria-selected')).toBe('false');
+
+    // Check file node
+    const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+    expect(readmeNode?.getAttribute('role')).toBe('treeitem');
+    expect(readmeNode?.getAttribute('aria-expanded')).toBeNull(); // files don't have aria-expanded
+    expect(readmeNode?.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('expanded directory has aria-expanded="true"', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // Expand src
+    fireEvent.click(screen.getByText('src'));
+
+    await waitFor(() => {
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      expect(srcNode?.getAttribute('aria-expanded')).toBe('true');
+    });
+  });
+
+  it('selected file has aria-selected="true"', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    const readme = await screen.findByText('README.md');
+    fireEvent.click(readme);
+
+    await waitFor(() => {
+      const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+      expect(readmeNode?.getAttribute('aria-selected')).toBe('true');
+    });
+  });
+
+  it('nested tree items have correct aria-level', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // Expand src to see children
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    const indexNode = container.querySelector('[data-path="/project/src/index.ts"]');
+    expect(indexNode?.getAttribute('aria-level')).toBe('2');
+  });
+
+  it('scrollIntoView is called when focused path changes', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // Mock scrollIntoView on the target element
+    const srcNode = container.querySelector('[data-path="/project/src"]') as HTMLElement;
+    srcNode.scrollIntoView = vi.fn();
+
+    const treeContainer = container.querySelector('[role="tree"]')!;
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+
+    await waitFor(() => {
+      expect(srcNode.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' });
     });
   });
 });

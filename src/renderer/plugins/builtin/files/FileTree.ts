@@ -194,7 +194,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const relPath = getRelativePath(node.path, projectPath);
   const gitStatus = gitMap.get(relPath);
 
-  const bgClass = isSelected ? 'bg-ctp-surface1' : isFocused ? 'bg-ctp-surface0' : 'hover:bg-ctp-surface0';
+  const bgClass = isSelected ? 'bg-ctp-surface1' : isFocused ? 'bg-ctp-surface1/60 ring-1 ring-inset ring-ctp-blue' : 'hover:bg-ctp-surface0';
 
   const handleClick = () => {
     if (node.isDirectory) {
@@ -227,6 +227,11 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
       onDoubleClick: handleDoubleClick,
       onContextMenu: (e: React.MouseEvent) => onContextMenu(e, node),
       'data-path': node.path,
+      role: 'treeitem',
+      tabIndex: -1,
+      'aria-expanded': node.isDirectory ? isExpanded : undefined,
+      'aria-selected': isSelected,
+      'aria-level': depth + 1,
     },
       chevron,
       icon,
@@ -727,6 +732,26 @@ export function FileTree({ api }: { api: PluginAPI }) {
         setFocusedPath(visible[prevIndex].path);
         break;
       }
+      case 'ArrowRight': {
+        e.preventDefault();
+        if (focusedPath) {
+          const node = visible.find((n) => n.path === focusedPath);
+          if (node?.isDirectory && !expanded.has(node.path)) {
+            toggleExpand(node.path);
+          }
+        }
+        break;
+      }
+      case 'ArrowLeft': {
+        e.preventDefault();
+        if (focusedPath) {
+          const node = visible.find((n) => n.path === focusedPath);
+          if (node?.isDirectory && expanded.has(node.path)) {
+            toggleExpand(node.path);
+          }
+        }
+        break;
+      }
       case 'Enter': {
         e.preventDefault();
         if (focusedPath) {
@@ -738,6 +763,16 @@ export function FileTree({ api }: { api: PluginAPI }) {
               // Enter opens permanently (like double-click)
               openFilePermanently(node.path);
             }
+          }
+        }
+        break;
+      }
+      case ' ': {
+        e.preventDefault();
+        if (focusedPath) {
+          const node = visible.find((n) => n.path === focusedPath);
+          if (node && !node.isDirectory) {
+            selectFile(node.path);
           }
         }
         break;
@@ -754,7 +789,23 @@ export function FileTree({ api }: { api: PluginAPI }) {
         break;
       }
     }
-  }, [focusedPath, getVisibleNodes, toggleExpand, selectFile, handleContextAction]);
+  }, [focusedPath, getVisibleNodes, toggleExpand, expanded, selectFile, openFilePermanently, handleContextAction]);
+
+  // Initialize focus on container focus
+  const handleFocus = useCallback(() => {
+    if (!focusedPath) {
+      const visible = getVisibleNodes();
+      setFocusedPath(selectedPath ?? visible[0]?.path ?? null);
+    }
+  }, [focusedPath, selectedPath, getVisibleNodes]);
+
+  // Scroll focused node into view
+  useEffect(() => {
+    if (focusedPath && containerRef.current) {
+      const el = containerRef.current.querySelector(`[data-path="${CSS.escape(focusedPath)}"]`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [focusedPath]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
@@ -763,9 +814,11 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
   return React.createElement('div', {
     ref: containerRef,
-    className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none',
+    className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ctp-blue/50',
     tabIndex: 0,
+    role: 'tree',
     onKeyDown: handleKeyDown,
+    onFocus: handleFocus,
   },
     // Header
     React.createElement('div', {
