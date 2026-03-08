@@ -173,11 +173,13 @@ test.describe('Command Palette – Filtering', () => {
   test('filters results as user types', async () => {
     await openPalette();
 
+    // Wait for palette to fully populate before capturing initial count
+    await window.waitForTimeout(500);
     const initialCount = await paletteOptions().count();
 
     // Type a partial query that should reduce results
     await window.keyboard.type('settings');
-    await window.waitForTimeout(200);
+    await window.waitForTimeout(300);
 
     const filteredCount = await paletteOptions().count();
     expect(filteredCount).toBeLessThan(initialCount);
