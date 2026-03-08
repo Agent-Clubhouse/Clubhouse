@@ -288,7 +288,7 @@ test.describe('Replace Functionality', () => {
     await window.waitForTimeout(500);
 
     // Dirty indicator should appear (orange dot in header)
-    const dirtyDot = window.locator('.bg-ctp-peach');
+    const dirtyDot = window.locator('.bg-ctp-warning');
     await expect(dirtyDot).toBeVisible({ timeout: 5_000 });
   });
 
@@ -301,7 +301,7 @@ test.describe('Replace Functionality', () => {
     await window.waitForTimeout(500);
 
     // Dirty state should clear since we're back to original
-    const dirtyDot = window.locator('.bg-ctp-peach');
+    const dirtyDot = window.locator('.bg-ctp-warning');
     await expect(dirtyDot).not.toBeVisible({ timeout: 5_000 });
   });
 });
