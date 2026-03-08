@@ -40,12 +40,12 @@ function _PinIcon() {
 }
 
 const ChevronLeftIcon = React.createElement('svg', {
-  width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '15 18 9 12 15 6' }));
 
 const ChevronRightIcon = React.createElement('svg', {
-  width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+  width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '9 6 15 12 9 18' }));
 
@@ -373,7 +373,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     // Left chevron
     showLeftChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-5 h-full flex items-center justify-center text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-ctp-surface0/50 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
           onClick: scrollLeft,
         }, ChevronLeftIcon)
       : null,
@@ -408,7 +408,7 @@ export function TabBar({ api: _api, onCloseTab, onRevealInTree }: TabBarProps) {
     // Right chevron
     showRightChevron
       ? React.createElement('button', {
-          className: 'flex-shrink-0 w-5 h-full flex items-center justify-center text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
+          className: 'flex-shrink-0 w-6 h-full flex items-center justify-center text-ctp-overlay2 bg-ctp-surface0/50 hover:text-ctp-text hover:bg-ctp-surface0 transition-colors',
           onClick: scrollRight,
         }, ChevronRightIcon)
       : null,
