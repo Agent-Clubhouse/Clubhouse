@@ -43,6 +43,7 @@ export async function startStructuredSession(
   agentId: string,
   adapter: StructuredAdapter,
   opts: StructuredSessionOpts,
+  onExit?: (agentId: string) => void,
 ): Promise<void> {
   // Clean up any existing session for this agent
   if (sessions.has(agentId)) {
@@ -80,6 +81,12 @@ export async function startStructuredSession(
         data: { code: 'ADAPTER_ERROR', message: err instanceof Error ? err.message : String(err) },
       };
       broadcastEvent(agentId, errorEvent, logStream);
+    }
+  }).finally(() => {
+    // Only invoke onExit for natural exits — explicit kills via cancelSession
+    // already call untrackAgent directly, so skip to avoid a double call.
+    if (!abortController.signal.aborted) {
+      onExit?.(agentId);
     }
   });
 }
