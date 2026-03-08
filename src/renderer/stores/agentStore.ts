@@ -635,9 +635,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   /** Clear detailed statuses that haven't been updated in STALE_THRESHOLD_MS */
   clearStaleStatuses: () => {
-    const now = Date.now();
-
     set((state) => {
+      const now = Date.now();
       const statuses = state.agentDetailedStatus;
       const agents = state.agents;
       let changed = false;
@@ -656,7 +655,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         }
       }
 
-      return changed ? { agentDetailedStatus: updated } : {};
+      return changed ? { agentDetailedStatus: updated } : state;
     });
   },
 
