@@ -47,9 +47,48 @@ describe('file-handlers', () => {
 
   it('READ_TREE delegates to fileService.readTree with options', async () => {
     const handler = handlers.get(IPC.FILE.READ_TREE)!;
-    const result = await handler({}, '/project', { includeHidden: true, depth: 2 });
-    expect(fileService.readTree).toHaveBeenCalledWith('/project', { includeHidden: true, depth: 2 });
+    const sender = { once: vi.fn(), off: vi.fn() };
+    const result = await handler({ sender }, '/project', { includeHidden: true, depth: 2 });
+    expect(fileService.readTree).toHaveBeenCalledWith(
+      '/project',
+      expect.objectContaining({ includeHidden: true, depth: 2, signal: expect.any(AbortSignal) }),
+    );
     expect(result).toEqual([{ name: 'file.ts', type: 'file' }]);
+  });
+
+  it('READ_TREE passes an AbortSignal that aborts when sender is destroyed', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.mocked(fileService.readTree).mockImplementation(async (_dir, opts) => {
+      capturedSignal = opts?.signal;
+      return [];
+    });
+
+    const handler = handlers.get(IPC.FILE.READ_TREE)!;
+    let destroyedCallback: (() => void) | undefined;
+    const sender = {
+      once: vi.fn((event: string, cb: () => void) => {
+        if (event === 'destroyed') destroyedCallback = cb;
+      }),
+      off: vi.fn(),
+    };
+
+    await handler({ sender }, '/project', {});
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(false);
+
+    // Simulate sender being destroyed
+    destroyedCallback?.();
+    expect(capturedSignal!.aborted).toBe(true);
+  });
+
+  it('READ_TREE removes the destroyed listener after completion', async () => {
+    const handler = handlers.get(IPC.FILE.READ_TREE)!;
+    const sender = { once: vi.fn(), off: vi.fn() };
+
+    await handler({ sender }, '/project', {});
+
+    expect(sender.off).toHaveBeenCalledWith('destroyed', expect.any(Function));
   });
 
   it('READ delegates to fileService.readFile', async () => {
