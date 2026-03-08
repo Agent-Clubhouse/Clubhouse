@@ -150,35 +150,6 @@ describe('headlessStore', () => {
       // Should roll back to interactive
       expect(getState().defaultMode).toBe('interactive');
     });
-
-    it('captures projectOverrides before set() to avoid race with concurrent setProjectMode', async () => {
-      // Set up initial state with a project override
-      useHeadlessStore.setState({
-        defaultMode: 'interactive',
-        projectOverrides: { '/project-a': 'headless' },
-      });
-
-      // Simulate a subscriber that modifies projectOverrides when defaultMode changes
-      const unsub = useHeadlessStore.subscribe((state, prevState) => {
-        if (state.defaultMode !== prevState.defaultMode) {
-          // This simulates a concurrent setProjectMode modifying overrides
-          useHeadlessStore.setState({
-            projectOverrides: { '/project-a': 'headless', '/project-b': 'structured' },
-          });
-        }
-      });
-
-      await getState().setDefaultMode('headless');
-
-      // The saved settings should contain the projectOverrides from BEFORE the set() call,
-      // not the modified ones from the subscriber
-      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
-        defaultMode: 'headless',
-        projectOverrides: { '/project-a': 'headless' },
-      });
-
-      unsub();
-    });
   });
 
   // ============================================================
@@ -471,6 +442,84 @@ describe('headlessStore', () => {
 
       expect(getState().getProjectMode('/my/project')).toBe('structured');
       expect(getState().getProjectMode('/other/project')).toBe('headless');
+    });
+  });
+
+  // ============================================================
+  // Race condition: snapshot state before optimistic set
+  // ============================================================
+  describe('race condition prevention', () => {
+    it('setDefaultMode saves with pre-snapshot projectOverrides', async () => {
+      useHeadlessStore.setState({
+        defaultMode: 'interactive',
+        projectOverrides: { '/a': 'headless' },
+      });
+
+      let resolveSave!: () => void;
+      mockSaveHeadlessSettings.mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().setDefaultMode('headless');
+
+      // Concurrent mutation while save is in-flight
+      useHeadlessStore.setState({ projectOverrides: { '/a': 'headless', '/b': 'structured' } });
+
+      resolveSave();
+      await promise;
+
+      // Save should use the snapshot taken before the concurrent mutation
+      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
+        defaultMode: 'headless',
+        projectOverrides: { '/a': 'headless' },
+      });
+    });
+
+    it('setProjectMode saves with pre-snapshot defaultMode', async () => {
+      useHeadlessStore.setState({ defaultMode: 'interactive', projectOverrides: {} });
+
+      let resolveSave!: () => void;
+      mockSaveHeadlessSettings.mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().setProjectMode('/a', 'headless');
+
+      // Concurrent mutation while save is in-flight
+      useHeadlessStore.setState({ defaultMode: 'structured' });
+
+      resolveSave();
+      await promise;
+
+      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
+        defaultMode: 'interactive',
+        projectOverrides: { '/a': 'headless' },
+      });
+    });
+
+    it('clearProjectMode saves with pre-snapshot defaultMode', async () => {
+      useHeadlessStore.setState({
+        defaultMode: 'interactive',
+        projectOverrides: { '/a': 'headless' },
+      });
+
+      let resolveSave!: () => void;
+      mockSaveHeadlessSettings.mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().clearProjectMode('/a');
+
+      // Concurrent mutation while save is in-flight
+      useHeadlessStore.setState({ defaultMode: 'structured' });
+
+      resolveSave();
+      await promise;
+
+      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
+        defaultMode: 'interactive',
+        projectOverrides: {},
+      });
     });
   });
 });
