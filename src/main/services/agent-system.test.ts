@@ -429,6 +429,30 @@ describe('agent-system', () => {
       expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-1');
     });
 
+    it('PTY onExit callback calls untrackAgent to clean up tracking state', async () => {
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+
+      // Verify agent is tracked before exit
+      expect(getAgentProjectPath('agent-1')).toBe('/project');
+      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentNonce('agent-1')).toBeDefined();
+
+      // Simulate natural agent exit via PTY onExit callback
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      onExitCallback('agent-1', 0);
+
+      // Verify agent tracking state is fully cleaned up
+      expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentNonce('agent-1')).toBeUndefined();
+    });
+
     it('skips snapshot when provider does not support hooks', async () => {
       mockGetHooksConfigPath.mockReturnValueOnce(null);
 

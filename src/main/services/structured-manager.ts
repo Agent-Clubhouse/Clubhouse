@@ -43,6 +43,7 @@ export async function startStructuredSession(
   agentId: string,
   adapter: StructuredAdapter,
   opts: StructuredSessionOpts,
+  onExit?: (agentId: string) => void,
 ): Promise<void> {
   // Clean up any existing session for this agent
   if (sessions.has(agentId)) {
@@ -69,7 +70,7 @@ export async function startStructuredSession(
   });
 
   // Consume the event stream in the background
-  consumeEvents(session, opts).catch((err) => {
+  consumeEvents(session, opts, onExit).catch((err) => {
     if (!abortController.signal.aborted) {
       appLog('core:structured', 'error', 'Structured session stream failed', {
         meta: { agentId, error: err instanceof Error ? err.message : String(err) },
@@ -84,7 +85,7 @@ export async function startStructuredSession(
   });
 }
 
-async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts): Promise<void> {
+async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts, onExit?: (agentId: string) => void): Promise<void> {
   const { adapter, agentId, logStream, abortController } = session;
 
   try {
@@ -96,6 +97,7 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     }
   } finally {
     cleanupSession(agentId);
+    onExit?.(agentId);
   }
 }
 
