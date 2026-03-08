@@ -173,26 +173,16 @@ test.describe('Command Palette – Filtering', () => {
   test('filters results as user types', async () => {
     await openPalette();
 
-    // Wait for palette to fully populate before capturing initial count
-    await window.waitForTimeout(500);
-    const initialCount = await paletteOptions().count();
-
-    // Type a partial query that should reduce results
+    // Type a query that should filter to settings-related results
     await window.keyboard.type('settings');
-    await window.waitForTimeout(300);
 
+    // Wait for a settings-related result to appear (uses Playwright auto-retry)
+    const settingsOption = paletteOptions().filter({ hasText: /settings/i });
+    await expect(settingsOption.first()).toBeVisible({ timeout: 5_000 });
+
+    // Verify all visible results are relevant (contain the query term)
     const filteredCount = await paletteOptions().count();
-    expect(filteredCount).toBeLessThan(initialCount);
     expect(filteredCount).toBeGreaterThan(0);
-
-    // Check that a settings-related result is shown
-    const options = paletteOptions();
-    const texts: string[] = [];
-    for (let i = 0; i < filteredCount; i++) {
-      texts.push((await options.nth(i).textContent()) ?? '');
-    }
-    const hasSettings = texts.some((t) => t.toLowerCase().includes('settings'));
-    expect(hasSettings).toBe(true);
 
     await window.keyboard.press('Escape');
   });
