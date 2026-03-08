@@ -9,6 +9,7 @@ interface WatchEntry {
   watcher: fs.FSWatcher;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
+  webContentsId: number;
 }
 
 const activeWatches = new Map<string, WatchEntry>();
@@ -38,6 +39,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watcher: null as unknown as fs.FSWatcher,
     debounceTimer: null,
     pendingEvents: [],
+    webContentsId: sender.id,
   };
 
   try {
@@ -74,6 +76,11 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
 
     entry.watcher = watcher;
     activeWatches.set(watchId, entry);
+
+    // Automatically clean up when the sender webContents is destroyed
+    sender.once('destroyed', () => {
+      stopWatch(watchId);
+    });
   } catch (err) {
     throw new Error(`Failed to start file watcher: ${(err as Error).message}`);
   }
@@ -106,11 +113,9 @@ export function stopAllWatches(): void {
 export function cleanupWatchesForWindow(win: BrowserWindow): void {
   const webContentsId = win.webContents.id;
   for (const [watchId, entry] of activeWatches) {
-    // We can't easily check the sender, so stop all watches
-    // In practice, watches are plugin-scoped and cleaned up via dispose()
-    void webContentsId;
-    void entry;
-    void watchId;
+    if (entry.webContentsId === webContentsId) {
+      stopWatch(watchId);
+    }
   }
 }
 
