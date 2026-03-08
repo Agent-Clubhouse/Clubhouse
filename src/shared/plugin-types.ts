@@ -655,6 +655,18 @@ export interface FilesAPI {
    * Callback receives batched file events. Returns a Disposable to stop watching.
    */
   watch(glob: string, callback: (events: FileEvent[]) => void): Disposable;
+  /**
+   * Search for text across all files in the project directory.
+   */
+  search(query: string, options?: {
+    caseSensitive?: boolean;
+    wholeWord?: boolean;
+    regex?: boolean;
+    includeGlobs?: string[];
+    excludeGlobs?: string[];
+    maxResults?: number;
+    contextLines?: number;
+  }): Promise<import('./types').FileSearchResult>;
 }
 
 // ── Workspace API (v0.7+) ─────────────────────────────────────────────

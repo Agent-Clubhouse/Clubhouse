@@ -10,6 +10,9 @@ export const fileState = {
   selectedPath: null as string | null,
   isDirty: false,
   refreshCount: 0,
+  searchMode: false,
+  /** When set, FileViewer should navigate to this line and highlight it */
+  scrollToLine: null as number | null,
   listeners: new Set<() => void>(),
 
   setSelectedPath(path: string | null): void {
@@ -25,6 +28,21 @@ export const fileState = {
   triggerRefresh(): void {
     this.refreshCount++;
     this.notify();
+  },
+
+  setSearchMode(enabled: boolean): void {
+    this.searchMode = enabled;
+    this.notify();
+  },
+
+  navigateToMatch(filePath: string, line: number): void {
+    this.selectedPath = filePath;
+    this.scrollToLine = line;
+    this.notify();
+  },
+
+  clearScrollToLine(): void {
+    this.scrollToLine = null;
   },
 
   subscribe(fn: () => void): () => void {
@@ -44,6 +62,8 @@ export const fileState = {
     this.selectedPath = null;
     this.isDirty = false;
     this.refreshCount = 0;
+    this.searchMode = false;
+    this.scrollToLine = null;
     this.listeners.clear();
   },
 };

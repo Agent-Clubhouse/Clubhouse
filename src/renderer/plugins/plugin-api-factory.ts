@@ -964,6 +964,17 @@ function createFilesAPIForRoot(basePath: string): FilesAPI {
       const fullPath = resolvePath(basePath, relativePath);
       await window.clubhouse.file.showInFolder(fullPath);
     },
+    async search(query: string, options?: {
+      caseSensitive?: boolean;
+      wholeWord?: boolean;
+      regex?: boolean;
+      includeGlobs?: string[];
+      excludeGlobs?: string[];
+      maxResults?: number;
+      contextLines?: number;
+    }) {
+      return window.clubhouse.file.search(basePath, query, options);
+    },
     forRoot(): FilesAPI {
       throw new Error('forRoot() cannot be called on an external root FilesAPI (no nesting)');
     },
@@ -1055,6 +1066,17 @@ function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): FilesAPI
         basePath = `${ctx.projectPath}/${basePath}`;
       }
       return createFilesAPIForRoot(basePath);
+    },
+    async search(query: string, options?: {
+      caseSensitive?: boolean;
+      wholeWord?: boolean;
+      regex?: boolean;
+      includeGlobs?: string[];
+      excludeGlobs?: string[];
+      maxResults?: number;
+      contextLines?: number;
+    }) {
+      return window.clubhouse.file.search(projectPath, query, options);
     },
     watch(glob: string, callback: (events: import('../../shared/plugin-types').FileEvent[]) => void): Disposable {
       if (!hasPermission(manifest, 'files.watch')) {

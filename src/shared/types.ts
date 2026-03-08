@@ -230,6 +230,38 @@ export interface FileNode {
 
 export type ExplorerTab = string;
 
+// ── File search types ─────────────────────────────────────────────────
+
+export interface FileSearchOptions {
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  regex?: boolean;
+  includeGlobs?: string[];
+  excludeGlobs?: string[];
+  maxResults?: number;
+  contextLines?: number;
+}
+
+export interface FileSearchMatch {
+  line: number;
+  column: number;
+  length: number;
+  lineContent: string;
+  contextBefore?: string[];
+  contextAfter?: string[];
+}
+
+export interface FileSearchFileResult {
+  filePath: string;
+  matches: FileSearchMatch[];
+}
+
+export interface FileSearchResult {
+  results: FileSearchFileResult[];
+  totalMatches: number;
+  truncated: boolean;
+}
+
 
 export interface ClipboardSettings {
   clipboardCompat: boolean;

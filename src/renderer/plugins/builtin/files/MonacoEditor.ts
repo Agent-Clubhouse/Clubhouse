@@ -28,9 +28,11 @@ interface MonacoEditorProps {
   onSave: (content: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   filePath: string;
+  /** When set, scroll to this line and briefly highlight it */
+  scrollToLine?: number | null;
 }
 
-export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath }: MonacoEditorProps) {
+export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath, scrollToLine }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
@@ -119,6 +121,21 @@ export function MonacoEditor({ value, language, onSave, onDirtyChange, filePath 
       onDirtyChangeRef.current(false);
     }
   }, [value, onDirtyChangeRef]);
+
+  // Scroll to line when requested (from search results)
+  useEffect(() => {
+    if (!scrollToLine || !editorRef.current) return;
+
+    const editor = editorRef.current;
+    editor.revealLineInCenter(scrollToLine);
+    editor.setSelection({
+      startLineNumber: scrollToLine,
+      startColumn: 1,
+      endLineNumber: scrollToLine,
+      endColumn: 1000,
+    });
+    editor.focus();
+  }, [scrollToLine]);
 
   // Update language when it changes
   useEffect(() => {

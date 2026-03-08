@@ -407,6 +407,15 @@ const api = {
       ipcRenderer.on(IPC.FILE.WATCH_EVENT, callback),
     offWatchEvent: (callback: (...args: unknown[]) => void) =>
       ipcRenderer.removeListener(IPC.FILE.WATCH_EVENT, callback),
+    search: (rootPath: string, query: string, options?: {
+      caseSensitive?: boolean;
+      wholeWord?: boolean;
+      regex?: boolean;
+      includeGlobs?: string[];
+      excludeGlobs?: string[];
+      maxResults?: number;
+      contextLines?: number;
+    }) => ipcRenderer.invoke(IPC.FILE.SEARCH, rootPath, query, options),
   },
   plugin: {
     discoverCommunity: () =>

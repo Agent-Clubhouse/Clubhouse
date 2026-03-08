@@ -80,6 +80,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const [isDirty, setIsDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [unsavedDialog, setUnsavedDialog] = useState<{ pendingPath: string } | null>(null);
+  const [scrollToLine, setScrollToLine] = useState<number | null>(null);
 
   const contentRef = useRef(content);
   contentRef.current = content;
@@ -194,8 +195,20 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   useEffect(() => {
     return fileState.subscribe(() => {
       const newPath = fileState.selectedPath;
+      const lineTarget = fileState.scrollToLine;
+
       if (newPath !== selectedPathRef.current) {
         switchToFile(newPath);
+        // Set scrollToLine after file load if requested
+        if (lineTarget) {
+          // Defer to allow file content to load first
+          setTimeout(() => setScrollToLine(lineTarget), 100);
+          fileState.clearScrollToLine();
+        }
+      } else if (lineTarget) {
+        // Same file, just scroll to line
+        setScrollToLine(lineTarget);
+        fileState.clearScrollToLine();
       }
     });
   }, [switchToFile]);
@@ -378,6 +391,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
             filePath: selectedPath,
+            scrollToLine,
           }),
         );
       }
@@ -396,6 +410,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
             onSave: handleSave,
             onDirtyChange: handleDirtyChange,
             filePath: selectedPath,
+            scrollToLine,
           }),
         );
       }
@@ -409,6 +424,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           onSave: handleSave,
           onDirtyChange: handleDirtyChange,
           filePath: selectedPath,
+          scrollToLine,
         }),
       );
       break;

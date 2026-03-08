@@ -71,6 +71,12 @@ const CollapseAllIcon = React.createElement('svg', {
 }, React.createElement('polyline', { points: '6 18 12 12 18 18' }),
    React.createElement('polyline', { points: '6 12 12 6 18 12' }));
 
+const SearchIcon = React.createElement('svg', {
+  width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+}, React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
+   React.createElement('line', { x1: 21, y1: 21, x2: 16.65, y2: 16.65 }));
+
 const GitBranchIcon = React.createElement('svg', {
   width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
@@ -816,6 +822,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
           onClick: collapseAll,
           title: 'Collapse All',
         }, CollapseAllIcon),
+        // Separator
+        React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
+        // Search
+        React.createElement('button', {
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          onClick: () => fileState.setSearchMode(true),
+          title: 'Search Across Files (Cmd+Shift+F)',
+        }, SearchIcon),
         // Separator
         React.createElement('div', { className: 'w-px h-3 bg-ctp-surface0 mx-0.5' }),
         // Refresh

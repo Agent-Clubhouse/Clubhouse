@@ -115,6 +115,7 @@ export const IPC = {
     WATCH_START: 'file:watch-start',
     WATCH_STOP: 'file:watch-stop',
     WATCH_EVENT: 'file:watch-event',
+    SEARCH: 'file:search',
   },
   GIT: {
     INFO: 'git:info',

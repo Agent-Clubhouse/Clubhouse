@@ -13,7 +13,10 @@ export const manifest: PluginManifest = {
   permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage'],
   contributes: {
     tab: { label: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
-    commands: [{ id: 'refresh', title: 'Refresh File Tree', defaultBinding: 'Meta+Shift+R' }],
+    commands: [
+      { id: 'refresh', title: 'Refresh File Tree', defaultBinding: 'Meta+Shift+R' },
+      { id: 'search', title: 'Search Across Files', defaultBinding: 'Meta+Shift+F' },
+    ],
     settings: [
       {
         key: 'showHiddenFiles',
