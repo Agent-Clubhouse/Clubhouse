@@ -44,74 +44,52 @@ function SleepingZzz({ x, y }: { x: number; y: number }) {
 /* ── Claude Code mascot ───────────────────────────────────────────── */
 
 export function ClaudeCodeSleeping() {
+  const bodyColor = '#d4896b';
+  const legColor = '#be7a5e';
+
   return (
     <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
       {/* Ground shadow */}
-      <ellipse cx="50" cy="90" rx="28" ry="3.5" fill="#181825" opacity="0.3" />
+      <ellipse cx="50" cy="90" rx="30" ry="3" fill="#181825" opacity="0.3" />
 
-      {/* Nightcap — droops to upper-left */}
-      <path d="M 56 27 L 36 27 Q 24 10 20 16" fill="#6366f1" />
-      <path d="M 38 25 Q 30 16 26 20" stroke="#818cf8" strokeWidth="1.5" fill="none" opacity="0.4" />
-      <circle cx="20" cy="15" r="3.5" fill="#a5b4fc" />
-      <rect x="30" y="26" width="32" height="3" rx="1.5" fill="#4f46e5" opacity="0.35" />
+      {/* Ears / top bumps */}
+      <rect x="20" y="20" width="12" height="10" rx="2" fill={bodyColor} />
+      <rect x="68" y="20" width="12" height="10" rx="2" fill={bodyColor} />
 
-      {/* Body */}
-      <rect x="18" y="27" width="64" height="48" rx="10" fill="#d4896b" />
+      {/* Main body — wide blocky rectangle */}
+      <rect x="20" y="27" width="60" height="38" rx="3" fill={bodyColor} />
 
-      {/* Horizontal shading bands (like original pixel art) */}
-      <rect x="18" y="27" width="64" height="8" rx="10" fill="#e0a88d" opacity="0.3" />
-      <rect x="18" y="50" width="64" height="6" fill="#c4795b" opacity="0.15" />
+      {/* Arms — stubs on sides */}
+      <rect x="10" y="36" width="10" height="14" rx="3" fill={bodyColor} />
+      <rect x="80" y="36" width="10" height="14" rx="3" fill={bodyColor} />
+
+      {/* Sleeping eyes — peaceful closed arcs */}
       <path
-        d="M 18 63 L 82 63 L 82 65 Q 82 75 72 75 L 28 75 Q 18 75 18 65 Z"
-        fill="#c4795b"
-        opacity="0.2"
-      />
-
-      {/* Closed eyes — peaceful arcs */}
-      <path
-        d="M 33 45 Q 37 40 41 45"
+        d="M 34 42 Q 38 37 42 42"
         stroke="#2a1f1a"
         strokeWidth="2.5"
         fill="none"
         strokeLinecap="round"
       />
       <path
-        d="M 59 45 Q 63 40 67 45"
+        d="M 58 42 Q 62 37 66 42"
         stroke="#2a1f1a"
         strokeWidth="2.5"
         fill="none"
         strokeLinecap="round"
       />
 
-      {/* Eyelashes */}
-      <line x1="32" y1="45" x2="31" y2="42.5" stroke="#2a1f1a" strokeWidth="0.8" strokeLinecap="round" />
-      <line x1="42" y1="45" x2="43" y2="42.5" stroke="#2a1f1a" strokeWidth="0.8" strokeLinecap="round" />
-      <line x1="58" y1="45" x2="57" y2="42.5" stroke="#2a1f1a" strokeWidth="0.8" strokeLinecap="round" />
-      <line x1="68" y1="45" x2="69" y2="42.5" stroke="#2a1f1a" strokeWidth="0.8" strokeLinecap="round" />
+      {/* Subtle blush */}
+      <circle cx="30" cy="48" r="4" fill="#e88" opacity="0.15" />
+      <circle cx="70" cy="48" r="4" fill="#e88" opacity="0.15" />
 
-      {/* Blush */}
-      <circle cx="29" cy="51" r="4.5" fill="#e88" opacity="0.2" />
-      <circle cx="71" cy="51" r="4.5" fill="#e88" opacity="0.2" />
+      {/* Legs — 4 legs in 2 pairs */}
+      <rect x="24" y="65" width="9" height="14" rx="2" fill={legColor} />
+      <rect x="35" y="65" width="9" height="14" rx="2" fill={legColor} />
+      <rect x="56" y="65" width="9" height="14" rx="2" fill={legColor} />
+      <rect x="67" y="65" width="9" height="14" rx="2" fill={legColor} />
 
-      {/* Content smile */}
-      <path
-        d="M 44 56 Q 50 60 56 56"
-        stroke="#2a1f1a"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-      />
-
-      {/* Legs */}
-      <rect x="28" y="75" width="9" height="11" rx="3" fill="#a86a4e" />
-      <rect x="45.5" y="75" width="9" height="11" rx="3" fill="#a86a4e" />
-      <rect x="63" y="75" width="9" height="11" rx="3" fill="#a86a4e" />
-      {/* Feet / shoes */}
-      <rect x="26.5" y="83" width="12" height="3.5" rx="1.75" fill="#8a5a3e" />
-      <rect x="44" y="83" width="12" height="3.5" rx="1.75" fill="#8a5a3e" />
-      <rect x="61.5" y="83" width="12" height="3.5" rx="1.75" fill="#8a5a3e" />
-
-      <SleepingZzz x={74} y={22} />
+      <SleepingZzz x={80} y={16} />
     </svg>
   );
 }

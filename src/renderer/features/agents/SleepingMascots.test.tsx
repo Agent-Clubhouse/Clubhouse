@@ -62,6 +62,30 @@ describe('SleepingMascots', () => {
         expect(z.classList.contains('animate-pulse')).toBe(true);
       });
     });
+
+    it('has 4 legs', () => {
+      const { container } = render(<ClaudeCodeSleeping />);
+      const legs = container.querySelectorAll('rect[fill="#be7a5e"]');
+      expect(legs.length).toBe(4);
+    });
+
+    it('has 2 arms', () => {
+      const { container } = render(<ClaudeCodeSleeping />);
+      // Arms are body-colored stubs at x=10 and x=80
+      const leftArm = container.querySelector('rect[x="10"]');
+      const rightArm = container.querySelector('rect[x="80"]');
+      expect(leftArm).not.toBeNull();
+      expect(rightArm).not.toBeNull();
+    });
+
+    it('does not contain nightcap elements', () => {
+      const { container } = render(<ClaudeCodeSleeping />);
+      // Old nightcap used indigo/violet fills
+      const nightcapPath = container.querySelector('path[fill="#6366f1"]');
+      const nightcapBall = container.querySelector('circle[fill="#a5b4fc"]');
+      expect(nightcapPath).toBeNull();
+      expect(nightcapBall).toBeNull();
+    });
   });
 
   describe('CopilotSleeping', () => {
