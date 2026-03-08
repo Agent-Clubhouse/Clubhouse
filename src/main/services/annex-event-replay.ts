@@ -86,12 +86,15 @@ export function getLastSeq(): number {
 
 /** Clear all buffered events for a specific agent ID. */
 export function clearForAgent(agentId: string): void {
-  // Remove events where payload.agentId matches
-  for (let i = buffer.length - 1; i >= 0; i--) {
-    const payload = buffer[i].payload as Record<string, unknown> | null;
-    if (payload && payload.agentId === agentId) {
-      buffer.splice(i, 1);
-    }
+  // Filter out matching events and replace buffer contents atomically
+  // to avoid race conditions with concurrent pushEvent calls.
+  const filtered = buffer.filter((e) => {
+    const payload = e.payload as Record<string, unknown> | null;
+    return !(payload && payload.agentId === agentId);
+  });
+  buffer.length = 0;
+  for (const e of filtered) {
+    buffer.push(e);
   }
 }
 
