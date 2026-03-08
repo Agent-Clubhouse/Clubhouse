@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useBadgeStore, BadgeTarget } from './badgeStore';
 import { useBadgeSettingsStore } from './badgeSettingsStore';
 
@@ -386,6 +386,15 @@ describe('badgeStore', () => {
 
       useBadgeSettingsStore.setState({ pluginBadges: false });
       expect(dockCounts[dockCounts.length - 1]).toBe(3);
+    });
+
+    it('recalculates dock count when pluginBadges is toggled back on', () => {
+      getState().setBadge('core:agents', 'count', 3, { kind: 'explorer-tab', projectId: 'p1', tabId: 'agents' });
+      getState().setBadge('plugin:hub', 'count', 5, { kind: 'app-plugin', pluginId: 'hub' });
+      useBadgeSettingsStore.setState({ pluginBadges: false });
+
+      useBadgeSettingsStore.setState({ pluginBadges: true });
+      expect(dockCounts[dockCounts.length - 1]).toBe(8);
     });
   });
 });
