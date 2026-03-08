@@ -118,8 +118,9 @@ export function cleanupWatchesForWindow(win: BrowserWindow): void {
  * Extract the base directory from a glob pattern.
  * e.g., "/home/user/project/src/**\/*.ts" → "/home/user/project/src"
  */
-function extractBaseDir(glob: string): string {
-  const parts = glob.split('/');
+export function extractBaseDir(glob: string): string {
+  const normalized = path.normalize(glob);
+  const parts = normalized.split(path.sep);
   const baseParts: string[] = [];
   for (const part of parts) {
     if (part.includes('*') || part.includes('?') || part.includes('{') || part.includes('[')) {
@@ -127,6 +128,6 @@ function extractBaseDir(glob: string): string {
     }
     baseParts.push(part);
   }
-  const base = baseParts.join('/');
+  const base = baseParts.join(path.sep);
   return base || '.';
 }
