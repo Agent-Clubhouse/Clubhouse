@@ -47,12 +47,13 @@ export function start(): Promise<number> {
       let bodySize = 0;
       let limitExceeded = false;
       req.on('data', (chunk: Buffer) => {
+        if (limitExceeded) return;
         bodySize += chunk.length;
         if (bodySize > MAX_BODY_SIZE) {
           limitExceeded = true;
-          req.destroy();
           res.writeHead(413);
           res.end();
+          req.destroy();
           return;
         }
         body += chunk;
