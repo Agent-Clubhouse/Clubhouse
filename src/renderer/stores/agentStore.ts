@@ -60,8 +60,6 @@ interface AgentState {
   setSessionNamePrompt: (agentId: string | null) => void;
 }
 
-let quickCounter = 0;
-
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: {},
   activeAgentId: null,
@@ -185,8 +183,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
-    quickCounter++;
-    const agentId = `quick_${Date.now()}_${quickCounter}`;
+    const agentId = `quick_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const name = generateQuickName();
 
     // Resolve CWD: if spawning under a parent durable, use its worktree
