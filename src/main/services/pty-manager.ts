@@ -11,6 +11,7 @@ interface ManagedSession {
   lastActivity: number;
   killing: boolean;
   outputChunks: string[];
+  outputHead: number;
   outputSize: number;
   pendingCommand?: string;
   eofTimer?: ReturnType<typeof setTimeout>;
@@ -90,17 +91,27 @@ export function stopStaleSweep(): void {
   }
 }
 
+/** Compact threshold: reclaim array memory once the dead-head region grows large. */
+const COMPACT_THRESHOLD = 1000;
+
 function appendToBuffer(session: ManagedSession, data: string): void {
   session.outputChunks.push(data);
   session.outputSize += data.length;
-  while (session.outputSize > MAX_BUFFER_SIZE && session.outputChunks.length > 1) {
-    session.outputSize -= session.outputChunks.shift()!.length;
+  // Evict oldest chunks using a head pointer — O(1) per eviction step.
+  while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
+    session.outputSize -= session.outputChunks[session.outputHead]!.length;
+    session.outputHead++;
+  }
+  // Periodically compact the array to reclaim memory from the evicted prefix.
+  if (session.outputHead >= COMPACT_THRESHOLD) {
+    session.outputChunks = session.outputChunks.slice(session.outputHead);
+    session.outputHead = 0;
   }
 }
 
 export function getBuffer(agentId: string): string {
   const session = sessions.get(agentId);
-  return session ? session.outputChunks.join('') : '';
+  return session ? session.outputChunks.slice(session.outputHead).join('') : '';
 }
 
 /** Check whether an agent has an active PTY session. */
@@ -181,6 +192,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     lastActivity: Date.now(),
     killing: false,
     outputChunks: [],
+    outputHead: 0,
     outputSize: 0,
     pendingCommand,
   };
@@ -206,7 +218,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
-    const fullBuffer = current.outputChunks.join('');
+    const fullBuffer = current.outputChunks.slice(current.outputHead).join('');
     const ptyBuffer = fullBuffer.slice(-500);
     appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
@@ -253,6 +265,7 @@ export function spawnShell(id: string, projectPath: string): void {
     lastActivity: Date.now(),
     killing: false,
     outputChunks: [],
+    outputHead: 0,
     outputSize: 0,
   };
   sessions.set(id, session);
