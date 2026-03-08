@@ -97,7 +97,11 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     }
   } finally {
     cleanupSession(agentId);
-    onExit?.(agentId);
+    // Only invoke onExit for natural exits — explicit kills via cancelSession
+    // already call untrackAgent directly, so skip to avoid a double call.
+    if (!abortController.signal.aborted) {
+      onExit?.(agentId);
+    }
   }
 }
 
