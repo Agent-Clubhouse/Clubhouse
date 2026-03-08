@@ -42,6 +42,11 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
+const mockAppLog = vi.fn();
+vi.mock('./log-service', () => ({
+  appLog: (...args: unknown[]) => mockAppLog(...args),
+}));
+
 const mockCreatePermission = vi.fn();
 vi.mock('./annex-permission-queue', () => ({
   createPermission: (...args: unknown[]) => mockCreatePermission(...args),
@@ -534,6 +539,55 @@ describe('hook-server', () => {
         'agent:hook-event',
         'agent-1',
         expect.objectContaining({ kind: 'permission_request', toolName: 'Bash' }),
+      );
+    });
+
+    it('catches rejected decision promise without crashing', async () => {
+      let rejectDecision!: (err: Error) => void;
+      const decisionPromise = new Promise<string>((_resolve, reject) => { rejectDecision = reject; });
+
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-err',
+        decision: decisionPromise,
+      });
+      mockResolveOrchestrator.mockReturnValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      // Fire the request but don't wait for a full response — the rejected
+      // decision means the server may close the connection unexpectedly.
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port,
+        path: '/hook/agent-1',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Clubhouse-Nonce': VALID_NONCE,
+        },
+      });
+      req.on('error', () => { /* expected – connection may reset */ });
+      req.on('response', (res) => { res.resume(); });
+      const data = JSON.stringify({ hook_event_name: 'PermissionRequest' });
+      req.write(data);
+      req.end();
+
+      // Give server time to set up the .catch() handler before rejecting
+      await new Promise(r => setTimeout(r, 50));
+      rejectDecision(new Error('connection closed'));
+      await new Promise(r => setTimeout(r, 50));
+
+      expect(mockAppLog).toHaveBeenCalledWith(
+        'core:hook-server', 'error', 'Failed to send permission response',
+        expect.objectContaining({
+          meta: expect.objectContaining({ agentId: 'agent-1', error: 'connection closed' }),
+        }),
       );
     });
   });
