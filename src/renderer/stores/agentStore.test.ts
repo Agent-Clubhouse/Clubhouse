@@ -390,6 +390,28 @@ describe('agentStore', () => {
     });
   });
 
+  describe('renameAgent', () => {
+    it('updates the agent name in local state', async () => {
+      seedAgent({ id: 'a_ren', name: 'old-name' });
+      await getState().renameAgent('a_ren', 'new-name', '/proj');
+      expect(getState().agents['a_ren'].name).toBe('new-name');
+      expect(getState().agents['a_ren'].color).toBe('indigo'); // unchanged
+    });
+
+    it('calls renameDurable IPC', async () => {
+      seedAgent({ id: 'a_ren_ipc' });
+      await getState().renameAgent('a_ren_ipc', 'renamed', '/proj');
+      expect(window.clubhouse.agent.renameDurable).toHaveBeenCalledWith('/proj', 'a_ren_ipc', 'renamed');
+    });
+
+    it('skips update when agent is missing', async () => {
+      const before = { ...getState().agents };
+      await getState().renameAgent('nonexistent', 'ghost', '/proj');
+      expect(getState().agents).toEqual(before);
+      expect(getState().agents['nonexistent']).toBeUndefined();
+    });
+  });
+
   describe('updateAgent', () => {
     it('patches name in local state', async () => {
       seedAgent({ id: 'a_upd', name: 'old' });

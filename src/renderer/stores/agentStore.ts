@@ -382,9 +382,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   renameAgent: async (id, newName, projectPath) => {
     await window.clubhouse.agent.renameDurable(projectPath, id, newName);
-    set((s) => ({
-      agents: { ...s.agents, [id]: { ...s.agents[id], name: newName } },
-    }));
+    set((s) => {
+      const agent = s.agents[id];
+      if (!agent) return s;
+      return { agents: { ...s.agents, [id]: { ...agent, name: newName } } };
+    });
   },
 
   updateAgent: async (id, updates, projectPath) => {
