@@ -320,6 +320,31 @@ describe('headlessStore', () => {
       // Should roll back — project-b should not be in overrides
       expect(getState().projectOverrides).toEqual({ '/project-a': 'headless' });
     });
+
+    it('captures defaultMode before set() to avoid race with concurrent setDefaultMode', async () => {
+      useHeadlessStore.setState({
+        defaultMode: 'interactive',
+        projectOverrides: {},
+      });
+
+      // Simulate a subscriber that modifies defaultMode when projectOverrides changes
+      const unsub = useHeadlessStore.subscribe((state, prevState) => {
+        if (state.projectOverrides !== prevState.projectOverrides) {
+          useHeadlessStore.setState({ defaultMode: 'structured' });
+        }
+      });
+
+      await getState().setProjectMode('/project-a', 'headless');
+
+      // The saved settings should contain the defaultMode from BEFORE the set() call,
+      // not the subscriber-mutated value
+      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
+        defaultMode: 'interactive',
+        projectOverrides: { '/project-a': 'headless' },
+      });
+
+      unsub();
+    });
   });
 
   // ============================================================
@@ -388,6 +413,31 @@ describe('headlessStore', () => {
         '/my/project': 'headless',
         '/other': 'interactive',
       });
+    });
+
+    it('captures defaultMode before set() to avoid race with concurrent setDefaultMode', async () => {
+      useHeadlessStore.setState({
+        defaultMode: 'interactive',
+        projectOverrides: { '/project-a': 'headless' },
+      });
+
+      // Simulate a subscriber that modifies defaultMode when projectOverrides changes
+      const unsub = useHeadlessStore.subscribe((state, prevState) => {
+        if (state.projectOverrides !== prevState.projectOverrides) {
+          useHeadlessStore.setState({ defaultMode: 'structured' });
+        }
+      });
+
+      await getState().clearProjectMode('/project-a');
+
+      // The saved settings should contain the defaultMode from BEFORE the set() call,
+      // not the subscriber-mutated value
+      expect(mockSaveHeadlessSettings).toHaveBeenCalledWith({
+        defaultMode: 'interactive',
+        projectOverrides: {},
+      });
+
+      unsub();
     });
   });
 
