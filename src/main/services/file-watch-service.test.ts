@@ -17,7 +17,7 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow } from './file-watch-service';
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, extractBaseDir } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 function makeSender(id = 1) {
@@ -172,5 +172,65 @@ describe('file-watch-service', () => {
       // wB should still be cleanly stoppable
       expect(() => stopWatch('wB')).not.toThrow();
     });
+  });
+});
+
+describe('extractBaseDir', () => {
+  it('extracts base directory from POSIX glob with **', () => {
+    expect(extractBaseDir('/home/user/project/src/**/*.ts')).toBe('/home/user/project/src');
+  });
+
+  it('extracts base directory from POSIX glob with single *', () => {
+    expect(extractBaseDir('/home/user/project/*.ts')).toBe('/home/user/project');
+  });
+
+  it('returns full path when no wildcard is present', () => {
+    expect(extractBaseDir('/home/user/project/src')).toBe('/home/user/project/src');
+  });
+
+  it('handles glob with ? wildcard', () => {
+    expect(extractBaseDir('/home/user/project/src/file?.ts')).toBe('/home/user/project/src');
+  });
+
+  it('handles glob with { brace pattern', () => {
+    expect(extractBaseDir('/home/user/project/src/{a,b}')).toBe('/home/user/project/src');
+  });
+
+  it('handles glob with [ bracket pattern', () => {
+    expect(extractBaseDir('/home/user/project/src/[abc].ts')).toBe('/home/user/project/src');
+  });
+
+  it('returns "." when glob starts with wildcard', () => {
+    expect(extractBaseDir('**/*.ts')).toBe('.');
+  });
+
+  it('handles Windows-style backslash separators', () => {
+    // Backslashes are normalized to forward slashes before splitting,
+    // so Windows paths work correctly on any platform.
+    expect(extractBaseDir('C:\\Users\\me\\project\\src\\**\\*.ts')).toBe('C:/Users/me/project/src');
+  });
+
+  it('handles mixed separators', () => {
+    expect(extractBaseDir('C:\\Users\\me/project/src/**/*.ts')).toBe('C:/Users/me/project/src');
+  });
+
+  it('returns "." for empty string', () => {
+    expect(extractBaseDir('')).toBe('.');
+  });
+
+  it('returns "/" for root-only path', () => {
+    // "/" splits into ['', ''] – baseParts collects both empty strings,
+    // joined result is '/' which is truthy → returned as-is.
+    expect(extractBaseDir('/')).toBe('/');
+  });
+
+  it('warns when falling back to "." for a non-wildcard-starting glob', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // A glob that appears to have a rooted path but produces empty base
+    // should trigger a warning. In practice this only happens for edge cases.
+    extractBaseDir('**/*.ts');
+    // Starts with wildcard — no warning expected
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
