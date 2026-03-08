@@ -49,10 +49,6 @@ async function loadSoundData(packId: string, event: SoundEvent, cache: Record<st
   if (cache[cacheKey]) return cache[cacheKey];
 
   const data = await window.clubhouse.app.getSoundData(packId, event);
-  if (data) {
-    // Store in cache via direct mutation (store will be updated separately)
-    cache[cacheKey] = data;
-  }
   return data;
 }
 
