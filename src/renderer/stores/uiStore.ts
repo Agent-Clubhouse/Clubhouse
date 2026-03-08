@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ExplorerTab, SettingsSubPage } from '../../shared/types';
+import { rendererLog } from '../plugins/renderer-logger';
 
 const VIEW_PREFS_KEY = 'clubhouse_view_prefs';
 
@@ -11,7 +12,11 @@ function loadViewPrefs(): ViewPrefs {
   try {
     const raw = localStorage.getItem(VIEW_PREFS_KEY);
     if (raw) return { showHome: true, ...JSON.parse(raw) };
-  } catch { /* ignore */ }
+  } catch (err) {
+    rendererLog('store:ui', 'warn', 'Corrupt view preferences in localStorage — reset to defaults', {
+      meta: { key: VIEW_PREFS_KEY, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
   return { showHome: true };
 }
 

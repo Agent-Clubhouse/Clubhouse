@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
+import { generateQuickAgentId } from '../../shared/agent-id';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
 import { useHeadlessStore } from './headlessStore';
@@ -183,7 +184,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
-    const agentId = `quick_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const agentId = generateQuickAgentId();
     const name = generateQuickName();
 
     // Resolve CWD: if spawning under a parent durable, use its worktree
@@ -276,9 +277,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
-      set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
-      }));
+      set((s) => {
+        if (!s.agents[agentId]) return s;
+        return {
+          agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
+        };
+      });
       throw err;
     }
 
@@ -330,9 +334,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
-      set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
-      }));
+      set((s) => {
+        if (!s.agents[agentId]) return s;
+        return {
+          agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
+        };
+      });
       throw err;
     }
 
@@ -379,9 +386,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   renameAgent: async (id, newName, projectPath) => {
     await window.clubhouse.agent.renameDurable(projectPath, id, newName);
-    set((s) => ({
-      agents: { ...s.agents, [id]: { ...s.agents[id], name: newName } },
-    }));
+    set((s) => {
+      const agent = s.agents[id];
+      if (!agent) return s;
+      return { agents: { ...s.agents, [id]: { ...agent, name: newName } } };
+    });
   },
 
   updateAgent: async (id, updates, projectPath) => {
@@ -632,28 +641,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   /** Clear detailed statuses that haven't been updated in STALE_THRESHOLD_MS */
   clearStaleStatuses: () => {
-    const now = Date.now();
-    const statuses = get().agentDetailedStatus;
-    const agents = get().agents;
-    let changed = false;
-    const updated = { ...statuses };
+    set((state) => {
+      const now = Date.now();
+      const statuses = state.agentDetailedStatus;
+      const agents = state.agents;
+      let changed = false;
+      const updated = { ...statuses };
 
-    for (const [agentId, status] of Object.entries(statuses)) {
-      const agent = agents[agentId];
-      if (!agent || agent.status !== 'running') continue;
+      for (const [agentId, status] of Object.entries(statuses)) {
+        const agent = agents[agentId];
+        if (!agent || agent.status !== 'running') continue;
 
-      const age = now - status.timestamp;
-      // Permission states shouldn't auto-clear — agent is waiting for user
-      if (status.state === 'needs_permission') continue;
-      if (age > STALE_THRESHOLD_MS) {
-        delete updated[agentId];
-        changed = true;
+        const age = now - status.timestamp;
+        // Permission states shouldn't auto-clear — agent is waiting for user
+        if (status.state === 'needs_permission') continue;
+        if (age > STALE_THRESHOLD_MS) {
+          delete updated[agentId];
+          changed = true;
+        }
       }
-    }
 
-    if (changed) {
-      set({ agentDetailedStatus: updated });
-    }
+      return changed ? { agentDetailedStatus: updated } : state;
+    });
   },
 
   recordActivity: (id) => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { rendererLog } from '../plugins/renderer-logger';
 
 export type Cohort = 'new-dev' | 'experienced-dev' | 'seasoned-dev';
 
@@ -15,7 +16,11 @@ function loadPersisted(): OnboardingPersisted {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+  } catch (err) {
+    rendererLog('store:onboarding', 'warn', 'Corrupt onboarding state in localStorage — reset to defaults', {
+      meta: { key: STORAGE_KEY, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
   return { completed: false, cohort: null };
 }
 

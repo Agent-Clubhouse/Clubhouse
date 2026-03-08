@@ -533,6 +533,135 @@ describe('reorder', () => {
   });
 });
 
+describe('sequential update correctness (no lost updates)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+  });
+
+  it('sequential add() calls do not lose projects', () => {
+    // Simulate file I/O: writeFileSync updates what readFileSync returns
+    let fileContent = JSON.stringify({ version: 1, projects: [] });
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH) return true;
+      if (s.includes('project-icons')) return true;
+      return true;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === STORE_PATH) return fileContent;
+      return '';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) fileContent = String(data);
+    });
+
+    add('/project-a');
+    add('/project-b');
+    add('/project-c');
+
+    const result = JSON.parse(fileContent);
+    expect(result.projects).toHaveLength(3);
+  });
+
+  it('sequential update() calls each see the result of the previous update', () => {
+    const initial = {
+      version: 1,
+      projects: [
+        { id: 'proj_1', name: 'One', path: '/one' },
+        { id: 'proj_2', name: 'Two', path: '/two' },
+      ],
+    };
+    let fileContent = JSON.stringify(initial);
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH) return true;
+      if (s.includes('project-icons')) return true;
+      return true;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === STORE_PATH) return fileContent;
+      return '';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) fileContent = String(data);
+    });
+
+    update('proj_1', { displayName: 'First' });
+    update('proj_2', { displayName: 'Second' });
+
+    const result = JSON.parse(fileContent);
+    // Both updates should be present — neither should be lost
+    expect(result.projects[0].displayName).toBe('First');
+    expect(result.projects[1].displayName).toBe('Second');
+  });
+
+  it('sequential remove() calls do not lose removals', () => {
+    const initial = {
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'A', path: '/a' },
+        { id: 'proj_b', name: 'B', path: '/b' },
+        { id: 'proj_c', name: 'C', path: '/c' },
+      ],
+    };
+    let fileContent = JSON.stringify(initial);
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === STORE_PATH) return true;
+      if (s.includes('project-icons')) return true;
+      return true;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === STORE_PATH) return fileContent;
+      return '';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) fileContent = String(data);
+    });
+
+    remove('proj_a');
+    remove('proj_c');
+
+    const result = JSON.parse(fileContent);
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].id).toBe('proj_b');
+  });
+
+  it('update() does not mutate the projects array read from disk', () => {
+    const initial = {
+      version: 1,
+      projects: [
+        { id: 'proj_1', name: 'Original', path: '/test', color: 'blue' },
+      ],
+    };
+    mockStoreFile(initial);
+
+    let capturedProjects: any[] | undefined;
+    const originalReadFileSync = vi.mocked(fs.readFileSync).getMockImplementation();
+    vi.mocked(fs.readFileSync).mockImplementation((p: any, ...args: any[]) => {
+      const data = originalReadFileSync?.(p, ...args);
+      if (String(p) === STORE_PATH) {
+        const parsed = JSON.parse(String(data));
+        capturedProjects = parsed.projects;
+      }
+      return data;
+    });
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_1', { color: 'red' });
+
+    // The written data should have the updated color
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].color).toBe('red');
+
+    // The original projects array should not have been mutated
+    expect(capturedProjects?.[0].color).toBe('blue');
+  });
+});
+
 describe('readIconData', () => {
   beforeEach(() => {
     vi.clearAllMocks();

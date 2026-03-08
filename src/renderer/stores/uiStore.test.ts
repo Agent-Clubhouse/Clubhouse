@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Mock rendererLog before importing the store
+const mockRendererLog = vi.fn();
+vi.mock('../plugins/renderer-logger', () => ({
+  rendererLog: (...args: unknown[]) => mockRendererLog(...args),
+}));
+
 import { useUIStore } from './uiStore';
 
 function getState() {
@@ -15,6 +22,7 @@ describe('uiStore', () => {
       showHome: true,
       projectExplorerTab: {},
     });
+    mockRendererLog.mockClear();
   });
 
   describe('settingsSubPage default', () => {
@@ -190,6 +198,22 @@ describe('uiStore', () => {
       useUIStore.setState({ explorerTab: 'agents', settingsContext: 'proj-1' });
       getState().toggleSettings();
       expect(getState().settingsContext).toBe('app');
+    });
+  });
+
+  describe('corrupt localStorage', () => {
+    it('logs a warning when view prefs data is corrupt', async () => {
+      localStorage.setItem('clubhouse_view_prefs', '{not valid json');
+      vi.resetModules();
+      await import('./uiStore');
+      expect(mockRendererLog).toHaveBeenCalledWith(
+        'store:ui',
+        'warn',
+        expect.stringContaining('Corrupt view preferences'),
+        expect.objectContaining({
+          meta: expect.objectContaining({ key: 'clubhouse_view_prefs' }),
+        }),
+      );
     });
   });
 });

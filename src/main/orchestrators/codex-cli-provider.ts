@@ -7,6 +7,7 @@ import {
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
+  SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
@@ -149,7 +150,7 @@ export class CodexCliProvider implements OrchestratorProvider {
     return { available: true };
   }
 
-  async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> }> {
+  async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = findCodexBinary();
     const args: string[] = [];
 

@@ -52,18 +52,21 @@ export function restoreForAgent(agentId: string): void {
   const files = agentFiles.get(agentId);
   if (!files) return;
 
+  // Remove agent tracking first to prevent double-call with the same agentId
+  agentFiles.delete(agentId);
+
   for (const absPath of files) {
     const snapshot = snapshots.get(absPath);
     if (!snapshot) continue;
 
     snapshot.refCount--;
     if (snapshot.refCount <= 0) {
-      restoreSnapshot(absPath, snapshot);
+      // Remove from map before restoring — atomic decrement-and-check
+      // prevents a concurrent caller from finding and restoring the same snapshot
       snapshots.delete(absPath);
+      restoreSnapshot(absPath, snapshot);
     }
   }
-
-  agentFiles.delete(agentId);
 }
 
 /**
