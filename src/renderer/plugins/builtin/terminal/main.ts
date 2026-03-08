@@ -211,8 +211,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     `Exited${exitCode !== null ? ` (${exitCode})` : ''}`;
 
   const statusColor =
-    status === 'running' ? 'text-ctp-green' :
-    status === 'exited' ? 'text-ctp-red' :
+    status === 'running' ? 'text-ctp-success' :
+    status === 'exited' ? 'text-ctp-error' :
     'text-ctp-subtext0';
 
   return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-base', 'data-testid': 'terminal-main-panel' },

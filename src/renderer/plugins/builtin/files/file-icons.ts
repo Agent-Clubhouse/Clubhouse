@@ -38,47 +38,47 @@ export const EXT_TO_LANG: Record<string, string> = {
 export function getFileIconColor(ext: string): string {
   switch (ext) {
     case 'ts': case 'tsx': case 'mts': case 'cts':
-      return 'text-ctp-blue';
+      return 'text-ctp-info';
     case 'js': case 'jsx': case 'mjs': case 'cjs':
-      return 'text-ctp-yellow';
+      return 'text-ctp-warning';
     case 'py': case 'pyw':
-      return 'text-ctp-green';
+      return 'text-ctp-success';
     case 'rs':
-      return 'text-ctp-peach';
+      return 'text-ctp-warning';
     case 'go':
-      return 'text-ctp-sapphire';
+      return 'text-ctp-info';
     case 'java': case 'kt': case 'kts':
-      return 'text-ctp-red';
+      return 'text-ctp-warning';
     case 'swift':
-      return 'text-ctp-peach';
+      return 'text-ctp-warning';
     case 'cs':
-      return 'text-ctp-mauve';
+      return 'text-ctp-accent';
     case 'html': case 'htm':
-      return 'text-ctp-peach';
+      return 'text-ctp-warning';
     case 'css': case 'scss': case 'less':
-      return 'text-ctp-blue';
+      return 'text-ctp-info';
     case 'json': case 'jsonc':
-      return 'text-ctp-yellow';
+      return 'text-ctp-warning';
     case 'md': case 'mdx':
-      return 'text-ctp-teal';
+      return 'text-ctp-success';
     case 'yaml': case 'yml': case 'toml':
-      return 'text-ctp-pink';
+      return 'text-ctp-accent';
     case 'sh': case 'bash': case 'zsh': case 'fish':
-      return 'text-ctp-green';
+      return 'text-ctp-success';
     case 'sql':
-      return 'text-ctp-blue';
+      return 'text-ctp-info';
     case 'svg':
-      return 'text-ctp-peach';
+      return 'text-ctp-warning';
     case 'xml': case 'xsl': case 'xslt':
-      return 'text-ctp-peach';
+      return 'text-ctp-warning';
     case 'rb':
-      return 'text-ctp-red';
+      return 'text-ctp-accent';
     case 'php':
-      return 'text-ctp-mauve';
+      return 'text-ctp-accent';
     case 'lua':
-      return 'text-ctp-blue';
+      return 'text-ctp-info';
     case 'cpp': case 'cc': case 'cxx': case 'hpp': case 'h': case 'c':
-      return 'text-ctp-blue';
+      return 'text-ctp-info';
     default:
       return 'text-ctp-subtext0';
   }

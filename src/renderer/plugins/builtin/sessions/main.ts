@@ -212,7 +212,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
                     ),
                   ),
                   idx === 0 && React.createElement('span', {
-                    className: 'text-[9px] text-ctp-blue',
+                    className: 'text-[9px] text-ctp-info',
                   }, 'latest'),
                 ),
               ),
@@ -450,7 +450,7 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
     // Expandable file list
     summary.filesModified.length > 0 && React.createElement('div', { className: 'mt-2' },
       React.createElement('button', {
-        className: 'text-[10px] text-ctp-blue hover:underline cursor-pointer',
+        className: 'text-[10px] text-ctp-info hover:underline cursor-pointer',
         onClick: () => setFilesExpanded(!filesExpanded),
       }, filesExpanded ? 'Hide files' : `Show ${summary.filesModified.length} modified files`),
       filesExpanded && React.createElement('div', { className: 'mt-1 text-[10px] text-ctp-subtext0 space-y-0.5' },

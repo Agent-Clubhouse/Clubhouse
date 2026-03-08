@@ -15,13 +15,13 @@ const RefreshIcon = React.createElement('svg', {
 const FolderIcon = React.createElement('svg', {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'text-ctp-blue flex-shrink-0',
+  className: 'text-ctp-info flex-shrink-0',
 }, React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }));
 
 const FolderOpenIcon = React.createElement('svg', {
   width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
-  className: 'text-ctp-blue flex-shrink-0',
+  className: 'text-ctp-info flex-shrink-0',
 }, React.createElement('path', { d: 'M5 19a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l2 3h9a2 2 0 0 1 2 2v1' }),
    React.createElement('path', { d: 'M22 10H10a2 2 0 0 0-2 2l-1 7h15l1-7a2 2 0 0 0-2-2z' }));
 
@@ -92,11 +92,11 @@ function GitBadge({ status }: { status: string }) {
   let letter = status.charAt(0).toUpperCase();
 
   switch (letter) {
-    case 'M': color = 'text-ctp-yellow'; break;
-    case '?': letter = 'U'; color = 'text-ctp-green'; break;
-    case 'A': color = 'text-ctp-green'; break;
-    case 'D': color = 'text-ctp-red'; break;
-    case 'R': color = 'text-ctp-blue'; break;
+    case 'M': color = 'text-ctp-warning'; break;
+    case '?': letter = 'U'; color = 'text-ctp-success'; break;
+    case 'A': color = 'text-ctp-success'; break;
+    case 'D': color = 'text-ctp-error'; break;
+    case 'R': color = 'text-ctp-info'; break;
   }
 
   return React.createElement('span', {
@@ -333,7 +333,7 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
     ...items.map((item) =>
       React.createElement('button', {
         key: item.action,
-        className: `w-full text-left px-3 py-1 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors ${item.action === 'delete' ? 'text-ctp-red' : ''}`,
+        className: `w-full text-left px-3 py-1 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors ${item.action === 'delete' ? 'text-ctp-error' : ''}`,
         onClick: () => { onAction(item.action); onClose(); },
       }, item.label),
     ),
