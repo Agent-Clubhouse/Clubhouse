@@ -1,0 +1,6 @@
+# Clubhouse agent manager
+.clubhouse/agents/
+.clubhouse/.local/
+.clubhouse/agents.json
+.clubhouse/settings.local.json
+.clubhouse/plugin-data-local/
