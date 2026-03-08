@@ -344,6 +344,28 @@ describe('agentStore', () => {
       expect(getState().agentDetailedStatus['a_fresh']).toBeDefined();
     });
 
+    it('does not notify subscribers when nothing is cleared', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_fresh', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentDetailedStatus: {
+          ...s.agentDetailedStatus,
+          a_fresh: { state: 'working', message: 'Reading file', timestamp: now - 5000 },
+        },
+      }));
+
+      const listener = vi.fn();
+      const unsubscribe = useAgentStore.subscribe(listener);
+
+      getState().clearStaleStatuses();
+
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
     it('does not clear needs_permission even if stale', () => {
       vi.useFakeTimers();
       const now = Date.now();

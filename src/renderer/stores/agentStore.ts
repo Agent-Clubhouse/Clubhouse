@@ -635,28 +635,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   /** Clear detailed statuses that haven't been updated in STALE_THRESHOLD_MS */
   clearStaleStatuses: () => {
-    const now = Date.now();
-    const statuses = get().agentDetailedStatus;
-    const agents = get().agents;
-    let changed = false;
-    const updated = { ...statuses };
+    set((state) => {
+      const now = Date.now();
+      const statuses = state.agentDetailedStatus;
+      const agents = state.agents;
+      let changed = false;
+      const updated = { ...statuses };
 
-    for (const [agentId, status] of Object.entries(statuses)) {
-      const agent = agents[agentId];
-      if (!agent || agent.status !== 'running') continue;
+      for (const [agentId, status] of Object.entries(statuses)) {
+        const agent = agents[agentId];
+        if (!agent || agent.status !== 'running') continue;
 
-      const age = now - status.timestamp;
-      // Permission states shouldn't auto-clear — agent is waiting for user
-      if (status.state === 'needs_permission') continue;
-      if (age > STALE_THRESHOLD_MS) {
-        delete updated[agentId];
-        changed = true;
+        const age = now - status.timestamp;
+        // Permission states shouldn't auto-clear — agent is waiting for user
+        if (status.state === 'needs_permission') continue;
+        if (age > STALE_THRESHOLD_MS) {
+          delete updated[agentId];
+          changed = true;
+        }
       }
-    }
 
-    if (changed) {
-      set({ agentDetailedStatus: updated });
-    }
+      return changed ? { agentDetailedStatus: updated } : state;
+    });
   },
 
   recordActivity: (id) => {
