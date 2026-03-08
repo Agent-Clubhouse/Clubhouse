@@ -5,6 +5,7 @@ import {
   SleepingMascot,
   ClaudeCodeSleeping,
   CopilotSleeping,
+  CodexCliSleeping,
   GenericRobotSleeping,
 } from './SleepingMascots';
 
@@ -22,6 +23,13 @@ describe('SleepingMascots', () => {
       // Copilot mascot uses the dark body color
       const body = container.querySelector('rect[fill="#1e1e2e"]');
       expect(body).not.toBeNull();
+    });
+
+    it('renders CodexCliSleeping for codex-cli orchestrator', () => {
+      const { container } = render(<SleepingMascot orchestrator="codex-cli" />);
+      // Codex mascot uses the white/light body color in its head
+      const head = container.querySelector('ellipse[fill="#E8E8EC"]');
+      expect(head).not.toBeNull();
     });
 
     it('renders GenericRobotSleeping for opencode orchestrator', () => {
@@ -81,6 +89,48 @@ describe('SleepingMascots', () => {
 
     it('contains animated Zzz text elements', () => {
       const { container } = render(<CopilotSleeping />);
+      const zTexts = container.querySelectorAll('text tspan');
+      expect(zTexts.length).toBe(3);
+    });
+  });
+
+  describe('CodexCliSleeping', () => {
+    it('renders an SVG with 200x200 dimensions', () => {
+      const { container } = render(<CodexCliSleeping />);
+      const svg = container.querySelector('svg');
+      expect(svg).not.toBeNull();
+      expect(svg!.getAttribute('width')).toBe('200');
+      expect(svg!.getAttribute('height')).toBe('200');
+    });
+
+    it('has a smooth oval head and dark visor', () => {
+      const { container } = render(<CodexCliSleeping />);
+      const head = container.querySelector('ellipse[fill="#E8E8EC"]');
+      const visor = container.querySelector('ellipse[fill="#0a0a14"]');
+      expect(head).not.toBeNull();
+      expect(visor).not.toBeNull();
+    });
+
+    it('has leaf-shaped arms', () => {
+      const { container } = render(<CodexCliSleeping />);
+      const arms = container.querySelectorAll('ellipse[fill="#D0D0D8"]');
+      expect(arms.length).toBe(2);
+    });
+
+    it('has a tapered body', () => {
+      const { container } = render(<CodexCliSleeping />);
+      const body = container.querySelector('path[fill="#E0E0E8"]');
+      expect(body).not.toBeNull();
+    });
+
+    it('has a Codex indigo accent', () => {
+      const { container } = render(<CodexCliSleeping />);
+      const accent = container.querySelector('rect[fill="#6B6BDE"]');
+      expect(accent).not.toBeNull();
+    });
+
+    it('contains animated Zzz text elements', () => {
+      const { container } = render(<CodexCliSleeping />);
       const zTexts = container.querySelectorAll('text tspan');
       expect(zTexts.length).toBe(3);
     });

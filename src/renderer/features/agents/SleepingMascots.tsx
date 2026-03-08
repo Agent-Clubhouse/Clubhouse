@@ -241,6 +241,59 @@ export function GenericRobotSleeping() {
   );
 }
 
+/* ── Codex CLI mascot ────────────────────────────────────────────── */
+
+export function CodexCliSleeping() {
+  return (
+    <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
+      {/* Ground shadow */}
+      <ellipse cx="50" cy="90" rx="18" ry="2.5" fill="#181825" opacity="0.3" />
+
+      {/* Arms — smooth leaf/paddle shapes, behind body */}
+      <ellipse cx="20" cy="60" rx="7" ry="18" transform="rotate(-12, 20, 60)" fill="#D0D0D8" />
+      <ellipse cx="80" cy="60" rx="7" ry="18" transform="rotate(12, 80, 60)" fill="#D0D0D8" />
+
+      {/* Body — tapered cup shape (wide top, narrow bottom) */}
+      <path
+        d="M 30 46 Q 30 44 32 44 L 68 44 Q 70 44 70 46 L 63 82 Q 61 88 50 88 Q 39 88 37 82 Z"
+        fill="#E0E0E8"
+      />
+
+      {/* Body highlight */}
+      <path
+        d="M 33 46 L 67 46 L 65 52 L 35 52 Z"
+        fill="#EAEAF0"
+        opacity="0.4"
+      />
+
+      {/* Head — smooth oval */}
+      <ellipse cx="50" cy="28" rx="24" ry="20" fill="#E8E8EC" />
+
+      {/* Head highlight */}
+      <ellipse cx="44" cy="18" rx="14" ry="8" fill="#F0F0F6" opacity="0.35" />
+
+      {/* Visor / face panel */}
+      <ellipse cx="50" cy="32" rx="18" ry="12" fill="#0a0a14" />
+
+      {/* Sleeping eyes — dim blue crescents */}
+      <ellipse cx="40" cy="34" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
+      <ellipse cx="60" cy="34" rx="5" ry="3" fill="#3a6a9a" opacity="0.4" />
+      {/* Eyelid overlay — visor covers top of eye */}
+      <ellipse cx="40" cy="32" rx="5.5" ry="3" fill="#0a0a14" />
+      <ellipse cx="60" cy="32" rx="5.5" ry="3" fill="#0a0a14" />
+
+      {/* Codex indigo accent at neck */}
+      <rect x="36" y="43" width="28" height="1.5" rx="0.75" fill="#6B6BDE" opacity="0.25" />
+
+      {/* Codex terminal prompt on chest >_ */}
+      <path d="M 44 60 L 48 63 L 44 66" stroke="#9898B0" strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" opacity="0.35" />
+      <line x1="50" y1="66" x2="56" y2="66" stroke="#9898B0" strokeWidth="1.2" strokeLinecap="round" opacity="0.35" />
+
+      <SleepingZzz x={68} y={8} />
+    </svg>
+  );
+}
+
 /* ── Mascot selector ──────────────────────────────────────────────── */
 
 export function SleepingMascot({ orchestrator }: { orchestrator?: OrchestratorId }) {
@@ -249,6 +302,8 @@ export function SleepingMascot({ orchestrator }: { orchestrator?: OrchestratorId
       return <ClaudeCodeSleeping />;
     case 'copilot-cli':
       return <CopilotSleeping />;
+    case 'codex-cli':
+      return <CodexCliSleeping />;
     default:
       return <GenericRobotSleeping />;
   }
