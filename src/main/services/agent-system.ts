@@ -296,19 +296,25 @@ async function spawnPtyAgent(
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
-  if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
-    await structuredManager.cancelSession(agentId);
-    structuredAgentSet.delete(agentId);
-    return;
+  try {
+    if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
+      await structuredManager.cancelSession(agentId);
+      structuredAgentSet.delete(agentId);
+      return;
+    }
+    if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
+      headlessManager.kill(agentId);
+      headlessAgentSet.delete(agentId);
+      return;
+    }
+    const provider = resolveOrchestrator(projectPath, orchestrator);
+    const exitCmd = provider.getExitCommand();
+    ptyManager.gracefulKill(agentId, exitCmd);
+  } catch (err) {
+    appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
   }
-  if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
-    headlessManager.kill(agentId);
-    headlessAgentSet.delete(agentId);
-    return;
-  }
-  const provider = resolveOrchestrator(projectPath, orchestrator);
-  const exitCmd = provider.getExitCommand();
-  ptyManager.gracefulKill(agentId, exitCmd);
 }
 
 export async function checkAvailability(
