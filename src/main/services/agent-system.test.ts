@@ -22,19 +22,21 @@ vi.mock('./pty-manager', () => ({
 // Mock headless-manager
 const mockHeadlessSpawn = vi.fn();
 const mockHeadlessKill = vi.fn();
+const mockIsHeadless = vi.fn(() => false);
 vi.mock('./headless-manager', () => ({
   spawnHeadless: (...args: unknown[]) => mockHeadlessSpawn(...args),
   kill: (...args: unknown[]) => mockHeadlessKill(...args),
-  isHeadless: vi.fn(() => false),
+  isHeadless: (...args: unknown[]) => mockIsHeadless(...args),
 }));
 
 // Mock structured-manager
 const mockStartStructured = vi.fn();
 const mockCancelSession = vi.fn();
+const mockIsStructuredSession = vi.fn(() => false);
 vi.mock('./structured-manager', () => ({
   startStructuredSession: (...args: unknown[]) => mockStartStructured(...args),
   cancelSession: (...args: unknown[]) => mockCancelSession(...args),
-  isStructuredSession: vi.fn(() => false),
+  isStructuredSession: (...args: unknown[]) => mockIsStructuredSession(...args),
 }));
 
 // Mock headless-settings
@@ -46,6 +48,43 @@ vi.mock('./headless-settings', () => ({
 // Mock hook-server
 vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
+}));
+
+// Mock clubhouse-mode-settings
+const mockIsClubhouseModeEnabled = vi.fn(() => false);
+vi.mock('./clubhouse-mode-settings', () => ({
+  isClubhouseModeEnabled: (...args: unknown[]) => mockIsClubhouseModeEnabled(...args),
+}));
+
+// Mock agent-config
+const mockGetDurableConfig = vi.fn(() => null);
+const mockAddSessionEntry = vi.fn();
+vi.mock('./agent-config', () => ({
+  getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
+  addSessionEntry: (...args: unknown[]) => mockAddSessionEntry(...args),
+}));
+
+// Mock materialization-service
+const mockMaterializeAgent = vi.fn();
+vi.mock('./materialization-service', () => ({
+  materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
+}));
+
+// Mock profile-settings
+vi.mock('./profile-settings', () => ({
+  getProfile: vi.fn(() => null),
+  resolveProfileEnv: vi.fn(() => undefined),
+}));
+
+// Mock agent-settings-service
+const mockReadProjectAgentDefaults = vi.fn(() => ({}));
+vi.mock('./agent-settings-service', () => ({
+  readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
+}));
+
+// Mock log-service
+vi.mock('./log-service', () => ({
+  appLog: vi.fn(),
 }));
 
 // Mock fs for readProjectOrchestrator
@@ -109,6 +148,8 @@ import {
   getAgentOrchestrator,
   getAgentNonce,
   untrackAgent,
+  isHeadlessAgent,
+  isStructuredAgent,
 } from './agent-system';
 import * as fs from 'fs';
 
@@ -291,13 +332,7 @@ describe('agent-system', () => {
     });
 
     it('passes commandPrefix from project settings to ptyManager.spawn', async () => {
-      // Mock readFileSync: called 3 times — readProjectOrchestrator,
-      // resolveProfileEnv (readProjectAgentDefaults), and readProjectAgentDefaults
-      const settingsWithPrefix = JSON.stringify({ agentDefaults: { commandPrefix: '. ./init.sh' } });
-      vi.mocked(fs.readFileSync)
-        .mockReturnValueOnce(JSON.stringify({}))   // readProjectOrchestrator
-        .mockReturnValueOnce(settingsWithPrefix)    // resolveProfileEnv → readProjectAgentDefaults
-        .mockReturnValueOnce(settingsWithPrefix);   // readProjectAgentDefaults (direct)
+      mockReadProjectAgentDefaults.mockReturnValue({ commandPrefix: '. ./init.sh' });
 
       await spawnAgent({
         agentId: 'agent-1',
@@ -594,6 +629,663 @@ describe('agent-system', () => {
       });
 
       expect(mockSnapshotFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('headless spawn path', () => {
+    beforeEach(() => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['-p', 'test mission', '--output-format', 'stream-json'],
+          env: { CUSTOM_VAR: 'val' },
+          outputKind: 'stream-json' as const,
+        }),
+      );
+    });
+
+    afterEach(() => {
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('spawns via headless-manager when mode is headless and kind is quick', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'quick',
+        mission: 'test mission',
+      });
+
+      expect(mockHeadlessSpawn).toHaveBeenCalledWith(
+        'test-headless',
+        '/project/worktree',
+        '/usr/bin/claude',
+        ['-p', 'test mission', '--output-format', 'stream-json'],
+        expect.objectContaining({
+          CUSTOM_VAR: 'val',
+          CLUBHOUSE_AGENT_ID: 'test-headless',
+        }),
+        'stream-json',
+        expect.any(Function),
+        undefined, // commandPrefix
+      );
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+    });
+
+    it('does not spawn headless for durable agents', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY when buildHeadlessCommand returns null', async () => {
+      (mockProvider.buildHeadlessCommand as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test mission',
+      });
+
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY when provider lacks buildHeadlessCommand', async () => {
+      delete (mockProvider as any).buildHeadlessCommand;
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test mission',
+      });
+
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('passes mission and systemPrompt to buildHeadlessCommand', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'do stuff',
+        systemPrompt: 'be concise',
+        model: 'opus',
+      });
+
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mission: 'do stuff',
+          systemPrompt: 'be concise',
+          model: 'opus',
+          agentId: 'test-headless',
+          noSessionPersistence: true,
+        }),
+      );
+    });
+
+    it('passes allowedTools from quick defaults to buildHeadlessCommand', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          allowedTools: ['Read', 'Write'],
+        }),
+      );
+    });
+
+    it('passes explicit allowedTools over defaults to buildHeadlessCommand', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+        allowedTools: ['Bash(git:*)'],
+      });
+
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          allowedTools: ['Bash(git:*)'],
+        }),
+      );
+    });
+
+    it('tracks headless agent and marks it as headless', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(isHeadlessAgent('test-headless')).toBe(true);
+      expect(isStructuredAgent('test-headless')).toBe(false);
+      expect(getAgentProjectPath('test-headless')).toBe('/project');
+      expect(getAgentOrchestrator('test-headless')).toBe('claude-code');
+    });
+
+    it('passes commandPrefix to headless spawn', async () => {
+      mockReadProjectAgentDefaults.mockReturnValue({ commandPrefix: '. ./init.sh' });
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      // commandPrefix is the 8th argument (index 7) to spawnHeadless
+      expect(mockHeadlessSpawn).toHaveBeenCalledWith(
+        'test-headless',
+        '/project',
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Object),
+        expect.any(String),
+        expect.any(Function),
+        '. ./init.sh',
+      );
+    });
+
+    it('headless onExit calls restoreForAgent and untrackAgent', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-headless')).toBe('/project');
+
+      // Extract and invoke the onExit callback (7th argument, index 6)
+      const onExitCallback = mockHeadlessSpawn.mock.calls[0][6];
+      onExitCallback('test-headless', 0);
+
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('test-headless');
+      expect(getAgentProjectPath('test-headless')).toBeUndefined();
+      expect(getAgentOrchestrator('test-headless')).toBeUndefined();
+    });
+
+    it('passes freeAgentMode to buildHeadlessCommand', async () => {
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+        freeAgentMode: true,
+      });
+
+      expect(mockProvider.buildHeadlessCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          freeAgentMode: true,
+        }),
+      );
+    });
+  });
+
+  describe('structured spawn path', () => {
+    const mockAdapter = {
+      start: vi.fn(),
+      sendMessage: vi.fn(),
+      respondToPermission: vi.fn(),
+      cancel: vi.fn(),
+      dispose: vi.fn(),
+    };
+
+    beforeEach(() => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+    });
+
+    afterEach(() => {
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('spawns via structured-manager when mode is structured and kind is quick', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project/worktree',
+        kind: 'quick',
+        mission: 'test mission',
+        model: 'opus',
+        systemPrompt: 'be concise',
+      });
+
+      expect(mockProvider.createStructuredAdapter).toHaveBeenCalled();
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-structured',
+        mockAdapter,
+        expect.objectContaining({
+          mission: 'test mission',
+          systemPrompt: 'be concise',
+          model: 'opus',
+          cwd: '/project/worktree',
+        }),
+        expect.any(Function),
+      );
+      expect(mockPtySpawn).not.toHaveBeenCalled();
+      expect(mockHeadlessSpawn).not.toHaveBeenCalled();
+    });
+
+    it('does not spawn structured for durable agents', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('falls back to PTY when provider lacks createStructuredAdapter', async () => {
+      delete (mockProvider as any).createStructuredAdapter;
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(mockStartStructured).not.toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+
+    it('tracks structured agent and marks it as structured', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(isStructuredAgent('test-structured')).toBe(true);
+      expect(isHeadlessAgent('test-structured')).toBe(false);
+      expect(getAgentProjectPath('test-structured')).toBe('/project');
+    });
+
+    it('passes allowedTools from quick defaults to structured session', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-structured',
+        mockAdapter,
+        expect.objectContaining({
+          allowedTools: ['Read', 'Write'],
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('passes explicit allowedTools over defaults to structured session', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+        allowedTools: ['Bash(npm:*)'],
+      });
+
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-structured',
+        mockAdapter,
+        expect.objectContaining({
+          allowedTools: ['Bash(npm:*)'],
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('passes freeAgentMode to structured session opts', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+        freeAgentMode: true,
+      });
+
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-structured',
+        mockAdapter,
+        expect.objectContaining({
+          freeAgentMode: true,
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('passes commandPrefix to structured session opts', async () => {
+      mockReadProjectAgentDefaults.mockReturnValue({ commandPrefix: '. ./init.sh' });
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(mockStartStructured).toHaveBeenCalledWith(
+        'test-structured',
+        mockAdapter,
+        expect.objectContaining({
+          commandPrefix: '. ./init.sh',
+        }),
+        expect.any(Function),
+      );
+    });
+
+    it('structured onExit callback calls untrackAgent', async () => {
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-structured')).toBe('/project');
+
+      // Extract and invoke the onExit callback (4th argument, index 3)
+      const onExitCallback = mockStartStructured.mock.calls[0][3];
+      onExitCallback('test-structured');
+
+      expect(getAgentProjectPath('test-structured')).toBeUndefined();
+      expect(getAgentOrchestrator('test-structured')).toBeUndefined();
+    });
+  });
+
+  describe('clubhouse mode materialization', () => {
+    it('calls materializeAgent for durable agents when clubhouse mode is enabled', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        worktreePath: '/project/.clubhouse/agents/agent-1',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).toHaveBeenCalledWith({
+        projectPath: '/project',
+        agent: expect.objectContaining({
+          id: 'agent-1',
+          worktreePath: '/project/.clubhouse/agents/agent-1',
+        }),
+        provider: expect.objectContaining({ id: 'claude-code' }),
+      });
+    });
+
+    it('skips materialization when clubhouse mode is disabled', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(false);
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('skips materialization for quick agents', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+      });
+
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('skips materialization when getDurableConfig returns null', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue(null);
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('skips materialization when clubhouseModeOverride is true', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        worktreePath: '/project/.clubhouse/agents/agent-1',
+        clubhouseModeOverride: true,
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('skips materialization when config has no worktreePath', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).not.toHaveBeenCalled();
+    });
+
+    it('continues spawn when materialization throws', async () => {
+      mockIsClubhouseModeEnabled.mockReturnValue(true);
+      mockGetDurableConfig.mockReturnValue({
+        id: 'agent-1',
+        name: 'agent-1',
+        worktreePath: '/project/.clubhouse/agents/agent-1',
+      });
+      mockMaterializeAgent.mockImplementation(() => {
+        throw new Error('materialization failed');
+      });
+
+      // Should not throw — materialization errors are caught
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      expect(mockMaterializeAgent).toHaveBeenCalled();
+      expect(mockPtySpawn).toHaveBeenCalled();
+    });
+  });
+
+  describe('killAgent spawn path routing', () => {
+    it('kills headless agent via headless-manager', async () => {
+      // Spawn a headless agent
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      await killAgent('test-headless', '/project');
+
+      expect(mockHeadlessKill).toHaveBeenCalledWith('test-headless');
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+      expect(mockCancelSession).not.toHaveBeenCalled();
+
+      // Clean up
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('kills structured agent via structured-manager', async () => {
+      // Spawn a structured agent
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      await killAgent('test-structured', '/project');
+
+      expect(mockCancelSession).toHaveBeenCalledWith('test-structured');
+      expect(mockHeadlessKill).not.toHaveBeenCalled();
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+
+      // Clean up
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('kills headless agent detected by headless-manager.isHeadless', async () => {
+      mockIsHeadless.mockReturnValue(true);
+
+      await killAgent('ext-headless', '/project');
+
+      expect(mockHeadlessKill).toHaveBeenCalledWith('ext-headless');
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+
+    it('kills structured agent detected by structured-manager.isStructuredSession', async () => {
+      mockIsStructuredSession.mockReturnValue(true);
+
+      await killAgent('ext-structured', '/project');
+
+      expect(mockCancelSession).toHaveBeenCalledWith('ext-structured');
+      expect(mockHeadlessKill).not.toHaveBeenCalled();
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+
+    it('untrackAgent is called after killing headless agent', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-headless')).toBe('/project');
+
+      await killAgent('test-headless', '/project');
+
+      expect(getAgentProjectPath('test-headless')).toBeUndefined();
+      expect(getAgentOrchestrator('test-headless')).toBeUndefined();
+
+      // Clean up
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('untrackAgent is called after killing structured agent', async () => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-structured')).toBe('/project');
+
+      await killAgent('test-structured', '/project');
+
+      expect(getAgentProjectPath('test-structured')).toBeUndefined();
+      expect(getAgentOrchestrator('test-structured')).toBeUndefined();
+
+      // Clean up
+      delete (mockProvider as any).createStructuredAdapter;
     });
   });
 });
