@@ -9,6 +9,7 @@ interface WatchEntry {
   watcher: fs.FSWatcher;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
+  webContentsId: number;
 }
 
 const activeWatches = new Map<string, WatchEntry>();
@@ -38,6 +39,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watcher: null as unknown as fs.FSWatcher,
     debounceTimer: null,
     pendingEvents: [],
+    webContentsId: sender.id,
   };
 
   try {
@@ -61,12 +63,16 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
         clearTimeout(entry.debounceTimer);
       }
       entry.debounceTimer = setTimeout(() => {
+        if (sender.isDestroyed()) {
+          stopWatch(watchId);
+          return;
+        }
         const events = entry.pendingEvents.splice(0);
         if (events.length > 0) {
           try {
             sender.send(IPC.FILE.WATCH_EVENT, { watchId, events });
           } catch {
-            // Sender may have been destroyed
+            stopWatch(watchId);
           }
         }
       }, DEBOUNCE_MS);
@@ -106,11 +112,9 @@ export function stopAllWatches(): void {
 export function cleanupWatchesForWindow(win: BrowserWindow): void {
   const webContentsId = win.webContents.id;
   for (const [watchId, entry] of activeWatches) {
-    // We can't easily check the sender, so stop all watches
-    // In practice, watches are plugin-scoped and cleaned up via dispose()
-    void webContentsId;
-    void entry;
-    void watchId;
+    if (entry.webContentsId === webContentsId) {
+      stopWatch(watchId);
+    }
   }
 }
 
