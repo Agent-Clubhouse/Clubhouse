@@ -255,6 +255,25 @@ describe('soundStore', () => {
       expect(mockGetSoundData).toHaveBeenCalledTimes(1);
     });
 
+    it('updates soundCache via set() without directly mutating state', async () => {
+      const initialCache = {};
+      useSoundStore.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          slotAssignments: { 'agent-done': { packId: 'my-pack' } },
+        },
+        soundCache: initialCache,
+      });
+      mockGetSoundData.mockResolvedValue('data:audio/mpeg;base64,test');
+
+      await useSoundStore.getState().playSound('agent-done');
+
+      // The original cache object should NOT have been mutated directly
+      expect(initialCache).toEqual({});
+      // But the store's soundCache should have the new entry (via set())
+      expect(useSoundStore.getState().soundCache['my-pack:agent-done']).toBe('data:audio/mpeg;base64,test');
+    });
+
     it('plays new event types', async () => {
       useSoundStore.setState({
         settings: {

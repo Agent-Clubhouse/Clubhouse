@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
+import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
 import { startStaleSweep as startHeadlessStaleSweep, stopStaleSweep as stopHeadlessStaleSweep } from './services/headless-manager';
 import { restoreAll } from './services/config-pipeline';
 import { buildMenu } from './menu';
@@ -91,6 +92,13 @@ const createWindow = (): void => {
   });
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  // Clean up file watchers when the window is about to close (before webContents is destroyed)
+  mainWindow.on('close', () => {
+    if (mainWindow) {
+      cleanupWatchesForWindow(mainWindow);
+    }
+  });
 
   // Show window once the renderer is ready (avoids white flash on startup).
   mainWindow.once('ready-to-show', () => {
@@ -203,4 +211,5 @@ app.on('before-quit', () => {
   annexServer.stop();
   restoreAll();
   killAll();
+  stopAllWatches();
 });
