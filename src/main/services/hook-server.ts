@@ -6,6 +6,8 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as permissionQueue from './annex-permission-queue';
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
 let server: any = null;
 let serverPort = 0;
 let readyPromise: Promise<number> | null = null;
@@ -42,8 +44,21 @@ export function start(): Promise<number> {
       }
 
       let body = '';
-      req.on('data', (chunk: Buffer) => { body += chunk; });
+      let bodySize = 0;
+      let limitExceeded = false;
+      req.on('data', (chunk: Buffer) => {
+        bodySize += chunk.length;
+        if (bodySize > MAX_BODY_SIZE) {
+          limitExceeded = true;
+          req.destroy();
+          res.writeHead(413);
+          res.end();
+          return;
+        }
+        body += chunk;
+      });
       req.on('end', () => {
+        if (limitExceeded) return;
         try {
           const raw = JSON.parse(body);
           // Inject event type hint from URL when not present in payload
