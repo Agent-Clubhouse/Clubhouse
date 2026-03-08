@@ -18,9 +18,11 @@ function createMockSender(id: number) {
       if (!listeners[event]) listeners[event] = [];
       listeners[event].push(handler);
     },
-    /** Fire a captured event for testing. */
+    /** Fire a captured event for testing (with once semantics). */
     _emit(event: string) {
-      for (const fn of listeners[event] ?? []) {
+      const handlers = listeners[event] ?? [];
+      delete listeners[event];
+      for (const fn of handlers) {
         fn();
       }
     },
