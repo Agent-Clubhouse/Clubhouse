@@ -279,9 +279,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
-      set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
-      }));
+      set((s) => {
+        if (!s.agents[agentId]) return s;
+        return {
+          agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
+        };
+      });
       throw err;
     }
 
@@ -333,9 +336,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to launch agent';
-      set((s) => ({
-        agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
-      }));
+      set((s) => {
+        if (!s.agents[agentId]) return s;
+        return {
+          agents: { ...s.agents, [agentId]: { ...s.agents[agentId], status: 'error', errorMessage } },
+        };
+      });
       throw err;
     }
 

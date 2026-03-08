@@ -604,6 +604,23 @@ describe('agentStore', () => {
       expect(spawnCall.model).toBe('sonnet');
       expect(spawnCall.mission).toBe('do stuff');
     });
+
+    it('does not create malformed agent entry if agent was removed before catch', async () => {
+      mockAgent.spawnAgent.mockImplementation(async ({ agentId }: { agentId: string }) => {
+        // Simulate concurrent removal of the agent before the error
+        useAgentStore.setState((s) => {
+          const { [agentId]: _, ...rest } = s.agents;
+          return { agents: rest };
+        });
+        throw new Error('spawn failed');
+      });
+
+      await expect(getState().spawnQuickAgent('proj_1', '/project', 'do stuff')).rejects.toThrow('spawn failed');
+
+      // The agents map should be empty — no malformed entry
+      const agents = getState().agents;
+      expect(Object.keys(agents)).toHaveLength(0);
+    });
   });
 
   describe('reorderAgents', () => {
