@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Mock rendererLog before importing the store
+const mockRendererLog = vi.fn();
+vi.mock('../plugins/renderer-logger', () => ({
+  rendererLog: (...args: unknown[]) => mockRendererLog(...args),
+}));
+
 import { useOnboardingStore } from './onboardingStore';
 
 // Mock localStorage
@@ -18,6 +25,7 @@ function resetStore() {
     step: 'cohort-select',
     highlightIndex: 0,
   });
+  mockRendererLog.mockClear();
 }
 
 describe('onboardingStore', () => {
@@ -126,5 +134,21 @@ describe('onboardingStore', () => {
 
     const persisted = JSON.parse(storage['clubhouse_onboarding']);
     expect(persisted.completed).toBe(false);
+  });
+
+  describe('corrupt localStorage', () => {
+    it('logs a warning when onboarding data is corrupt', async () => {
+      storage['clubhouse_onboarding'] = '{not valid json';
+      vi.resetModules();
+      await import('./onboardingStore');
+      expect(mockRendererLog).toHaveBeenCalledWith(
+        'store:onboarding',
+        'warn',
+        expect.stringContaining('Corrupt onboarding state'),
+        expect.objectContaining({
+          meta: expect.objectContaining({ key: 'clubhouse_onboarding' }),
+        }),
+      );
+    });
   });
 });
