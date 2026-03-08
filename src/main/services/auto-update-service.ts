@@ -842,11 +842,15 @@ export function applyUpdateOnQuit(): void {
       });
 
       const { spawn } = require('child_process');
-      spawn(updateExe, ['--update', releasesUrl], {
+      const child = spawn(updateExe, ['--update', releasesUrl], {
         detached: true,
         stdio: 'ignore',
         windowsHide: true,
-      }).unref();
+      });
+      child.on('error', (spawnErr: Error) => {
+        appLog('update:apply-on-quit', 'error', `Update.exe failed to start: ${spawnErr.message}`);
+      });
+      child.unref();
 
       flushLogs();
     } catch (err) {
