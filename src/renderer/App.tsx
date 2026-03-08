@@ -25,6 +25,8 @@ import { PluginUpdateBanner } from './features/plugins/PluginUpdateBanner';
 import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
+import { ToastContainer } from './components/ToastContainer';
+import { useToastStore } from './stores/toastStore';
 
 export function App() {
   // ── Layout state (only selectors needed for rendering) ──────────────────
@@ -103,7 +105,13 @@ export function App() {
             usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
           } catch { /* no saved config */ }
           await handleProjectSwitch(prevId, activeProjectId, project.path);
-        })().catch((err) => console.error('[Plugins] Project switch error:', err));
+        })().catch((err) => {
+          console.error('[Plugins] Project switch error:', err);
+          useToastStore.getState().addToast(
+            'Some plugins failed to load for this project. Try reloading the window.',
+            'error',
+          );
+        });
       }
     }
   }, [activeProjectId, projects]);
@@ -154,6 +162,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <ToastContainer />
       </div>
     );
   }
@@ -177,6 +186,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <ToastContainer />
       </div>
     );
   }
@@ -199,6 +209,7 @@ export function App() {
         <WhatsNewDialog />
         <OnboardingModal />
         <ConfigChangesDialog />
+        <ToastContainer />
       </div>
     );
   }
@@ -255,6 +266,7 @@ export function App() {
       <WhatsNewDialog />
       <OnboardingModal />
       <ConfigChangesDialog />
+      <ToastContainer />
     </div>
   );
 }
