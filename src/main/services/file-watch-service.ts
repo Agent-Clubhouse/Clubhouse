@@ -140,5 +140,8 @@ export function extractBaseDir(glob: string): string {
     baseParts.push(part);
   }
   const base = baseParts.join('/');
+  if (!base && !glob.startsWith('*') && !glob.startsWith('?') && !glob.startsWith('{') && !glob.startsWith('[')) {
+    console.warn(`extractBaseDir: Could not extract base from glob "${glob}", falling back to '.'`);
+  }
   return base || '.';
 }

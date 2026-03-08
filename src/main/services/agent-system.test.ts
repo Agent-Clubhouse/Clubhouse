@@ -399,6 +399,15 @@ describe('agent-system', () => {
       await killAgent('agent-1', '/project', 'claude-code');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
+
+    it('does not reject when gracefulKill throws (process already dead)', async () => {
+      mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('process already dead'); });
+      await expect(killAgent('agent-1', '/project')).resolves.toBeUndefined();
+    });
+
+    it('does not reject for unknown orchestrator', async () => {
+      await expect(killAgent('agent-1', '/project', 'nonexistent' as any)).resolves.toBeUndefined();
+    });
   });
 
   describe('untrackAgent', () => {
