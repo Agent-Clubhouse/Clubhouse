@@ -112,7 +112,7 @@ export function start(): Promise<number> {
                   appLog('core:hook-server', 'error', 'Failed to send permission response', {
                     meta: { agentId, error: err instanceof Error ? err.message : String(err) },
                   });
-                  try { if (!res.writableEnded) res.end(); } catch { /* already closed */ }
+                  try { if (!res.writableEnded) res.end(); } catch { /* response already closed */ }
                 });
                 return; // Don't respond yet — the promise will handle it
               }

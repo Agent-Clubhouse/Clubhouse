@@ -572,7 +572,7 @@ describe('hook-server', () => {
           'X-Clubhouse-Nonce': VALID_NONCE,
         },
       });
-      req.on('error', () => { /* expected – connection may reset */ });
+      req.on('error', () => { /* expected — connection may reset */ });
       req.on('response', (res) => { res.resume(); });
       const data = JSON.stringify({ hook_event_name: 'PermissionRequest' });
       req.write(data);
