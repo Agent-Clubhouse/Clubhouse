@@ -7,6 +7,7 @@ describe('clubhouseModeStore', () => {
     useClubhouseModeStore.setState({
       enabled: false,
       projectOverrides: {},
+      sourceControlProvider: 'github',
     });
     vi.restoreAllMocks();
   });
