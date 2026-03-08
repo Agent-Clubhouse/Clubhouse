@@ -17,6 +17,11 @@ export const useAppHubStore = createHubStore(PANE_PREFIX);
 // Project-mode hub stores: one per project, keyed by projectId
 const projectHubStores = new Map<string, ReturnType<typeof createHubStore>>();
 
+/** Check whether a hub store already exists for the given project (without creating one). */
+export function hasProjectHubStore(projectId: string | null): boolean {
+  return projectId !== null && projectHubStores.has(projectId);
+}
+
 /** Get (or create) the hub store for a specific project. */
 export function getProjectHubStore(projectId: string | null): ReturnType<typeof createHubStore> {
   if (!projectId) return createHubStore(PANE_PREFIX); // transient fallback

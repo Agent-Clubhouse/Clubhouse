@@ -32,11 +32,11 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   setEnabled: async (enabled, projectPath?) => {
-    const prev = get().enabled;
+    const { enabled: prev, projectOverrides, sourceControlProvider } = get();
     set({ enabled });
     try {
       await window.clubhouse.app.saveClubhouseModeSettings(
-        { enabled, projectOverrides: get().projectOverrides, sourceControlProvider: get().sourceControlProvider },
+        { enabled, projectOverrides, sourceControlProvider },
         projectPath,
       );
     } catch {
@@ -53,12 +53,12 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   setProjectOverride: async (projectPath, enabled) => {
-    const prevOverrides = get().projectOverrides;
+    const { enabled: currentEnabled, projectOverrides: prevOverrides, sourceControlProvider } = get();
     const newOverrides = { ...prevOverrides, [projectPath]: enabled };
     set({ projectOverrides: newOverrides });
     try {
       await window.clubhouse.app.saveClubhouseModeSettings(
-        { enabled: get().enabled, projectOverrides: newOverrides, sourceControlProvider: get().sourceControlProvider },
+        { enabled: currentEnabled, projectOverrides: newOverrides, sourceControlProvider },
         projectPath,
       );
     } catch {
@@ -67,12 +67,12 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   clearProjectOverride: async (projectPath) => {
-    const prevOverrides = get().projectOverrides;
+    const { enabled, projectOverrides: prevOverrides, sourceControlProvider } = get();
     const { [projectPath]: _, ...rest } = prevOverrides;
     set({ projectOverrides: rest });
     try {
       await window.clubhouse.app.saveClubhouseModeSettings(
-        { enabled: get().enabled, projectOverrides: rest, sourceControlProvider: get().sourceControlProvider },
+        { enabled, projectOverrides: rest, sourceControlProvider },
         projectPath,
       );
     } catch {
@@ -81,11 +81,11 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   setSourceControlProvider: async (provider) => {
-    const prev = get().sourceControlProvider;
+    const { sourceControlProvider: prev, enabled, projectOverrides } = get();
     set({ sourceControlProvider: provider });
     try {
       await window.clubhouse.app.saveClubhouseModeSettings(
-        { enabled: get().enabled, projectOverrides: get().projectOverrides, sourceControlProvider: provider },
+        { enabled, projectOverrides, sourceControlProvider: provider },
       );
     } catch {
       set({ sourceControlProvider: prev });

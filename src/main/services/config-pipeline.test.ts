@@ -207,6 +207,41 @@ describe('config-pipeline', () => {
       expect(fs.unlinkSync).not.toHaveBeenCalled();
     });
 
+    it('calling restoreForAgent twice for same agent does not double-restore', () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+
+      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+
+      // First restore reads current file
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
+      restoreForAgent('agent-1');
+
+      // Second call with same agentId should be a no-op
+      restoreForAgent('agent-1');
+
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('concurrent agent cleanup does not restore the same file twice', () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+
+      // Two agents reference the same file
+      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      snapshotFile('agent-2', '/project/.claude/settings.local.json');
+
+      // Restore agent-1 (decrements refCount to 1, no restore yet)
+      restoreForAgent('agent-1');
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+
+      // Restore agent-2 (decrements refCount to 0, triggers restore)
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
+      restoreForAgent('agent-2');
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+
+      // Snapshot should be gone — a third call should not restore again
+      expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(false);
+    });
+
     it('falls back to original snapshot when current file is corrupt', () => {
       vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
 

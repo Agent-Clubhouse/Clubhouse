@@ -261,9 +261,6 @@ function initPtyExitListener(): () => void {
 }
 
 function initHookEventListener(): () => void {
-  // Track previous detailed status per agent to detect permission resolution
-  const prevDetailedState: Record<string, string | undefined> = {};
-
   const removeHookListener = window.clubhouse.agent.onHookEvent(
     (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
       // Capture previous detailed state before handleHookEvent updates it
@@ -282,9 +279,6 @@ function initHookEventListener(): () => void {
         const soundEvent = event.kind === 'pre_tool' ? 'permission-granted' : 'permission-denied';
         useSoundStore.getState().playSound(soundEvent as SoundEvent, agent.projectId);
       }
-
-      // Track for next iteration
-      prevDetailedState[agentId] = useAgentStore.getState().agentDetailedStatus[agentId]?.state;
 
       // Emit plugin events for agent lifecycle
       if (event.kind === 'stop') {
@@ -310,7 +304,7 @@ function initHookEventListener(): () => void {
           const currentAgent = useAgentStore.getState().agents[agentId];
           if (currentAgent?.status !== 'running') return; // already exited
           if (project) {
-            window.clubhouse.agent.killAgent(agentId, project.path);
+            window.clubhouse.agent.killAgent(agentId, project.path).catch(() => {});
           } else {
             window.clubhouse.pty.kill(agentId);
           }
