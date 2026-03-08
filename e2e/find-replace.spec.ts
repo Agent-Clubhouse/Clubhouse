@@ -77,7 +77,7 @@ async function focusEditor() {
 /** Open find widget via Cmd+F after focusing editor. */
 async function openFind() {
   await focusEditor();
-  await window.keyboard.press('Meta+f');
+  await window.keyboard.press('ControlOrMeta+f');
   await window.waitForTimeout(500);
   await expect(window.locator('.monaco-editor .find-widget.visible')).toBeVisible({ timeout: 5_000 });
 }
@@ -159,7 +159,7 @@ test.describe('Find Widget Activation', () => {
 
   test('Cmd+Option+F opens find and replace widget', async () => {
     await focusEditor();
-    await window.keyboard.press('Meta+Alt+f');
+    await window.keyboard.press('ControlOrMeta+Alt+f');
     await window.waitForTimeout(500);
 
     // Find widget should appear with replace toggled
@@ -268,7 +268,7 @@ test.describe('Replace Functionality', () => {
     // Type search query in the find textarea
     const findInput = window.locator('.find-widget .find-part textarea.input').first();
     await findInput.click();
-    await window.keyboard.press('Meta+a');
+    await window.keyboard.press('ControlOrMeta+a');
     await window.keyboard.type('_defaultName', { delay: 50 });
     await window.waitForTimeout(500);
 
@@ -297,7 +297,7 @@ test.describe('Replace Functionality', () => {
     await focusEditor();
 
     // Undo the replacement
-    await window.keyboard.press('Meta+z');
+    await window.keyboard.press('ControlOrMeta+z');
     await window.waitForTimeout(500);
 
     // Dirty state should clear since we're back to original
@@ -336,9 +336,9 @@ test.describe('Multi-cursor Find Keybindings', () => {
     await focusEditor();
 
     // Cmd+D should not crash the editor
-    await window.keyboard.press('Meta+d');
+    await window.keyboard.press('ControlOrMeta+d');
     await window.waitForTimeout(300);
-    await window.keyboard.press('Meta+d');
+    await window.keyboard.press('ControlOrMeta+d');
     await window.waitForTimeout(300);
 
     await assertNotBlankScreen();
@@ -351,7 +351,7 @@ test.describe('Multi-cursor Find Keybindings', () => {
   test('Cmd+Shift+L selects all occurrences without crashing', async () => {
     await focusEditor();
 
-    await window.keyboard.press('Meta+Shift+l');
+    await window.keyboard.press('ControlOrMeta+Shift+l');
     await window.waitForTimeout(500);
 
     await assertNotBlankScreen();
