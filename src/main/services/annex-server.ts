@@ -17,6 +17,7 @@ import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
 import { THEMES } from '../../renderer/themes';
 import { generateQuickName } from '../../shared/name-generator';
+import { generateQuickAgentId } from '../../shared/agent-id';
 import type { StructuredEvent } from '../../shared/structured-events';
 import type {
   AnnexStatus,
@@ -430,7 +431,7 @@ async function handleSpawnQuickAgent(
     systemPrompt = (body.systemPrompt as string | undefined) || parentInfo.config.quickAgentDefaults?.systemPrompt;
   }
 
-  const agentId = `quick_${Date.now()}_${randomUUID().slice(0, 6)}`;
+  const agentId = generateQuickAgentId();
   const name = generateQuickName();
   const model = (body.model as string | undefined) || defaultModel;
   const orchestrator = (body.orchestrator as string | undefined) || defaultOrchestrator;
