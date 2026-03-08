@@ -13,6 +13,7 @@ import { useUIStore } from './stores/uiStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { usePluginStore } from './plugins/plugin-store';
 import { handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
+import { rendererLog } from './plugins/renderer-logger';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
@@ -106,7 +107,10 @@ export function App() {
           } catch { /* no saved config */ }
           await handleProjectSwitch(prevId, activeProjectId, project.path);
         })().catch((err) => {
-          console.error('[Plugins] Project switch error:', err);
+          rendererLog('core:plugins', 'error', 'Project switch error', {
+            projectId: activeProjectId,
+            meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+          });
           useToastStore.getState().addToast(
             'Some plugins failed to load for this project. Try reloading the window.',
             'error',
