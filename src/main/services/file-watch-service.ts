@@ -7,6 +7,7 @@ interface WatchEntry {
   watchId: string;
   glob: string;
   watcher: fs.FSWatcher;
+  webContentsId: number;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
 }
@@ -36,6 +37,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watchId,
     glob,
     watcher: null as unknown as fs.FSWatcher,
+    webContentsId: sender.id,
     debounceTimer: null,
     pendingEvents: [],
   };
@@ -106,11 +108,9 @@ export function stopAllWatches(): void {
 export function cleanupWatchesForWindow(win: BrowserWindow): void {
   const webContentsId = win.webContents.id;
   for (const [watchId, entry] of activeWatches) {
-    // We can't easily check the sender, so stop all watches
-    // In practice, watches are plugin-scoped and cleaned up via dispose()
-    void webContentsId;
-    void entry;
-    void watchId;
+    if (entry.webContentsId === webContentsId) {
+      stopWatch(watchId);
+    }
   }
 }
 
