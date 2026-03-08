@@ -43,6 +43,7 @@ export async function startStructuredSession(
   agentId: string,
   adapter: StructuredAdapter,
   opts: StructuredSessionOpts,
+  onExit?: (agentId: string) => void,
 ): Promise<void> {
   // Clean up any existing session for this agent
   if (sessions.has(agentId)) {
@@ -81,11 +82,18 @@ export async function startStructuredSession(
       };
       broadcastEvent(agentId, errorEvent, logStream);
     }
+  }).finally(() => {
+    // Only invoke onExit for natural exits — explicit kills via cancelSession
+    // already call untrackAgent directly, so skip to avoid a double call.
+    if (!abortController.signal.aborted) {
+      onExit?.(agentId);
+    }
   });
 }
 
 async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts): Promise<void> {
   const { adapter, agentId, logStream, abortController } = session;
+  let exitCode = 0;
 
   try {
     const stream = adapter.start(opts);
@@ -94,8 +102,14 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
       if (abortController.signal.aborted) break;
       broadcastEvent(agentId, event, logStream);
     }
+    if (abortController.signal.aborted) exitCode = 1;
+  } catch (err) {
+    exitCode = 1;
+    throw err;
   } finally {
     cleanupSession(agentId);
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
+    annexEventBus.emitPtyExit(agentId, exitCode);
   }
 }
 

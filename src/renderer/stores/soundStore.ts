@@ -44,15 +44,11 @@ function stopActiveAudio(): void {
   }
 }
 
-async function loadSoundData(packId: string, event: SoundEvent, cache: Record<string, string>): Promise<string | null> {
+async function loadSoundData(packId: string, event: SoundEvent, cache: Readonly<Record<string, string>>): Promise<string | null> {
   const cacheKey = `${packId}:${event}`;
   if (cache[cacheKey]) return cache[cacheKey];
 
   const data = await window.clubhouse.app.getSoundData(packId, event);
-  if (data) {
-    // Store in cache via direct mutation (store will be updated separately)
-    cache[cacheKey] = data;
-  }
   return data;
 }
 

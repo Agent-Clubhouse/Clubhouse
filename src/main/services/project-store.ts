@@ -223,12 +223,24 @@ function writeProjects(projects: Project[]): void {
   writeStore({ version: CURRENT_VERSION, projects });
 }
 
+/**
+ * Sequential read-modify-write the projects list to prevent lost updates
+ * within a single Node.js process. The `fn` callback receives the current
+ * projects array and must return a new array that will be written back to disk.
+ * Callbacks should be pure transforms — avoid filesystem side effects inside.
+ */
+function updateProjects(fn: (projects: Project[]) => Project[]): Project[] {
+  const projects = readProjects();
+  const updated = fn(projects);
+  writeProjects(updated);
+  return updated;
+}
+
 export function list(): Project[] {
   return readProjects();
 }
 
 export function add(dirPath: string): Project {
-  const projects = readProjects();
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const project: Project = { id, name, path: dirPath };
@@ -250,68 +262,80 @@ export function add(dirPath: string): Project {
     project.icon = restoredIcon;
   }
 
-  projects.push(project);
-  writeProjects(projects);
+  updateProjects((projects) => [...projects, project]);
   return project;
 }
 
 export function remove(id: string): void {
-  const projects = readProjects();
-  const project = projects.find((p) => p.id === id);
-  const filtered = projects.filter((p) => p.id !== id);
-  writeProjects(filtered);
+  let removedProject: Project | undefined;
+  updateProjects((projects) => {
+    removedProject = projects.find((p) => p.id === id);
+    return projects.filter((p) => p.id !== id);
+  });
 
-  if (project) {
+  if (removedProject) {
     // Preserve user-configured settings for later re-add at the same path
-    preserveSettings(project);
+    preserveSettings(removedProject);
   }
 
   // Preserve the icon for later re-add at the same path; delete if no icon
-  if (project?.icon) {
-    preserveIcon(project);
+  if (removedProject?.icon) {
+    preserveIcon(removedProject);
   } else {
     removeIconFile(id);
   }
 }
 
 export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
-  const projects = readProjects();
-  const idx = projects.findIndex((p) => p.id === id);
-  if (idx === -1) return projects;
+  let shouldRemoveIcon = false;
 
-  if (updates.icon === '') {
+  const result = updateProjects((projects) => {
+    return projects.map((p) => {
+      if (p.id !== id) return p;
+
+      const next = { ...p };
+
+      if (updates.icon === '') {
+        shouldRemoveIcon = true;
+        delete next.icon;
+      } else if (updates.icon !== undefined) {
+        next.icon = updates.icon;
+      }
+
+      if (updates.color !== undefined) {
+        if (updates.color === '') {
+          delete next.color;
+        } else {
+          next.color = updates.color;
+        }
+      }
+
+      if (updates.name !== undefined && updates.name !== '') {
+        next.name = updates.name;
+      }
+
+      if (updates.displayName !== undefined) {
+        if (updates.displayName === '') {
+          delete next.displayName;
+        } else {
+          next.displayName = updates.displayName;
+        }
+      }
+
+      if (updates.orchestrator !== undefined) {
+        next.orchestrator = updates.orchestrator;
+      }
+
+      return next;
+    });
+  });
+
+  // Perform filesystem side effect after the state write succeeds
+  if (shouldRemoveIcon) {
     removeIconFile(id);
-    delete projects[idx].icon;
-  } else if (updates.icon !== undefined) {
-    projects[idx].icon = updates.icon;
   }
 
-  if (updates.color !== undefined) {
-    if (updates.color === '') {
-      delete projects[idx].color;
-    } else {
-      projects[idx].color = updates.color;
-    }
-  }
-
-  if (updates.name !== undefined && updates.name !== '') {
-    projects[idx].name = updates.name;
-  }
-
-  if (updates.displayName !== undefined) {
-    if (updates.displayName === '') {
-      delete projects[idx].displayName;
-    } else {
-      projects[idx].displayName = updates.displayName;
-    }
-  }
-
-  if (updates.orchestrator !== undefined) {
-    projects[idx].orchestrator = updates.orchestrator;
-  }
-
-  writeProjects(projects);
-  return projects;
+  return result;
 }
 
 export function setIcon(projectId: string, sourcePath: string): string {
@@ -322,12 +346,12 @@ export function setIcon(projectId: string, sourcePath: string): string {
   const dest = path.join(getIconsDir(), filename);
   fs.copyFileSync(sourcePath, dest);
 
-  const projects = readProjects();
-  const idx = projects.findIndex((p) => p.id === projectId);
-  if (idx !== -1) {
-    projects[idx].icon = filename;
-    writeProjects(projects);
-  }
+  updateProjects((projects) => {
+    return projects.map((p) => {
+      if (p.id !== projectId) return p;
+      return { ...p, icon: filename };
+    });
+  });
 
   return filename;
 }
@@ -375,33 +399,33 @@ export function saveCroppedIcon(projectId: string, dataUrl: string): string {
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
   fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
 
-  const projects = readProjects();
-  const idx = projects.findIndex((p) => p.id === projectId);
-  if (idx !== -1) {
-    projects[idx].icon = filename;
-    writeProjects(projects);
-  }
+  updateProjects((projects) => {
+    return projects.map((p) => {
+      if (p.id !== projectId) return p;
+      return { ...p, icon: filename };
+    });
+  });
 
   return filename;
 }
 
 export function reorder(orderedIds: string[]): Project[] {
-  const projects = readProjects();
-  const byId = new Map(projects.map((p) => [p.id, p]));
+  return updateProjects((projects) => {
+    const byId = new Map(projects.map((p) => [p.id, p]));
 
-  const result: Project[] = [];
-  for (const id of orderedIds) {
-    const p = byId.get(id);
-    if (p) {
-      result.push(p);
-      byId.delete(id);
+    const result: Project[] = [];
+    for (const id of orderedIds) {
+      const p = byId.get(id);
+      if (p) {
+        result.push(p);
+        byId.delete(id);
+      }
     }
-  }
-  // Append any projects not in orderedIds (defensive)
-  for (const p of byId.values()) {
-    result.push(p);
-  }
+    // Append any projects not in orderedIds (defensive)
+    for (const p of byId.values()) {
+      result.push(p);
+    }
 
-  writeProjects(result);
-  return result;
+    return result;
+  });
 }

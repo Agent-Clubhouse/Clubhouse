@@ -121,4 +121,81 @@ describe('sessionSettingsStore', () => {
       expect(getState().projectOverrides).toEqual({ '/projects/a': true });
     });
   });
+
+  describe('race condition prevention', () => {
+    it('setPromptForName saves with pre-snapshot projectOverrides', async () => {
+      useSessionSettingsStore.setState({
+        promptForName: false,
+        projectOverrides: { '/a': true },
+      });
+
+      let resolveSave!: () => void;
+      window.clubhouse.app.saveSessionSettings = vi.fn().mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().setPromptForName(true);
+
+      // Concurrent mutation while save is in-flight
+      useSessionSettingsStore.setState({ projectOverrides: { '/a': true, '/b': false } });
+
+      resolveSave();
+      await promise;
+
+      expect(window.clubhouse.app.saveSessionSettings).toHaveBeenCalledWith({
+        promptForName: true,
+        projectOverrides: { '/a': true },
+      });
+    });
+
+    it('setProjectOverride saves with pre-snapshot promptForName', async () => {
+      useSessionSettingsStore.setState({
+        promptForName: false,
+        projectOverrides: {},
+      });
+
+      let resolveSave!: () => void;
+      window.clubhouse.app.saveSessionSettings = vi.fn().mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().setProjectOverride('/a', true);
+
+      // Concurrent mutation while save is in-flight
+      useSessionSettingsStore.setState({ promptForName: true });
+
+      resolveSave();
+      await promise;
+
+      expect(window.clubhouse.app.saveSessionSettings).toHaveBeenCalledWith({
+        promptForName: false,
+        projectOverrides: { '/a': true },
+      });
+    });
+
+    it('clearProjectOverride saves with pre-snapshot promptForName', async () => {
+      useSessionSettingsStore.setState({
+        promptForName: false,
+        projectOverrides: { '/a': true },
+      });
+
+      let resolveSave!: () => void;
+      window.clubhouse.app.saveSessionSettings = vi.fn().mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = getState().clearProjectOverride('/a');
+
+      // Concurrent mutation while save is in-flight
+      useSessionSettingsStore.setState({ promptForName: true });
+
+      resolveSave();
+      await promise;
+
+      expect(window.clubhouse.app.saveSessionSettings).toHaveBeenCalledWith({
+        promptForName: false,
+        projectOverrides: {},
+      });
+    });
+  });
 });
