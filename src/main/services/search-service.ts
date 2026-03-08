@@ -162,8 +162,8 @@ function searchWithRipgrep(
       args,
       { maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
       (error, stdout, _stderr) => {
-        // ripgrep exits with code 1 when no matches found — not an error
-        if (error && (error as NodeJS.ErrnoException).code !== null && !stdout) {
+        if (error) {
+          // ripgrep exits with code 1 when no matches found — not an error
           const exitCode = (error as { code?: number }).code;
           if (exitCode === 1) {
             resolve({ results: [], totalMatches: 0, truncated: false });
