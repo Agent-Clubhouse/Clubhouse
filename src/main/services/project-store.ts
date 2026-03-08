@@ -266,18 +266,20 @@ export function add(dirPath: string): Project {
 }
 
 export function remove(id: string): void {
-  const projects = readProjects();
-  const project = projects.find((p) => p.id === id);
-  updateProjects((current) => current.filter((p) => p.id !== id));
+  let removedProject: Project | undefined;
+  updateProjects((projects) => {
+    removedProject = projects.find((p) => p.id === id);
+    return projects.filter((p) => p.id !== id);
+  });
 
-  if (project) {
+  if (removedProject) {
     // Preserve user-configured settings for later re-add at the same path
-    preserveSettings(project);
+    preserveSettings(removedProject);
   }
 
   // Preserve the icon for later re-add at the same path; delete if no icon
-  if (project?.icon) {
-    preserveIcon(project);
+  if (removedProject?.icon) {
+    preserveIcon(removedProject);
   } else {
     removeIconFile(id);
   }
