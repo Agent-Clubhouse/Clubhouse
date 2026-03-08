@@ -31,12 +31,12 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   },
 
   setDefaultMode: async (mode) => {
-    const prev = get().defaultMode;
+    const { defaultMode: prev, projectOverrides } = get();
     set({ defaultMode: mode });
     try {
       await window.clubhouse.app.saveHeadlessSettings({
         defaultMode: mode,
-        projectOverrides: get().projectOverrides,
+        projectOverrides,
       });
     } catch {
       set({ defaultMode: prev });
@@ -52,12 +52,12 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   },
 
   setProjectMode: async (projectPath, mode) => {
-    const prevOverrides = get().projectOverrides;
+    const { defaultMode, projectOverrides: prevOverrides } = get();
     const newOverrides = { ...prevOverrides, [projectPath]: mode };
     set({ projectOverrides: newOverrides });
     try {
       await window.clubhouse.app.saveHeadlessSettings({
-        defaultMode: get().defaultMode,
+        defaultMode,
         projectOverrides: newOverrides,
       });
     } catch {
@@ -66,12 +66,12 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   },
 
   clearProjectMode: async (projectPath) => {
-    const prevOverrides = get().projectOverrides;
+    const { defaultMode, projectOverrides: prevOverrides } = get();
     const { [projectPath]: _, ...rest } = prevOverrides;
     set({ projectOverrides: rest });
     try {
       await window.clubhouse.app.saveHeadlessSettings({
-        defaultMode: get().defaultMode,
+        defaultMode,
         projectOverrides: rest,
       });
     } catch {

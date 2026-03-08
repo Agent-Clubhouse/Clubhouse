@@ -310,7 +310,7 @@ function initHookEventListener(): () => void {
           const currentAgent = useAgentStore.getState().agents[agentId];
           if (currentAgent?.status !== 'running') return; // already exited
           if (project) {
-            window.clubhouse.agent.killAgent(agentId, project.path);
+            window.clubhouse.agent.killAgent(agentId, project.path).catch(() => {});
           } else {
             window.clubhouse.pty.kill(agentId);
           }

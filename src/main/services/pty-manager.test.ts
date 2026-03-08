@@ -30,11 +30,25 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
+// Mock broadcastToAllWindows
+vi.mock('../util/ipc-broadcast', () => ({
+  broadcastToAllWindows: vi.fn(),
+  setChannelPolicy: vi.fn(),
+}));
+
+// Mock annex-event-bus
+vi.mock('./annex-event-bus', () => ({
+  emitPtyExit: vi.fn(),
+  emitPtyData: vi.fn(),
+}));
+
 // We need to import AFTER mocks are set up
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
 import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep } from './pty-manager';
+import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import * as annexEventBus from './annex-event-bus';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -419,6 +433,24 @@ describe('pty-manager', () => {
       // from the old gracefulKill timers
       expect(mockProcess.write).not.toHaveBeenCalledWith('\x04');
       expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGTERM');
+
+      vi.useRealTimers();
+    });
+
+    it('broadcasts PTY.EXIT when the 9s kill timer fires on a stuck process', () => {
+      vi.useFakeTimers();
+      spawn('agent_gk_exit', '/test', '/usr/local/bin/claude', []);
+      vi.mocked(broadcastToAllWindows).mockClear();
+      vi.mocked(annexEventBus.emitPtyExit).mockClear();
+
+      gracefulKill('agent_gk_exit');
+
+      // Advance to the 9s kill timer
+      vi.advanceTimersByTime(9000);
+
+      // Should broadcast PTY.EXIT so the renderer removes the agent from UI
+      expect(broadcastToAllWindows).toHaveBeenCalledWith('pty:exit', 'agent_gk_exit', 1, '');
+      expect(annexEventBus.emitPtyExit).toHaveBeenCalledWith('agent_gk_exit', 1);
 
       vi.useRealTimers();
     });

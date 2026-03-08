@@ -182,10 +182,19 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(json);
 }
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1 MB
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk; });
+    req.on('data', (chunk: Buffer) => {
+      if (body.length + chunk.length > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Body exceeded maximum allowed size'));
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => resolve(body));
     req.on('error', (err) => reject(err));
   });
@@ -706,21 +715,28 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   // POST /pair — no auth required
   if (method === 'POST' && url === '/pair') {
-    let body = '';
-    req.on('data', (chunk: Buffer) => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const { pin } = JSON.parse(body);
-        if (pin === currentPin) {
-          const token = randomUUID();
-          sessionTokens.add(token);
-          sendJson(res, 200, { token });
-        } else {
-          sendJson(res, 401, { error: 'invalid_pin' });
-        }
-      } catch {
+    readBody(req).then((raw) => {
+      const body = parseJsonBody(raw);
+      if (!body) {
         sendJson(res, 400, { error: 'invalid_json' });
+        return;
       }
+      const pin = body.pin;
+      if (typeof pin !== 'string') {
+        sendJson(res, 400, { error: 'invalid_json' });
+        return;
+      }
+      if (pin === currentPin) {
+        const token = randomUUID();
+        sessionTokens.add(token);
+        sendJson(res, 200, { token });
+      } else {
+        sendJson(res, 401, { error: 'invalid_pin' });
+      }
+    }).catch((err) => {
+      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      res.writeHead(400);
+      res.end();
     });
     return;
   }

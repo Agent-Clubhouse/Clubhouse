@@ -344,6 +344,28 @@ describe('agentStore', () => {
       expect(getState().agentDetailedStatus['a_fresh']).toBeDefined();
     });
 
+    it('does not notify subscribers when nothing is cleared', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_fresh', status: 'running' });
+      useAgentStore.setState((s) => ({
+        agentDetailedStatus: {
+          ...s.agentDetailedStatus,
+          a_fresh: { state: 'working', message: 'Reading file', timestamp: now - 5000 },
+        },
+      }));
+
+      const listener = vi.fn();
+      const unsubscribe = useAgentStore.subscribe(listener);
+
+      getState().clearStaleStatuses();
+
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
     it('does not clear needs_permission even if stale', () => {
       vi.useFakeTimers();
       const now = Date.now();
@@ -387,6 +409,28 @@ describe('agentStore', () => {
       seedAgent({ id: 'a_noname', status: 'running' });
       getState().handleHookEvent('a_noname', { kind: 'pre_tool', timestamp: 100 });
       expect(getState().agentDetailedStatus['a_noname'].message).toBe('Working');
+    });
+  });
+
+  describe('renameAgent', () => {
+    it('updates the agent name in local state', async () => {
+      seedAgent({ id: 'a_ren', name: 'old-name' });
+      await getState().renameAgent('a_ren', 'new-name', '/proj');
+      expect(getState().agents['a_ren'].name).toBe('new-name');
+      expect(getState().agents['a_ren'].color).toBe('indigo'); // unchanged
+    });
+
+    it('calls renameDurable IPC', async () => {
+      seedAgent({ id: 'a_ren_ipc' });
+      await getState().renameAgent('a_ren_ipc', 'renamed', '/proj');
+      expect(window.clubhouse.agent.renameDurable).toHaveBeenCalledWith('/proj', 'a_ren_ipc', 'renamed');
+    });
+
+    it('skips update when agent is missing', async () => {
+      const before = { ...getState().agents };
+      await getState().renameAgent('nonexistent', 'ghost', '/proj');
+      expect(getState().agents).toEqual(before);
+      expect(getState().agents['nonexistent']).toBeUndefined();
     });
   });
 
@@ -604,6 +648,23 @@ describe('agentStore', () => {
       expect(spawnCall.model).toBe('sonnet');
       expect(spawnCall.mission).toBe('do stuff');
     });
+
+    it('does not create malformed agent entry if agent was removed before catch', async () => {
+      mockAgent.spawnAgent.mockImplementation(async ({ agentId }: { agentId: string }) => {
+        // Simulate concurrent removal of the agent before the error
+        useAgentStore.setState((s) => {
+          const { [agentId]: _, ...rest } = s.agents;
+          return { agents: rest };
+        });
+        throw new Error('spawn failed');
+      });
+
+      await expect(getState().spawnQuickAgent('proj_1', '/project', 'do stuff')).rejects.toThrow('spawn failed');
+
+      // The agents map should be empty — no malformed entry
+      const agents = getState().agents;
+      expect(Object.keys(agents)).toHaveLength(0);
+    });
   });
 
   describe('reorderAgents', () => {
@@ -753,6 +814,29 @@ describe('agentStore', () => {
 
       await getState().spawnDurableAgent('proj_1', '/project', config, false);
       expect(getState().agents['durable_noresume'].resuming).toBeUndefined();
+    });
+
+    it('does not create malformed agent entry if agent was removed before catch', async () => {
+      mockAgent.spawnAgent.mockImplementation(async ({ agentId }: { agentId: string }) => {
+        // Simulate concurrent removal of the agent before the error
+        useAgentStore.setState((s) => {
+          const { [agentId]: _, ...rest } = s.agents;
+          return { agents: rest };
+        });
+        throw new Error('spawn failed');
+      });
+
+      const config = {
+        id: 'durable_removed',
+        name: 'removed-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await expect(getState().spawnDurableAgent('proj_1', '/project', config, false)).rejects.toThrow('spawn failed');
+
+      // The agents map should not contain the removed agent
+      expect(getState().agents['durable_removed']).toBeUndefined();
     });
   });
 

@@ -5,6 +5,8 @@ import * as fs from 'fs';
 export interface SettingsStore<T> {
   get(): T;
   save(settings: T): void;
+  /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
+  update(fn: (current: T) => T): T;
 }
 
 export function createSettingsStore<T>(
@@ -13,7 +15,7 @@ export function createSettingsStore<T>(
   migrate?: (raw: Record<string, unknown>) => T,
 ): SettingsStore<T> {
   const filePath = path.join(app.getPath('userData'), filename);
-  return {
+  const store: SettingsStore<T> = {
     get() {
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
@@ -31,5 +33,12 @@ export function createSettingsStore<T>(
     save(settings: T) {
       fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
     },
+    update(fn: (current: T) => T): T {
+      const current = store.get();
+      const updated = fn(current);
+      store.save(updated);
+      return updated;
+    },
   };
+  return store;
 }
