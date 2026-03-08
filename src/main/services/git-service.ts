@@ -101,31 +101,16 @@ export function getGitInfo(dirPath: string): GitInfo {
   return { branch, branches, status, log, hasGit, ahead, behind, remote, stashCount, hasConflicts };
 }
 
-export function checkout(dirPath: string, branchName: string): boolean {
-  try {
-    execSync(`git checkout ${branchName}`, { cwd: dirPath, encoding: 'utf-8' });
-    return true;
-  } catch {
-    return false;
-  }
+export function checkout(dirPath: string, branchName: string): GitOpResult {
+  return runResult(`git checkout ${branchName}`, dirPath);
 }
 
-export function stage(dirPath: string, filePath: string): boolean {
-  try {
-    execSync(`git add -- "${filePath}"`, { cwd: dirPath, encoding: 'utf-8' });
-    return true;
-  } catch {
-    return false;
-  }
+export function stage(dirPath: string, filePath: string): GitOpResult {
+  return runResult(`git add -- "${filePath}"`, dirPath);
 }
 
-export function unstage(dirPath: string, filePath: string): boolean {
-  try {
-    execSync(`git reset HEAD -- "${filePath}"`, { cwd: dirPath, encoding: 'utf-8' });
-    return true;
-  } catch {
-    return false;
-  }
+export function unstage(dirPath: string, filePath: string): GitOpResult {
+  return runResult(`git reset HEAD -- "${filePath}"`, dirPath);
 }
 
 export function commit(dirPath: string, message: string): GitOpResult {
@@ -189,22 +174,12 @@ export function pull(dirPath: string): GitOpResult {
   return runResult(`git pull ${info.remote} ${info.branch}`, dirPath);
 }
 
-export function stageAll(dirPath: string): boolean {
-  try {
-    execSync('git add -A', { cwd: dirPath, encoding: 'utf-8' });
-    return true;
-  } catch {
-    return false;
-  }
+export function stageAll(dirPath: string): GitOpResult {
+  return runResult('git add -A', dirPath);
 }
 
-export function unstageAll(dirPath: string): boolean {
-  try {
-    execSync('git reset HEAD', { cwd: dirPath, encoding: 'utf-8' });
-    return true;
-  } catch {
-    return false;
-  }
+export function unstageAll(dirPath: string): GitOpResult {
+  return runResult('git reset HEAD', dirPath);
 }
 
 export function discardFile(dirPath: string, filePath: string, isUntracked: boolean): GitOpResult {
