@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BrowserWindow } from 'electron';
+import picomatch from 'picomatch';
 import { IPC } from '../../shared/ipc-channels';
 
 interface WatchEntry {
@@ -40,11 +41,16 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     pendingEvents: [],
   };
 
+  const isMatch = picomatch(glob);
+
   try {
     const watcher = fs.watch(baseDir, { recursive: true }, (eventType, filename) => {
       if (!filename) return;
 
       const fullPath = path.join(baseDir, filename);
+
+      // Filter: only forward events for paths matching the original glob
+      if (!isMatch(fullPath)) return;
 
       // Map fs.watch event types to our FileEvent types
       let type: 'created' | 'modified' | 'deleted';
