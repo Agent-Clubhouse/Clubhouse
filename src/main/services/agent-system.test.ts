@@ -154,14 +154,27 @@ describe('agent-system', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('opencode');
     });
 
-    it('does not track orchestrator when not specified', async () => {
+    it('tracks resolved orchestrator even when not explicitly specified', async () => {
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/my/project',
         cwd: '/my/project',
         kind: 'durable',
       });
-      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBe('claude-code');
+    });
+
+    it('tracks project-level orchestrator from settings.json', async () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+        JSON.stringify({ orchestrator: 'opencode' })
+      );
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/my/project',
+        cwd: '/my/project',
+        kind: 'durable',
+      });
+      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
     });
 
     it('writes hooks config with base URL (no agentId)', async () => {
@@ -326,6 +339,38 @@ describe('agent-system', () => {
 
     it('uses orchestrator-specific exit command', async () => {
       await killAgent('agent-1', '/project', 'opencode');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    });
+
+    it('uses tracked orchestrator from spawn rather than caller-provided', async () => {
+      // Spawn with opencode orchestrator
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+
+      // Kill without specifying orchestrator — should use the tracked one (opencode)
+      await killAgent('agent-1', '/project');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    });
+
+    it('uses tracked project-level orchestrator over caller-provided', async () => {
+      // Spawn with orchestrator resolved from project settings (opencode)
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+        JSON.stringify({ orchestrator: 'opencode' })
+      );
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // Kill with explicit claude-code — should still use tracked opencode
+      await killAgent('agent-1', '/project', 'claude-code');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
   });
