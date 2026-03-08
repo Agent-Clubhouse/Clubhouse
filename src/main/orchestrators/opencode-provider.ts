@@ -7,6 +7,7 @@ import {
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
+  SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
@@ -113,7 +114,7 @@ export class OpenCodeProvider implements OrchestratorProvider {
     }
   }
 
-  async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
+  async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = findOpenCodeBinary();
     const args: string[] = [];
 
