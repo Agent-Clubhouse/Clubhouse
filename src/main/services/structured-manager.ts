@@ -70,7 +70,7 @@ export async function startStructuredSession(
   });
 
   // Consume the event stream in the background
-  consumeEvents(session, opts, onExit).catch((err) => {
+  consumeEvents(session, opts).catch((err) => {
     if (!abortController.signal.aborted) {
       appLog('core:structured', 'error', 'Structured session stream failed', {
         meta: { agentId, error: err instanceof Error ? err.message : String(err) },
@@ -82,10 +82,16 @@ export async function startStructuredSession(
       };
       broadcastEvent(agentId, errorEvent, logStream);
     }
+  }).finally(() => {
+    // Only invoke onExit for natural exits — explicit kills via cancelSession
+    // already call untrackAgent directly, so skip to avoid a double call.
+    if (!abortController.signal.aborted) {
+      onExit?.(agentId);
+    }
   });
 }
 
-async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts, onExit?: (agentId: string) => void): Promise<void> {
+async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts): Promise<void> {
   const { adapter, agentId, logStream, abortController } = session;
 
   try {
@@ -97,11 +103,6 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     }
   } finally {
     cleanupSession(agentId);
-    // Only invoke onExit for natural exits — explicit kills via cancelSession
-    // already call untrackAgent directly, so skip to avoid a double call.
-    if (!abortController.signal.aborted) {
-      onExit?.(agentId);
-    }
   }
 }
 
