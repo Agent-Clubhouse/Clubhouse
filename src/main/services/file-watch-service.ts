@@ -10,6 +10,8 @@ interface WatchEntry {
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
   webContentsId: number;
+  sender: Electron.WebContents;
+  destroyedListener: (() => void) | null;
 }
 
 const activeWatches = new Map<string, WatchEntry>();
@@ -40,6 +42,8 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     debounceTimer: null,
     pendingEvents: [],
     webContentsId: sender.id,
+    sender,
+    destroyedListener: null,
   };
 
   try {
@@ -63,12 +67,16 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
         clearTimeout(entry.debounceTimer);
       }
       entry.debounceTimer = setTimeout(() => {
+        if (sender.isDestroyed()) {
+          stopWatch(watchId);
+          return;
+        }
         const events = entry.pendingEvents.splice(0);
         if (events.length > 0) {
           try {
             sender.send(IPC.FILE.WATCH_EVENT, { watchId, events });
           } catch {
-            // Sender may have been destroyed
+            stopWatch(watchId);
           }
         }
       }, DEBOUNCE_MS);
@@ -78,9 +86,11 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     activeWatches.set(watchId, entry);
 
     // Automatically clean up when the sender webContents is destroyed
-    sender.once('destroyed', () => {
+    const destroyedListener = () => {
       stopWatch(watchId);
-    });
+    };
+    entry.destroyedListener = destroyedListener;
+    sender.once('destroyed', destroyedListener);
   } catch (err) {
     throw new Error(`Failed to start file watcher: ${(err as Error).message}`);
   }
@@ -94,6 +104,10 @@ export function stopWatch(watchId: string): void {
   if (entry.debounceTimer) {
     clearTimeout(entry.debounceTimer);
   }
+  if (entry.destroyedListener) {
+    entry.sender.removeListener('destroyed', entry.destroyedListener);
+    entry.destroyedListener = null;
+  }
   try {
     entry.watcher.close();
   } catch {
@@ -104,7 +118,8 @@ export function stopWatch(watchId: string): void {
 
 /** Stop all watches (cleanup on window close). */
 export function stopAllWatches(): void {
-  for (const watchId of activeWatches.keys()) {
+  const watchIds = [...activeWatches.keys()];
+  for (const watchId of watchIds) {
     stopWatch(watchId);
   }
 }
@@ -112,19 +127,30 @@ export function stopAllWatches(): void {
 /** Clean up watches when a window is closed. */
 export function cleanupWatchesForWindow(win: BrowserWindow): void {
   const webContentsId = win.webContents.id;
-  for (const [watchId, entry] of activeWatches) {
-    if (entry.webContentsId === webContentsId) {
-      stopWatch(watchId);
-    }
+  const toStop = [...activeWatches.entries()]
+    .filter(([, entry]) => entry.webContentsId === webContentsId)
+    .map(([watchId]) => watchId);
+  for (const watchId of toStop) {
+    stopWatch(watchId);
   }
+}
+
+/** Return the number of currently active watches (for testing). */
+export function getActiveWatchCount(): number {
+  return activeWatches.size;
 }
 
 /**
  * Extract the base directory from a glob pattern.
+ * Handles both POSIX and Windows path separators.
  * e.g., "/home/user/project/src/**\/*.ts" → "/home/user/project/src"
+ *      "C:\Users\project\src\**\*.ts"    → "C:/Users/project/src"
  */
 function extractBaseDir(glob: string): string {
-  const parts = glob.split('/');
+  // Normalize backslashes to forward slashes for consistent splitting.
+  // Windows fs APIs accept forward slashes, so we can safely keep them.
+  const normalized = glob.replace(/\\/g, '/');
+  const parts = normalized.split('/');
   const baseParts: string[] = [];
   for (const part of parts) {
     if (part.includes('*') || part.includes('?') || part.includes('{') || part.includes('[')) {

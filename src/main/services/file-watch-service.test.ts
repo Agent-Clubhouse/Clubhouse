@@ -2,21 +2,44 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow } from './file-watch-service';
+
+// Mock electron BrowserWindow
+vi.mock('electron', () => ({
+  BrowserWindow: vi.fn(),
+}));
+
+// Mock IPC channels
+vi.mock('../../shared/ipc-channels', () => ({
+  IPC: {
+    FILE: {
+      WATCH_EVENT: 'file:watch-event',
+    },
+  },
+}));
+
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 /**
- * Create a mock Electron WebContents-like object.
- * The `destroyed` event listener is captured so tests can fire it manually.
+ * Create a mock Electron WebContents with support for once/removeListener
+ * so that the `destroyed` auto-cleanup listener can be tested.
  */
-function createMockSender(id: number) {
+function makeSender(id = 1) {
   const listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
   return {
     id,
+    isDestroyed: vi.fn().mockReturnValue(false),
     send: vi.fn(),
     once(event: string, handler: (...args: unknown[]) => void) {
       if (!listeners[event]) listeners[event] = [];
       listeners[event].push(handler);
+    },
+    removeListener(event: string, handler: (...args: unknown[]) => void) {
+      const list = listeners[event];
+      if (list) {
+        const idx = list.indexOf(handler);
+        if (idx >= 0) list.splice(idx, 1);
+      }
     },
     /** Fire a captured event for testing (with once semantics). */
     _emit(event: string) {
@@ -26,12 +49,17 @@ function createMockSender(id: number) {
         fn();
       }
     },
-  } as unknown as Electron.WebContents & { _emit: (event: string) => void };
+    /** Return the number of registered listeners for the given event. */
+    _listenerCount(event: string) {
+      return (listeners[event] ?? []).length;
+    },
+  };
 }
 
-/** Create a mock BrowserWindow with the given webContents id. */
-function createMockWindow(webContentsId: number) {
-  return { webContents: { id: webContentsId } } as unknown as BrowserWindow;
+function makeWindow(webContentsId = 1) {
+  return {
+    webContents: { id: webContentsId },
+  } as unknown as BrowserWindow;
 }
 
 describe('file-watch-service', () => {
@@ -39,114 +67,204 @@ describe('file-watch-service', () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'file-watch-test-'));
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
     stopAllWatches();
+    vi.useRealTimers();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe('startWatch / stopWatch', () => {
-    it('creates and stops a watch without errors', () => {
-      const sender = createMockSender(1);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      expect(() => startWatch('w1', glob, sender)).not.toThrow();
-      expect(() => stopWatch('w1')).not.toThrow();
+  describe('startWatch', () => {
+    it('throws if base directory does not exist', () => {
+      const sender = makeSender();
+      expect(() =>
+        startWatch('w1', path.join(tmpDir, 'nonexistent', '**', '*.ts'), sender as any),
+      ).toThrow('Watch directory does not exist');
     });
 
-    it('stopWatch is a no-op for unknown id', () => {
+    it('starts a watch and registers in activeWatches (stopWatch succeeds)', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('w1');
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('replaces existing watch with same ID', () => {
+      const sender1 = makeSender(1);
+      const sender2 = makeSender(2);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+      expect(getActiveWatchCount()).toBe(1);
+      // Re-registering same watchId replaces the old one without error
+      expect(() =>
+        startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender2 as any),
+      ).not.toThrow();
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('w1');
+    });
+  });
+
+  describe('stopWatch', () => {
+    it('is a no-op for unknown watchId', () => {
       expect(() => stopWatch('nonexistent')).not.toThrow();
     });
 
-    it('replaces an existing watch with the same id', () => {
-      const sender = createMockSender(1);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender);
-      expect(() => startWatch('w1', glob, sender)).not.toThrow();
+    it('stops an active watch and clears pending debounce timer', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(getActiveWatchCount()).toBe(1);
       stopWatch('w1');
-    });
-  });
-
-  describe('cleanupWatchesForWindow', () => {
-    it('stops watches associated with the given window', () => {
-      const sender1 = createMockSender(10);
-      const sender2 = createMockSender(20);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender1);
-      startWatch('w2', glob, sender1);
-      startWatch('w3', glob, sender2);
-
-      const win = createMockWindow(10);
-      cleanupWatchesForWindow(win);
-
-      // w1 and w2 should already be stopped; calling stopWatch again is a no-op
-      expect(() => stopWatch('w1')).not.toThrow();
-      expect(() => stopWatch('w2')).not.toThrow();
-
-      // w3 should still be active — stopWatch should succeed
-      expect(() => stopWatch('w3')).not.toThrow();
-    });
-
-    it('is a no-op when no watches exist for the window', () => {
-      const sender = createMockSender(99);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender);
-
-      const win = createMockWindow(42);
-      expect(() => cleanupWatchesForWindow(win)).not.toThrow();
-
-      // Original watch should still be active
-      stopWatch('w1');
-    });
-  });
-
-  describe('automatic cleanup on webContents destroyed', () => {
-    it('stops the watch when sender webContents is destroyed', () => {
-      const sender = createMockSender(5);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender);
-
-      // Simulate webContents destruction
-      sender._emit('destroyed');
-
-      // Watch should already be cleaned up; stopWatch is a no-op
+      expect(getActiveWatchCount()).toBe(0);
+      // Second stop is a no-op
       expect(() => stopWatch('w1')).not.toThrow();
     });
 
-    it('does not affect watches from other senders', () => {
-      const sender1 = createMockSender(5);
-      const sender2 = createMockSender(6);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender1);
-      startWatch('w2', glob, sender2);
-
-      // Destroy sender1
-      sender1._emit('destroyed');
-
-      // w2 should still be alive
-      expect(() => stopWatch('w2')).not.toThrow();
+    it('removes the destroyed listener from the sender', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(sender._listenerCount('destroyed')).toBe(1);
+      stopWatch('w1');
+      expect(sender._listenerCount('destroyed')).toBe(0);
     });
   });
 
   describe('stopAllWatches', () => {
     it('stops all active watches', () => {
-      const sender = createMockSender(1);
-      const glob = `${tmpDir}/**/*.txt`;
-
-      startWatch('w1', glob, sender);
-      startWatch('w2', glob, sender);
-
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+      expect(getActiveWatchCount()).toBe(2);
       expect(() => stopAllWatches()).not.toThrow();
+      expect(getActiveWatchCount()).toBe(0);
+    });
+  });
 
-      // Subsequent stopWatch calls should be no-ops
-      expect(() => stopWatch('w1')).not.toThrow();
-      expect(() => stopWatch('w2')).not.toThrow();
+  describe('cleanupWatchesForWindow', () => {
+    it('stops watches belonging to the given window', () => {
+      const sender1 = makeSender(10);
+      const sender2 = makeSender(20);
+      startWatch('w10', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+      startWatch('w20', path.join(tmpDir, '**', '*.js'), sender2 as any);
+      expect(getActiveWatchCount()).toBe(2);
+
+      const win = makeWindow(10);
+      cleanupWatchesForWindow(win);
+
+      // w10 should be gone, w20 should remain
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('w20');
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('does nothing when no watches exist for the window', () => {
+      const sender = makeSender(99);
+      startWatch('w99', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(getActiveWatchCount()).toBe(1);
+
+      const win = makeWindow(1); // different webContentsId
+      expect(() => cleanupWatchesForWindow(win)).not.toThrow();
+
+      // w99 should still be active
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('w99');
+    });
+  });
+
+  describe('automatic cleanup on webContents destroyed', () => {
+    it('stops the watch when sender webContents is destroyed', () => {
+      const sender = makeSender(5);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(getActiveWatchCount()).toBe(1);
+
+      // Simulate webContents destruction
+      sender._emit('destroyed');
+
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('does not affect watches from other senders', () => {
+      const sender1 = makeSender(5);
+      const sender2 = makeSender(6);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender1 as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.ts'), sender2 as any);
+      expect(getActiveWatchCount()).toBe(2);
+
+      // Destroy sender1
+      sender1._emit('destroyed');
+
+      // w2 should still be alive
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('w2');
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('does not leak listeners when watch is replaced', () => {
+      const sender = makeSender(1);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(sender._listenerCount('destroyed')).toBe(1);
+
+      // Replace the watch — old listener should be removed
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(sender._listenerCount('destroyed')).toBe(1);
+    });
+
+    it('old sender destroyed does not stop new watch after replacement', () => {
+      const senderA = makeSender(1);
+      const senderB = makeSender(2);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), senderA as any);
+
+      // Replace with different sender
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), senderB as any);
+      expect(getActiveWatchCount()).toBe(1);
+
+      // Destroy old sender — should NOT affect the new watch
+      senderA._emit('destroyed');
+      expect(getActiveWatchCount()).toBe(1);
+
+      stopWatch('w1');
+    });
+  });
+
+  describe('debounce behaviour', () => {
+    it('stops the watch and does not send if sender is destroyed', () => {
+      const sender = makeSender();
+      sender.isDestroyed.mockReturnValue(true);
+
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      // Simulate the debounce timer firing
+      vi.runAllTimers();
+
+      // sender.send should NOT have been called because isDestroyed returns true
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+
+    it('sends batched events when sender is alive', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      vi.runAllTimers();
+      // No events pending, so send should not be called
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('webContentsId stored in entry', () => {
+    it('associates a watch with the correct webContents ID for cleanup', () => {
+      const senderA = makeSender(100);
+      const senderB = makeSender(200);
+
+      startWatch('wA', path.join(tmpDir, '**', '*.ts'), senderA as any);
+      startWatch('wB', path.join(tmpDir, '**', '*.ts'), senderB as any);
+      expect(getActiveWatchCount()).toBe(2);
+
+      // Cleanup for window with id 100 should only remove wA
+      cleanupWatchesForWindow(makeWindow(100));
+
+      expect(getActiveWatchCount()).toBe(1);
+      stopWatch('wB');
     });
   });
 });
