@@ -26,6 +26,7 @@ import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { initializePluginSystem } from './plugins/plugin-loader';
+import { rendererLog } from './plugins/renderer-logger';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -56,7 +57,9 @@ export function initApp(): () => void {
 
   // 2. Initialize plugin system (must be after settings)
   initializePluginSystem().catch((err) => {
-    console.error('[Plugins] Failed to initialize plugin system:', err);
+    rendererLog('core:plugins', 'error', 'Failed to initialize plugin system', {
+      meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+    });
   });
 
   // 3. Start IPC listeners for updates, annex, and plugin updates
