@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import type { Tab } from './state';
@@ -84,10 +84,19 @@ function TabContextMenu({ x, y, tab, onClose, onAction }: TabContextMenuProps) {
     { label: 'Reveal in File Tree', action: 'revealInTree' },
   ];
 
+  const style = useMemo(() => {
+    const menuWidth = 170;
+    const menuHeight = items.length * 22 + 8; // estimated height per item + padding
+    return {
+      left: Math.min(x, window.innerWidth - menuWidth - 8),
+      top: Math.min(y, window.innerHeight - menuHeight - 8),
+    };
+  }, [x, y, items.length]);
+
   return React.createElement('div', {
     ref: menuRef,
     className: 'fixed z-50 bg-ctp-mantle border border-ctp-surface0 rounded shadow-lg py-1 min-w-[170px]',
-    style: { left: x, top: y },
+    style,
   },
     ...items.map((item) => {
       if (item.label === '—') {

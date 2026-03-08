@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { FileNode } from '../../../../shared/types';
 import { fileState } from './state';
@@ -316,10 +316,19 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
     { label: 'Delete', action: 'delete' },
   ];
 
+  const style = useMemo(() => {
+    const menuWidth = 140;
+    const menuHeight = items.length * 24 + 8; // items × 24px + 8px padding
+    return {
+      left: Math.min(x, window.innerWidth - menuWidth - 8),
+      top: Math.min(y, window.innerHeight - menuHeight - 8),
+    };
+  }, [x, y, items.length]);
+
   return React.createElement('div', {
     ref: menuRef,
     className: 'fixed z-50 bg-ctp-mantle border border-ctp-surface0 rounded shadow-lg py-1 min-w-[140px]',
-    style: { left: x, top: y },
+    style,
   },
     ...items.map((item) =>
       React.createElement('button', {
