@@ -3,21 +3,16 @@ import { create } from 'zustand';
 export type SpawnMode = 'headless' | 'interactive' | 'structured';
 
 interface HeadlessState {
-  /** @deprecated Read via `defaultMode` instead */
-  enabled: boolean;
   defaultMode: SpawnMode;
   projectOverrides: Record<string, SpawnMode>;
   loadSettings: () => Promise<void>;
   setDefaultMode: (mode: SpawnMode) => Promise<void>;
-  /** @deprecated Use `setDefaultMode` instead */
-  setEnabled: (enabled: boolean) => Promise<void>;
   getProjectMode: (projectPath?: string) => SpawnMode;
   setProjectMode: (projectPath: string, mode: SpawnMode) => Promise<void>;
   clearProjectMode: (projectPath: string) => Promise<void>;
 }
 
 export const useHeadlessStore = create<HeadlessState>((set, get) => ({
-  enabled: true,
   defaultMode: 'headless',
   projectOverrides: {},
 
@@ -27,7 +22,6 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
       const defaultMode: SpawnMode = settings?.defaultMode
         ?? (settings?.enabled !== false ? 'headless' : 'interactive');
       set({
-        enabled: defaultMode === 'headless',
         defaultMode,
         projectOverrides: settings?.projectOverrides ?? {},
       });
@@ -38,20 +32,15 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
 
   setDefaultMode: async (mode) => {
     const prev = get().defaultMode;
-    set({ defaultMode: mode, enabled: mode === 'headless' });
+    set({ defaultMode: mode });
     try {
       await window.clubhouse.app.saveHeadlessSettings({
         defaultMode: mode,
         projectOverrides: get().projectOverrides,
       });
     } catch {
-      set({ defaultMode: prev, enabled: prev === 'headless' });
+      set({ defaultMode: prev });
     }
-  },
-
-  setEnabled: async (enabled) => {
-    const mode = enabled ? 'headless' : 'interactive';
-    await get().setDefaultMode(mode);
   },
 
   getProjectMode: (projectPath?) => {

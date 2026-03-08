@@ -30,11 +30,9 @@ function resetStores() {
     checkAllAvailability: vi.fn().mockResolvedValue(undefined),
   });
   useHeadlessStore.setState({
-    enabled: true,
     defaultMode: 'headless' as const,
     projectOverrides: {},
     loadSettings: vi.fn().mockResolvedValue(undefined),
-    setEnabled: vi.fn(),
     setDefaultMode: vi.fn(),
     setProjectMode: vi.fn(),
     clearProjectMode: vi.fn(),
