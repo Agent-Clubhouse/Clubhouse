@@ -135,9 +135,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   }
 
   agentProjectMap.set(params.agentId, params.projectPath);
-  if (params.orchestrator) {
-    agentOrchestratorMap.set(params.agentId, params.orchestrator);
-  }
+  agentOrchestratorMap.set(params.agentId, provider.id as OrchestratorId);
 
   // Clubhouse Mode: materialize project defaults into worktree before spawn
   if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
@@ -310,7 +308,8 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
     untrackAgent(agentId);
     return;
   }
-  const provider = resolveOrchestrator(projectPath, orchestrator);
+  const tracked = agentOrchestratorMap.get(agentId);
+  const provider = resolveOrchestrator(projectPath, tracked || orchestrator);
   const exitCmd = provider.getExitCommand();
   ptyManager.gracefulKill(agentId, exitCmd);
 }
