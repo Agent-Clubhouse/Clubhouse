@@ -346,6 +346,8 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
       try { proc.kill(); } catch { /* dead */ }
+      broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
+      annexEventBus.emitPtyExit(agentId, 1);
     }
     cleanupSession(agentId);
   }, 9000);
