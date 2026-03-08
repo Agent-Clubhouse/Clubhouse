@@ -298,13 +298,13 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
   try {
     if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
-      await structuredManager.cancelSession(agentId);
       structuredAgentSet.delete(agentId);
+      await structuredManager.cancelSession(agentId);
       return;
     }
     if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
-      headlessManager.kill(agentId);
       headlessAgentSet.delete(agentId);
+      headlessManager.kill(agentId);
       return;
     }
     const provider = resolveOrchestrator(projectPath, orchestrator);
