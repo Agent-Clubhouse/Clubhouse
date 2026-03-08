@@ -266,15 +266,17 @@ export function initBadgeSideEffects(): void {
     prevTab = nextTab;
   });
 
-  // Dock badge sync
-  useBadgeStore.subscribe((state) => {
-    const count = state.getDockCount();
+  // Dock badge sync — recalculate when badges OR badge settings change
+  const syncDockBadge = () => {
+    const count = useBadgeStore.getState().getDockCount();
     try {
       window.clubhouse?.app?.setDockBadge?.(count);
     } catch {
       // Preload bridge may not be available in tests
     }
-  });
+  };
+  useBadgeStore.subscribe(syncDockBadge);
+  useBadgeSettingsStore.subscribe(syncDockBadge);
 
   // Core agent badge: show dot on Agents tab when any agent needs attention
   const { useAgentStore } = require('./agentStore');

@@ -6,8 +6,15 @@ import { startWatch, stopWatch } from '../services/file-watch-service';
 import type { FileSearchOptions } from '../../shared/types';
 
 export function registerFileHandlers(): void {
-  ipcMain.handle(IPC.FILE.READ_TREE, async (_event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
-    return fileService.readTree(dirPath, options);
+  ipcMain.handle(IPC.FILE.READ_TREE, async (event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    event.sender.once('destroyed', abort);
+    try {
+      return await fileService.readTree(dirPath, { ...options, signal: controller.signal });
+    } finally {
+      event.sender.off('destroyed', abort);
+    }
   });
 
   ipcMain.handle(IPC.FILE.READ, async (_event, filePath: string) => {

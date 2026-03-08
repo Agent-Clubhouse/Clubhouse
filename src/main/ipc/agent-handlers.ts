@@ -97,7 +97,8 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.DELETE_SAVE_PATCH, async (_event, projectPath: string, agentId: string) => {
     const win = BrowserWindow.getFocusedWindow();
-    const result = await dialog.showSaveDialog(win!, {
+    if (!win) return { ok: false, message: 'cancelled' };
+    const result = await dialog.showSaveDialog(win, {
       title: 'Save patch file',
       defaultPath: `agent-${agentId}.patch`,
       filters: [{ name: 'Patch files', extensions: ['patch'] }],

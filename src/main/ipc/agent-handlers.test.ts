@@ -218,6 +218,14 @@ describe('agent-handlers', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it('DELETE_SAVE_PATCH returns cancelled when no focused window', async () => {
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValueOnce(null);
+    const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
+    const result = await handler({}, '/project', 'agent-1');
+    expect(result).toEqual({ ok: false, message: 'cancelled' });
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+  });
+
   it('DELETE_SAVE_PATCH returns cancelled when dialog is canceled', async () => {
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: undefined } as any);
     const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
