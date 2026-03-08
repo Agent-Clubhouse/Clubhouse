@@ -92,7 +92,10 @@ export function clearForAgent(agentId: string): void {
     const payload = e.payload as Record<string, unknown> | null;
     return !(payload && payload.agentId === agentId);
   });
-  buffer.splice(0, buffer.length, ...filtered);
+  buffer.length = 0;
+  for (const e of filtered) {
+    buffer.push(e);
+  }
 }
 
 /** Reset the entire buffer. Used during shutdown. */
