@@ -27,12 +27,12 @@ export const useSessionSettingsStore = create<SessionSettingsState>((set, get) =
   },
 
   setPromptForName: async (enabled) => {
-    const prev = get().promptForName;
+    const { promptForName: prev, projectOverrides } = get();
     set({ promptForName: enabled });
     try {
       await window.clubhouse.app.saveSessionSettings({
         promptForName: enabled,
-        projectOverrides: get().projectOverrides,
+        projectOverrides,
       });
     } catch {
       set({ promptForName: prev });
@@ -48,12 +48,12 @@ export const useSessionSettingsStore = create<SessionSettingsState>((set, get) =
   },
 
   setProjectOverride: async (projectPath, value) => {
-    const prevOverrides = get().projectOverrides;
+    const { promptForName, projectOverrides: prevOverrides } = get();
     const newOverrides = { ...prevOverrides, [projectPath]: value };
     set({ projectOverrides: newOverrides });
     try {
       await window.clubhouse.app.saveSessionSettings({
-        promptForName: get().promptForName,
+        promptForName,
         projectOverrides: newOverrides,
       });
     } catch {
@@ -62,12 +62,12 @@ export const useSessionSettingsStore = create<SessionSettingsState>((set, get) =
   },
 
   clearProjectOverride: async (projectPath) => {
-    const prevOverrides = get().projectOverrides;
+    const { promptForName, projectOverrides: prevOverrides } = get();
     const { [projectPath]: _, ...rest } = prevOverrides;
     set({ projectOverrides: rest });
     try {
       await window.clubhouse.app.saveSessionSettings({
-        promptForName: get().promptForName,
+        promptForName,
         projectOverrides: rest,
       });
     } catch {
