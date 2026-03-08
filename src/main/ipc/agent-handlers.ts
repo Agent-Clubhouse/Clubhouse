@@ -3,6 +3,7 @@ import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
+import { StructuredSessionOpts } from '../orchestrators/types';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
@@ -10,6 +11,8 @@ import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
+
+type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
 
 export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.LIST_DURABLE, (_event, projectPath: string) => {
@@ -75,7 +78,7 @@ export function registerAgentHandlers(): void {
     return agentConfig.getDurableConfig(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, (_event, projectPath: string, agentId: string, updates: any) => {
+  ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, (_event, projectPath: string, agentId: string, updates: DurableConfigUpdates) => {
     agentConfig.updateDurableConfig(projectPath, agentId, updates);
   });
 
@@ -246,7 +249,7 @@ export function registerAgentHandlers(): void {
 
   // --- Structured mode handlers ---
 
-  ipcMain.handle(IPC.AGENT.START_STRUCTURED, async (_event, agentId: string, opts: any) => {
+  ipcMain.handle(IPC.AGENT.START_STRUCTURED, async (_event, agentId: string, opts: StructuredSessionOpts) => {
     try {
       const orchestratorId = agentSystem.getAgentOrchestrator(agentId);
       const projectPath = agentSystem.getAgentProjectPath(agentId);

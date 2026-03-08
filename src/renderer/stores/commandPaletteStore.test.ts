@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+// Mock rendererLog before importing the store
+const mockRendererLog = vi.fn();
+vi.mock('../plugins/renderer-logger', () => ({
+  rendererLog: (...args: unknown[]) => mockRendererLog(...args),
+}));
+
 // Mock localStorage
 const storage: Record<string, string> = {};
 Object.defineProperty(globalThis, 'window', {
@@ -31,6 +37,7 @@ describe('commandPaletteStore', () => {
       recentCommands: [],
     });
     for (const key of Object.keys(storage)) delete storage[key];
+    mockRendererLog.mockClear();
   });
 
   describe('open/close/toggle', () => {
@@ -163,6 +170,22 @@ describe('commandPaletteStore', () => {
       useCommandPaletteStore.getState().recordRecent('cmd-1');
       expect(useCommandPaletteStore.getState().isRecent('cmd-1')).toBe(true);
       expect(useCommandPaletteStore.getState().isRecent('cmd-2')).toBe(false);
+    });
+  });
+
+  describe('corrupt localStorage', () => {
+    it('logs a warning when recents data is corrupt', async () => {
+      storage['clubhouse_command_palette_recents'] = '{not valid json';
+      vi.resetModules();
+      await import('./commandPaletteStore');
+      expect(mockRendererLog).toHaveBeenCalledWith(
+        'store:commandPalette',
+        'warn',
+        expect.stringContaining('Corrupt command palette recents'),
+        expect.objectContaining({
+          meta: expect.objectContaining({ key: 'clubhouse_command_palette_recents' }),
+        }),
+      );
     });
   });
 });

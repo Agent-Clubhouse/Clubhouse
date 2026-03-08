@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import { AgentHookEvent } from '../shared/types';
 
 const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
@@ -146,7 +147,7 @@ const api = {
       toolVerb?: string;
       timestamp: number;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: any) =>
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: AgentHookEvent) =>
         callback(agentId, hookEvent);
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };

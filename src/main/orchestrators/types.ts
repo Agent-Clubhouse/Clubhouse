@@ -27,6 +27,12 @@ export interface HeadlessOpts extends SpawnOpts {
 
 export type HeadlessOutputKind = 'stream-json' | 'text';
 
+export interface SpawnCommandResult {
+  binary: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
 export interface HeadlessCommandResult {
   binary: string;
   args: string[];
@@ -81,7 +87,7 @@ export interface OrchestratorProvider {
 
   // Lifecycle
   checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }>;
-  buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> }>;
+  buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult>;
   getExitCommand(): string;
 
   // Hooks

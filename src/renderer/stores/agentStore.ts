@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Agent, AgentStatus, AgentDetailedStatus, AgentHookEvent, DurableAgentConfig, DeleteResult } from '../../shared/types';
+import { generateQuickAgentId } from '../../shared/agent-id';
 import { generateQuickName } from '../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../shared/template-engine';
 import { useHeadlessStore } from './headlessStore';
@@ -59,8 +60,6 @@ interface AgentState {
   sessionNamePromptFor: string | null;
   setSessionNamePrompt: (agentId: string | null) => void;
 }
-
-let quickCounter = 0;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: {},
@@ -185,8 +184,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
-    quickCounter++;
-    const agentId = `quick_${Date.now()}_${quickCounter}`;
+    const agentId = generateQuickAgentId();
     const name = generateQuickName();
 
     // Resolve CWD: if spawning under a parent durable, use its worktree
