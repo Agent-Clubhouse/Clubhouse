@@ -299,6 +299,25 @@ describe('agent-system', () => {
       );
     });
 
+    it('cleans up tracking maps when async spawn fails', async () => {
+      mockProvider.buildSpawnCommand.mockRejectedValueOnce(new Error('spawn failed'));
+
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+          orchestrator: 'claude-code',
+        })
+      ).rejects.toThrowError('spawn failed');
+
+      // Maps should be cleaned up after failed spawn
+      expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentNonce('agent-1')).toBeUndefined();
+    });
+
     it('does not spawn PTY when pre-flight check fails', async () => {
       mockProvider.checkAvailability.mockResolvedValueOnce({
         available: false,
