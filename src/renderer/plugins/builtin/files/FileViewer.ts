@@ -264,6 +264,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       if (tab) {
         fileState.setTabDirty(tab.id, false);
       }
+      fileState.triggerRefresh();
     } catch (err) {
       api.ui.showError(`Failed to save: ${err}`);
     }
@@ -284,6 +285,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       await api.files.writeFile(activeTab.filePath, newContent);
       updateSavedContent(activeTab.filePath, newContent);
       fileState.setTabDirty(activeTab.id, false);
+      fileState.triggerRefresh();
       // Update cache
       const cached = fileCache.current.get(activeTab.filePath);
       if (cached) {
@@ -388,7 +390,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text truncate' }, fileName),
       activeTab.isDirty
         ? React.createElement('span', {
-            className: 'w-2 h-2 rounded-full bg-ctp-peach flex-shrink-0',
+            className: 'w-2 h-2 rounded-full bg-ctp-warning flex-shrink-0',
             title: 'Unsaved changes',
           })
         : null,

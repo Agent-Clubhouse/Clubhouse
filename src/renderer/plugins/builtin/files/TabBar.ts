@@ -180,7 +180,7 @@ function TabItem({
       React.createElement(FileIconSvg, { color: iconColor }),
       tab.isDirty
         ? React.createElement('div', {
-            className: 'absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-ctp-peach',
+            className: 'absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-ctp-warning',
           })
         : null,
     );
@@ -222,7 +222,7 @@ function TabItem({
         ? React.createElement('button', {
             className: `w-4 h-4 flex items-center justify-center rounded text-[10px]
               ${tab.isDirty
-                ? 'text-ctp-peach hover:bg-ctp-surface1'
+                ? 'text-ctp-warning hover:bg-ctp-surface1'
                 : 'text-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text'
               }`,
             onClick: handleClose,
@@ -230,7 +230,7 @@ function TabItem({
           }, '\u00D7')
         : tab.isDirty
           ? React.createElement('span', {
-              className: 'w-2 h-2 rounded-full bg-ctp-peach',
+              className: 'w-2 h-2 rounded-full bg-ctp-warning',
             })
           : null,
     ),
