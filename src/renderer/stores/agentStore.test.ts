@@ -771,6 +771,29 @@ describe('agentStore', () => {
       await getState().spawnDurableAgent('proj_1', '/project', config, false);
       expect(getState().agents['durable_noresume'].resuming).toBeUndefined();
     });
+
+    it('does not create malformed agent entry if agent was removed before catch', async () => {
+      mockAgent.spawnAgent.mockImplementation(async ({ agentId }: { agentId: string }) => {
+        // Simulate concurrent removal of the agent before the error
+        useAgentStore.setState((s) => {
+          const { [agentId]: _, ...rest } = s.agents;
+          return { agents: rest };
+        });
+        throw new Error('spawn failed');
+      });
+
+      const config = {
+        id: 'durable_removed',
+        name: 'removed-agent',
+        color: 'indigo',
+        createdAt: '2024-01-01',
+      };
+
+      await expect(getState().spawnDurableAgent('proj_1', '/project', config, false)).rejects.toThrow('spawn failed');
+
+      // The agents map should not contain the removed agent
+      expect(getState().agents['durable_removed']).toBeUndefined();
+    });
   });
 
   describe('clearResuming', () => {
