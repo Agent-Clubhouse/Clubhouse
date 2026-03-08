@@ -19,9 +19,9 @@ describe('SleepingMascots', () => {
 
     it('renders CopilotSleeping for copilot-cli orchestrator', () => {
       const { container } = render(<SleepingMascot orchestrator="copilot-cli" />);
-      // Copilot mascot uses the dark body color
-      const body = container.querySelector('rect[fill="#1e1e2e"]');
-      expect(body).not.toBeNull();
+      // Copilot mascot uses distinctive blue goggle frame color
+      const goggle = container.querySelector('rect[fill="#5AB0E0"]');
+      expect(goggle).not.toBeNull();
     });
 
     it('renders GenericRobotSleeping for opencode orchestrator', () => {
@@ -73,10 +73,28 @@ describe('SleepingMascots', () => {
       expect(svg!.getAttribute('height')).toBe('200');
     });
 
-    it('contains the magenta top stripe', () => {
+    it('contains goggle frames in Copilot blue', () => {
       const { container } = render(<CopilotSleeping />);
-      const stripe = container.querySelector('rect[fill="#d946ef"]');
-      expect(stripe).not.toBeNull();
+      const goggles = container.querySelectorAll('rect[fill="#5AB0E0"]');
+      // 2 goggle frames + bridge + 2 sleeping eyelids = 5
+      expect(goggles.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('contains ear bumps', () => {
+      const { container } = render(<CopilotSleeping />);
+      const leftEar = container.querySelector('ellipse[cx="12"]');
+      const rightEar = container.querySelector('ellipse[cx="88"]');
+      expect(leftEar).not.toBeNull();
+      expect(rightEar).not.toBeNull();
+    });
+
+    it('contains face plate with ventilation slits', () => {
+      const { container } = render(<CopilotSleeping />);
+      const faceplate = container.querySelector('rect[fill="#0e1838"]');
+      expect(faceplate).not.toBeNull();
+      // 3 ventilation slits
+      const vents = container.querySelectorAll('rect[fill="#1a2a5a"]');
+      expect(vents.length).toBe(3);
     });
 
     it('contains animated Zzz text elements', () => {

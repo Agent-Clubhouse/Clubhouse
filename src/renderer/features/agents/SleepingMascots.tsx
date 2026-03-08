@@ -121,50 +121,59 @@ export function ClaudeCodeSleeping() {
 export function CopilotSleeping() {
   return (
     <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
+      <defs>
+        <linearGradient id="copilotHelmetGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7B8CE0" />
+          <stop offset="65%" stopColor="#8B7BE0" />
+          <stop offset="100%" stopColor="#C070D0" />
+        </linearGradient>
+      </defs>
+
       {/* Ground shadow */}
-      <ellipse cx="50" cy="91" rx="26" ry="3" fill="#181825" opacity="0.3" />
+      <ellipse cx="50" cy="88" rx="28" ry="3" fill="#181825" opacity="0.3" />
 
-      {/* Legs */}
-      <rect x="30" y="76" width="12" height="10" rx="4" fill="#14141e" />
-      <rect x="58" y="76" width="12" height="10" rx="4" fill="#14141e" />
-      {/* Feet */}
-      <rect x="28" y="83" width="16" height="4" rx="2" fill="#0e0e18" />
-      <rect x="56" y="83" width="16" height="4" rx="2" fill="#0e0e18" />
+      {/* Helmet dome — rounded */}
+      <rect x="16" y="16" width="68" height="60" rx="28" fill="url(#copilotHelmetGrad)" />
 
-      {/* Main face / body */}
-      <rect x="15" y="18" width="70" height="58" rx="10" fill="#1e1e2e" stroke="#2d2d3d" strokeWidth="0.5" />
+      {/* Helmet highlight */}
+      <rect x="24" y="18" width="36" height="12" rx="6" fill="#9BA8F0" opacity="0.25" />
 
-      {/* Top magenta stripe */}
-      <rect x="15" y="18" width="70" height="4" rx="10" fill="#d946ef" opacity="0.8" />
+      {/* Pink accent — subtle overlay on right side */}
+      <rect x="58" y="20" width="22" height="30" rx="14" fill="#D060D8" opacity="0.2" />
 
-      {/* Eye socket backgrounds (dim teal) */}
-      <rect x="23" y="34" width="22" height="18" rx="5" fill="#0d2e2e" />
-      <rect x="55" y="34" width="22" height="18" rx="5" fill="#0d2e2e" />
+      {/* Ear bumps */}
+      <ellipse cx="12" cy="46" rx="8" ry="10" fill="#7B8CE0" />
+      <ellipse cx="88" cy="46" rx="8" ry="10" fill="#B868D0" />
+      {/* Ear bump inner detail */}
+      <ellipse cx="12" cy="46" rx="4.5" ry="6" fill="#5A68B8" />
+      <ellipse cx="88" cy="46" rx="4.5" ry="6" fill="#9048B0" />
 
-      {/* Eye "eyelid" overlay — covers top portion for half-closed look */}
-      <rect x="23" y="34" width="22" height="11" rx="5" fill="#1e1e2e" />
-      <rect x="55" y="34" width="22" height="11" rx="5" fill="#1e1e2e" />
+      {/* Goggle frames */}
+      <rect x="22" y="28" width="21" height="18" rx="7" fill="#5AB0E0" stroke="#4AA0D0" strokeWidth="1.5" />
+      <rect x="57" y="28" width="21" height="18" rx="7" fill="#5AB0E0" stroke="#4AA0D0" strokeWidth="1.5" />
+      {/* Goggle bridge */}
+      <rect x="43" y="34" width="14" height="6" rx="3" fill="#5AB0E0" />
 
-      {/* Dim eye glow — bottom sliver visible */}
-      <rect x="23" y="45" width="22" height="7" rx="0 0 5 5" fill="#0a4a4a" opacity="0.6" />
-      <rect x="55" y="45" width="22" height="7" rx="0 0 5 5" fill="#0a4a4a" opacity="0.6" />
+      {/* Goggle lenses — dark (sleeping) */}
+      <rect x="25" y="31" width="15" height="12" rx="5" fill="#0a1030" />
+      <rect x="60" y="31" width="15" height="12" rx="5" fill="#0a1030" />
 
-      {/* Subtle eyelid line */}
-      <line x1="24" y1="45" x2="44" y2="45" stroke="#2a6a6a" strokeWidth="0.5" opacity="0.4" />
-      <line x1="56" y1="45" x2="76" y2="45" stroke="#2a6a6a" strokeWidth="0.5" opacity="0.4" />
+      {/* Sleeping eyelids — cover top of lens for half-closed look */}
+      <rect x="25" y="31" width="15" height="8" rx="5" fill="#5AB0E0" />
+      <rect x="60" y="31" width="15" height="8" rx="5" fill="#5AB0E0" />
 
-      {/* Green LED indicators (dimmed) */}
-      <rect x="39" y="60" width="5" height="3" rx="1" fill="#1a3a1a" />
-      <rect x="48" y="60" width="5" height="3" rx="1" fill="#1a3a1a" />
+      {/* Face plate — lower visor */}
+      <rect x="24" y="52" width="52" height="24" rx="8" fill="#0e1838" />
 
-      {/* Magenta side panels (dimmed) */}
-      <rect x="20" y="59" width="8" height="5" rx="2" fill="#4a1a4a" />
-      <rect x="64" y="59" width="8" height="5" rx="2" fill="#4a1a4a" />
+      {/* Face plate top edge */}
+      <rect x="28" y="52" width="44" height="1.5" rx="0.75" fill="#4A80C8" opacity="0.3" />
 
-      {/* Mouth — small horizontal bar */}
-      <rect x="42" y="67" width="8" height="2" rx="1" fill="#2d2d3d" />
+      {/* Ventilation slits (dimmed for sleeping) */}
+      <rect x="38" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
+      <rect x="48.5" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
+      <rect x="59" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
 
-      <SleepingZzz x={76} y={14} />
+      <SleepingZzz x={78} y={12} />
     </svg>
   );
 }
