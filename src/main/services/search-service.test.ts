@@ -139,4 +139,46 @@ describe('search-service', () => {
       expect(fp.endsWith('.md')).toBe(false);
     }
   });
+
+  it('truncates long lineContent to prevent IPC serialization overflow', async () => {
+    // Create a file with a very long line (>500 chars)
+    const longLine = 'x'.repeat(1000) + ' findme ' + 'y'.repeat(1000);
+    await fs.writeFile(path.join(tmpDir, 'long-line.txt'), longLine);
+
+    const result = await searchFiles(tmpDir, 'findme');
+    const longFile = result.results.find(r => r.filePath.includes('long-line.txt'));
+    expect(longFile).toBeDefined();
+    expect(longFile!.matches.length).toBeGreaterThan(0);
+
+    // lineContent should be truncated to 501 chars (500 + ellipsis)
+    for (const match of longFile!.matches) {
+      expect(match.lineContent.length).toBeLessThanOrEqual(501);
+    }
+  });
+
+  it('does not truncate short lineContent', async () => {
+    const result = await searchFiles(tmpDir, 'greeting');
+    const helloFile = result.results.find(r => r.filePath.includes('hello.ts'));
+    expect(helloFile).toBeDefined();
+
+    for (const match of helloFile!.matches) {
+      // Short lines should not have the ellipsis truncation marker
+      expect(match.lineContent).not.toContain('…');
+    }
+  });
+
+  it('uses reduced default max results (1000) to prevent large payloads', async () => {
+    // Create many small files with matches
+    const dir = path.join(tmpDir, 'many');
+    await fs.mkdir(dir);
+    for (let i = 0; i < 20; i++) {
+      const lines = Array.from({ length: 100 }, (_, j) => `line ${j} match_token`);
+      await fs.writeFile(path.join(dir, `file${i}.txt`), lines.join('\n'));
+    }
+
+    // Search without explicit maxResults — should use the default (1000)
+    const result = await searchFiles(tmpDir, 'match_token');
+    expect(result.totalMatches).toBeLessThanOrEqual(1000);
+    expect(result.truncated).toBe(true);
+  });
 });

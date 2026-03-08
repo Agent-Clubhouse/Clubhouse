@@ -6,8 +6,9 @@ const picomatch = require('picomatch') as (
 ) => (input: string) => boolean;
 import type { FileSearchOptions, FileSearchResult, FileSearchFileResult, FileSearchMatch } from '../../shared/types';
 
-const DEFAULT_MAX_RESULTS = 10_000;
+const DEFAULT_MAX_RESULTS = 1_000;
 const DEFAULT_CONTEXT_LINES = 0;
+const MAX_LINE_CONTENT_LENGTH = 500;
 
 /**
  * Try to locate the ripgrep binary. Returns the path or null if not found.
@@ -82,7 +83,7 @@ function buildRgArgs(query: string, rootPath: string, options?: FileSearchOption
 
   const args: string[] = [
     '--json',                        // JSON output for structured parsing
-    '--max-count', '1000',           // max matches per file
+    '--max-count', '100',            // max matches per file
     '--no-messages',                 // suppress file access error messages
   ];
 
@@ -159,7 +160,7 @@ function searchWithRipgrep(
     const child = execFile(
       rgPath,
       args,
-      { maxBuffer: 100 * 1024 * 1024, timeout: 30_000 },
+      { maxBuffer: 10 * 1024 * 1024, timeout: 30_000 },
       (error, stdout, _stderr) => {
         // ripgrep exits with code 1 when no matches found — not an error
         if (error && (error as NodeJS.ErrnoException).code !== null && !stdout) {
@@ -210,7 +211,7 @@ function parseRipgrepOutput(
 
     const data = parsed.data;
     const filePath = data.path?.text;
-    const lineContent = data.lines?.text?.replace(/\n$/, '') ?? '';
+    const lineContent = truncateLineContent(data.lines?.text?.replace(/\n$/, '') ?? '');
     const lineNumber = data.line_number ?? 0;
 
     if (!filePath) continue;
@@ -321,7 +322,7 @@ async function searchWithNodeFs(
             line: i + 1,
             column: match.index + 1,
             length: match[0].length,
-            lineContent: line,
+            lineContent: truncateLineContent(line),
           });
           totalMatches++;
 
@@ -344,6 +345,11 @@ async function searchWithNodeFs(
   }
 
   return { results, totalMatches, truncated };
+}
+
+function truncateLineContent(line: string): string {
+  if (line.length <= MAX_LINE_CONTENT_LENGTH) return line;
+  return line.slice(0, MAX_LINE_CONTENT_LENGTH) + '…';
 }
 
 function escapeRegex(s: string): string {
