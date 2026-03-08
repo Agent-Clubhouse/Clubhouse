@@ -199,6 +199,25 @@ function parseJsonBody(raw: string): Record<string, unknown> | null {
   }
 }
 
+function readJsonBody(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  handler: (body: Record<string, unknown>) => void,
+): void {
+  readBody(req).then((raw) => {
+    const body = parseJsonBody(raw);
+    if (!body) {
+      sendJson(res, 400, { error: 'invalid_json' });
+      return;
+    }
+    handler(body);
+  }).catch((err) => {
+    appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
+    res.writeHead(400);
+    res.end();
+  });
+}
+
 function getThemeColors(): ThemeColors {
   const { themeId } = themeService.getSettings();
   const theme = THEMES[themeId];
@@ -789,18 +808,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const quickProjectMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickProjectMatch) {
     const projectId = decodeURIComponent(quickProjectMatch[1]);
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
-      handleSpawnQuickAgent(res, projectId, null, body);
-    }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
-    });
+    readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, projectId, null, body));
     return;
   }
 
@@ -813,18 +821,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
       sendJson(res, 404, { error: 'agent_not_found' });
       return;
     }
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
-      handleSpawnQuickAgent(res, parentInfo.project.id, parentAgentId, body);
-    }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
-    });
+    readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, parentInfo.project.id, parentAgentId, body));
     return;
   }
 
@@ -832,18 +829,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const wakeMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/wake$/);
   if (method === 'POST' && wakeMatch) {
     const agentId = decodeURIComponent(wakeMatch[1]);
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
-      handleWakeAgent(res, agentId, body);
-    }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
-    });
+    readJsonBody(req, res, (body) => handleWakeAgent(res, agentId, body));
     return;
   }
 
@@ -851,18 +837,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const permissionMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/permission-response$/);
   if (method === 'POST' && permissionMatch) {
     const agentId = decodeURIComponent(permissionMatch[1]);
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
-      handlePermissionResponse(res, agentId, body);
-    }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
-    });
+    readJsonBody(req, res, (body) => handlePermissionResponse(res, agentId, body));
     return;
   }
 
@@ -870,18 +845,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const structuredPermMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/structured-permission$/);
   if (method === 'POST' && structuredPermMatch) {
     const agentId = decodeURIComponent(structuredPermMatch[1]);
-    readBody(req).then((raw) => {
-      const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
-      handleStructuredPermissionResponse(res, agentId, body);
-    }).catch((err) => {
-      appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
-      res.writeHead(400);
-      res.end();
-    });
+    readJsonBody(req, res, (body) => handleStructuredPermissionResponse(res, agentId, body));
     return;
   }
 
