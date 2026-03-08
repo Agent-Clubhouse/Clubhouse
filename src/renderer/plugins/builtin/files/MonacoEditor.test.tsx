@@ -24,6 +24,8 @@ describe('MonacoEditor lazy loading', () => {
         onSave={() => {}}
         onDirtyChange={() => {}}
         filePath="test.ts"
+        initialScrollState={null}
+        onScrollStateChange={() => {}}
       />,
     );
 
@@ -44,6 +46,8 @@ describe('MonacoEditor lazy loading', () => {
         onSave={() => {}}
         onDirtyChange={() => {}}
         filePath="test.js"
+        initialScrollState={null}
+        onScrollStateChange={() => {}}
       />,
     );
 

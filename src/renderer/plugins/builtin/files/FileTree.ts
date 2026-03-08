@@ -178,6 +178,7 @@ interface TreeNodeProps {
   expanded: Set<string>;
   onToggle: (path: string) => void;
   onSelect: (path: string) => void;
+  onDoubleClick: (path: string) => void;
   selected: string | null;
   focused: string | null;
   gitMap: Map<string, string>;
@@ -185,7 +186,7 @@ interface TreeNodeProps {
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
 }
 
-const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
+const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, onDoubleClick, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
   const isExpanded = expanded.has(node.path);
   const isSelected = selected === node.path;
   const isFocused = focused === node.path;
@@ -203,6 +204,12 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
     }
   };
 
+  const handleDoubleClick = () => {
+    if (!node.isDirectory) {
+      onDoubleClick(node.path);
+    }
+  };
+
   const icon = node.isDirectory
     ? (isExpanded ? FolderOpenIcon : FolderIcon)
     : FileIcon(getFileIconColor(ext));
@@ -217,6 +224,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
       className: `flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none text-xs ${bgClass} transition-colors`,
       style: { paddingLeft: `${8 + depth * 12}px` },
       onClick: handleClick,
+      onDoubleClick: handleDoubleClick,
       onContextMenu: (e: React.MouseEvent) => onContextMenu(e, node),
       'data-path': node.path,
     },
@@ -240,6 +248,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
           expanded,
           onToggle,
           onSelect,
+          onDoubleClick,
           selected,
           focused,
           gitMap,
@@ -441,17 +450,15 @@ export function FileTree({ api }: { api: PluginAPI }) {
     let cancelled = false;
     async function restore() {
       try {
-        const [savedPath, savedRoot] = await Promise.all([
-          api.storage.project.read('files:lastSelectedPath'),
-          api.storage.project.read('files:lastRootPath'),
-        ]);
+        const savedRoot = await api.storage.project.read('files:lastRootPath');
         if (cancelled) return;
         if (typeof savedRoot === 'string' && savedRoot) {
           setRootPath(savedRoot);
         }
-        if (typeof savedPath === 'string' && savedPath) {
-          setSelectedPath(`${projectPath}/${savedPath}`);
-          fileState.setSelectedPath(savedPath);
+        // Tab restore is handled by FileViewer — sync selected from active tab
+        const activeTab = fileState.getActiveTab();
+        if (activeTab) {
+          setSelectedPath(`${projectPath}/${activeTab.filePath}`);
         }
       } catch {
         // Fresh start
@@ -536,13 +543,19 @@ export function FileTree({ api }: { api: PluginAPI }) {
     }
   }, [api, projectPath, showHidden]);
 
-  // Select file
+  // Select file — single-click opens as preview tab
   const selectFile = useCallback((path: string) => {
     setSelectedPath(path);
     const relPath = getRelativePath(path, projectPath);
-    fileState.setSelectedPath(relPath);
-    api.storage.project.write('files:lastSelectedPath', relPath).catch(() => {});
-  }, [projectPath, api]);
+    fileState.openTab(relPath, { preview: true });
+  }, [projectPath]);
+
+  // Double-click — opens as permanent (pinned) tab
+  const openFilePermanently = useCallback((path: string) => {
+    setSelectedPath(path);
+    const relPath = getRelativePath(path, projectPath);
+    fileState.openTab(relPath, { preview: false });
+  }, [projectPath]);
 
   // Handle root path change (worktree selector)
   const handleRootChange = useCallback((newRoot: string) => {
@@ -722,7 +735,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
             if (node.isDirectory) {
               toggleExpand(node.path);
             } else {
-              selectFile(node.path);
+              // Enter opens permanently (like double-click)
+              openFilePermanently(node.path);
             }
           }
         }
@@ -853,6 +867,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
               expanded,
               onToggle: toggleExpand,
               onSelect: selectFile,
+              onDoubleClick: openFilePermanently,
               selected: selectedPath,
               focused: focusedPath,
               gitMap,
