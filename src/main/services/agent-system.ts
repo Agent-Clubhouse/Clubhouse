@@ -168,6 +168,8 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       allowedTools,
       freeAgentMode: params.freeAgentMode,
       commandPrefix,
+    }, (exitAgentId) => {
+      untrackAgent(exitAgentId);
     });
     return;
   }
@@ -197,6 +199,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         headlessResult.outputKind || 'stream-json',
         (exitAgentId) => {
           configPipeline.restoreForAgent(exitAgentId);
+          untrackAgent(exitAgentId);
         },
         commandPrefix,
       );
@@ -267,6 +270,7 @@ async function spawnPtyAgent(
 
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
+    untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents
     if (params.kind === 'durable' && buffer && provider.extractSessionId) {
@@ -296,12 +300,12 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
   try {
     if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
-      structuredAgentSet.delete(agentId);
+      untrackAgent(agentId);
       await structuredManager.cancelSession(agentId);
       return;
     }
     if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
-      headlessAgentSet.delete(agentId);
+      untrackAgent(agentId);
       headlessManager.kill(agentId);
       return;
     }
