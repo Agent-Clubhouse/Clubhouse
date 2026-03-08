@@ -90,10 +90,9 @@ function HighlightedLine({ lineContent, column, length }: {
 
 // ── File result group ─────────────────────────────────────────────────
 
-function FileResultGroup({ result, onMatchClick, projectPath }: {
+function FileResultGroup({ result, onMatchClick }: {
   result: FileSearchFileResult;
   onMatchClick: (filePath: string, line: number) => void;
-  projectPath: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -166,8 +165,6 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchVersionRef = useRef(0);
 
-  const projectPath = api.context.projectPath || '';
-
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
@@ -201,7 +198,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
 
       if (searchVersionRef.current !== version) return;
       setResults(result);
-    } catch (err) {
+    } catch {
       if (searchVersionRef.current !== version) return;
       setResults({ results: [], totalMatches: 0, truncated: false });
     } finally {
@@ -377,7 +374,6 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
                   key: fileResult.filePath,
                   result: fileResult,
                   onMatchClick: handleMatchClick,
-                  projectPath,
                 }),
               )
             : null,

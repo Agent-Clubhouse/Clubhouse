@@ -1,5 +1,9 @@
-import { execFile } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
 import * as path from 'path';
+const picomatch = require('picomatch') as (
+  patterns: string[],
+  options?: { basename?: boolean }
+) => (input: string) => boolean;
 import type { FileSearchOptions, FileSearchResult, FileSearchFileResult, FileSearchMatch } from '../../shared/types';
 
 const DEFAULT_MAX_RESULTS = 10_000;
@@ -9,16 +13,28 @@ const DEFAULT_CONTEXT_LINES = 0;
  * Try to locate the ripgrep binary. Returns the path or null if not found.
  */
 function findRipgrep(): string | null {
-  // Common locations
   const candidates = [
-    'rg',                           // system PATH
     '/usr/local/bin/rg',
     '/opt/homebrew/bin/rg',
     '/usr/bin/rg',
   ];
+
+  // Also try resolving 'rg' via `which`
+  try {
+    const resolved = execFileSync('which', ['rg'], {
+      timeout: 3000,
+      encoding: 'utf-8',
+    }).trim();
+    if (resolved && !candidates.includes(resolved)) {
+      candidates.unshift(resolved);
+    }
+  } catch {
+    // which not available or rg not found
+  }
+
   for (const candidate of candidates) {
     try {
-      require('child_process').execFileSync(candidate, ['--version'], {
+      execFileSync(candidate, ['--version'], {
         timeout: 3000,
         stdio: 'ignore',
       });
@@ -62,7 +78,6 @@ export async function searchFiles(
  * Build ripgrep arguments from search options.
  */
 function buildRgArgs(query: string, rootPath: string, options?: FileSearchOptions): string[] {
-  const maxResults = options?.maxResults ?? DEFAULT_MAX_RESULTS;
   const contextLines = options?.contextLines ?? DEFAULT_CONTEXT_LINES;
 
   const args: string[] = [
@@ -233,7 +248,7 @@ function parseRipgrepOutput(
       matches.push({
         line: lineNumber,
         column: 1,
-        length: query.length,
+        length: lineContent.trimEnd().length || 1,
         lineContent,
       });
       totalMatches++;
@@ -277,7 +292,7 @@ async function searchWithNodeFs(
     return { results: [], totalMatches: 0, truncated: false };
   }
 
-  const files = await collectFiles(rootPath, options?.includeGlobs, options?.excludeGlobs);
+  const files = await collectFiles(rootPath, options?.includeGlobs ?? undefined, options?.excludeGlobs ?? undefined);
   const results: FileSearchFileResult[] = [];
   let totalMatches = 0;
   let truncated = false;
@@ -347,34 +362,52 @@ const BINARY_EXTENSIONS = new Set([
 ]);
 
 async function collectFiles(
-  dir: string,
-  _includeGlobs?: string[],
-  _excludeGlobs?: string[],
-  collected: string[] = [],
-  maxFiles = 50_000,
+  rootDir: string,
+  includeGlobs?: string[],
+  excludeGlobs?: string[],
 ): Promise<string[]> {
-  if (collected.length >= maxFiles) return collected;
+  const includeMatcher = includeGlobs?.length
+    ? picomatch(includeGlobs, { basename: true })
+    : null;
+  const excludeMatcher = excludeGlobs?.length
+    ? picomatch(excludeGlobs, { basename: true })
+    : null;
 
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (collected.length >= maxFiles) break;
-      if (IGNORED_DIRS.has(entry.name)) continue;
+  const collected: string[] = [];
+  const maxFiles = 50_000;
 
-      const fullPath = path.join(dir, entry.name);
+  async function walk(dir: string): Promise<void> {
+    if (collected.length >= maxFiles) return;
 
-      if (entry.isDirectory()) {
-        await collectFiles(fullPath, _includeGlobs, _excludeGlobs, collected, maxFiles);
-      } else if (entry.isFile()) {
-        const ext = path.extname(entry.name).slice(1).toLowerCase();
-        if (!BINARY_EXTENSIONS.has(ext)) {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (collected.length >= maxFiles) break;
+        if (IGNORED_DIRS.has(entry.name)) continue;
+
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).slice(1).toLowerCase();
+          if (BINARY_EXTENSIONS.has(ext)) continue;
+
+          const relPath = fullPath.slice(rootDir.length + 1);
+
+          // Apply include filter: if set, file must match
+          if (includeMatcher && !includeMatcher(relPath)) continue;
+          // Apply exclude filter: if set, file must not match
+          if (excludeMatcher && excludeMatcher(relPath)) continue;
+
           collected.push(fullPath);
         }
       }
+    } catch {
+      // Skip unreadable directories
     }
-  } catch {
-    // Skip unreadable directories
   }
 
+  await walk(rootDir);
   return collected;
 }
