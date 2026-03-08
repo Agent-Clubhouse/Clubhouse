@@ -37,7 +37,7 @@ const baseAgent: Agent = {
   color: 'indigo',
 };
 
-const mockSpawnDurableAgent = vi.fn().mockResolvedValue(undefined);
+const mockSpawnDurableAgent = vi.fn();
 
 function resetStores(agentOverrides: Partial<Agent> = {}) {
   const agent = { ...baseAgent, ...agentOverrides };
@@ -60,6 +60,7 @@ function renderComponent(agentOverrides: Partial<Agent> = {}) {
 describe('SleepingAgent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSpawnDurableAgent.mockResolvedValue(undefined);
     window.clubhouse.agent.listDurable = vi.fn().mockResolvedValue([]);
   });
 

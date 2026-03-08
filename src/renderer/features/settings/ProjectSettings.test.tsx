@@ -33,8 +33,8 @@ const baseProject: Project = {
 
 const mockUpdateProject = vi.fn();
 const mockRemoveProject = vi.fn();
-const mockPickProjectImage = vi.fn().mockResolvedValue(null);
-const mockSaveCroppedProjectIcon = vi.fn().mockResolvedValue(undefined);
+const mockPickProjectImage = vi.fn();
+const mockSaveCroppedProjectIcon = vi.fn();
 const mockToggleSettings = vi.fn();
 
 function resetStores(projectOverrides: Partial<Project> = {}) {
@@ -56,6 +56,8 @@ function resetStores(projectOverrides: Partial<Project> = {}) {
 describe('ProjectSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPickProjectImage.mockResolvedValue(null);
+    mockSaveCroppedProjectIcon.mockResolvedValue(undefined);
     window.clubhouse.project.resetProject = vi.fn().mockResolvedValue(undefined);
   });
 

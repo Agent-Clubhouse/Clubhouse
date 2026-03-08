@@ -2,7 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSafeMarkdownLinks } from './safe-markdown-links';
 
-const mockOpenExternalUrl = vi.fn().mockResolvedValue(undefined);
+const mockOpenExternalUrl = vi.fn();
 
 Object.defineProperty(globalThis, 'window', {
   value: {
@@ -36,6 +36,7 @@ function makeClickEvent(anchorAttrs?: { href?: string } | null) {
 describe('useSafeMarkdownLinks', () => {
   beforeEach(() => {
     mockOpenExternalUrl.mockClear();
+    mockOpenExternalUrl.mockResolvedValue(undefined);
   });
 
   it('returns a stable callback', () => {
