@@ -216,7 +216,7 @@ describe('settings-store', () => {
       expect(result.name).toBe('default');
     });
 
-    it('performs atomic read-modify-write preventing stale reads', () => {
+    it('sequential updates each see the result of the previous update', () => {
       // Simulate a scenario where the file content changes between calls
       let fileContent = JSON.stringify({ name: 'v1', count: 1, nested: { flag: false } });
       vi.mocked(fs.readFileSync).mockImplementation(() => fileContent);

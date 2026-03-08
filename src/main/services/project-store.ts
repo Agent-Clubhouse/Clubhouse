@@ -224,9 +224,10 @@ function writeProjects(projects: Project[]): void {
 }
 
 /**
- * Atomically read-modify-write the projects list to prevent lost updates.
- * The `fn` callback receives the current projects array and must return the
- * updated array that will be written back to disk.
+ * Sequential read-modify-write the projects list to prevent lost updates
+ * within a single Node.js process. The `fn` callback receives the current
+ * projects array and must return a new array that will be written back to disk.
+ * Callbacks should be pure transforms — avoid filesystem side effects inside.
  */
 function updateProjects(fn: (projects: Project[]) => Project[]): Project[] {
   const projects = readProjects();
@@ -286,42 +287,49 @@ export function remove(id: string): void {
 }
 
 export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
+  // Perform filesystem side effects before the state transform
+  if (updates.icon === '') {
+    removeIconFile(id);
+  }
+
   return updateProjects((projects) => {
-    const idx = projects.findIndex((p) => p.id === id);
-    if (idx === -1) return projects;
+    return projects.map((p) => {
+      if (p.id !== id) return p;
 
-    if (updates.icon === '') {
-      removeIconFile(id);
-      delete projects[idx].icon;
-    } else if (updates.icon !== undefined) {
-      projects[idx].icon = updates.icon;
-    }
+      const next = { ...p };
 
-    if (updates.color !== undefined) {
-      if (updates.color === '') {
-        delete projects[idx].color;
-      } else {
-        projects[idx].color = updates.color;
+      if (updates.icon === '') {
+        delete next.icon;
+      } else if (updates.icon !== undefined) {
+        next.icon = updates.icon;
       }
-    }
 
-    if (updates.name !== undefined && updates.name !== '') {
-      projects[idx].name = updates.name;
-    }
-
-    if (updates.displayName !== undefined) {
-      if (updates.displayName === '') {
-        delete projects[idx].displayName;
-      } else {
-        projects[idx].displayName = updates.displayName;
+      if (updates.color !== undefined) {
+        if (updates.color === '') {
+          delete next.color;
+        } else {
+          next.color = updates.color;
+        }
       }
-    }
 
-    if (updates.orchestrator !== undefined) {
-      projects[idx].orchestrator = updates.orchestrator;
-    }
+      if (updates.name !== undefined && updates.name !== '') {
+        next.name = updates.name;
+      }
 
-    return projects;
+      if (updates.displayName !== undefined) {
+        if (updates.displayName === '') {
+          delete next.displayName;
+        } else {
+          next.displayName = updates.displayName;
+        }
+      }
+
+      if (updates.orchestrator !== undefined) {
+        next.orchestrator = updates.orchestrator;
+      }
+
+      return next;
+    });
   });
 }
 
@@ -334,11 +342,10 @@ export function setIcon(projectId: string, sourcePath: string): string {
   fs.copyFileSync(sourcePath, dest);
 
   updateProjects((projects) => {
-    const idx = projects.findIndex((p) => p.id === projectId);
-    if (idx !== -1) {
-      projects[idx].icon = filename;
-    }
-    return projects;
+    return projects.map((p) => {
+      if (p.id !== projectId) return p;
+      return { ...p, icon: filename };
+    });
   });
 
   return filename;
@@ -388,11 +395,10 @@ export function saveCroppedIcon(projectId: string, dataUrl: string): string {
   fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
 
   updateProjects((projects) => {
-    const idx = projects.findIndex((p) => p.id === projectId);
-    if (idx !== -1) {
-      projects[idx].icon = filename;
-    }
-    return projects;
+    return projects.map((p) => {
+      if (p.id !== projectId) return p;
+      return { ...p, icon: filename };
+    });
   });
 
   return filename;

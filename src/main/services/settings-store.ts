@@ -5,7 +5,7 @@ import * as fs from 'fs';
 export interface SettingsStore<T> {
   get(): T;
   save(settings: T): void;
-  /** Atomically read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
+  /** Sequential read-modify-write: reads the current value, applies `fn`, saves, and returns the updated value. */
   update(fn: (current: T) => T): T;
 }
 
