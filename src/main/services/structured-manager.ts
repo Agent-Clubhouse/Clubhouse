@@ -86,6 +86,7 @@ export async function startStructuredSession(
 
 async function consumeEvents(session: StructuredSession, opts: StructuredSessionOpts): Promise<void> {
   const { adapter, agentId, logStream, abortController } = session;
+  let exitCode = 0;
 
   try {
     const stream = adapter.start(opts);
@@ -94,10 +95,14 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
       if (abortController.signal.aborted) break;
       broadcastEvent(agentId, event, logStream);
     }
+    if (abortController.signal.aborted) exitCode = 1;
+  } catch (err) {
+    exitCode = 1;
+    throw err;
   } finally {
     cleanupSession(agentId);
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 0);
-    annexEventBus.emitPtyExit(agentId, 0);
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode);
+    annexEventBus.emitPtyExit(agentId, exitCode);
   }
 }
 

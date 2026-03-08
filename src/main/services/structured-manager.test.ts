@@ -232,7 +232,7 @@ describe('structured-manager', () => {
       expect(textDeltaHook).toBeUndefined();
     });
 
-    it('broadcasts IPC.PTY.EXIT when stream completes normally', async () => {
+    it('broadcasts IPC.PTY.EXIT with exit code 0 when stream completes normally', async () => {
       const events: StructuredEvent[] = [
         makeEvent('text_delta', { text: 'done' }),
         makeEvent('end', { reason: 'complete', summary: 'Finished' }),
@@ -250,6 +250,31 @@ describe('structured-manager', () => {
       });
 
       expect(mockEmitPtyExit).toHaveBeenCalledWith('exit-agent', 0);
+    });
+
+    it('broadcasts IPC.PTY.EXIT with exit code 1 when stream throws an error', async () => {
+      const adapter: StructuredAdapter = {
+        start: async function* () {
+          yield makeEvent('text_delta', { text: 'starting' });
+          throw new Error('stream failure');
+        },
+        sendMessage: vi.fn(async () => {}),
+        respondToPermission: vi.fn(async () => {}),
+        cancel: vi.fn(async () => {}),
+        dispose: vi.fn(),
+      };
+
+      await startStructuredSession('error-exit-agent', adapter, baseOpts);
+
+      await vi.waitFor(() => {
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          'pty:exit',
+          'error-exit-agent',
+          1,
+        );
+      });
+
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('error-exit-agent', 1);
     });
   });
 
