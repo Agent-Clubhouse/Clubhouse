@@ -188,11 +188,12 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk: Buffer) => {
-      body += chunk;
-      if (body.length > MAX_BODY_SIZE) {
+      if (body.length + chunk.length > MAX_BODY_SIZE) {
         req.destroy();
         reject(new Error('Body exceeded maximum allowed size'));
+        return;
       }
+      body += chunk;
     });
     req.on('end', () => resolve(body));
     req.on('error', (err) => reject(err));
@@ -720,7 +721,11 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
         sendJson(res, 400, { error: 'invalid_json' });
         return;
       }
-      const pin = body.pin as string | undefined;
+      const pin = body.pin;
+      if (typeof pin !== 'string') {
+        sendJson(res, 400, { error: 'invalid_json' });
+        return;
+      }
       if (pin === currentPin) {
         const token = randomUUID();
         sessionTokens.add(token);
