@@ -177,6 +177,13 @@ export function MonacoEditor({
         automaticLayout: true,
         scrollBeyondLastLine: false,
         padding: { top: 8 },
+        fixedOverflowWidgets: true,
+        find: {
+          addExtraSpaceOnTop: false,
+          seedSearchStringFromSelection: 'selection',
+          autoFindInSelection: 'multiline',
+          loop: true,
+        },
       });
 
       editorRef.current = editor;
@@ -187,6 +194,41 @@ export function MonacoEditor({
         updateSavedContent(filePathRef.current, content);
         onSaveRef.current(content);
         onDirtyChangeRef.current(false);
+      });
+
+      // Cmd+F — Open find widget
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyF, () => {
+        editor.trigger('keyboard', 'actions.find', null);
+      });
+
+      // Cmd+H — Open find and replace widget
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyH, () => {
+        editor.trigger('keyboard', 'editor.action.startFindReplaceAction', null);
+      });
+
+      // Cmd+Option+F — Open find and replace widget (alternative)
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Alt | m.KeyCode.KeyF, () => {
+        editor.trigger('keyboard', 'editor.action.startFindReplaceAction', null);
+      });
+
+      // Cmd+G — Next match
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyG, () => {
+        editor.trigger('keyboard', 'editor.action.nextMatchFindAction', null);
+      });
+
+      // Cmd+Shift+G — Previous match
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Shift | m.KeyCode.KeyG, () => {
+        editor.trigger('keyboard', 'editor.action.previousMatchFindAction', null);
+      });
+
+      // Cmd+D — Add selection to next find match
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyD, () => {
+        editor.trigger('keyboard', 'editor.action.addSelectionToNextFindMatch', null);
+      });
+
+      // Cmd+Shift+L — Select all occurrences of find match
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyMod.Shift | m.KeyCode.KeyL, () => {
+        editor.trigger('keyboard', 'editor.action.selectHighlights', null);
       });
 
       // Track dirty state

@@ -450,7 +450,8 @@ function initKeyboardShortcuts(): () => void {
 
     const target = e.target as HTMLElement | null;
     const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' ||
-      target?.isContentEditable || target?.closest?.('[contenteditable]') != null;
+      target?.isContentEditable || target?.closest?.('[contenteditable]') != null ||
+      target?.closest?.('.monaco-editor') != null;
 
     // Find matching system shortcut
     const { shortcuts } = useKeyboardShortcutsStore.getState();

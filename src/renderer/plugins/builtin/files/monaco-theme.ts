@@ -65,6 +65,20 @@ export function generateMonacoTheme(theme: ThemeDefinition): IStandaloneThemeDat
       'scrollbarSlider.background': theme.colors.surface1 + '80',
       'scrollbarSlider.hoverBackground': theme.colors.surface2 + '80',
       'scrollbarSlider.activeBackground': theme.colors.surface2,
+
+      // Find widget
+      'editor.findMatchBackground': theme.colors.accent + '40',
+      'editor.findMatchBorder': theme.colors.accent,
+      'editor.findMatchHighlightBackground': theme.colors.surface2 + '80',
+      'editor.findMatchHighlightBorder': theme.colors.surface2,
+      'editor.findRangeHighlightBackground': theme.colors.surface1 + '40',
+      'editorOverviewRuler.findMatchForeground': theme.colors.accent + 'A0',
+
+      // Find widget input & buttons (inherit from editorWidget tokens above)
+      'inputOption.activeBackground': theme.colors.accent + '40',
+      'inputOption.activeForeground': theme.colors.text,
+      'inputOption.activeBorder': theme.colors.accent,
+      'inputOption.hoverBackground': theme.colors.surface1,
     },
   };
 }

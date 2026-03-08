@@ -1,4 +1,5 @@
 // Minimal mock for monaco-editor in vitest
+/// <reference types="vitest/globals" />
 
 const mockModel = {
   dispose: () => {},
@@ -13,7 +14,8 @@ const mockEditor = {
   setValue: () => {},
   getModel: () => mockModel as any,
   setModel: () => {},
-  addCommand: () => {},
+  addCommand: vi.fn(),
+  trigger: vi.fn(),
   updateOptions: () => {},
   getPosition: () => ({ lineNumber: 1, column: 1 }),
   setPosition: () => {},
@@ -38,5 +40,12 @@ export const Uri = {
   parse: (value: string) => ({ toString: () => value }),
 };
 
-export const KeyMod = { CtrlCmd: 0x0800 };
-export const KeyCode = { KeyS: 49 };
+export const KeyMod = { CtrlCmd: 0x0800, Alt: 0x0100, Shift: 0x0400 };
+export const KeyCode = {
+  KeyS: 49,
+  KeyF: 36,
+  KeyH: 38,
+  KeyG: 37,
+  KeyD: 34,
+  KeyL: 42,
+};
