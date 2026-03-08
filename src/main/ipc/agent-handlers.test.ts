@@ -267,8 +267,8 @@ describe('agent-handlers', () => {
 
   it('KILL_AGENT delegates to agentSystem.killAgent', async () => {
     const handler = handlers.get(IPC.AGENT.KILL_AGENT)!;
-    await handler({}, 'a1', '/project', 'claude-code');
-    expect(agentSystem.killAgent).toHaveBeenCalledWith('a1', '/project', 'claude-code');
+    await handler({}, 'a1', '/project');
+    expect(agentSystem.killAgent).toHaveBeenCalledWith('a1', '/project');
   });
 
   it('READ_QUICK_SUMMARY delegates to readQuickSummary', async () => {

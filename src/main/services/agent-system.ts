@@ -294,7 +294,7 @@ async function spawnPtyAgent(
   }, commandPrefix);
 }
 
-export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
+export async function killAgent(agentId: string, projectPath: string): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
   if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
     await structuredManager.cancelSession(agentId);
@@ -306,6 +306,7 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
     headlessAgentSet.delete(agentId);
     return;
   }
+  const orchestrator = agentOrchestratorMap.get(agentId);
   const provider = resolveOrchestrator(projectPath, orchestrator);
   const exitCmd = provider.getExitCommand();
   ptyManager.gracefulKill(agentId, exitCmd);

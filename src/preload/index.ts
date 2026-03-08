@@ -108,8 +108,8 @@ const api = {
       sessionId?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
-    killAgent: (agentId: string, projectPath: string, orchestrator?: string) =>
-      ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath, orchestrator),
+    killAgent: (agentId: string, projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath),
 
     getModelOptions: (projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),

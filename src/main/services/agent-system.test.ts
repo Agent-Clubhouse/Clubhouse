@@ -324,9 +324,16 @@ describe('agent-system', () => {
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
     });
 
-    it('uses orchestrator-specific exit command', async () => {
-      await killAgent('agent-1', '/project', 'opencode');
-      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    it('uses orchestrator from agentOrchestratorMap set at spawn time', async () => {
+      await spawnAgent({
+        agentId: 'agent-orch',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+      await killAgent('agent-orch', '/project');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-orch', '/quit\r');
     });
   });
 
