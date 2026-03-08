@@ -236,21 +236,36 @@ export function buildMacUpdateScript(
 }
 
 /**
- * Build a macOS shell script that waits for the app to exit, replaces the
- * old .app bundle with the extracted update, and cleans up — no relaunch.
+ * Build a macOS shell script that waits for the app to exit, extracts the
+ * update ZIP, replaces the old .app bundle, and cleans up — no relaunch.
+ *
+ * The extraction happens inside the script (after the app has quit) so the
+ * main process never blocks on `unzip` during shutdown.
  */
 export function buildMacQuitUpdateScript(
   appBundlePath: string,
-  newAppPath: string,
-  tmpExtract: string,
   downloadPath: string,
+  tmpExtract: string,
   scriptPath: string,
 ): string {
   return [
     '#!/bin/bash',
     'sleep 1',
+    // Extract the update archive
+    `rm -rf "${tmpExtract}"`,
+    `mkdir -p "${tmpExtract}"`,
+    `unzip -o -q "${downloadPath}" -d "${tmpExtract}"`,
+    // Find the .app bundle; abort if extraction failed
+    `APP_PATH=$(find "${tmpExtract}" -maxdepth 1 -name "*.app" -print -quit)`,
+    'if [ -z "$APP_PATH" ]; then',
+    `  rm -rf "${tmpExtract}"`,
+    `  rm -f "${scriptPath}"`,
+    '  exit 1',
+    'fi',
+    // Replace old app bundle with the new one
     `rm -rf "${appBundlePath}"`,
-    `mv "${newAppPath}" "${appBundlePath}"`,
+    `mv "$APP_PATH" "${appBundlePath}"`,
+    // Clean up temp files
     `rm -rf "${tmpExtract}"`,
     `rm -f "${downloadPath}"`,
     `rm -f "${scriptPath}"`,
@@ -792,24 +807,13 @@ export function applyUpdateOnQuit(): void {
       const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
 
       if (appBundlePath.endsWith('.app') && fs.existsSync(downloadPath)) {
-        const { execSync } = require('child_process');
         const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
 
-        if (fs.existsSync(tmpExtract)) {
-          fs.rmSync(tmpExtract, { recursive: true, force: true });
-        }
-        fs.mkdirSync(tmpExtract, { recursive: true });
-
-        execSync(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`, { timeout: 60_000 });
-
-        const extracted = fs.readdirSync(tmpExtract).find((f) => f.endsWith('.app'));
-        if (!extracted) throw new Error('No .app found in update archive');
-
-        const newAppPath = path.join(tmpExtract, extracted);
-
-        // Shell script replaces the app bundle after quit — NO relaunch
+        // Write a shell script that extracts and applies the update after
+        // the app has exited.  All heavy work (unzip) happens in the
+        // detached script so the main process never blocks during quit.
         const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        fs.writeFileSync(script, buildMacQuitUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
+        fs.writeFileSync(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
 
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
@@ -818,7 +822,9 @@ export function applyUpdateOnQuit(): void {
       appLog('update:apply-on-quit', 'error', `Failed to apply update on quit: ${err instanceof Error ? err.message : String(err)}`);
     }
   } else if (process.platform === 'win32') {
-    // Squirrel native update — no relaunch since the user chose to quit
+    // Squirrel native update — no relaunch since the user chose to quit.
+    // Spawn Update.exe as a detached process so the main process can exit
+    // immediately without blocking on Squirrel's download/apply cycle.
     try {
       const updateExe = getSquirrelUpdateExePath();
       if (!fs.existsSync(updateExe)) {
@@ -835,31 +841,13 @@ export function applyUpdateOnQuit(): void {
         meta: { updateExe, releasesUrl },
       });
 
-      const { execFileSync } = require('child_process');
-      let stdout: string;
-      try {
-        const result = execFileSync(updateExe, ['--update', releasesUrl], {
-          timeout: 300_000,
-          encoding: 'utf-8',
-          windowsHide: true,
-        });
-        stdout = (result || '').trim();
-      } catch (execErr: unknown) {
-        const e = execErr as { stdout?: string; stderr?: string; status?: number; message?: string };
-        appLog('update:apply-on-quit', 'error', 'Update.exe --update failed', {
-          meta: {
-            exitCode: e.status ?? null,
-            stdout: (e.stdout || '').trim().slice(0, 2000),
-            stderr: (e.stderr || '').trim().slice(0, 2000),
-            message: e.message,
-          },
-        });
-        throw execErr;
-      }
+      const { spawn } = require('child_process');
+      spawn(updateExe, ['--update', releasesUrl], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref();
 
-      appLog('update:apply-on-quit', 'info', 'Update.exe --update completed (quit)', {
-        meta: { stdout: stdout.slice(0, 2000) },
-      });
       flushLogs();
     } catch (err) {
       appLog('update:apply-on-quit', 'error', `Failed to apply Windows update on quit: ${err instanceof Error ? err.message : String(err)}`);

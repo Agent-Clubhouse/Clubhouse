@@ -68,11 +68,18 @@ describe.skipIf(process.platform !== 'darwin')('macOS update script execution (i
     return { tmpDir, appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath };
   }
 
-  it('quit script replaces the app bundle and cleans up all temp files', async () => {
+  it('quit script extracts zip, replaces the app bundle and cleans up all temp files', async () => {
     const env = await createMacTestEnv();
 
+    // Create a real zip containing the mock "new" app bundle
+    const { execSync } = await import('child_process');
+    execSync(`cd "${env.tmpExtract}" && zip -r -q "${env.downloadPath}" Test.app`);
+
+    // Remove the pre-created extract dir so the script can recreate it
+    await fsp.rm(env.tmpExtract, { recursive: true, force: true });
+
     const script = buildMacQuitUpdateScript(
-      env.appBundlePath, env.newAppPath, env.tmpExtract, env.downloadPath, env.scriptPath,
+      env.appBundlePath, env.downloadPath, env.tmpExtract, env.scriptPath,
     );
     await fsp.writeFile(env.scriptPath, script, { mode: 0o755 });
 
@@ -122,11 +129,16 @@ describe.skipIf(process.platform !== 'darwin')('macOS update script execution (i
   it('script does not exit prematurely if the old app bundle is missing', async () => {
     const env = await createMacTestEnv();
 
-    // Remove the old app bundle before running the script
+    // Create a real zip containing the mock "new" app bundle
+    const { execSync } = await import('child_process');
+    execSync(`cd "${env.tmpExtract}" && zip -r -q "${env.downloadPath}" Test.app`);
+
+    // Remove both the extract dir and old app bundle
+    await fsp.rm(env.tmpExtract, { recursive: true, force: true });
     await fsp.rm(env.appBundlePath, { recursive: true });
 
     const script = buildMacQuitUpdateScript(
-      env.appBundlePath, env.newAppPath, env.tmpExtract, env.downloadPath, env.scriptPath,
+      env.appBundlePath, env.downloadPath, env.tmpExtract, env.scriptPath,
     );
     await fsp.writeFile(env.scriptPath, script, { mode: 0o755 });
 
@@ -213,27 +225,36 @@ describe('buildMacUpdateScript', () => {
 
 describe('buildMacQuitUpdateScript', () => {
   const appBundlePath = '/Applications/Clubhouse.app';
-  const newAppPath = '/tmp/extract/Clubhouse.app';
-  const tmpExtract = '/tmp/extract';
   const downloadPath = '/tmp/Clubhouse-1.0.0.zip';
+  const tmpExtract = '/tmp/extract';
   const scriptPath = '/tmp/clubhouse-update.sh';
 
   it('does NOT relaunch the app', () => {
-    const script = buildMacQuitUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
+    const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
     expect(script).not.toContain('open');
   });
 
-  it('has one fewer line than the relaunch script (no open)', () => {
-    const updateScript = buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
-    const quitScript = buildMacQuitUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
-    expect(quitScript.split('\n').length).toBe(updateScript.split('\n').length - 1);
+  it('extracts the update archive via unzip', () => {
+    const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
+    expect(script).toContain(`unzip -o -q "${downloadPath}" -d "${tmpExtract}"`);
+  });
+
+  it('finds the .app bundle in the extract directory', () => {
+    const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
+    expect(script).toContain('find');
+    expect(script).toContain('*.app');
+  });
+
+  it('aborts with cleanup if no .app is found', () => {
+    const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
+    expect(script).toContain('if [ -z "$APP_PATH" ]');
+    expect(script).toContain('exit 1');
   });
 
   it('still performs the full replacement and cleanup sequence', () => {
-    const script = buildMacQuitUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, scriptPath);
+    const script = buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, scriptPath);
     expect(script).toContain('sleep 1');
     expect(script).toContain(`rm -rf "${appBundlePath}"`);
-    expect(script).toContain(`mv "${newAppPath}" "${appBundlePath}"`);
     expect(script).toContain(`rm -rf "${tmpExtract}"`);
     expect(script).toContain(`rm -f "${downloadPath}"`);
     expect(script).toContain(`rm -f "${scriptPath}"`);
