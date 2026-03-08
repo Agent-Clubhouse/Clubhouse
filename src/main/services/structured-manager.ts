@@ -96,6 +96,8 @@ async function consumeEvents(session: StructuredSession, opts: StructuredSession
     }
   } finally {
     cleanupSession(agentId);
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 0);
+    annexEventBus.emitPtyExit(agentId, 0);
   }
 }
 

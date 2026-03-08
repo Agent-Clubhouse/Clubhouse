@@ -26,9 +26,11 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 const mockEmitHookEvent = vi.fn();
 const mockEmitStructuredEvent = vi.fn();
+const mockEmitPtyExit = vi.fn();
 vi.mock('./annex-event-bus', () => ({
   emitHookEvent: (...args: unknown[]) => mockEmitHookEvent(...args),
   emitStructuredEvent: (...args: unknown[]) => mockEmitStructuredEvent(...args),
+  emitPtyExit: (...args: unknown[]) => mockEmitPtyExit(...args),
 }));
 
 vi.mock('./log-service', () => ({
@@ -217,7 +219,7 @@ describe('structured-manager', () => {
       await startStructuredSession('agent-6', adapter, baseOpts);
 
       await vi.waitFor(() => {
-        expect(mockBroadcastToAllWindows).toHaveBeenCalledTimes(2);
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledTimes(3);
       });
 
       // text_delta should not trigger an annex event
@@ -228,6 +230,26 @@ describe('structured-manager', () => {
       // Only the 'stop' event should have triggered an annex emit
       expect(hookCalls.length).toBe(1);
       expect(textDeltaHook).toBeUndefined();
+    });
+
+    it('broadcasts IPC.PTY.EXIT when stream completes normally', async () => {
+      const events: StructuredEvent[] = [
+        makeEvent('text_delta', { text: 'done' }),
+        makeEvent('end', { reason: 'complete', summary: 'Finished' }),
+      ];
+
+      const adapter = createMockAdapter(events);
+      await startStructuredSession('exit-agent', adapter, baseOpts);
+
+      await vi.waitFor(() => {
+        expect(mockBroadcastToAllWindows).toHaveBeenCalledWith(
+          'pty:exit',
+          'exit-agent',
+          0,
+        );
+      });
+
+      expect(mockEmitPtyExit).toHaveBeenCalledWith('exit-agent', 0);
     });
   });
 
