@@ -10,6 +10,7 @@ import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { HeadlessOutputKind } from '../orchestrators/types';
+import { TranscriptFeedItem } from '../../shared/transcript-types';
 
 /**
  * Quote a single argument for a Windows cmd.exe /s /c command line.
@@ -436,6 +437,110 @@ export function readTranscript(agentId: string): string | null {
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     return fs.readFileSync(transcriptPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert an array of StreamJsonEvent objects into TranscriptFeedItem[].
+ *
+ * Handles both --verbose format (assistant/user/result conversation-level events)
+ * and legacy streaming format (content_block_start/delta/stop).
+ * This is the single source of truth for transcript → feed-item conversion,
+ * eliminating the need for the renderer to parse raw JSONL.
+ */
+export function eventsToFeedItems(events: StreamJsonEvent[]): TranscriptFeedItem[] {
+  const items: TranscriptFeedItem[] = [];
+  let currentText = '';
+  const now = Date.now();
+
+  for (const event of events) {
+    // --verbose format: assistant messages with tool_use and text blocks
+    if (event.type === 'assistant' && event.message) {
+      const content = (event.message as { content?: Array<{ type: string; name?: string; text?: string }> }).content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'tool_use' && block.name) {
+            if (currentText.trim()) {
+              items.push({ kind: 'text', text: currentText.trim(), ts: now });
+              currentText = '';
+            }
+            items.push({ kind: 'tool', name: block.name, ts: now });
+          } else if (block.type === 'text' && block.text) {
+            currentText += block.text;
+          }
+        }
+        // Flush text after each assistant message
+        if (currentText.trim()) {
+          items.push({ kind: 'text', text: currentText.trim(), ts: now });
+          currentText = '';
+        }
+      }
+    }
+
+    // Legacy streaming format
+    if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+      if (currentText.trim()) {
+        items.push({ kind: 'text', text: currentText.trim(), ts: now });
+        currentText = '';
+      }
+      items.push({ kind: 'tool', name: event.content_block.name || 'unknown', ts: now });
+    }
+    if (event.type === 'content_block_delta') {
+      const delta = event.delta as { type?: string; text?: string } | undefined;
+      if (delta?.type === 'text_delta' && delta.text) {
+        currentText += delta.text;
+      }
+    }
+    if (event.type === 'content_block_stop' || event.type === 'message_stop') {
+      if (currentText.trim()) {
+        items.push({ kind: 'text', text: currentText.trim(), ts: now });
+        currentText = '';
+      }
+    }
+
+    // Final result (same in both formats)
+    if (event.type === 'result') {
+      if (currentText.trim()) {
+        items.push({ kind: 'text', text: currentText.trim(), ts: now });
+        currentText = '';
+      }
+      const msg = typeof event.result === 'string' ? event.result : 'Done';
+      items.push({ kind: 'result', text: msg, ts: now });
+    }
+  }
+  if (currentText.trim()) {
+    items.push({ kind: 'text', text: currentText.trim(), ts: now });
+  }
+
+  return items;
+}
+
+/**
+ * Read a headless agent's transcript and return it as structured feed items.
+ * Unlike readTranscript() which returns raw JSONL, this returns already-parsed
+ * TranscriptFeedItem[] so the renderer doesn't need to duplicate parsing logic.
+ */
+export function readTranscriptFeed(agentId: string): TranscriptFeedItem[] | null {
+  // In-memory session (not evicted)
+  const session = sessions.get(agentId);
+  if (session && !session.transcriptEvicted) {
+    return eventsToFeedItems(session.transcript);
+  }
+
+  // Disk: evicted session or completed session
+  const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
+  try {
+    const raw = fs.readFileSync(transcriptPath, 'utf-8');
+    const events = raw
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        try { return JSON.parse(line) as StreamJsonEvent; } catch { return null; }
+      })
+      .filter(Boolean) as StreamJsonEvent[];
+    return eventsToFeedItems(events);
   } catch {
     return null;
   }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Agent, AgentHookEvent } from '../../../shared/types';
+import { TranscriptFeedItem } from '../../../shared/transcript-types';
 import { useAgentStore } from '../../stores/agentStore';
 
 export const MAX_FEED_ITEMS = 200;
@@ -8,10 +9,7 @@ interface Props {
   agent: Agent;
 }
 
-type FeedItem =
-  | { kind: 'tool'; name: string; ts: number }
-  | { kind: 'text'; text: string; ts: number }
-  | { kind: 'result'; text: string; ts: number };
+type FeedItem = TranscriptFeedItem;
 
 function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -166,104 +164,28 @@ export function HeadlessAgentView({ agent }: Props) {
     return () => removeListener();
   }, [agent.id, appendItem]);
 
-  // Poll transcript for full activity feed (tools + text content)
-  // This serves as both supplementary (to hook events) and primary source when hooks don't fire
+  // Poll transcript feed for full activity (tools + text content).
+  // The main process parses the raw JSONL and returns structured FeedItems,
+  // so the renderer doesn't need to duplicate format-specific parsing logic.
   useEffect(() => {
     let cancelled = false;
-    let lastEventCount = 0;
+    let lastItemCount = 0;
     let pollCount = 0;
 
     async function poll() {
       if (cancelled) return;
       pollCount++;
       try {
-        const raw = await window.clubhouse.agent.readTranscript(agent.id);
+        const items = await window.clubhouse.agent.readTranscriptFeed(agent.id);
         if (cancelled) return;
-        if (raw == null || raw.length === 0) return;
+        if (items == null || items.length === 0) return;
+        if (items.length === lastItemCount) return;
+        lastItemCount = items.length;
 
-        const events = raw.split('\n')
-          .filter((line: string) => line.trim())
-          .map((line: string) => {
-            try { return JSON.parse(line); } catch { return null; }
-          })
-          .filter(Boolean);
-
-        if (events.length === lastEventCount) return;
-        lastEventCount = events.length;
-
-        // Build a complete feed from the transcript.
-        // Supports both --verbose format (assistant/user/result events)
-        // and legacy streaming format (content_block_start/delta/stop).
-        const items: FeedItem[] = [];
-        let currentText = '';
-        const now = Date.now();
-
-        for (const event of events) {
-          // --verbose format: assistant messages with tool_use and text blocks
-          if (event.type === 'assistant' && event.message) {
-            const content = (event.message as { content?: Array<{ type: string; name?: string; text?: string }> }).content;
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if (block.type === 'tool_use' && block.name) {
-                  if (currentText.trim()) {
-                    items.push({ kind: 'text', text: currentText.trim(), ts: now });
-                    currentText = '';
-                  }
-                  items.push({ kind: 'tool', name: block.name, ts: now });
-                } else if (block.type === 'text' && block.text) {
-                  currentText += block.text;
-                }
-              }
-              // Flush text after each assistant message
-              if (currentText.trim()) {
-                items.push({ kind: 'text', text: currentText.trim(), ts: now });
-                currentText = '';
-              }
-            }
-          }
-
-          // Legacy streaming format
-          if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-            if (currentText.trim()) {
-              items.push({ kind: 'text', text: currentText.trim(), ts: now });
-              currentText = '';
-            }
-            items.push({ kind: 'tool', name: event.content_block.name || 'unknown', ts: now });
-          }
-          if (event.type === 'content_block_delta') {
-            const delta = event.delta as { type?: string; text?: string } | undefined;
-            if (delta?.type === 'text_delta' && delta.text) {
-              currentText += delta.text;
-            }
-          }
-          if (event.type === 'content_block_stop' || event.type === 'message_stop') {
-            if (currentText.trim()) {
-              items.push({ kind: 'text', text: currentText.trim(), ts: now });
-              currentText = '';
-            }
-          }
-
-          // Final result (same in both formats)
-          if (event.type === 'result') {
-            if (currentText.trim()) {
-              items.push({ kind: 'text', text: currentText.trim(), ts: now });
-              currentText = '';
-            }
-            const msg = typeof event.result === 'string' ? event.result : 'Done';
-            items.push({ kind: 'result', text: msg, ts: now });
-          }
-        }
-        if (currentText.trim()) {
-          items.push({ kind: 'text', text: currentText.trim(), ts: now });
-        }
-
-        // Only update if we have more items than the current feed
-        if (items.length > 0) {
-          const capped = items.length > MAX_FEED_ITEMS
-            ? items.slice(items.length - MAX_FEED_ITEMS)
-            : items;
-          setFeedItems((prev) => capped.length > prev.length ? capped : prev);
-        }
+        const capped = items.length > MAX_FEED_ITEMS
+          ? items.slice(items.length - MAX_FEED_ITEMS)
+          : items;
+        setFeedItems((prev) => capped.length > prev.length ? capped : prev);
       } catch {
         // transcript not ready yet
       }

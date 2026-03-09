@@ -130,6 +130,13 @@ const api = {
     readTranscript: (agentId: string): Promise<string | null> =>
       ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT, agentId),
 
+    readTranscriptFeed: (agentId: string): Promise<Array<
+      | { kind: 'tool'; name: string; ts: number }
+      | { kind: 'text'; text: string; ts: number }
+      | { kind: 'result'; text: string; ts: number }
+    > | null> =>
+      ipcRenderer.invoke(IPC.AGENT.READ_TRANSCRIPT_FEED, agentId),
+
     getTranscriptInfo: (agentId: string): Promise<{ totalEvents: number; fileSizeBytes: number } | null> =>
       ipcRenderer.invoke(IPC.AGENT.GET_TRANSCRIPT_INFO, agentId),
 
