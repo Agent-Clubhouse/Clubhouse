@@ -45,7 +45,6 @@ vi.mock('../services/agent-system', () => ({
 
 vi.mock('../services/headless-manager', () => ({
   readTranscript: vi.fn(() => 'transcript text'),
-  readTranscriptFeed: vi.fn(() => [{ kind: 'tool', name: 'Read', ts: 1000 }]),
   getTranscriptInfo: vi.fn(async () => ({ totalEvents: 10, fileSizeBytes: 1024 })),
   readTranscriptPage: vi.fn(async () => ({ events: [{ type: 'result' }], totalEvents: 10 })),
 }));
@@ -327,13 +326,6 @@ describe('agent-handlers', () => {
     const result = await handler({}, 'a1');
     expect(headlessManager.readTranscript).toHaveBeenCalledWith('a1');
     expect(result).toBe('transcript text');
-  });
-
-  it('READ_TRANSCRIPT_FEED delegates to headlessManager.readTranscriptFeed', async () => {
-    const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_FEED)!;
-    const result = await handler({}, 'a1');
-    expect(headlessManager.readTranscriptFeed).toHaveBeenCalledWith('a1');
-    expect(result).toEqual([{ kind: 'tool', name: 'Read', ts: 1000 }]);
   });
 
   it('GET_TRANSCRIPT_INFO delegates to headlessManager.getTranscriptInfo', async () => {

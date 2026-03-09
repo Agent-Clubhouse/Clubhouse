@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SourceControlProvider } from '../../shared/types';
+import { optimisticUpdate } from './optimistic-update';
 
 interface ClubhouseModeState {
   enabled: boolean;
@@ -32,16 +33,14 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   setEnabled: async (enabled, projectPath?) => {
-    const { enabled: prev, projectOverrides, sourceControlProvider } = get();
-    set({ enabled });
-    try {
-      await window.clubhouse.app.saveClubhouseModeSettings(
+    const { projectOverrides, sourceControlProvider } = get();
+    await optimisticUpdate(set, get,
+      { enabled },
+      () => window.clubhouse.app.saveClubhouseModeSettings(
         { enabled, projectOverrides, sourceControlProvider },
         projectPath,
-      );
-    } catch {
-      set({ enabled: prev });
-    }
+      ),
+    );
   },
 
   isEnabledForProject: (projectPath?) => {
@@ -53,42 +52,35 @@ export const useClubhouseModeStore = create<ClubhouseModeState>((set, get) => ({
   },
 
   setProjectOverride: async (projectPath, enabled) => {
-    const { enabled: currentEnabled, projectOverrides: prevOverrides, sourceControlProvider } = get();
-    const newOverrides = { ...prevOverrides, [projectPath]: enabled };
-    set({ projectOverrides: newOverrides });
-    try {
-      await window.clubhouse.app.saveClubhouseModeSettings(
+    const { enabled: currentEnabled, sourceControlProvider } = get();
+    const newOverrides = { ...get().projectOverrides, [projectPath]: enabled };
+    await optimisticUpdate(set, get,
+      { projectOverrides: newOverrides },
+      () => window.clubhouse.app.saveClubhouseModeSettings(
         { enabled: currentEnabled, projectOverrides: newOverrides, sourceControlProvider },
         projectPath,
-      );
-    } catch {
-      set({ projectOverrides: prevOverrides });
-    }
+      ),
+    );
   },
 
   clearProjectOverride: async (projectPath) => {
-    const { enabled, projectOverrides: prevOverrides, sourceControlProvider } = get();
-    const { [projectPath]: _, ...rest } = prevOverrides;
-    set({ projectOverrides: rest });
-    try {
-      await window.clubhouse.app.saveClubhouseModeSettings(
+    const { enabled, projectOverrides, sourceControlProvider } = get();
+    const { [projectPath]: _, ...rest } = projectOverrides;
+    await optimisticUpdate(set, get,
+      { projectOverrides: rest },
+      () => window.clubhouse.app.saveClubhouseModeSettings(
         { enabled, projectOverrides: rest, sourceControlProvider },
-        projectPath,
-      );
-    } catch {
-      set({ projectOverrides: prevOverrides });
-    }
+      ),
+    );
   },
 
   setSourceControlProvider: async (provider) => {
-    const { sourceControlProvider: prev, enabled, projectOverrides } = get();
-    set({ sourceControlProvider: provider });
-    try {
-      await window.clubhouse.app.saveClubhouseModeSettings(
+    const { enabled, projectOverrides } = get();
+    await optimisticUpdate(set, get,
+      { sourceControlProvider: provider },
+      () => window.clubhouse.app.saveClubhouseModeSettings(
         { enabled, projectOverrides, sourceControlProvider: provider },
-      );
-    } catch {
-      set({ sourceControlProvider: prev });
-    }
+      ),
+    );
   },
 }));

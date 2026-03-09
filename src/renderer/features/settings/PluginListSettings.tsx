@@ -195,7 +195,7 @@ function OrphanInjectionsBanner({
     } catch {
       setOrphans([]);
     }
-  }, [projectPath, knownPluginIdsSerialized]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectPath, knownPluginIdsSerialized]);
 
   useEffect(() => {
     load();

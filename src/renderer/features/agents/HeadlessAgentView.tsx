@@ -1,15 +1,146 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Agent, AgentHookEvent } from '../../../shared/types';
-import { TranscriptFeedItem } from '../../../shared/transcript-types';
 import { useAgentStore } from '../../stores/agentStore';
 
 export const MAX_FEED_ITEMS = 200;
+const TRANSCRIPT_PAGE_SIZE = 100;
 
 interface Props {
   agent: Agent;
 }
 
-type FeedItem = TranscriptFeedItem;
+type FeedItem =
+  | { id: string; kind: 'tool'; name: string; ts: number }
+  | { id: string; kind: 'text'; text: string; ts: number }
+  | { id: string; kind: 'result'; text: string; ts: number };
+
+interface TranscriptEvent {
+  type: string;
+  content_block?: { type: string; name?: string };
+  message?: { content?: Array<{ type: string; name?: string; text?: string }> };
+  result?: string;
+  delta?: { type?: string; text?: string };
+  [key: string]: unknown;
+}
+
+interface TranscriptParseState {
+  pendingText: string;
+  signatureCounts: Map<string, number>;
+}
+
+function capFeedItems(items: FeedItem[]): FeedItem[] {
+  return items.length > MAX_FEED_ITEMS
+    ? items.slice(items.length - MAX_FEED_ITEMS)
+    : items;
+}
+
+function nextFeedItemId(counts: Map<string, number>, signature: string): string {
+  const next = (counts.get(signature) ?? 0) + 1;
+  counts.set(signature, next);
+  return `${signature}:${next}`;
+}
+
+function flushPendingTranscriptText(
+  items: FeedItem[],
+  state: TranscriptParseState,
+  ts: number,
+): void {
+  const text = state.pendingText.trim();
+  if (!text) return;
+
+  items.push({
+    id: nextFeedItemId(state.signatureCounts, `text:${text}`),
+    kind: 'text',
+    text,
+    ts,
+  });
+  state.pendingText = '';
+}
+
+function buildTranscriptFeedItems(
+  events: TranscriptEvent[],
+  state: TranscriptParseState,
+): FeedItem[] {
+  const items: FeedItem[] = [];
+
+  for (const event of events) {
+    const ts = Date.now();
+
+    if (event.type === 'assistant' && event.message) {
+      const content = (
+        event.message as { content?: Array<{ type: string; name?: string; text?: string }> }
+      ).content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'tool_use' && block.name) {
+            flushPendingTranscriptText(items, state, ts);
+            items.push({
+              id: nextFeedItemId(state.signatureCounts, `tool:${block.name}`),
+              kind: 'tool',
+              name: block.name,
+              ts,
+            });
+          } else if (block.type === 'text' && block.text) {
+            state.pendingText += block.text;
+          }
+        }
+        flushPendingTranscriptText(items, state, ts);
+      }
+      continue;
+    }
+
+    if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+      flushPendingTranscriptText(items, state, ts);
+      const name = event.content_block.name || 'unknown';
+      items.push({
+        id: nextFeedItemId(state.signatureCounts, `tool:${name}`),
+        kind: 'tool',
+        name,
+        ts,
+      });
+      continue;
+    }
+
+    if (event.type === 'content_block_delta') {
+      const delta = event.delta as { type?: string; text?: string } | undefined;
+      if (delta?.type === 'text_delta' && delta.text) {
+        state.pendingText += delta.text;
+      }
+      continue;
+    }
+
+    if (event.type === 'content_block_stop' || event.type === 'message_start' || event.type === 'message_stop') {
+      flushPendingTranscriptText(items, state, ts);
+      continue;
+    }
+
+    if (event.type === 'result') {
+      flushPendingTranscriptText(items, state, ts);
+      const text = typeof event.result === 'string' ? event.result : 'Done';
+      items.push({
+        id: nextFeedItemId(state.signatureCounts, `result:${text}`),
+        kind: 'result',
+        text,
+        ts,
+      });
+    }
+  }
+
+  return items;
+}
+
+function createNotificationFeedItem(
+  message: string,
+  ts: number,
+  counts: Map<string, number>,
+): FeedItem {
+  return {
+    id: nextFeedItemId(counts, `notification:${message}`),
+    kind: 'text',
+    text: message,
+    ts,
+  };
+}
 
 function formatElapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -123,6 +254,14 @@ export function HeadlessAgentView({ agent }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const feedRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(0);
+  const transcriptOffsetRef = useRef(0);
+  const transcriptParseStateRef = useRef<TranscriptParseState>({
+    pendingText: '',
+    signatureCounts: new Map(),
+  });
+  const notificationCountsRef = useRef<Map<string, number>>(new Map());
+  const syncingTranscriptRef = useRef(false);
+  const syncRequestedRef = useRef(false);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
 
@@ -136,77 +275,112 @@ export function HeadlessAgentView({ agent }: Props) {
     return () => clearInterval(tick);
   }, [agent.id, spawnedAt, agent.status]);
 
-  // Real-time feed from hook events (primary source — instant, no polling delay)
-  const appendItem = useCallback((item: FeedItem) => {
+  const appendNotificationItem = useCallback((message: string, ts: number) => {
     setFeedItems((prev) => {
-      const updated = [...prev, item];
-      return updated.length > MAX_FEED_ITEMS
-        ? updated.slice(updated.length - MAX_FEED_ITEMS)
-        : updated;
+      return capFeedItems([
+        ...prev,
+        createNotificationFeedItem(message, ts, notificationCountsRef.current),
+      ]);
     });
   }, []);
 
-  useEffect(() => {
-    const removeListener = window.clubhouse.agent.onHookEvent(
-      (agentId: string, event: AgentHookEvent) => {
-        if (agentId !== agent.id) return;
-        const ts = event.timestamp || Date.now();
-
-        if (event.kind === 'pre_tool' && event.toolName) {
-          appendItem({ kind: 'tool', name: event.toolVerb || event.toolName, ts });
-        } else if (event.kind === 'stop') {
-          appendItem({ kind: 'result', text: event.message || 'Done', ts });
-        } else if (event.kind === 'notification' && event.message) {
-          appendItem({ kind: 'text', text: event.message, ts });
-        }
-      },
-    );
-    return () => removeListener();
-  }, [agent.id, appendItem]);
-
-  // Poll transcript feed for full activity (tools + text content).
-  // The main process parses the raw JSONL and returns structured FeedItems,
-  // so the renderer doesn't need to duplicate format-specific parsing logic.
+  // Poll transcript pages incrementally so the transcript remains the canonical
+  // source for tool/text/result activity without rebuilding the whole feed.
   useEffect(() => {
     let cancelled = false;
-    let lastItemCount = 0;
     let pollCount = 0;
+    let interval: ReturnType<typeof setInterval>;
 
-    async function poll() {
+    prevCountRef.current = 0;
+    transcriptOffsetRef.current = 0;
+    transcriptParseStateRef.current = {
+      pendingText: '',
+      signatureCounts: new Map(),
+    };
+    notificationCountsRef.current = new Map();
+    syncingTranscriptRef.current = false;
+    syncRequestedRef.current = false;
+    setFeedItems([]);
+
+    async function syncTranscript(): Promise<void> {
       if (cancelled) return;
-      pollCount++;
-      try {
-        const items = await window.clubhouse.agent.readTranscriptFeed(agent.id);
-        if (cancelled) return;
-        if (items == null || items.length === 0) return;
-        if (items.length === lastItemCount) return;
-        lastItemCount = items.length;
+      if (syncingTranscriptRef.current) {
+        syncRequestedRef.current = true;
+        return;
+      }
 
-        const capped = items.length > MAX_FEED_ITEMS
-          ? items.slice(items.length - MAX_FEED_ITEMS)
-          : items;
-        setFeedItems((prev) => capped.length > prev.length ? capped : prev);
+      syncingTranscriptRef.current = true;
+      try {
+        while (!cancelled) {
+          syncRequestedRef.current = false;
+          const page = await window.clubhouse.agent.readTranscriptPage(
+            agent.id,
+            transcriptOffsetRef.current,
+            TRANSCRIPT_PAGE_SIZE,
+          );
+          if (cancelled || !page) return;
+
+          if (page.events.length === 0) {
+            if (page.totalEvents > transcriptOffsetRef.current) {
+              transcriptOffsetRef.current = page.totalEvents;
+            }
+            return;
+          }
+
+          transcriptOffsetRef.current += page.events.length;
+          const newItems = buildTranscriptFeedItems(
+            page.events as TranscriptEvent[],
+            transcriptParseStateRef.current,
+          );
+
+          if (newItems.length > 0) {
+            setFeedItems((prev) => capFeedItems([...prev, ...newItems]));
+          }
+
+          if (transcriptOffsetRef.current >= page.totalEvents) return;
+        }
       } catch {
         // transcript not ready yet
+      } finally {
+        syncingTranscriptRef.current = false;
+        if (syncRequestedRef.current && !cancelled) {
+          void syncTranscript();
+        }
       }
     }
 
-    // Poll faster initially (every 500ms for first 10 polls), then every 2s
-    let interval: ReturnType<typeof setInterval>;
+    const removeListener = window.clubhouse.agent.onHookEvent(
+      (agentId: string, event: AgentHookEvent) => {
+        if (agentId !== agent.id) return;
+
+        if (event.kind === 'notification' && event.message) {
+          appendNotificationItem(event.message, event.timestamp || Date.now());
+          return;
+        }
+
+        if (event.kind === 'pre_tool' || event.kind === 'post_tool' || event.kind === 'stop') {
+          void syncTranscript();
+        }
+      },
+    );
+
+    void syncTranscript();
     const fastInterval = setInterval(() => {
-      poll();
+      pollCount++;
+      void syncTranscript();
       if (pollCount >= 10) {
         clearInterval(fastInterval);
-        interval = setInterval(poll, 2000);
+        interval = setInterval(() => { void syncTranscript(); }, 2000);
       }
     }, 500);
 
     return () => {
       cancelled = true;
+      removeListener();
       clearInterval(fastInterval);
       if (interval) clearInterval(interval);
     };
-  }, [agent.id]);
+  }, [agent.id, appendNotificationItem]);
 
   // Auto-scroll when new items appear
   useEffect(() => {
@@ -253,7 +427,7 @@ export function HeadlessAgentView({ agent }: Props) {
               </div>
             ) : (
               feedItems.map((item, i) => (
-                <LiveFeedItem key={i} item={item} isLatest={i === feedItems.length - 1} />
+                <LiveFeedItem key={item.id} item={item} isLatest={i === feedItems.length - 1} />
               ))
             )}
           </div>

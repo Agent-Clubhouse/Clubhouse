@@ -23,6 +23,14 @@ function resetStore(spawnedAt?: number) {
   });
 }
 
+async function flushAsyncWork() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 describe('HeadlessAgentView', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -30,7 +38,11 @@ describe('HeadlessAgentView', () => {
     resetStore();
     // Mock IPC calls
     window.clubhouse.agent.onHookEvent = vi.fn(() => vi.fn());
-    window.clubhouse.agent.readTranscriptFeed = vi.fn().mockResolvedValue([]);
+    window.clubhouse.agent.readTranscript = vi.fn().mockResolvedValue('');
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+      events: [],
+      totalEvents: 0,
+    });
   });
 
   afterEach(() => {
@@ -101,29 +113,131 @@ describe('HeadlessAgentView', () => {
     expect(screen.getByText('15s')).toBeInTheDocument();
   });
 
-  it('caps feedItems from hook events at MAX_FEED_ITEMS', () => {
+  it('caps transcript feed items at MAX_FEED_ITEMS', async () => {
+    const transcriptEvents = Array.from({ length: MAX_FEED_ITEMS + 50 }, (_, i) => ({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', name: `tool-${i}` }],
+      },
+    }));
+
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(
+      async (_agentId: string, offset: number, limit: number) => ({
+        events: transcriptEvents.slice(offset, offset + limit),
+        totalEvents: transcriptEvents.length,
+      }),
+    );
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+
+    const toolItems = screen.getAllByText(/^tool-/);
+    expect(toolItems.length).toBeLessThanOrEqual(MAX_FEED_ITEMS);
+    expect(screen.getByText(`tool-${MAX_FEED_ITEMS + 49}`)).toBeInTheDocument();
+  });
+
+  it('uses transcript pages as the canonical source for tool and result items', async () => {
     let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
+    let transcriptReady = false;
+
     window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
       hookCallback = cb;
       return vi.fn();
     });
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
+      if (!transcriptReady) {
+        return { events: [], totalEvents: 0 };
+      }
+
+      if (offset === 0) {
+        return {
+          events: [
+            {
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', name: 'Read' }] },
+            },
+            { type: 'result', result: 'Done' },
+          ],
+          totalEvents: 2,
+        };
+      }
+
+      return { events: [], totalEvents: 2 };
+    });
 
     render(<HeadlessAgentView agent={headlessAgent} />);
 
-    // Push more than MAX_FEED_ITEMS events
     act(() => {
-      for (let i = 0; i < MAX_FEED_ITEMS + 50; i++) {
-        hookCallback(headlessAgent.id, {
-          kind: 'pre_tool',
-          toolName: `tool-${i}`,
-          timestamp: Date.now(),
-        });
-      }
+      transcriptReady = true;
+      hookCallback(headlessAgent.id, {
+        kind: 'pre_tool',
+        toolName: 'Read',
+        timestamp: Date.now(),
+      });
+      hookCallback(headlessAgent.id, {
+        kind: 'stop',
+        message: 'Done',
+        timestamp: Date.now(),
+      });
     });
 
-    // Only MAX_FEED_ITEMS tool items should be rendered
-    const toolItems = screen.getAllByText(/^tool-/);
-    expect(toolItems.length).toBeLessThanOrEqual(MAX_FEED_ITEMS);
+    await flushAsyncWork();
+
+    expect(screen.getAllByText('Read')).toHaveLength(1);
+    expect(screen.getAllByText('Done')).toHaveLength(1);
+
+    expect(window.clubhouse.agent.readTranscript).not.toHaveBeenCalled();
+  });
+
+  it('polls transcript pages incrementally instead of rereading from the beginning', async () => {
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockImplementation(async (_agentId: string, offset: number) => {
+      if (offset === 0) {
+        return {
+          events: [
+            {
+              type: 'assistant',
+              message: {
+                content: [
+                  { type: 'tool_use', name: 'Read' },
+                  { type: 'text', text: 'Inspect file' },
+                ],
+              },
+            },
+          ],
+          totalEvents: 1,
+        };
+      }
+
+      if (offset === 1) {
+        return {
+          events: [{ type: 'result', result: 'Done' }],
+          totalEvents: 2,
+        };
+      }
+
+      return { events: [], totalEvents: 2 };
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+
+    expect(screen.getByText('Read')).toBeInTheDocument();
+    expect(screen.getByText('Inspect file')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    await flushAsyncWork();
+
+    expect(screen.getByText('Done')).toBeInTheDocument();
+
+    const offsets = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls
+      .map(([, offset]) => offset);
+
+    expect(offsets.filter((offset) => offset === 0)).toHaveLength(1);
+    expect(offsets).toContain(1);
+    expect(screen.getByText('Read')).toBeInTheDocument();
+    expect(screen.getByText('Inspect file')).toBeInTheDocument();
   });
 
   it('freezes the timer when the agent is no longer running', () => {

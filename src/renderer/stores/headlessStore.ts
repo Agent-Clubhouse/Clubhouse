@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { optimisticUpdate } from './optimistic-update';
 
 export type SpawnMode = 'headless' | 'interactive' | 'structured';
 
@@ -31,16 +32,14 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   },
 
   setDefaultMode: async (mode) => {
-    const { defaultMode: prevDefaultMode, projectOverrides: currentOverrides } = get();
-    set({ defaultMode: mode });
-    try {
-      await window.clubhouse.app.saveHeadlessSettings({
+    const { projectOverrides } = get();
+    await optimisticUpdate(set, get,
+      { defaultMode: mode },
+      () => window.clubhouse.app.saveHeadlessSettings({
         defaultMode: mode,
-        projectOverrides: currentOverrides,
-      });
-    } catch {
-      set({ defaultMode: prevDefaultMode });
-    }
+        projectOverrides,
+      }),
+    );
   },
 
   getProjectMode: (projectPath?) => {
@@ -52,30 +51,26 @@ export const useHeadlessStore = create<HeadlessState>((set, get) => ({
   },
 
   setProjectMode: async (projectPath, mode) => {
-    const { projectOverrides: prevOverrides, defaultMode: currentDefault } = get();
-    const newOverrides = { ...prevOverrides, [projectPath]: mode };
-    set({ projectOverrides: newOverrides });
-    try {
-      await window.clubhouse.app.saveHeadlessSettings({
-        defaultMode: currentDefault,
+    const { defaultMode } = get();
+    const newOverrides = { ...get().projectOverrides, [projectPath]: mode };
+    await optimisticUpdate(set, get,
+      { projectOverrides: newOverrides },
+      () => window.clubhouse.app.saveHeadlessSettings({
+        defaultMode,
         projectOverrides: newOverrides,
-      });
-    } catch {
-      set({ projectOverrides: prevOverrides });
-    }
+      }),
+    );
   },
 
   clearProjectMode: async (projectPath) => {
-    const { projectOverrides: prevOverrides, defaultMode: currentDefault } = get();
-    const { [projectPath]: _, ...rest } = prevOverrides;
-    set({ projectOverrides: rest });
-    try {
-      await window.clubhouse.app.saveHeadlessSettings({
-        defaultMode: currentDefault,
+    const { defaultMode, projectOverrides } = get();
+    const { [projectPath]: _, ...rest } = projectOverrides;
+    await optimisticUpdate(set, get,
+      { projectOverrides: rest },
+      () => window.clubhouse.app.saveHeadlessSettings({
+        defaultMode,
         projectOverrides: rest,
-      });
-    } catch {
-      set({ projectOverrides: prevOverrides });
-    }
+      }),
+    );
   },
 }));

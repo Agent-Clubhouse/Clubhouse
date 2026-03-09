@@ -175,10 +175,6 @@ export function registerAgentHandlers(): void {
     return headlessManager.readTranscript(agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT_FEED, async (_event, agentId: string) => {
-    return headlessManager.readTranscriptFeed(agentId);
-  });
-
   ipcMain.handle(IPC.AGENT.GET_TRANSCRIPT_INFO, async (_event, agentId: string) => {
     return headlessManager.getTranscriptInfo(agentId);
   });

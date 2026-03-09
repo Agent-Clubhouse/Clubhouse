@@ -156,6 +156,18 @@ import * as fs from 'fs';
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHeadlessSpawn.mockImplementation((agentId: string) => {
+      mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
+    });
+    mockHeadlessKill.mockImplementation((agentId: string) => {
+      mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId !== agentId);
+    });
+    mockStartStructured.mockImplementation(async (agentId: string) => {
+      mockIsStructuredSession.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
+    });
+    mockCancelSession.mockImplementation(async (agentId: string) => {
+      mockIsStructuredSession.mockImplementation((trackedAgentId: string) => trackedAgentId !== agentId);
+    });
   });
 
   afterEach(() => {
@@ -164,6 +176,8 @@ describe('agent-system', () => {
     untrackAgent('agent-1');
     untrackAgent('test-headless');
     untrackAgent('test-structured');
+    mockIsHeadless.mockReturnValue(false);
+    mockIsStructuredSession.mockReturnValue(false);
   });
 
   describe('resolveOrchestrator', () => {
