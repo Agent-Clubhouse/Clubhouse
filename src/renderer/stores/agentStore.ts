@@ -467,7 +467,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     })();
 
     if (resolvedPath) {
-      await window.clubhouse.agent.killAgent(id, resolvedPath, agent.orchestrator);
+      await window.clubhouse.agent.killAgent(id, resolvedPath);
     } else {
       // Last resort fallback
       await window.clubhouse.pty.kill(id);

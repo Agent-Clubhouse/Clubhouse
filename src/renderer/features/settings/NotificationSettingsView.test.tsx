@@ -12,12 +12,12 @@ vi.mock('../../stores/badgeStore', () => ({
   }),
 }));
 
-const mockLoadSettings = vi.fn().mockResolvedValue(undefined);
-const mockSaveSettings = vi.fn().mockResolvedValue(undefined);
-const mockLoadBadgeSettings = vi.fn().mockResolvedValue(undefined);
-const mockSaveAppSettings = vi.fn().mockResolvedValue(undefined);
-const mockSetProjectOverride = vi.fn().mockResolvedValue(undefined);
-const mockClearProjectOverride = vi.fn().mockResolvedValue(undefined);
+const mockLoadSettings = vi.fn();
+const mockSaveSettings = vi.fn();
+const mockLoadBadgeSettings = vi.fn();
+const mockSaveAppSettings = vi.fn();
+const mockSetProjectOverride = vi.fn();
+const mockClearProjectOverride = vi.fn();
 
 function resetStores(opts: { projectOverrides?: Record<string, any> } = {}) {
   useNotificationStore.setState({
@@ -47,6 +47,12 @@ function resetStores(opts: { projectOverrides?: Record<string, any> } = {}) {
 describe('NotificationSettingsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockLoadSettings.mockResolvedValue(undefined);
+    mockSaveSettings.mockResolvedValue(undefined);
+    mockLoadBadgeSettings.mockResolvedValue(undefined);
+    mockSaveAppSettings.mockResolvedValue(undefined);
+    mockSetProjectOverride.mockResolvedValue(undefined);
+    mockClearProjectOverride.mockResolvedValue(undefined);
   });
 
   it('renders loading state when settings are null', () => {

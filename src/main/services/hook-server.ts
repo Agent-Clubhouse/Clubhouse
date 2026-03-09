@@ -115,26 +115,20 @@ export function start(): Promise<number> {
                 );
 
                 decision.then((result) => {
-                  if (result === 'timeout') {
-                    // Timeout — return "ask" so Claude Code falls back to its own prompt
-                    const responseBody = JSON.stringify({
-                      hookSpecificOutput: { permissionDecision: 'ask' },
-                    });
-                    res.writeHead(200, {
-                      'Content-Type': 'application/json',
-                      'Content-Length': Buffer.byteLength(responseBody),
-                    });
-                    res.end(responseBody);
-                  } else {
-                    const responseBody = JSON.stringify({
-                      hookSpecificOutput: { permissionDecision: result },
-                    });
-                    res.writeHead(200, {
-                      'Content-Type': 'application/json',
-                      'Content-Length': Buffer.byteLength(responseBody),
-                    });
-                    res.end(responseBody);
-                  }
+                  const permissionDecision = result === 'timeout' ? 'ask' : result;
+                  const responseBody = JSON.stringify({
+                    hookSpecificOutput: { permissionDecision },
+                  });
+                  res.writeHead(200, {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(responseBody),
+                  });
+                  res.end(responseBody);
+                }).catch((err) => {
+                  appLog('core:hook-server', 'error', 'Failed to send permission response', {
+                    meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+                  });
+                  try { if (!res.writableEnded) res.end(); } catch { /* response already closed */ }
                 });
                 return; // Don't respond yet — the promise will handle it
               }

@@ -31,7 +31,7 @@ vi.mock('../agents/QuickAgentGhost', () => ({
   ),
 }));
 
-const mockKillAgent = vi.fn().mockResolvedValue(undefined);
+const mockKillAgent = vi.fn();
 
 const defaultPane: LeafPane = {
   type: 'leaf',
@@ -74,6 +74,7 @@ function renderPane(overrides: Partial<typeof defaultProps> = {}) {
 describe('PopoutHubPane', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockKillAgent.mockResolvedValue(undefined);
     useAgentStore.setState({ killAgent: mockKillAgent });
     window.clubhouse.window.focusMain = vi.fn().mockResolvedValue(undefined);
   });

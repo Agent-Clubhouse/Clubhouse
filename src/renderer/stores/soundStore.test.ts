@@ -27,7 +27,7 @@ Object.defineProperty(globalThis, 'window', {
 });
 
 // Mock Audio - each instance must have its own pause/play so module-level references work
-const mockPlay = vi.fn().mockResolvedValue(undefined);
+const mockPlay = vi.fn();
 const mockPause = vi.fn();
 
 class MockAudio {
@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS: SoundSettings = {
 describe('soundStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPlay.mockResolvedValue(undefined);
     useSoundStore.setState({ settings: null, packs: [], soundCache: {} });
   });
 

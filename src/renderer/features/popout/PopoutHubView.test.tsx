@@ -30,7 +30,7 @@ vi.mock('../agents/QuickAgentGhost', () => ({
 
 const mockAgents: Record<string, any> = {};
 let mockDetailedStatuses: Record<string, any> = {};
-const mockLoadDurableAgents = vi.fn().mockResolvedValue(undefined);
+const mockLoadDurableAgents = vi.fn();
 
 vi.mock('../../stores/agentStore', () => ({
   useAgentStore: (selector: (s: any) => any) => selector({
@@ -42,7 +42,7 @@ vi.mock('../../stores/agentStore', () => ({
   }),
 }));
 
-const mockLoadProjects = vi.fn().mockResolvedValue(undefined);
+const mockLoadProjects = vi.fn();
 let mockProjects: any[] = [];
 
 vi.mock('../../stores/projectStore', () => {
@@ -139,6 +139,8 @@ describe('PopoutHubView', () => {
     mockLoadCompleted.mockClear();
     mockDismissCompleted.mockClear();
     mockLoadDurableAgents.mockClear();
+    mockLoadDurableAgents.mockResolvedValue(undefined);
+    mockLoadProjects.mockResolvedValue(undefined);
 
     window.clubhouse.pty.onExit = vi.fn().mockReturnValue(noop);
     window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(noop);
