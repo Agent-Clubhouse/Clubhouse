@@ -76,6 +76,67 @@ export interface ProviderCapabilities {
   structuredProtocol?: 'acp';
 }
 
+// ── Capability Sub-interfaces ───────────────────────────────────────────────
+// Providers only implement interfaces for features they support.
+// Use the type guard functions (isHookCapable, etc.) to narrow at call sites.
+
+/** Providers that support hook configuration and event parsing */
+export interface HookCapable {
+  writeHooksConfig(cwd: string, hookUrl: string): Promise<void>;
+  parseHookEvent(raw: unknown): NormalizedHookEvent | null;
+}
+
+/** Providers that support headless (non-interactive) execution */
+export interface HeadlessCapable {
+  buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null>;
+}
+
+/** Providers that support session listing, transcript reading, and ID extraction */
+export interface SessionCapable {
+  /** List available CLI sessions for the given project directory */
+  listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
+
+  /** Read a historical session transcript from the CLI's own storage.
+   *  Returns raw StreamJsonEvent[] or null if session not found. */
+  readSessionTranscript(
+    sessionId: string,
+    cwd: string,
+    profileEnv?: Record<string, string>,
+  ): Promise<StreamJsonEvent[] | null>;
+
+  /** Extract session ID from PTY buffer output, if recognizable */
+  extractSessionId(ptyBuffer: string): string | null;
+}
+
+/** Providers that support structured mode via an adapter */
+export interface StructuredCapable {
+  createStructuredAdapter(): StructuredAdapter;
+}
+
+// ── Type Guards ─────────────────────────────────────────────────────────────
+
+/** Check if a provider supports hooks (writeHooksConfig, parseHookEvent) */
+export function isHookCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & HookCapable {
+  return provider.getCapabilities().hooks;
+}
+
+/** Check if a provider supports headless execution */
+export function isHeadlessCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & HeadlessCapable {
+  return provider.getCapabilities().headless;
+}
+
+/** Check if a provider supports session management */
+export function isSessionCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & SessionCapable {
+  return provider.getCapabilities().sessionResume && typeof (provider as unknown as SessionCapable).listSessions === 'function';
+}
+
+/** Check if a provider supports structured mode */
+export function isStructuredCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & StructuredCapable {
+  return provider.getCapabilities().structuredMode;
+}
+
+// ── Core Interface ──────────────────────────────────────────────────────────
+
 export interface OrchestratorProvider {
   readonly id: OrchestratorId;
   readonly displayName: string;
@@ -90,10 +151,6 @@ export interface OrchestratorProvider {
   buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult>;
   getExitCommand(): string;
 
-  // Hooks
-  writeHooksConfig(cwd: string, hookUrl: string): Promise<void>;
-  parseHookEvent(raw: unknown): NormalizedHookEvent | null;
-
   // Instructions
   readInstructions(worktreePath: string): string;
   writeInstructions(worktreePath: string, content: string): void;
@@ -105,36 +162,10 @@ export interface OrchestratorProvider {
   getModelOptions(): Promise<Array<{ id: string; label: string }>>;
   getDefaultPermissions(kind: 'durable' | 'quick'): string[];
   toolVerb(toolName: string): string | undefined;
-  buildSummaryInstruction(agentId: string): string;
-  readQuickSummary(agentId: string): Promise<{ summary: string | null; filesModified: string[] } | null>;
 
   // Profile support
   /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
   getProfileEnvKeys(): string[];
-
-  // Headless mode (optional — absence means headless not supported)
-  buildHeadlessCommand?(opts: HeadlessOpts): Promise<HeadlessCommandResult | null>;
-
-  // Session listing (optional — absence means session listing not supported)
-  /** List available CLI sessions for the given project directory */
-  listSessions?(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>>;
-
-  // Session transcript reading (optional)
-  /** Read a historical session transcript from the CLI's own storage.
-   *  Returns raw StreamJsonEvent[] or null if session not found. */
-  readSessionTranscript?(
-    sessionId: string,
-    cwd: string,
-    profileEnv?: Record<string, string>,
-  ): Promise<StreamJsonEvent[] | null>;
-
-  // Session ID extraction (optional)
-  /** Extract session ID from PTY buffer output, if recognizable */
-  extractSessionId?(ptyBuffer: string): string | null;
-
-  // Structured mode adapter (optional — absence means structured mode not supported)
-  /** Create a structured adapter for this provider */
-  createStructuredAdapter?(): StructuredAdapter;
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
-import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider } from '../orchestrators';
+import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady } from './hook-server';
 import * as ptyManager from './pty-manager';
 import { appLog } from './log-service';
@@ -157,7 +157,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
 
     // Try structured path when enabled and provider supports it
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-    if (spawnMode === 'structured' && params.kind === 'quick' && provider.createStructuredAdapter) {
+    if (spawnMode === 'structured' && params.kind === 'quick' && isStructuredCapable(provider)) {
       const adapter = provider.createStructuredAdapter();
       structuredAgentSet.add(params.agentId);
       try {
@@ -181,7 +181,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     }
 
     // Try headless path for quick agents when enabled
-    if (spawnMode === 'headless' && params.kind === 'quick' && provider.buildHeadlessCommand) {
+    if (spawnMode === 'headless' && params.kind === 'quick' && isHeadlessCapable(provider)) {
       const headlessResult = await provider.buildHeadlessCommand({
         cwd: params.cwd,
         model: params.model,
@@ -245,8 +245,10 @@ async function spawnPtyAgent(
   // Run hook server setup and command building in parallel — they're independent.
   const [, { binary, args, env }] = await Promise.all([
     waitHookServerReady().then(async (port) => {
-      const hookUrl = `http://127.0.0.1:${port}/hook`;
-      await provider.writeHooksConfig(params.cwd, hookUrl);
+      if (isHookCapable(provider)) {
+        const hookUrl = `http://127.0.0.1:${port}/hook`;
+        await provider.writeHooksConfig(params.cwd, hookUrl);
+      }
     }),
     provider.buildSpawnCommand({
       cwd: params.cwd,
@@ -288,7 +290,7 @@ async function spawnPtyAgent(
     untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents
-    if (params.kind === 'durable' && buffer && provider.extractSessionId) {
+    if (params.kind === 'durable' && buffer && isSessionCapable(provider)) {
       try {
         const sessionId = provider.extractSessionId(buffer);
         if (sessionId) {
@@ -398,7 +400,7 @@ export async function listSessions(
 
   // Try to get provider-discovered sessions
   let providerSessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
-  if (provider.listSessions) {
+  if (isSessionCapable(provider)) {
     try {
       const profileEnv = resolveProfileEnv(projectPath, provider.id);
       providerSessions = await provider.listSessions(cwd, profileEnv);
