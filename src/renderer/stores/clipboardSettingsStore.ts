@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ClipboardSettings } from '../../shared/types';
-import { CLIPBOARD_SETTINGS } from '../../main/ipc/settings-handlers';
+import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
 
 function defaultClipboardCompat(): boolean {
   return window.clubhouse.platform === 'win32';

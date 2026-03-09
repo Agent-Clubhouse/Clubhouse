@@ -33,3 +33,15 @@ export function settingsChannels(key: string) {
     save: `settings:${key}:save`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Concrete definitions — importable from both main and renderer
+// ---------------------------------------------------------------------------
+
+import type { ClipboardSettings } from './types';
+
+export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
+  key: 'clipboard',
+  filename: 'clipboard-settings.json',
+  defaults: { clipboardCompat: false },
+};

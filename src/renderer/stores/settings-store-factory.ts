@@ -7,7 +7,7 @@
  * - saveSettings(updates) — optimistic update with error revert
  *
  * Usage:
- *   import { CLIPBOARD_SETTINGS } from '../../main/ipc/settings-handlers';
+ *   import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
  *
  *   export const useClipboardSettingsStore = createSettingsStore(CLIPBOARD_SETTINGS);
  *

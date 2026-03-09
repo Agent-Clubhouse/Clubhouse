@@ -13,17 +13,9 @@
  * That's it — no IPC channels, handler registration, or preload changes needed.
  */
 import { createManagedSettings } from '../services/managed-settings';
-import type { SettingsDefinition } from '../../shared/settings-definitions';
-import type { ClipboardSettings } from '../../shared/types';
+import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
 
-// ---------------------------------------------------------------------------
-// Clipboard Settings
-// ---------------------------------------------------------------------------
-export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
-  key: 'clipboard',
-  filename: 'clipboard-settings.json',
-  defaults: { clipboardCompat: false },
-};
+export { CLIPBOARD_SETTINGS };
 
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
