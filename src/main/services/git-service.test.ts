@@ -2,31 +2,78 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 
 vi.mock('child_process', () => ({
-  execSync: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 vi.mock('fs', () => ({
   existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  unlinkSync: vi.fn(),
+  promises: {
+    readFile: vi.fn(),
+    unlink: vi.fn(),
+  },
 }));
 
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
 import { getGitInfo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
 
 const DIR = path.join(path.sep, 'test', 'repo');
+
+/** Helper: mock execFile callback with a handler that maps args to stdout */
+function mockGitExec(handler: (args: string[]) => string) {
+  vi.mocked(execFile).mockImplementation(
+    (_file: any, args: any, _opts: any, cb: any) => {
+      try {
+        const result = handler(args as string[]);
+        cb(null, result, '');
+      } catch (err: any) {
+        cb(err, '', err.stderr || err.message || '');
+      }
+      return {} as any;
+    }
+  );
+}
+
+/** Helper: mock execFile to always fail with stderr */
+function mockGitExecError(stderr: string) {
+  vi.mocked(execFile).mockImplementation(
+    (_file: any, _args: any, _opts: any, cb: any) => {
+      const err = new Error('fail') as any;
+      err.stderr = stderr;
+      cb(err, '', stderr);
+      return {} as any;
+    }
+  );
+}
+
+/** Standard mock for getGitInfo-style tests — routes by arg content */
+function mockGitInfoExec(overrides: Record<string, string> = {}) {
+  const defaults: Record<string, string> = {
+    'rev-parse': 'main\n',
+    'branch --no-color': '* main\n',
+    'status --porcelain': '',
+    'log': '',
+    'remote': '',
+    'stash': '',
+  };
+  const responses = { ...defaults, ...overrides };
+  mockGitExec((args) => {
+    const argsStr = args.join(' ');
+    for (const [key, value] of Object.entries(responses)) {
+      if (argsStr.includes(key)) return value;
+    }
+    return '';
+  });
+}
 
 describe('getGitInfo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('no .git returns hasGit:false and empty fields', () => {
+  it('no .git returns hasGit:false and empty fields', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.hasGit).toBe(false);
     expect(info.branch).toBe('');
     expect(info.branches).toEqual([]);
@@ -36,66 +83,43 @@ describe('getGitInfo', () => {
     expect(info.behind).toBe(0);
   });
 
-  it('parses branch from rev-parse', () => {
+  it('parses branch from rev-parse', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'feature/my-branch\n';
-      if (c.includes('git branch --no-color')) return '  main\n* feature/my-branch\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'rev-parse': 'feature/my-branch\n',
+      'branch --no-color': '  main\n* feature/my-branch\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.branch).toBe('feature/my-branch');
   });
 
-  it('parses git branch --no-color list, strips * prefix', () => {
+  it('parses git branch --no-color list, strips * prefix', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n  develop\n  feature/x\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'branch --no-color': '* main\n  develop\n  feature/x\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.branches).toEqual(['main', 'develop', 'feature/x']);
   });
 
-  it('parses porcelain status — staged, unstaged, untracked', () => {
+  it('parses porcelain status — staged, unstaged, untracked', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return 'M  staged.ts\n M unstaged.ts\n?? new.ts\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'M  staged.ts\n M unstaged.ts\n?? new.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status).toHaveLength(3);
     expect(info.status[0]).toEqual({ path: 'staged.ts', status: 'M', staged: true });
     expect(info.status[1]).toEqual({ path: 'unstaged.ts', status: 'M', staged: false });
     expect(info.status[2]).toEqual({ path: 'new.ts', status: '??', staged: false });
   });
 
-  it('parses ||| delimited log into GitLogEntry', () => {
+  it('parses ||| delimited log into GitLogEntry', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return 'abc123|||abc|||Fix bug|||Author|||2 hours ago\n';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'log': 'abc123|||abc|||Fix bug|||Author|||2 hours ago\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.log).toHaveLength(1);
     expect(info.log[0]).toEqual({
       hash: 'abc123',
@@ -106,112 +130,78 @@ describe('getGitInfo', () => {
     });
   });
 
-  it('calculates ahead/behind from rev-list', () => {
+  it('calculates ahead/behind from rev-list', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return 'origin\n';
-      if (c.includes('rev-list --left-right')) return '3\t5\n';
-      return '';
+    mockGitInfoExec({
+      'remote': 'origin\n',
+      'rev-list': '3\t5\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.behind).toBe(3);
     expect(info.ahead).toBe(5);
     expect(info.remote).toBe('origin');
   });
 
-  it('no remote returns ahead:0, behind:0', () => {
+  it('no remote returns ahead:0, behind:0', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '\n';
-      return '';
-    });
-    const info = getGitInfo(DIR);
+    mockGitInfoExec({ 'remote': '\n' });
+    const info = await getGitInfo(DIR);
     expect(info.ahead).toBe(0);
     expect(info.behind).toBe(0);
   });
 
-  it('uses -uall flag to enumerate files inside untracked directories', () => {
+  it('uses -uall flag to enumerate files inside untracked directories', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) {
-        expect(c).toContain('-uall');
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('status')) {
+        expect(args).toContain('-uall');
         return '?? src/new-folder/index.ts\n?? src/new-folder/utils.ts\n?? src/new-folder/types.ts\n';
       }
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
+      if (argsStr.includes('rev-parse')) return 'main\n';
+      if (argsStr.includes('branch --no-color')) return '* main\n';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('remote')) return '';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status).toHaveLength(3);
     expect(info.status[0]).toEqual({ path: 'src/new-folder/index.ts', status: '??', staged: false });
     expect(info.status[1]).toEqual({ path: 'src/new-folder/utils.ts', status: '??', staged: false });
     expect(info.status[2]).toEqual({ path: 'src/new-folder/types.ts', status: '??', staged: false });
   });
 
-  it('parses nested directory paths for modified files', () => {
+  it('parses nested directory paths for modified files', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain'))
-        return 'M  src/components/Header.tsx\n M src/utils/helpers/format.ts\nA  src/pages/new/Dashboard.tsx\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'M  src/components/Header.tsx\n M src/utils/helpers/format.ts\nA  src/pages/new/Dashboard.tsx\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status).toHaveLength(3);
     expect(info.status[0]).toEqual({ path: 'src/components/Header.tsx', status: 'M', staged: true });
     expect(info.status[1]).toEqual({ path: 'src/utils/helpers/format.ts', status: 'M', staged: false });
     expect(info.status[2]).toEqual({ path: 'src/pages/new/Dashboard.tsx', status: 'A', staged: true });
   });
 
-  it('handles renamed files with arrow syntax', () => {
+  it('handles renamed files with arrow syntax', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain'))
-        return 'R  old-name.ts -> new-name.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'R  old-name.ts -> new-name.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status).toHaveLength(1);
     expect(info.status[0].status).toBe('R');
     expect(info.status[0].staged).toBe(true);
     expect(info.status[0].path).toContain('new-name.ts');
   });
 
-  it('handles mix of staged adds in new dirs and unstaged modifications', () => {
+  it('handles mix of staged adds in new dirs and unstaged modifications', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain'))
-        return 'A  lib/new-module/index.ts\nA  lib/new-module/helper.ts\n M src/app.ts\n?? docs/notes.md\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'A  lib/new-module/index.ts\nA  lib/new-module/helper.ts\n M src/app.ts\n?? docs/notes.md\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     const staged = info.status.filter((f) => f.staged);
     const unstaged = info.status.filter((f) => !f.staged);
     expect(staged).toHaveLength(2);
@@ -222,18 +212,10 @@ describe('getGitInfo', () => {
     expect(unstaged[1].path).toBe('docs/notes.md');
   });
 
-  it('empty status returns empty array, not parse artifacts', () => {
+  it('empty status returns empty array, not parse artifacts', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
-    });
-    const info = getGitInfo(DIR);
+    mockGitInfoExec();
+    const info = await getGitInfo(DIR);
     expect(info.status).toEqual([]);
   });
 });
@@ -243,18 +225,17 @@ describe('commit', () => {
     vi.clearAllMocks();
   });
 
-  it('escapes double quotes in message', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockReturnValue('committed\n');
-    commit(DIR, 'Fix "bug" here');
-    const call = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(call).toContain('Fix \\"bug\\" here');
+  it('passes message verbatim as arg (no shell escaping needed)', async () => {
+    mockGitExec(() => 'committed\n');
+    await commit(DIR, 'Fix "bug" here');
+    const call = vi.mocked(execFile).mock.calls[0];
+    const args = call[1] as string[];
+    expect(args).toEqual(['commit', '-m', 'Fix "bug" here']);
   });
 
-  it('returns ok:true with output on success', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockReturnValue('[main abc123] Fix bug\n 1 file changed\n');
-    const result = commit(DIR, 'Fix bug');
+  it('returns ok:true with output on success', async () => {
+    mockGitExec(() => '[main abc123] Fix bug\n 1 file changed\n');
+    const result = await commit(DIR, 'Fix bug');
     expect(result.ok).toBe(true);
     expect(result.message).toContain('Fix bug');
   });
@@ -265,18 +246,10 @@ describe('push', () => {
     vi.clearAllMocks();
   });
 
-  it('returns ok:false when no remote', () => {
+  it('returns ok:false when no remote', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git remote')) return '\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      return '';
-    });
-    const result = push(DIR);
+    mockGitInfoExec({ 'remote': '\n' });
+    const result = await push(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('No remote');
   });
@@ -287,18 +260,10 @@ describe('pull', () => {
     vi.clearAllMocks();
   });
 
-  it('returns ok:false when no remote', () => {
+  it('returns ok:false when no remote', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git remote')) return '\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      return '';
-    });
-    const result = pull(DIR);
+    mockGitInfoExec({ 'remote': '\n' });
+    const result = await pull(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('No remote');
   });
@@ -309,33 +274,32 @@ describe('getFileDiff', () => {
     vi.clearAllMocks();
   });
 
-  it('staged=true reads from index (:file)', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('HEAD:')) return 'original content\n';
-      if (c.includes(':"')) return 'staged content\n';
+  it('staged=true reads from index (:file)', async () => {
+    mockGitExec((args) => {
+      if (args[1]?.startsWith('HEAD:')) return 'original content\n';
+      if (args[1]?.startsWith(':')) return 'staged content\n';
       return '';
     });
-    const diff = getFileDiff(DIR, 'file.ts', true);
+    const diff = await getFileDiff(DIR, 'file.ts', true);
     expect(diff.original).toBe('original content\n');
     expect(diff.modified).toBe('staged content\n');
   });
 
-  it('staged=false reads from disk', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      if (String(cmd).includes('HEAD:')) return 'original content\n';
+  it('staged=false reads from disk', async () => {
+    mockGitExec((args) => {
+      if (args[1]?.startsWith('HEAD:')) return 'original content\n';
       return '';
     });
-    vi.mocked(fs.readFileSync).mockReturnValue('disk content');
-    const diff = getFileDiff(DIR, 'file.ts', false);
+    vi.mocked(fs.promises.readFile).mockResolvedValue('disk content');
+    const diff = await getFileDiff(DIR, 'file.ts', false);
     expect(diff.original).toBe('original content\n');
     expect(diff.modified).toBe('disk content');
   });
 
-  it('new file returns empty original', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
-    vi.mocked(fs.readFileSync).mockReturnValue('new file content');
-    const diff = getFileDiff(DIR, 'newfile.ts', false);
+  it('new file returns empty original', async () => {
+    mockGitExecError('not found');
+    vi.mocked(fs.promises.readFile).mockResolvedValue('new file content');
+    const diff = await getFileDiff(DIR, 'newfile.ts', false);
     expect(diff.original).toBe('');
     expect(diff.modified).toBe('new file content');
   });
@@ -346,32 +310,28 @@ describe('stage/unstage', () => {
     vi.clearAllMocks();
   });
 
-  it('stage returns ok:true on success', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    const result = stage(DIR, 'file.ts');
+  it('stage returns ok:true on success', async () => {
+    mockGitExec(() => '');
+    const result = await stage(DIR, 'file.ts');
     expect(result.ok).toBe(true);
   });
 
-  it('stage returns ok:false with message on failure', () => {
-    const err = new Error('fail') as any;
-    err.stderr = Buffer.from('fatal: not a git repository');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = stage(DIR, 'file.ts');
+  it('stage returns ok:false with message on failure', async () => {
+    mockGitExecError('fatal: not a git repository');
+    const result = await stage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('not a git repository');
   });
 
-  it('unstage returns ok:true on success', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    const result = unstage(DIR, 'file.ts');
+  it('unstage returns ok:true on success', async () => {
+    mockGitExec(() => '');
+    const result = await unstage(DIR, 'file.ts');
     expect(result.ok).toBe(true);
   });
 
-  it('unstage returns ok:false with message on failure', () => {
-    const err = new Error('fail') as any;
-    err.stderr = Buffer.from('fatal: not a git repository');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = unstage(DIR, 'file.ts');
+  it('unstage returns ok:false with message on failure', async () => {
+    mockGitExecError('fatal: not a git repository');
+    const result = await unstage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('not a git repository');
   });
@@ -382,34 +342,40 @@ describe('stageAll/unstageAll', () => {
     vi.clearAllMocks();
   });
 
-  it('stageAll runs git add -A', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    const result = stageAll(DIR);
+  it('stageAll runs git add -A', async () => {
+    mockGitExec(() => '');
+    const result = await stageAll(DIR);
     expect(result.ok).toBe(true);
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith('git add -A', expect.objectContaining({ cwd: DIR }));
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['add', '-A'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('stageAll returns ok:false with message on failure', () => {
-    const err = new Error('fail') as any;
-    err.stderr = Buffer.from('fatal: not a git repository');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = stageAll(DIR);
+  it('stageAll returns ok:false with message on failure', async () => {
+    mockGitExecError('fatal: not a git repository');
+    const result = await stageAll(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('not a git repository');
   });
 
-  it('unstageAll runs git reset HEAD', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    const result = unstageAll(DIR);
+  it('unstageAll runs git reset HEAD', async () => {
+    mockGitExec(() => '');
+    const result = await unstageAll(DIR);
     expect(result.ok).toBe(true);
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith('git reset HEAD', expect.objectContaining({ cwd: DIR }));
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['reset', 'HEAD'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('unstageAll returns ok:false with message on failure', () => {
-    const err = new Error('fail') as any;
-    err.stderr = Buffer.from('fatal: not a git repository');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = unstageAll(DIR);
+  it('unstageAll returns ok:false with message on failure', async () => {
+    mockGitExecError('fatal: not a git repository');
+    const result = await unstageAll(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('not a git repository');
   });
@@ -420,37 +386,36 @@ describe('discardFile', () => {
     vi.clearAllMocks();
   });
 
-  it('restores tracked file with git restore', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    const result = discardFile(DIR, 'src/app.ts', false);
+  it('restores tracked file with git restore', async () => {
+    mockGitExec(() => '');
+    const result = await discardFile(DIR, 'src/app.ts', false);
     expect(result.ok).toBe(true);
-    const call = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(call).toContain('git restore');
-    expect(call).toContain('src/app.ts');
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['restore', '--', 'src/app.ts'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('deletes untracked file from disk', () => {
-    vi.mocked(fs.unlinkSync).mockReturnValue(undefined);
-    const result = discardFile(DIR, 'new-file.ts', true);
+  it('deletes untracked file from disk', async () => {
+    vi.mocked(fs.promises.unlink).mockResolvedValue(undefined);
+    const result = await discardFile(DIR, 'new-file.ts', true);
     expect(result.ok).toBe(true);
     expect(result.message).toContain('Deleted');
-    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(path.join(DIR, 'new-file.ts'));
+    expect(vi.mocked(fs.promises.unlink)).toHaveBeenCalledWith(path.join(DIR, 'new-file.ts'));
   });
 
-  it('returns error when untracked file delete fails', () => {
-    vi.mocked(fs.unlinkSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = discardFile(DIR, 'missing.ts', true);
+  it('returns error when untracked file delete fails', async () => {
+    vi.mocked(fs.promises.unlink).mockRejectedValue(new Error('ENOENT'));
+    const result = await discardFile(DIR, 'missing.ts', true);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('ENOENT');
   });
 
-  it('returns error when git restore fails', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      const err = new Error('pathspec error') as any;
-      err.stderr = Buffer.from('pathspec error');
-      throw err;
-    });
-    const result = discardFile(DIR, 'bad-file.ts', false);
+  it('returns error when git restore fails', async () => {
+    mockGitExecError('pathspec error');
+    const result = await discardFile(DIR, 'bad-file.ts', false);
     expect(result.ok).toBe(false);
   });
 });
@@ -460,22 +425,21 @@ describe('createBranch', () => {
     vi.clearAllMocks();
   });
 
-  it('creates and checks out new branch', () => {
-    vi.mocked(execSync).mockReturnValue('Switched to a new branch\n');
-    const result = createBranch(DIR, 'feature/new-thing');
+  it('creates and checks out new branch', async () => {
+    mockGitExec(() => 'Switched to a new branch\n');
+    const result = await createBranch(DIR, 'feature/new-thing');
     expect(result.ok).toBe(true);
-    const call = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(call).toContain('git checkout -b');
-    expect(call).toContain('feature/new-thing');
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['checkout', '-b', 'feature/new-thing'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('returns error if branch already exists', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      const err = new Error('already exists') as any;
-      err.stderr = Buffer.from('fatal: a branch named \'feature/new-thing\' already exists');
-      throw err;
-    });
-    const result = createBranch(DIR, 'feature/new-thing');
+  it('returns error if branch already exists', async () => {
+    mockGitExecError("fatal: a branch named 'feature/new-thing' already exists");
+    const result = await createBranch(DIR, 'feature/new-thing');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('already exists');
   });
@@ -486,38 +450,40 @@ describe('stash/stashPop', () => {
     vi.clearAllMocks();
   });
 
-  it('stash returns ok on success', () => {
-    vi.mocked(execSync).mockReturnValue('Saved working directory\n');
-    const result = stash(DIR);
+  it('stash returns ok on success', async () => {
+    mockGitExec(() => 'Saved working directory\n');
+    const result = await stash(DIR);
     expect(result.ok).toBe(true);
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith('git stash', expect.objectContaining({ cwd: DIR }));
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['stash'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('stash returns error on failure', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      const err = new Error('fail') as any;
-      err.stderr = Buffer.from('No local changes to save');
-      throw err;
-    });
-    const result = stash(DIR);
+  it('stash returns error on failure', async () => {
+    mockGitExecError('No local changes to save');
+    const result = await stash(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('No local changes');
   });
 
-  it('stashPop returns ok on success', () => {
-    vi.mocked(execSync).mockReturnValue('On branch main\n');
-    const result = stashPop(DIR);
+  it('stashPop returns ok on success', async () => {
+    mockGitExec(() => 'On branch main\n');
+    const result = await stashPop(DIR);
     expect(result.ok).toBe(true);
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith('git stash pop', expect.objectContaining({ cwd: DIR }));
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['stash', 'pop'],
+      expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
+    );
   });
 
-  it('stashPop returns error when no stash entries', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      const err = new Error('fail') as any;
-      err.stderr = Buffer.from('No stash entries found');
-      throw err;
-    });
-    const result = stashPop(DIR);
+  it('stashPop returns error when no stash entries', async () => {
+    mockGitExecError('No stash entries found');
+    const result = await stashPop(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('No stash entries');
   });
@@ -528,38 +494,24 @@ describe('getGitInfo — rename parsing', () => {
     vi.clearAllMocks();
   });
 
-  it('splits rename into path and origPath', () => {
+  it('splits rename into path and origPath', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return 'R  src/old.ts -> src/new.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'R  src/old.ts -> src/new.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status[0].path).toBe('src/new.ts');
     expect(info.status[0].origPath).toBe('src/old.ts');
     expect(info.status[0].status).toBe('R');
     expect(info.status[0].staged).toBe(true);
   });
 
-  it('splits copy into path and origPath', () => {
+  it('splits copy into path and origPath', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return 'C  base.ts -> copy.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'C  base.ts -> copy.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.status[0].path).toBe('copy.ts');
     expect(info.status[0].origPath).toBe('base.ts');
     expect(info.status[0].status).toBe('C');
@@ -571,52 +523,31 @@ describe('getGitInfo — conflict detection', () => {
     vi.clearAllMocks();
   });
 
-  it('sets hasConflicts=true when UU status present', () => {
+  it('sets hasConflicts=true when UU status present', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return 'UU src/conflict.ts\n M src/ok.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'UU src/conflict.ts\n M src/ok.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.hasConflicts).toBe(true);
     expect(info.status[0].status).toBe('UU');
   });
 
-  it('detects AA (both-added) as conflict', () => {
+  it('detects AA (both-added) as conflict', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return 'AA both-added.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'AA both-added.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.hasConflicts).toBe(true);
   });
 
-  it('hasConflicts=false when no conflict codes', () => {
+  it('hasConflicts=false when no conflict codes', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git status --porcelain')) return 'M  file.ts\n?? new.ts\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'status --porcelain': 'M  file.ts\n?? new.ts\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.hasConflicts).toBe(false);
   });
 });
@@ -626,35 +557,19 @@ describe('getGitInfo — stash count', () => {
     vi.clearAllMocks();
   });
 
-  it('counts stash entries', () => {
+  it('counts stash entries', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git stash list')) return 'stash@{0}: WIP on main\nstash@{1}: WIP on feature\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
+    mockGitInfoExec({
+      'stash': 'stash@{0}: WIP on main\nstash@{1}: WIP on feature\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.stashCount).toBe(2);
   });
 
-  it('returns stashCount=0 when no stashes', () => {
+  it('returns stashCount=0 when no stashes', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git stash list')) return '';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      return '';
-    });
-    const info = getGitInfo(DIR);
+    mockGitInfoExec();
+    const info = await getGitInfo(DIR);
     expect(info.stashCount).toBe(0);
   });
 });
@@ -664,39 +579,38 @@ describe('checkout', () => {
     vi.clearAllMocks();
   });
 
-  it('returns ok:true on successful checkout', () => {
-    vi.mocked(execSync).mockReturnValue('Switched to branch \'main\'\n');
-    const result = checkout(DIR, 'main');
+  it('returns ok:true on successful checkout', async () => {
+    mockGitExec(() => "Switched to branch 'main'\n");
+    const result = await checkout(DIR, 'main');
     expect(result.ok).toBe(true);
-    expect(vi.mocked(execSync)).toHaveBeenCalledWith(
-      'git checkout main',
+    expect(vi.mocked(execFile)).toHaveBeenCalledWith(
+      'git',
+      ['checkout', 'main'],
       expect.objectContaining({ cwd: DIR }),
+      expect.any(Function)
     );
   });
 
-  it('returns ok:false with message when checkout fails (non-existent branch)', () => {
-    const err = new Error('pathspec did not match') as any;
-    err.stderr = Buffer.from('error: pathspec did not match any file(s) known to git');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = checkout(DIR, 'nonexistent-branch');
+  it('returns ok:false with message when checkout fails (non-existent branch)', async () => {
+    mockGitExecError('error: pathspec did not match any file(s) known to git');
+    const result = await checkout(DIR, 'nonexistent-branch');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('pathspec');
   });
 
-  it('returns ok:false with message when checkout fails due to uncommitted changes', () => {
-    const err = new Error('Your local changes would be overwritten') as any;
-    err.stderr = Buffer.from('error: Your local changes would be overwritten by checkout');
-    vi.mocked(execSync).mockImplementation(() => { throw err; });
-    const result = checkout(DIR, 'feature/other');
+  it('returns ok:false with message when checkout fails due to uncommitted changes', async () => {
+    mockGitExecError('error: Your local changes would be overwritten by checkout');
+    const result = await checkout(DIR, 'feature/other');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('overwritten');
   });
 
-  it('passes branch name directly to git checkout command', () => {
-    vi.mocked(execSync).mockReturnValue('');
-    checkout(DIR, 'feature/my-branch');
-    const call = vi.mocked(execSync).mock.calls[0][0] as string;
-    expect(call).toBe('git checkout feature/my-branch');
+  it('passes branch name as direct arg (no shell interpretation)', async () => {
+    mockGitExec(() => '');
+    await checkout(DIR, 'feature/my-branch');
+    const call = vi.mocked(execFile).mock.calls[0];
+    expect(call[0]).toBe('git');
+    expect(call[1]).toEqual(['checkout', 'feature/my-branch']);
   });
 });
 
@@ -705,48 +619,48 @@ describe('push — success case', () => {
     vi.clearAllMocks();
   });
 
-  it('pushes to remote branch and returns ok:true', () => {
+  it('pushes to remote branch and returns ok:true', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     let pushCalled = false;
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git push')) {
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('push')) {
         pushCalled = true;
         return 'Everything up-to-date\n';
       }
-      if (c.includes('git remote')) return 'origin\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'feature/x\n';
-      if (c.includes('git branch --no-color')) return '* feature/x\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('rev-list --left-right')) return '0\t0\n';
-      if (c.includes('git stash list')) return '';
+      if (argsStr.includes('remote')) return 'origin\n';
+      if (argsStr.includes('rev-parse')) return 'feature/x\n';
+      if (argsStr.includes('branch --no-color')) return '* feature/x\n';
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('rev-list')) return '0\t0\n';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const result = push(DIR);
+    const result = await push(DIR);
     expect(result.ok).toBe(true);
     expect(pushCalled).toBe(true);
   });
 
-  it('returns error message when push command fails', () => {
+  it('returns error message when push command fails', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git push')) {
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('push')) {
         const err = new Error('rejected') as any;
-        err.stderr = Buffer.from('rejected: non-fast-forward');
+        err.stderr = 'rejected: non-fast-forward';
         throw err;
       }
-      if (c.includes('git remote')) return 'origin\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('rev-list --left-right')) return '0\t1\n';
-      if (c.includes('git stash list')) return '';
+      if (argsStr.includes('remote')) return 'origin\n';
+      if (argsStr.includes('rev-parse')) return 'main\n';
+      if (argsStr.includes('branch --no-color')) return '* main\n';
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('rev-list')) return '0\t1\n';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const result = push(DIR);
+    const result = await push(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('rejected');
   });
@@ -757,48 +671,48 @@ describe('pull — success case', () => {
     vi.clearAllMocks();
   });
 
-  it('pulls from remote branch and returns ok:true', () => {
+  it('pulls from remote branch and returns ok:true', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     let pullCalled = false;
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git pull')) {
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('pull')) {
         pullCalled = true;
         return 'Already up to date.\n';
       }
-      if (c.includes('git remote')) return 'origin\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('rev-list --left-right')) return '0\t0\n';
-      if (c.includes('git stash list')) return '';
+      if (argsStr.includes('remote')) return 'origin\n';
+      if (argsStr.includes('rev-parse')) return 'main\n';
+      if (argsStr.includes('branch --no-color')) return '* main\n';
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('rev-list')) return '0\t0\n';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const result = pull(DIR);
+    const result = await pull(DIR);
     expect(result.ok).toBe(true);
     expect(pullCalled).toBe(true);
   });
 
-  it('returns error when pull has merge conflicts', () => {
+  it('returns error when pull has merge conflicts', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('git pull')) {
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('pull')) {
         const err = new Error('merge conflict') as any;
-        err.stderr = Buffer.from('CONFLICT (content): Merge conflict in file.ts');
+        err.stderr = 'CONFLICT (content): Merge conflict in file.ts';
         throw err;
       }
-      if (c.includes('git remote')) return 'origin\n';
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('rev-list --left-right')) return '2\t0\n';
-      if (c.includes('git stash list')) return '';
+      if (argsStr.includes('remote')) return 'origin\n';
+      if (argsStr.includes('rev-parse')) return 'main\n';
+      if (argsStr.includes('branch --no-color')) return '* main\n';
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('rev-list')) return '2\t0\n';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const result = pull(DIR);
+    const result = await pull(DIR);
     expect(result.ok).toBe(false);
     expect(result.message).toContain('CONFLICT');
   });
@@ -809,13 +723,9 @@ describe('commit — failure case', () => {
     vi.clearAllMocks();
   });
 
-  it('returns ok:false with error message when commit fails', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      const err = new Error('nothing to commit') as any;
-      err.stderr = Buffer.from('nothing to commit, working tree clean');
-      throw err;
-    });
-    const result = commit(DIR, 'empty commit');
+  it('returns ok:false with error message when commit fails', async () => {
+    mockGitExecError('nothing to commit, working tree clean');
+    const result = await commit(DIR, 'empty commit');
     expect(result.ok).toBe(false);
     expect(result.message).toContain('nothing to commit');
   });
@@ -826,33 +736,36 @@ describe('getFileDiff — edge cases', () => {
     vi.clearAllMocks();
   });
 
-  it('returns empty modified when staged read fails', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('HEAD:')) return 'original\n';
-      if (c.includes(':"')) throw new Error('not in index');
+  it('returns empty modified when staged read fails', async () => {
+    mockGitExec((args) => {
+      if (args[1]?.startsWith('HEAD:')) return 'original\n';
+      if (args[1]?.startsWith(':')) {
+        const err = new Error('not in index') as any;
+        err.stderr = 'not in index';
+        throw err;
+      }
       return '';
     });
-    const diff = getFileDiff(DIR, 'gone.ts', true);
+    const diff = await getFileDiff(DIR, 'gone.ts', true);
     expect(diff.original).toBe('original\n');
     expect(diff.modified).toBe('');
   });
 
-  it('returns empty modified when disk read fails for unstaged', () => {
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      if (String(cmd).includes('HEAD:')) return 'original\n';
+  it('returns empty modified when disk read fails for unstaged', async () => {
+    mockGitExec((args) => {
+      if (args[1]?.startsWith('HEAD:')) return 'original\n';
       return '';
     });
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const diff = getFileDiff(DIR, 'deleted.ts', false);
+    vi.mocked(fs.promises.readFile).mockRejectedValue(new Error('ENOENT'));
+    const diff = await getFileDiff(DIR, 'deleted.ts', false);
     expect(diff.original).toBe('original\n');
     expect(diff.modified).toBe('');
   });
 
-  it('returns both empty for completely new untracked file that was deleted', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const diff = getFileDiff(DIR, 'phantom.ts', false);
+  it('returns both empty for completely new untracked file that was deleted', async () => {
+    mockGitExecError('not found');
+    vi.mocked(fs.promises.readFile).mockRejectedValue(new Error('ENOENT'));
+    const diff = await getFileDiff(DIR, 'phantom.ts', false);
     expect(diff.original).toBe('');
     expect(diff.modified).toBe('');
   });
@@ -863,72 +776,57 @@ describe('getGitInfo — command failure resilience', () => {
     vi.clearAllMocks();
   });
 
-  it('returns HEAD when rev-parse fails', () => {
+  it('returns HEAD when rev-parse fails', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) throw new Error('fatal');
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('rev-parse')) throw new Error('fatal');
+      if (argsStr.includes('branch --no-color')) return '* main\n';
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('remote')) return '';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const info = getGitInfo(DIR);
-    // run() returns '' on error, and the fallback is 'HEAD'
+    const info = await getGitInfo(DIR);
     expect(info.branch).toBe('HEAD');
   });
 
-  it('returns empty branches when git branch fails', () => {
+  it('returns empty branches when git branch fails', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) throw new Error('fatal');
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return '';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
+    mockGitExec((args) => {
+      const argsStr = args.join(' ');
+      if (argsStr.includes('rev-parse')) return 'main\n';
+      if (argsStr.includes('branch --no-color')) throw new Error('fatal');
+      if (argsStr.includes('status')) return '';
+      if (argsStr.includes('log')) return '';
+      if (argsStr.includes('remote')) return '';
+      if (argsStr.includes('stash')) return '';
       return '';
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.branches).toEqual([]);
   });
 
-  it('handles multiple log entries', () => {
+  it('handles multiple log entries', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      const c = String(cmd);
-      if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-      if (c.includes('git branch --no-color')) return '* main\n';
-      if (c.includes('git status --porcelain')) return '';
-      if (c.includes('git log')) return 'aaa|||aa|||First commit|||Alice|||1 hour ago\nbbb|||bb|||Second commit|||Bob|||2 hours ago\nccc|||cc|||Third commit|||Charlie|||3 hours ago\n';
-      if (c.includes('git remote')) return '';
-      if (c.includes('git stash list')) return '';
-      return '';
+    mockGitInfoExec({
+      'log': 'aaa|||aa|||First commit|||Alice|||1 hour ago\nbbb|||bb|||Second commit|||Bob|||2 hours ago\nccc|||cc|||Third commit|||Charlie|||3 hours ago\n',
     });
-    const info = getGitInfo(DIR);
+    const info = await getGitInfo(DIR);
     expect(info.log).toHaveLength(3);
     expect(info.log[0].author).toBe('Alice');
     expect(info.log[2].subject).toBe('Third commit');
   });
 
-  it('detects all conflict codes: DD, AU, UD, UA, DU', () => {
+  it('detects all conflict codes: DD, AU, UD, UA, DU', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const conflictCodes = ['DD', 'AU', 'UD', 'UA', 'DU'];
     for (const code of conflictCodes) {
-      vi.mocked(execSync).mockImplementation((cmd: any) => {
-        const c = String(cmd);
-        if (c.includes('git status --porcelain')) return `${code} conflict-file.ts\n`;
-        if (c.includes('rev-parse --abbrev-ref')) return 'main\n';
-        if (c.includes('git branch --no-color')) return '* main\n';
-        if (c.includes('git log')) return '';
-        if (c.includes('git remote')) return '';
-        if (c.includes('git stash list')) return '';
-        return '';
+      mockGitInfoExec({
+        'status --porcelain': `${code} conflict-file.ts\n`,
       });
-      const info = getGitInfo(DIR);
+      const info = await getGitInfo(DIR);
       expect(info.hasConflicts).toBe(true);
     }
   });
