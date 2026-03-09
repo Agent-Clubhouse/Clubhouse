@@ -13,8 +13,8 @@ describe('showInputDialog', () => {
       showInputDialog('File name');
     });
 
-    expect(screen.getByTestId('plugin-dialog')).toBeTruthy();
-    expect(screen.getByText('File name')).toBeTruthy();
+    expect(screen.getByTestId('plugin-dialog')).toBeInTheDocument();
+    expect(screen.getByText('File name')).toBeInTheDocument();
   });
 
   it('pre-fills and selects the default value', async () => {
@@ -128,7 +128,7 @@ describe('showInputDialog', () => {
       result = showInputDialog('Name');
     });
 
-    expect(document.querySelector('[data-plugin-dialog="input"]')).toBeTruthy();
+    expect(document.querySelector('[data-plugin-dialog="input"]')).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(screen.getByTestId('plugin-dialog-cancel'));
@@ -156,7 +156,7 @@ describe('showConfirmDialog', () => {
       showConfirmDialog('Are you sure?');
     });
 
-    expect(screen.getByTestId('plugin-dialog')).toBeTruthy();
+    expect(screen.getByTestId('plugin-dialog')).toBeInTheDocument();
     expect(screen.getByTestId('plugin-dialog-message').textContent).toBe('Are you sure?');
   });
 
@@ -277,7 +277,7 @@ describe('showConfirmDialog', () => {
       result = showConfirmDialog('Proceed?');
     });
 
-    expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeTruthy();
+    expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(screen.getByTestId('plugin-dialog-cancel'));

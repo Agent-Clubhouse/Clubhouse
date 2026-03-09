@@ -358,7 +358,7 @@ describe('PopoutHubPane', () => {
       fireEvent.dragOver(paneEl!, { dataTransfer });
 
       // Should show a drag-over overlay
-      expect(container.querySelector('.border-dashed')).toBeTruthy();
+      expect(container.querySelector('.border-dashed')).toBeInTheDocument();
     });
 
     it('calls onSwap when drop occurs from a different pane', () => {

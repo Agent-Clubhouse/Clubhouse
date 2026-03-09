@@ -97,7 +97,7 @@ describe('hub-sync', () => {
 
       const leaves = getAllLeaves(store.getState().activeHub().paneTree);
       const secondPane = leaves.find((l) => l.id !== paneId);
-      expect(secondPane).toBeTruthy();
+      expect(secondPane).toBeDefined();
 
       applyHubMutation(store, hubId, { type: 'focus', paneId: secondPane!.id });
       expect(store.getState().activeHub().focusedPaneId).toBe(secondPane!.id);

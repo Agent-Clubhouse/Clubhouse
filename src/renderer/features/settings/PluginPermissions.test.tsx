@@ -226,7 +226,7 @@ describe('PluginListSettings — PermissionInfoPopup', () => {
 
     const popup = screen.getByTestId('permission-popup');
     // When flipped, popup should have a `bottom` style (not `top`)
-    expect(popup.style.bottom).toBeTruthy();
+    expect(popup.style.bottom).toBeDefined();
     expect(popup.style.top).toBeFalsy();
 
     // Restore

@@ -59,7 +59,7 @@ describe('ProjectRail badge clipping', () => {
     const { container } = render(<ProjectRail />);
     // The rail container is the inner div with width transition
     const railContainer = container.querySelector('[style*="width"]');
-    expect(railContainer).toBeTruthy();
+    expect(railContainer).toBeInTheDocument();
     // Should have pr-[10px] (not pr-[14px]) to give badges room
     expect(railContainer!.className).toContain('pr-[10px]');
     expect(railContainer!.className).toContain('pl-[14px]');
@@ -73,7 +73,7 @@ describe('ProjectRail badge clipping', () => {
     const { container } = render(<ProjectRail />);
     // The scroll container holds the project list with overflow-y-auto
     const scrollContainer = container.querySelector('.overflow-y-auto');
-    expect(scrollContainer).toBeTruthy();
+    expect(scrollContainer).toBeInTheDocument();
     expect(scrollContainer!.className).toContain('pt-1');
   });
 

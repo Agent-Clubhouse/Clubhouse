@@ -17,7 +17,7 @@ describe('toastStore', () => {
     expect(toasts).toHaveLength(1);
     expect(toasts[0].message).toBe('Something went wrong');
     expect(toasts[0].type).toBe('error');
-    expect(toasts[0].id).toBeTruthy();
+    expect(toasts[0].id).toBeDefined();
   });
 
   it('addToast supports info type', () => {

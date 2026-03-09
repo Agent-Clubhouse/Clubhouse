@@ -164,7 +164,7 @@ describe('useCommandSource', () => {
   it('includes annex settings page', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'settings:annex');
-    expect(item).toBeTruthy();
+    expect(item).toBeDefined();
     expect(item.label).toBe('Annex');
     expect(item.category).toBe('Settings');
   });
@@ -173,7 +173,7 @@ describe('useCommandSource', () => {
     annexState.settings = { enabled: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:toggle-annex');
-    expect(item).toBeTruthy();
+    expect(item).toBeDefined();
     expect(item.label).toBe('Enable Annex');
     expect(item.category).toBe('Actions');
   });
@@ -182,7 +182,7 @@ describe('useCommandSource', () => {
     annexState.settings = { enabled: true, deviceName: 'Mac' };
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:toggle-annex');
-    expect(item).toBeTruthy();
+    expect(item).toBeDefined();
     expect(item.label).toBe('Disable Annex');
   });
 
@@ -197,7 +197,7 @@ describe('useCommandSource', () => {
   it('includes show annex PIN action', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:annex-show-pin');
-    expect(item).toBeTruthy();
+    expect(item).toBeDefined();
     expect(item.label).toBe('Show Annex PIN');
     expect(item.category).toBe('Actions');
   });
@@ -229,7 +229,7 @@ describe('useCommandSource', () => {
   it('includes agent config action', () => {
     const { result } = renderHook(() => useCommandSource());
     const item = findItem(result.current, 'action:agent-config');
-    expect(item).toBeTruthy();
+    expect(item).toBeDefined();
     expect(item.label).toBe('Agent Config');
     expect(item.category).toBe('Actions');
     expect(item.keywords).toContain('clubhouse');
@@ -260,11 +260,11 @@ describe('useCommandSource', () => {
     const projectHub = findItem(result.current, 'hub:project:ph1');
     const appHub1 = findItem(result.current, 'hub:app:ah1');
     const appHub2 = findItem(result.current, 'hub:app:ah2');
-    expect(projectHub).toBeTruthy();
+    expect(projectHub).toBeDefined();
     expect(projectHub.label).toBe('ProjectHub1');
-    expect(appHub1).toBeTruthy();
+    expect(appHub1).toBeDefined();
     expect(appHub1.label).toBe('AppHub1');
-    expect(appHub2).toBeTruthy();
+    expect(appHub2).toBeDefined();
     expect(appHub2.label).toBe('AppHub2');
   });
 
@@ -329,7 +329,7 @@ describe('useCommandSource', () => {
 
     await waitFor(() => {
       const oh1 = findItem(result.current, 'hub:project:p2:oh1');
-      expect(oh1).toBeTruthy();
+      expect(oh1).toBeDefined();
     });
 
     const oh1 = findItem(result.current, 'hub:project:p2:oh1');
@@ -338,7 +338,7 @@ describe('useCommandSource', () => {
     expect(oh1.detail).toBe('Other');
     expect(oh1.category).toBe('Hubs');
     expect(oh1.typeIndicator).toBe('#');
-    expect(oh2).toBeTruthy();
+    expect(oh2).toBeDefined();
     expect(oh2.label).toBe('OtherHub2');
   });
 
@@ -353,7 +353,7 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
 
     await waitFor(() => {
-      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeTruthy();
+      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeDefined();
     });
 
     const oh1 = findItem(result.current, 'hub:project:p2:oh1');
@@ -383,7 +383,7 @@ describe('useCommandSource', () => {
     const { result } = renderHook(() => useCommandSource());
 
     await waitFor(() => {
-      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeTruthy();
+      expect(findItem(result.current, 'hub:project:p2:oh1')).toBeDefined();
     });
 
     // Should NOT have read storage for the active project
@@ -404,7 +404,7 @@ describe('useCommandSource', () => {
     });
 
     // Active project hubs and app hubs should still be present
-    expect(findItem(result.current, 'hub:project:ph1')).toBeTruthy();
-    expect(findItem(result.current, 'hub:app:ah1')).toBeTruthy();
+    expect(findItem(result.current, 'hub:project:ph1')).toBeDefined();
+    expect(findItem(result.current, 'hub:app:ah1')).toBeDefined();
   });
 });

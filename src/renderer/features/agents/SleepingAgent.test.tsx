@@ -110,7 +110,7 @@ describe('SleepingAgent', () => {
     it('renders color dot for durable agents', () => {
       const { container } = renderComponent({ kind: 'durable', color: 'indigo' });
       const dot = container.querySelector('.rounded-full');
-      expect(dot).toBeTruthy();
+      expect(dot).toBeInTheDocument();
     });
 
     it('does not render color dot for quick agents', () => {

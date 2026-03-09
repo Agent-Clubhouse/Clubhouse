@@ -45,15 +45,15 @@ describe('CommandPalette', () => {
   it('renders overlay when open', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     render(<CommandPalette />);
-    expect(screen.getByTestId('command-palette-overlay')).toBeTruthy();
+    expect(screen.getByTestId('command-palette-overlay')).toBeInTheDocument();
   });
 
   it('shows projects and agents in results when open', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     render(<CommandPalette />);
     expect(screen.getAllByText('my-project').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Another Project')).toBeTruthy();
-    expect(screen.getByText('curious-tapir')).toBeTruthy();
+    expect(screen.getByText('Another Project')).toBeInTheDocument();
+    expect(screen.getByText('curious-tapir')).toBeInTheDocument();
   });
 
   it('filters results based on query', () => {
@@ -62,13 +62,13 @@ describe('CommandPalette', () => {
     // Agent name is highlighted so text is split across spans - check the option exists
     const options = screen.getAllByRole('option');
     const agentOption = options.find((el) => el.textContent?.includes('curious-tapir'));
-    expect(agentOption).toBeTruthy();
+    expect(agentOption).toBeDefined();
   });
 
   it('shows no results message for unmatched query', () => {
     useCommandPaletteStore.setState({ isOpen: true, query: 'xyznonexistent' });
     render(<CommandPalette />);
-    expect(screen.getByText(/No results found/)).toBeTruthy();
+    expect(screen.getByText(/No results found/)).toBeInTheDocument();
   });
 
   it('closes on backdrop click', () => {

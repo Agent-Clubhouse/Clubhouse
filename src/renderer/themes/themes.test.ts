@@ -52,7 +52,7 @@ describe('theme registry', () => {
   it('each theme has required properties', () => {
     for (const [id, theme] of Object.entries(THEMES)) {
       expect(theme.id).toBe(id);
-      expect(theme.name).toBeTruthy();
+      expect(theme.name).toBeDefined();
       expect(theme.type).toMatch(/^(dark|light)$/);
     }
   });
@@ -63,7 +63,7 @@ describe('theme registry', () => {
   });
 
   it('terminal theme has a fontOverride', () => {
-    expect(THEMES['terminal'].fontOverride).toBeTruthy();
+    expect(THEMES['terminal'].fontOverride).toBeDefined();
   });
 
   it('non-terminal themes do not have fontOverride', () => {

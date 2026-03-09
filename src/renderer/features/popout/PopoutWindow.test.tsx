@@ -239,7 +239,7 @@ describe('PopoutWindow', () => {
     const funcCall = mockSetState.mock.calls.find(
       (call: any[]) => typeof call[0] === 'function',
     );
-    expect(funcCall).toBeTruthy();
+    expect(funcCall).toBeDefined();
 
     // Invoke the functional update with sleeping agent state
     const updater = funcCall![0];
