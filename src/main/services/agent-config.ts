@@ -67,21 +67,54 @@ export function ensureGitignore(projectPath: string): void {
   }
 }
 
+// In-memory cache: maps projectPath -> DurableAgentConfig[].
+// Eliminates redundant disk reads when multiple operations are performed in sequence.
+// Before this cache, every mutation called readAgents() (a synchronous file read + JSON.parse)
+// followed by writeAgents(). With N sequential operations that meant N blocking disk reads.
+// Now only the first read per project ever touches disk; subsequent reads are O(1) from memory.
+const agentsCache = new Map<string, DurableAgentConfig[]>();
+
+/**
+ * Invalidate the in-memory cache for a specific project (or all projects when
+ * called without arguments). Call this after external modifications to agents.json
+ * so the next read picks up the latest data from disk.
+ */
+export function invalidateAgentsCache(projectPath?: string): void {
+  if (projectPath) {
+    agentsCache.delete(projectPath);
+  } else {
+    agentsCache.clear();
+  }
+}
+
 function readAgents(projectPath: string): DurableAgentConfig[] {
+  // Serve from cache when available — avoids disk I/O on every sequential operation.
+  if (agentsCache.has(projectPath)) {
+    return agentsCache.get(projectPath)!;
+  }
+
   const configPath = agentsConfigPath(projectPath);
-  if (!fs.existsSync(configPath)) return [];
+  if (!fs.existsSync(configPath)) {
+    agentsCache.set(projectPath, []);
+    return [];
+  }
   try {
     const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    agentsCache.set(projectPath, agents);
     return agents;
   } catch (err) {
     appLog('core:agent-config', 'error', 'Failed to parse agents.json', {
       meta: { configPath, error: err instanceof Error ? err.message : String(err) },
     });
+    agentsCache.set(projectPath, []);
     return [];
   }
 }
 
 function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
+  // Update the cache first so subsequent reads in the same sequence see the
+  // latest state without another disk round-trip.
+  agentsCache.set(projectPath, agents);
   ensureDir(clubhouseDir(projectPath));
   fs.writeFileSync(agentsConfigPath(projectPath), JSON.stringify(agents, null, 2), 'utf-8');
 }

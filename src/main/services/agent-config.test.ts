@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'path';
 
 // Mock child_process (include execFile used by orchestrator providers)
@@ -45,7 +45,14 @@ import {
   getSessionHistory,
   ensureGitignore as _ensureGitignore,
   saveAgentIcon,
+  invalidateAgentsCache,
 } from './agent-config';
+
+// Invalidate the in-memory agents cache after every test so that cached data from
+// one test cannot bleed into the next test's mock setup.
+afterEach(() => {
+  invalidateAgentsCache();
+});
 
 const PROJECT_PATH = '/test/project';
 
