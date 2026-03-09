@@ -75,6 +75,16 @@ export function invalidateShellEnvironmentCache(): void {
   cachedShellEnv = null;
 }
 
+/**
+ * Remove environment variables that prevent nested agent spawning.
+ * Mutates and returns the given env object.
+ */
+export function cleanSpawnEnv(env: Record<string, string>): Record<string, string> {
+  delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  return env;
+}
+
 /** Returns the platform-appropriate default shell. */
 export function getDefaultShell(): string {
   if (process.platform === 'win32') {

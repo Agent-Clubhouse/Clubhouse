@@ -5,7 +5,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
-import { getShellEnvironment } from '../util/shell';
+import { getShellEnvironment, cleanSpawnEnv } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -163,10 +163,7 @@ export function spawnHeadless(
   ensureLogsDir();
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
 
-  const env = { ...getShellEnvironment(), ...extraEnv };
-  // Remove markers that prevent nested Claude Code sessions
-  delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
+  const env = cleanSpawnEnv({ ...getShellEnvironment(), ...extraEnv });
 
   appLog('core:headless', 'info', `Spawning headless agent`, {
     meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
