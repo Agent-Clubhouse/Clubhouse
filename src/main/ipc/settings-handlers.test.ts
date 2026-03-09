@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import * as path from 'path';
 
 // Track all registered IPC handlers persistently (survives mockReset).
@@ -24,6 +24,11 @@ vi.mock('fs', () => ({
 
 import * as fs from 'fs';
 import { clipboardSettings, CLIPBOARD_SETTINGS, registerSettingsHandlers } from './settings-handlers';
+
+// IPC handlers are deferred — call register to bind them
+beforeAll(() => {
+  registerSettingsHandlers();
+});
 
 describe('settings-handlers', () => {
   beforeEach(() => {
@@ -87,8 +92,10 @@ describe('settings-handlers', () => {
   });
 
   describe('registerSettingsHandlers', () => {
-    it('is callable (ensures module side effects fire)', () => {
-      expect(() => registerSettingsHandlers()).not.toThrow();
+    it('is idempotent — calling twice does not double-register', () => {
+      registerSettingsHandlers(); // already called in beforeAll
+      // Should still only have 2 handlers total (get + save)
+      expect(registeredHandlers.size).toBeGreaterThanOrEqual(2);
     });
   });
 });

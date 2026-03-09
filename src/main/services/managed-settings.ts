@@ -1,6 +1,6 @@
 /**
  * Managed Settings — main-process factory that creates a settings store
- * and auto-registers IPC handlers from a single SettingsDefinition.
+ * and provides a deferred IPC registration function.
  *
  * This eliminates the need to:
  * - Create a separate settings service file
@@ -9,9 +9,15 @@
  * - Add preload bridge methods to preload/index.ts
  *
  * Usage:
+ *   // Define (safe at module level — no side effects)
  *   const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS);
- *   clipboardSettings.getSettings();   // read current value
- *   clipboardSettings.saveSettings(v); // persist
+ *
+ *   // Register IPC (call during handler bootstrap)
+ *   clipboardSettings.register();
+ *
+ *   // Use
+ *   clipboardSettings.getSettings();
+ *   clipboardSettings.saveSettings(v);
  *
  * For settings with side effects on save:
  *   const updateSettings = createManagedSettings(UPDATE_SETTINGS, {
@@ -31,6 +37,8 @@ export interface ManagedSettings<T> {
   saveSettings(settings: T): void;
   /** The underlying SettingsStore (for advanced use: update, etc.). */
   store: SettingsStore<T>;
+  /** Register IPC handlers. Call once during handler bootstrap. */
+  register(): void;
 }
 
 export interface ManagedSettingsOptions<T> {
@@ -43,7 +51,12 @@ export interface ManagedSettingsOptions<T> {
 }
 
 /**
- * Creates a settings service and registers IPC handlers in one call.
+ * Creates a settings service with deferred IPC registration.
+ *
+ * The store is created immediately (safe at module load), but IPC handlers
+ * are only registered when `.register()` is called. This avoids triggering
+ * `ipcMain.handle` during module import, which breaks tests that need to
+ * capture handlers via mock setup.
  *
  * The IPC channels are derived from the definition key:
  *   - `settings:{key}:get` — returns current settings
@@ -58,18 +71,25 @@ export function createManagedSettings<T>(
     : definition.defaults;
 
   const store = createSettingsStore<T>(definition.filename, defaults, options?.migrate);
-  const channels = settingsChannels(definition.key);
 
-  ipcMain.handle(channels.get, () => store.get());
-
-  ipcMain.handle(channels.save, (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
-    store.save(settings);
-    options?.onSave?.(settings, ...extraArgs);
-  });
+  let registered = false;
 
   return {
     getSettings: store.get,
     saveSettings: store.save,
     store,
+    register() {
+      if (registered) return;
+      registered = true;
+
+      const channels = settingsChannels(definition.key);
+
+      ipcMain.handle(channels.get, () => store.get());
+
+      ipcMain.handle(channels.save, (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
+        store.save(settings);
+        options?.onSave?.(settings, ...extraArgs);
+      });
+    },
   };
 }

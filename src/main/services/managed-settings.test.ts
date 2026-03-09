@@ -39,15 +39,22 @@ describe('managed-settings', () => {
   });
 
   describe('createManagedSettings', () => {
-    it('returns getSettings and saveSettings methods', () => {
+    it('returns getSettings, saveSettings, store, and register', () => {
       const managed = createManagedSettings(TEST_DEF);
       expect(typeof managed.getSettings).toBe('function');
       expect(typeof managed.saveSettings).toBe('function');
+      expect(typeof managed.register).toBe('function');
       expect(managed.store).toBeDefined();
     });
 
-    it('registers get and save IPC handlers', () => {
+    it('does NOT register IPC handlers at creation time', () => {
       createManagedSettings(TEST_DEF);
+      expect(vi.mocked(ipcMain.handle)).not.toHaveBeenCalled();
+    });
+
+    it('registers get and save IPC handlers when register() is called', () => {
+      const managed = createManagedSettings(TEST_DEF);
+      managed.register();
 
       const handleCalls = vi.mocked(ipcMain.handle).mock.calls;
       const channels = handleCalls.map(([ch]) => ch);
@@ -55,9 +62,18 @@ describe('managed-settings', () => {
       expect(channels).toContain('settings:test:save');
     });
 
+    it('register() is idempotent — only registers once', () => {
+      const managed = createManagedSettings(TEST_DEF);
+      managed.register();
+      managed.register();
+
+      expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledTimes(2); // get + save
+    });
+
     it('get handler returns current settings', () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ enabled: true, name: 'saved' }));
-      createManagedSettings(TEST_DEF);
+      const managed = createManagedSettings(TEST_DEF);
+      managed.register();
 
       const getHandler = vi.mocked(ipcMain.handle).mock.calls.find(
         ([ch]) => ch === 'settings:test:get',
@@ -68,7 +84,8 @@ describe('managed-settings', () => {
     });
 
     it('get handler returns defaults when no file exists', () => {
-      createManagedSettings(TEST_DEF);
+      const managed = createManagedSettings(TEST_DEF);
+      managed.register();
 
       const getHandler = vi.mocked(ipcMain.handle).mock.calls.find(
         ([ch]) => ch === 'settings:test:get',
@@ -78,7 +95,8 @@ describe('managed-settings', () => {
     });
 
     it('save handler persists settings', () => {
-      createManagedSettings(TEST_DEF);
+      const managed = createManagedSettings(TEST_DEF);
+      managed.register();
 
       const saveHandler = vi.mocked(ipcMain.handle).mock.calls.find(
         ([ch]) => ch === 'settings:test:save',
@@ -119,7 +137,8 @@ describe('managed-settings', () => {
   describe('onSave callback', () => {
     it('calls onSave after saving via IPC handler', () => {
       const onSave = vi.fn();
-      createManagedSettings(TEST_DEF, { onSave });
+      const managed = createManagedSettings(TEST_DEF, { onSave });
+      managed.register();
 
       const saveHandler = vi.mocked(ipcMain.handle).mock.calls.find(
         ([ch]) => ch === 'settings:test:save',
@@ -133,7 +152,8 @@ describe('managed-settings', () => {
 
     it('passes extra args to onSave', () => {
       const onSave = vi.fn();
-      createManagedSettings(TEST_DEF, { onSave });
+      const managed = createManagedSettings(TEST_DEF, { onSave });
+      managed.register();
 
       const saveHandler = vi.mocked(ipcMain.handle).mock.calls.find(
         ([ch]) => ch === 'settings:test:save',
