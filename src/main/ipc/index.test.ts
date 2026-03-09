@@ -16,6 +16,7 @@ vi.mock('./annex-handlers', () => ({
   maybeStartAnnex: vi.fn(),
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
+vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
 vi.mock('../orchestrators', () => ({ registerBuiltinProviders: vi.fn() }));
 vi.mock('../services/hook-server', () => ({
   start: vi.fn(async () => {}),
@@ -23,6 +24,9 @@ vi.mock('../services/hook-server', () => ({
 vi.mock('../services/log-service', () => ({
   init: vi.fn(),
   appLog: vi.fn(),
+}));
+vi.mock('../util/ipc-broadcast-policies', () => ({
+  registerDefaultBroadcastPolicies: vi.fn(),
 }));
 
 import { registerAllHandlers } from './index';
@@ -38,9 +42,11 @@ import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
+import { registerProfileHandlers } from './profile-handlers';
 import { registerBuiltinProviders } from '../orchestrators';
 import * as hookServer from '../services/hook-server';
 import * as logService from '../services/log-service';
+import { registerDefaultBroadcastPolicies } from '../util/ipc-broadcast-policies';
 
 describe('registerAllHandlers', () => {
   it('calls all handler registration functions', () => {
@@ -60,6 +66,8 @@ describe('registerAllHandlers', () => {
     expect(registerWindowHandlers).toHaveBeenCalled();
     expect(registerAnnexHandlers).toHaveBeenCalled();
     expect(registerMarketplaceHandlers).toHaveBeenCalled();
+    expect(registerProfileHandlers).toHaveBeenCalled();
+    expect(registerDefaultBroadcastPolicies).toHaveBeenCalled();
   });
 
   it('registers orchestrator providers before other handlers', () => {
@@ -70,6 +78,16 @@ describe('registerAllHandlers', () => {
     registerAllHandlers();
 
     expect(callOrder.indexOf('providers')).toBeLessThan(callOrder.indexOf('pty'));
+  });
+
+  it('registers broadcast policies before handlers', () => {
+    const callOrder: string[] = [];
+    vi.mocked(registerDefaultBroadcastPolicies).mockImplementation(() => { callOrder.push('policies'); });
+    vi.mocked(registerPtyHandlers).mockImplementation(() => { callOrder.push('pty'); });
+
+    registerAllHandlers();
+
+    expect(callOrder.indexOf('policies')).toBeLessThan(callOrder.indexOf('pty'));
   });
 
   it('initializes logging before registering handlers', () => {
