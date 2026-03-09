@@ -620,8 +620,9 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
       startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
 
-      // Make w1's watcher.close throw
+      // Save real close so we can release the native handle after the test
       const entry1 = _activeWatches.get('w1')!;
+      const realClose1 = entry1.watcher.close.bind(entry1.watcher);
       vi.spyOn(entry1.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
       });
@@ -631,6 +632,9 @@ describe('file-watch lifecycle and cleanup', () => {
 
       expect(closeSpy2).toHaveBeenCalledOnce();
       expect(getActiveWatchCount()).toBe(0);
+
+      // Close the leaked native handle to avoid keeping the process alive on Windows
+      realClose1();
     });
 
     it('still removes from map when watcher.close() throws', () => {
@@ -638,6 +642,7 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
       const entry = _activeWatches.get('w1')!;
+      const realClose = entry.watcher.close.bind(entry.watcher);
       vi.spyOn(entry.watcher, 'close').mockImplementation(() => {
         throw new Error('already closed');
       });
@@ -646,6 +651,9 @@ describe('file-watch lifecycle and cleanup', () => {
 
       expect(_activeWatches.has('w1')).toBe(false);
       expect(getActiveWatchCount()).toBe(0);
+
+      // Close the leaked native handle to avoid keeping the process alive on Windows
+      realClose();
     });
   });
 });
