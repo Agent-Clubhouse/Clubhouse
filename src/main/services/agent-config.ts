@@ -431,11 +431,11 @@ export function deleteDurable(projectPath: string, agentId: string): void {
   writeAgents(projectPath, filtered);
 }
 
-function detectBaseBranch(projectPath: string): string {
+async function detectBaseBranch(projectPath: string): Promise<string> {
   // Try main, then master, then fallback to HEAD
   for (const candidate of ['main', 'master']) {
     try {
-      execSync(`git rev-parse --verify ${candidate}`, { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' });
+      await execGitAsync(`git rev-parse --verify ${candidate}`, projectPath);
       return candidate;
     } catch {
       // not found
@@ -464,7 +464,7 @@ function parseLogLine(line: string): GitLogEntry | null {
   };
 }
 
-export function getWorktreeStatus(projectPath: string, agentId: string): WorktreeStatus {
+export async function getWorktreeStatus(projectPath: string, agentId: string): Promise<WorktreeStatus> {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) {
@@ -481,35 +481,28 @@ export function getWorktreeStatus(projectPath: string, agentId: string): Worktre
     return { isValid: false, branch: agent.branch || '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
-  // Get uncommitted files
-  let uncommittedFiles: GitStatusFile[] = [];
-  try {
-    const statusOut = execSync('git status --porcelain', { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
-    uncommittedFiles = statusOut.trim().split('\n').filter(Boolean).map(parseStatusLine);
-  } catch {
-    // ignore
-  }
+  // Run git status, base branch detection, and remote check in parallel
+  const [statusResult, base, remoteResult] = await Promise.all([
+    execGitAsync('git status --porcelain', wt).catch(() => ''),
+    detectBaseBranch(projectPath),
+    execGitAsync('git remote', wt).catch(() => ''),
+  ]);
 
-  // Detect base branch and get unpushed commits
-  const base = detectBaseBranch(projectPath);
+  // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
+  const uncommittedFiles = statusResult.trimEnd()
+    ? statusResult.trimEnd().split('\n').filter(Boolean).map(parseStatusLine)
+    : [];
+
+  // Get unpushed commits (depends on base branch result)
   let unpushedCommits: GitLogEntry[] = [];
   try {
-    const logOut = execSync(
+    const logOut = await execGitAsync(
       `git log ${base}..HEAD --format="%H|%h|%s|%an|%ai"`,
-      { cwd: wt, encoding: 'utf-8', stdio: 'pipe' }
+      wt,
     );
     unpushedCommits = logOut.trim().split('\n').filter(Boolean)
       .map(parseLogLine)
       .filter((e): e is GitLogEntry => e !== null);
-  } catch {
-    // ignore
-  }
-
-  // Check if remote exists
-  let hasRemote = false;
-  try {
-    const remoteOut = execSync('git remote', { cwd: wt, encoding: 'utf-8', stdio: 'pipe' });
-    hasRemote = remoteOut.trim().length > 0;
   } catch {
     // ignore
   }
@@ -519,7 +512,7 @@ export function getWorktreeStatus(projectPath: string, agentId: string): Worktre
     branch: agent.branch || '',
     uncommittedFiles,
     unpushedCommits,
-    hasRemote,
+    hasRemote: remoteResult.trim().length > 0,
   };
 }
 
@@ -617,7 +610,7 @@ export function deleteWithCleanupBranch(projectPath: string, agentId: string): D
   return { ok: true, message: `Saved to ${cleanupBranch} and deleted` };
 }
 
-export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): DeleteResult {
+export async function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
   const agents = readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
@@ -628,7 +621,7 @@ export function deleteSaveAsPatch(projectPath: string, agentId: string, savePath
     return { ok: true, message: 'Deleted (no worktree)' };
   }
 
-  const base = detectBaseBranch(projectPath);
+  const base = await detectBaseBranch(projectPath);
 
   try {
     let patchContent = '';
