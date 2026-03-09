@@ -42,6 +42,13 @@ interface HeadlessSession {
   transcriptBytes: number;
   /** True once events have been evicted from the in-memory transcript. */
   transcriptEvicted: boolean;
+  /**
+   * Pre-built JSONL string of in-memory transcript events.
+   * Each line is `JSON.stringify(event) + '\n'`.
+   * Avoids re-serializing the entire transcript on every readTranscript call.
+   * Rebuilt from remaining events after eviction; disk is authoritative when evicted.
+   */
+  transcriptRaw: string;
   transcriptPath: string;
   startedAt: number;
   textBuffer?: string;
@@ -126,6 +133,11 @@ function evictOldEvents(session: HeadlessSession): void {
     session.transcript.splice(0, removeCount);
     session.transcriptEventSizes.splice(0, removeCount);
     session.transcriptBytes -= removeBytes;
+
+    // Rebuild the pre-serialized string from the remaining in-memory events.
+    // This keeps transcriptRaw consistent with session.transcript after eviction
+    // so readTranscript can still serve a partial fallback if disk is unavailable.
+    session.transcriptRaw = session.transcript.map((e) => JSON.stringify(e) + '\n').join('');
 
     if (!session.transcriptEvicted) {
       session.transcriptEvicted = true;
@@ -229,6 +241,7 @@ export function spawnHeadless(
     transcriptEventSizes,
     transcriptBytes: 0,
     transcriptEvicted: false,
+    transcriptRaw: '',
     transcriptPath,
     startedAt: Date.now(),
   };
@@ -247,6 +260,7 @@ export function spawnHeadless(
       transcript.push(event);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
+      session.transcriptRaw += serialized + '\n';
 
       // Log first event for diagnostics
       if (transcript.length === 1) {
@@ -337,6 +351,7 @@ export function spawnHeadless(
       transcript.push(resultEvent);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
+      session.transcriptRaw += serialized + '\n';
       logStream.write(serialized + '\n');
 
       const stopEvent = {
@@ -429,7 +444,7 @@ export function readTranscript(agentId: string): string | null {
         // Fall through to partial in-memory transcript
       }
     }
-    return session.transcript.map((e) => JSON.stringify(e)).join('\n');
+    return session.transcriptRaw;
   }
 
   // Fall back to disk for completed sessions
