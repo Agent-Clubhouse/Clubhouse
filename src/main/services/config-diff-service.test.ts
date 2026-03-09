@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { clearAgentConfigCache } from './agent-config';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/test-app' },
@@ -107,6 +108,7 @@ function settingsJsonWith(agentDefaults: Record<string, unknown>): string {
 describe('config-diff-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAgentConfigCache();
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.readdirSync).mockReturnValue([]);
   });
