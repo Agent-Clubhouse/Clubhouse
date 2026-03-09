@@ -26,7 +26,8 @@ export function getAllowedRoots(): string[] {
  */
 export function isPathAllowed(targetPath: string, allowedRoots: string[]): boolean {
   const resolved = path.resolve(targetPath);
-  for (const root of allowedRoots) {
+  for (const rawRoot of allowedRoots) {
+    const root = path.resolve(rawRoot);
     if (resolved === root || resolved.startsWith(root + path.sep)) {
       return true;
     }
