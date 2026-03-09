@@ -62,7 +62,7 @@ describe('ConfigChangesDialog', () => {
       resetStore();
       const { container } = render(<ConfigChangesDialog />);
       // spinner is a div with animate-spin
-      expect(container.querySelector('.animate-spin')).toBeTruthy();
+      expect(container.querySelector('.animate-spin')).toBeInTheDocument();
     });
   });
 
@@ -282,7 +282,7 @@ describe('ConfigChangesDialog', () => {
       await screen.findByText('Save to Clubhouse');
       // The outer div is the backdrop
       const backdrop = screen.getByText('Save to Clubhouse').closest('.fixed');
-      expect(backdrop).toBeTruthy();
+      expect(backdrop).toBeInTheDocument();
       fireEvent.click(backdrop!);
 
       expect(mockCloseDialog).toHaveBeenCalled();

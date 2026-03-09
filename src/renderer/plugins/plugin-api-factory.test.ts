@@ -626,7 +626,7 @@ describe('plugin-api-factory', () => {
       });
       expect(promise!).toBeInstanceOf(Promise);
       // Dialog should be mounted in the DOM
-      expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeTruthy();
+      expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeInTheDocument();
       // Clean up by clicking cancel
       act(() => {
         const cancelBtn = document.querySelector('[data-testid="plugin-dialog-cancel"]') as HTMLElement;
@@ -662,7 +662,7 @@ describe('plugin-api-factory', () => {
       });
       expect(promise!).toBeInstanceOf(Promise);
       // Dialog should be mounted in the DOM
-      expect(document.querySelector('[data-plugin-dialog="input"]')).toBeTruthy();
+      expect(document.querySelector('[data-plugin-dialog="input"]')).toBeInTheDocument();
       // Clean up
       act(() => {
         const cancelBtn = document.querySelector('[data-testid="plugin-dialog-cancel"]') as HTMLElement;

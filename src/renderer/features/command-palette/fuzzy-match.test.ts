@@ -172,7 +172,7 @@ describe('fuzzyFilter', () => {
     const result = fuzzyFilter(itemsForThreshold, 'a', (i) => i.name);
     // About should match (prefix 'a'), Display Settings may not meet threshold
     const aboutMatch = result.find((r) => r.item.name === 'About');
-    expect(aboutMatch).toBeTruthy();
+    expect(aboutMatch).toBeDefined();
   });
 
   it('includes strong matches and excludes weak ones with short query', () => {

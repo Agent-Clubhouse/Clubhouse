@@ -102,13 +102,13 @@ describe('ShellTerminal', () => {
   describe('initialization', () => {
     it('creates a Terminal instance with theme colors', () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      expect(term()).toBeTruthy();
+      expect(term()).toBeDefined();
       expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
     });
 
     it('creates and loads FitAddon', () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      expect(fitAddon()).toBeTruthy();
+      expect(fitAddon()).toBeDefined();
       expect(term().loadAddon).toHaveBeenCalled();
     });
 
@@ -156,7 +156,7 @@ describe('ShellTerminal', () => {
 
     it('writes PTY data to terminal for matching sessionId', () => {
       render(<ShellTerminal sessionId="shell-1" />);
-      expect(mockOnDataCallback).toBeTruthy();
+      expect(mockOnDataCallback).toBeDefined();
       act(() => { mockOnDataCallback!('shell-1', 'hello world'); });
       expect(term().write).toHaveBeenCalledWith('hello world');
     });
@@ -216,7 +216,7 @@ describe('ShellTerminal', () => {
     it('nulls out refs on unmount', () => {
       const { unmount } = render(<ShellTerminal sessionId="shell-1" />);
       const termBefore = term();
-      expect(termBefore).toBeTruthy();
+      expect(termBefore).toBeDefined();
       unmount();
       // Terminal was disposed — verifying via the dispose call
       expect(termBefore.dispose).toHaveBeenCalled();

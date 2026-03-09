@@ -217,7 +217,7 @@ describe('ProjectSettings', () => {
       render(<ProjectSettings />);
       const indigoBtn = screen.getByTitle('Indigo');
       const svg = indigoBtn.querySelector('svg');
-      expect(svg).toBeTruthy();
+      expect(svg).toBeInTheDocument();
     });
 
     it('defaults to indigo when no color is set', () => {
@@ -225,7 +225,7 @@ describe('ProjectSettings', () => {
       const _indigoBtn = render(<ProjectSettings />);
       // Indigo should show check when no color set
       const svg = screen.getByTitle('Indigo').querySelector('svg');
-      expect(svg).toBeTruthy();
+      expect(svg).toBeInTheDocument();
     });
   });
 

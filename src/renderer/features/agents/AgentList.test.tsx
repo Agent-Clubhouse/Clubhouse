@@ -93,7 +93,7 @@ describe('AgentList dropdown', () => {
     render(<AgentList />);
     const buttons = screen.getAllByRole('button');
     const dropdownBtn = buttons.find((b) => b.textContent === '\u25BE');
-    expect(dropdownBtn).toBeTruthy();
+    expect(dropdownBtn).toBeDefined();
     fireEvent.click(dropdownBtn!);
 
     expect(screen.getByText('Durable')).toBeInTheDocument();

@@ -101,13 +101,13 @@ describe('AgentTerminal', () => {
   describe('initialization', () => {
     it('creates a Terminal instance with theme colors', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      expect(term()).toBeTruthy();
+      expect(term()).toBeDefined();
       expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
     });
 
     it('creates and loads FitAddon', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      expect(fitAddon()).toBeTruthy();
+      expect(fitAddon()).toBeDefined();
       expect(term().loadAddon).toHaveBeenCalled();
     });
 
@@ -157,7 +157,7 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" />);
       // Flush the getBuffer() microtask so bufferReplayed is set
       await act(async () => {});
-      expect(mockOnDataCallback).toBeTruthy();
+      expect(mockOnDataCallback).toBeDefined();
       act(() => { mockOnDataCallback!('agent-1', 'hello world'); });
       expect(term().write).toHaveBeenCalledWith('hello world');
     });

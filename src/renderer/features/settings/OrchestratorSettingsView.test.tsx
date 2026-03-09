@@ -89,7 +89,7 @@ describe('OrchestratorSettingsView', () => {
       render(<OrchestratorSettingsView />);
       const quickAgents = screen.getByText('Quick Agents');
       const clubhouse = screen.getByText('Durable Agents');
-      expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(quickAgents.compareDocumentPosition(clubhouse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
     });
 
     it('renders Orchestrators section', () => {

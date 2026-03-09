@@ -223,7 +223,7 @@ describe('PopoutHubView', () => {
     await screen.findByTestId('agent-terminal-agent-1');
 
     const paneContainer = screen.getByTestId('agent-terminal-agent-1').closest('[class*="rounded-sm"]');
-    expect(paneContainer).toBeTruthy();
+    expect(paneContainer).toBeInTheDocument();
     fireEvent.mouseEnter(paneContainer!);
 
     expect(screen.getByTitle('Split Up')).toBeInTheDocument();

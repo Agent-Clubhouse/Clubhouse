@@ -27,12 +27,12 @@ describe('AboutSettingsView', () => {
 
   it('renders version', async () => {
     render(<AboutSettingsView />);
-    expect(await screen.findByText(/1\.2\.3/)).toBeTruthy();
+    expect(await screen.findByText(/1\.2\.3/)).toBeInTheDocument();
   });
 
   it('renders architecture for arm64', async () => {
     render(<AboutSettingsView />);
-    expect(await screen.findByText('arm64')).toBeTruthy();
+    expect(await screen.findByText('arm64')).toBeInTheDocument();
   });
 
   it('renders Rosetta warning when running under translation', async () => {
@@ -42,8 +42,8 @@ describe('AboutSettingsView', () => {
       rosetta: true,
     });
     render(<AboutSettingsView />);
-    expect(await screen.findByText('x64 (Rosetta)')).toBeTruthy();
-    expect(await screen.findByText(/running under Rosetta translation/)).toBeTruthy();
+    expect(await screen.findByText('x64 (Rosetta)')).toBeInTheDocument();
+    expect(await screen.findByText(/running under Rosetta translation/)).toBeInTheDocument();
   });
 
   it('does not show Rosetta warning for native x64', async () => {
@@ -53,12 +53,12 @@ describe('AboutSettingsView', () => {
       rosetta: false,
     });
     render(<AboutSettingsView />);
-    expect(await screen.findByText('x64')).toBeTruthy();
+    expect(await screen.findByText('x64')).toBeInTheDocument();
     expect(screen.queryByText(/Rosetta/)).toBeNull();
   });
 
   it('renders plugin API versions', async () => {
     render(<AboutSettingsView />);
-    expect(await screen.findByText('0.5')).toBeTruthy();
+    expect(await screen.findByText('0.5')).toBeInTheDocument();
   });
 });

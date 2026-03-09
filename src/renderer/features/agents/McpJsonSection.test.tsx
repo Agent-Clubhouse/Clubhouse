@@ -81,7 +81,7 @@ describe('McpJsonSection', () => {
 
     await waitFor(() => {
       // JSON.parse error message should appear
-      expect(screen.getByText(/Expected property name|Unexpected token/i)).toBeTruthy();
+      expect(screen.getByText(/Expected property name|Unexpected token/i)).toBeInTheDocument();
     });
   });
 
