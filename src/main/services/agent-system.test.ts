@@ -114,8 +114,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  buildSummaryInstruction: vi.fn(() => ''),
-  readQuickSummary: vi.fn(() => Promise.resolve(null)),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true, structuredMode: false,
@@ -136,6 +134,10 @@ vi.mock('../orchestrators', () => ({
     return undefined;
   }),
   getAllProviders: vi.fn(() => [mockProvider, mockAltProvider]),
+  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
+  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
+  isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
+  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
 }));
 
 import {
@@ -426,6 +428,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
       mockStartStructured.mockRejectedValueOnce(new Error('structured spawn failed'));
 
       await expect(
@@ -709,6 +715,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -973,10 +983,18 @@ describe('agent-system', () => {
     beforeEach(() => {
       mockGetSpawnMode.mockReturnValue('structured');
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
     });
 
     afterEach(() => {
       delete (mockProvider as any).createStructuredAdapter;
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: false,
+      });
     });
 
     it('spawns via structured-manager when mode is structured and kind is quick', async () => {
@@ -1309,6 +1327,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -1381,6 +1403,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',

@@ -4,6 +4,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { SpawnAgentParams } from '../../shared/types';
 import { StructuredSessionOpts } from '../orchestrators/types';
+import { isSessionCapable, isStructuredCapable } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
 import * as headlessManager from '../services/headless-manager';
@@ -210,7 +211,7 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath: string, agentId: string, sessionId: string, offset: number, limit: number, orchestrator?: string) => {
       try {
         const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
-        if (!provider.readSessionTranscript) return null;
+        if (!isSessionCapable(provider)) return null;
         const config = agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
         const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
@@ -231,7 +232,7 @@ export function registerAgentHandlers(): void {
     async (_event, projectPath: string, agentId: string, sessionId: string, orchestrator?: string) => {
       try {
         const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
-        if (!provider.readSessionTranscript) return null;
+        if (!isSessionCapable(provider)) return null;
         const config = agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
         const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
@@ -256,7 +257,7 @@ export function registerAgentHandlers(): void {
       if (!projectPath) throw new Error(`No project path found for agent ${agentId}`);
 
       const provider = agentSystem.resolveOrchestrator(projectPath, orchestratorId);
-      if (!provider.createStructuredAdapter) {
+      if (!isStructuredCapable(provider)) {
         throw new Error(`${provider.displayName} does not support structured mode`);
       }
 

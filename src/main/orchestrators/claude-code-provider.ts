@@ -11,9 +11,13 @@ import {
   HeadlessCommandResult,
   NormalizedHookEvent,
   StructuredAdapter,
+  HookCapable,
+  HeadlessCapable,
+  SessionCapable,
+  StructuredCapable,
 } from './types';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
-import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -75,7 +79,7 @@ function findClaudeBinary(): string {
   return findBinaryInPath(['claude'], paths);
 }
 
-export class ClaudeCodeProvider implements OrchestratorProvider {
+export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
   readonly id = 'claude-code' as const;
   readonly displayName = 'Claude Code';
   readonly shortName = 'CC';
@@ -455,6 +459,4 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }
   toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
-  buildSummaryInstruction(agentId: string) { return buildSummaryInstruction(agentId); }
-  readQuickSummary(agentId: string) { return readQuickSummary(agentId); }
 }
