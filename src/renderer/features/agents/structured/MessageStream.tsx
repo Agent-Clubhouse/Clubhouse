@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 
 interface Props {
   text: string;
@@ -10,7 +11,7 @@ interface Props {
  * Accumulates deltas in the parent; this component just renders the buffer.
  */
 export function MessageStream({ text, isStreaming }: Props) {
-  const rendered = useMemo(() => renderMarkdown(text), [text]);
+  const rendered = useMemo(() => renderMarkdownSafe(text), [text]);
 
   if (!text) return null;
 
@@ -25,40 +26,4 @@ export function MessageStream({ text, isStreaming }: Props) {
       )}
     </div>
   );
-}
-
-/** Lightweight markdown: code blocks, inline code, bold, italic, links, lists. */
-function renderMarkdown(text: string): string {
-  // Escape HTML entities first
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  // Fenced code blocks: ```lang\n...\n```
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
-    `<pre class="bg-ctp-mantle rounded p-2 my-1 text-xs overflow-x-auto"><code>${code.trim()}</code></pre>`
-  );
-
-  // Inline code: `...`
-  html = html.replace(/`([^`]+)`/g,
-    '<code class="bg-ctp-mantle px-1 rounded text-xs">$1</code>');
-
-  // Bold: **...**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // Italic: *...*
-  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
-
-  // Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a class="text-indigo-400 hover:underline" href="$2" target="_blank" rel="noopener">$1</a>');
-
-  // Unordered list items: - item
-  html = html.replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>');
-
-  // Ordered list items: 1. item
-  html = html.replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>');
-
-  return html;
 }
