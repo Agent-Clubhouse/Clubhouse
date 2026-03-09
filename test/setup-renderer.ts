@@ -79,6 +79,7 @@ vi.stubGlobal('clubhouse', {
     getToolVerb: async () => '',
     getSummaryInstruction: async () => '',
     readTranscript: async () => null,
+    readTranscriptFeed: async () => null,
     isHeadlessAgent: async () => false,
     onHookEvent: () => noop,
     // Structured mode
