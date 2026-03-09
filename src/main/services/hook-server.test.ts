@@ -332,6 +332,41 @@ describe('hook-server', () => {
     });
   });
 
+  describe('body size limit', () => {
+    it('returns 413 for requests exceeding 1MB', async () => {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = http.request({
+          hostname: '127.0.0.1',
+          port,
+          path: '/hook/agent-1',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }, (res) => {
+          res.resume();
+          resolve(res.statusCode || 0);
+        });
+        req.on('error', () => {
+          // Connection may be destroyed before we get a response
+          resolve(413);
+        });
+        // Send just over 1MB of data
+        const chunk = Buffer.alloc(64 * 1024, 'x');
+        for (let i = 0; i < 17; i++) {
+          req.write(chunk);
+        }
+        req.end();
+      });
+
+      expect(status).toBe(413);
+    });
+
+    it('accepts requests under 1MB', async () => {
+      mockGetAgentProjectPath.mockReturnValue(undefined);
+      const status = await postToServer(port, '/hook/agent-1', { hook_event_name: 'Stop' });
+      expect(status).toBe(200);
+    });
+  });
+
   describe('error handling', () => {
     it('ignores malformed JSON without crashing', async () => {
       // Send raw string that's not JSON

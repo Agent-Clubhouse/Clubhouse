@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { rendererLog } from '../plugins/renderer-logger';
 
 const RECENTS_KEY = 'clubhouse_command_palette_recents';
 const MAX_RECENTS = 20;
@@ -14,7 +15,11 @@ function loadRecents(): RecentCommand[] {
   try {
     const raw = localStorage.getItem(RECENTS_KEY);
     if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
+  } catch (err) {
+    rendererLog('store:commandPalette', 'warn', 'Corrupt command palette recents in localStorage — reset to defaults', {
+      meta: { key: RECENTS_KEY, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
   return [];
 }
 

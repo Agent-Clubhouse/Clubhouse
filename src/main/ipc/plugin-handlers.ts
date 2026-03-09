@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
+import { PluginManifest } from '../../shared/plugin-types';
 import * as pluginStorage from '../services/plugin-storage';
 import * as pluginDiscovery from '../services/plugin-discovery';
 import * as gitignoreManager from '../services/gitignore-manager';
@@ -98,7 +99,7 @@ export function registerPluginHandlers(): void {
   });
 
   // ── Manifest Registry ─────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, manifest: any) => {
+  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, manifest: PluginManifest) => {
     pluginManifestRegistry.registerManifest(pluginId, manifest);
   });
 }

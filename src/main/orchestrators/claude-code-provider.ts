@@ -6,6 +6,7 @@ import {
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
+  SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
@@ -113,7 +114,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     }
   }
 
-  async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[] }> {
+  async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = findClaudeBinary();
     const args: string[] = [];
 

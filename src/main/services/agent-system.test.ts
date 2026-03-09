@@ -19,6 +19,30 @@ vi.mock('./pty-manager', () => ({
   gracefulKill: (...args: unknown[]) => mockPtyGracefulKill(...args),
 }));
 
+// Mock headless-manager
+const mockHeadlessSpawn = vi.fn();
+const mockHeadlessKill = vi.fn();
+vi.mock('./headless-manager', () => ({
+  spawnHeadless: (...args: unknown[]) => mockHeadlessSpawn(...args),
+  kill: (...args: unknown[]) => mockHeadlessKill(...args),
+  isHeadless: vi.fn(() => false),
+}));
+
+// Mock structured-manager
+const mockStartStructured = vi.fn();
+const mockCancelSession = vi.fn();
+vi.mock('./structured-manager', () => ({
+  startStructuredSession: (...args: unknown[]) => mockStartStructured(...args),
+  cancelSession: (...args: unknown[]) => mockCancelSession(...args),
+  isStructuredSession: vi.fn(() => false),
+}));
+
+// Mock headless-settings
+const mockGetSpawnMode = vi.fn(() => 'interactive' as const);
+vi.mock('./headless-settings', () => ({
+  getSpawnMode: (...args: unknown[]) => mockGetSpawnMode(...args),
+}));
+
 // Mock hook-server
 vi.mock('./hook-server', () => ({
   waitReady: vi.fn(() => Promise.resolve(12345)),
@@ -97,6 +121,8 @@ describe('agent-system', () => {
     // Clean up tracked agents
     untrackAgent('test-agent');
     untrackAgent('agent-1');
+    untrackAgent('test-headless');
+    untrackAgent('test-structured');
   });
 
   describe('resolveOrchestrator', () => {
@@ -154,14 +180,27 @@ describe('agent-system', () => {
       expect(getAgentOrchestrator('agent-1')).toBe('opencode');
     });
 
-    it('does not track orchestrator when not specified', async () => {
+    it('tracks resolved orchestrator even when not explicitly specified', async () => {
       await spawnAgent({
         agentId: 'agent-1',
         projectPath: '/my/project',
         cwd: '/my/project',
         kind: 'durable',
       });
-      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBe('claude-code');
+    });
+
+    it('tracks project-level orchestrator from settings.json', async () => {
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+        JSON.stringify({ orchestrator: 'opencode' })
+      );
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/my/project',
+        cwd: '/my/project',
+        kind: 'durable',
+      });
+      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
     });
 
     it('writes hooks config with base URL (no agentId)', async () => {
@@ -328,6 +367,47 @@ describe('agent-system', () => {
       await killAgent('agent-1', '/project', 'opencode');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
+
+    it('uses tracked orchestrator from spawn rather than caller-provided', async () => {
+      // Spawn with opencode orchestrator
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+
+      // Kill without specifying orchestrator — should use the tracked one (opencode)
+      await killAgent('agent-1', '/project');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    });
+
+    it('uses tracked project-level orchestrator over caller-provided', async () => {
+      // Spawn with orchestrator resolved from project settings (opencode)
+      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+        JSON.stringify({ orchestrator: 'opencode' })
+      );
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      // Kill with explicit claude-code — should still use tracked opencode
+      await killAgent('agent-1', '/project', 'claude-code');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    });
+
+    it('does not reject when gracefulKill throws (process already dead)', async () => {
+      mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('process already dead'); });
+      await expect(killAgent('agent-1', '/project')).resolves.toBeUndefined();
+    });
+
+    it('does not reject for unknown orchestrator', async () => {
+      await expect(killAgent('agent-1', '/project', 'nonexistent' as any)).resolves.toBeUndefined();
+    });
   });
 
   describe('untrackAgent', () => {
@@ -427,6 +507,89 @@ describe('agent-system', () => {
       // Simulate agent exit
       onExitCallback('agent-1', 0);
       expect(mockRestoreForAgent).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('PTY onExit callback calls untrackAgent to clean up tracking state', async () => {
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+
+      // Verify agent is tracked before exit
+      expect(getAgentProjectPath('agent-1')).toBe('/project');
+      expect(getAgentOrchestrator('agent-1')).toBe('opencode');
+      expect(getAgentNonce('agent-1')).toBeDefined();
+
+      // Simulate natural agent exit via PTY onExit callback
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      onExitCallback('agent-1', 0);
+
+      // Verify agent tracking state is fully cleaned up
+      expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentNonce('agent-1')).toBeUndefined();
+    });
+
+    it('headless onExit callback calls untrackAgent to clean up tracking state', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test mission',
+      });
+
+      // Verify agent is tracked before exit
+      expect(getAgentProjectPath('test-headless')).toBe('/project');
+
+      // Extract and invoke the onExit callback (7th argument, index 6)
+      const onExitCallback = mockHeadlessSpawn.mock.calls[0][6];
+      onExitCallback('test-headless', 0);
+
+      // Verify agent tracking state is fully cleaned up
+      expect(getAgentProjectPath('test-headless')).toBeUndefined();
+      expect(getAgentOrchestrator('test-headless')).toBeUndefined();
+      expect(getAgentNonce('test-headless')).toBeUndefined();
+      expect(mockRestoreForAgent).toHaveBeenCalledWith('test-headless');
+    });
+
+    it('structured onExit callback calls untrackAgent to clean up tracking state', async () => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test mission',
+      });
+
+      // Verify agent is tracked before exit
+      expect(getAgentProjectPath('test-structured')).toBe('/project');
+
+      // Extract and invoke the onExit callback (4th argument, index 3)
+      const onExitCallback = mockStartStructured.mock.calls[0][3];
+      onExitCallback('test-structured');
+
+      // Verify agent tracking state is fully cleaned up
+      expect(getAgentProjectPath('test-structured')).toBeUndefined();
+      expect(getAgentOrchestrator('test-structured')).toBeUndefined();
+      expect(getAgentNonce('test-structured')).toBeUndefined();
     });
 
     it('skips snapshot when provider does not support hooks', async () => {

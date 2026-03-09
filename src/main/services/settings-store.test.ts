@@ -181,4 +181,56 @@ describe('settings-store', () => {
       expect(callB[0]).toContain('store-b.json');
     });
   });
+
+  describe('update', () => {
+    it('reads current value, applies fn, and saves the result', () => {
+      const saved: TestSettings = { name: 'original', count: 5, nested: { flag: false } };
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(saved));
+
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      const result = store.update((current) => ({ ...current, count: current.count + 1 }));
+
+      expect(result.count).toBe(6);
+      expect(result.name).toBe('original');
+      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(written.count).toBe(6);
+    });
+
+    it('returns the updated settings object', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(DEFAULTS));
+
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      const result = store.update((current) => ({ ...current, name: 'updated' }));
+
+      expect(result.name).toBe('updated');
+    });
+
+    it('uses defaults when file does not exist', () => {
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+      const result = store.update((current) => ({ ...current, count: current.count + 10 }));
+
+      expect(result.count).toBe(10);
+      expect(result.name).toBe('default');
+    });
+
+    it('sequential updates each see the result of the previous update', () => {
+      // Simulate a scenario where the file content changes between calls
+      let fileContent = JSON.stringify({ name: 'v1', count: 1, nested: { flag: false } });
+      vi.mocked(fs.readFileSync).mockImplementation(() => fileContent);
+      vi.mocked(fs.writeFileSync).mockImplementation((_p: any, data: any) => { fileContent = String(data); });
+
+      const store = createSettingsStore<TestSettings>('test.json', DEFAULTS);
+
+      // First update increments count
+      store.update((current) => ({ ...current, count: current.count + 1 }));
+      // Second update increments count again — should see the first update's result
+      store.update((current) => ({ ...current, count: current.count + 1 }));
+
+      const final = JSON.parse(fileContent);
+      expect(final.count).toBe(3); // 1 + 1 + 1, not 1 + 1 (lost update)
+    });
+  });
 });
