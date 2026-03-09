@@ -8,9 +8,9 @@ interface WatchEntry {
   watchId: string;
   glob: string;
   watcher: fs.FSWatcher;
+  webContentsId: number;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
-  webContentsId: number;
   sender: Electron.WebContents;
   destroyedListener: (() => void) | null;
 }
@@ -40,9 +40,9 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watchId,
     glob,
     watcher: null as unknown as fs.FSWatcher,
+    webContentsId: sender.id,
     debounceTimer: null,
     pendingEvents: [],
-    webContentsId: sender.id,
     sender,
     destroyedListener: null,
   };
