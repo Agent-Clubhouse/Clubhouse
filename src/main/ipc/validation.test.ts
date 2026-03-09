@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stringArg, numberArg, booleanArg, arrayArg } from './validation';
+import { stringArg } from './validation';
 
 describe('stringArg', () => {
   it('rejects non-string values', () => {
