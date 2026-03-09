@@ -97,6 +97,12 @@ import {
 describe('Headless integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHeadlessSpawn.mockImplementation((agentId: string) => {
+      mockHeadlessIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
+    });
+    mockHeadlessKill.mockImplementation((agentId: string) => {
+      mockHeadlessIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId !== agentId);
+    });
     mockGetSettings.mockReturnValue({ enabled: false });
     mockGetSpawnMode.mockReturnValue('interactive');
     mockBuildHeadlessCommand.mockResolvedValue({
@@ -108,6 +114,7 @@ describe('Headless integration', () => {
 
   afterEach(() => {
     untrackAgent('test-agent');
+    mockHeadlessIsHeadless.mockReturnValue(false);
   });
 
   describe('headless spawn routing', () => {
