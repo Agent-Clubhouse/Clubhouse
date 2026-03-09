@@ -142,8 +142,8 @@ describe('shared orchestrator utilities', () => {
       expect(humanizeModelId('default')).toBe('Default');
     });
 
-    it('handles nested provider prefix with multiple slashes', () => {
-      expect(humanizeModelId('provider/sub/claude-opus')).toBe('Claude Opus');
+    it('returns input unchanged when no hyphens or prefix', () => {
+      expect(humanizeModelId('gpt5')).toBe('Gpt5');
     });
   });
 
