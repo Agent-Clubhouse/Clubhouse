@@ -1266,15 +1266,18 @@ describe('pty-manager', () => {
       expect(() => validateSpawnCwd('/home/user/file.txt')).toThrow('not a directory');
     });
 
-    it('rejects /etc as a sensitive directory', () => {
+    it('rejects /etc as a sensitive directory (unix)', () => {
+      if (process.platform === 'win32') return;
       expect(() => validateSpawnCwd('/etc')).toThrow('restricted system directory');
     });
 
-    it('rejects subdirectories of /etc', () => {
+    it('rejects subdirectories of /etc (unix)', () => {
+      if (process.platform === 'win32') return;
       expect(() => validateSpawnCwd('/etc/ssh')).toThrow('restricted system directory');
     });
 
-    it('rejects /sbin', () => {
+    it('rejects /sbin (unix)', () => {
+      if (process.platform === 'win32') return;
       expect(() => validateSpawnCwd('/sbin')).toThrow('restricted system directory');
     });
 
@@ -1293,9 +1296,21 @@ describe('pty-manager', () => {
       expect(() => validateSpawnCwd('/Library/Preferences')).toThrow('restricted system directory');
     });
 
+    it('rejects C:\\Windows as a sensitive directory (win32)', () => {
+      if (process.platform !== 'win32') return;
+      expect(() => validateSpawnCwd('C:\\Windows')).toThrow('restricted system directory');
+    });
+
+    it('rejects subdirectories of C:\\Windows (win32)', () => {
+      if (process.platform !== 'win32') return;
+      expect(() => validateSpawnCwd('C:\\Windows\\System32')).toThrow('restricted system directory');
+    });
+
     it('rejects path traversal resolving to sensitive directory', () => {
-      mockRealpathSync.mockReturnValue('/etc/shadow');
-      expect(() => validateSpawnCwd('/home/user/../../etc/shadow')).toThrow('restricted system directory');
+      const sensitivePath = process.platform === 'win32' ? 'C:\\Windows\\System32' : '/etc/shadow';
+      const inputPath = process.platform === 'win32' ? 'C:\\Users\\..\\Windows\\System32' : '/home/user/../../etc/shadow';
+      mockRealpathSync.mockReturnValue(sensitivePath);
+      expect(() => validateSpawnCwd(inputPath)).toThrow('restricted system directory');
     });
 
     it('accepts /tmp as a valid directory', () => {
@@ -1310,8 +1325,10 @@ describe('pty-manager', () => {
   // ── spawn / spawnShell path validation integration ──────────────────
 
   describe('spawn path validation', () => {
+    const sensitiveDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
+
     it('spawn rejects sensitive cwd', () => {
-      expect(() => spawn('agent_val', '/etc', '/usr/local/bin/claude', [])).toThrow('restricted system directory');
+      expect(() => spawn('agent_val', sensitiveDir, '/usr/local/bin/claude', [])).toThrow('restricted system directory');
       expect(isRunning('agent_val')).toBe(false);
     });
 
@@ -1321,7 +1338,7 @@ describe('pty-manager', () => {
     });
 
     it('spawnShell rejects sensitive projectPath', () => {
-      expect(() => spawnShell('shell_val', '/etc')).toThrow('restricted system directory');
+      expect(() => spawnShell('shell_val', sensitiveDir)).toThrow('restricted system directory');
       expect(isRunning('shell_val')).toBe(false);
     });
 
@@ -1331,8 +1348,9 @@ describe('pty-manager', () => {
     });
 
     it('spawnShell rejects path-traversal projectPath', () => {
-      mockRealpathSync.mockReturnValue('/etc');
-      expect(() => spawnShell('shell_trav', '/home/../etc')).toThrow('restricted system directory');
+      mockRealpathSync.mockReturnValue(sensitiveDir);
+      const traversalPath = process.platform === 'win32' ? 'C:\\Users\\..\\Windows' : '/home/../etc';
+      expect(() => spawnShell('shell_trav', traversalPath)).toThrow('restricted system directory');
       expect(isRunning('shell_trav')).toBe(false);
     });
   });
