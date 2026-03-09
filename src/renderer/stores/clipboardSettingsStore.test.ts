@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useClipboardSettingsStore } from './clipboardSettingsStore';
 
-// Override the default setup-renderer stub with controllable mocks
+// Mock the generic settings bridge (used by the updated store)
+const mockSettingsGet = vi.fn(async () => ({ clipboardCompat: false }));
+const mockSettingsSave = vi.fn(async () => {});
+// Keep legacy mocks for backward compatibility checks
 const mockGetClipboardSettings = vi.fn(async () => ({ clipboardCompat: false }));
 const mockSaveClipboardSettings = vi.fn(async () => {});
 
@@ -11,6 +14,10 @@ Object.defineProperty(window, 'clubhouse', {
   configurable: true,
   get: () => ({
     platform: mockPlatform,
+    settings: {
+      get: mockSettingsGet,
+      save: mockSettingsSave,
+    },
     app: {
       getClipboardSettings: mockGetClipboardSettings,
       saveClipboardSettings: mockSaveClipboardSettings,
@@ -22,6 +29,8 @@ Object.defineProperty(window, 'clubhouse', {
 describe('clipboardSettingsStore', () => {
   beforeEach(() => {
     mockPlatform = 'darwin';
+    mockSettingsGet.mockReset().mockResolvedValue({ clipboardCompat: false });
+    mockSettingsSave.mockReset().mockResolvedValue(undefined);
     mockGetClipboardSettings.mockReset().mockResolvedValue({ clipboardCompat: false });
     mockSaveClipboardSettings.mockReset();
     // Reset store state
@@ -32,18 +41,18 @@ describe('clipboardSettingsStore', () => {
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(false);
   });
 
-  it('loads settings from main process', async () => {
-    mockGetClipboardSettings.mockResolvedValue({ clipboardCompat: true });
+  it('loads settings from main process via generic bridge', async () => {
+    mockSettingsGet.mockResolvedValue({ clipboardCompat: true });
     await useClipboardSettingsStore.getState().loadSettings();
 
-    expect(mockGetClipboardSettings).toHaveBeenCalled();
+    expect(mockSettingsGet).toHaveBeenCalledWith('clipboard');
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(true);
     expect(useClipboardSettingsStore.getState().loaded).toBe(true);
   });
 
   it('defaults to false on mac when load returns null', async () => {
     mockPlatform = 'darwin';
-    mockGetClipboardSettings.mockResolvedValue(null);
+    mockSettingsGet.mockResolvedValue(null);
     await useClipboardSettingsStore.getState().loadSettings();
 
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(false);
@@ -52,22 +61,22 @@ describe('clipboardSettingsStore', () => {
 
   it('defaults to true on windows when load returns null', async () => {
     mockPlatform = 'win32';
-    mockGetClipboardSettings.mockResolvedValue(null);
+    mockSettingsGet.mockResolvedValue(null);
     await useClipboardSettingsStore.getState().loadSettings();
 
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(true);
     expect(useClipboardSettingsStore.getState().loaded).toBe(true);
   });
 
-  it('saves settings to main process', async () => {
+  it('saves settings via generic bridge', async () => {
     await useClipboardSettingsStore.getState().saveSettings(true);
 
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(true);
-    expect(mockSaveClipboardSettings).toHaveBeenCalledWith({ clipboardCompat: true });
+    expect(mockSettingsSave).toHaveBeenCalledWith('clipboard', { clipboardCompat: true });
   });
 
   it('reverts on save failure', async () => {
-    mockSaveClipboardSettings.mockImplementation(() => { throw new Error('fail'); });
+    mockSettingsSave.mockRejectedValue(new Error('fail'));
     await useClipboardSettingsStore.getState().saveSettings(true);
 
     expect(useClipboardSettingsStore.getState().clipboardCompat).toBe(false);
