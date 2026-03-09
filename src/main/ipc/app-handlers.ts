@@ -8,7 +8,7 @@ import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
-import * as clipboardSettings from '../services/clipboard-settings';
+import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
 import * as sessionSettings from '../services/session-settings';
@@ -103,6 +103,8 @@ export function registerAppHandlers(): void {
     badgeSettings.saveSettings(settings);
   });
 
+  // Clipboard settings are now managed via createManagedSettings() in settings-handlers.ts.
+  // Legacy IPC channels preserved for backward compatibility with any external consumers.
   ipcMain.handle(IPC.APP.GET_CLIPBOARD_SETTINGS, () => {
     return clipboardSettings.getSettings();
   });

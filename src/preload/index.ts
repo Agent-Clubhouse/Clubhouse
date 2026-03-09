@@ -1,10 +1,26 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC } from '../shared/ipc-channels';
+import { settingsChannels } from '../shared/settings-definitions';
 import { AgentHookEvent } from '../shared/types';
 
 const api = {
   platform: process.platform as 'darwin' | 'win32' | 'linux',
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  /**
+   * Generic settings bridge — routes get/save by definition key.
+   * Eliminates per-setting preload boilerplate: no new methods needed
+   * when adding a setting via createManagedSettings().
+   */
+  settings: {
+    get: (key: string): Promise<unknown> => {
+      const ch = settingsChannels(key);
+      return ipcRenderer.invoke(ch.get);
+    },
+    save: (key: string, value: unknown, ...extraArgs: unknown[]): Promise<void> => {
+      const ch = settingsChannels(key);
+      return ipcRenderer.invoke(ch.save, value, ...extraArgs);
+    },
+  },
   pty: {
     spawnShell: (id: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.PTY.SPAWN_SHELL, id, projectPath),
