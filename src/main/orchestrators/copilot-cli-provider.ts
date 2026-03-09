@@ -15,7 +15,7 @@ import {
   StructuredAdapter,
 } from './types';
 import { AcpAdapter } from './adapters';
-import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -37,13 +37,6 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'gpt-5', label: 'GPT 5' },
   { id: 'gpt-5-mini', label: 'GPT 5 Mini' },
 ];
-
-function humanizeModelId(id: string): string {
-  return id
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
 
 /** Parse model choices from `copilot --help` output */
 function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label: string }> | null {

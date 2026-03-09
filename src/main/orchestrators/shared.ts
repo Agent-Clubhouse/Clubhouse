@@ -112,6 +112,20 @@ export function findBinaryInPath(names: string[], extraPaths: string[]): string 
   );
 }
 
+/**
+ * Shared model-ID humanizer used by all orchestrator providers.
+ *
+ * Strips an optional provider prefix (e.g. "github-copilot/gpt-5" → "gpt-5"),
+ * then capitalizes each hyphen-separated word ("gpt-5" → "GPT 5").
+ */
+export function humanizeModelId(raw: string): string {
+  const id = raw.includes('/') ? raw.split('/').slice(1).join('/') : raw;
+  return id
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 /** Common home-relative path builder */
 export function homePath(...segments: string[]): string {
   return path.join(app.getPath('home'), ...segments);

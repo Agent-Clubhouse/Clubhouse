@@ -21,7 +21,7 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
 
 describe('shared orchestrator utilities', () => {
   beforeEach(() => {
@@ -126,6 +126,24 @@ describe('shared orchestrator utilities', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => p === '/fallback/claude');
       const result = findBinaryInPath(['claude'], ['/fallback/claude']);
       expect(result).toBe('/fallback/claude');
+    });
+  });
+
+  describe('humanizeModelId', () => {
+    it('capitalizes hyphen-separated words', () => {
+      expect(humanizeModelId('claude-sonnet-4.5')).toBe('Claude Sonnet 4.5');
+    });
+
+    it('strips provider prefix before slash', () => {
+      expect(humanizeModelId('github-copilot/gpt-5')).toBe('Gpt 5');
+    });
+
+    it('handles single-word id', () => {
+      expect(humanizeModelId('default')).toBe('Default');
+    });
+
+    it('handles nested provider prefix with multiple slashes', () => {
+      expect(humanizeModelId('provider/sub/claude-opus')).toBe('Claude Opus');
     });
   });
 

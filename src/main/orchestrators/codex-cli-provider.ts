@@ -12,7 +12,7 @@ import {
   HeadlessCommandResult,
   NormalizedHookEvent,
 } from './types';
-import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -30,13 +30,6 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'codex-mini-latest', label: 'Codex Mini' },
   { id: 'gpt-5', label: 'GPT 5' },
 ];
-
-function humanizeModelId(id: string): string {
-  return id
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
-}
 
 /** Parse model choices from `codex --help` output */
 function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label: string }> | null {

@@ -12,7 +12,7 @@ import {
   HeadlessCommandResult,
   NormalizedHookEvent,
 } from './types';
-import { findBinaryInPath, homePath, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
 import { getShellEnvironment } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -44,15 +44,6 @@ function findOpenCodeBinary(): string {
     paths.push('/usr/local/bin/opencode', '/opt/homebrew/bin/opencode');
   }
   return findBinaryInPath(['opencode'], paths);
-}
-
-function humanizeModelId(raw: string): string {
-  // Strip provider prefix (e.g. "github-copilot/gpt-5" → "gpt-5")
-  const id = raw.includes('/') ? raw.split('/').slice(1).join('/') : raw;
-  return id
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
 }
 
 /** Parse output of `opencode models` into options */
