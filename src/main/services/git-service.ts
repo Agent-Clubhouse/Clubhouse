@@ -7,6 +7,30 @@ import { appLog } from './log-service';
 // Conflict status codes from git porcelain format
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 
+/** Reject branch names that could be misinterpreted as git flags or contain dangerous chars. */
+function validateBranchName(name: string): void {
+  if (name.startsWith('-')) {
+    throw new Error(`Invalid branch name: must not start with '-'`);
+  }
+  if (name.includes('\0')) {
+    throw new Error('Invalid branch name: must not contain null bytes');
+  }
+}
+
+/** Reject file paths with traversal sequences or null bytes. */
+function validateFilePath(filePath: string): void {
+  if (path.isAbsolute(filePath)) {
+    throw new Error('Invalid file path: must be relative');
+  }
+  const normalized = path.normalize(filePath);
+  if (normalized.startsWith('..')) {
+    throw new Error('Invalid file path: must not traverse above repository root');
+  }
+  if (filePath.includes('\0')) {
+    throw new Error('Invalid file path: must not contain null bytes');
+  }
+}
+
 function gitExec(args: string[], cwd: string, timeout = 10000): Promise<string> {
   return new Promise((resolve, reject) => {
     nodeExecFile('git', args, { cwd, encoding: 'utf-8', timeout }, (error, stdout, stderr) => {
@@ -123,14 +147,17 @@ export async function getGitInfo(dirPath: string): Promise<GitInfo> {
 }
 
 export async function checkout(dirPath: string, branchName: string): Promise<GitOpResult> {
+  validateBranchName(branchName);
   return runResult(['checkout', branchName], dirPath);
 }
 
 export async function stage(dirPath: string, filePath: string): Promise<GitOpResult> {
+  validateFilePath(filePath);
   return runResult(['add', '--', filePath], dirPath);
 }
 
 export async function unstage(dirPath: string, filePath: string): Promise<GitOpResult> {
+  validateFilePath(filePath);
   return runResult(['reset', 'HEAD', '--', filePath], dirPath);
 }
 
@@ -151,6 +178,8 @@ export async function getFileDiff(
   filePath: string,
   staged: boolean
 ): Promise<{ original: string; modified: string }> {
+  validateFilePath(filePath);
+
   // Get the HEAD version (empty for new/untracked files)
   let original = '';
   try {
@@ -196,6 +225,7 @@ export async function unstageAll(dirPath: string): Promise<GitOpResult> {
 }
 
 export async function discardFile(dirPath: string, filePath: string, isUntracked: boolean): Promise<GitOpResult> {
+  validateFilePath(filePath);
   if (isUntracked) {
     // Remove untracked file from disk
     try {
@@ -209,6 +239,7 @@ export async function discardFile(dirPath: string, filePath: string, isUntracked
 }
 
 export async function createBranch(dirPath: string, branchName: string): Promise<GitOpResult> {
+  validateBranchName(branchName);
   return runResult(['checkout', '-b', branchName], dirPath);
 }
 
