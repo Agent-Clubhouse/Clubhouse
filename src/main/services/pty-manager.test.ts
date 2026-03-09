@@ -979,20 +979,39 @@ describe('pty-manager', () => {
       expect(getBuffer('agent_guard_data')).toBe('new data');
     });
 
-    it('onExit callback is ignored if session has been replaced', () => {
-      spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
-      const firstOnExit = mockProcess.onExit.mock.calls[0][0];
+    it('onExit callback is ignored if session has been replaced', async () => {
+      const pty = await import('node-pty');
 
-      // Replace session
+      // Create distinct mock processes so the identity guard can distinguish them
+      const firstProc = {
+        onData: vi.fn(),
+        onExit: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        pid: 1001,
+      };
+      const secondProc = {
+        onData: vi.fn(),
+        onExit: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        pid: 1002,
+      };
+
+      vi.mocked(pty.spawn).mockReturnValueOnce(firstProc as any);
+      spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
+      const firstOnExit = firstProc.onExit.mock.calls[0][0];
+
+      vi.mocked(pty.spawn).mockReturnValueOnce(secondProc as any);
       spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_guard_exit')).toBe(true);
 
       // Old onExit fires — should not tear down the replacement session
-      // (In practice, the guard checks current.process !== proc)
-      // Since we use a shared mock, this validates the code path exists
       firstOnExit({ exitCode: 0 });
 
-      // Session should still be running (replacement not affected)
+      // Replacement session should still be running
       expect(isRunning('agent_guard_exit')).toBe(true);
     });
 
