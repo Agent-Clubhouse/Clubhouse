@@ -13,9 +13,12 @@ import {
   HeadlessCommandResult,
   NormalizedHookEvent,
   StructuredAdapter,
+  HookCapable,
+  HeadlessCapable,
+  StructuredCapable,
 } from './types';
 import { AcpAdapter } from './adapters';
-import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId } from './shared';
 import { getShellEnvironment } from '../util/shell';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
@@ -76,7 +79,7 @@ function findCopilotBinary(): string {
   return findBinaryInPath(['copilot'], paths);
 }
 
-export class CopilotCliProvider implements OrchestratorProvider {
+export class CopilotCliProvider implements OrchestratorProvider, HookCapable, HeadlessCapable, StructuredCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
@@ -281,6 +284,4 @@ export class CopilotCliProvider implements OrchestratorProvider {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }
   toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
-  buildSummaryInstruction(agentId: string) { return buildSummaryInstruction(agentId); }
-  readQuickSummary(agentId: string) { return readQuickSummary(agentId); }
 }

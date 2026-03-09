@@ -10,9 +10,9 @@ import {
   SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
-  NormalizedHookEvent,
+  HeadlessCapable,
 } from './types';
-import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId } from './shared';
 import { getShellEnvironment } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -59,7 +59,7 @@ function parseOpenCodeModels(stdout: string): Array<{ id: string; label: string 
   ];
 }
 
-export class OpenCodeProvider implements OrchestratorProvider {
+export class OpenCodeProvider implements OrchestratorProvider, HeadlessCapable {
   readonly id = 'opencode' as const;
   readonly displayName = 'OpenCode';
   readonly shortName = 'OC';
@@ -122,27 +122,6 @@ export class OpenCodeProvider implements OrchestratorProvider {
     return '/exit\r';
   }
 
-  async writeHooksConfig(_cwd: string, _hookUrl: string): Promise<void> {
-    // OpenCode uses TypeScript plugins for hooks, not config-level shell scripts — no-op
-  }
-
-  parseHookEvent(raw: unknown): NormalizedHookEvent | null {
-    if (!raw || typeof raw !== 'object') return null;
-    const obj = raw as Record<string, unknown>;
-
-    // OpenCode structured output provides tool events directly
-    const toolName = (obj.tool_name ?? obj.toolName) as string | undefined;
-    const kind = obj.kind as NormalizedHookEvent['kind'] | undefined;
-    if (!kind) return null;
-
-    return {
-      kind,
-      toolName,
-      toolInput: obj.tool_input as Record<string, unknown> | undefined,
-      message: obj.message as string | undefined,
-    };
-  }
-
   readInstructions(worktreePath: string): string {
     const instructionsPath = path.join(worktreePath, '.opencode', 'instructions.md');
     try {
@@ -196,6 +175,4 @@ export class OpenCodeProvider implements OrchestratorProvider {
     return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
   }
   toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
-  buildSummaryInstruction(agentId: string) { return buildSummaryInstruction(agentId); }
-  readQuickSummary(agentId: string) { return readQuickSummary(agentId); }
 }

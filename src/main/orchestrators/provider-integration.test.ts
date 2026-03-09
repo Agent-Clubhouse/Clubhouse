@@ -34,6 +34,7 @@ import { ClaudeCodeProvider } from './claude-code-provider';
 import { CopilotCliProvider } from './copilot-cli-provider';
 import { CodexCliProvider } from './codex-cli-provider';
 import { OpenCodeProvider } from './opencode-provider';
+import { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from './types';
 import { clearBinaryCache } from './shared';
 
 /** Check if path's basename matches a known binary name (with or without Windows extensions) */
@@ -587,16 +588,14 @@ describe('Provider integration tests', () => {
       );
     });
 
-    it('CodexCli: writeHooksConfig is a no-op', async () => {
+    it('CodexCli: does not implement HookCapable (no writeHooksConfig)', () => {
       const provider = new CodexCliProvider();
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect((provider as any).writeHooksConfig).toBeUndefined();
     });
 
-    it('OpenCode: writeHooksConfig is a no-op', async () => {
+    it('OpenCode: does not implement HookCapable (no writeHooksConfig)', () => {
       const provider = new OpenCodeProvider();
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect((provider as any).writeHooksConfig).toBeUndefined();
     });
   });
 
@@ -713,42 +712,25 @@ describe('Provider integration tests', () => {
       expect(event!.toolInput).toEqual({ path: '/foo' });
     });
 
-    it('CodexCli: maps agent-turn-complete to stop', () => {
+    it('CodexCli: does not implement HookCapable (no parseHookEvent)', () => {
       const provider = new CodexCliProvider();
-      const event = provider.parseHookEvent({
-        type: 'agent-turn-complete',
-        'last-assistant-message': 'All done',
-      });
-      expect(event).not.toBeNull();
-      expect(event!.kind).toBe('stop');
-      expect(event!.message).toBe('All done');
+      expect((provider as any).parseHookEvent).toBeUndefined();
     });
 
-    it('CodexCli: returns null for unknown event type', () => {
-      const provider = new CodexCliProvider();
-      expect(provider.parseHookEvent({ type: 'something-else' })).toBeNull();
-    });
-
-    it('OpenCode: uses kind field directly', () => {
+    it('OpenCode: does not implement HookCapable (no parseHookEvent)', () => {
       const provider = new OpenCodeProvider();
-      expect(provider.parseHookEvent({ kind: 'pre_tool', toolName: 'bash' })?.kind).toBe('pre_tool');
-      expect(provider.parseHookEvent({ kind: 'post_tool' })?.kind).toBe('post_tool');
-      expect(provider.parseHookEvent({ kind: 'stop' })?.kind).toBe('stop');
+      expect((provider as any).parseHookEvent).toBeUndefined();
     });
 
-    it('all providers return null for unknown event', () => {
-      const providers = [new ClaudeCodeProvider(), new CopilotCliProvider(), new CodexCliProvider(), new OpenCodeProvider()];
-      for (const p of providers) {
+    it('hook-capable providers return null for unknown event', () => {
+      const hookProviders = [new ClaudeCodeProvider(), new CopilotCliProvider()];
+      for (const p of hookProviders) {
         expect(p.parseHookEvent(null)).toBeNull();
         expect(p.parseHookEvent('not-object')).toBeNull();
       }
       // Claude and Copilot return null for unknown hook_event_name
       expect(new ClaudeCodeProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
       expect(new CopilotCliProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
-      // Codex returns null for unknown type
-      expect(new CodexCliProvider().parseHookEvent({ type: 'unknown' })).toBeNull();
-      // OpenCode returns null when kind is missing
-      expect(new OpenCodeProvider().parseHookEvent({ hook_event_name: 'Unknown' })).toBeNull();
     });
   });
 
@@ -1147,6 +1129,59 @@ describe('Provider integration tests', () => {
       const provider = new OpenCodeProvider();
       const result = await provider.checkAvailability({ OPENCODE_CONFIG_DIR: '/custom' });
       expect(result.available).toBe(true);
+    });
+  });
+
+  describe('type guards for capability sub-interfaces', () => {
+    it('isHookCapable returns true for ClaudeCode and CopilotCli', () => {
+      expect(isHookCapable(new ClaudeCodeProvider())).toBe(true);
+      expect(isHookCapable(new CopilotCliProvider())).toBe(true);
+    });
+
+    it('isHookCapable returns false for CodexCli and OpenCode', () => {
+      expect(isHookCapable(new CodexCliProvider())).toBe(false);
+      expect(isHookCapable(new OpenCodeProvider())).toBe(false);
+    });
+
+    it('isHeadlessCapable returns true for all providers', () => {
+      expect(isHeadlessCapable(new ClaudeCodeProvider())).toBe(true);
+      expect(isHeadlessCapable(new CopilotCliProvider())).toBe(true);
+      expect(isHeadlessCapable(new CodexCliProvider())).toBe(true);
+      expect(isHeadlessCapable(new OpenCodeProvider())).toBe(true);
+    });
+
+    it('isSessionCapable returns true only for ClaudeCode', () => {
+      expect(isSessionCapable(new ClaudeCodeProvider())).toBe(true);
+      expect(isSessionCapable(new CopilotCliProvider())).toBe(false);
+      expect(isSessionCapable(new CodexCliProvider())).toBe(false);
+      expect(isSessionCapable(new OpenCodeProvider())).toBe(false);
+    });
+
+    it('isStructuredCapable returns true for ClaudeCode and CopilotCli', () => {
+      expect(isStructuredCapable(new ClaudeCodeProvider())).toBe(true);
+      expect(isStructuredCapable(new CopilotCliProvider())).toBe(true);
+      expect(isStructuredCapable(new CodexCliProvider())).toBe(false);
+      expect(isStructuredCapable(new OpenCodeProvider())).toBe(false);
+    });
+
+    it('type narrowing grants access to sub-interface methods', () => {
+      const provider = new ClaudeCodeProvider();
+      if (isHookCapable(provider)) {
+        // TypeScript should allow these calls after narrowing
+        expect(typeof provider.writeHooksConfig).toBe('function');
+        expect(typeof provider.parseHookEvent).toBe('function');
+      }
+      if (isSessionCapable(provider)) {
+        expect(typeof provider.listSessions).toBe('function');
+        expect(typeof provider.readSessionTranscript).toBe('function');
+        expect(typeof provider.extractSessionId).toBe('function');
+      }
+      if (isStructuredCapable(provider)) {
+        expect(typeof provider.createStructuredAdapter).toBe('function');
+      }
+      if (isHeadlessCapable(provider)) {
+        expect(typeof provider.buildHeadlessCommand).toBe('function');
+      }
     });
   });
 });

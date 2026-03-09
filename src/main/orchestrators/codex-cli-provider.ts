@@ -10,9 +10,9 @@ import {
   SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
-  NormalizedHookEvent,
+  HeadlessCapable,
 } from './types';
-import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -77,7 +77,7 @@ function findCodexBinary(): string {
   return findBinaryInPath(['codex'], paths);
 }
 
-export class CodexCliProvider implements OrchestratorProvider {
+export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
@@ -181,29 +181,6 @@ export class CodexCliProvider implements OrchestratorProvider {
     return '/exit\r';
   }
 
-  async writeHooksConfig(_cwd: string, _hookUrl: string): Promise<void> {
-    // Codex CLI only supports a notify hook for agent-turn-complete events,
-    // which is not granular enough for pre_tool/post_tool — no-op.
-  }
-
-  parseHookEvent(raw: unknown): NormalizedHookEvent | null {
-    if (!raw || typeof raw !== 'object') return null;
-    const obj = raw as Record<string, unknown>;
-
-    // Codex notify events use a "type" field
-    const eventType = obj.type as string | undefined;
-    if (eventType === 'agent-turn-complete') {
-      return {
-        kind: 'stop',
-        toolName: undefined,
-        toolInput: undefined,
-        message: obj['last-assistant-message'] as string | undefined,
-      };
-    }
-
-    return null;
-  }
-
   readInstructions(worktreePath: string): string {
     // Codex uses AGENTS.md at the project root
     const instructionsPath = path.join(worktreePath, 'AGENTS.md');
@@ -267,6 +244,4 @@ export class CodexCliProvider implements OrchestratorProvider {
   }
 
   toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
-  buildSummaryInstruction(agentId: string) { return buildSummaryInstruction(agentId); }
-  readQuickSummary(agentId: string) { return readQuickSummary(agentId); }
 }

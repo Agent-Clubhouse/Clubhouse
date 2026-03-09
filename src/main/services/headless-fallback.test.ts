@@ -67,8 +67,6 @@ const providerWithoutHeadless = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn(() => []),
   toolVerb: vi.fn(),
-  buildSummaryInstruction: vi.fn(() => ''),
-  readQuickSummary: vi.fn(() => Promise.resolve(null)),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: false, hooks: true,
     sessionResume: true, permissions: true, structuredMode: false,
@@ -88,6 +86,10 @@ let activeProvider: any = providerWithoutHeadless;
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn(() => activeProvider),
   getAllProviders: vi.fn(() => [activeProvider]),
+  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
+  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
+  isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
+  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
 }));
 
 import { spawnAgent, untrackAgent } from './agent-system';

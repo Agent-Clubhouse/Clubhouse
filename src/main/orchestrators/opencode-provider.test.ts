@@ -22,8 +22,7 @@ vi.mock('util', () => ({
 vi.mock('./shared', () => ({
   findBinaryInPath: vi.fn(() => '/usr/local/bin/opencode'),
   homePath: vi.fn((...segments: string[]) => `/home/user/${segments.join('/')}`),
-  buildSummaryInstruction: vi.fn(() => 'Summarize'),
-  readQuickSummary: vi.fn(async () => null),
+  humanizeModelId: vi.fn((id: string) => id),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -143,83 +142,6 @@ describe('OpenCodeProvider', () => {
   describe('getExitCommand', () => {
     it('returns /exit with carriage return', () => {
       expect(provider.getExitCommand()).toBe('/exit\r');
-    });
-  });
-
-  describe('writeHooksConfig', () => {
-    it('is a no-op', async () => {
-      await provider.writeHooksConfig('/project', 'http://localhost:3000');
-      // Should not throw or write anything
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
-      expect(fs.mkdirSync).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('parseHookEvent', () => {
-    it('parses event with kind field', () => {
-      const result = provider.parseHookEvent({
-        kind: 'pre_tool',
-        tool_name: 'bash',
-        tool_input: { command: 'ls' },
-      });
-      expect(result).toEqual({
-        kind: 'pre_tool',
-        toolName: 'bash',
-        toolInput: { command: 'ls' },
-        message: undefined,
-      });
-    });
-
-    it('accepts camelCase toolName field', () => {
-      const result = provider.parseHookEvent({
-        kind: 'post_tool',
-        toolName: 'edit',
-      });
-      expect(result?.toolName).toBe('edit');
-    });
-
-    it('prefers tool_name over toolName when both present', () => {
-      const result = provider.parseHookEvent({
-        kind: 'pre_tool',
-        tool_name: 'bash',
-        toolName: 'edit',
-      });
-      expect(result?.toolName).toBe('bash');
-    });
-
-    it('parses stop event', () => {
-      const result = provider.parseHookEvent({
-        kind: 'stop',
-        message: 'Done',
-      });
-      expect(result).toEqual({
-        kind: 'stop',
-        toolName: undefined,
-        toolInput: undefined,
-        message: 'Done',
-      });
-    });
-
-    it('parses tool_error event', () => {
-      const result = provider.parseHookEvent({
-        kind: 'tool_error',
-        tool_name: 'bash',
-        message: 'Command failed',
-      });
-      expect(result?.kind).toBe('tool_error');
-      expect(result?.message).toBe('Command failed');
-    });
-
-    it('returns null when kind is missing', () => {
-      const result = provider.parseHookEvent({ tool_name: 'bash' });
-      expect(result).toBeNull();
-    });
-
-    it('returns null for non-object input', () => {
-      expect(provider.parseHookEvent(null)).toBeNull();
-      expect(provider.parseHookEvent(42)).toBeNull();
-      expect(provider.parseHookEvent('string')).toBeNull();
-      expect(provider.parseHookEvent(undefined)).toBeNull();
     });
   });
 
@@ -451,17 +373,4 @@ describe('OpenCodeProvider', () => {
     });
   });
 
-  describe('buildSummaryInstruction', () => {
-    it('delegates to shared implementation', () => {
-      const result = provider.buildSummaryInstruction('agent-1');
-      expect(result).toBe('Summarize');
-    });
-  });
-
-  describe('readQuickSummary', () => {
-    it('delegates to shared implementation', async () => {
-      const result = await provider.readQuickSummary('agent-1');
-      expect(result).toBeNull();
-    });
-  });
 });
