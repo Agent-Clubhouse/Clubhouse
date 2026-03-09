@@ -20,6 +20,9 @@ const mockWriteStream = {
   write: vi.fn(),
   end: vi.fn(),
 };
+
+const mockCreateReadStream = vi.hoisted(() => vi.fn());
+
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
@@ -29,8 +32,22 @@ vi.mock('fs', async () => {
     readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
     writeFileSync: vi.fn(),
     createWriteStream: vi.fn(() => mockWriteStream),
+    createReadStream: (...args: unknown[]) => mockCreateReadStream(...args),
   };
 });
+
+function createMockReadStream(data: string | Error) {
+  const stream = new EventEmitter();
+  process.nextTick(() => {
+    if (data instanceof Error) {
+      stream.emit('error', data);
+    } else {
+      stream.emit('data', data);
+      stream.emit('end');
+    }
+  });
+  return stream;
+}
 
 // Mock fs/promises for async transcript APIs
 const mockFsPromises = vi.hoisted(() => ({
@@ -949,9 +966,8 @@ describe('headless-manager', () => {
   describe('getTranscriptInfo', () => {
     beforeEach(() => {
       mockFsPromises.stat.mockReset();
-      mockFsPromises.readFile.mockReset();
       mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
-      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+      mockCreateReadStream.mockImplementation(() => createMockReadStream(new Error('ENOENT')));
     });
 
     it('returns null for unknown agent with no transcript on disk', async () => {
@@ -976,7 +992,7 @@ describe('headless-manager', () => {
     it('returns disk info for completed session', async () => {
       const diskData = '{"type":"result","result":"ok"}\n{"type":"assistant","message":{}}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockImplementation(() => createMockReadStream(diskData));
 
       const info = await getTranscriptInfo('completed-agent');
       expect(info).not.toBeNull();
@@ -996,7 +1012,7 @@ describe('headless-manager', () => {
 
       const diskData = '{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockImplementation(() => createMockReadStream(diskData));
 
       const info = await getTranscriptInfo('test-agent');
       expect(info).not.toBeNull();

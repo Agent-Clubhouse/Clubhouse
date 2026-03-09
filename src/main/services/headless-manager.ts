@@ -452,8 +452,33 @@ export interface TranscriptPage {
 }
 
 /**
+ * Count non-empty lines in a file using a read stream to avoid loading
+ * the entire file into memory. O(file size) but uses constant memory.
+ */
+function countNonEmptyLines(filePath: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let count = 0;
+    let remainder = '';
+    const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    stream.on('data', (chunk: string | Buffer) => {
+      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+      const lines = (remainder + text).split('\n');
+      remainder = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim()) count++;
+      }
+    });
+    stream.on('end', () => {
+      if (remainder.trim()) count++;
+      resolve(count);
+    });
+    stream.on('error', reject);
+  });
+}
+
+/**
  * Return metadata about a transcript without loading event data.
- * Uses async fs to avoid blocking the main process for large files.
+ * Uses a streaming line counter to avoid reading the entire file into memory.
  */
 export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo | null> {
   // Check in-memory session first
@@ -469,8 +494,7 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
   const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     const stat = await fsPromises.stat(transcriptPath);
-    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
-    const lineCount = raw.split('\n').filter((l) => l.trim()).length;
+    const lineCount = await countNonEmptyLines(transcriptPath);
     return { totalEvents: lineCount, fileSizeBytes: stat.size };
   } catch {
     return null;
