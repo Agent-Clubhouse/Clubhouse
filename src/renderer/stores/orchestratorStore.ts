@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ProviderCapabilities, OrchestratorInfo } from '../../shared/types';
+import { optimisticUpdate } from './optimistic-update';
 
 interface OrchestratorState {
   enabled: string[];
@@ -41,13 +42,10 @@ export const useOrchestratorStore = create<OrchestratorState>((set, get) => ({
       // Don't allow disabling all orchestrators
       if (next.length === 0) return;
     }
-    set({ enabled: next });
-    try {
-      await window.clubhouse.app.saveOrchestratorSettings({ enabled: next });
-    } catch {
-      // Revert on error
-      set({ enabled: current });
-    }
+    await optimisticUpdate(set, get,
+      { enabled: next },
+      () => window.clubhouse.app.saveOrchestratorSettings({ enabled: next }),
+    );
   },
 
   checkAllAvailability: async () => {
