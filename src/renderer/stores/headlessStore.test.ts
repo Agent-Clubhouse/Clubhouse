@@ -25,7 +25,6 @@ describe('headlessStore', () => {
     mockGetHeadlessSettings.mockResolvedValue({ defaultMode: 'interactive' });
     mockSaveHeadlessSettings.mockResolvedValue(undefined);
     useHeadlessStore.setState({
-      enabled: false,
       defaultMode: 'interactive',
       projectOverrides: {},
     });
@@ -41,7 +40,6 @@ describe('headlessStore', () => {
       await getState().loadSettings();
 
       expect(getState().defaultMode).toBe('headless');
-      expect(getState().enabled).toBe(true); // backwards compat
     });
 
     it('loads structured mode from backend', async () => {
@@ -119,17 +117,6 @@ describe('headlessStore', () => {
       expect(getState().defaultMode).toBe('headless');
     });
 
-    it('updates enabled for backwards compatibility', async () => {
-      await getState().setDefaultMode('headless');
-      expect(getState().enabled).toBe(true);
-
-      await getState().setDefaultMode('interactive');
-      expect(getState().enabled).toBe(false);
-
-      await getState().setDefaultMode('structured');
-      expect(getState().enabled).toBe(false);
-    });
-
     it('persists defaultMode with current projectOverrides', async () => {
       useHeadlessStore.setState({ projectOverrides: { '/p': 'headless' } });
 
@@ -148,19 +135,6 @@ describe('headlessStore', () => {
       await getState().setDefaultMode('headless');
 
       // Should roll back to interactive
-      expect(getState().defaultMode).toBe('interactive');
-    });
-  });
-
-  // ============================================================
-  // setEnabled (legacy)
-  // ============================================================
-  describe('setEnabled', () => {
-    it('delegates to setDefaultMode', async () => {
-      await getState().setEnabled(true);
-      expect(getState().defaultMode).toBe('headless');
-
-      await getState().setEnabled(false);
       expect(getState().defaultMode).toBe('interactive');
     });
   });
