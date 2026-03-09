@@ -13,6 +13,7 @@ import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpd
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
+import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
@@ -205,6 +206,9 @@ app.on('before-quit', () => {
 
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
+
+  // Flush any pending agent config writes to disk
+  flushAllAgentConfigs();
 
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();
