@@ -43,11 +43,19 @@ vi.mock('./annex-event-bus', () => ({
   emitPtyData: vi.fn(),
 }));
 
+// Mock fs for validateSpawnCwd — default to making all paths look like valid directories
+const mockRealpathSync = vi.fn((p: string) => p);
+const mockStatSync = vi.fn(() => ({ isDirectory: () => true }));
+vi.mock('fs', () => ({
+  realpathSync: (...args: unknown[]) => mockRealpathSync(...args),
+  statSync: (...args: unknown[]) => mockStatSync(...args),
+}));
+
 // We need to import AFTER mocks are set up
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep } from './pty-manager';
+import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 
@@ -66,6 +74,8 @@ describe('pty-manager', () => {
     mockProcess.onExit.mockReset();
     mockProcess.write.mockReset();
     mockProcess.kill.mockReset();
+    mockRealpathSync.mockImplementation((p: string) => p);
+    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }));
   });
 
   describe('getBuffer', () => {
@@ -1214,6 +1224,112 @@ describe('pty-manager', () => {
       expect(writeCall).toBeDefined();
       // Empty arg should become ""
       expect(writeCall![0]).toContain('""');
+    });
+  });
+
+  // ── validateSpawnCwd ────────────────────────────────────────────────
+
+  describe('validateSpawnCwd', () => {
+    it('accepts a valid absolute directory path', () => {
+      expect(() => validateSpawnCwd('/home/user/project')).not.toThrow();
+    });
+
+    it('returns the resolved real path', () => {
+      mockRealpathSync.mockReturnValue('/resolved/project');
+      expect(validateSpawnCwd('/home/user/project')).toBe('/resolved/project');
+    });
+
+    it('rejects relative paths', () => {
+      expect(() => validateSpawnCwd('relative/path')).toThrow('must be an absolute path');
+    });
+
+    it('rejects dot-relative paths', () => {
+      expect(() => validateSpawnCwd('./project')).toThrow('must be an absolute path');
+    });
+
+    it('rejects paths that do not exist', () => {
+      mockRealpathSync.mockImplementation(() => { throw new Error('ENOENT'); });
+      expect(() => validateSpawnCwd('/nonexistent/path')).toThrow('does not exist');
+    });
+
+    it('rejects paths where stat fails', () => {
+      mockStatSync.mockImplementation(() => { throw new Error('EACCES'); });
+      expect(() => validateSpawnCwd('/no/access')).toThrow('does not exist');
+    });
+
+    it('rejects paths that are files, not directories', () => {
+      mockStatSync.mockReturnValue({ isDirectory: () => false });
+      expect(() => validateSpawnCwd('/home/user/file.txt')).toThrow('not a directory');
+    });
+
+    it('rejects /etc as a sensitive directory', () => {
+      expect(() => validateSpawnCwd('/etc')).toThrow('restricted system directory');
+    });
+
+    it('rejects subdirectories of /etc', () => {
+      expect(() => validateSpawnCwd('/etc/ssh')).toThrow('restricted system directory');
+    });
+
+    it('rejects /sbin', () => {
+      expect(() => validateSpawnCwd('/sbin')).toThrow('restricted system directory');
+    });
+
+    it('rejects /System on macOS', () => {
+      if (process.platform === 'win32') return;
+      expect(() => validateSpawnCwd('/System/Library')).toThrow('restricted system directory');
+    });
+
+    it('rejects /private/etc (macOS symlink target)', () => {
+      if (process.platform === 'win32') return;
+      expect(() => validateSpawnCwd('/private/etc')).toThrow('restricted system directory');
+    });
+
+    it('rejects /Library', () => {
+      if (process.platform === 'win32') return;
+      expect(() => validateSpawnCwd('/Library/Preferences')).toThrow('restricted system directory');
+    });
+
+    it('rejects path traversal resolving to sensitive directory', () => {
+      mockRealpathSync.mockReturnValue('/etc/shadow');
+      expect(() => validateSpawnCwd('/home/user/../../etc/shadow')).toThrow('restricted system directory');
+    });
+
+    it('accepts /tmp as a valid directory', () => {
+      expect(() => validateSpawnCwd('/tmp/build')).not.toThrow();
+    });
+
+    it('accepts home directory paths', () => {
+      expect(() => validateSpawnCwd('/Users/dev/project')).not.toThrow();
+    });
+  });
+
+  // ── spawn / spawnShell path validation integration ──────────────────
+
+  describe('spawn path validation', () => {
+    it('spawn rejects sensitive cwd', () => {
+      expect(() => spawn('agent_val', '/etc', '/usr/local/bin/claude', [])).toThrow('restricted system directory');
+      expect(isRunning('agent_val')).toBe(false);
+    });
+
+    it('spawn rejects relative cwd', () => {
+      expect(() => spawn('agent_rel', 'relative', '/usr/local/bin/claude', [])).toThrow('must be an absolute path');
+      expect(isRunning('agent_rel')).toBe(false);
+    });
+
+    it('spawnShell rejects sensitive projectPath', () => {
+      expect(() => spawnShell('shell_val', '/etc')).toThrow('restricted system directory');
+      expect(isRunning('shell_val')).toBe(false);
+    });
+
+    it('spawnShell rejects relative projectPath', () => {
+      expect(() => spawnShell('shell_rel', 'relative')).toThrow('must be an absolute path');
+      expect(isRunning('shell_rel')).toBe(false);
+    });
+
+    it('spawnShell rejects path-traversal projectPath', () => {
+      mockRealpathSync.mockReturnValue('/etc');
+      expect(() => spawnShell('shell_trav', '/home/../etc')).toThrow('restricted system directory');
+      expect(isRunning('shell_trav')).toBe(false);
     });
   });
 });
