@@ -141,8 +141,8 @@ export function registerAgentHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string, orchestrator?: string) => {
-    await agentSystem.killAgent(agentId, projectPath, orchestrator);
+  ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string) => {
+    await agentSystem.killAgent(agentId, projectPath);
   });
 
   ipcMain.handle(IPC.AGENT.READ_QUICK_SUMMARY, async (_event, agentId: string) => {
