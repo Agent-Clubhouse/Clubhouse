@@ -117,22 +117,26 @@ export interface StructuredCapable {
 
 /** Check if a provider supports hooks (writeHooksConfig, parseHookEvent) */
 export function isHookCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & HookCapable {
-  return provider.getCapabilities().hooks;
+  return provider.getCapabilities().hooks
+    && typeof (provider as unknown as HookCapable).writeHooksConfig === 'function';
 }
 
 /** Check if a provider supports headless execution */
 export function isHeadlessCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & HeadlessCapable {
-  return provider.getCapabilities().headless;
+  return provider.getCapabilities().headless
+    && typeof (provider as unknown as HeadlessCapable).buildHeadlessCommand === 'function';
 }
 
 /** Check if a provider supports session management */
 export function isSessionCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & SessionCapable {
-  return provider.getCapabilities().sessionResume && typeof (provider as unknown as SessionCapable).listSessions === 'function';
+  return provider.getCapabilities().sessionResume
+    && typeof (provider as unknown as SessionCapable).listSessions === 'function';
 }
 
 /** Check if a provider supports structured mode */
 export function isStructuredCapable(provider: OrchestratorProvider): provider is OrchestratorProvider & StructuredCapable {
-  return provider.getCapabilities().structuredMode;
+  return provider.getCapabilities().structuredMode
+    && typeof (provider as unknown as StructuredCapable).createStructuredAdapter === 'function';
 }
 
 // ── Core Interface ──────────────────────────────────────────────────────────

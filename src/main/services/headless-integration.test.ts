@@ -83,10 +83,10 @@ const mockProvider = {
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn(() => mockProvider),
   getAllProviders: vi.fn(() => [mockProvider]),
-  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks),
-  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless),
+  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
+  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
   isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
-  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode),
+  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
 }));
 
 import {

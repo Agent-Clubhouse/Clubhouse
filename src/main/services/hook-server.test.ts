@@ -35,7 +35,7 @@ vi.mock('./agent-system', () => ({
 }));
 
 vi.mock('../orchestrators', () => ({
-  isHookCapable: vi.fn((provider: any) => provider.getCapabilities?.().hooks !== false),
+  isHookCapable: vi.fn((provider: any) => typeof provider.parseHookEvent === 'function'),
 }));
 
 vi.mock('../../shared/ipc-channels', () => ({
