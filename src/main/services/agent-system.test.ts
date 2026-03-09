@@ -390,6 +390,89 @@ describe('agent-system', () => {
 
       expect(mockPtySpawn).not.toHaveBeenCalled();
     });
+
+    it('cleans up tracking maps when PTY spawn fails', async () => {
+      mockProvider.buildSpawnCommand.mockRejectedValueOnce(new Error('spawn failed'));
+
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+        })
+      ).rejects.toThrow('spawn failed');
+
+      expect(getAgentProjectPath('agent-1')).toBeUndefined();
+      expect(getAgentOrchestrator('agent-1')).toBeUndefined();
+      expect(getAgentNonce('agent-1')).toBeUndefined();
+    });
+
+    it('cleans up tracking maps when structured spawn fails', async () => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockStartStructured.mockRejectedValueOnce(new Error('structured spawn failed'));
+
+      await expect(
+        spawnAgent({
+          agentId: 'test-structured',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'quick',
+          mission: 'test',
+        })
+      ).rejects.toThrow('structured spawn failed');
+
+      expect(getAgentProjectPath('test-structured')).toBeUndefined();
+      expect(getAgentOrchestrator('test-structured')).toBeUndefined();
+      expect(isStructuredAgent('test-structured')).toBe(false);
+
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('cleans up tracking maps when headless spawn fails', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+      mockHeadlessSpawn.mockImplementationOnce(() => { throw new Error('headless spawn failed'); });
+
+      await expect(
+        spawnAgent({
+          agentId: 'test-headless',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'quick',
+          mission: 'test',
+        })
+      ).rejects.toThrow('headless spawn failed');
+
+      expect(getAgentProjectPath('test-headless')).toBeUndefined();
+      expect(getAgentOrchestrator('test-headless')).toBeUndefined();
+      expect(isHeadlessAgent('test-headless')).toBe(false);
+
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('propagates the original error after cleanup on spawn failure', async () => {
+      const originalError = new Error('specific spawn error');
+      mockProvider.buildSpawnCommand.mockRejectedValueOnce(originalError);
+
+      await expect(
+        spawnAgent({
+          agentId: 'agent-1',
+          projectPath: '/project',
+          cwd: '/project',
+          kind: 'durable',
+        })
+      ).rejects.toThrow(originalError);
+    });
   });
 
   describe('killAgent', () => {

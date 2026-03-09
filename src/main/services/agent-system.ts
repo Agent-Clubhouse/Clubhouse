@@ -137,78 +137,93 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   agentProjectMap.set(params.agentId, params.projectPath);
   agentOrchestratorMap.set(params.agentId, provider.id as OrchestratorId);
 
-  // Clubhouse Mode: materialize project defaults into worktree before spawn
-  if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
-    try {
-      const config = getDurableConfig(params.projectPath, params.agentId);
-      if (config && !config.clubhouseModeOverride && config.worktreePath) {
-        materializeAgent({ projectPath: params.projectPath, agent: config, provider });
+  try {
+    // Clubhouse Mode: materialize project defaults into worktree before spawn
+    if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
+      try {
+        const config = getDurableConfig(params.projectPath, params.agentId);
+        if (config && !config.clubhouseModeOverride && config.worktreePath) {
+          materializeAgent({ projectPath: params.projectPath, agent: config, provider });
+        }
+      } catch (err) {
+        appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
       }
-    } catch (err) {
-      appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
-        meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
-      });
     }
-  }
 
-  const allowedTools = params.allowedTools
-    || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
+    const allowedTools = params.allowedTools
+      || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
-  // Try structured path when enabled and provider supports it
-  const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
-  if (spawnMode === 'structured' && params.kind === 'quick' && provider.createStructuredAdapter) {
-    const adapter = provider.createStructuredAdapter();
-    structuredAgentSet.add(params.agentId);
-    await structuredManager.startStructuredSession(params.agentId, adapter, {
-      mission: params.mission || '',
-      systemPrompt: params.systemPrompt,
-      model: params.model,
-      cwd: params.cwd,
-      env: profileEnv,
-      allowedTools,
-      freeAgentMode: params.freeAgentMode,
-      commandPrefix,
-    }, (exitAgentId) => {
-      untrackAgent(exitAgentId);
-    });
-    return;
-  }
-
-  // Try headless path for quick agents when enabled
-  if (spawnMode === 'headless' && params.kind === 'quick' && provider.buildHeadlessCommand) {
-    const headlessResult = await provider.buildHeadlessCommand({
-      cwd: params.cwd,
-      model: params.model,
-      mission: params.mission,
-      systemPrompt: params.systemPrompt,
-      allowedTools,
-      agentId: params.agentId,
-      noSessionPersistence: true,
-      freeAgentMode: params.freeAgentMode,
-    });
-
-    if (headlessResult) {
-      headlessAgentSet.add(params.agentId);
-      const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
-      headlessManager.spawnHeadless(
-        params.agentId,
-        params.cwd,
-        headlessResult.binary,
-        headlessResult.args,
-        spawnEnv,
-        headlessResult.outputKind || 'stream-json',
-        (exitAgentId) => {
-          configPipeline.restoreForAgent(exitAgentId);
+    // Try structured path when enabled and provider supports it
+    const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
+    if (spawnMode === 'structured' && params.kind === 'quick' && provider.createStructuredAdapter) {
+      const adapter = provider.createStructuredAdapter();
+      structuredAgentSet.add(params.agentId);
+      try {
+        await structuredManager.startStructuredSession(params.agentId, adapter, {
+          mission: params.mission || '',
+          systemPrompt: params.systemPrompt,
+          model: params.model,
+          cwd: params.cwd,
+          env: profileEnv,
+          allowedTools,
+          freeAgentMode: params.freeAgentMode,
+          commandPrefix,
+        }, (exitAgentId) => {
           untrackAgent(exitAgentId);
-        },
-        commandPrefix,
-      );
-      return;
+        });
+        return;
+      } catch (err) {
+        structuredAgentSet.delete(params.agentId);
+        throw err;
+      }
     }
-  }
 
-  // Fall back to PTY mode
-  await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix);
+    // Try headless path for quick agents when enabled
+    if (spawnMode === 'headless' && params.kind === 'quick' && provider.buildHeadlessCommand) {
+      const headlessResult = await provider.buildHeadlessCommand({
+        cwd: params.cwd,
+        model: params.model,
+        mission: params.mission,
+        systemPrompt: params.systemPrompt,
+        allowedTools,
+        agentId: params.agentId,
+        noSessionPersistence: true,
+        freeAgentMode: params.freeAgentMode,
+      });
+
+      if (headlessResult) {
+        headlessAgentSet.add(params.agentId);
+        const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
+        try {
+          headlessManager.spawnHeadless(
+            params.agentId,
+            params.cwd,
+            headlessResult.binary,
+            headlessResult.args,
+            spawnEnv,
+            headlessResult.outputKind || 'stream-json',
+            (exitAgentId) => {
+              configPipeline.restoreForAgent(exitAgentId);
+              untrackAgent(exitAgentId);
+            },
+            commandPrefix,
+          );
+          return;
+        } catch (err) {
+          headlessAgentSet.delete(params.agentId);
+          throw err;
+        }
+      }
+    }
+
+    // Fall back to PTY mode
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix);
+  } catch (err) {
+    untrackAgent(params.agentId);
+    throw err;
+  }
 }
 
 async function spawnPtyAgent(
