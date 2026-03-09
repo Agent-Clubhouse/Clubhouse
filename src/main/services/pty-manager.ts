@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
@@ -21,6 +23,65 @@ interface ManagedSession {
 }
 
 const MAX_BUFFER_SIZE = 512 * 1024; // 512KB per agent
+
+/**
+ * Sensitive directory prefixes that should never be used as a PTY cwd.
+ * Checked against the resolved real path (symlinks and ".." already resolved).
+ */
+const SENSITIVE_PREFIXES_UNIX = [
+  '/etc',
+  '/sbin',
+  '/usr/sbin',
+  '/var/root',
+  '/private/etc',
+  '/private/var',
+  '/System',
+  '/Library',
+];
+const SENSITIVE_PREFIXES_WIN = [
+  'C:\\Windows',
+  'C:\\WINDOWS',
+];
+
+/**
+ * Validate that a directory path is safe to use as a PTY working directory.
+ * Throws if the path is relative, does not exist, is not a directory,
+ * or resolves to a sensitive system location.
+ */
+export function validateSpawnCwd(cwd: string): string {
+  if (!path.isAbsolute(cwd)) {
+    throw new Error(`PTY cwd must be an absolute path, received: ${cwd}`);
+  }
+
+  let realCwd: string;
+  try {
+    realCwd = fs.realpathSync(cwd);
+  } catch {
+    throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
+  }
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(realCwd);
+  } catch {
+    throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
+  }
+
+  if (!stat.isDirectory()) {
+    throw new Error(`PTY cwd is not a directory: ${cwd}`);
+  }
+
+  const prefixes = process.platform === 'win32' ? SENSITIVE_PREFIXES_WIN : SENSITIVE_PREFIXES_UNIX;
+  const normalizedCwd = realCwd.toLowerCase();
+  for (const prefix of prefixes) {
+    const normalizedPrefix = prefix.toLowerCase();
+    if (normalizedCwd === normalizedPrefix || normalizedCwd.startsWith(normalizedPrefix + path.sep)) {
+      throw new Error(`PTY cwd points to a restricted system directory: ${cwd}`);
+    }
+  }
+
+  return realCwd;
+}
 
 /**
  * Quote a single argument for use in a Windows cmd.exe command line.
@@ -120,6 +181,8 @@ function cleanupSession(agentId: string): void {
 }
 
 export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): void {
+  validateSpawnCwd(cwd);
+
   if (sessions.has(agentId)) {
     const existing = sessions.get(agentId)!;
     try { existing.process.kill(); } catch {}
@@ -222,6 +285,8 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 }
 
 export function spawnShell(id: string, projectPath: string): void {
+  validateSpawnCwd(projectPath);
+
   if (sessions.has(id)) {
     const existing = sessions.get(id)!;
     try { existing.process.kill(); } catch {}
