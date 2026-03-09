@@ -143,6 +143,26 @@ describe('marketplace-service', () => {
       await expect(fetchRegistry()).rejects.toThrow('Failed to fetch registry');
     });
 
+    it('passes AbortSignal.timeout to fetch calls', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleFeatured,
+        });
+
+      await fetchRegistry();
+
+      // Both fetch calls should include a signal option
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
     it('returns null featured when featured.json fetch fails', async () => {
       mockFetch
         .mockResolvedValueOnce({
@@ -200,6 +220,30 @@ describe('marketplace-service', () => {
 
       expect(result.registry.plugins).toHaveLength(1);
       expect(result.registry.plugins[0].id).toBe('custom-plugin');
+    });
+
+    it('passes AbortSignal.timeout to custom registry fetch calls', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => sampleCustomRegistry,
+        })
+        .mockResolvedValueOnce({
+          ok: false, // featured not available
+        });
+
+      await fetchCustomRegistry({
+        id: 'cm-1',
+        name: 'My Store',
+        url: 'https://internal.example.com/registry/registry.json',
+        enabled: true,
+      });
+
+      // Both fetch calls should include a signal option
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
 
     it('throws on failed custom registry fetch', async () => {
@@ -357,6 +401,26 @@ describe('marketplace-service', () => {
   });
 
   describe('installPlugin', () => {
+    it('passes AbortSignal.timeout to plugin download fetch', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+      });
+
+      await installPlugin({
+        pluginId: 'test-plugin',
+        version: '1.0.0',
+        assetUrl: 'https://example.com/test.zip',
+        sha256: 'abc123',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://example.com/test.zip',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
     it('returns error on download failure', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

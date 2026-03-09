@@ -223,6 +223,7 @@ describe('agent-handlers', () => {
     const handler = handlers.get(IPC.AGENT.DELETE_SAVE_PATCH)!;
     const result = await handler({}, '/project', 'agent-1');
     expect(result).toEqual({ ok: false, message: 'cancelled' });
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
   });
 
   it('DELETE_SAVE_PATCH returns cancelled when dialog is canceled', async () => {
