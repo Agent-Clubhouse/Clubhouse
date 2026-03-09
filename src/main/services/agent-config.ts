@@ -488,9 +488,9 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
     execGitAsync('git remote', wt).catch(() => ''),
   ]);
 
-  // Parse uncommitted files
-  const uncommittedFiles = statusResult.trim()
-    ? statusResult.trim().split('\n').filter(Boolean).map(parseStatusLine)
+  // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
+  const uncommittedFiles = statusResult.trimEnd()
+    ? statusResult.trimEnd().split('\n').filter(Boolean).map(parseStatusLine)
     : [];
 
   // Get unpushed commits (depends on base branch result)
