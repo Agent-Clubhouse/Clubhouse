@@ -16,7 +16,7 @@ function extractIgnores(source: string): string[] {
 }
 
 describe('eslint ignores configuration', () => {
-  const configPath = path.resolve(__dirname, '../eslint.config.mjs');
+  const configPath = path.resolve(__dirname, '../../eslint.config.mjs');
   const source = fs.readFileSync(configPath, 'utf-8');
   const ignores = extractIgnores(source);
 
