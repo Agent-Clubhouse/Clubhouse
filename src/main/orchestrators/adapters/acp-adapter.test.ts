@@ -10,6 +10,7 @@ vi.mock('./acp-client', () => ({
 // Mock shell environment
 vi.mock('../../util/shell', () => ({
   getShellEnvironment: vi.fn().mockReturnValue({ PATH: '/usr/bin', HOME: '/home/test' }),
+  cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
 }));
 
 import { AcpClient } from './acp-client';

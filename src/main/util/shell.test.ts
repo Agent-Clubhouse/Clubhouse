@@ -5,7 +5,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv } from './shell';
 import { execSync, execFile } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -104,6 +104,30 @@ describe('getDefaultShell', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     delete process.env.COMSPEC;
     expect(getDefaultShell()).toBe('cmd.exe');
+  });
+});
+
+describe('cleanSpawnEnv', () => {
+  it('removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT', () => {
+    const env: Record<string, string> = {
+      PATH: '/usr/bin',
+      CLAUDECODE: '1',
+      CLAUDE_CODE_ENTRYPOINT: 'cli',
+      HOME: '/home/user',
+    };
+    const result = cleanSpawnEnv(env);
+    expect(result).toBe(env); // same reference (mutates in place)
+    expect(result.CLAUDECODE).toBeUndefined();
+    expect(result.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+    expect(result.PATH).toBe('/usr/bin');
+    expect(result.HOME).toBe('/home/user');
+  });
+
+  it('is a no-op when keys are not present', () => {
+    const env: Record<string, string> = { PATH: '/usr/bin' };
+    const result = cleanSpawnEnv(env);
+    expect(result).toBe(env);
+    expect(result.PATH).toBe('/usr/bin');
   });
 });
 

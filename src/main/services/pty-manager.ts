@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
-import { getShellEnvironment, getDefaultShell } from '../util/shell';
+import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -128,12 +128,11 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
   const isWin = process.platform === 'win32';
 
-  const spawnEnv = extraEnv
-    ? { ...getShellEnvironment(), ...extraEnv }
-    : { ...getShellEnvironment() };
-  // Remove markers that prevent nested Claude Code sessions
-  delete spawnEnv.CLAUDECODE;
-  delete spawnEnv.CLAUDE_CODE_ENTRYPOINT;
+  const spawnEnv = cleanSpawnEnv(
+    extraEnv
+      ? { ...getShellEnvironment(), ...extraEnv }
+      : { ...getShellEnvironment() },
+  );
 
   let proc: pty.IPty;
   let pendingCommand: string | undefined;
