@@ -190,3 +190,95 @@ describe('AgentList completed selector stability', () => {
     expect(screen.getByText('Completed (0)')).toBeInTheDocument();
   });
 });
+
+describe('AgentList onData throttle', () => {
+  let onDataCallback: (agentId: string) => void;
+  let recordActivitySpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetStores();
+
+    recordActivitySpy = vi.fn();
+    useAgentStore.setState({ recordActivity: recordActivitySpy });
+
+    // Capture the onData callback when the component registers it
+    window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: (agentId: string) => void) => {
+      onDataCallback = cb;
+      return () => {};
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fires recordActivity immediately on first onData call', () => {
+    render(<AgentList />);
+    act(() => { onDataCallback('agent-1'); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+    expect(recordActivitySpy).toHaveBeenCalledWith('agent-1');
+  });
+
+  it('throttles rapid onData calls to at most one per 150ms', () => {
+    render(<AgentList />);
+
+    // First call goes through immediately
+    act(() => { onDataCallback('agent-1'); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+
+    // Rapid subsequent calls within the throttle window should not fire immediately
+    act(() => {
+      onDataCallback('agent-1');
+      onDataCallback('agent-1');
+      onDataCallback('agent-1');
+    });
+    // Only 1 call so far (the initial one) + 1 trailing timer scheduled
+    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+
+    // After the throttle interval, the trailing call fires
+    act(() => { vi.advanceTimersByTime(150); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('throttles independently per agent', () => {
+    render(<AgentList />);
+
+    // Both agents fire immediately on first call
+    act(() => { onDataCallback('agent-1'); });
+    act(() => { onDataCallback('agent-2'); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
+    expect(recordActivitySpy).toHaveBeenCalledWith('agent-1');
+    expect(recordActivitySpy).toHaveBeenCalledWith('agent-2');
+
+    // Rapid calls for agent-1 only — agent-2 is not affected
+    act(() => {
+      onDataCallback('agent-1');
+      onDataCallback('agent-1');
+    });
+    // Still 2 from above — agent-1's rapid calls are throttled
+    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
+
+    // agent-2 can still fire after its own throttle window passes
+    act(() => { vi.advanceTimersByTime(150); });
+    // Now agent-1's trailing call fires
+    expect(recordActivitySpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('cleans up pending timers on unmount', () => {
+    const { unmount } = render(<AgentList />);
+
+    // Fire initial + schedule a trailing call
+    act(() => { onDataCallback('agent-1'); });
+    act(() => { onDataCallback('agent-1'); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+
+    // Unmount before the trailing timer fires
+    unmount();
+
+    // Advance timers — the trailing call should NOT fire
+    act(() => { vi.advanceTimersByTime(300); });
+    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+  });
+});

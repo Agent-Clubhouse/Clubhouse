@@ -80,12 +80,34 @@ export function AgentList() {
     }
   }, [activeProject, loadDurableAgents]);
 
-  // Track activity from pty data
+  // Track activity from pty data (throttled per agent to avoid excessive store updates)
+  const lastActivityRef = useRef<Record<string, number>>({});
   useEffect(() => {
+    const THROTTLE_MS = 150;
+    const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
     const unsub = window.clubhouse.pty.onData((agentId: string) => {
-      recordActivity(agentId);
+      const now = Date.now();
+      const last = lastActivityRef.current[agentId] ?? 0;
+      if (now - last >= THROTTLE_MS) {
+        lastActivityRef.current[agentId] = now;
+        recordActivity(agentId);
+      } else if (!pendingTimers.has(agentId)) {
+        // Schedule a trailing call so we don't miss the last burst of activity
+        const delay = THROTTLE_MS - (now - last);
+        pendingTimers.set(agentId, setTimeout(() => {
+          lastActivityRef.current[agentId] = Date.now();
+          recordActivity(agentId);
+          pendingTimers.delete(agentId);
+        }, delay));
+      }
     });
-    return unsub;
+
+    return () => {
+      unsub();
+      for (const timer of pendingTimers.values()) clearTimeout(timer);
+      pendingTimers.clear();
+    };
   }, [recordActivity]);
 
   // Tick for activity status refresh
