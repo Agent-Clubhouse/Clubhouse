@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { AgentAvatar, AgentAvatarWithRing, STATUS_RING_COLOR } from './AgentAvatar';
+import { AgentAvatar, AgentAvatarWithRing } from './AgentAvatar';
 import { useAgentStore } from '../../stores/agentStore';
 import type { Agent } from '../../../shared/types';
 
