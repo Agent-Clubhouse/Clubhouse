@@ -21,11 +21,16 @@ vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('../services/path-sandbox', () => ({
+  assertAllowedPath: vi.fn(),
+}));
+
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerFileHandlers } from './file-handlers';
 import * as fileService from '../services/file-service';
 import { appLog } from '../services/log-service';
+import { assertAllowedPath } from '../services/path-sandbox';
 
 describe('file-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -186,5 +191,113 @@ describe('file-handlers', () => {
     await expect(handler({}, '/some/file.ts')).rejects.toThrow(
       'Failed to read file "/some/file.ts": UNKNOWN - unexpected',
     );
+  });
+
+  describe('path sandboxing', () => {
+    it('validates path for single-path handlers', async () => {
+      const singlePathHandlers: Array<{ channel: string; args: unknown[] }> = [
+        { channel: IPC.FILE.READ, args: ['/project/file.ts'] },
+        { channel: IPC.FILE.WRITE, args: ['/project/file.ts', 'content'] },
+        { channel: IPC.FILE.READ_BINARY, args: ['/project/image.png'] },
+        { channel: IPC.FILE.SHOW_IN_FOLDER, args: ['/project/file.ts'] },
+        { channel: IPC.FILE.MKDIR, args: ['/project/dir'] },
+        { channel: IPC.FILE.DELETE, args: ['/project/file.ts'] },
+        { channel: IPC.FILE.STAT, args: ['/project/file.ts'] },
+      ];
+
+      for (const { channel, args } of singlePathHandlers) {
+        vi.clearAllMocks();
+        const handler = handlers.get(channel)!;
+        await handler({}, ...args);
+        expect(assertAllowedPath).toHaveBeenCalledWith(args[0]);
+      }
+    });
+
+    it('validates path for READ_TREE', async () => {
+      const handler = handlers.get(IPC.FILE.READ_TREE)!;
+      const sender = { once: vi.fn(), off: vi.fn() };
+      await handler({ sender }, '/project', {});
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project');
+    });
+
+    it('validates both paths for RENAME', async () => {
+      const handler = handlers.get(IPC.FILE.RENAME)!;
+      await handler({}, '/project/old.ts', '/project/new.ts');
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/old.ts');
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/new.ts');
+    });
+
+    it('validates both paths for COPY', async () => {
+      const handler = handlers.get(IPC.FILE.COPY)!;
+      await handler({}, '/project/src.ts', '/project/dest.ts');
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/src.ts');
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project/dest.ts');
+    });
+
+    it('validates rootPath for SEARCH', async () => {
+      const handler = handlers.get(IPC.FILE.SEARCH)!;
+      await handler({}, '/project', 'query', {});
+      expect(assertAllowedPath).toHaveBeenCalledWith('/project');
+    });
+
+    it('blocks file operations when path is outside sandbox', async () => {
+      vi.mocked(assertAllowedPath).mockImplementation((p: string) => {
+        if (p === '/etc/passwd') {
+          throw new Error('Access denied: path "/etc/passwd" is outside allowed project directories');
+        }
+      });
+
+      const handler = handlers.get(IPC.FILE.READ)!;
+      await expect(handler({}, '/etc/passwd')).rejects.toThrow('Access denied');
+      expect(fileService.readFile).not.toHaveBeenCalled();
+    });
+
+    it('blocks write operations when path is outside sandbox', async () => {
+      vi.mocked(assertAllowedPath).mockImplementation((p: string) => {
+        if (p === '/etc/shadow') {
+          throw new Error('Access denied: path "/etc/shadow" is outside allowed project directories');
+        }
+      });
+
+      const handler = handlers.get(IPC.FILE.WRITE)!;
+      await expect(handler({}, '/etc/shadow', 'malicious')).rejects.toThrow('Access denied');
+      expect(fileService.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('blocks delete operations when path is outside sandbox', async () => {
+      vi.mocked(assertAllowedPath).mockImplementation((p: string) => {
+        if (p === '/Users/victim/.ssh/id_rsa') {
+          throw new Error('Access denied');
+        }
+      });
+
+      const handler = handlers.get(IPC.FILE.DELETE)!;
+      await expect(handler({}, '/Users/victim/.ssh/id_rsa')).rejects.toThrow('Access denied');
+      expect(fileService.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('blocks rename when destination is outside sandbox', async () => {
+      vi.mocked(assertAllowedPath).mockImplementation((p: string) => {
+        if (p === '/tmp/exfiltrated') {
+          throw new Error('Access denied');
+        }
+      });
+
+      const handler = handlers.get(IPC.FILE.RENAME)!;
+      await expect(handler({}, '/project/file.ts', '/tmp/exfiltrated')).rejects.toThrow('Access denied');
+      expect(fileService.rename).not.toHaveBeenCalled();
+    });
+
+    it('blocks copy when source is outside sandbox', async () => {
+      vi.mocked(assertAllowedPath).mockImplementation((p: string) => {
+        if (p === '/etc/passwd') {
+          throw new Error('Access denied');
+        }
+      });
+
+      const handler = handlers.get(IPC.FILE.COPY)!;
+      await expect(handler({}, '/etc/passwd', '/project/stolen.txt')).rejects.toThrow('Access denied');
+      expect(fileService.copy).not.toHaveBeenCalled();
+    });
   });
 });

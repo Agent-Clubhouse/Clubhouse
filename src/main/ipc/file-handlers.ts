@@ -4,6 +4,7 @@ import * as fileService from '../services/file-service';
 import * as searchService from '../services/search-service';
 import { startWatch, stopWatch } from '../services/file-watch-service';
 import { appLog } from '../services/log-service';
+import { assertAllowedPath } from '../services/path-sandbox';
 import type { FileSearchOptions } from '../../shared/types';
 import { booleanArg, numberArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
@@ -20,6 +21,7 @@ export function registerFileHandlers(): void {
       }),
     ],
     async (event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
+    assertAllowedPath(dirPath);
     const controller = new AbortController();
     const abort = () => controller.abort();
     event.sender.once('destroyed', abort);
@@ -32,6 +34,7 @@ export function registerFileHandlers(): void {
   ));
 
   ipcMain.handle(IPC.FILE.READ, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    assertAllowedPath(filePath);
     try {
       return await fileService.readFile(filePath);
     } catch (err) {
@@ -45,34 +48,44 @@ export function registerFileHandlers(): void {
   }));
 
   ipcMain.handle(IPC.FILE.WRITE, withValidatedArgs([stringArg(), stringArg({ minLength: 0 })], async (_event, filePath: string, content: string) => {
+    assertAllowedPath(filePath);
     await fileService.writeFile(filePath, content);
   }));
 
   ipcMain.handle(IPC.FILE.READ_BINARY, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    assertAllowedPath(filePath);
     return fileService.readBinary(filePath);
   }));
 
   ipcMain.handle(IPC.FILE.SHOW_IN_FOLDER, withValidatedArgs([stringArg()], (_event, filePath: string) => {
+    assertAllowedPath(filePath);
     shell.showItemInFolder(filePath);
   }));
 
   ipcMain.handle(IPC.FILE.MKDIR, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    assertAllowedPath(dirPath);
     await fileService.mkdir(dirPath);
   }));
 
   ipcMain.handle(IPC.FILE.DELETE, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    assertAllowedPath(filePath);
     await fileService.deleteFile(filePath);
   }));
 
   ipcMain.handle(IPC.FILE.RENAME, withValidatedArgs([stringArg(), stringArg()], async (_event, oldPath: string, newPath: string) => {
+    assertAllowedPath(oldPath);
+    assertAllowedPath(newPath);
     await fileService.rename(oldPath, newPath);
   }));
 
   ipcMain.handle(IPC.FILE.COPY, withValidatedArgs([stringArg(), stringArg()], async (_event, src: string, dest: string) => {
+    assertAllowedPath(src);
+    assertAllowedPath(dest);
     await fileService.copy(src, dest);
   }));
 
   ipcMain.handle(IPC.FILE.STAT, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    assertAllowedPath(filePath);
     return fileService.stat(filePath);
   }));
 
@@ -89,6 +102,7 @@ export function registerFileHandlers(): void {
     stringArg({ minLength: 0 }),
     objectArg<FileSearchOptions>({ optional: true }),
   ], async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
+    assertAllowedPath(rootPath);
     return searchService.searchFiles(rootPath, query, options);
   }));
 }
