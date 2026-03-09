@@ -568,7 +568,7 @@ describe('project-handlers', () => {
   it('RESET_PROJECT logs non-Error thrown values as strings', async () => {
     vi.mocked(fs.existsSync).mockReturnValueOnce(true);
     vi.mocked(fs.rmSync).mockImplementationOnce(() => {
-      throw 'string-error'; // eslint-disable-line no-throw-literal
+      throw 'string-error';
     });
 
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
