@@ -1477,6 +1477,12 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      // Enable structuredMode so isStructuredCapable returns true for spawn
+      const origCaps = mockProvider.getCapabilities;
+      mockProvider.getCapabilities = vi.fn(() => ({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      }));
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -1497,6 +1503,7 @@ describe('agent-system', () => {
 
       // Clean up
       delete (mockProvider as any).createStructuredAdapter;
+      mockProvider.getCapabilities = origCaps;
     });
 
     it('structured branch takes priority over headless when both match', async () => {
