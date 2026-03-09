@@ -71,6 +71,9 @@ describe.skipIf(process.platform !== 'darwin')('macOS update script execution (i
   it('quit script extracts zip, replaces the app bundle and cleans up all temp files', async () => {
     const env = await createMacTestEnv();
 
+    // Remove the fake download placeholder so `zip` can create a fresh archive
+    await fsp.rm(env.downloadPath, { force: true });
+
     // Create a real zip containing the mock "new" app bundle
     const { execSync } = await import('child_process');
     execSync(`cd "${env.tmpExtract}" && zip -r -q "${env.downloadPath}" Test.app`);
@@ -128,6 +131,9 @@ describe.skipIf(process.platform !== 'darwin')('macOS update script execution (i
 
   it('script does not exit prematurely if the old app bundle is missing', async () => {
     const env = await createMacTestEnv();
+
+    // Remove the fake download placeholder so `zip` can create a fresh archive
+    await fsp.rm(env.downloadPath, { force: true });
 
     // Create a real zip containing the mock "new" app bundle
     const { execSync } = await import('child_process');
