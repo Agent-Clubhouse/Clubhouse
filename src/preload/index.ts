@@ -147,8 +147,17 @@ const api = {
       toolVerb?: string;
       timestamp: number;
     }) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEvent: AgentHookEvent) =>
-        callback(agentId, hookEvent);
+      // Hook events may arrive as a single event or as a batched array
+      // (the broadcast policy merges events within a 50ms window).
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string, hookEventOrBatch: AgentHookEvent | AgentHookEvent[]) => {
+        if (Array.isArray(hookEventOrBatch)) {
+          for (const ev of hookEventOrBatch) {
+            callback(agentId, ev);
+          }
+        } else {
+          callback(agentId, hookEventOrBatch);
+        }
+      };
       ipcRenderer.on(IPC.AGENT.HOOK_EVENT, listener);
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
     },

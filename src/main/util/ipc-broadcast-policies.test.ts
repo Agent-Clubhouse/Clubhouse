@@ -57,7 +57,7 @@ describe('registerDefaultBroadcastPolicies', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('pty:data', 'agent-1', 'hello world');
   });
 
-  it('throttles agent:hook-event with queue (preserves all events)', () => {
+  it('throttles agent:hook-event with merge (batches events into array)', () => {
     const win = createMockWindow();
     mockGetAllWindows.mockReturnValue([win]);
 
@@ -71,9 +71,24 @@ describe('registerDefaultBroadcastPolicies', () => {
 
     vi.advanceTimersByTime(50);
 
-    expect(win.webContents.send).toHaveBeenCalledTimes(2);
-    expect(win.webContents.send).toHaveBeenNthCalledWith(1, 'agent:hook-event', 'agent-1', ev1);
-    expect(win.webContents.send).toHaveBeenNthCalledWith(2, 'agent:hook-event', 'agent-1', ev2);
+    // Single IPC message with batched array instead of 2 separate calls
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).toHaveBeenCalledWith('agent:hook-event', 'agent-1', [ev1, ev2]);
+  });
+
+  it('sends a single hook event unwrapped when only one arrives in the window', () => {
+    const win = createMockWindow();
+    mockGetAllWindows.mockReturnValue([win]);
+
+    const ev1 = { kind: 'pre_tool', toolName: 'Read', timestamp: 1 };
+
+    broadcastToAllWindows('agent:hook-event', 'agent-1', ev1);
+
+    vi.advanceTimersByTime(50);
+
+    // Single event is sent as-is (no array wrapping) for backwards compatibility
+    expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    expect(win.webContents.send).toHaveBeenCalledWith('agent:hook-event', 'agent-1', ev1);
   });
 
   it('does not throttle unregistered channels', () => {
