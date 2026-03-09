@@ -276,16 +276,17 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
   }
 
   /**
-   * List available CLI sessions by scanning Claude Code's project session storage.
+   * Resolve the Claude Code project directory for a given working directory.
    *
    * Claude Code stores sessions under ~/.claude/projects/<encoded-path>/.
-   * The encoded path replaces path separators with dashes.
+   * The encoded path replaces path separators with dashes. This method
+   * handles the ambiguity of whether the leading dash is present.
    */
-  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+  private resolveProjectDir(cwd: string, profileEnv?: Record<string, string>): string | null {
     const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
     const projectsDir = path.join(configDir, 'projects');
 
-    if (!fs.existsSync(projectsDir)) return [];
+    if (!fs.existsSync(projectsDir)) return null;
 
     // Claude Code encodes project path by replacing separators with dashes
     const absCwd = path.resolve(cwd);
@@ -294,14 +295,21 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     // Try candidate directory names (with and without leading dash)
     const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
 
-    let projectDir: string | null = null;
     for (const candidate of candidates) {
       const dir = path.join(projectsDir, candidate);
       if (fs.existsSync(dir)) {
-        projectDir = dir;
-        break;
+        return dir;
       }
     }
+
+    return null;
+  }
+
+  /**
+   * List available CLI sessions by scanning Claude Code's project session storage.
+   */
+  async listSessions(cwd: string, profileEnv?: Record<string, string>): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string }>> {
+    const projectDir = this.resolveProjectDir(cwd, profileEnv);
 
     if (!projectDir) return [];
 
@@ -361,23 +369,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider {
     cwd: string,
     profileEnv?: Record<string, string>,
   ): Promise<import('../services/jsonl-parser').StreamJsonEvent[] | null> {
-    const configDir = profileEnv?.CLAUDE_CONFIG_DIR || homePath('.claude');
-    const projectsDir = path.join(configDir, 'projects');
-
-    if (!fs.existsSync(projectsDir)) return null;
-
-    const absCwd = path.resolve(cwd);
-    const encodedPath = absCwd.replace(/[/\\]/g, '-');
-    const candidates = [encodedPath, encodedPath.replace(/^-/, '')];
-
-    let projectDir: string | null = null;
-    for (const candidate of candidates) {
-      const dir = path.join(projectsDir, candidate);
-      if (fs.existsSync(dir)) {
-        projectDir = dir;
-        break;
-      }
-    }
+    const projectDir = this.resolveProjectDir(cwd, profileEnv);
 
     if (!projectDir) return null;
 

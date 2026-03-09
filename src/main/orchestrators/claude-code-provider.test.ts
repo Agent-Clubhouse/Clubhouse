@@ -424,6 +424,125 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('resolveProjectDir (via listSessions and readSessionTranscript)', () => {
+    const projectsDir = path.join(path.resolve(require('os').homedir()), '.claude', 'projects');
+
+    it('listSessions returns empty when projects dir does not exist', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (isClaudePath(p as string)) return true;
+        return false;
+      });
+
+      const result = await provider.listSessions('/my/project');
+      expect(result).toEqual([]);
+    });
+
+    it('readSessionTranscript returns null when projects dir does not exist', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (isClaudePath(p as string)) return true;
+        return false;
+      });
+
+      const result = await provider.readSessionTranscript('some-id', '/my/project');
+      expect(result).toBeNull();
+    });
+
+    it('resolves project dir with leading dash', async () => {
+      const encodedWithDash = '-my-project';
+      const projectDir = path.join(projectsDir, encodedWithDash);
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        return false;
+      });
+
+      // readSessionTranscript returns null because no JSONL file, but
+      // it wouldn't get that far if resolveProjectDir failed
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
+      // Verifies that existsSync was called with the encoded path
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDir);
+    });
+
+    it('resolves project dir without leading dash when with-dash does not exist', async () => {
+      const encodedWithDash = '-my-project';
+      const encodedWithoutDash = 'my-project';
+      const projectDirWithDash = path.join(projectsDir, encodedWithDash);
+      const projectDirWithoutDash = path.join(projectsDir, encodedWithoutDash);
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        // The with-dash variant does NOT exist
+        if (s === projectDirWithDash) return false;
+        // The without-dash variant DOES exist
+        if (s === projectDirWithoutDash) return true;
+        return false;
+      });
+
+      const result = await provider.readSessionTranscript('test-session', '/my/project');
+      // Should have tried both candidates
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithDash);
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithoutDash);
+    });
+
+    it('uses CLAUDE_CONFIG_DIR from profileEnv when provided', async () => {
+      const customConfigDir = '/custom/config';
+      const customProjectsDir = path.join(customConfigDir, 'projects');
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === customProjectsDir) return true;
+        return false;
+      });
+
+      await provider.listSessions('/my/project', { CLAUDE_CONFIG_DIR: customConfigDir });
+      expect(fs.existsSync).toHaveBeenCalledWith(customProjectsDir);
+    });
+
+    it('returns empty/null when no matching project dir exists', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        // No project directories match
+        return false;
+      });
+
+      const sessions = await provider.listSessions('/my/project');
+      expect(sessions).toEqual([]);
+
+      const transcript = await provider.readSessionTranscript('id', '/my/project');
+      expect(transcript).toBeNull();
+    });
+
+    it('both methods resolve the same project dir for the same cwd', async () => {
+      const encodedWithDash = '-my-project';
+      const projectDir = path.join(projectsDir, encodedWithDash);
+      const existsSyncCalls: string[] = [];
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        existsSyncCalls.push(s);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        return false;
+      });
+
+      await provider.listSessions('/my/project');
+      await provider.readSessionTranscript('id', '/my/project');
+
+      // Both methods should have checked the same project directory path
+      const projectDirChecks = existsSyncCalls.filter(c => c === projectDir);
+      expect(projectDirChecks.length).toBe(2);
+    });
+  });
+
   describe('extractSessionId', () => {
     it('extracts UUID from "session: <uuid>" pattern', () => {
       const buffer = 'some output\nsession: a1b2c3d4-e5f6-7890-abcd-ef1234567890\nmore output';
