@@ -17,6 +17,7 @@ vi.stubGlobal('window', {
       deleteForce: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: '' }),
       reorderDurable: vi.fn().mockResolvedValue(undefined),
+      readIcon: vi.fn().mockResolvedValue(null),
       getDurableConfig: vi.fn().mockResolvedValue(null),
       spawnAgent: vi.fn().mockResolvedValue(undefined),
       killAgent: vi.fn().mockResolvedValue(undefined),
@@ -67,6 +68,7 @@ describe('agentStore', () => {
       agentSpawnedAt: {},
       agentDetailedStatus: {},
       projectActiveAgent: {},
+      agentIcons: {},
     });
   });
 
@@ -881,6 +883,30 @@ describe('agentStore', () => {
 
       await getState().loadDurableAgents('proj_1', '/project');
       expect(getState().agents['durable_nomodel'].model).toBeUndefined();
+    });
+
+    it('loads icons in parallel via Promise.all', async () => {
+      const mockAgent = window.clubhouse.agent as any;
+      mockAgent.listDurable.mockResolvedValue([
+        { id: 'icon_a', name: 'agent-a', color: 'indigo', icon: 'icon_a.png', createdAt: '2024-01-01' },
+        { id: 'icon_b', name: 'agent-b', color: 'emerald', icon: 'icon_b.png', createdAt: '2024-01-01' },
+        { id: 'no_icon', name: 'agent-c', color: 'amber', createdAt: '2024-01-01' },
+      ]);
+      mockAgent.readIcon.mockImplementation((iconPath: string) => {
+        if (iconPath === 'icon_a.png') return Promise.resolve('data:image/png;base64,aaaa');
+        if (iconPath === 'icon_b.png') return Promise.resolve('data:image/png;base64,bbbb');
+        return Promise.resolve(null);
+      });
+
+      await getState().loadDurableAgents('proj_1', '/project');
+
+      // Both icons should be loaded
+      expect(getState().agentIcons['icon_a']).toBe('data:image/png;base64,aaaa');
+      expect(getState().agentIcons['icon_b']).toBe('data:image/png;base64,bbbb');
+      // Agent without icon should not have an entry
+      expect(getState().agentIcons['no_icon']).toBeUndefined();
+      // readIcon should have been called exactly twice (not for no_icon)
+      expect(mockAgent.readIcon).toHaveBeenCalledTimes(2);
     });
 
     it('updates projectId when same agent is loaded under a different project', async () => {

@@ -376,12 +376,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     set({ agents });
 
-    // Load icons for agents that have them
-    for (const config of configs) {
-      if (config.icon && agents[config.id]) {
-        get().loadAgentIcon(agents[config.id]);
-      }
-    }
+    // Load icons for agents that have them (in parallel)
+    await Promise.all(
+      configs
+        .filter((config) => config.icon && agents[config.id])
+        .map((config) => get().loadAgentIcon(agents[config.id])),
+    );
   },
 
   renameAgent: async (id, newName, projectPath) => {
