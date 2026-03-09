@@ -1178,6 +1178,98 @@ describe('headless-manager', () => {
   });
 
   // ============================================================
+  // close/error handler race condition (CQ-2)
+  // ============================================================
+  describe('close/error handler — session replacement guard', () => {
+    it('old process close handler does not delete replacement session', () => {
+      // Spawn first session
+      const proc1 = createMockProcess();
+      mockProcess = proc1;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Spawn replacement — this kills the old process and creates new session
+      const proc2 = createMockProcess();
+      mockProcess = proc2;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Old process close handler fires AFTER replacement is stored
+      proc1.emit('close', 0);
+
+      // The replacement session MUST still exist
+      expect(isHeadless('test-agent')).toBe(true);
+    });
+
+    it('old process close handler does not broadcast PTY.EXIT for replaced session', () => {
+      const proc1 = createMockProcess();
+      mockProcess = proc1;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+
+      const proc2 = createMockProcess();
+      mockProcess = proc2;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+
+      mockSend.mockClear();
+      mockEmitPtyExit.mockClear();
+
+      // Old process closes after replacement
+      proc1.emit('close', 0);
+
+      // No exit broadcast should have been sent
+      const exitCalls = mockSend.mock.calls.filter(
+        (call) => call[0] === IPC.PTY.EXIT
+      );
+      expect(exitCalls).toHaveLength(0);
+      expect(mockEmitPtyExit).not.toHaveBeenCalled();
+    });
+
+    it('old process close handler does not call onExit for replaced session', () => {
+      const onExit = vi.fn();
+      const proc1 = createMockProcess();
+      mockProcess = proc1;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+
+      const proc2 = createMockProcess();
+      mockProcess = proc2;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2'], {}, 'stream-json', onExit);
+
+      // Old process closes after replacement
+      proc1.emit('close', 0);
+
+      // onExit should NOT have been called for the replaced session
+      expect(onExit).not.toHaveBeenCalled();
+    });
+
+    it('old process error handler does not delete replacement session', () => {
+      const proc1 = createMockProcess();
+      mockProcess = proc1;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+
+      const proc2 = createMockProcess();
+      mockProcess = proc2;
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+
+      // Old process error fires after replacement
+      proc1.emit('error', new Error('spawn failed'));
+
+      // The replacement session MUST still exist
+      expect(isHeadless('test-agent')).toBe(true);
+    });
+
+    it('current session close handler still cleans up normally', () => {
+      const onExit = vi.fn();
+      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      mockProcess.emit('close', 0);
+
+      expect(isHeadless('test-agent')).toBe(false);
+      expect(onExit).toHaveBeenCalledWith('test-agent', 0);
+    });
+  });
+
+  // ============================================================
   // Stale session sweep (Issue #326)
   // ============================================================
   describe('stale session sweep', () => {

@@ -15,7 +15,7 @@ import { appLog } from '../services/log-service';
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
 
 export function registerAgentHandlers(): void {
-  ipcMain.handle(IPC.AGENT.LIST_DURABLE, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_DURABLE, async (_event, projectPath: string) => {
     return agentConfig.listDurable(projectPath);
   });
 
@@ -26,17 +26,17 @@ export function registerAgentHandlers(): void {
     }
   );
 
-  ipcMain.handle(IPC.AGENT.DELETE_DURABLE, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.DELETE_DURABLE, async (_event, projectPath: string, agentId: string) => {
     agentConfig.deleteDurable(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.RENAME_DURABLE, (_event, projectPath: string, agentId: string, newName: string) => {
+  ipcMain.handle(IPC.AGENT.RENAME_DURABLE, async (_event, projectPath: string, agentId: string, newName: string) => {
     agentConfig.renameDurable(projectPath, agentId, newName);
   });
 
   ipcMain.handle(
     IPC.AGENT.UPDATE_DURABLE,
-    (_event, projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) => {
+    async (_event, projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) => {
       agentConfig.updateDurable(projectPath, agentId, updates);
     }
   );
@@ -62,39 +62,39 @@ export function registerAgentHandlers(): void {
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
-  ipcMain.handle(IPC.AGENT.SAVE_ICON, (_event, projectPath: string, agentId: string, dataUrl: string) => {
+  ipcMain.handle(IPC.AGENT.SAVE_ICON, async (_event, projectPath: string, agentId: string, dataUrl: string) => {
     return agentConfig.saveAgentIcon(projectPath, agentId, dataUrl);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_ICON, (_event, filename: string) => {
+  ipcMain.handle(IPC.AGENT.READ_ICON, async (_event, filename: string) => {
     return agentConfig.readAgentIconData(filename);
   });
 
-  ipcMain.handle(IPC.AGENT.REMOVE_ICON, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.REMOVE_ICON, async (_event, projectPath: string, agentId: string) => {
     agentConfig.removeAgentIcon(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.getDurableConfig(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, (_event, projectPath: string, agentId: string, updates: DurableConfigUpdates) => {
+  ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, async (_event, projectPath: string, agentId: string, updates: DurableConfigUpdates) => {
     agentConfig.updateDurableConfig(projectPath, agentId, updates);
   });
 
-  ipcMain.handle(IPC.AGENT.REORDER_DURABLE, (_event, projectPath: string, orderedIds: string[]) => {
+  ipcMain.handle(IPC.AGENT.REORDER_DURABLE, async (_event, projectPath: string, orderedIds: string[]) => {
     return agentConfig.reorderDurable(projectPath, orderedIds);
   });
 
-  ipcMain.handle(IPC.AGENT.GET_WORKTREE_STATUS, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.GET_WORKTREE_STATUS, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.getWorktreeStatus(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.deleteCommitAndPush(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.deleteWithCleanupBranch(projectPath, agentId);
   });
 
@@ -114,11 +114,11 @@ export function registerAgentHandlers(): void {
     return agentConfig.deleteSaveAsPatch(projectPath, agentId, result.filePath);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_FORCE, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.DELETE_FORCE, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.deleteForce(projectPath, agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, async (_event, projectPath: string, agentId: string) => {
     return agentConfig.deleteUnregister(projectPath, agentId);
   });
 
@@ -141,8 +141,8 @@ export function registerAgentHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string, orchestrator?: string) => {
-    await agentSystem.killAgent(agentId, projectPath, orchestrator);
+  ipcMain.handle(IPC.AGENT.KILL_AGENT, async (_event, agentId: string, projectPath: string) => {
+    await agentSystem.killAgent(agentId, projectPath);
   });
 
   ipcMain.handle(IPC.AGENT.READ_QUICK_SUMMARY, async (_event, agentId: string) => {
@@ -158,32 +158,32 @@ export function registerAgentHandlers(): void {
     return agentSystem.checkAvailability(projectPath, orchestrator);
   });
 
-  ipcMain.handle(IPC.AGENT.GET_ORCHESTRATORS, () => {
+  ipcMain.handle(IPC.AGENT.GET_ORCHESTRATORS, async () => {
     return agentSystem.getAvailableOrchestrators();
   });
 
-  ipcMain.handle(IPC.AGENT.GET_TOOL_VERB, (_event, toolName: string, projectPath: string, orchestrator?: string) => {
+  ipcMain.handle(IPC.AGENT.GET_TOOL_VERB, async (_event, toolName: string, projectPath: string, orchestrator?: string) => {
     const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
     return provider.toolVerb(toolName) || `Using ${toolName}`;
   });
 
-  ipcMain.handle(IPC.AGENT.GET_SUMMARY_INSTRUCTION, (_event, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.GET_SUMMARY_INSTRUCTION, async (_event, agentId: string) => {
     return buildSummaryInstruction(agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT, (_event, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT, async (_event, agentId: string) => {
     return headlessManager.readTranscript(agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.GET_TRANSCRIPT_INFO, (_event, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.GET_TRANSCRIPT_INFO, async (_event, agentId: string) => {
     return headlessManager.getTranscriptInfo(agentId);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT_PAGE, (_event, agentId: string, offset: number, limit: number) => {
+  ipcMain.handle(IPC.AGENT.READ_TRANSCRIPT_PAGE, async (_event, agentId: string, offset: number, limit: number) => {
     return headlessManager.readTranscriptPage(agentId, offset, limit);
   });
 
-  ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, (_event, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.IS_HEADLESS_AGENT, async (_event, agentId: string) => {
     return agentSystem.isHeadlessAgent(agentId);
   });
 
@@ -198,7 +198,7 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle(
     IPC.AGENT.UPDATE_SESSION_NAME,
-    (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
+    async (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
       agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
     }
   );

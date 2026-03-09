@@ -349,16 +349,28 @@ export function spawnHeadless(
     }
 
     logStream.end();
-    cleanupHeadlessSession(agentId);
 
-    appLog('core:headless', 'info', `Process exited`, {
-      meta: { agentId, exitCode: code, stdoutBytes, events: transcript.length, stderr: stderrChunks.join('\n').slice(0, 500) },
-    });
+    // Only clean up and broadcast exit if this session has not been replaced.
+    // When spawnHeadless replaces a session, the old process's close handler
+    // fires after the new session is already stored — without this guard the
+    // handler would delete the NEW session (CQ-2 race condition).
+    const currentSession = sessions.get(agentId);
+    if (!currentSession || currentSession.process === proc) {
+      cleanupHeadlessSession(agentId);
 
-    onExit?.(agentId, code ?? 0);
+      appLog('core:headless', 'info', `Process exited`, {
+        meta: { agentId, exitCode: code, stdoutBytes, events: transcript.length, stderr: stderrChunks.join('\n').slice(0, 500) },
+      });
 
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, code ?? 0);
-    annexEventBus.emitPtyExit(agentId, code ?? 0);
+      onExit?.(agentId, code ?? 0);
+
+      broadcastToAllWindows(IPC.PTY.EXIT, agentId, code ?? 0);
+      annexEventBus.emitPtyExit(agentId, code ?? 0);
+    } else {
+      appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
+        meta: { agentId, exitCode: code },
+      });
+    }
   });
 
   proc.on('error', (err) => {
@@ -367,12 +379,17 @@ export function spawnHeadless(
 
     appLog('core:headless', 'error', `Process error`, { meta: { agentId, error: err.message } });
     logStream.end();
-    cleanupHeadlessSession(agentId);
 
-    onExit?.(agentId, 1);
+    // Only clean up and broadcast exit if this session has not been replaced (CQ-2).
+    const currentSession = sessions.get(agentId);
+    if (!currentSession || currentSession.process === proc) {
+      cleanupHeadlessSession(agentId);
 
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
-    annexEventBus.emitPtyExit(agentId, 1);
+      onExit?.(agentId, 1);
+
+      broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
+      annexEventBus.emitPtyExit(agentId, 1);
+    }
   });
 }
 

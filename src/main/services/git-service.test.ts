@@ -346,24 +346,30 @@ describe('stage/unstage', () => {
     vi.clearAllMocks();
   });
 
-  it('stage returns true on success', () => {
+  it('stage returns ok:true on success', () => {
     vi.mocked(execSync).mockReturnValue('');
-    expect(stage(DIR, 'file.ts')).toBe(true);
+    const result = stage(DIR, 'file.ts');
+    expect(result.ok).toBe(true);
   });
 
-  it('stage returns false on failure', () => {
+  it('stage returns ok:false with message on failure', () => {
     vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
-    expect(stage(DIR, 'file.ts')).toBe(false);
+    const result = stage(DIR, 'file.ts');
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 
-  it('unstage returns true on success', () => {
+  it('unstage returns ok:true on success', () => {
     vi.mocked(execSync).mockReturnValue('');
-    expect(unstage(DIR, 'file.ts')).toBe(true);
+    const result = unstage(DIR, 'file.ts');
+    expect(result.ok).toBe(true);
   });
 
-  it('unstage returns false on failure', () => {
+  it('unstage returns ok:false with message on failure', () => {
     vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
-    expect(unstage(DIR, 'file.ts')).toBe(false);
+    const result = unstage(DIR, 'file.ts');
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 });
 
@@ -374,24 +380,30 @@ describe('stageAll/unstageAll', () => {
 
   it('stageAll runs git add -A', () => {
     vi.mocked(execSync).mockReturnValue('');
-    expect(stageAll(DIR)).toBe(true);
+    const result = stageAll(DIR);
+    expect(result.ok).toBe(true);
     expect(vi.mocked(execSync)).toHaveBeenCalledWith('git add -A', expect.objectContaining({ cwd: DIR }));
   });
 
-  it('stageAll returns false on failure', () => {
+  it('stageAll returns ok:false with message on failure', () => {
     vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
-    expect(stageAll(DIR)).toBe(false);
+    const result = stageAll(DIR);
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 
   it('unstageAll runs git reset HEAD', () => {
     vi.mocked(execSync).mockReturnValue('');
-    expect(unstageAll(DIR)).toBe(true);
+    const result = unstageAll(DIR);
+    expect(result.ok).toBe(true);
     expect(vi.mocked(execSync)).toHaveBeenCalledWith('git reset HEAD', expect.objectContaining({ cwd: DIR }));
   });
 
-  it('unstageAll returns false on failure', () => {
+  it('unstageAll returns ok:false with message on failure', () => {
     vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
-    expect(unstageAll(DIR)).toBe(false);
+    const result = unstageAll(DIR);
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 });
 
@@ -644,25 +656,30 @@ describe('checkout', () => {
     vi.clearAllMocks();
   });
 
-  it('returns true on successful checkout', () => {
+  it('returns ok:true on successful checkout', () => {
     vi.mocked(execSync).mockReturnValue('Switched to branch \'main\'\n');
-    expect(checkout(DIR, 'main')).toBe(true);
+    const result = checkout(DIR, 'main');
+    expect(result.ok).toBe(true);
     expect(vi.mocked(execSync)).toHaveBeenCalledWith(
       'git checkout main',
       expect.objectContaining({ cwd: DIR }),
     );
   });
 
-  it('returns false when checkout fails (non-existent branch)', () => {
+  it('returns ok:false when checkout fails (non-existent branch)', () => {
     vi.mocked(execSync).mockImplementation(() => { throw new Error('pathspec did not match'); });
-    expect(checkout(DIR, 'nonexistent-branch')).toBe(false);
+    const result = checkout(DIR, 'nonexistent-branch');
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 
-  it('returns false when checkout fails due to uncommitted changes', () => {
+  it('returns ok:false when checkout fails due to uncommitted changes', () => {
     vi.mocked(execSync).mockImplementation(() => {
       throw new Error('Your local changes would be overwritten');
     });
-    expect(checkout(DIR, 'feature/other')).toBe(false);
+    const result = checkout(DIR, 'feature/other');
+    expect(result.ok).toBe(false);
+    expect(result.message).toBeTruthy();
   });
 
   it('passes branch name directly to git checkout command', () => {
