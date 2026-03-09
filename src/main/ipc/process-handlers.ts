@@ -3,6 +3,7 @@ import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
 import { getAllowedCommands } from '../services/plugin-manifest-registry';
+import { arrayArg, numberArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
 interface ProcessExecRequest {
   pluginId: string;
@@ -17,7 +18,20 @@ const MAX_TIMEOUT = 60000;
 const DEFAULT_TIMEOUT = 15000;
 
 export function registerProcessHandlers(): void {
-  ipcMain.handle(IPC.PROCESS.EXEC, (_event, req: ProcessExecRequest) => {
+  ipcMain.handle(IPC.PROCESS.EXEC, withValidatedArgs([objectArg<ProcessExecRequest>({
+    validate: (req, argName) => {
+      stringArg({ optional: true, minLength: 0 })(req.pluginId, `${argName}.pluginId`);
+      stringArg({ optional: true, minLength: 0 })(req.command, `${argName}.command`);
+      arrayArg(stringArg())(req.args, `${argName}.args`);
+      stringArg({ optional: true })(req.projectPath, `${argName}.projectPath`);
+      objectArg<{ timeout?: number }>({
+        optional: true,
+        validate: (options, optionsArgName) => {
+          if (options.timeout !== undefined) numberArg({ integer: true, min: 0 })(options.timeout, `${optionsArgName}.timeout`);
+        },
+      })(req.options, `${argName}.options`);
+    },
+  })], (_event, req: ProcessExecRequest) => {
     const { pluginId, command, args, projectPath, options } = req;
 
     // Reject requests without a pluginId
@@ -76,5 +90,5 @@ export function registerProcessHandlers(): void {
         },
       );
     });
-  });
+  }));
 }

@@ -186,6 +186,17 @@ describe('process-handlers', () => {
     });
   });
 
+  it('rejects invalid argument types before policy checks run', async () => {
+    const handler = handlers.get(IPC.PROCESS.EXEC)!;
+    expect(() => handler({}, {
+      pluginId: 'p1',
+      command: 'ls',
+      args: ['-la'],
+      projectPath: 42,
+    })).toThrow('arg1.projectPath must be a string');
+    expect(getAllowedCommands).not.toHaveBeenCalled();
+  });
+
   // ── Execution behavior ─────────────────────────────────────────────
 
   it('executes valid commands via execFile', async () => {

@@ -153,6 +153,12 @@ describe('file-handlers', () => {
     expect(result).toEqual({ size: 100, isFile: true });
   });
 
+  it('rejects invalid path arguments before delegating', async () => {
+    const handler = handlers.get(IPC.FILE.READ)!;
+    expect(() => handler({}, null)).toThrow('arg1 must be a string');
+    expect(fileService.readFile).not.toHaveBeenCalled();
+  });
+
   it('READ throws descriptive error and logs when readFile fails', async () => {
     const err = Object.assign(new Error('no such file or directory'), { code: 'ENOENT' });
     vi.mocked(fileService.readFile).mockRejectedValueOnce(err);

@@ -6,13 +6,14 @@ import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
 import { appLog } from '../services/log-service';
+import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
 export function registerProjectHandlers(): void {
   ipcMain.handle(IPC.PROJECT.LIST, () => {
     return projectStore.list();
   });
 
-  ipcMain.handle(IPC.PROJECT.ADD, (_event, dirPath: string) => {
+  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     const project = projectStore.add(dirPath);
     try {
       ensureGitignore(dirPath);
@@ -20,11 +21,11 @@ export function registerProjectHandlers(): void {
       // Non-fatal
     }
     return project;
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.REMOVE, (_event, id: string) => {
+  ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], (_event, id: string) => {
     projectStore.remove(id);
-  });
+  }));
 
   ipcMain.handle(IPC.PROJECT.PICK_DIR, async () => {
     const win = BrowserWindow.getFocusedWindow();
@@ -37,24 +38,24 @@ export function registerProjectHandlers(): void {
     return result.filePaths[0];
   });
 
-  ipcMain.handle(IPC.PROJECT.CHECK_GIT, (_event, dirPath: string) => {
+  ipcMain.handle(IPC.PROJECT.CHECK_GIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     return fs.existsSync(path.join(dirPath, '.git'));
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.GIT_INIT, (_event, dirPath: string) => {
+  ipcMain.handle(IPC.PROJECT.GIT_INIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     try {
       execSync('git init', { cwd: dirPath, encoding: 'utf-8' });
       return true;
     } catch {
       return false;
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.UPDATE, (_event, id: string, updates: Record<string, unknown>) => {
+  ipcMain.handle(IPC.PROJECT.UPDATE, withValidatedArgs([stringArg(), objectArg<Record<string, unknown>>()], (_event, id: string, updates: Record<string, unknown>) => {
     return projectStore.update(id, updates as any);
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.PICK_ICON, async (_event, projectId: string) => {
+  ipcMain.handle(IPC.PROJECT.PICK_ICON, withValidatedArgs([stringArg()], async (_event, projectId: string) => {
     const win = BrowserWindow.getFocusedWindow();
     if (!win) return null;
     const result = await dialog.showOpenDialog(win, {
@@ -64,15 +65,15 @@ export function registerProjectHandlers(): void {
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return projectStore.setIcon(projectId, result.filePaths[0]);
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.REORDER, (_event, orderedIds: string[]) => {
+  ipcMain.handle(IPC.PROJECT.REORDER, withValidatedArgs([arrayArg(stringArg())], (_event, orderedIds: string[]) => {
     return projectStore.reorder(orderedIds);
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.READ_ICON, (_event, filename: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_ICON, withValidatedArgs([stringArg()], (_event, filename: string) => {
     return projectStore.readIconData(filename);
-  });
+  }));
 
   ipcMain.handle(IPC.PROJECT.PICK_IMAGE, async () => {
     const win = BrowserWindow.getFocusedWindow();
@@ -94,11 +95,11 @@ export function registerProjectHandlers(): void {
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
-  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, (_event, projectId: string, dataUrl: string) => {
+  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg()], (_event, projectId: string, dataUrl: string) => {
     return projectStore.saveCroppedIcon(projectId, dataUrl);
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, (_event, projectPath: string): string[] => {
+  ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, withValidatedArgs([stringArg()], (_event, projectPath: string): string[] => {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     if (!fs.existsSync(clubhouseDir)) return [];
     try {
@@ -120,9 +121,9 @@ export function registerProjectHandlers(): void {
     } catch {
       return [];
     }
-  });
+  }));
 
-  ipcMain.handle(IPC.PROJECT.RESET_PROJECT, (_event, projectPath: string): boolean => {
+  ipcMain.handle(IPC.PROJECT.RESET_PROJECT, withValidatedArgs([stringArg()], (_event, projectPath: string): boolean => {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
     if (!fs.existsSync(clubhouseDir)) return true;
     try {
@@ -137,5 +138,5 @@ export function registerProjectHandlers(): void {
       });
       return false;
     }
-  });
+  }));
 }

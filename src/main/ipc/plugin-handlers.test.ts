@@ -239,4 +239,10 @@ describe('plugin-handlers', () => {
     expect(pluginDiscovery.listOrphanedPluginIds).toHaveBeenCalledWith('/project/path', ['plugin-a']);
     expect(result).toEqual([]);
   });
+
+  it('rejects invalid mkdir arguments before delegating', async () => {
+    const handler = handlers.get(IPC.PLUGIN.MKDIR)!;
+    expect(() => handler({}, 'p1', 'project', 123, '/project')).toThrow('arg3 must be a string');
+    expect(pluginStorage.mkdirPlugin).not.toHaveBeenCalled();
+  });
 });
