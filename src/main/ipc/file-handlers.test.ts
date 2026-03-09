@@ -17,10 +17,15 @@ vi.mock('../services/file-service', () => ({
   stat: vi.fn(async () => ({ size: 100, isFile: true })),
 }));
 
+vi.mock('../services/log-service', () => ({
+  appLog: vi.fn(),
+}));
+
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerFileHandlers } from './file-handlers';
 import * as fileService from '../services/file-service';
+import { appLog } from '../services/log-service';
 
 describe('file-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -146,5 +151,34 @@ describe('file-handlers', () => {
     const result = await handler({}, '/project/file.ts');
     expect(fileService.stat).toHaveBeenCalledWith('/project/file.ts');
     expect(result).toEqual({ size: 100, isFile: true });
+  });
+
+  it('READ throws descriptive error and logs when readFile fails', async () => {
+    const err = Object.assign(new Error('no such file or directory'), { code: 'ENOENT' });
+    vi.mocked(fileService.readFile).mockRejectedValueOnce(err);
+    const handler = handlers.get(IPC.FILE.READ)!;
+    await expect(handler({}, '/missing/file.ts')).rejects.toThrow(
+      'Failed to read file "/missing/file.ts": ENOENT - no such file or directory',
+    );
+    expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to read file', {
+      meta: { filePath: '/missing/file.ts', code: 'ENOENT', error: 'no such file or directory' },
+    });
+  });
+
+  it('READ handles permission errors with EACCES code', async () => {
+    const err = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    vi.mocked(fileService.readFile).mockRejectedValueOnce(err);
+    const handler = handlers.get(IPC.FILE.READ)!;
+    await expect(handler({}, '/protected/file.ts')).rejects.toThrow(
+      'Failed to read file "/protected/file.ts": EACCES - permission denied',
+    );
+  });
+
+  it('READ uses UNKNOWN code when error has no code property', async () => {
+    vi.mocked(fileService.readFile).mockRejectedValueOnce(new Error('unexpected'));
+    const handler = handlers.get(IPC.FILE.READ)!;
+    await expect(handler({}, '/some/file.ts')).rejects.toThrow(
+      'Failed to read file "/some/file.ts": UNKNOWN - unexpected',
+    );
   });
 });

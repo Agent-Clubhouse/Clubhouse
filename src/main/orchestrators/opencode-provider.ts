@@ -26,13 +26,6 @@ const TOOL_VERBS: Record<string, string> = {
   grep: 'Searching code',
 };
 
-const _MODEL_OPTIONS = [
-  { id: 'default', label: 'Default' },
-  { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-  { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-];
-
 // OpenCode uses lowercase tool names
 const DEFAULT_DURABLE_PERMISSIONS = ['bash(git:*)', 'bash(npm:*)', 'bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'read', 'edit', 'glob', 'grep'];

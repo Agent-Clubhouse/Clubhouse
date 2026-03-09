@@ -363,9 +363,16 @@ describe('agent-system', () => {
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/exit\r');
     });
 
-    it('uses orchestrator-specific exit command', async () => {
-      await killAgent('agent-1', '/project', 'opencode');
-      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
+    it('uses orchestrator from agentOrchestratorMap set at spawn time', async () => {
+      await spawnAgent({
+        agentId: 'agent-orch',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+        orchestrator: 'opencode',
+      });
+      await killAgent('agent-orch', '/project');
+      expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-orch', '/quit\r');
     });
 
     it('uses tracked orchestrator from spawn rather than caller-provided', async () => {
@@ -383,7 +390,7 @@ describe('agent-system', () => {
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
 
-    it('uses tracked project-level orchestrator over caller-provided', async () => {
+    it('uses tracked project-level orchestrator when spawned from settings', async () => {
       // Spawn with orchestrator resolved from project settings (opencode)
       vi.mocked(fs.readFileSync).mockReturnValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
@@ -395,8 +402,8 @@ describe('agent-system', () => {
         kind: 'durable',
       });
 
-      // Kill with explicit claude-code — should still use tracked opencode
-      await killAgent('agent-1', '/project', 'claude-code');
+      // Kill without specifying orchestrator — should use the tracked one (opencode)
+      await killAgent('agent-1', '/project');
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
 
