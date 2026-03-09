@@ -66,6 +66,7 @@ import {
   deactivatePlugin,
   handleProjectSwitch,
   getActiveContext,
+  getBuiltinProjectPluginIds,
   discoverNewPlugins,
   hotReloadPlugin,
   approvePluginPermissions,
@@ -371,6 +372,190 @@ describe('plugin-loader', () => {
 
       expect(usePluginStore.getState().externalPluginsEnabled).toBe(true);
       expect(mockPlugin.discoverCommunity).toHaveBeenCalled();
+    });
+
+    // ── Realistic built-in plugin discovery ──────────────────────────
+
+    describe('realistic built-in plugin discovery', () => {
+      const hubManifest = makeManifest({
+        id: 'hub',
+        name: 'Hub',
+        scope: 'dual',
+        engine: { api: 0.6 },
+        permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'notifications'],
+      });
+      const terminalManifest = makeManifest({
+        id: 'terminal',
+        name: 'Terminal',
+        scope: 'project',
+        engine: { api: 0.6 },
+        permissions: ['terminal', 'commands', 'agents'],
+      });
+      const filesManifest = makeManifest({
+        id: 'files',
+        name: 'Files',
+        scope: 'project',
+        engine: { api: 0.6 },
+        permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage'],
+      });
+
+      const hubModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+      const terminalModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+      const filesModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+
+      function setupRealisticBuiltins(): void {
+        (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+          { manifest: hubManifest, module: hubModule },
+          { manifest: terminalManifest, module: terminalModule },
+          { manifest: filesManifest, module: filesModule },
+        ]);
+        (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+          new Set(['hub', 'terminal', 'files']),
+        );
+      }
+
+      beforeEach(() => {
+        vi.mocked(hubModule.activate!).mockReset();
+        vi.mocked(terminalModule.activate!).mockReset();
+        vi.mocked(filesModule.activate!).mockReset();
+      });
+
+      it('registers all three built-in plugins (hub, terminal, files)', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        const store = usePluginStore.getState();
+        expect(store.plugins['hub']).toBeDefined();
+        expect(store.plugins['terminal']).toBeDefined();
+        expect(store.plugins['files']).toBeDefined();
+
+        for (const id of ['hub', 'terminal', 'files']) {
+          expect(store.plugins[id].source).toBe('builtin');
+        }
+      });
+
+      it('preserves correct scope for each built-in plugin', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        const store = usePluginStore.getState();
+        expect(store.plugins['hub'].manifest.scope).toBe('dual');
+        expect(store.plugins['terminal'].manifest.scope).toBe('project');
+        expect(store.plugins['files'].manifest.scope).toBe('project');
+      });
+
+      it('auto-enables all three built-in plugins at app level', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        const { appEnabled } = usePluginStore.getState();
+        expect(appEnabled).toContain('hub');
+        expect(appEnabled).toContain('terminal');
+        expect(appEnabled).toContain('files');
+      });
+
+      it('sets modules for all built-in plugins', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        const store = usePluginStore.getState();
+        expect(store.modules['hub']).toBe(hubModule);
+        expect(store.modules['terminal']).toBe(terminalModule);
+        expect(store.modules['files']).toBe(filesModule);
+      });
+
+      it('calls registerManifest for each built-in plugin', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('hub', hubManifest);
+        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('terminal', terminalManifest);
+        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('files', filesManifest);
+      });
+
+      it('does not activate project-scoped builtins during init (terminal, files)', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        const store = usePluginStore.getState();
+        // terminal and files are project-scoped → not activated until a project switch
+        expect(store.plugins['terminal'].status).toBe('registered');
+        expect(store.plugins['files'].status).toBe('registered');
+        expect(terminalModule.activate).not.toHaveBeenCalled();
+        expect(filesModule.activate).not.toHaveBeenCalled();
+      });
+
+      it('activates realistic builtins correctly via activatePlugin', async () => {
+        setupRealisticBuiltins();
+        await initializePluginSystem();
+
+        // Directly activate hub (dual-scoped) at app level
+        await activatePlugin('hub');
+        expect(usePluginStore.getState().plugins['hub'].status).toBe('activated');
+        expect(hubModule.activate).toHaveBeenCalledTimes(1);
+
+        // Directly activate terminal (project-scoped) with project context
+        await activatePlugin('terminal', 'proj-1', '/path/to/proj-1');
+        expect(usePluginStore.getState().plugins['terminal'].status).toBe('activated');
+        expect(terminalModule.activate).toHaveBeenCalledTimes(1);
+
+        // Directly activate files (project-scoped) with project context
+        await activatePlugin('files', 'proj-1', '/path/to/proj-1');
+        expect(usePluginStore.getState().plugins['files'].status).toBe('activated');
+        expect(filesModule.activate).toHaveBeenCalledTimes(1);
+      });
+
+      it('merges persisted app-enabled config with auto-enabled builtins', async () => {
+        setupRealisticBuiltins();
+        mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+          if (req.key === 'app-enabled') return ['custom-plugin'];
+          return undefined;
+        });
+
+        await initializePluginSystem();
+
+        const { appEnabled } = usePluginStore.getState();
+        // Should contain both persisted and auto-enabled builtins
+        expect(appEnabled).toContain('hub');
+        expect(appEnabled).toContain('terminal');
+        expect(appEnabled).toContain('files');
+        expect(appEnabled).toContain('custom-plugin');
+      });
+
+      it('activates project-scoped builtins on project switch', async () => {
+        setupRealisticBuiltins();
+        await initializePluginSystem();
+
+        // Enable terminal and files for a project
+        const store = usePluginStore.getState();
+        store.loadProjectPluginConfig('proj-1', ['terminal', 'files']);
+
+        await handleProjectSwitch(null, 'proj-1', '/path/to/proj-1');
+
+        const updated = usePluginStore.getState();
+        expect(updated.plugins['terminal'].status).toBe('activated');
+        expect(updated.plugins['files'].status).toBe('activated');
+        expect(terminalModule.activate).toHaveBeenCalledTimes(1);
+        expect(filesModule.activate).toHaveBeenCalledTimes(1);
+      });
+
+      it('writes startup marker with all enabled builtins', async () => {
+        setupRealisticBuiltins();
+
+        await initializePluginSystem();
+
+        expect(mockPlugin.startupMarkerWrite).toHaveBeenCalledTimes(1);
+        const writeArgs = mockPlugin.startupMarkerWrite.mock.calls[0][0];
+        expect(writeArgs).toContain('hub');
+        expect(writeArgs).toContain('terminal');
+        expect(writeArgs).toContain('files');
+      });
     });
   });
 
@@ -1406,6 +1591,73 @@ describe('plugin-loader', () => {
 
       // Status unchanged
       expect(usePluginStore.getState().plugins['not-pending'].status).toBe('activated');
+    });
+  });
+
+  // ── getBuiltinProjectPluginIds ─────────────────────────────────────
+
+  describe('getBuiltinProjectPluginIds()', () => {
+    it('returns project-scoped and dual-scoped default-enabled built-in plugin IDs', () => {
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'hub', scope: 'dual' }), module: {} },
+        { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
+        { manifest: makeManifest({ id: 'files', scope: 'project' }), module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['hub', 'terminal', 'files']),
+      );
+
+      const result = getBuiltinProjectPluginIds();
+
+      expect(result).toContain('hub');
+      expect(result).toContain('terminal');
+      expect(result).toContain('files');
+      expect(result).toHaveLength(3);
+    });
+
+    it('excludes app-scoped built-in plugins', () => {
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'app-only', scope: 'app' }), module: {} },
+        { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['app-only', 'terminal']),
+      );
+
+      const result = getBuiltinProjectPluginIds();
+
+      expect(result).not.toContain('app-only');
+      expect(result).toContain('terminal');
+      expect(result).toHaveLength(1);
+    });
+
+    it('excludes non-default built-in plugins', () => {
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
+        { manifest: makeManifest({ id: 'optional', scope: 'project' }), module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['terminal']),
+      );
+
+      const result = getBuiltinProjectPluginIds();
+
+      expect(result).toContain('terminal');
+      expect(result).not.toContain('optional');
+      expect(result).toHaveLength(1);
+    });
+
+    it('returns empty array when no builtins match', () => {
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'app-only', scope: 'app' }), module: {} },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['app-only']),
+      );
+
+      const result = getBuiltinProjectPluginIds();
+
+      expect(result).toEqual([]);
     });
   });
 
