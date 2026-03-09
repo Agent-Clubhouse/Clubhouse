@@ -63,6 +63,16 @@ export default defineConfig({
         },
         resolve: { alias: aliases },
       },
+      {
+        plugins: [rawMarkdown()],
+        test: {
+          name: 'integration',
+          ...sharedTestConfig,
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: { alias: aliases },
+      },
     ],
   },
   resolve: { alias: aliases },
