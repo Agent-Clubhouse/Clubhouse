@@ -371,7 +371,11 @@ export function removeIconFile(projectId: string): void {
 }
 
 export function readIconData(filename: string): string | null {
-  const filePath = path.join(getIconsDir(), filename);
+  const iconsDir = getIconsDir();
+  const filePath = path.resolve(iconsDir, filename);
+  if (!filePath.startsWith(iconsDir + path.sep) && filePath !== iconsDir) {
+    return null;
+  }
   if (!fs.existsSync(filePath)) return null;
 
   const ext = path.extname(filename).toLowerCase();

@@ -22,6 +22,7 @@ import { appLog } from './log-service';
 import {
   initializeTrustedManifests,
   refreshManifest,
+  registerManifest,
   registerTrustedManifest,
   getManifest,
   getAllowedCommands,
@@ -59,44 +60,128 @@ describe('plugin-manifest-registry', () => {
     expect(getAllowedCommands('unknown')).toEqual([]);
   });
 
-  it('registers and retrieves a trusted manifest', () => {
-    const manifest = makeManifest({ allowedCommands: ['git', 'node'] });
-    registerTrustedManifest('test-plugin', manifest);
-    expect(getManifest('test-plugin')).toBe(manifest);
+  // ── Trusted registration (main-process disk reads) ────────────────
+
+  describe('registerTrustedManifest', () => {
+    it('registers and retrieves a manifest', () => {
+      const manifest = makeManifest({ allowedCommands: ['git', 'node'] });
+      registerTrustedManifest('test-plugin', manifest);
+      expect(getManifest('test-plugin')).toBe(manifest);
+    });
+
+    it('returns allowedCommands from trusted manifest', () => {
+      registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['git', 'node'] }));
+      expect(getAllowedCommands('test-plugin')).toEqual(['git', 'node']);
+    });
+
+    it('returns empty array when trusted manifest has no allowedCommands', () => {
+      registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: undefined }));
+      expect(getAllowedCommands('test-plugin')).toEqual([]);
+    });
+
+    it('overwrites trusted manifest on re-registration', () => {
+      registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['git'] }));
+      registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['node'] }));
+      expect(getAllowedCommands('test-plugin')).toEqual(['node']);
+    });
   });
 
-  it('returns allowedCommands from trusted manifest', () => {
-    registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['git', 'node'] }));
-    expect(getAllowedCommands('test-plugin')).toEqual(['git', 'node']);
+  // ── Untrusted registration (renderer IPC) ──────────────────────────
+
+  describe('registerManifest (untrusted/IPC)', () => {
+    it('strips allowedCommands from renderer-sourced manifest', () => {
+      registerManifest('test-plugin', makeManifest({ allowedCommands: ['sh', 'bash', 'curl'] }));
+      expect(getAllowedCommands('test-plugin')).toEqual([]);
+    });
+
+    it('preserves non-sensitive fields', () => {
+      registerManifest('test-plugin', makeManifest({
+        name: 'Malicious Plugin',
+        version: '2.0.0',
+        allowedCommands: ['sh'],
+      }));
+      const manifest = getManifest('test-plugin');
+      expect(manifest?.name).toBe('Malicious Plugin');
+      expect(manifest?.version).toBe('2.0.0');
+      expect(manifest?.allowedCommands).toBeUndefined();
+    });
+
+    it('cannot overwrite trusted allowedCommands via untrusted re-registration', () => {
+      registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['git'] }));
+      registerManifest('test-plugin', makeManifest({ allowedCommands: ['sh', 'bash', 'rm'] }));
+      expect(getAllowedCommands('test-plugin')).toEqual(['git']);
+    });
+
+    it('cannot register a fake plugin to gain allowedCommands', () => {
+      registerManifest('evil-plugin', makeManifest({
+        id: 'evil-plugin',
+        allowedCommands: ['sh', 'bash'],
+      }));
+      expect(getAllowedCommands('evil-plugin')).toEqual([]);
+    });
   });
 
-  it('returns empty array when manifest has no allowedCommands', () => {
-    registerTrustedManifest('test-plugin', makeManifest({ permissions: [] as PluginManifest['permissions'], allowedCommands: undefined }));
-    expect(getAllowedCommands('test-plugin')).toEqual([]);
+  // ── Self-escalation attack scenarios ─────────────────────────────────
+
+  describe('self-escalation prevention', () => {
+    it('blocks self-escalation: register new manifest then exec', () => {
+      registerManifest('malicious', makeManifest({
+        id: 'malicious',
+        permissions: ['process'],
+        allowedCommands: ['sh', 'bash', 'curl', 'rm'],
+      }));
+      expect(getAllowedCommands('malicious')).toEqual([]);
+    });
+
+    it('blocks self-escalation: overwrite existing manifest', () => {
+      registerTrustedManifest('my-plugin', makeManifest({
+        id: 'my-plugin',
+        allowedCommands: ['git'],
+      }));
+      registerManifest('my-plugin', makeManifest({
+        id: 'my-plugin',
+        allowedCommands: ['git', 'sh', 'bash', 'rm'],
+      }));
+      expect(getAllowedCommands('my-plugin')).toEqual(['git']);
+    });
   });
 
-  it('overwrites manifest on trusted re-registration', () => {
-    registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['git'] }));
-    registerTrustedManifest('test-plugin', makeManifest({ allowedCommands: ['node'] }));
-    expect(getAllowedCommands('test-plugin')).toEqual(['node']);
+  // ── Utility functions ──────────────────────────────────────────────
+
+  describe('unregisterManifest', () => {
+    it('removes both trusted and untrusted manifests', () => {
+      registerTrustedManifest('test-plugin', makeManifest());
+      registerManifest('test-plugin', makeManifest());
+      expect(unregisterManifest('test-plugin')).toBe(true);
+      expect(getManifest('test-plugin')).toBeUndefined();
+    });
+
+    it('returns false for unknown plugin', () => {
+      expect(unregisterManifest('unknown')).toBe(false);
+    });
   });
 
-  it('unregisters a manifest', () => {
-    registerTrustedManifest('test-plugin', makeManifest());
-    expect(unregisterManifest('test-plugin')).toBe(true);
-    expect(getManifest('test-plugin')).toBeUndefined();
+  describe('clear', () => {
+    it('removes all manifests', () => {
+      registerTrustedManifest('a', makeManifest({ id: 'a' }));
+      registerManifest('b', makeManifest({ id: 'b' }));
+      clear();
+      expect(getManifest('a')).toBeUndefined();
+      expect(getManifest('b')).toBeUndefined();
+    });
   });
 
-  it('unregisterManifest returns false for unknown plugin', () => {
-    expect(unregisterManifest('unknown')).toBe(false);
-  });
+  describe('getManifest preference', () => {
+    it('prefers trusted manifest over untrusted', () => {
+      registerTrustedManifest('test-plugin', makeManifest({ name: 'Trusted' }));
+      registerManifest('test-plugin', makeManifest({ name: 'Untrusted' }));
+      expect(getManifest('test-plugin')?.name).toBe('Trusted');
+    });
 
-  it('clear removes all manifests', () => {
-    registerTrustedManifest('a', makeManifest({ id: 'a' }));
-    registerTrustedManifest('b', makeManifest({ id: 'b' }));
-    clear();
-    expect(getManifest('a')).toBeUndefined();
-    expect(getManifest('b')).toBeUndefined();
+    it('falls back to untrusted manifest if no trusted exists', () => {
+      registerManifest('test-plugin', makeManifest({ name: 'Untrusted' }));
+      expect(getManifest('test-plugin')?.name).toBe('Untrusted');
+    });
   });
 
   it('loads trusted builtin manifests at initialization', () => {

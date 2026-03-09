@@ -2,7 +2,7 @@ import type { StructuredAdapter, StructuredSessionOpts } from '../types';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
 import { AcpClient } from './acp-client';
-import { getShellEnvironment } from '../../util/shell';
+import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 
 export interface AcpAdapterOpts {
   binary: string;
@@ -30,14 +30,11 @@ export class AcpAdapter implements StructuredAdapter {
     this.queue = queue;
 
     // Build clean environment
-    const env = {
+    const env = cleanSpawnEnv({
       ...getShellEnvironment(),
       ...this.opts.env,
       ...sessionOpts.env,
-    };
-    // Prevent nested agent detection
-    delete env.CLAUDECODE;
-    delete env.CLAUDE_CODE_ENTRYPOINT;
+    });
 
     const args = [...this.opts.args];
     if (sessionOpts.model) {

@@ -3,7 +3,7 @@ import type { StructuredAdapter, StructuredSessionOpts } from '../types';
 import type { StructuredEvent } from '../../../shared/structured-events';
 import { AsyncQueue } from './async-queue';
 import { JsonlParser, StreamJsonEvent } from '../../services/jsonl-parser';
-import { getShellEnvironment } from '../../util/shell';
+import { getShellEnvironment, cleanSpawnEnv } from '../../util/shell';
 
 export interface StreamJsonAdapterOpts {
   binary: string;
@@ -42,14 +42,11 @@ export class StreamJsonAdapter implements StructuredAdapter {
     this.queue = queue;
 
     // Build clean environment
-    const env = {
+    const env = cleanSpawnEnv({
       ...getShellEnvironment(),
       ...this.opts.env,
       ...sessionOpts.env,
-    };
-    // Prevent nested agent detection
-    delete env.CLAUDECODE;
-    delete env.CLAUDE_CODE_ENTRYPOINT;
+    });
 
     // Build args: -p <mission> --output-format stream-json --verbose --include-partial-messages
     const args = [...(this.opts.baseArgs || [])];

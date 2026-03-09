@@ -548,16 +548,16 @@ export async function hotReloadPlugin(pluginId: string): Promise<void> {
     // Register the updated manifest but set status to pending-approval
     // so the plugin doesn't activate until the user approves.
     store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'pending-approval');
-    // Update main-process manifest registry for server-side policy enforcement
-    window.clubhouse.plugin.registerManifest(validation.manifest.id, validation.manifest);
+    // Refresh trusted manifest from disk (main process re-reads it)
+    await window.clubhouse.plugin.refreshManifestFromDisk(pluginId);
     store.setPendingPermissions(pluginId, escalatedPerms);
     return;
   }
 
   // 5. Re-register with updated manifest (preserve original source)
   store.registerPlugin(validation.manifest, entry.source, entry.pluginPath, 'registered');
-  // Update main-process manifest registry for server-side policy enforcement
-  window.clubhouse.plugin.registerManifest(validation.manifest.id, validation.manifest);
+  // Refresh trusted manifest from disk (main process re-reads it)
+  await window.clubhouse.plugin.refreshManifestFromDisk(pluginId);
 
   // 6. Re-activate in all enabled scopes. We use the snapshotted enabled
   //    state rather than just activeContexts, so project-scoped contexts

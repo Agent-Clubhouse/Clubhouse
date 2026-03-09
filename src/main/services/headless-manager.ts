@@ -5,11 +5,12 @@ import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
-import { getShellEnvironment } from '../util/shell';
+import { getShellEnvironment, cleanSpawnEnv } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { HeadlessOutputKind } from '../orchestrators/types';
+import { StaleSweeper } from './stale-sweeper';
 
 /**
  * Quote a single argument for a Windows cmd.exe /s /c command line.
@@ -59,39 +60,27 @@ function cleanupHeadlessSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-/** Interval (ms) between stale session sweep checks. */
-const STALE_SWEEP_INTERVAL = 30_000;
+const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
+  isStale: (_agentId, session) => {
+    // ChildProcess.exitCode is non-null once the process has exited
+    return session.process.exitCode !== null;
+  },
+  onStale: (agentId, session) => {
+    appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
+      meta: { agentId, exitCode: session.process.exitCode },
+    });
+    cleanupHeadlessSession(agentId);
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, session.process.exitCode ?? 1);
+    annexEventBus.emitPtyExit(agentId, session.process.exitCode ?? 1);
+  },
+});
 
-let sweepTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * Start a periodic sweep that detects headless sessions whose processes have
- * died without triggering the close/error handler. Safety net for edge cases.
- */
 export function startStaleSweep(): void {
-  if (sweepTimer) return;
-  sweepTimer = setInterval(() => {
-    for (const [agentId, session] of sessions) {
-      // ChildProcess.exitCode is non-null once the process has exited
-      if (session.process.exitCode !== null) {
-        appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
-          meta: { agentId, exitCode: session.process.exitCode },
-        });
-        cleanupHeadlessSession(agentId);
-        broadcastToAllWindows(IPC.PTY.EXIT, agentId, session.process.exitCode ?? 1);
-        annexEventBus.emitPtyExit(agentId, session.process.exitCode ?? 1);
-      }
-    }
-  }, STALE_SWEEP_INTERVAL);
-  sweepTimer.unref();
+  staleSweeper.start();
 }
 
-/** Stop the periodic stale session sweep. */
 export function stopStaleSweep(): void {
-  if (sweepTimer) {
-    clearInterval(sweepTimer);
-    sweepTimer = null;
-  }
+  staleSweeper.stop();
 }
 
 const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
@@ -163,10 +152,7 @@ export function spawnHeadless(
   ensureLogsDir();
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
 
-  const env = { ...getShellEnvironment(), ...extraEnv };
-  // Remove markers that prevent nested Claude Code sessions
-  delete env.CLAUDECODE;
-  delete env.CLAUDE_CODE_ENTRYPOINT;
+  const env = cleanSpawnEnv({ ...getShellEnvironment(), ...extraEnv });
 
   appLog('core:headless', 'info', `Spawning headless agent`, {
     meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },

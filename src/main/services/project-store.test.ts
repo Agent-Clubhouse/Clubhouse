@@ -1218,3 +1218,37 @@ describe('readIconData — additional edge cases', () => {
     expect(result).toContain('data:image/webp;base64,');
   });
 });
+
+// ── readIconData path traversal protection ─────────────────────────────
+
+describe('readIconData — path traversal protection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('secret'));
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+  });
+
+  it('rejects ../ traversal', () => {
+    const result = readIconData('../../../../etc/passwd');
+    expect(result).toBeNull();
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects absolute path', () => {
+    const result = readIconData('/etc/passwd');
+    expect(result).toBeNull();
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects path with embedded traversal', () => {
+    const result = readIconData('subdir/../../../etc/shadow');
+    expect(result).toBeNull();
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('allows simple filename', () => {
+    const result = readIconData('proj.png');
+    expect(result).toContain('data:image/png;base64,');
+  });
+});

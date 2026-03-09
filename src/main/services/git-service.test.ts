@@ -771,6 +771,99 @@ describe('getFileDiff — edge cases', () => {
   });
 });
 
+describe('security — input validation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('branch name validation', () => {
+    it('rejects branch names starting with -', async () => {
+      await expect(checkout(DIR, '--track')).rejects.toThrow("must not start with '-'");
+      await expect(createBranch(DIR, '-evil')).rejects.toThrow("must not start with '-'");
+    });
+
+    it('rejects branch names with null bytes', async () => {
+      await expect(checkout(DIR, 'main\0evil')).rejects.toThrow('null bytes');
+      await expect(createBranch(DIR, 'branch\0name')).rejects.toThrow('null bytes');
+    });
+
+    it('allows valid branch names with slashes and dots', async () => {
+      mockGitExec(() => 'Switched\n');
+      const result = await checkout(DIR, 'feature/my-branch.v2');
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('file path validation', () => {
+    it('rejects absolute paths', async () => {
+      await expect(stage(DIR, '/etc/passwd')).rejects.toThrow('must be relative');
+      await expect(unstage(DIR, '/etc/passwd')).rejects.toThrow('must be relative');
+      await expect(getFileDiff(DIR, '/etc/passwd', false)).rejects.toThrow('must be relative');
+      await expect(discardFile(DIR, '/etc/passwd', false)).rejects.toThrow('must be relative');
+    });
+
+    it('rejects paths with .. traversal', async () => {
+      await expect(stage(DIR, '../../etc/passwd')).rejects.toThrow('traverse above');
+      await expect(unstage(DIR, '../secret')).rejects.toThrow('traverse above');
+      await expect(getFileDiff(DIR, '../../etc/shadow', true)).rejects.toThrow('traverse above');
+      await expect(discardFile(DIR, '../../../tmp/evil', true)).rejects.toThrow('traverse above');
+    });
+
+    it('rejects paths with null bytes', async () => {
+      await expect(stage(DIR, 'file\0.ts')).rejects.toThrow('null bytes');
+      await expect(getFileDiff(DIR, 'src/\0evil', false)).rejects.toThrow('null bytes');
+    });
+
+    it('allows valid relative paths including nested dirs', async () => {
+      mockGitExec(() => '');
+      const result = await stage(DIR, 'src/components/Header.tsx');
+      expect(result.ok).toBe(true);
+    });
+
+    it('allows paths with internal .. that resolve within repo', async () => {
+      mockGitExec(() => '');
+      const result = await stage(DIR, 'src/../lib/util.ts');
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('shell metacharacter safety', () => {
+    it('commit message with backticks is passed as-is (no shell interpretation)', async () => {
+      mockGitExec(() => 'committed\n');
+      await commit(DIR, 'Fix `bug` in code');
+      const call = vi.mocked(execFile).mock.calls[0];
+      const args = call[1] as string[];
+      expect(args).toEqual(['commit', '-m', 'Fix `bug` in code']);
+    });
+
+    it('commit message with $() is passed as-is', async () => {
+      mockGitExec(() => 'committed\n');
+      await commit(DIR, 'Update $(whoami) reference');
+      const call = vi.mocked(execFile).mock.calls[0];
+      const args = call[1] as string[];
+      expect(args).toEqual(['commit', '-m', 'Update $(whoami) reference']);
+    });
+
+    it('branch name with shell metacharacters is passed as a single arg', async () => {
+      mockGitExec(() => 'Switched\n');
+      await checkout(DIR, 'feature/test;echo-pwned');
+      const call = vi.mocked(execFile).mock.calls[0];
+      expect(call[0]).toBe('git');
+      expect(call[1]).toEqual(['checkout', 'feature/test;echo-pwned']);
+    });
+  });
+
+  describe('execFile usage (no shell interpretation)', () => {
+    it('uses execFile not execSync — args are always arrays', async () => {
+      mockGitExec(() => '');
+      await stage(DIR, 'file.ts');
+      const call = vi.mocked(execFile).mock.calls[0];
+      expect(call[0]).toBe('git');
+      expect(Array.isArray(call[1])).toBe(true);
+    });
+  });
+});
+
 describe('getGitInfo — command failure resilience', () => {
   beforeEach(() => {
     vi.clearAllMocks();

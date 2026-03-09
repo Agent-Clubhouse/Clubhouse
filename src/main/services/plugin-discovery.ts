@@ -4,6 +4,7 @@ import { app } from 'electron';
 import type { PluginManifest } from '../../shared/plugin-types';
 import { getGlobalPluginDataDir } from './plugin-storage';
 import * as agentSettings from './agent-settings-service';
+import { registerTrustedManifest } from './plugin-manifest-registry';
 
 function getCommunityPluginsDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
@@ -41,6 +42,12 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
         const manifest = JSON.parse(raw) as PluginManifest;
         const pluginDir = path.join(pluginsDir, dir.name);
         const fromMarketplace = fs.existsSync(path.join(pluginDir, '.marketplace'));
+        // Register manifest as trusted in main-process registry.
+        // This is the authoritative source for security-sensitive fields
+        // like allowedCommands — the renderer cannot override these.
+        if (manifest.id) {
+          registerTrustedManifest(manifest.id, manifest);
+        }
         results.push({
           manifest,
           pluginPath: pluginDir,
@@ -54,6 +61,38 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
     // plugins dir doesn't exist or can't be read
   }
   return results;
+}
+
+/**
+ * Re-read a plugin's manifest from disk and update the trusted registry.
+ * Used during hot-reload to ensure the main process has the latest
+ * security-sensitive fields without trusting the renderer.
+ *
+ * Returns the refreshed manifest, or null if the plugin was not found on disk.
+ */
+export function refreshManifestFromDisk(pluginId: string): PluginManifest | null {
+  const pluginsDir = getCommunityPluginsDir();
+  const pluginDir = path.join(pluginsDir, pluginId);
+  const manifestPath = path.join(pluginDir, 'manifest.json');
+
+  try {
+    // Verify the plugin directory is actually inside the plugins directory
+    // to prevent path traversal attacks.
+    const resolvedDir = fs.realpathSync(pluginDir);
+    const resolvedPluginsDir = fs.realpathSync(pluginsDir);
+    if (!resolvedDir.startsWith(resolvedPluginsDir + path.sep) && resolvedDir !== resolvedPluginsDir) {
+      return null;
+    }
+
+    const raw = fs.readFileSync(manifestPath, 'utf-8');
+    const manifest = JSON.parse(raw) as PluginManifest;
+    if (manifest.id) {
+      registerTrustedManifest(manifest.id, manifest);
+    }
+    return manifest;
+  } catch {
+    return null;
+  }
 }
 
 export async function uninstallPlugin(pluginId: string): Promise<void> {
