@@ -1,10 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock rendererLog before importing the store
-const mockRendererLog = vi.fn();
+const mockRendererLog = vi.hoisted(() => vi.fn());
 vi.mock('../plugins/renderer-logger', () => ({
   rendererLog: (...args: unknown[]) => mockRendererLog(...args),
 }));
+
+const storage: Record<string, string> = {};
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: vi.fn((key: string) => storage[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => { storage[key] = value; }),
+    removeItem: vi.fn((key: string) => { delete storage[key]; }),
+    clear: vi.fn(() => {
+      for (const key of Object.keys(storage)) delete storage[key];
+    }),
+  },
+  writable: true,
+});
 
 import { useUIStore } from './uiStore';
 
@@ -22,6 +35,7 @@ describe('uiStore', () => {
       showHome: true,
       projectExplorerTab: {},
     });
+    for (const key of Object.keys(storage)) delete storage[key];
     mockRendererLog.mockClear();
   });
 
