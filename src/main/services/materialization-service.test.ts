@@ -88,13 +88,9 @@ const mockProvider: OrchestratorProvider = {
   checkAvailability: vi.fn(async () => ({ available: true })),
   buildSpawnCommand: vi.fn(async () => ({ binary: 'claude', args: [], env: {} })),
   getExitCommand: vi.fn(() => '/exit'),
-  writeHooksConfig: vi.fn(async () => {}),
-  parseHookEvent: vi.fn(() => null),
   getModelOptions: vi.fn(async () => []),
   getDefaultPermissions: vi.fn(() => []),
   toolVerb: vi.fn(() => undefined),
-  buildSummaryInstruction: vi.fn(() => ''),
-  readQuickSummary: vi.fn(async () => null),
 };
 
 describe('materialization-service', () => {

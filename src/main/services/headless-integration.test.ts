@@ -74,8 +74,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  buildSummaryInstruction: vi.fn(() => ''),
-  readQuickSummary: vi.fn(() => Promise.resolve(null)),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true, structuredMode: false,
@@ -85,6 +83,10 @@ const mockProvider = {
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn(() => mockProvider),
   getAllProviders: vi.fn(() => [mockProvider]),
+  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks),
+  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless),
+  isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
+  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode),
 }));
 
 import {

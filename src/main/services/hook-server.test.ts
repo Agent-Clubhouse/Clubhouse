@@ -34,6 +34,10 @@ vi.mock('./agent-system', () => ({
   resolveOrchestrator: (...args: unknown[]) => mockResolveOrchestrator(...args),
 }));
 
+vi.mock('../orchestrators', () => ({
+  isHookCapable: vi.fn((provider: any) => provider.getCapabilities?.().hooks !== false),
+}));
+
 vi.mock('../../shared/ipc-channels', () => ({
   IPC: {
     AGENT: {

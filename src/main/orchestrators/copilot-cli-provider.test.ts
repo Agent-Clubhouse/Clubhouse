@@ -28,8 +28,7 @@ vi.mock('util', () => ({
 vi.mock('./shared', () => ({
   findBinaryInPath: vi.fn(() => '/usr/local/bin/copilot'),
   homePath: vi.fn((...segments: string[]) => `/home/user/${segments.join('/')}`),
-  buildSummaryInstruction: vi.fn(() => 'Summarize'),
-  readQuickSummary: vi.fn(async () => null),
+  humanizeModelId: vi.fn((id: string) => id),
 }));
 
 vi.mock('../services/config-pipeline', () => ({
@@ -602,17 +601,4 @@ describe('CopilotCliProvider', () => {
     });
   });
 
-  describe('buildSummaryInstruction', () => {
-    it('delegates to shared implementation', () => {
-      const result = provider.buildSummaryInstruction('agent-1');
-      expect(result).toBe('Summarize');
-    });
-  });
-
-  describe('readQuickSummary', () => {
-    it('delegates to shared implementation', async () => {
-      const result = await provider.readQuickSummary('agent-1');
-      expect(result).toBeNull();
-    });
-  });
 });
