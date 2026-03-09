@@ -56,7 +56,7 @@ async function ensureDir(dirPath: string): Promise<void> {
 function assertSafePath(base: string, target: string): void {
   const resolvedBase = path.resolve(base);
   const resolved = path.resolve(base, target);
-  if (!resolved.startsWith(resolvedBase)) {
+  if (resolved !== resolvedBase && !resolved.startsWith(resolvedBase + path.sep)) {
     appLog('core:plugin-storage', 'error', 'Path traversal attempt blocked', {
       meta: { base, target, resolved },
     });

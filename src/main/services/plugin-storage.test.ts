@@ -227,6 +227,35 @@ describe('plugin-storage', () => {
     });
   });
 
+  // ── Path segment boundary enforcement ─────────────────────────────────
+
+  describe('assertSafePath segment boundary', () => {
+    it('rejects prefix collision via sibling directory name', async () => {
+      // A pluginId like "my-plugin-evil" should not be able to read from
+      // "my-plugin" storage via a relative path that resolves to a prefix match
+      // e.g. base = ".../my-plugin/kv", target resolves to ".../my-plugin-evil/kv/secret"
+      // The old startsWith check would allow ".../my-plugin-evil".startsWith(".../my-plugin")
+      await expect(
+        readPluginFile({ pluginId: 'p', scope: 'global', relativePath: '../p-evil/secret.txt' }),
+      ).rejects.toThrow('Path traversal');
+    });
+
+    it('rejects key that escapes via prefix collision', async () => {
+      // key "../my-plugin-evil/data" resolves outside the kv dir via prefix trick
+      await expect(
+        readKey({ pluginId: 'p', scope: 'global', key: '../p-evil/data' }),
+      ).rejects.toThrow('Path traversal');
+    });
+
+    it('allows path that exactly equals base (e.g. relativePath ".")', async () => {
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'file.txt', isDirectory: () => false },
+      ] as any);
+      const entries = await listPluginDir({ pluginId: 'p', scope: 'global', relativePath: '.' });
+      expect(entries).toEqual([{ name: 'file.txt', isDirectory: false }]);
+    });
+  });
+
   // ── project-local scope ──────────────────────────────────────────────
 
   describe('project-local scope', () => {
