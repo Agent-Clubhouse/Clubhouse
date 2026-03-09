@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { Readable } from 'stream';
 
 // --- Mocks ---
 
@@ -20,6 +21,21 @@ const mockWriteStream = {
   write: vi.fn(),
   end: vi.fn(),
 };
+
+/** Helper: create a mock readable stream that emits the given string content. */
+function createMockReadableStream(content: string): Readable {
+  return Readable.from([content]);
+}
+
+/** Helper: create a mock readable stream that emits an error event. */
+function createErrorReadableStream(): Readable {
+  const stream = new Readable({ read() {} });
+  process.nextTick(() => stream.emit('error', new Error('ENOENT')));
+  return stream;
+}
+
+const mockCreateReadStream = vi.fn((_path: string) => createErrorReadableStream());
+
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
@@ -29,6 +45,7 @@ vi.mock('fs', async () => {
     readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
     writeFileSync: vi.fn(),
     createWriteStream: vi.fn(() => mockWriteStream),
+    createReadStream: (...args: unknown[]) => mockCreateReadStream(args[0] as string),
   };
 });
 
@@ -949,9 +966,9 @@ describe('headless-manager', () => {
   describe('getTranscriptInfo', () => {
     beforeEach(() => {
       mockFsPromises.stat.mockReset();
-      mockFsPromises.readFile.mockReset();
       mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
-      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+      mockCreateReadStream.mockReset();
+      mockCreateReadStream.mockImplementation((_path: string) => createErrorReadableStream());
     });
 
     it('returns null for unknown agent with no transcript on disk', async () => {
@@ -976,7 +993,7 @@ describe('headless-manager', () => {
     it('returns disk info for completed session', async () => {
       const diskData = '{"type":"result","result":"ok"}\n{"type":"assistant","message":{}}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockImplementation((_path: string) => createMockReadableStream(diskData));
 
       const info = await getTranscriptInfo('completed-agent');
       expect(info).not.toBeNull();
@@ -996,7 +1013,7 @@ describe('headless-manager', () => {
 
       const diskData = '{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockImplementation((_path: string) => createMockReadableStream(diskData));
 
       const info = await getTranscriptInfo('test-agent');
       expect(info).not.toBeNull();
@@ -1009,10 +1026,8 @@ describe('headless-manager', () => {
   // ============================================================
   describe('readTranscriptPage', () => {
     beforeEach(() => {
-      mockFsPromises.stat.mockReset();
-      mockFsPromises.readFile.mockReset();
-      mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
-      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+      mockCreateReadStream.mockReset();
+      mockCreateReadStream.mockImplementation((_path: string) => createErrorReadableStream());
     });
 
     it('returns null for unknown agent with no transcript on disk', async () => {
@@ -1053,7 +1068,7 @@ describe('headless-manager', () => {
         JSON.stringify({ type: 'result', result: `disk-${i}` })
       ).join('\n') + '\n';
 
-      mockFsPromises.readFile.mockResolvedValue(events);
+      mockCreateReadStream.mockImplementation((_path: string) => createMockReadableStream(events));
 
       const page = await readTranscriptPage('completed-agent', 2, 2);
       expect(page).not.toBeNull();
@@ -1090,7 +1105,7 @@ describe('headless-manager', () => {
       const diskEvents = Array.from({ length: 5 }, (_, i) =>
         JSON.stringify({ type: 'result', result: `disk-${i}` })
       ).join('\n') + '\n';
-      mockFsPromises.readFile.mockResolvedValue(diskEvents);
+      mockCreateReadStream.mockImplementation((_path: string) => createMockReadableStream(diskEvents));
 
       const page = await readTranscriptPage('test-agent', 0, 3);
       expect(page).not.toBeNull();

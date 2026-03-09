@@ -2,6 +2,7 @@ import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+import * as readline from 'readline';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
@@ -452,8 +453,54 @@ export interface TranscriptPage {
 }
 
 /**
+ * Stream-count non-empty lines in a JSONL file without parsing JSON.
+ * Returns null if the file cannot be read.
+ */
+function countFileLinesStreaming(filePath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+    let count = 0;
+    let errored = false;
+    fileStream.on('error', () => { errored = true; rl.close(); });
+    rl.on('line', (line) => { if (line.trim()) count++; });
+    rl.on('close', () => resolve(errored ? null : count));
+  });
+}
+
+/**
+ * Stream a page of events from a JSONL file, only JSON-parsing lines within
+ * the requested window. Lines outside the window are counted but not parsed,
+ * avoiding O(n) allocation for large transcripts.
+ * Returns null if the file cannot be read.
+ */
+function readPageFromFile(
+  filePath: string,
+  offset: number,
+  limit: number,
+): Promise<{ events: StreamJsonEvent[]; totalEvents: number } | null> {
+  return new Promise((resolve) => {
+    const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+    let lineNumber = 0;
+    const events: StreamJsonEvent[] = [];
+    let errored = false;
+    fileStream.on('error', () => { errored = true; rl.close(); });
+    rl.on('line', (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (lineNumber >= offset && lineNumber < offset + limit) {
+        try { events.push(JSON.parse(trimmed) as StreamJsonEvent); } catch { /* skip malformed */ }
+      }
+      lineNumber++;
+    });
+    rl.on('close', () => resolve(errored ? null : { events, totalEvents: lineNumber }));
+  });
+}
+
+/**
  * Return metadata about a transcript without loading event data.
- * Uses async fs to avoid blocking the main process for large files.
+ * Streams through the file to count lines without parsing JSON.
  */
 export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo | null> {
   // Check in-memory session first
@@ -468,9 +515,11 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
   // Read from disk (evicted session or completed session)
   const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
-    const stat = await fsPromises.stat(transcriptPath);
-    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
-    const lineCount = raw.split('\n').filter((l) => l.trim()).length;
+    const [stat, lineCount] = await Promise.all([
+      fsPromises.stat(transcriptPath),
+      countFileLinesStreaming(transcriptPath),
+    ]);
+    if (lineCount === null) return null;
     return { totalEvents: lineCount, fileSizeBytes: stat.size };
   } catch {
     return null;
@@ -481,7 +530,8 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
  * Return a page of parsed transcript events.
  * `offset` is the 0-based event index; `limit` is the max events to return.
  * Events are returned in chronological order.
- * Uses async fs to avoid blocking the main process.
+ * Streams through the file and only parses JSON for events within the page
+ * window, avoiding O(n) JSON.parse for large transcripts.
  */
 export async function readTranscriptPage(
   agentId: string,
@@ -498,21 +548,8 @@ export async function readTranscriptPage(
 
   // Disk: evicted session or completed session
   const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
-  try {
-    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
-    const allEvents = raw
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => {
-        try { return JSON.parse(line) as StreamJsonEvent; } catch { return null; }
-      })
-      .filter(Boolean) as StreamJsonEvent[];
-    const total = allEvents.length;
-    const events = allEvents.slice(offset, offset + limit);
-    return { events, totalEvents: total };
-  } catch {
-    return null;
-  }
+  const result = await readPageFromFile(transcriptPath, offset, limit);
+  return result;
 }
 
 
