@@ -75,4 +75,10 @@ describe('pty-handlers', () => {
     expect(ptyManager.getBuffer).toHaveBeenCalledWith('agent-1');
     expect(result).toBe('terminal output');
   });
+
+  it('rejects invalid spawn arguments before delegating', async () => {
+    const handler = handleHandlers.get(IPC.PTY.SPAWN_SHELL)!;
+    expect(() => handler({}, 'agent-1', null)).toThrow('arg2 must be a string');
+    expect(ptyManager.spawnShell).not.toHaveBeenCalled();
+  });
 });

@@ -137,6 +137,12 @@ describe('project-handlers', () => {
     expect(result).toEqual({ id: 'proj_1', name: 'test', path: '/tmp/readonly-project' });
   });
 
+  it('rejects invalid project paths before delegating', async () => {
+    const handler = handlers.get(IPC.PROJECT.ADD)!;
+    expect(() => handler({}, { bad: true })).toThrow('arg1 must be a string');
+    expect(projectStore.add).not.toHaveBeenCalled();
+  });
+
   // --- REMOVE ---
 
   it('REMOVE delegates to projectStore.remove', async () => {

@@ -1,6 +1,7 @@
 import * as http from 'http';
 import { IPC } from '../../shared/ipc-channels';
 import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
+import { isHookCapable } from '../orchestrators';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -84,6 +85,11 @@ export function start(): Promise<number> {
             }
 
             const provider = resolveOrchestrator(projectPath, orchestrator);
+            if (!isHookCapable(provider)) {
+              res.writeHead(200);
+              res.end();
+              return;
+            }
             const normalized = provider.parseHookEvent(raw);
 
             if (normalized) {

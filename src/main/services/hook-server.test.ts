@@ -34,6 +34,10 @@ vi.mock('./agent-system', () => ({
   resolveOrchestrator: (...args: unknown[]) => mockResolveOrchestrator(...args),
 }));
 
+vi.mock('../orchestrators', () => ({
+  isHookCapable: vi.fn((provider: any) => typeof provider.parseHookEvent === 'function'),
+}));
+
 vi.mock('../../shared/ipc-channels', () => ({
   IPC: {
     AGENT: {
@@ -339,7 +343,7 @@ describe('hook-server', () => {
 
   describe('body size limit', () => {
     it('returns 413 for requests exceeding 1MB', async () => {
-      const status = await new Promise<number>((resolve, reject) => {
+      const status = await new Promise<number>((resolve, _reject) => {
         const req = http.request({
           hostname: '127.0.0.1',
           port,

@@ -17,7 +17,7 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir } from './file-watch-service';
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 /**
@@ -354,6 +354,306 @@ describe('file-watch-service', () => {
       }
 
       stopWatch('gf3');
+    });
+  });
+});
+
+describe('file-watch lifecycle and cleanup', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'file-watch-lifecycle-'));
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    stopAllWatches();
+    vi.useRealTimers();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('watcher cleanup on window close', () => {
+    it('closes the FSWatcher when window is cleaned up', () => {
+      const sender = makeSender(10);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      const closeSpy = vi.spyOn(entry.watcher, 'close');
+
+      cleanupWatchesForWindow(makeWindow(10));
+
+      expect(closeSpy).toHaveBeenCalledOnce();
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('removes destroyed listener from sender on window close', () => {
+      const sender = makeSender(10);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      expect(sender._listenerCount('destroyed')).toBe(1);
+
+      cleanupWatchesForWindow(makeWindow(10));
+
+      expect(sender._listenerCount('destroyed')).toBe(0);
+    });
+
+    it('clears pending debounce timer on window close', () => {
+      const sender = makeSender(10);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      // Simulate a pending debounce by setting a timer
+      entry.pendingEvents.push({ type: 'modified', path: '/tmp/test.ts' });
+      entry.debounceTimer = setTimeout(() => {}, 10000);
+
+      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+
+      cleanupWatchesForWindow(makeWindow(10));
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(getActiveWatchCount()).toBe(0);
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it('cleans up multiple watches for the same window', () => {
+      const sender = makeSender(10);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+      startWatch('w3', path.join(tmpDir, '**', '*.json'), sender as any);
+
+      const closeSpy1 = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
+      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
+      const closeSpy3 = vi.spyOn(_activeWatches.get('w3')!.watcher, 'close');
+
+      cleanupWatchesForWindow(makeWindow(10));
+
+      expect(closeSpy1).toHaveBeenCalledOnce();
+      expect(closeSpy2).toHaveBeenCalledOnce();
+      expect(closeSpy3).toHaveBeenCalledOnce();
+      expect(getActiveWatchCount()).toBe(0);
+      expect(sender._listenerCount('destroyed')).toBe(0);
+    });
+
+    it('does not close watchers belonging to other windows', () => {
+      const sender10 = makeSender(10);
+      const sender20 = makeSender(20);
+      startWatch('w10', path.join(tmpDir, '**', '*.ts'), sender10 as any);
+      startWatch('w20', path.join(tmpDir, '**', '*.ts'), sender20 as any);
+
+      const closeSpy20 = vi.spyOn(_activeWatches.get('w20')!.watcher, 'close');
+
+      cleanupWatchesForWindow(makeWindow(10));
+
+      expect(closeSpy20).not.toHaveBeenCalled();
+      expect(getActiveWatchCount()).toBe(1);
+      expect(sender20._listenerCount('destroyed')).toBe(1);
+    });
+  });
+
+  describe('cleanup on sender destruction', () => {
+    it('closes the FSWatcher when sender is destroyed', () => {
+      const sender = makeSender(5);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const closeSpy = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
+
+      sender._emit('destroyed');
+
+      expect(closeSpy).toHaveBeenCalledOnce();
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('clears pending debounce timer on sender destruction', () => {
+      const sender = makeSender(5);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      entry.pendingEvents.push({ type: 'created', path: '/tmp/new.ts' });
+      entry.debounceTimer = setTimeout(() => {}, 10000);
+
+      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+
+      sender._emit('destroyed');
+
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      expect(getActiveWatchCount()).toBe(0);
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it('does not send events after sender destruction', () => {
+      const sender = makeSender(5);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      sender._emit('destroyed');
+
+      // Advance timers to ensure no debounce callback fires
+      vi.runAllTimers();
+
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+
+    it('cleans up only the watch belonging to the destroyed sender', () => {
+      const senderA = makeSender(5);
+      const senderB = makeSender(6);
+      startWatch('wA', path.join(tmpDir, '**', '*.ts'), senderA as any);
+      startWatch('wB', path.join(tmpDir, '**', '*.ts'), senderB as any);
+
+      const closeSpyB = vi.spyOn(_activeWatches.get('wB')!.watcher, 'close');
+
+      senderA._emit('destroyed');
+
+      expect(getActiveWatchCount()).toBe(1);
+      expect(closeSpyB).not.toHaveBeenCalled();
+      expect(senderB._listenerCount('destroyed')).toBe(1);
+    });
+
+    it('handles sender destroyed during debounce gracefully', () => {
+      const sender = makeSender(5);
+      sender.isDestroyed.mockReturnValue(false);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      // Simulate pending events waiting to be flushed
+      entry.pendingEvents.push(
+        { type: 'created', path: '/tmp/a.ts' },
+        { type: 'modified', path: '/tmp/b.ts' },
+      );
+
+      // Destroy the sender
+      sender._emit('destroyed');
+
+      // Entry should be fully cleaned up
+      expect(_activeWatches.has('w1')).toBe(false);
+      expect(getActiveWatchCount()).toBe(0);
+
+      // Running timers should not throw or send events
+      vi.runAllTimers();
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('application shutdown (stopAllWatches)', () => {
+    it('closes all FSWatchers', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+
+      const closeSpy1 = vi.spyOn(_activeWatches.get('w1')!.watcher, 'close');
+      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
+
+      stopAllWatches();
+
+      expect(closeSpy1).toHaveBeenCalledOnce();
+      expect(closeSpy2).toHaveBeenCalledOnce();
+      expect(getActiveWatchCount()).toBe(0);
+    });
+
+    it('removes all destroyed listeners', () => {
+      const senderA = makeSender(1);
+      const senderB = makeSender(2);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), senderA as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.ts'), senderB as any);
+
+      expect(senderA._listenerCount('destroyed')).toBe(1);
+      expect(senderB._listenerCount('destroyed')).toBe(1);
+
+      stopAllWatches();
+
+      expect(senderA._listenerCount('destroyed')).toBe(0);
+      expect(senderB._listenerCount('destroyed')).toBe(0);
+    });
+
+    it('clears all pending debounce timers', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+
+      // Simulate pending debounce timers
+      const entry1 = _activeWatches.get('w1')!;
+      const entry2 = _activeWatches.get('w2')!;
+      entry1.debounceTimer = setTimeout(() => {}, 10000);
+      entry2.debounceTimer = setTimeout(() => {}, 10000);
+      entry1.pendingEvents.push({ type: 'modified', path: '/tmp/a.ts' });
+      entry2.pendingEvents.push({ type: 'modified', path: '/tmp/b.js' });
+
+      const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
+
+      stopAllWatches();
+
+      // clearTimeout should have been called at least once per entry with a timer
+      expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(getActiveWatchCount()).toBe(0);
+
+      // Advancing timers should not trigger any sends
+      vi.runAllTimers();
+      expect(sender.send).not.toHaveBeenCalled();
+
+      clearTimeoutSpy.mockRestore();
+    });
+
+    it('leaves activeWatches map completely empty', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+      startWatch('w3', path.join(tmpDir, '**', '*.json'), sender as any);
+
+      stopAllWatches();
+
+      expect(_activeWatches.size).toBe(0);
+    });
+
+    it('is safe to call multiple times', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      stopAllWatches();
+      expect(getActiveWatchCount()).toBe(0);
+
+      // Second call should be a no-op
+      expect(() => stopAllWatches()).not.toThrow();
+      expect(getActiveWatchCount()).toBe(0);
+    });
+  });
+
+  describe('error resilience during cleanup', () => {
+    it('continues cleanup when watcher.close() throws', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+      startWatch('w2', path.join(tmpDir, '**', '*.js'), sender as any);
+
+      // Save real close so we can release the native handle after the test
+      const entry1 = _activeWatches.get('w1')!;
+      const realClose1 = entry1.watcher.close.bind(entry1.watcher);
+      vi.spyOn(entry1.watcher, 'close').mockImplementation(() => {
+        throw new Error('already closed');
+      });
+      const closeSpy2 = vi.spyOn(_activeWatches.get('w2')!.watcher, 'close');
+
+      expect(() => stopAllWatches()).not.toThrow();
+
+      expect(closeSpy2).toHaveBeenCalledOnce();
+      expect(getActiveWatchCount()).toBe(0);
+
+      // Close the leaked native handle to avoid keeping the process alive on Windows
+      realClose1();
+    });
+
+    it('still removes from map when watcher.close() throws', () => {
+      const sender = makeSender(10);
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      const realClose = entry.watcher.close.bind(entry.watcher);
+      vi.spyOn(entry.watcher, 'close').mockImplementation(() => {
+        throw new Error('already closed');
+      });
+
+      expect(() => cleanupWatchesForWindow(makeWindow(10))).not.toThrow();
+
+      expect(_activeWatches.has('w1')).toBe(false);
+      expect(getActiveWatchCount()).toBe(0);
+
+      // Close the leaked native handle to avoid keeping the process alive on Windows
+      realClose();
     });
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock rendererLog before importing the store
-const mockRendererLog = vi.fn();
+const mockRendererLog = vi.hoisted(() => vi.fn());
 vi.mock('../plugins/renderer-logger', () => ({
   rendererLog: (...args: unknown[]) => mockRendererLog(...args),
 }));

@@ -114,8 +114,6 @@ const mockProvider = {
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
-  buildSummaryInstruction: vi.fn(() => ''),
-  readQuickSummary: vi.fn(() => Promise.resolve(null)),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true, structuredMode: false,
@@ -136,6 +134,10 @@ vi.mock('../orchestrators', () => ({
     return undefined;
   }),
   getAllProviders: vi.fn(() => [mockProvider, mockAltProvider]),
+  isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
+  isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
+  isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
+  isStructuredCapable: vi.fn((p: any) => p.getCapabilities().structuredMode && typeof p.createStructuredAdapter === 'function'),
 }));
 
 import {
@@ -156,6 +158,18 @@ import * as fs from 'fs';
 describe('agent-system', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHeadlessSpawn.mockImplementation((agentId: string) => {
+      mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
+    });
+    mockHeadlessKill.mockImplementation((agentId: string) => {
+      mockIsHeadless.mockImplementation((trackedAgentId: string) => trackedAgentId !== agentId);
+    });
+    mockStartStructured.mockImplementation(async (agentId: string) => {
+      mockIsStructuredSession.mockImplementation((trackedAgentId: string) => trackedAgentId === agentId);
+    });
+    mockCancelSession.mockImplementation(async (agentId: string) => {
+      mockIsStructuredSession.mockImplementation((trackedAgentId: string) => trackedAgentId !== agentId);
+    });
   });
 
   afterEach(() => {
@@ -164,6 +178,8 @@ describe('agent-system', () => {
     untrackAgent('agent-1');
     untrackAgent('test-headless');
     untrackAgent('test-structured');
+    mockIsHeadless.mockReturnValue(false);
+    mockIsStructuredSession.mockReturnValue(false);
   });
 
   describe('resolveOrchestrator', () => {
@@ -412,6 +428,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
       mockStartStructured.mockRejectedValueOnce(new Error('structured spawn failed'));
 
       await expect(
@@ -695,6 +715,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -959,10 +983,18 @@ describe('agent-system', () => {
     beforeEach(() => {
       mockGetSpawnMode.mockReturnValue('structured');
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
     });
 
     afterEach(() => {
       delete (mockProvider as any).createStructuredAdapter;
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: false,
+      });
     });
 
     it('spawns via structured-manager when mode is structured and kind is quick', async () => {
@@ -1295,6 +1327,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -1367,6 +1403,10 @@ describe('agent-system', () => {
       mockGetSpawnMode.mockReturnValue('structured');
       const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
       mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
 
       await spawnAgent({
         agentId: 'test-structured',
@@ -1385,6 +1425,90 @@ describe('agent-system', () => {
 
       // Clean up
       delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('does not reject when headless kill throws', async () => {
+      mockIsHeadless.mockReturnValue(true);
+      mockHeadlessKill.mockImplementation(() => { throw new Error('kill failed'); });
+
+      await expect(killAgent('ext-headless', '/project')).resolves.toBeUndefined();
+    });
+
+    it('does not reject when structured cancelSession rejects', async () => {
+      mockIsStructuredSession.mockReturnValue(true);
+      mockCancelSession.mockRejectedValue(new Error('cancel failed'));
+
+      await expect(killAgent('ext-structured', '/project')).resolves.toBeUndefined();
+    });
+
+    it('untrackAgent is called even when headless kill throws', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-headless')).toBe('/project');
+
+      mockHeadlessKill.mockImplementation(() => { throw new Error('kill failed'); });
+      await killAgent('test-headless', '/project');
+
+      // Agent should still be untracked despite kill failure
+      expect(getAgentProjectPath('test-headless')).toBeUndefined();
+      expect(getAgentOrchestrator('test-headless')).toBeUndefined();
+
+      // Clean up
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('untrackAgent is called even when structured cancelSession rejects', async () => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      expect(getAgentProjectPath('test-structured')).toBe('/project');
+
+      mockCancelSession.mockRejectedValue(new Error('cancel failed'));
+      await killAgent('test-structured', '/project');
+
+      // Agent should still be untracked despite cancel failure
+      expect(getAgentProjectPath('test-structured')).toBeUndefined();
+      expect(getAgentOrchestrator('test-structured')).toBeUndefined();
+
+      // Clean up
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
+    it('structured branch takes priority over headless when both match', async () => {
+      mockIsStructuredSession.mockReturnValue(true);
+      mockIsHeadless.mockReturnValue(true);
+
+      await killAgent('dual-agent', '/project');
+
+      // Structured branch checked first — only cancelSession called
+      expect(mockCancelSession).toHaveBeenCalledWith('dual-agent');
+      expect(mockHeadlessKill).not.toHaveBeenCalled();
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
     });
   });
 });

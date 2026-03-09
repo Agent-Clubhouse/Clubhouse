@@ -357,62 +357,6 @@ describe('CodexCliProvider', () => {
     });
   });
 
-  describe('writeHooksConfig', () => {
-    it('is a no-op (does not write any files)', async () => {
-      await provider.writeHooksConfig('/project', 'http://127.0.0.1:9999/hook');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
-      expect(fs.mkdirSync).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('parseHookEvent', () => {
-    it('parses agent-turn-complete as stop', () => {
-      const result = provider.parseHookEvent({
-        type: 'agent-turn-complete',
-        'last-assistant-message': 'Done. All tests pass.',
-      });
-      expect(result).toEqual({
-        kind: 'stop',
-        toolName: undefined,
-        toolInput: undefined,
-        message: 'Done. All tests pass.',
-      });
-    });
-
-    it('parses agent-turn-complete without message', () => {
-      const result = provider.parseHookEvent({
-        type: 'agent-turn-complete',
-      });
-      expect(result).not.toBeNull();
-      expect(result!.kind).toBe('stop');
-      expect(result!.message).toBeUndefined();
-    });
-
-    it('returns null for unknown event types', () => {
-      expect(provider.parseHookEvent({ type: 'unknown-event' })).toBeNull();
-    });
-
-    it('returns null for null input', () => {
-      expect(provider.parseHookEvent(null)).toBeNull();
-    });
-
-    it('returns null for non-object input', () => {
-      expect(provider.parseHookEvent('string')).toBeNull();
-    });
-
-    it('returns null for undefined input', () => {
-      expect(provider.parseHookEvent(undefined)).toBeNull();
-    });
-
-    it('returns null for missing type field', () => {
-      expect(provider.parseHookEvent({ message: 'hello' })).toBeNull();
-    });
-
-    it('returns null for empty object', () => {
-      expect(provider.parseHookEvent({})).toBeNull();
-    });
-  });
-
   describe('readInstructions', () => {
     it('reads from AGENTS.md at project root', () => {
       vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
@@ -644,35 +588,4 @@ describe('CodexCliProvider', () => {
     });
   });
 
-  describe('buildSummaryInstruction', () => {
-    it('includes agent ID in the instruction', () => {
-      const result = provider.buildSummaryInstruction('agent-codex-1');
-      expect(result).toContain('clubhouse-summary-agent-codex-1.json');
-    });
-
-    it('specifies JSON format', () => {
-      const result = provider.buildSummaryInstruction('test');
-      expect(result).toContain('"summary"');
-      expect(result).toContain('"filesModified"');
-    });
-  });
-
-  describe('readQuickSummary', () => {
-    it('delegates to shared implementation', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(
-        JSON.stringify({ summary: 'Fixed it', filesModified: ['src/index.ts'] })
-      );
-      const result = await provider.readQuickSummary('agent-1');
-      expect(result).toEqual({
-        summary: 'Fixed it',
-        filesModified: ['src/index.ts'],
-      });
-    });
-
-    it('returns null when no summary file', async () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      const result = await provider.readQuickSummary('missing');
-      expect(result).toBeNull();
-    });
-  });
 });

@@ -135,4 +135,10 @@ describe('git-handlers', () => {
     await handler({}, '/project');
     expect(gitService.stashPop).toHaveBeenCalledWith('/project');
   });
+
+  it('rejects invalid file arguments before delegating', async () => {
+    const handler = handlers.get(IPC.GIT.STAGE)!;
+    expect(() => handler({}, '/project', 42)).toThrow('arg2 must be a string');
+    expect(gitService.stage).not.toHaveBeenCalled();
+  });
 });
