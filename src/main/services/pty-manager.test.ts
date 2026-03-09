@@ -46,10 +46,14 @@ vi.mock('./annex-event-bus', () => ({
 // Mock fs for validateSpawnCwd — default to making all paths look like valid directories
 const mockRealpathSync = vi.fn((p: string) => p);
 const mockStatSync = vi.fn(() => ({ isDirectory: () => true }));
-vi.mock('fs', () => ({
-  realpathSync: (...args: unknown[]) => mockRealpathSync(...args),
-  statSync: (...args: unknown[]) => mockStatSync(...args),
-}));
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    realpathSync: (...args: unknown[]) => mockRealpathSync(...args),
+    statSync: (...args: unknown[]) => mockStatSync(...args),
+  };
+});
 
 // We need to import AFTER mocks are set up
 // But the module has state (Maps), so we need to handle that.
