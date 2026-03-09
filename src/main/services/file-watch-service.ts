@@ -10,7 +10,6 @@ interface WatchEntry {
   webContentsId: number;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
-  webContentsId: number;
 }
 
 const activeWatches = new Map<string, WatchEntry>();
@@ -41,7 +40,6 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     webContentsId: sender.id,
     debounceTimer: null,
     pendingEvents: [],
-    webContentsId: sender.id,
   };
 
   try {
