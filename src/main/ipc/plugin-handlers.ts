@@ -8,6 +8,8 @@ import * as safeMode from '../services/safe-mode';
 import * as pluginManifestRegistry from '../services/plugin-manifest-registry';
 
 export function registerPluginHandlers(): void {
+  pluginManifestRegistry.initializeTrustedManifests();
+
   // ── Discovery ────────────────────────────────────────────────────────
   ipcMain.handle(IPC.PLUGIN.DISCOVER_COMMUNITY, () => {
     return pluginDiscovery.discoverCommunityPlugins();
@@ -84,6 +86,7 @@ export function registerPluginHandlers(): void {
 
   ipcMain.handle(IPC.PLUGIN.UNINSTALL, async (_event, pluginId: string) => {
     await pluginDiscovery.uninstallPlugin(pluginId);
+    pluginManifestRegistry.unregisterManifest(pluginId);
   });
 
   ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, (_event, pluginId: string, projectPath: string) => {
@@ -99,7 +102,7 @@ export function registerPluginHandlers(): void {
   });
 
   // ── Manifest Registry ─────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, manifest: PluginManifest) => {
-    pluginManifestRegistry.registerManifest(pluginId, manifest);
+  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, (_event, pluginId: string, _manifest: PluginManifest) => {
+    pluginManifestRegistry.refreshManifest(pluginId);
   });
 }

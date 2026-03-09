@@ -45,7 +45,9 @@ vi.mock('../services/safe-mode', () => ({
 }));
 
 vi.mock('../services/plugin-manifest-registry', () => ({
-  registerManifest: vi.fn(),
+  initializeTrustedManifests: vi.fn(),
+  refreshManifest: vi.fn(),
+  unregisterManifest: vi.fn(),
 }));
 
 import { ipcMain } from 'electron';
@@ -70,6 +72,8 @@ describe('plugin-handlers', () => {
   });
 
   it('registers all plugin IPC handlers', () => {
+    expect(pluginManifestRegistry.initializeTrustedManifests).toHaveBeenCalled();
+
     const expectedChannels = [
       IPC.PLUGIN.DISCOVER_COMMUNITY,
       IPC.PLUGIN.STORAGE_READ, IPC.PLUGIN.STORAGE_WRITE,
@@ -211,13 +215,14 @@ describe('plugin-handlers', () => {
     const handler = handlers.get(IPC.PLUGIN.UNINSTALL)!;
     await handler({}, 'p1');
     expect(pluginDiscovery.uninstallPlugin).toHaveBeenCalledWith('p1');
+    expect(pluginManifestRegistry.unregisterManifest).toHaveBeenCalledWith('p1');
   });
 
-  it('REGISTER_MANIFEST delegates to pluginManifestRegistry.registerManifest', async () => {
+  it('REGISTER_MANIFEST reloads the trusted manifest by plugin id', async () => {
     const manifest = { id: 'p1', name: 'Test', version: '1.0.0', engine: { api: 0.5 }, scope: 'project' };
     const handler = handlers.get(IPC.PLUGIN.REGISTER_MANIFEST)!;
     await handler({}, 'p1', manifest);
-    expect(pluginManifestRegistry.registerManifest).toHaveBeenCalledWith('p1', manifest);
+    expect(pluginManifestRegistry.refreshManifest).toHaveBeenCalledWith('p1');
   });
 
   it('LIST_PROJECT_INJECTIONS delegates to pluginDiscovery.listProjectPluginInjections', async () => {

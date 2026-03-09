@@ -2,7 +2,7 @@ import { ipcMain, app } from 'electron';
 import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { getShellEnvironment } from '../util/shell';
-import { getAllowedCommands } from '../services/plugin-manifest-registry';
+import { getAllowedCommands, refreshManifest } from '../services/plugin-manifest-registry';
 
 interface ProcessExecRequest {
   pluginId: string;
@@ -35,8 +35,12 @@ export function registerProcessHandlers(): void {
       return { stdout: '', stderr: `Invalid command: "${command}"`, exitCode: 1 };
     }
 
+    // Refresh from trusted main-process sources before enforcing policy.
+    // Renderer payloads may request a sync, but disk/static manifests are authoritative.
+    refreshManifest(pluginId);
+
     // Look up allowed commands from the server-side manifest registry
-    // — never trust renderer-supplied allowedCommands
+    // — never trust renderer-supplied allowedCommands.
     const allowedCommands = getAllowedCommands(pluginId);
     if (!allowedCommands.includes(command)) {
       return { stdout: '', stderr: `Command "${command}" not allowed for plugin "${pluginId}"`, exitCode: 1 };

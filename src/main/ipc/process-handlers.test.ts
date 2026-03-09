@@ -15,13 +15,14 @@ vi.mock('../util/shell', () => ({
 
 vi.mock('../services/plugin-manifest-registry', () => ({
   getAllowedCommands: vi.fn(() => []),
+  refreshManifest: vi.fn(),
 }));
 
 import { ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { IPC } from '../../shared/ipc-channels';
 import { registerProcessHandlers } from './process-handlers';
-import { getAllowedCommands } from '../services/plugin-manifest-registry';
+import { getAllowedCommands, refreshManifest } from '../services/plugin-manifest-registry';
 
 describe('process-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -72,6 +73,7 @@ describe('process-handlers', () => {
     });
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('not allowed');
+    expect(refreshManifest).toHaveBeenCalledWith('malicious-plugin');
     expect(getAllowedCommands).toHaveBeenCalledWith('malicious-plugin');
   });
 

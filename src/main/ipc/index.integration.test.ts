@@ -206,7 +206,9 @@ vi.mock('../util/shell', () => ({
 
 vi.mock('../services/plugin-manifest-registry', () => ({
   getAllowedCommands: vi.fn(() => []),
-  registerManifest: vi.fn(),
+  initializeTrustedManifests: vi.fn(),
+  refreshManifest: vi.fn(),
+  unregisterManifest: vi.fn(),
   getManifest: vi.fn(() => null),
 }));
 
