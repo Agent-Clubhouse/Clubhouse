@@ -240,6 +240,85 @@ describe('HeadlessAgentView', () => {
     expect(screen.getByText('Inspect file')).toBeInTheDocument();
   });
 
+  it('suppresses polling when hooks are actively firing', async () => {
+    let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
+    window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
+      hookCallback = cb;
+      return vi.fn();
+    });
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+      events: [],
+      totalEvents: 0,
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+
+    // Initial mount triggers one sync
+    await flushAsyncWork();
+    const callsAfterMount = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Fire hook events to mark hooks as active
+    act(() => {
+      hookCallback(headlessAgent.id, {
+        kind: 'pre_tool',
+        toolName: 'Read',
+        timestamp: Date.now(),
+      });
+    });
+    await flushAsyncWork();
+    const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Advance past multiple poll intervals (500ms each) while hooks are "active"
+    // The poller should skip these cycles since hooks fired recently
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    await flushAsyncWork();
+    const callsAfterPolling = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Hook-triggered sync should have added calls, but the poller intervals
+    // should NOT have added any additional calls
+    expect(callsAfterPolling).toBe(callsAfterHook);
+    // Verify hook did trigger at least one sync beyond the initial mount
+    expect(callsAfterHook).toBeGreaterThan(callsAfterMount);
+  });
+
+  it('resumes polling when hooks stop firing', async () => {
+    let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
+    window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
+      hookCallback = cb;
+      return vi.fn();
+    });
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+      events: [],
+      totalEvents: 0,
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+
+    // Fire a hook event to suppress polling
+    act(() => {
+      hookCallback(headlessAgent.id, {
+        kind: 'pre_tool',
+        toolName: 'Read',
+        timestamp: Date.now(),
+      });
+    });
+    await flushAsyncWork();
+    const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Advance past the hook active threshold (5s) so hooks are no longer "active"
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    await flushAsyncWork();
+    const callsAfterThreshold = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Polling should have resumed and made additional calls
+    expect(callsAfterThreshold).toBeGreaterThan(callsAfterHook);
+  });
+
   it('freezes the timer when the agent is no longer running', () => {
     const now = Date.now();
     resetStore(now - 60_000);

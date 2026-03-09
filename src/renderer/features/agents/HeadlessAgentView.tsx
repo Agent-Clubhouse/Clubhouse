@@ -249,6 +249,9 @@ function AnimatedTreehouse() {
   );
 }
 
+/** How recently a hook must have fired for us to consider hooks "active" and skip polling. */
+const HOOK_ACTIVE_THRESHOLD_MS = 5_000;
+
 export function HeadlessAgentView({ agent }: Props) {
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [elapsed, setElapsed] = useState(0);
@@ -262,6 +265,7 @@ export function HeadlessAgentView({ agent }: Props) {
   const notificationCountsRef = useRef<Map<string, number>>(new Map());
   const syncingTranscriptRef = useRef(false);
   const syncRequestedRef = useRef(false);
+  const lastHookTimestampRef = useRef(0);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
 
@@ -300,6 +304,7 @@ export function HeadlessAgentView({ agent }: Props) {
     notificationCountsRef.current = new Map();
     syncingTranscriptRef.current = false;
     syncRequestedRef.current = false;
+    lastHookTimestampRef.current = 0;
     setFeedItems([]);
 
     async function syncTranscript(): Promise<void> {
@@ -352,6 +357,7 @@ export function HeadlessAgentView({ agent }: Props) {
     const removeListener = window.clubhouse.agent.onHookEvent(
       (agentId: string, event: AgentHookEvent) => {
         if (agentId !== agent.id) return;
+        lastHookTimestampRef.current = Date.now();
 
         if (event.kind === 'notification' && event.message) {
           appendNotificationItem(event.message, event.timestamp || Date.now());
@@ -367,10 +373,16 @@ export function HeadlessAgentView({ agent }: Props) {
     void syncTranscript();
     const fastInterval = setInterval(() => {
       pollCount++;
+      // Skip poll when hooks are actively firing — they already trigger syncs
+      if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
       void syncTranscript();
       if (pollCount >= 10) {
         clearInterval(fastInterval);
-        interval = setInterval(() => { void syncTranscript(); }, 2000);
+        interval = setInterval(() => {
+          // Skip poll when hooks are actively firing
+          if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
+          void syncTranscript();
+        }, 2000);
       }
     }, 500);
 
