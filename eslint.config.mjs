@@ -71,6 +71,10 @@ export default tseslint.config(
       'dist/**',
       'node_modules/**',
       'recovery/**',
+      '.clubhouse/agents/**/.webpack/**',
+      '.clubhouse/agents/**/out/**',
+      '.clubhouse/agents/**/dist/**',
+      '.clubhouse/agents/**/node_modules/**',
     ],
   },
 );
