@@ -15,10 +15,10 @@ function describeType(value: unknown): string {
   return typeof value;
 }
 
-export function stringArg(options: { minLength?: number; optional: true }): ArgValidator<string | undefined>;
-export function stringArg(options?: { minLength?: number; optional?: false }): ArgValidator<string>;
-export function stringArg(options: { minLength?: number; optional?: boolean } = {}): ArgValidator<string | undefined> {
-  const { minLength = 1, optional = false } = options;
+export function stringArg(options: { minLength?: number; maxLength?: number; optional: true }): ArgValidator<string | undefined>;
+export function stringArg(options?: { minLength?: number; maxLength?: number; optional?: false }): ArgValidator<string>;
+export function stringArg(options: { minLength?: number; maxLength?: number; optional?: boolean } = {}): ArgValidator<string | undefined> {
+  const { minLength = 1, maxLength, optional = false } = options;
 
   return (value, argName) => {
     if (optional && value === undefined) return undefined;
@@ -27,6 +27,9 @@ export function stringArg(options: { minLength?: number; optional?: boolean } = 
     }
     if (value.length < minLength) {
       fail(argName, `must be at least ${minLength} character${minLength === 1 ? '' : 's'}`);
+    }
+    if (maxLength !== undefined && value.length > maxLength) {
+      fail(argName, `must be at most ${maxLength} characters`);
     }
     return value;
   };

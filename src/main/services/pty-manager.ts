@@ -278,11 +278,21 @@ export function spawnShell(id: string, projectPath: string): void {
   });
 }
 
+/** Defense-in-depth ceiling for a single write() call (64 KB). */
+const MAX_WRITE_LENGTH = 64 * 1024;
+
 export function write(agentId: string, data: string): void {
   const session = sessions.get(agentId);
-  if (session) {
-    session.process.write(data);
+  if (!session) return;
+
+  if (data.length > MAX_WRITE_LENGTH) {
+    appLog('core:pty', 'warn', 'Oversized PTY write rejected', {
+      meta: { agentId, length: data.length, limit: MAX_WRITE_LENGTH },
+    });
+    return;
   }
+
+  session.process.write(data);
 }
 
 export function resize(agentId: string, cols: number, rows: number): void {
