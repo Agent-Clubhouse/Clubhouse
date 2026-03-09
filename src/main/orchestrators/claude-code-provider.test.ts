@@ -424,6 +424,124 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('resolveProjectDir (via listSessions and readSessionTranscript)', () => {
+    // Use a custom config dir to avoid path.resolve ambiguity with homedir
+    const customConfigDir = '/test/config';
+    const projectsDir = path.join(customConfigDir, 'projects');
+    const profileEnv = { CLAUDE_CONFIG_DIR: customConfigDir };
+
+    // Encode cwd the same way the provider does
+    function encodeCwd(cwd: string): string {
+      return path.resolve(cwd).replace(/[/\\]/g, '-');
+    }
+
+    it('listSessions returns empty when projects dir does not exist', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (isClaudePath(p as string)) return true;
+        return false;
+      });
+
+      const result = await provider.listSessions('/my/project', profileEnv);
+      expect(result).toEqual([]);
+    });
+
+    it('readSessionTranscript returns null when projects dir does not exist', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (isClaudePath(p as string)) return true;
+        return false;
+      });
+
+      const result = await provider.readSessionTranscript('some-id', '/my/project', profileEnv);
+      expect(result).toBeNull();
+    });
+
+    it('resolves project dir with leading dash', async () => {
+      const encoded = encodeCwd('/my/project');
+      const projectDir = path.join(projectsDir, encoded);
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        return false;
+      });
+
+      await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDir);
+    });
+
+    it('resolves project dir without leading dash when with-dash does not exist', async () => {
+      const encoded = encodeCwd('/my/project');
+      const encodedNoDash = encoded.replace(/^-/, '');
+      const projectDirWithDash = path.join(projectsDir, encoded);
+      const projectDirWithoutDash = path.join(projectsDir, encodedNoDash);
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDirWithDash) return false;
+        if (s === projectDirWithoutDash) return true;
+        return false;
+      });
+
+      await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithDash);
+      expect(fs.existsSync).toHaveBeenCalledWith(projectDirWithoutDash);
+    });
+
+    it('uses CLAUDE_CONFIG_DIR from profileEnv when provided', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        return false;
+      });
+
+      await provider.listSessions('/my/project', profileEnv);
+      expect(fs.existsSync).toHaveBeenCalledWith(projectsDir);
+    });
+
+    it('returns empty/null when no matching project dir exists', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        return false;
+      });
+
+      const sessions = await provider.listSessions('/my/project', profileEnv);
+      expect(sessions).toEqual([]);
+
+      const transcript = await provider.readSessionTranscript('id', '/my/project', profileEnv);
+      expect(transcript).toBeNull();
+    });
+
+    it('both methods resolve the same project dir for the same cwd', async () => {
+      const encoded = encodeCwd('/my/project');
+      const projectDir = path.join(projectsDir, encoded);
+      const existsSyncCalls: string[] = [];
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        existsSyncCalls.push(s);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        return false;
+      });
+
+      await provider.listSessions('/my/project', profileEnv);
+      await provider.readSessionTranscript('id', '/my/project', profileEnv);
+
+      const projectDirChecks = existsSyncCalls.filter(c => c === projectDir);
+      // At least 2: one from each method's resolveProjectDir call
+      // (listSessions also re-checks projectDir as a session location)
+      expect(projectDirChecks.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   describe('extractSessionId', () => {
     it('extracts UUID from "session: <uuid>" pattern', () => {
       const buffer = 'some output\nsession: a1b2c3d4-e5f6-7890-abcd-ef1234567890\nmore output';
