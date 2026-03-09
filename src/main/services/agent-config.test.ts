@@ -45,9 +45,16 @@ import {
   getSessionHistory,
   ensureGitignore as _ensureGitignore,
   saveAgentIcon,
+  clearAgentConfigCache,
+  flushAgentConfig,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
+
+// Clear the write-back cache before every test to prevent cross-test contamination
+beforeEach(() => {
+  clearAgentConfigCache();
+});
 
 function mockAgentsFile(agents: any[]) {
   vi.mocked(fs.existsSync).mockImplementation((p: any) => {
@@ -260,6 +267,7 @@ describe('createDurable', () => {
     });
 
     await createDurable(PROJECT_PATH, 'new-agent', 'emerald');
+    flushAgentConfig(PROJECT_PATH);
     const written = JSON.parse(writtenData[agentsJsonPath]);
     expect(written.length).toBe(2);
     expect(written[0].id).toBe('durable_old');
@@ -385,6 +393,7 @@ describe('deleteDurable', () => {
     vi.mocked(execSync).mockReturnValue('');
 
     deleteDurable(PROJECT_PATH, 'durable_del');
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result.length).toBe(1);
     expect(result[0].id).toBe('durable_keep');
@@ -464,6 +473,7 @@ describe('deleteDurable', () => {
     vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
 
     deleteDurable(PROJECT_PATH, 'durable_nowt');
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result.length).toBe(0);
     // No git commands for non-worktree agents
@@ -489,18 +499,21 @@ describe('reorderDurable', () => {
 
   it('reorders by orderedIds', () => {
     reorderDurable(PROJECT_PATH, ['durable_c', 'durable_a', 'durable_b']);
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result.map((a: any) => a.id)).toEqual(['durable_c', 'durable_a', 'durable_b']);
   });
 
   it('appends agents not in orderedIds', () => {
     reorderDurable(PROJECT_PATH, ['durable_b']);
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result.map((a: any) => a.id)).toEqual(['durable_b', 'durable_a', 'durable_c']);
   });
 
   it('ignores unknown ids in orderedIds', () => {
     reorderDurable(PROJECT_PATH, ['nonexistent', 'durable_c', 'durable_a']);
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result.map((a: any) => a.id)).toEqual(['durable_c', 'durable_a', 'durable_b']);
   });
@@ -520,6 +533,7 @@ describe('renameDurable', () => {
     vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
 
     renameDurable(PROJECT_PATH, 'durable_ren', 'new-name');
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0].name).toBe('new-name');
   });
@@ -539,6 +553,7 @@ describe('updateDurable', () => {
 
   it('updates name only', () => {
     updateDurable(PROJECT_PATH, 'durable_upd', { name: 'new-name' });
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0].name).toBe('new-name');
     expect(result[0].color).toBe('indigo');
@@ -547,6 +562,7 @@ describe('updateDurable', () => {
 
   it('updates color only', () => {
     updateDurable(PROJECT_PATH, 'durable_upd', { color: 'emerald' });
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0].color).toBe('emerald');
     expect(result[0].name).toBe('old-name');
@@ -554,24 +570,28 @@ describe('updateDurable', () => {
 
   it('sets icon', () => {
     updateDurable(PROJECT_PATH, 'durable_upd', { icon: 'durable_upd_new.png' });
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0].icon).toBe('durable_upd_new.png');
   });
 
   it('clears icon when null', () => {
     updateDurable(PROJECT_PATH, 'durable_upd', { icon: null });
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0]).not.toHaveProperty('icon');
   });
 
   it('clears icon when empty string', () => {
     updateDurable(PROJECT_PATH, 'durable_upd', { icon: '' });
+    flushAgentConfig(PROJECT_PATH);
     const result = JSON.parse(writtenAgents);
     expect(result[0]).not.toHaveProperty('icon');
   });
 
   it('no-op for unknown agentId', () => {
     updateDurable(PROJECT_PATH, 'nonexistent', { name: 'foo' });
+    flushAgentConfig(PROJECT_PATH);
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
     const agentWrites = writeCalls.filter((c) => String(c[0]).endsWith('agents.json'));
     if (agentWrites.length > 0) {
@@ -720,6 +740,7 @@ describe('deleteUnregister', () => {
     vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenAgents = String(data); });
 
     const result = deleteUnregister(PROJECT_PATH, 'durable_unreg');
+    flushAgentConfig(PROJECT_PATH);
     expect(result.ok).toBe(true);
     const remaining = JSON.parse(writtenAgents);
     expect(remaining.length).toBe(0);
@@ -1301,11 +1322,173 @@ describe('saveAgentIcon', () => {
     const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
 
     saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
+    flushAgentConfig(PROJECT_PATH);
 
     const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
     const agentsWrite = writeCalls.find((c) => String(c[0]).endsWith('agents.json'));
     expect(agentsWrite).toBeDefined();
     const agents = JSON.parse(String(agentsWrite![1]));
     expect(agents[0].icon).toBe(`${AGENT_ID}.png`);
+  });
+});
+
+describe('write-back cache', () => {
+  const agentsJsonPath = path.join(PROJECT_PATH, '.clubhouse', 'agents.json');
+
+  function setupCacheTest(agents: any[]) {
+    const writtenData: Record<string, string> = {};
+    writtenData[agentsJsonPath] = JSON.stringify(agents);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      return writtenData[String(p)] || '[]';
+    });
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      writtenData[String(p)] = String(data);
+    });
+    return writtenData;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads from disk only once for multiple reads', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    // First read populates cache
+    const result1 = listDurable(PROJECT_PATH);
+    expect(result1).toHaveLength(1);
+
+    // Second read should come from cache
+    const result2 = getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(result2!.name).toBe('agent-1');
+
+    // readFileSync should only have been called once (for agents.json)
+    const readCalls = vi.mocked(fs.readFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(readCalls).toHaveLength(1);
+  });
+
+  it('coalesces multiple writes into one disk write on flush', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    // Perform multiple sequential modifications
+    renameDurable(PROJECT_PATH, 'durable_1', 'renamed');
+    updateDurable(PROJECT_PATH, 'durable_1', { color: 'emerald' });
+
+    // No disk writes yet (debounced)
+    const writesBefore = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writesBefore).toHaveLength(0);
+
+    // Flush writes to disk
+    flushAgentConfig(PROJECT_PATH);
+
+    // Only one disk write should have occurred
+    const writesAfter = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writesAfter).toHaveLength(1);
+
+    // The single write should contain both modifications
+    const written = JSON.parse(String(writesAfter[0][1]));
+    expect(written[0].name).toBe('renamed');
+    expect(written[0].color).toBe('emerald');
+  });
+
+  it('serves updated data from cache before flush', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    renameDurable(PROJECT_PATH, 'durable_1', 'cached-name');
+
+    // Read should return the cached (updated) data without flushing
+    const config = getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(config!.name).toBe('cached-name');
+
+    // readFileSync should only have been called once (initial cache population)
+    const readCalls = vi.mocked(fs.readFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(readCalls).toHaveLength(1);
+  });
+
+  it('clearAgentConfigCache discards pending writes', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    renameDurable(PROJECT_PATH, 'durable_1', 'will-be-discarded');
+    clearAgentConfigCache();
+
+    // No disk write should have occurred
+    const writes = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writes).toHaveLength(0);
+
+    // Next read should go to disk again (cache was cleared)
+    const config = getDurableConfig(PROJECT_PATH, 'durable_1');
+    expect(config!.name).toBe('agent-1'); // original name from disk
+  });
+
+  it('flushAgentConfig is idempotent when no changes pending', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+    ]);
+
+    // Read to populate cache
+    listDurable(PROJECT_PATH);
+
+    // Flush with no pending writes
+    flushAgentConfig(PROJECT_PATH);
+    flushAgentConfig(PROJECT_PATH);
+
+    // No disk writes should have occurred
+    const writes = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writes).toHaveLength(0);
+  });
+
+  it('sequential operations only read from disk once', () => {
+    setupCacheTest([
+      { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2024-01-01' },
+      { id: 'durable_2', name: 'agent-2', color: 'amber', createdAt: '2024-01-02' },
+    ]);
+
+    // Perform a sequence of read-modify-write operations
+    renameDurable(PROJECT_PATH, 'durable_1', 'renamed-1');
+    renameDurable(PROJECT_PATH, 'durable_2', 'renamed-2');
+    updateDurable(PROJECT_PATH, 'durable_1', { color: 'emerald' });
+    updateDurable(PROJECT_PATH, 'durable_2', { color: 'rose' });
+
+    // Only one readFileSync for agents.json (initial cache population)
+    const readCalls = vi.mocked(fs.readFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(readCalls).toHaveLength(1);
+
+    // No disk writes yet
+    const writesBefore = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writesBefore).toHaveLength(0);
+
+    // Flush and verify all changes persisted
+    flushAgentConfig(PROJECT_PATH);
+
+    const writesAfter = vi.mocked(fs.writeFileSync).mock.calls
+      .filter((c) => String(c[0]).endsWith('agents.json'));
+    expect(writesAfter).toHaveLength(1);
+
+    const written = JSON.parse(String(writesAfter[0][1]));
+    expect(written[0].name).toBe('renamed-1');
+    expect(written[0].color).toBe('emerald');
+    expect(written[1].name).toBe('renamed-2');
+    expect(written[1].color).toBe('rose');
   });
 });

@@ -67,7 +67,20 @@ export function ensureGitignore(projectPath: string): void {
   }
 }
 
-function readAgents(projectPath: string): DurableAgentConfig[] {
+// --- Write-back cache with dirty tracking and debounced flush ---
+
+interface CacheEntry {
+  agents: DurableAgentConfig[];
+  dirty: boolean;
+  flushTimer: ReturnType<typeof setTimeout> | null;
+}
+
+const configCache = new Map<string, CacheEntry>();
+
+/** How long to wait before flushing dirty cache entries to disk (ms) */
+const FLUSH_DELAY_MS = 100;
+
+function readAgentsFromDisk(projectPath: string): DurableAgentConfig[] {
   const configPath = agentsConfigPath(projectPath);
   if (!fs.existsSync(configPath)) return [];
   try {
@@ -81,9 +94,76 @@ function readAgents(projectPath: string): DurableAgentConfig[] {
   }
 }
 
-function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
+function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): void {
   ensureDir(clubhouseDir(projectPath));
   fs.writeFileSync(agentsConfigPath(projectPath), JSON.stringify(agents, null, 2), 'utf-8');
+}
+
+function flushEntry(projectPath: string, entry: CacheEntry): void {
+  if (entry.flushTimer) {
+    clearTimeout(entry.flushTimer);
+    entry.flushTimer = null;
+  }
+  if (entry.dirty) {
+    writeAgentsToDisk(projectPath, entry.agents);
+    entry.dirty = false;
+  }
+}
+
+function scheduleFlush(projectPath: string, entry: CacheEntry): void {
+  if (entry.flushTimer) {
+    clearTimeout(entry.flushTimer);
+  }
+  entry.flushTimer = setTimeout(() => {
+    flushEntry(projectPath, entry);
+  }, FLUSH_DELAY_MS);
+}
+
+function readAgents(projectPath: string): DurableAgentConfig[] {
+  let entry = configCache.get(projectPath);
+  if (!entry) {
+    entry = { agents: readAgentsFromDisk(projectPath), dirty: false, flushTimer: null };
+    configCache.set(projectPath, entry);
+  }
+  return entry.agents;
+}
+
+function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
+  let entry = configCache.get(projectPath);
+  if (!entry) {
+    entry = { agents, dirty: true, flushTimer: null };
+    configCache.set(projectPath, entry);
+  } else {
+    entry.agents = agents;
+    entry.dirty = true;
+  }
+  scheduleFlush(projectPath, entry);
+}
+
+/** Flush any pending writes for a project path immediately */
+export function flushAgentConfig(projectPath: string): void {
+  const entry = configCache.get(projectPath);
+  if (entry) {
+    flushEntry(projectPath, entry);
+  }
+}
+
+/** Flush all pending writes across all project paths */
+export function flushAllAgentConfigs(): void {
+  for (const [projectPath, entry] of configCache) {
+    flushEntry(projectPath, entry);
+  }
+}
+
+/** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
+export function clearAgentConfigCache(): void {
+  for (const entry of configCache.values()) {
+    if (entry.flushTimer) {
+      clearTimeout(entry.flushTimer);
+      entry.flushTimer = null;
+    }
+  }
+  configCache.clear();
 }
 
 export function listDurable(projectPath: string): DurableAgentConfig[] {
