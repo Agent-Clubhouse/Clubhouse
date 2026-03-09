@@ -81,4 +81,24 @@ describe('pty-handlers', () => {
     expect(() => handler({}, 'agent-1', null)).toThrow('arg2 must be a string');
     expect(ptyManager.spawnShell).not.toHaveBeenCalled();
   });
+
+  it('rejects PTY write data exceeding max length', () => {
+    const handler = onHandlers.get(IPC.PTY.WRITE)!;
+    const oversized = 'x'.repeat(64 * 1024 + 1);
+    expect(() => handler({}, 'agent-1', oversized)).toThrow('must be at most');
+    expect(ptyManager.write).not.toHaveBeenCalled();
+  });
+
+  it('accepts PTY write data within max length', () => {
+    const handler = onHandlers.get(IPC.PTY.WRITE)!;
+    const data = 'x'.repeat(64 * 1024);
+    handler({}, 'agent-1', data);
+    expect(ptyManager.write).toHaveBeenCalledWith('agent-1', data);
+  });
+
+  it('accepts empty PTY write data', () => {
+    const handler = onHandlers.get(IPC.PTY.WRITE)!;
+    handler({}, 'agent-1', '');
+    expect(ptyManager.write).toHaveBeenCalledWith('agent-1', '');
+  });
 });

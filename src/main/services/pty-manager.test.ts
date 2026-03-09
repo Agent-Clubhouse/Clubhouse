@@ -240,6 +240,22 @@ describe('pty-manager', () => {
       write('nonexistent', 'hello');
       expect(mockProcess.write).not.toHaveBeenCalled();
     });
+
+    it('rejects oversized writes (defense-in-depth)', () => {
+      spawn('agent_big', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      const oversized = 'x'.repeat(64 * 1024 + 1);
+      write('agent_big', oversized);
+      expect(mockProcess.write).not.toHaveBeenCalled();
+    });
+
+    it('accepts writes at exactly the max length', () => {
+      spawn('agent_exact', '/test', '/usr/local/bin/claude', []);
+      mockProcess.write.mockClear();
+      const maxData = 'x'.repeat(64 * 1024);
+      write('agent_exact', maxData);
+      expect(mockProcess.write).toHaveBeenCalledWith(maxData);
+    });
   });
 
   describe('resize', () => {
