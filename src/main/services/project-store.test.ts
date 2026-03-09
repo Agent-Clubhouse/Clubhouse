@@ -28,7 +28,7 @@ vi.mock('./sound-service', () => ({
 
 // electron is aliased to our mock by vitest.config.ts
 import * as fs from 'fs';
-import { list, add, remove, update, reorder, readIconData } from './project-store';
+import { list, add, remove, update, reorder, readIconData, setIcon, saveCroppedIcon, removeIconFile } from './project-store';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
 
@@ -701,5 +701,520 @@ describe('readIconData', () => {
 
     const result = readIconData('test.png');
     expect(result).toBe(`data:image/png;base64,${testData.toString('base64')}`);
+  });
+});
+
+// ── Filesystem Error Handling ──────────────────────────────────────────
+
+describe('filesystem error handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+  });
+
+  it('writeFileSync failure during add does not corrupt state', () => {
+    mockNoStoreFile();
+    vi.mocked(fs.writeFileSync).mockImplementation(() => {
+      throw new Error('ENOSPC: no space left on device');
+    });
+
+    expect(() => add('/test-project')).toThrow('ENOSPC');
+  });
+
+  it('writeFileSync failure during update propagates error', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_1', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.writeFileSync).mockImplementation(() => {
+      throw new Error('EACCES: permission denied');
+    });
+
+    expect(() => update('proj_1', { name: 'New' })).toThrow('EACCES');
+  });
+
+  it('readFileSync throwing non-JSON error returns empty list', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw new Error('EACCES: permission denied');
+    });
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    expect(list()).toEqual([]);
+  });
+
+  it('readdirSync failure in removeIconFile is silently caught', () => {
+    vi.mocked(fs.readdirSync).mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory');
+    });
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    // Should not throw
+    expect(() => removeIconFile('proj_1')).not.toThrow();
+  });
+
+  it('unlinkSync failure in removeIconFile is silently caught', () => {
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_1.png'] as any);
+    vi.mocked(fs.unlinkSync).mockImplementation(() => {
+      throw new Error('EPERM: operation not permitted');
+    });
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    // The function catches errors from the icons dir operations
+    expect(() => removeIconFile('proj_1')).not.toThrow();
+  });
+
+  it('copyFileSync failure in setIcon propagates error', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_icon', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.copyFileSync).mockImplementation(() => {
+      throw new Error('ENOENT: source file not found');
+    });
+
+    expect(() => setIcon('proj_icon', '/missing/image.png')).toThrow('ENOENT');
+  });
+
+  it('renameSync failure during icon preservation is silently caught', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_rename', name: 'Test', path: '/test', icon: 'proj_rename.png' },
+      ],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_rename.png'] as any);
+    vi.mocked(fs.renameSync).mockImplementation(() => {
+      throw new Error('EXDEV: cross-device link not permitted');
+    });
+
+    const writtenFiles: Record<string, string> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenFiles[String(p)] = String(data); });
+
+    // remove() preserves icon via renameSync — failure is caught
+    expect(() => remove('proj_rename')).not.toThrow();
+    const result = JSON.parse(writtenFiles[STORE_PATH]);
+    expect(result.projects).toHaveLength(0);
+  });
+
+  it('corrupt preserved settings sidecar returns empty object gracefully', () => {
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update('/corrupt-project').digest('hex').slice(0, 16);
+    const sidecarPath = path.join(BASE_DIR, `_preserved_${hash}.json`);
+
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === sidecarPath) return true;
+      if (s.includes('project-icons')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      if (String(p) === sidecarPath) return '{{invalid json';
+      return '';
+    });
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+
+    // Should not throw and should not apply any restored settings
+    const project = add('/corrupt-project');
+    expect(project.displayName).toBeUndefined();
+    expect(project.color).toBeUndefined();
+  });
+});
+
+// ── setIcon edge cases ─────────────────────────────────────────────────
+
+describe('setIcon', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.copyFileSync).mockReturnValue(undefined);
+  });
+
+  it('copies file and updates project icon field', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_si', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) writtenData = String(data);
+    });
+
+    const filename = setIcon('proj_si', '/tmp/icon.png');
+    expect(filename).toBe('proj_si.png');
+    expect(vi.mocked(fs.copyFileSync)).toHaveBeenCalled();
+
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].icon).toBe('proj_si.png');
+  });
+
+  it('removes old icon file before setting new one', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_replace', name: 'Test', path: '/test', icon: 'proj_replace.jpg' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_replace.jpg'] as any);
+
+    setIcon('proj_replace', '/tmp/new-icon.png');
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
+    expect(vi.mocked(fs.copyFileSync)).toHaveBeenCalled();
+  });
+
+  it('uses source file extension', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_ext', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    const filename = setIcon('proj_ext', '/tmp/icon.webp');
+    expect(filename).toBe('proj_ext.webp');
+  });
+
+  it('defaults to .png when source has no extension', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_noext', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    const filename = setIcon('proj_noext', '/tmp/icon');
+    expect(filename).toBe('proj_noext.png');
+  });
+});
+
+// ── saveCroppedIcon edge cases ─────────────────────────────────────────
+
+describe('saveCroppedIcon', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+  });
+
+  it('strips data URL prefix and writes PNG buffer', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_crop', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    const writtenBuffers: Record<string, Buffer> = {};
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (Buffer.isBuffer(data)) writtenBuffers[String(p)] = data;
+    });
+
+    const base64Data = Buffer.from('fake-png-data').toString('base64');
+    const filename = saveCroppedIcon('proj_crop', `data:image/png;base64,${base64Data}`);
+
+    expect(filename).toBe('proj_crop.png');
+    // Find the icon file write (not the JSON store write)
+    const iconPath = Object.keys(writtenBuffers).find(k => k.endsWith('.png'));
+    expect(iconPath).toBeDefined();
+    expect(writtenBuffers[iconPath!].toString()).toBe('fake-png-data');
+  });
+
+  it('handles webp data URL prefix', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_webp', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    const base64Data = Buffer.from('fake-webp-data').toString('base64');
+    const filename = saveCroppedIcon('proj_webp', `data:image/webp;base64,${base64Data}`);
+
+    // Always saves as .png regardless of source format
+    expect(filename).toBe('proj_webp.png');
+  });
+
+  it('updates project icon field in store', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_cropup', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) writtenData = String(data);
+    });
+
+    const base64Data = Buffer.from('data').toString('base64');
+    saveCroppedIcon('proj_cropup', `data:image/png;base64,${base64Data}`);
+
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].icon).toBe('proj_cropup.png');
+  });
+});
+
+// ── update edge cases ──────────────────────────────────────────────────
+
+describe('update — additional edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+  });
+
+  it('sets displayName', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_dn', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_dn', { displayName: 'My Custom Name' });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].displayName).toBe('My Custom Name');
+  });
+
+  it('clears displayName with empty string', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_dn_clear', name: 'Test', path: '/test', displayName: 'Old Name' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_dn_clear', { displayName: '' });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].displayName).toBeUndefined();
+  });
+
+  it('sets orchestrator', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_orch', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_orch', { orchestrator: 'claude-code' as any });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].orchestrator).toBe('claude-code');
+  });
+
+  it('setting icon to empty string removes it and triggers file cleanup', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_icon_rm', name: 'Test', path: '/test', icon: 'proj_icon_rm.png' }],
+    };
+    mockStoreFile(store);
+    vi.mocked(fs.readdirSync).mockReturnValue(['proj_icon_rm.png'] as any);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) writtenData = String(data);
+    });
+
+    update('proj_icon_rm', { icon: '' });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].icon).toBeUndefined();
+    expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalled();
+  });
+
+  it('setting icon to a value updates it without file cleanup', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_icon_set', name: 'Test', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_icon_set', { icon: 'proj_icon_set.png' });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].icon).toBe('proj_icon_set.png');
+    expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalled();
+  });
+
+  it('multiple fields can be updated simultaneously', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_multi', name: 'Old', path: '/test' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    update('proj_multi', { name: 'New', color: 'violet', displayName: 'Display' });
+    const result = JSON.parse(writtenData);
+    expect(result.projects[0].name).toBe('New');
+    expect(result.projects[0].color).toBe('violet');
+    expect(result.projects[0].displayName).toBe('Display');
+  });
+});
+
+// ── remove edge cases ──────────────────────────────────────────────────
+
+describe('remove — additional edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+  });
+
+  it('removing nonexistent id is a no-op', () => {
+    const store = {
+      version: 1,
+      projects: [{ id: 'proj_keep', name: 'Keep', path: '/keep' }],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) writtenData = String(data);
+    });
+
+    remove('nonexistent');
+    const result = JSON.parse(writtenData);
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].id).toBe('proj_keep');
+    // No settings preservation for nonexistent project
+    expect(vi.mocked(fs.renameSync)).not.toHaveBeenCalled();
+  });
+
+  it('removing from empty list is a no-op', () => {
+    mockStoreFile({ version: 1, projects: [] });
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => {
+      if (String(p) === STORE_PATH) writtenData = String(data);
+    });
+
+    remove('proj_1');
+    const result = JSON.parse(writtenData);
+    expect(result.projects).toHaveLength(0);
+  });
+});
+
+// ── reorder edge cases ─────────────────────────────────────────────────
+
+describe('reorder — additional edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fs.writeFileSync).mockReturnValue(undefined);
+    vi.mocked(fs.readdirSync).mockReturnValue([]);
+  });
+
+  it('empty orderedIds appends all projects', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'A', path: '/a' },
+        { id: 'proj_b', name: 'B', path: '/b' },
+      ],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    reorder([]);
+    const result = JSON.parse(writtenData);
+    // All projects appended (order preserved from map iteration)
+    expect(result.projects).toHaveLength(2);
+  });
+
+  it('duplicate IDs in orderedIds does not duplicate projects', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'A', path: '/a' },
+        { id: 'proj_b', name: 'B', path: '/b' },
+      ],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    reorder(['proj_a', 'proj_a', 'proj_b']);
+    const result = JSON.parse(writtenData);
+    // First occurrence picks up proj_a, second is no-op (deleted from map)
+    expect(result.projects).toHaveLength(2);
+    expect(result.projects[0].id).toBe('proj_a');
+    expect(result.projects[1].id).toBe('proj_b');
+  });
+
+  it('unknown IDs in orderedIds are ignored', () => {
+    const store = {
+      version: 1,
+      projects: [
+        { id: 'proj_a', name: 'A', path: '/a' },
+      ],
+    };
+    mockStoreFile(store);
+
+    let writtenData = '';
+    vi.mocked(fs.writeFileSync).mockImplementation((p: any, data: any) => { writtenData = String(data); });
+
+    reorder(['proj_unknown', 'proj_a']);
+    const result = JSON.parse(writtenData);
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].id).toBe('proj_a');
+  });
+});
+
+// ── readIconData edge cases ────────────────────────────────────────────
+
+describe('readIconData — additional edge cases', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('unknown extension defaults to image/png', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('data'));
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+
+    const result = readIconData('proj.bmp');
+    expect(result).toContain('data:image/png;base64,');
+  });
+
+  it('ico extension uses image/x-icon', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('data'));
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+
+    const result = readIconData('proj.ico');
+    expect(result).toContain('data:image/x-icon;base64,');
+  });
+
+  it('gif extension uses image/gif', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('data'));
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+
+    const result = readIconData('proj.gif');
+    expect(result).toContain('data:image/gif;base64,');
+  });
+
+  it('webp extension uses image/webp', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('data'));
+    vi.mocked(fs.mkdirSync).mockReturnValue(undefined);
+
+    const result = readIconData('proj.webp');
+    expect(result).toContain('data:image/webp;base64,');
   });
 });
