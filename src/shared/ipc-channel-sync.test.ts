@@ -8,11 +8,16 @@
  * - A channel is defined but not exposed in preload (renderer can't call it)
  * - A handler or preload references a channel that no longer exists
  *
+ * Channel definitions are imported at runtime (not parsed with regex), making
+ * the test resilient to formatting changes in ipc-channels.ts. Cross-file
+ * wiring checks use simple string presence which is stable across formatters.
+ *
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/238
  */
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { IPC } from './ipc-channels';
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -30,46 +35,17 @@ function readAllHandlerFiles(): string {
 }
 
 /**
- * Extract all IPC channel string values from ipc-channels.ts.
- * Matches patterns like: KEY: 'namespace:action'
- */
-function _extractChannelEntries(source: string): Array<{ key: string; value: string }> {
-  const entries: Array<{ key: string; value: string }> = [];
-  // Match lines like:   SOME_KEY: 'namespace:action',
-  const re = /^\s+(\w+)\s*:\s*'([^']+)'/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(source)) !== null) {
-    entries.push({ key: m[1], value: m[2] });
-  }
-  return entries;
-}
-
-/**
- * Build a dotted path map from the IPC object.
+ * Build a dotted path map from the IPC object at runtime.
  * e.g. IPC.PTY.DATA -> 'pty:data'
+ *
+ * This replaces the old regex-based `extractChannelMap` which parsed the
+ * source text line-by-line and was fragile to formatting changes.
  */
-function extractChannelMap(source: string): Map<string, string> {
+function buildChannelMap(): Map<string, string> {
   const map = new Map<string, string>();
-  let currentGroup: string | null = null;
-  for (const line of source.split('\n')) {
-    // Match group start like: PTY: {
-    const groupMatch = line.match(/^\s+(\w+)\s*:\s*\{/);
-    if (groupMatch) {
-      currentGroup = groupMatch[1];
-      continue;
-    }
-    // Match closing brace
-    if (currentGroup && /^\s+\}/.test(line)) {
-      currentGroup = null;
-      continue;
-    }
-    // Match channel entry
-    if (currentGroup) {
-      const entryMatch = line.match(/^\s+(\w+)\s*:\s*'([^']+)'/);
-      if (entryMatch) {
-        const dottedPath = `IPC.${currentGroup}.${entryMatch[1]}`;
-        map.set(dottedPath, entryMatch[2]);
-      }
+  for (const [group, channels] of Object.entries(IPC)) {
+    for (const [key, value] of Object.entries(channels as Record<string, string>)) {
+      map.set(`IPC.${group}.${key}`, value);
     }
   }
   return map;
@@ -114,14 +90,14 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
 /**
  * Channels where the renderer sends to main AND main also broadcasts back.
  * These need main-side handling (ipcMain.on) but are also used as events.
+ * Kept for documentation purposes.
  */
 const _BIDIRECTIONAL_CHANNELS = new Set([
   'IPC.WINDOW.HUB_STATE_CHANGED',
 ]);
 
 describe('IPC Channel Sync', () => {
-  const channelsSource = readSrc('shared/ipc-channels.ts');
-  const channelMap = extractChannelMap(channelsSource);
+  const channelMap = buildChannelMap();
   const allHandlersSource = readAllHandlerFiles();
   const preloadSource = readSrc('preload/index.ts');
 
@@ -161,11 +137,11 @@ describe('IPC Channel Sync', () => {
   });
 
   describe('handler files only reference channels that exist in ipc-channels.ts', () => {
-    const _allChannelValues = new Set(channelMap.values());
     const allDottedPaths = new Set(channelMap.keys());
 
     it('no phantom channel references in handler files', () => {
-      // Extract IPC.X.Y references from handler source
+      // Extract IPC.X.Y references from handler source — this pattern
+      // matches property access identifiers which are formatting-resilient
       const ipcRefPattern = /IPC\.(\w+)\.(\w+)/g;
       let match: RegExpExecArray | null;
       const phantoms: string[] = [];
@@ -208,7 +184,6 @@ describe('IPC Channel Sync', () => {
 
   describe('channel string values are unique (no duplicates)', () => {
     it('every channel string is unique', () => {
-      const _values = Array.from(channelMap.values());
       const seen = new Map<string, string>();
       const dupes: string[] = [];
 
