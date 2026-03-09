@@ -6,6 +6,7 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
   readdirSync: vi.fn(),
+  realpathSync: vi.fn(),
   statSync: vi.fn(),
   rmSync: vi.fn(),
   promises: {
@@ -13,6 +14,10 @@ vi.mock('fs', () => ({
     unlink: vi.fn(),
     rm: vi.fn(),
   },
+}));
+
+vi.mock('./plugin-manifest-registry', () => ({
+  registerTrustedManifest: vi.fn(),
 }));
 
 vi.mock('./agent-settings-service', () => ({
@@ -26,8 +31,10 @@ vi.mock('./agent-settings-service', () => ({
 
 import * as fs from 'fs';
 import * as agentSettings from './agent-settings-service';
+import { registerTrustedManifest } from './plugin-manifest-registry';
 import {
   discoverCommunityPlugins,
+  refreshManifestFromDisk,
   uninstallPlugin,
   listProjectPluginInjections,
   cleanupProjectPluginInjections,
@@ -540,6 +547,118 @@ describe('plugin-discovery', () => {
 
       const result = listOrphanedPluginIds(PROJECT_PATH, ['known-plugin']);
       expect(result).toEqual([]);
+    });
+  });
+
+  // ── Trusted manifest registration during discovery ─────────────────
+
+  describe('trusted manifest registration', () => {
+    it('registers discovered manifests as trusted during discovery', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s === PLUGINS_DIR) return true;
+        if (s.endsWith('manifest.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'my-plugin', isDirectory: () => true, isSymbolicLink: () => false },
+      ] as any);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        id: 'my-plugin',
+        name: 'My Plugin',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        allowedCommands: ['git'],
+      }));
+
+      discoverCommunityPlugins();
+
+      expect(registerTrustedManifest).toHaveBeenCalledWith('my-plugin', expect.objectContaining({
+        id: 'my-plugin',
+        allowedCommands: ['git'],
+      }));
+    });
+
+    it('does not register manifest without an id', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s === PLUGINS_DIR) return true;
+        if (s.endsWith('manifest.json')) return true;
+        return false;
+      });
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        { name: 'no-id-plugin', isDirectory: () => true, isSymbolicLink: () => false },
+      ] as any);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        name: 'No ID',
+        version: '1.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+      }));
+
+      discoverCommunityPlugins();
+
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── refreshManifestFromDisk ──────────────────────────────────────────
+
+  describe('refreshManifestFromDisk', () => {
+    it('reads manifest from disk and registers as trusted', () => {
+      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+        id: 'my-plugin',
+        name: 'My Plugin',
+        version: '2.0.0',
+        engine: { api: 0.5 },
+        scope: 'project',
+        allowedCommands: ['node'],
+      }));
+
+      const result = refreshManifestFromDisk('my-plugin');
+
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe('my-plugin');
+      expect(result!.allowedCommands).toEqual(['node']);
+      expect(registerTrustedManifest).toHaveBeenCalledWith('my-plugin', expect.objectContaining({
+        id: 'my-plugin',
+        allowedCommands: ['node'],
+      }));
+    });
+
+    it('returns null when manifest file does not exist', () => {
+      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
+      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+
+      const result = refreshManifestFromDisk('nonexistent-plugin');
+
+      expect(result).toBeNull();
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
+    });
+
+    it('returns null for path traversal attempts', () => {
+      // Simulate a pluginId that resolves outside the plugins directory
+      vi.mocked(fs.realpathSync).mockImplementation((p: any) => {
+        const s = String(p);
+        if (s.includes('plugins') && !s.includes('..')) return s;
+        return '/etc/evil';
+      });
+
+      const result = refreshManifestFromDisk('../../../etc/passwd');
+
+      expect(result).toBeNull();
+      expect(registerTrustedManifest).not.toHaveBeenCalled();
+    });
+
+    it('returns null for invalid JSON in manifest', () => {
+      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
+      vi.mocked(fs.readFileSync).mockReturnValue('{{invalid json');
+
+      const result = refreshManifestFromDisk('bad-plugin');
+
+      expect(result).toBeNull();
     });
   });
 });

@@ -180,7 +180,16 @@ export function registerPluginHandlers(): void {
   }));
 
   // ── Manifest Registry ─────────────────────────────────────────────────
+  // NOTE: registerManifest from the renderer strips security-sensitive fields
+  // (e.g., allowedCommands) to prevent self-escalation attacks.
+  // Trusted manifests are registered by the main process during discovery.
   ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, withValidatedArgs([stringArg(), objectArg<PluginManifest>()], (_event, pluginId: string, manifest: PluginManifest) => {
     pluginManifestRegistry.registerManifest(pluginId, manifest);
+  }));
+
+  // Re-read a plugin's manifest from disk and register it as trusted.
+  // Used during hot-reload so the renderer doesn't need to send the manifest.
+  ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], (_event, pluginId: string) => {
+    return pluginDiscovery.refreshManifestFromDisk(pluginId);
   }));
 }
