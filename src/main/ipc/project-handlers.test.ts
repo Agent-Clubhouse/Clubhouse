@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
+import * as path from 'path';
 import { execSync } from 'child_process';
 
 vi.mock('electron', () => {
@@ -194,7 +195,7 @@ describe('project-handlers', () => {
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/my-project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith('/tmp/my-project/.git');
+    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/my-project', '.git'));
     expect(result).toBe(true);
   });
 
@@ -204,7 +205,7 @@ describe('project-handlers', () => {
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/no-git-project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith('/tmp/no-git-project/.git');
+    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/no-git-project', '.git'));
     expect(result).toBe(false);
   });
 
@@ -472,7 +473,7 @@ describe('project-handlers', () => {
     const handler = handlers.get(IPC.PROJECT.LIST_CLUBHOUSE_FILES)!;
     const result = await handler({}, '/tmp/project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith('/tmp/project/.clubhouse');
+    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
     expect(result).toEqual([]);
   });
 
@@ -519,7 +520,7 @@ describe('project-handlers', () => {
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
     const result = await handler({}, '/tmp/project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith('/tmp/project/.clubhouse');
+    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
     expect(result).toBe(true);
   });
 
@@ -535,7 +536,7 @@ describe('project-handlers', () => {
       'Resetting project .clubhouse directory',
       { meta: { projectPath: '/tmp/project' } },
     );
-    expect(fs.rmSync).toHaveBeenCalledWith('/tmp/project/.clubhouse', {
+    expect(fs.rmSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'), {
       recursive: true,
       force: true,
     });
