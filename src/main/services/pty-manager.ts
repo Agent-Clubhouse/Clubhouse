@@ -4,6 +4,7 @@ import { getShellEnvironment, getDefaultShell } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import { StaleSweeper } from './stale-sweeper';
 
 interface ManagedSession {
   process: pty.IPty;
@@ -52,43 +53,32 @@ function flushPendingCommand(session: ManagedSession): boolean {
   return true;
 }
 
-/** Interval (ms) between stale session sweep checks. */
-const STALE_SWEEP_INTERVAL = 30_000;
-
-let sweepTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * Start a periodic sweep that detects PTY sessions whose processes have
- * died without triggering the onExit handler (e.g., crash during startup).
- * This is a safety net — normal exits are handled by the onExit callback.
- */
-export function startStaleSweep(): void {
-  if (sweepTimer) return;
-  sweepTimer = setInterval(() => {
-    for (const [agentId, session] of sessions) {
-      try {
-        // Signal 0 checks process liveness without sending a real signal
-        process.kill(session.process.pid, 0);
-      } catch {
-        // Process is dead but session was never cleaned up
-        appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
-          meta: { agentId, pid: session.process.pid },
-        });
-        cleanupSession(agentId);
-        broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
-        annexEventBus.emitPtyExit(agentId, 1);
-      }
+const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
+  isStale: (_agentId, session) => {
+    try {
+      // Signal 0 checks process liveness without sending a real signal
+      process.kill(session.process.pid, 0);
+      return false;
+    } catch {
+      return true;
     }
-  }, STALE_SWEEP_INTERVAL);
-  sweepTimer.unref();
+  },
+  onStale: (agentId, session) => {
+    appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
+      meta: { agentId, pid: session.process.pid },
+    });
+    cleanupSession(agentId);
+    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
+    annexEventBus.emitPtyExit(agentId, 1);
+  },
+});
+
+export function startStaleSweep(): void {
+  staleSweeper.start();
 }
 
-/** Stop the periodic stale session sweep. */
 export function stopStaleSweep(): void {
-  if (sweepTimer) {
-    clearInterval(sweepTimer);
-    sweepTimer = null;
-  }
+  staleSweeper.stop();
 }
 
 /** Compact threshold: reclaim array memory once the dead-head region grows large. */
