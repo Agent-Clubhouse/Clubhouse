@@ -353,10 +353,12 @@ describe('stage/unstage', () => {
   });
 
   it('stage returns ok:false with message on failure', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
+    const err = new Error('fail') as any;
+    err.stderr = Buffer.from('fatal: not a git repository');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = stage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 
   it('unstage returns ok:true on success', () => {
@@ -366,10 +368,12 @@ describe('stage/unstage', () => {
   });
 
   it('unstage returns ok:false with message on failure', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
+    const err = new Error('fail') as any;
+    err.stderr = Buffer.from('fatal: not a git repository');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = unstage(DIR, 'file.ts');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 });
 
@@ -386,10 +390,12 @@ describe('stageAll/unstageAll', () => {
   });
 
   it('stageAll returns ok:false with message on failure', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
+    const err = new Error('fail') as any;
+    err.stderr = Buffer.from('fatal: not a git repository');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = stageAll(DIR);
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 
   it('unstageAll runs git reset HEAD', () => {
@@ -400,10 +406,12 @@ describe('stageAll/unstageAll', () => {
   });
 
   it('unstageAll returns ok:false with message on failure', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('fail'); });
+    const err = new Error('fail') as any;
+    err.stderr = Buffer.from('fatal: not a git repository');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = unstageAll(DIR);
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('not a git repository');
   });
 });
 
@@ -666,20 +674,22 @@ describe('checkout', () => {
     );
   });
 
-  it('returns ok:false when checkout fails (non-existent branch)', () => {
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('pathspec did not match'); });
+  it('returns ok:false with message when checkout fails (non-existent branch)', () => {
+    const err = new Error('pathspec did not match') as any;
+    err.stderr = Buffer.from('error: pathspec did not match any file(s) known to git');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = checkout(DIR, 'nonexistent-branch');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('pathspec');
   });
 
-  it('returns ok:false when checkout fails due to uncommitted changes', () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      throw new Error('Your local changes would be overwritten');
-    });
+  it('returns ok:false with message when checkout fails due to uncommitted changes', () => {
+    const err = new Error('Your local changes would be overwritten') as any;
+    err.stderr = Buffer.from('error: Your local changes would be overwritten by checkout');
+    vi.mocked(execSync).mockImplementation(() => { throw err; });
     const result = checkout(DIR, 'feature/other');
     expect(result.ok).toBe(false);
-    expect(result.message).toBeTruthy();
+    expect(result.message).toContain('overwritten');
   });
 
   it('passes branch name directly to git checkout command', () => {

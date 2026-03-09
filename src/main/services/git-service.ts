@@ -10,7 +10,11 @@ const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
 function run(cmd: string, cwd: string): string {
   try {
     return execSync(cmd, { cwd, encoding: 'utf-8', timeout: 10000 }).trim();
-  } catch {
+  } catch (err: any) {
+    const msg = err?.stderr?.toString?.() || err?.message || 'Unknown error';
+    appLog('core:git', 'warn', 'Git command failed', {
+      meta: { cmd: cmd.split(' ').slice(0, 3).join(' '), cwd, error: msg.trim() },
+    });
     return '';
   }
 }
