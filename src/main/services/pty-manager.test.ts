@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock node-pty
 const mockProcess = {
+  pid: 12345,
   onData: vi.fn(),
   onExit: vi.fn(),
   write: vi.fn(),
