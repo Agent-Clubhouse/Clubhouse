@@ -186,6 +186,7 @@ vi.stubGlobal('clubhouse', {
     cleanupProjectInjections: asyncNoop,
     listOrphanedPluginIds: async () => [],
     registerManifest: asyncNoop,
+    refreshManifestFromDisk: async () => null,
   },
   marketplace: {
     fetchRegistry: async () => ({ registry: { version: 1, updated: '', plugins: [] }, featured: null }),
