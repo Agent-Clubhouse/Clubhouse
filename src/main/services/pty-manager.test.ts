@@ -964,7 +964,7 @@ describe('pty-manager', () => {
     it('onData callback is ignored if session has been replaced', () => {
       // First spawn
       spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
-      const firstOnData = mockProcess.onData.mock.calls[0][0];
+      const _firstOnData = mockProcess.onData.mock.calls[0][0];
 
       // Replace session with a new spawn
       spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
