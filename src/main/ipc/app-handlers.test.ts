@@ -59,6 +59,14 @@ vi.mock('../services/clipboard-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
+vi.mock('./settings-handlers', () => ({
+  clipboardSettings: {
+    getSettings: vi.fn(() => ({ clipboardCompat: false })),
+    saveSettings: vi.fn(),
+  },
+  registerSettingsHandlers: vi.fn(),
+}));
+
 vi.mock('../services/auto-update-service', () => ({
   getSettings: vi.fn(() => ({ autoUpdate: true })),
   saveSettings: vi.fn(),
@@ -116,7 +124,7 @@ import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
-import * as clipboardSettings from '../services/clipboard-settings';
+import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';
 import * as logService from '../services/log-service';

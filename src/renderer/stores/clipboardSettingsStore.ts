@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import type { ClipboardSettings } from '../../shared/types';
+import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
 
 function defaultClipboardCompat(): boolean {
   return window.clubhouse.platform === 'win32';
@@ -17,7 +19,7 @@ export const useClipboardSettingsStore = create<ClipboardSettingsState>((set, ge
 
   loadSettings: async () => {
     try {
-      const settings = await window.clubhouse.app.getClipboardSettings();
+      const settings = await window.clubhouse.settings.get(CLIPBOARD_SETTINGS.key) as ClipboardSettings | null;
       set({ clipboardCompat: settings?.clipboardCompat ?? defaultClipboardCompat(), loaded: true });
     } catch {
       set({ loaded: true });
@@ -28,7 +30,7 @@ export const useClipboardSettingsStore = create<ClipboardSettingsState>((set, ge
     const prev = get().clipboardCompat;
     set({ clipboardCompat });
     try {
-      window.clubhouse.app.saveClipboardSettings({ clipboardCompat });
+      await window.clubhouse.settings.save(CLIPBOARD_SETTINGS.key, { clipboardCompat });
     } catch {
       set({ clipboardCompat: prev });
     }
