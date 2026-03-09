@@ -582,13 +582,13 @@ describe('updateDurable', () => {
 });
 
 describe('getWorktreeStatus', () => {
-  it('invalid agent returns isValid:false', () => {
+  it('invalid agent returns isValid:false', async () => {
     mockNoAgentsFile();
-    const status = getWorktreeStatus(PROJECT_PATH, 'nonexistent');
+    const status = await getWorktreeStatus(PROJECT_PATH, 'nonexistent');
     expect(status.isValid).toBe(false);
   });
 
-  it('missing .git returns isValid:false', () => {
+  it('missing .git returns isValid:false', async () => {
     const agents = [{ id: 'durable_nogit', name: 'nogit', color: 'indigo', branch: 'nogit/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       const s = String(p);
@@ -599,11 +599,11 @@ describe('getWorktreeStatus', () => {
     });
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
 
-    const status = getWorktreeStatus(PROJECT_PATH, 'durable_nogit');
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_nogit');
     expect(status.isValid).toBe(false);
   });
 
-  it('non-worktree agent returns isValid:false', () => {
+  it('non-worktree agent returns isValid:false', async () => {
     const agents = [{ id: 'durable_nowt', name: 'nowt', color: 'indigo', createdAt: '2024-01-01' }];
     vi.mocked(fs.existsSync).mockImplementation((p: any) => {
       if (String(p).endsWith('agents.json')) return true;
@@ -611,8 +611,70 @@ describe('getWorktreeStatus', () => {
     });
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
 
-    const status = getWorktreeStatus(PROJECT_PATH, 'durable_nowt');
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_nowt');
     expect(status.isValid).toBe(false);
+  });
+
+  it('valid worktree runs git commands async and returns parsed status', async () => {
+    const agents = [{ id: 'durable_wt', name: 'wt', color: 'indigo', branch: 'wt/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.endsWith('agents.json')) return true;
+      if (s === '/test/wt') return true;
+      if (s === path.join('/test/wt', '.git')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    // Mock exec to simulate git commands
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes('git status --porcelain')) {
+        cb(null, ' M src/file.ts\n?? newfile.ts\n', '');
+      } else if (cmdStr.includes('git rev-parse --verify main')) {
+        cb(null, 'abc123\n', '');
+      } else if (cmdStr.includes('git remote')) {
+        cb(null, 'origin\n', '');
+      } else if (cmdStr.includes('git log')) {
+        cb(null, 'abc123|abc1|fix bug|Author|2024-01-01 00:00:00 +0000\n', '');
+      } else {
+        cb(null, '', '');
+      }
+      return {} as any;
+    });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_wt');
+    expect(status.isValid).toBe(true);
+    expect(status.branch).toBe('wt/standby');
+    expect(status.hasRemote).toBe(true);
+    expect(status.uncommittedFiles).toHaveLength(2);
+    expect(status.uncommittedFiles[0].path).toBe('src/file.ts');
+    expect(status.unpushedCommits).toHaveLength(1);
+    expect(status.unpushedCommits[0].shortHash).toBe('abc1');
+  });
+
+  it('handles git command failures gracefully', async () => {
+    const agents = [{ id: 'durable_fail', name: 'fail', color: 'indigo', branch: 'fail/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
+    vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+      const s = String(p);
+      if (s.endsWith('agents.json')) return true;
+      if (s === '/test/wt') return true;
+      if (s === path.join('/test/wt', '.git')) return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(agents));
+
+    // All git commands fail
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+      cb(new Error('git failed'), '', '');
+      return {} as any;
+    });
+
+    const status = await getWorktreeStatus(PROJECT_PATH, 'durable_fail');
+    expect(status.isValid).toBe(true);
+    expect(status.uncommittedFiles).toHaveLength(0);
+    expect(status.unpushedCommits).toHaveLength(0);
+    expect(status.hasRemote).toBe(false);
   });
 });
 
