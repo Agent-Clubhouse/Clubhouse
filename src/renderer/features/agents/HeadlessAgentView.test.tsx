@@ -30,7 +30,7 @@ describe('HeadlessAgentView', () => {
     resetStore();
     // Mock IPC calls
     window.clubhouse.agent.onHookEvent = vi.fn(() => vi.fn());
-    window.clubhouse.agent.readTranscript = vi.fn().mockResolvedValue('');
+    window.clubhouse.agent.readTranscriptFeed = vi.fn().mockResolvedValue([]);
   });
 
   afterEach(() => {

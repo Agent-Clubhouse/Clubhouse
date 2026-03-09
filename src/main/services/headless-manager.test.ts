@@ -91,6 +91,8 @@ import {
   isHeadless,
   kill,
   readTranscript,
+  readTranscriptFeed,
+  eventsToFeedItems,
   getTranscriptInfo,
   readTranscriptPage,
   setMaxTranscriptBytes,
@@ -1361,6 +1363,219 @@ describe('headless-manager', () => {
         ['-p', 'test'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
+    });
+  });
+
+  // ============================================================
+  // eventsToFeedItems (transcript-to-feed-item conversion)
+  // ============================================================
+  describe('eventsToFeedItems', () => {
+    it('converts verbose assistant tool_use to tool feed items', () => {
+      const events = [{
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', name: 'Edit', input: { file_path: '/foo.ts' } },
+            { type: 'tool_use', name: 'Read', input: { file_path: '/bar.ts' } },
+          ],
+        },
+      }];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({ kind: 'tool', name: 'Edit' });
+      expect(items[1]).toMatchObject({ kind: 'tool', name: 'Read' });
+    });
+
+    it('converts verbose assistant text blocks to text feed items', () => {
+      const events = [{
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'Hello world' }],
+        },
+      }];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'Hello world' });
+    });
+
+    it('flushes accumulated text before tool_use blocks', () => {
+      const events = [{
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'text', text: 'Analyzing code...' },
+            { type: 'tool_use', name: 'Read' },
+          ],
+        },
+      }];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(2);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'Analyzing code...' });
+      expect(items[1]).toMatchObject({ kind: 'tool', name: 'Read' });
+    });
+
+    it('converts result events', () => {
+      const events = [
+        { type: 'result', result: 'Task completed successfully' },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'result', text: 'Task completed successfully' });
+    });
+
+    it('defaults to "Done" when result is not a string', () => {
+      const events = [{ type: 'result' }];
+      const items = eventsToFeedItems(events);
+      expect(items[0]).toMatchObject({ kind: 'result', text: 'Done' });
+    });
+
+    it('handles legacy content_block_start with tool_use', () => {
+      const events = [
+        {
+          type: 'content_block_start',
+          content_block: { type: 'tool_use', name: 'Bash' },
+        },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'tool', name: 'Bash' });
+    });
+
+    it('handles legacy content_block_delta text accumulation', () => {
+      const events = [
+        { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello ' } },
+        { type: 'content_block_delta', delta: { type: 'text_delta', text: 'world' } },
+        { type: 'content_block_stop' },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'Hello world' });
+    });
+
+    it('flushes text on message_stop', () => {
+      const events = [
+        { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Pending' } },
+        { type: 'message_stop' },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'Pending' });
+    });
+
+    it('flushes trailing text at the end of events', () => {
+      const events = [
+        { type: 'content_block_delta', delta: { type: 'text_delta', text: 'leftover' } },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'leftover' });
+    });
+
+    it('skips whitespace-only text', () => {
+      const events = [{
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: '   ' }],
+        },
+      }];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(0);
+    });
+
+    it('handles mixed verbose and result events', () => {
+      const events = [
+        {
+          type: 'assistant',
+          message: {
+            content: [
+              { type: 'text', text: 'Working on it...' },
+              { type: 'tool_use', name: 'Edit' },
+            ],
+          },
+        },
+        {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'text', text: 'Done editing.' }],
+          },
+        },
+        { type: 'result', result: 'All done' },
+      ];
+
+      const items = eventsToFeedItems(events);
+      expect(items).toHaveLength(4);
+      expect(items[0]).toMatchObject({ kind: 'text', text: 'Working on it...' });
+      expect(items[1]).toMatchObject({ kind: 'tool', name: 'Edit' });
+      expect(items[2]).toMatchObject({ kind: 'text', text: 'Done editing.' });
+      expect(items[3]).toMatchObject({ kind: 'result', text: 'All done' });
+    });
+
+    it('returns empty array for empty input', () => {
+      expect(eventsToFeedItems([])).toHaveLength(0);
+    });
+  });
+
+  // ============================================================
+  // readTranscriptFeed (IPC-facing wrapper)
+  // ============================================================
+  describe('readTranscriptFeed', () => {
+    it('returns parsed feed items from in-memory session', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      // Feed a tool_use event through stdout
+      const event = {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/foo.ts' } }],
+        },
+      };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      const feed = readTranscriptFeed('test-agent');
+      expect(feed).not.toBeNull();
+      expect(feed!.length).toBeGreaterThanOrEqual(1);
+      expect(feed!.find(i => i.kind === 'tool')).toMatchObject({ kind: 'tool', name: 'Read' });
+    });
+
+    it('returns null for unknown agent', () => {
+      expect(readTranscriptFeed('nonexistent')).toBeNull();
+    });
+
+    it('includes result feed items', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = { type: 'result', result: 'Task completed', cost_usd: 0.01, duration_ms: 5000 };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      const feed = readTranscriptFeed('test-agent');
+      expect(feed).not.toBeNull();
+      expect(feed!.find(i => i.kind === 'result')).toMatchObject({ kind: 'result', text: 'Task completed' });
+    });
+
+    it('includes text feed items from verbose assistant messages', () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const event = {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Analyzing the code...' }] },
+      };
+      mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+
+      const feed = readTranscriptFeed('test-agent');
+      expect(feed).not.toBeNull();
+      expect(feed!.find(i => i.kind === 'text')).toMatchObject({
+        kind: 'text',
+        text: 'Analyzing the code...',
+      });
     });
   });
 });
