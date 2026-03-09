@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SettingsDefinition } from '../../shared/settings-definitions';
-import { createSettingsStore, type SettingsStoreState } from './settings-store-factory';
+import { createSettingsStore } from './settings-store-factory';
 
 // Mock the preload bridge
 const mockGet = vi.fn();

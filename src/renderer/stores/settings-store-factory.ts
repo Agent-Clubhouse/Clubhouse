@@ -47,7 +47,7 @@ export function createSettingsStore<T extends Record<string, unknown>>(
       try {
         const settings = await window.clubhouse.settings.get(definition.key) as T | null;
         if (settings) {
-          set({ ...definition.defaults, ...settings, loaded: true } as Partial<SettingsStoreState<T>>);
+          set({ ...definition.defaults, ...settings, loaded: true } as unknown as Partial<SettingsStoreState<T>>);
         } else {
           set({ loaded: true } as Partial<SettingsStoreState<T>>);
         }

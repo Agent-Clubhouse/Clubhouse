@@ -124,7 +124,6 @@ import * as orchestratorSettings from '../services/orchestrator-settings';
 import * as headlessSettings from '../services/headless-settings';
 import * as clubhouseModeSettings from '../services/clubhouse-mode-settings';
 import * as badgeSettings from '../services/badge-settings';
-import * as clipboardSettingsLegacy from '../services/clipboard-settings';
 import { clipboardSettings } from './settings-handlers';
 import * as autoUpdateService from '../services/auto-update-service';
 import * as soundService from '../services/sound-service';

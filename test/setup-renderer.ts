@@ -26,6 +26,10 @@ const asyncNoop = async () => {};
 vi.stubGlobal('clubhouse', {
   platform: process.platform,
   getPathForFile: (_file: File) => '',
+  settings: {
+    get: async () => null,
+    save: asyncNoop,
+  },
   pty: {
     spawnShell: asyncNoop,
     write: noop,
