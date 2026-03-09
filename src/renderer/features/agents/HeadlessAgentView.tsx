@@ -249,9 +249,6 @@ function AnimatedTreehouse() {
   );
 }
 
-/** How recently a hook must have fired for us to consider hooks "active" and skip polling. */
-const HOOK_ACTIVE_THRESHOLD_MS = 5_000;
-
 export function HeadlessAgentView({ agent }: Props) {
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [elapsed, setElapsed] = useState(0);
@@ -265,7 +262,6 @@ export function HeadlessAgentView({ agent }: Props) {
   const notificationCountsRef = useRef<Map<string, number>>(new Map());
   const syncingTranscriptRef = useRef(false);
   const syncRequestedRef = useRef(false);
-  const lastHookTimestampRef = useRef(0);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
 
@@ -288,12 +284,10 @@ export function HeadlessAgentView({ agent }: Props) {
     });
   }, []);
 
-  // Poll transcript pages incrementally so the transcript remains the canonical
-  // source for tool/text/result activity without rebuilding the whole feed.
+  // Sync transcript incrementally via hook events so the transcript remains the
+  // canonical source for tool/text/result activity without rebuilding the whole feed.
   useEffect(() => {
     let cancelled = false;
-    let pollCount = 0;
-    let interval: ReturnType<typeof setInterval>;
 
     prevCountRef.current = 0;
     transcriptOffsetRef.current = 0;
@@ -304,7 +298,6 @@ export function HeadlessAgentView({ agent }: Props) {
     notificationCountsRef.current = new Map();
     syncingTranscriptRef.current = false;
     syncRequestedRef.current = false;
-    lastHookTimestampRef.current = 0;
     setFeedItems([]);
 
     async function syncTranscript(): Promise<void> {
@@ -357,40 +350,29 @@ export function HeadlessAgentView({ agent }: Props) {
     const removeListener = window.clubhouse.agent.onHookEvent(
       (agentId: string, event: AgentHookEvent) => {
         if (agentId !== agent.id) return;
-        lastHookTimestampRef.current = Date.now();
 
         if (event.kind === 'notification' && event.message) {
           appendNotificationItem(event.message, event.timestamp || Date.now());
           return;
         }
 
-        if (event.kind === 'pre_tool' || event.kind === 'post_tool' || event.kind === 'stop') {
+        if (
+          event.kind === 'pre_tool' ||
+          event.kind === 'post_tool' ||
+          event.kind === 'tool_error' ||
+          event.kind === 'stop'
+        ) {
           void syncTranscript();
         }
       },
     );
 
+    // Initial sync to load any existing transcript content
     void syncTranscript();
-    const fastInterval = setInterval(() => {
-      pollCount++;
-      // Skip poll when hooks are actively firing — they already trigger syncs
-      if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
-      void syncTranscript();
-      if (pollCount >= 10) {
-        clearInterval(fastInterval);
-        interval = setInterval(() => {
-          // Skip poll when hooks are actively firing
-          if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
-          void syncTranscript();
-        }, 2000);
-      }
-    }, 500);
 
     return () => {
       cancelled = true;
       removeListener();
-      clearInterval(fastInterval);
-      if (interval) clearInterval(interval);
     };
   }, [agent.id, appendNotificationItem]);
 
