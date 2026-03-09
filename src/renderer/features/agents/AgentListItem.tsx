@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
@@ -9,7 +9,6 @@ import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelL
 interface Props {
   agent: Agent;
   isActive: boolean;
-  isThinking: boolean;
   onSelect: () => void;
   onSpawnQuickChild?: () => void;
   isNested?: boolean;
@@ -126,16 +125,31 @@ function ContextMenu({ actions, position, onClose }: {
 
 // ── Main component ─────────────────────────────────────────────────
 
-export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
-  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus, agentIcons } = useAgentStore();
-  const iconDataUrl = agentIcons[agent.id];
+export function AgentListItem({ agent, isActive, onSelect, onSpawnQuickChild, isNested }: Props) {
+  const killAgent = useAgentStore((s) => s.killAgent);
+  const removeAgent = useAgentStore((s) => s.removeAgent);
+  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
+  const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
+  const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
+  const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const lastActivity = useAgentStore((s) => s.agentActivity[agent.id]);
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
+
+  // Periodic re-render to expire the "thinking" indicator after 3s of inactivity
+  useEffect(() => {
+    const interval = setInterval(forceUpdate, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isThinking = !!lastActivity && Date.now() - lastActivity < 3000;
+
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
-  const detailed = agentDetailedStatus[agent.id];
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'

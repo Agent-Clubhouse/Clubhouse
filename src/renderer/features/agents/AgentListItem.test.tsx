@@ -21,6 +21,7 @@ function resetStores(agentOverrides: Partial<Agent> = {}) {
     agents: { [agent.id]: agent },
     activeAgentId: agent.id,
     agentIcons: {},
+    agentActivity: {},
     agentDetailedStatus: {},
     killAgent: vi.fn(),
     removeAgent: vi.fn(),
@@ -47,7 +48,7 @@ function renderItem(agentOverrides: Partial<Agent> = {}, props: Partial<{ onSpaw
   const agent = { ...baseAgent, ...agentOverrides };
   resetStores(agentOverrides);
   return render(
-    <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} {...props} />,
+    <AgentListItem agent={agent} isActive={false} onSelect={vi.fn()} {...props} />,
   );
 }
 
@@ -70,7 +71,7 @@ describe('AgentListItem activity animation', () => {
     });
     const agent = { ...baseAgent, status: 'running' as const };
     const { container } = render(
-      <AgentListItem agent={agent} isActive={false} isThinking={true} onSelect={vi.fn()} />,
+      <AgentListItem agent={agent} isActive={false} onSelect={vi.fn()} />,
     );
     const avatarWrapper = container.querySelector('[class*="flex-shrink-0"]');
     expect(avatarWrapper?.className).toContain('animate-pulse-ring');
@@ -83,7 +84,7 @@ describe('AgentListItem activity animation', () => {
     });
     const agent = { ...baseAgent, status: 'running' as const, headless: true };
     const { container } = render(
-      <AgentListItem agent={agent} isActive={false} isThinking={true} onSelect={vi.fn()} />,
+      <AgentListItem agent={agent} isActive={false} onSelect={vi.fn()} />,
     );
     const avatarWrapper = container.querySelector('[class*="flex-shrink-0"]');
     // Should use pulse-ring, not headless-orbit
@@ -93,9 +94,10 @@ describe('AgentListItem activity animation', () => {
 
   it('applies pulse-ring consistently for both durable and quick working agents', () => {
     resetStores({ status: 'running', kind: 'quick' });
+    useAgentStore.setState({ agentActivity: { 'agent-1': Date.now() } });
     const agent = { ...baseAgent, status: 'running' as const, kind: 'quick' as const };
     const { container } = render(
-      <AgentListItem agent={agent} isActive={false} isThinking={true} onSelect={vi.fn()} />,
+      <AgentListItem agent={agent} isActive={false} onSelect={vi.fn()} />,
     );
     const avatarWrapper = container.querySelector('[class*="flex-shrink-0"]');
     expect(avatarWrapper?.className).toContain('animate-pulse-ring');

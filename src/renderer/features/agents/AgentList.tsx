@@ -21,7 +21,6 @@ export function AgentList() {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
-  const agentActivity = useAgentStore((s) => s.agentActivity);
   const recordActivity = useAgentStore((s) => s.recordActivity);
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
@@ -50,8 +49,6 @@ export function AgentList() {
   const [quickFreeAgentMode, setQuickFreeAgentMode] = useState(false);
   const missionInputRef = useRef<HTMLInputElement>(null);
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
-  const [, setTick] = useState(0);
-
   // Drag-to-reorder state for durable agents
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -109,12 +106,6 @@ export function AgentList() {
       pendingTimers.clear();
     };
   }, [recordActivity]);
-
-  // Tick for activity status refresh
-  useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 2000);
-    return () => clearInterval(interval);
-  }, []);
 
   const projectAgents = Object.values(agents).filter(
     (a) => a.projectId === activeProjectId
@@ -197,12 +188,6 @@ export function AgentList() {
       console.error('Failed to create durable agent:', err);
     }
   };
-
-  const isThinking = useCallback((id: string) => {
-    const last = agentActivity[id];
-    if (!last) return false;
-    return Date.now() - last < 3000;
-  }, [agentActivity]);
 
   // Drag-to-reorder handlers for durable agents
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
@@ -442,7 +427,6 @@ export function AgentList() {
                     <AgentListItem
                       agent={durable}
                       isActive={durable.id === activeAgentId}
-                      isThinking={isThinking(durable.id)}
                       onSelect={() => { selectCompleted(null); setActiveAgent(durable.id, activeProjectId ?? undefined); }}
                       onSpawnQuickChild={() => handleSpawnQuickChild(durable.id)}
                     />
@@ -463,7 +447,6 @@ export function AgentList() {
                       key={child.id}
                       agent={child}
                       isActive={child.id === activeAgentId}
-                      isThinking={isThinking(child.id)}
                       onSelect={() => { selectCompleted(null); setActiveAgent(child.id, activeProjectId ?? undefined); }}
                       isNested
                     />
@@ -499,7 +482,6 @@ export function AgentList() {
                 key={agent.id}
                 agent={agent}
                 isActive={agent.id === activeAgentId}
-                isThinking={isThinking(agent.id)}
                 onSelect={() => { selectCompleted(null); setActiveAgent(agent.id, activeProjectId ?? undefined); }}
               />
             ))}
