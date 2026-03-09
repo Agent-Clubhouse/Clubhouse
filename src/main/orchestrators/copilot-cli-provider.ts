@@ -8,6 +8,7 @@ import {
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
+  SpawnCommandResult,
   HeadlessOpts,
   HeadlessCommandResult,
   NormalizedHookEvent,
@@ -130,7 +131,7 @@ export class CopilotCliProvider implements OrchestratorProvider {
     }
   }
 
-  async buildSpawnCommand(opts: SpawnOpts): Promise<{ binary: string; args: string[]; env?: Record<string, string> }> {
+  async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
     const binary = findCopilotBinary();
     const args: string[] = [];
 

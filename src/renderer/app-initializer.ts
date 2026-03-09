@@ -26,6 +26,7 @@ import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { useOnboardingStore } from './stores/onboardingStore';
 import { initializePluginSystem } from './plugins/plugin-loader';
+import { useToastStore } from './stores/toastStore';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -57,6 +58,10 @@ export function initApp(): () => void {
   // 2. Initialize plugin system (must be after settings)
   initializePluginSystem().catch((err) => {
     console.error('[Plugins] Failed to initialize plugin system:', err);
+    useToastStore.getState().addToast(
+      'Failed to initialize plugin system. Some features may be unavailable.',
+      'error',
+    );
   });
 
   // 3. Start IPC listeners for updates, annex, and plugin updates

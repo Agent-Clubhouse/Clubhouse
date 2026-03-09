@@ -7,6 +7,7 @@ describe('clubhouseModeStore', () => {
     useClubhouseModeStore.setState({
       enabled: false,
       projectOverrides: {},
+      sourceControlProvider: 'github',
     });
     vi.restoreAllMocks();
   });
@@ -97,6 +98,59 @@ describe('clubhouseModeStore', () => {
       await useClubhouseModeStore.getState().clearProjectOverride('/project');
 
       expect(useClubhouseModeStore.getState().projectOverrides).toEqual({ '/other': false });
+    });
+  });
+
+  describe('race condition prevention', () => {
+    it('setEnabled saves with pre-snapshot projectOverrides', async () => {
+      useClubhouseModeStore.setState({
+        enabled: false,
+        projectOverrides: { '/a': true },
+        sourceControlProvider: 'github',
+      });
+
+      let resolveSave!: () => void;
+      window.clubhouse.app.saveClubhouseModeSettings = vi.fn().mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = useClubhouseModeStore.getState().setEnabled(true);
+
+      // Concurrent mutation while save is in-flight
+      useClubhouseModeStore.setState({ projectOverrides: { '/a': true, '/b': false } });
+
+      resolveSave();
+      await promise;
+
+      expect(window.clubhouse.app.saveClubhouseModeSettings).toHaveBeenCalledWith(
+        { enabled: true, projectOverrides: { '/a': true }, sourceControlProvider: 'github' },
+        undefined,
+      );
+    });
+
+    it('setSourceControlProvider saves with pre-snapshot enabled and projectOverrides', async () => {
+      useClubhouseModeStore.setState({
+        enabled: false,
+        projectOverrides: {},
+        sourceControlProvider: 'github',
+      });
+
+      let resolveSave!: () => void;
+      window.clubhouse.app.saveClubhouseModeSettings = vi.fn().mockImplementation(
+        () => new Promise<void>((r) => { resolveSave = r; }),
+      );
+
+      const promise = useClubhouseModeStore.getState().setSourceControlProvider('gitlab');
+
+      // Concurrent mutations while save is in-flight
+      useClubhouseModeStore.setState({ enabled: true, projectOverrides: { '/x': true } });
+
+      resolveSave();
+      await promise;
+
+      expect(window.clubhouse.app.saveClubhouseModeSettings).toHaveBeenCalledWith(
+        { enabled: false, projectOverrides: {}, sourceControlProvider: 'gitlab' },
+      );
     });
   });
 });

@@ -135,9 +135,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   }
 
   agentProjectMap.set(params.agentId, params.projectPath);
-  if (params.orchestrator) {
-    agentOrchestratorMap.set(params.agentId, params.orchestrator);
-  }
+  agentOrchestratorMap.set(params.agentId, provider.id as OrchestratorId);
 
   // Clubhouse Mode: materialize project defaults into worktree before spawn
   if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
@@ -170,6 +168,8 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       allowedTools,
       freeAgentMode: params.freeAgentMode,
       commandPrefix,
+    }, (exitAgentId) => {
+      untrackAgent(exitAgentId);
     });
     return;
   }
@@ -199,6 +199,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         headlessResult.outputKind || 'stream-json',
         (exitAgentId) => {
           configPipeline.restoreForAgent(exitAgentId);
+          untrackAgent(exitAgentId);
         },
         commandPrefix,
       );
@@ -269,6 +270,7 @@ async function spawnPtyAgent(
 
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
+    untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents
     if (params.kind === 'durable' && buffer && provider.extractSessionId) {
@@ -296,19 +298,26 @@ async function spawnPtyAgent(
 
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
-  if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
-    await structuredManager.cancelSession(agentId);
-    structuredAgentSet.delete(agentId);
-    return;
+  try {
+    if (structuredAgentSet.has(agentId) || structuredManager.isStructuredSession(agentId)) {
+      untrackAgent(agentId);
+      await structuredManager.cancelSession(agentId);
+      return;
+    }
+    if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
+      untrackAgent(agentId);
+      headlessManager.kill(agentId);
+      return;
+    }
+    const tracked = agentOrchestratorMap.get(agentId);
+    const provider = resolveOrchestrator(projectPath, tracked || orchestrator);
+    const exitCmd = provider.getExitCommand();
+    ptyManager.gracefulKill(agentId, exitCmd);
+  } catch (err) {
+    appLog('core:agent', 'warn', 'killAgent failed (process may already be dead)', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
   }
-  if (headlessAgentSet.has(agentId) || headlessManager.isHeadless(agentId)) {
-    headlessManager.kill(agentId);
-    headlessAgentSet.delete(agentId);
-    return;
-  }
-  const provider = resolveOrchestrator(projectPath, orchestrator);
-  const exitCmd = provider.getExitCommand();
-  ptyManager.gracefulKill(agentId, exitCmd);
 }
 
 export async function checkAvailability(

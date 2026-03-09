@@ -47,6 +47,26 @@ describe('hub main', () => {
     expect(typeof hubModule.getProjectHubStore).toBe('function');
   });
 
+  it('exports hasProjectHubStore function', () => {
+    expect(hubModule.hasProjectHubStore).toBeDefined();
+    expect(typeof hubModule.hasProjectHubStore).toBe('function');
+  });
+
+  it('hasProjectHubStore returns false for unknown project', () => {
+    expect(hubModule.hasProjectHubStore('nonexistent-project')).toBe(false);
+  });
+
+  it('hasProjectHubStore returns false for null', () => {
+    expect(hubModule.hasProjectHubStore(null)).toBe(false);
+  });
+
+  it('hasProjectHubStore returns true after store is created', () => {
+    const projectId = 'proj-has-check';
+    expect(hubModule.hasProjectHubStore(projectId)).toBe(false);
+    hubModule.getProjectHubStore(projectId);
+    expect(hubModule.hasProjectHubStore(projectId)).toBe(true);
+  });
+
   it('getProjectHubStore returns the same store for the same projectId', () => {
     const store1 = hubModule.getProjectHubStore('proj-1');
     const store2 = hubModule.getProjectHubStore('proj-1');

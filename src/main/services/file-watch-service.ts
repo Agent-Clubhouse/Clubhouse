@@ -10,6 +10,7 @@ interface WatchEntry {
   webContentsId: number;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
+  webContentsId: number;
 }
 
 const activeWatches = new Map<string, WatchEntry>();
@@ -40,6 +41,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     webContentsId: sender.id,
     debounceTimer: null,
     pendingEvents: [],
+    webContentsId: sender.id,
   };
 
   try {
@@ -63,12 +65,16 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
         clearTimeout(entry.debounceTimer);
       }
       entry.debounceTimer = setTimeout(() => {
+        if (sender.isDestroyed()) {
+          stopWatch(watchId);
+          return;
+        }
         const events = entry.pendingEvents.splice(0);
         if (events.length > 0) {
           try {
             sender.send(IPC.FILE.WATCH_EVENT, { watchId, events });
           } catch {
-            // Sender may have been destroyed
+            stopWatch(watchId);
           }
         }
       }, DEBOUNCE_MS);
@@ -116,10 +122,15 @@ export function cleanupWatchesForWindow(win: BrowserWindow): void {
 
 /**
  * Extract the base directory from a glob pattern.
+ * Handles both POSIX and Windows path separators.
  * e.g., "/home/user/project/src/**\/*.ts" → "/home/user/project/src"
+ *      "C:\Users\project\src\**\*.ts"    → "C:/Users/project/src"
  */
-function extractBaseDir(glob: string): string {
-  const parts = glob.split('/');
+export function extractBaseDir(glob: string): string {
+  // Normalize backslashes to forward slashes for consistent splitting.
+  // Windows fs APIs accept forward slashes, so we can safely keep them.
+  const normalized = glob.replace(/\\/g, '/');
+  const parts = normalized.split('/');
   const baseParts: string[] = [];
   for (const part of parts) {
     if (part.includes('*') || part.includes('?') || part.includes('{') || part.includes('[')) {
@@ -128,5 +139,8 @@ function extractBaseDir(glob: string): string {
     baseParts.push(part);
   }
   const base = baseParts.join('/');
+  if (!base && !glob.startsWith('*') && !glob.startsWith('?') && !glob.startsWith('{') && !glob.startsWith('[')) {
+    console.warn(`extractBaseDir: Could not extract base from glob "${glob}", falling back to '.'`);
+  }
   return base || '.';
 }
