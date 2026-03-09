@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   text: string;
@@ -8,9 +8,37 @@ interface Props {
 /**
  * Renders streaming text from text_delta / text_done events with basic markdown.
  * Accumulates deltas in the parent; this component just renders the buffer.
+ *
+ * During streaming, markdown rendering is debounced to avoid the O(N²) cost of
+ * running the full regex pipeline on every incoming token.
  */
 export function MessageStream({ text, isStreaming }: Props) {
-  const rendered = useMemo(() => renderMarkdown(text), [text]);
+  const [renderedHtml, setRenderedHtml] = useState(() => renderMarkdown(text));
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    if (isStreaming) {
+      // Debounce during streaming: only re-render markdown every 50 ms instead
+      // of on every token, reducing total work from O(N²) to O(N).
+      debounceRef.current = setTimeout(() => {
+        debounceRef.current = null;
+        setRenderedHtml(renderMarkdown(text));
+      }, 50);
+    } else {
+      // Streaming finished — render immediately so the final result is sharp.
+      setRenderedHtml(renderMarkdown(text));
+    }
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, [text, isStreaming]);
 
   if (!text) return null;
 
@@ -18,7 +46,7 @@ export function MessageStream({ text, isStreaming }: Props) {
     <div className="px-4 py-2" data-testid="message-stream">
       <div
         className="text-sm text-ctp-text leading-relaxed whitespace-pre-wrap break-words prose-inline"
-        dangerouslySetInnerHTML={{ __html: rendered }}
+        dangerouslySetInnerHTML={{ __html: renderedHtml }}
       />
       {isStreaming && (
         <span className="inline-block w-1.5 h-4 bg-ctp-accent animate-pulse ml-0.5 align-text-bottom" />
