@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
+import type { LaunchWrapperConfig, McpCatalogEntry } from '../../../shared/types';
 
 function NameAndPathSection({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -225,6 +226,101 @@ function SessionSettingsSection({ projectPath }: { projectPath: string }) {
   );
 }
 
+function LaunchWrapperSection({ projectPath }: { projectPath: string }) {
+  const [wrapper, setWrapper] = useState<LaunchWrapperConfig | undefined>(undefined);
+  const [catalog, setCatalog] = useState<McpCatalogEntry[]>([]);
+  const [defaultMcps, setDefaultMcps] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    const [w, c, d] = await Promise.all([
+      window.clubhouse.project.readLaunchWrapper(projectPath),
+      window.clubhouse.project.readMcpCatalog(projectPath),
+      window.clubhouse.project.readDefaultMcps(projectPath),
+    ]);
+    setWrapper(w);
+    setCatalog(c || []);
+    setDefaultMcps(d || []);
+    setLoaded(true);
+  }, [projectPath]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (!loaded) return null;
+  if (!wrapper) {
+    return (
+      <div className="mb-6">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Launch Wrapper</h3>
+        <p className="text-xs text-ctp-subtext0">
+          No launch wrapper configured. A plugin can set one up automatically.
+        </p>
+      </div>
+    );
+  }
+
+  const toggleMcp = async (id: string) => {
+    const next = defaultMcps.includes(id)
+      ? defaultMcps.filter((m) => m !== id)
+      : [...defaultMcps, id];
+    setDefaultMcps(next);
+    await window.clubhouse.project.writeDefaultMcps(projectPath, next);
+  };
+
+  const handleRemoveWrapper = async () => {
+    await window.clubhouse.project.writeLaunchWrapper(projectPath, undefined);
+    await window.clubhouse.project.writeMcpCatalog(projectPath, []);
+    await window.clubhouse.project.writeDefaultMcps(projectPath, []);
+    setWrapper(undefined);
+    setCatalog([]);
+    setDefaultMcps([]);
+  };
+
+  return (
+    <div className="mb-6">
+      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Launch Wrapper</h3>
+      <div className="rounded-lg border border-surface-2 p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+            <span className="text-sm text-ctp-text font-mono">{wrapper.binary}</span>
+          </div>
+          <button
+            onClick={handleRemoveWrapper}
+            className="text-xs text-ctp-subtext0 hover:text-red-400 cursor-pointer transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+        {catalog.length > 0 && (
+          <div>
+            <label className="block text-xs text-ctp-subtext0 uppercase tracking-wider mb-1.5">
+              Default MCPs
+            </label>
+            <div className="grid grid-cols-2 gap-1">
+              {catalog.map((entry) => {
+                const checked = defaultMcps.includes(entry.id);
+                return (
+                  <label key={entry.id} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-surface-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleMcp(entry.id)}
+                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-ctp-text truncate" title={entry.description}>
+                      {entry.name}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DangerZone({ projectId, projectPath, projectName }: { projectId: string; projectPath: string; projectName: string }) {
   const removeProject = useProjectStore((s) => s.removeProject);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
@@ -294,6 +390,7 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
         <NameAndPathSection projectId={project.id} />
         <AppearanceSection projectId={project.id} />
         <SessionSettingsSection projectPath={project.path} />
+        <LaunchWrapperSection projectPath={project.path} />
         <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>
     </div>

@@ -301,6 +301,7 @@ export async function createDurable(
   useWorktree: boolean = true,
   orchestrator?: OrchestratorId,
   freeAgentMode?: boolean,
+  mcpIds?: string[],
 ): Promise<DurableAgentConfig> {
   ensureDir(clubhouseDir(projectPath));
   ensureGitignore(projectPath);
@@ -382,6 +383,7 @@ export async function createDurable(
     ...(model && model !== 'default' ? { model } : {}),
     ...(orchestrator ? { orchestrator } : {}),
     ...(effectiveFreeAgent ? { freeAgentMode: effectiveFreeAgent } : {}),
+    ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
   };
 
   const agents = readAgents(projectPath);

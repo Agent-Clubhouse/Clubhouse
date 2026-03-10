@@ -21,7 +21,8 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper } from './shared';
+import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
   beforeEach(() => {
@@ -144,6 +145,88 @@ describe('shared orchestrator utilities', () => {
 
     it('returns input unchanged when no hyphens or prefix', () => {
       expect(humanizeModelId('gpt5')).toBe('Gpt5');
+    });
+  });
+
+  describe('applyLaunchWrapper', () => {
+    const wrapperConfig: LaunchWrapperConfig = {
+      binary: 'mywrapper',
+      separator: '--',
+      orchestratorMap: {
+        'claude-code': { subcommand: 'claude' },
+        'copilot-cli': { subcommand: 'copilot' },
+        'opencode': { subcommand: 'opencode' },
+      },
+    };
+
+    it('transforms binary and inserts subcommand + mcps + separator + original args', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', ['--model', 'opus', 'do the thing'], ['ado', 'kusto']
+      );
+      expect(result).toEqual({
+        binary: 'mywrapper',
+        args: ['claude', '--mcp', 'ado', '--mcp', 'kusto', '--', '--model', 'opus', 'do the thing'],
+      });
+    });
+
+    it('works with no MCPs selected', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', ['--model', 'opus'], []
+      );
+      expect(result).toEqual({
+        binary: 'mywrapper',
+        args: ['claude', '--', '--model', 'opus'],
+      });
+    });
+
+    it('works with no original args', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', [], ['ado']
+      );
+      expect(result).toEqual({
+        binary: 'mywrapper',
+        args: ['claude', '--mcp', 'ado', '--'],
+      });
+    });
+
+    it('maps different orchestrator IDs to correct subcommands', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'copilot-cli', 'copilot', ['--help'], ['workiq']
+      );
+      expect(result).toEqual({
+        binary: 'mywrapper',
+        args: ['copilot', '--mcp', 'workiq', '--', '--help'],
+      });
+    });
+
+    it('throws when orchestrator has no mapping', () => {
+      expect(() => applyLaunchWrapper(
+        wrapperConfig, 'unknown-cli', 'unknown', [], []
+      )).toThrowError(/no mapping for orchestrator "unknown-cli"/);
+    });
+
+    it('omits separator when config.separator is empty', () => {
+      const noSepConfig: LaunchWrapperConfig = {
+        binary: 'wrapper',
+        separator: '',
+        orchestratorMap: { 'claude-code': { subcommand: 'claude' } },
+      };
+      const result = applyLaunchWrapper(
+        noSepConfig, 'claude-code', 'claude', ['--verbose'], ['ado']
+      );
+      expect(result).toEqual({
+        binary: 'wrapper',
+        args: ['claude', '--mcp', 'ado', '--verbose'],
+      });
+    });
+
+    it('handles multiple MCPs in order', () => {
+      const result = applyLaunchWrapper(
+        wrapperConfig, 'claude-code', 'claude', [], ['ado', 'kusto', 'workiq', 'icm']
+      );
+      expect(result.args).toEqual([
+        'claude', '--mcp', 'ado', '--mcp', 'kusto', '--mcp', 'workiq', '--mcp', 'icm', '--',
+      ]);
     });
   });
 

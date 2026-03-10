@@ -99,7 +99,7 @@ describe('AddAgentDialog', () => {
     render(<AddAgentDialog {...defaultProps} />);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', false, 'claude-code', undefined,
+      'test-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
     );
   });
 
@@ -130,7 +130,7 @@ describe('AddAgentDialog', () => {
     fireEvent.change(input, { target: { value: 'my-custom-agent' } });
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined,
+      'my-custom-agent', 'indigo', 'default', false, 'claude-code', undefined, undefined,
     );
   });
 
@@ -140,7 +140,7 @@ describe('AddAgentDialog', () => {
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByText('Create Agent'));
     expect(defaultProps.onCreate).toHaveBeenCalledWith(
-      'test-agent', 'indigo', 'default', true, 'claude-code', undefined,
+      'test-agent', 'indigo', 'default', true, 'claude-code', undefined, undefined,
     );
   });
 });

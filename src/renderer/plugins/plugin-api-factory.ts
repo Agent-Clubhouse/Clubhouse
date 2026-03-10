@@ -1694,6 +1694,28 @@ function createAgentConfigAPI(ctx: PluginContext, manifest?: PluginManifest): Ag
       const data = await storage.read('injected-mcp');
       return (data as Record<string, unknown>) || {};
     },
+
+    async contributeWrapperPreset(preset: {
+      binary: string;
+      separator: string;
+      orchestratorMap: Record<string, { subcommand: string }>;
+      env?: Record<string, string>;
+      mcpCatalog: Array<{ id: string; name: string; description: string }>;
+      defaultMcps?: string[];
+    }): Promise<void> {
+      const projectPath = ctx.projectPath;
+      if (!projectPath) throw new Error('contributeWrapperPreset requires a project context');
+      await window.clubhouse.project.writeLaunchWrapper(projectPath, {
+        binary: preset.binary,
+        separator: preset.separator,
+        orchestratorMap: preset.orchestratorMap,
+        env: preset.env,
+      });
+      await window.clubhouse.project.writeMcpCatalog(projectPath, preset.mcpCatalog);
+      if (preset.defaultMcps) {
+        await window.clubhouse.project.writeDefaultMcps(projectPath, preset.defaultMcps);
+      }
+    },
   };
 }
 

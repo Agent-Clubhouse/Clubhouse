@@ -50,14 +50,18 @@ describe('dynamicImportModule', () => {
     expect(functionSpy).toHaveBeenCalledWith('path', 'return import(path)');
   });
 
-  it('passes the URL to the constructed import function', async () => {
+  it('passes a data: URI to the constructed import function for file: URLs in dev mode', async () => {
     const fakeModule: PluginModule = {};
     mockImportFn.mockResolvedValue(fakeModule);
 
     const dynamicImportModule = await loadModule();
     await dynamicImportModule('file:///some/plugin/main.js');
 
-    expect(mockImportFn).toHaveBeenCalledWith('file:///some/plugin/main.js');
+    // In dev mode (non-file: protocol), file contents are read via IPC
+    // and imported from a data: URI instead of the original file: URL
+    expect(mockImportFn).toHaveBeenCalledWith(
+      expect.stringMatching(/^data:text\/javascript;base64,/),
+    );
   });
 
   it('returns the resolved module from the import function', async () => {

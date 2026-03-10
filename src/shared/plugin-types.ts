@@ -780,6 +780,19 @@ export interface AgentConfigAPI {
   removeMcpServers(opts?: AgentConfigTargetOptions): Promise<void>;
   /** Get the MCP server configurations currently injected by this plugin. */
   getInjectedMcpServers(opts?: AgentConfigTargetOptions): Promise<Record<string, unknown>>;
+  /**
+   * Register a launch wrapper preset for the current project.
+   * Writes the wrapper config and MCP catalog to project settings.
+   * The preset becomes active immediately.
+   */
+  contributeWrapperPreset(preset: {
+    binary: string;
+    separator: string;
+    orchestratorMap: Record<string, { subcommand: string }>;
+    env?: Record<string, string>;
+    mcpCatalog: Array<{ id: string; name: string; description: string }>;
+    defaultMcps?: string[];
+  }): Promise<void>;
 }
 
 // ── Badges API ────────────────────────────────────────────────────────

@@ -12,8 +12,10 @@ import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
 import { materializeAgent } from './materialization-service';
 import * as profileSettings from './profile-settings';
-import { readProjectAgentDefaults } from './agent-settings-service';
+import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import * as structuredManager from './structured-manager';
+import { applyLaunchWrapper } from '../orchestrators/shared';
+import type { LaunchWrapperConfig } from '../../shared/types';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
@@ -172,7 +174,20 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     const allowedTools = params.allowedTools
       || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
+    // Resolve launch wrapper config (if any)
+    const wrapperConfig = readLaunchWrapper(params.projectPath);
+    let resolvedMcpIds: string[] = [];
+    if (wrapperConfig) {
+      if (params.kind === 'durable') {
+        const config = getDurableConfig(params.projectPath, params.agentId);
+        resolvedMcpIds = config?.mcpIds || readDefaultMcps(params.projectPath);
+      } else {
+        resolvedMcpIds = readDefaultMcps(params.projectPath);
+      }
+    }
+
     // Try structured path when enabled and provider supports it
+    // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     if (spawnMode === 'structured' && params.kind === 'quick' && isStructuredCapable(provider)) {
       const adapter = provider.createStructuredAdapter();
@@ -205,12 +220,19 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       });
 
       if (headlessResult) {
-        const spawnEnv = { ...headlessResult.env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId };
+        // Apply launch wrapper transform if configured
+        let { binary: headlessBin, args: headlessArgs } = headlessResult;
+        if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
+          const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, headlessBin, headlessArgs, resolvedMcpIds);
+          headlessBin = wrapped.binary;
+          headlessArgs = wrapped.args;
+        }
+        const spawnEnv = { ...headlessResult.env, ...profileEnv, ...wrapperConfig?.env, CLUBHOUSE_AGENT_ID: params.agentId };
         headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
-          headlessResult.binary,
-          headlessResult.args,
+          headlessBin,
+          headlessArgs,
           spawnEnv,
           headlessResult.outputKind || 'stream-json',
           (exitAgentId) => {
@@ -224,7 +246,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     }
 
     // Fall back to PTY mode
-    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix);
+    await spawnPtyAgent(params, provider, allowedTools, profileEnv, commandPrefix, wrapperConfig, resolvedMcpIds);
   } catch (err) {
     untrackAgent(params.agentId);
     throw err;
@@ -237,6 +259,8 @@ async function spawnPtyAgent(
   allowedTools: string[] | undefined,
   profileEnv: Record<string, string> | undefined,
   commandPrefix?: string,
+  wrapperConfig?: LaunchWrapperConfig,
+  mcpIds?: string[],
 ): Promise<void> {
   const nonce = randomUUID();
   agentRegistry.setNonce(params.agentId, nonce);
@@ -248,7 +272,7 @@ async function spawnPtyAgent(
   }
 
   // Run hook server setup and command building in parallel — they're independent.
-  const [, { binary, args, env }] = await Promise.all([
+  const [, spawnCmd] = await Promise.all([
     waitHookServerReady().then(async (port) => {
       if (isHookCapable(provider)) {
         const hookUrl = `http://127.0.0.1:${port}/hook`;
@@ -268,6 +292,15 @@ async function spawnPtyAgent(
     }),
   ]);
 
+  // Apply launch wrapper transform if configured
+  let { binary, args } = spawnCmd;
+  const { env } = spawnCmd;
+  if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
+    const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, binary, args, mcpIds || []);
+    binary = wrapped.binary;
+    args = wrapped.args;
+  }
+
   appLog('core:agent', 'info', `Spawning ${params.kind} agent`, {
     meta: {
       agentId: params.agentId,
@@ -282,7 +315,7 @@ async function spawnPtyAgent(
     },
   });
 
-  const spawnEnv = { ...env, ...profileEnv, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
+  const spawnEnv = { ...env, ...profileEnv, ...wrapperConfig?.env, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
 
   if (profileEnv) {
     appLog('core:agent', 'info', 'Profile env injected', {

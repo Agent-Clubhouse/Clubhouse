@@ -54,6 +54,12 @@ vi.stubGlobal('clubhouse', {
     saveCroppedIcon: asyncNoop,
     listClubhouseFiles: async () => [],
     resetProject: async () => false,
+    readLaunchWrapper: async () => undefined,
+    writeLaunchWrapper: asyncNoop,
+    readMcpCatalog: async () => [],
+    writeMcpCatalog: asyncNoop,
+    readDefaultMcps: async () => [],
+    writeDefaultMcps: asyncNoop,
   },
   agent: {
     listDurable: async () => [],
@@ -191,6 +197,7 @@ vi.stubGlobal('clubhouse', {
     listOrphanedPluginIds: async () => [],
     registerManifest: asyncNoop,
     refreshManifestFromDisk: async () => null,
+    loadModuleSource: async () => '',
   },
   marketplace: {
     fetchRegistry: async () => ({ registry: { version: 1, updated: '', plugins: [] }, featured: null }),

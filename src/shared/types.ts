@@ -68,6 +68,8 @@ export interface Agent {
   /** Execution mode: 'pty' (terminal), 'headless' (feed), or 'structured' (rich UI) */
   executionMode?: AgentExecutionMode;
   freeAgentMode?: boolean;
+  /** MCP IDs active for this agent via launch wrapper */
+  mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
   resuming?: boolean;
 }
@@ -183,6 +185,35 @@ export interface DurableAgentConfig {
   lastSessionId?: string;
   /** History of CLI sessions for this agent */
   sessionHistory?: SessionInfo[];
+  /** MCP IDs to inject via launch wrapper (when unset, falls back to project defaultMcps) */
+  mcpIds?: string[];
+}
+
+/** Maps an orchestrator ID to its wrapper subcommand */
+export interface WrapperOrchestratorMapping {
+  subcommand: string;
+}
+
+/** Configuration for a CLI launch wrapper. */
+export interface LaunchWrapperConfig {
+  /** Path or name of the wrapper binary */
+  binary: string;
+  /** Separator token between wrapper args and original CLI args (e.g. "--") */
+  separator: string;
+  /** Per-orchestrator subcommand mapping */
+  orchestratorMap: Record<string, WrapperOrchestratorMapping>;
+  /** Optional environment variables to set when launching through the wrapper */
+  env?: Record<string, string>;
+}
+
+/** An MCP server available through a launch wrapper */
+export interface McpCatalogEntry {
+  /** Short identifier used in --mcp flags (e.g. "ado", "kusto") */
+  id: string;
+  /** Human-readable display name */
+  name: string;
+  /** Brief description of the MCP's functionality */
+  description: string;
 }
 
 export interface ClubhouseModeSettings {

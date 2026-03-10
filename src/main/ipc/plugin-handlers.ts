@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import type {
   PluginFileRequest,
@@ -180,6 +182,18 @@ export function registerPluginHandlers(): void {
 
   ipcMain.handle(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, withValidatedArgs([stringArg(), arrayArg(stringArg())], (_event, projectPath: string, knownPluginIds: string[]) => {
     return pluginDiscovery.listOrphanedPluginIds(projectPath, knownPluginIds);
+  }));
+
+  // ── Module source loader (dev mode) ──────────────────────────────────
+  // In dev mode the renderer can't import() file:// URLs cross-origin.
+  // This handler reads plugin source files so the renderer can import via blob URL.
+  ipcMain.handle(IPC.PLUGIN.LOAD_MODULE_SOURCE, withValidatedArgs([stringArg()], (_event, filePath: string) => {
+    const pluginsDir = path.join(app.getPath('home'), '.clubhouse', 'plugins');
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(pluginsDir)) {
+      throw new Error(`Access denied: path "${filePath}" is outside the plugins directory`);
+    }
+    return fs.readFileSync(resolved, 'utf-8');
   }));
 
   // ── Manifest Registry ─────────────────────────────────────────────────

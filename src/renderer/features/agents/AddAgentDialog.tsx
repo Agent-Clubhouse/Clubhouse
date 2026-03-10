@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { generateDurableName, AGENT_COLORS } from '../../../shared/name-generator';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
+import type { McpCatalogEntry } from '../../../shared/types';
 
 interface Props {
   onClose: () => void;
-  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean) => void;
+  onCreate: (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => void;
   projectPath?: string;
 }
 
@@ -16,6 +17,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   const [model, setModel] = useState('default');
   const [useWorktree, setUseWorktree] = useState(false);
   const [freeAgentMode, setFreeAgentMode] = useState(false);
+  const [mcpCatalog, setMcpCatalog] = useState<McpCatalogEntry[]>([]);
+  const [selectedMcps, setSelectedMcps] = useState<string[]>([]);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
   const availability = useOrchestratorStore((s) => s.availability);
   const { effectiveOrchestrators: enabledOrchestrators } = useEffectiveOrchestrators(projectPath);
@@ -26,10 +29,21 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
   const selectedOrch = allOrchestrators.find((o) => o.id === orchestrator);
   const supportsPermissions = selectedOrch?.capabilities?.permissions ?? false;
 
+  useEffect(() => {
+    if (!projectPath) return;
+    Promise.all([
+      window.clubhouse.project.readMcpCatalog(projectPath),
+      window.clubhouse.project.readDefaultMcps(projectPath),
+    ]).then(([catalog, defaults]) => {
+      setMcpCatalog(catalog || []);
+      setSelectedMcps(defaults || []);
+    });
+  }, [projectPath]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined);
+    onCreate(name.trim(), color, model, useWorktree, orchestrator, freeAgentMode || undefined, selectedMcps.length > 0 ? selectedMcps : undefined);
   };
 
   return (
@@ -159,6 +173,32 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
               {supportsPermissions ? '(skip all permissions)' : '(not supported)'}
             </span>
           </label>
+
+          {/* MCPs (only when catalog is available) */}
+          {mcpCatalog.length > 0 && (
+            <div className="mb-4">
+              <span className="text-xs text-ctp-subtext0 uppercase tracking-wider block mb-1.5">MCPs</span>
+              <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto rounded border border-surface-2 p-2 bg-surface-0">
+                {mcpCatalog.map((entry) => (
+                  <label key={entry.id} className="flex items-center gap-2 py-0.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedMcps.includes(entry.id)}
+                      onChange={() => {
+                        setSelectedMcps((prev) =>
+                          prev.includes(entry.id) ? prev.filter((m) => m !== entry.id) : [...prev, entry.id]
+                        );
+                      }}
+                      className="w-3.5 h-3.5 rounded border-surface-2 bg-surface-0 text-indigo-500 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-ctp-text truncate" title={entry.description}>
+                      {entry.name}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-2">

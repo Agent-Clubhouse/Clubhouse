@@ -177,7 +177,7 @@ export function AgentList() {
   const registerCreatingAgent = useAgentStore((s) => s.registerCreatingAgent);
   const removeAgent = useAgentStore((s) => s.removeAgent);
 
-  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean) => {
+  const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => {
     if (!activeProject) return;
     setShowDialog(false);
 
@@ -188,7 +188,7 @@ export function AgentList() {
 
     try {
       const config = await window.clubhouse.agent.createDurable(
-        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode
+        activeProject.path, name, color, model !== 'default' ? model : undefined, useWorktree, orchestrator, freeAgentMode, mcpIds
       );
       if (tempId) removeAgent(tempId);
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);

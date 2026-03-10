@@ -78,8 +78,12 @@ vi.mock('./profile-settings', () => ({
 
 // Mock agent-settings-service
 const mockReadProjectAgentDefaults = vi.fn(() => ({}));
+const mockReadLaunchWrapper = vi.fn(() => undefined);
+const mockReadDefaultMcps = vi.fn(() => []);
 vi.mock('./agent-settings-service', () => ({
   readProjectAgentDefaults: (...args: unknown[]) => mockReadProjectAgentDefaults(...args),
+  readLaunchWrapper: (...args: unknown[]) => mockReadLaunchWrapper(...args),
+  readDefaultMcps: (...args: unknown[]) => mockReadDefaultMcps(...args),
 }));
 
 // Mock log-service

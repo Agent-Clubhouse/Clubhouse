@@ -306,6 +306,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       mission,
       orchestrator: config.orchestrator,
       freeAgentMode: config.freeAgentMode || undefined,
+      mcpIds: config.mcpIds,
       resuming: resume || undefined,
     };
 
@@ -365,6 +366,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           model: config.model,
           orchestrator: config.orchestrator,
           freeAgentMode: config.freeAgentMode,
+          mcpIds: config.mcpIds,
         };
       } else {
         // Always update projectId — the same agents.json may be loaded
