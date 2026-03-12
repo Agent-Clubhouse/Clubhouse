@@ -261,6 +261,28 @@ describe('clipboard — right-click context menu', () => {
     expect(writeToPty).toHaveBeenCalledWith('right-click paste');
   });
 
+  it('stops propagation to prevent xterm double-paste (issue #760)', async () => {
+    const term = createMockTerminal({ hasSelection: false });
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    // Simulate a child element (like xterm's internal element) that would
+    // also handle the contextmenu event and trigger a second paste.
+    const child = document.createElement('div');
+    container.appendChild(child);
+    const childHandler = vi.fn();
+    child.addEventListener('contextmenu', childHandler);
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    child.dispatchEvent(event);
+
+    await flush();
+    // Our capture-phase handler should have stopped propagation,
+    // preventing the child's own bubble-phase handler from firing.
+    expect(childHandler).not.toHaveBeenCalled();
+    expect(writeToPty).toHaveBeenCalledTimes(1);
+  });
+
   it('copies selection on right-click when text is selected', async () => {
     const term = createMockTerminal({ hasSelection: true, selection: 'right-click copy' });
     const container = createContainer();

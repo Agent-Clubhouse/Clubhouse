@@ -111,8 +111,13 @@ export function attachClipboardHandlers(
   });
 
   // --- Right-click context menu ---
+  // Use the capture phase so this fires before xterm.js's own contextmenu
+  // handler (which focuses its hidden textarea and can trigger a second
+  // native paste event on Windows/Electron).  stopPropagation prevents
+  // the event from reaching xterm's handler, avoiding the double-paste.
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (term.hasSelection()) {
       writeClipboard(term.getSelection());
       term.clearSelection();
@@ -120,9 +125,9 @@ export function attachClipboardHandlers(
       pasteIntoTerminal(term, writeToPty);
     }
   };
-  container.addEventListener('contextmenu', onContextMenu);
+  container.addEventListener('contextmenu', onContextMenu, true);
 
   return () => {
-    container.removeEventListener('contextmenu', onContextMenu);
+    container.removeEventListener('contextmenu', onContextMenu, true);
   };
 }
