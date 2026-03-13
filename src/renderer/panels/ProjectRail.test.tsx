@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
@@ -119,5 +119,57 @@ describe('ProjectRail badge clipping', () => {
     // Badge wrapper uses -top-1 -right-1 to position outside icon bounds
     expect(badgeWrapper.className).toContain('-top-1');
     expect(badgeWrapper.className).toContain('-right-1');
+  });
+});
+
+describe('ProjectRail context menu', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+  });
+
+  it('shows context menu on right-click of a project icon', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+    });
+
+    render(<ProjectRail />);
+    const projectButton = screen.getByTestId('project-p1');
+    fireEvent.contextMenu(projectButton.parentElement!);
+
+    expect(screen.getByTestId('project-context-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-project-settings')).toBeInTheDocument();
+    expect(screen.getByTestId('ctx-close-project')).toBeInTheDocument();
+  });
+
+  it('closes project when Close Project is clicked', () => {
+    const removeProject = vi.fn();
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+      removeProject,
+    });
+
+    render(<ProjectRail />);
+    const projectButton = screen.getByTestId('project-p1');
+    fireEvent.contextMenu(projectButton.parentElement!);
+    fireEvent.click(screen.getByTestId('ctx-close-project'));
+
+    expect(removeProject).toHaveBeenCalledWith('p1');
+  });
+
+  it('does not show context menu initially', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+      activeProjectId: 'p1',
+    });
+
+    render(<ProjectRail />);
+    expect(screen.queryByTestId('project-context-menu')).not.toBeInTheDocument();
   });
 });

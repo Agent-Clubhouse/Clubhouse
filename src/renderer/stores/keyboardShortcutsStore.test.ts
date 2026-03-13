@@ -75,6 +75,8 @@ describe('keyboardShortcutsStore', () => {
     expect(shortcuts['new-quick-agent'].defaultBinding).toBe('Meta+Shift+N');
     expect(shortcuts['add-project']).toBeDefined();
     expect(shortcuts['add-project'].defaultBinding).toBe('Meta+Shift+O');
+    expect(shortcuts['close-project']).toBeDefined();
+    expect(shortcuts['close-project'].defaultBinding).toBe('Meta+Shift+W');
   });
 
   it('sets a custom binding', () => {

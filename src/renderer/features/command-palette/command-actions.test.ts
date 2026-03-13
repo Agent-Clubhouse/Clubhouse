@@ -9,6 +9,7 @@ const mockToggleExplorerCollapse = vi.fn();
 const mockToggleAccessoryCollapse = vi.fn();
 const mockSetExplorerTab = vi.fn();
 const mockPickAndAddProject = vi.fn();
+const mockRemoveProject = vi.fn();
 const mockSetActiveAgent = vi.fn();
 const mockOpenQuickAgentDialog = vi.fn();
 
@@ -21,7 +22,7 @@ vi.mock('../../stores/uiStore', () => ({
 }));
 
 vi.mock('../../stores/projectStore', () => ({
-  useProjectStore: { getState: () => ({ setActiveProject: mockSetActiveProject, pickAndAddProject: mockPickAndAddProject, activeProjectId: 'proj-1', projects: [{ id: 'proj-1', name: 'A' }, { id: 'proj-2', name: 'B' }] }) },
+  useProjectStore: { getState: () => ({ setActiveProject: mockSetActiveProject, pickAndAddProject: mockPickAndAddProject, removeProject: mockRemoveProject, activeProjectId: 'proj-1', projects: [{ id: 'proj-1', name: 'A' }, { id: 'proj-2', name: 'B' }] }) },
 }));
 
 vi.mock('../../stores/panelStore', () => ({
@@ -60,6 +61,7 @@ describe('command-actions', () => {
     expect(ids).toContain('toggle-accessory');
     expect(ids).toContain('new-quick-agent');
     expect(ids).toContain('add-project');
+    expect(ids).toContain('close-project');
     expect(ids).toContain('switch-agent-1');
     expect(ids).toContain('switch-agent-9');
     expect(ids).toContain('switch-project-1');
@@ -129,6 +131,11 @@ describe('command-actions', () => {
   it('switch-agent-2 sets active agent to second durable agent', () => {
     findAction('switch-agent-2')?.execute();
     expect(mockSetActiveAgent).toHaveBeenCalledWith('a2', 'proj-1');
+  });
+
+  it('close-project calls removeProject with activeProjectId', () => {
+    findAction('close-project')?.execute();
+    expect(mockRemoveProject).toHaveBeenCalledWith('proj-1');
   });
 
   it('new-quick-agent is marked global so it fires from text inputs', () => {

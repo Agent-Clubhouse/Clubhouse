@@ -32,6 +32,7 @@ const HUB_TAB = 'plugin:hub';
 export function useCommandSource(): CommandItem[] {
   const projects = useProjectStore((s) => s.projects);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const removeProject = useProjectStore((s) => s.removeProject);
   const agents = useAgentStore((s) => s.agents);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
@@ -320,6 +321,17 @@ export function useCommandSource(): CommandItem[] {
       },
     });
 
+    if (activeProjectId) {
+      items.push({
+        id: 'action:close-project',
+        label: 'Close Project',
+        category: 'Actions',
+        shortcut: getShortcut(shortcuts, 'close-project'),
+        keywords: ['remove', 'delete', 'close', 'project'],
+        execute: () => removeProject(activeProjectId),
+      });
+    }
+
     // Annex actions
     items.push({
       id: 'action:toggle-annex',
@@ -385,7 +397,7 @@ export function useCommandSource(): CommandItem[] {
     annexSettings, annexStatus,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     otherProjectHubs,
-    setActiveProject, setActiveAgent, setExplorerTab, toggleSettings,
+    setActiveProject, removeProject, setActiveAgent, setExplorerTab, toggleSettings,
     setSettingsSubPage, setSettingsContext, toggleHelp, openAbout,
     toggleExplorerCollapse, toggleAccessoryCollapse,
   ]);

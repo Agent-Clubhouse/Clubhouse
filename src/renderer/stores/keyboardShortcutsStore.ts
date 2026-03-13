@@ -94,6 +94,7 @@ const DEFAULT_SHORTCUTS: Omit<ShortcutDefinition, 'currentBinding'>[] = [
 
   // Projects
   { id: 'add-project', label: 'Add Project', category: 'Projects', defaultBinding: 'Meta+Shift+O' },
+  { id: 'close-project', label: 'Close Project', category: 'Projects', defaultBinding: 'Meta+Shift+W' },
   ...Array.from({ length: 9 }, (_, i) => ({
     id: `switch-project-${i + 1}`,
     label: `Switch to Project ${i + 1}`,
