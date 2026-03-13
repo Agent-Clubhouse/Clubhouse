@@ -8,6 +8,8 @@ describe('panelStore', () => {
       explorerCollapsed: false,
       accessoryWidth: 280,
       accessoryCollapsed: false,
+      railPinned: false,
+      railWidth: 200,
     });
     vi.restoreAllMocks();
   });
@@ -84,5 +86,72 @@ describe('panelStore', () => {
     usePanelStore.getState().toggleExplorerCollapse();
     expect(usePanelStore.getState().explorerCollapsed).toBe(false);
     expect(usePanelStore.getState().explorerWidth).toBe(250);
+  });
+
+  // ── Rail pin tests ──────────────────────────────────────────────────────
+
+  it('rail starts unpinned', () => {
+    expect(usePanelStore.getState().railPinned).toBe(false);
+  });
+
+  it('toggleRailPin toggles pinned state', () => {
+    usePanelStore.getState().toggleRailPin();
+    expect(usePanelStore.getState().railPinned).toBe(true);
+    usePanelStore.getState().toggleRailPin();
+    expect(usePanelStore.getState().railPinned).toBe(false);
+  });
+
+  it('rail starts at default width of 200', () => {
+    expect(usePanelStore.getState().railWidth).toBe(200);
+  });
+
+  it('resizeRail adjusts width', () => {
+    usePanelStore.getState().resizeRail(50);
+    expect(usePanelStore.getState().railWidth).toBe(250);
+  });
+
+  it('resizeRail clamps at minimum (140)', () => {
+    usePanelStore.getState().resizeRail(-100);
+    expect(usePanelStore.getState().railWidth).toBe(140);
+  });
+
+  it('resizeRail clamps at maximum (400)', () => {
+    usePanelStore.getState().resizeRail(300);
+    expect(usePanelStore.getState().railWidth).toBe(400);
+  });
+
+  it('resizeRail accumulates across multiple calls', () => {
+    usePanelStore.getState().resizeRail(30);
+    usePanelStore.getState().resizeRail(30);
+    expect(usePanelStore.getState().railWidth).toBe(260);
+  });
+
+  it('toggling pin preserves rail width', () => {
+    usePanelStore.getState().resizeRail(50);
+    expect(usePanelStore.getState().railWidth).toBe(250);
+    usePanelStore.getState().toggleRailPin();
+    expect(usePanelStore.getState().railPinned).toBe(true);
+    expect(usePanelStore.getState().railWidth).toBe(250);
+    usePanelStore.getState().toggleRailPin();
+    expect(usePanelStore.getState().railPinned).toBe(false);
+    expect(usePanelStore.getState().railWidth).toBe(250);
+  });
+
+  it('resizeRail with zero delta is a no-op', () => {
+    usePanelStore.getState().resizeRail(0);
+    expect(usePanelStore.getState().railWidth).toBe(200);
+  });
+
+  it('resizeRail with negative delta that would go below min clamps', () => {
+    usePanelStore.setState({ railWidth: 150 });
+    usePanelStore.getState().resizeRail(-20);
+    expect(usePanelStore.getState().railWidth).toBe(140);
+  });
+
+  it('rail pin state is independent of explorer collapse', () => {
+    usePanelStore.getState().toggleRailPin();
+    usePanelStore.getState().toggleExplorerCollapse();
+    expect(usePanelStore.getState().railPinned).toBe(true);
+    expect(usePanelStore.getState().explorerCollapsed).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
+import { usePanelStore } from '../stores/panelStore';
 import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
@@ -266,33 +267,42 @@ export function ProjectRail() {
     (e) => e.manifest.contributes!.railItem!.position === 'bottom'
   );
 
-  const [expanded, setExpanded] = useState(false);
+  const railPinned = usePanelStore((s) => s.railPinned);
+  const railWidth = usePanelStore((s) => s.railWidth);
+  const toggleRailPin = usePanelStore((s) => s.toggleRailPin);
+
+  const [hoverExpanded, setHoverExpanded] = useState(false);
   const [overlaying, setOverlaying] = useState(false);
   const [isScrollable, setIsScrollable] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // The rail is visually expanded when pinned OR hover-expanded
+  const expanded = railPinned || hoverExpanded;
+
   const handleMouseEnter = useCallback(() => {
+    if (railPinned) return;
     if (overlayTimerRef.current) {
       clearTimeout(overlayTimerRef.current);
       overlayTimerRef.current = null;
     }
     hoverTimerRef.current = setTimeout(() => {
-      setExpanded(true);
+      setHoverExpanded(true);
       setOverlaying(true);
     }, 600);
-  }, []);
+  }, [railPinned]);
 
   const handleMouseLeave = useCallback(() => {
+    if (railPinned) return;
     if (hoverTimerRef.current) {
       clearTimeout(hoverTimerRef.current);
       hoverTimerRef.current = null;
     }
-    setExpanded(false);
+    setHoverExpanded(false);
     // Keep overlay styling (absolute + z-30) during the 200ms close transition
     overlayTimerRef.current = setTimeout(() => setOverlaying(false), 200);
-  }, []);
+  }, [railPinned]);
 
   useEffect(() => {
     return () => {
@@ -315,8 +325,9 @@ export function ProjectRail() {
   // Sync rail width to a CSS variable so the grid column in App.tsx can match
   const collapsedWidth = isScrollable ? 76 : 70;
   useEffect(() => {
-    document.documentElement.style.setProperty('--rail-width', `${collapsedWidth}px`);
-  }, [collapsedWidth]);
+    const width = railPinned ? railWidth : collapsedWidth;
+    document.documentElement.style.setProperty('--rail-width', `${width}px`);
+  }, [collapsedWidth, railPinned, railWidth]);
 
   const exitSettingsAndNavigate = useCallback((action: () => void) => {
     if (inSettings || inHelp) {
@@ -374,20 +385,62 @@ export function ProjectRail() {
     setDragOverIndex(null);
   }, [dragIndex, projects, reorderProjects]);
 
+  const handlePinClick = useCallback(() => {
+    toggleRailPin();
+    // If we're pinning, clear hover state since pin takes over
+    if (!railPinned) {
+      setHoverExpanded(false);
+      setOverlaying(false);
+    }
+  }, [toggleRailPin, railPinned]);
+
+  const computedWidth = railPinned ? railWidth : (hoverExpanded ? 200 : collapsedWidth);
+
   return (
     <div
       className="relative h-full min-h-0"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      data-testid="rail-container"
     >
       <div
         className={`
           flex flex-col py-3 gap-2 bg-ctp-mantle border-r border-surface-0 h-full
           transition-[width] duration-200 ease-in-out overflow-hidden pl-[14px] pr-[10px]
-          ${overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
+          ${!railPinned && overlaying ? 'absolute inset-y-0 left-0 z-30 shadow-xl shadow-black/20' : ''}
         `}
-        style={{ width: expanded ? 200 : collapsedWidth }}
+        style={{ width: computedWidth }}
       >
+        {/* Pin button — visible when rail is expanded */}
+        <button
+          onClick={handlePinClick}
+          title={railPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+          data-testid="rail-pin-button"
+          className={`
+            absolute top-2 right-1 z-40 w-6 h-6 flex items-center justify-center rounded
+            transition-opacity duration-200 cursor-pointer
+            ${expanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+            ${railPinned
+              ? 'text-ctp-accent hover:bg-surface-1'
+              : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'
+            }
+          `}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill={railPinned ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={railPinned ? '' : 'rotate-45'}
+          >
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+          </svg>
+        </button>
         {/* Home button */}
         {showHome && (
           <button

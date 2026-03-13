@@ -12,19 +12,27 @@ const ACCESSORY_MAX = 500;
 const ACCESSORY_DEFAULT = 280;
 const ACCESSORY_SNAP = 80;
 
+const RAIL_MIN = 140;
+const RAIL_MAX = 400;
+const RAIL_DEFAULT = 200;
+
 interface PanelState {
   explorerWidth: number;
   explorerCollapsed: boolean;
   accessoryWidth: number;
   accessoryCollapsed: boolean;
+  railPinned: boolean;
+  railWidth: number;
 
   resizeExplorer: (delta: number) => void;
   resizeAccessory: (delta: number) => void;
   toggleExplorerCollapse: () => void;
   toggleAccessoryCollapse: () => void;
+  toggleRailPin: () => void;
+  resizeRail: (delta: number) => void;
 }
 
-function loadPersistedState(): Partial<Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' | 'accessoryWidth' | 'accessoryCollapsed'>> {
+function loadPersistedState(): Partial<Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' | 'accessoryWidth' | 'accessoryCollapsed' | 'railPinned' | 'railWidth'>> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
@@ -32,13 +40,15 @@ function loadPersistedState(): Partial<Pick<PanelState, 'explorerWidth' | 'explo
   return {};
 }
 
-function persist(state: Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' | 'accessoryWidth' | 'accessoryCollapsed'>): void {
+function persist(state: Pick<PanelState, 'explorerWidth' | 'explorerCollapsed' | 'accessoryWidth' | 'accessoryCollapsed' | 'railPinned' | 'railWidth'>): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       explorerWidth: state.explorerWidth,
       explorerCollapsed: state.explorerCollapsed,
       accessoryWidth: state.accessoryWidth,
       accessoryCollapsed: state.accessoryCollapsed,
+      railPinned: state.railPinned,
+      railWidth: state.railWidth,
     }));
   } catch { /* ignore */ }
 }
@@ -50,6 +60,8 @@ export const usePanelStore = create<PanelState>((set, get) => ({
   explorerCollapsed: saved.explorerCollapsed ?? false,
   accessoryWidth: saved.accessoryWidth ?? ACCESSORY_DEFAULT,
   accessoryCollapsed: saved.accessoryCollapsed ?? false,
+  railPinned: saved.railPinned ?? false,
+  railWidth: saved.railWidth ?? RAIL_DEFAULT,
 
   resizeExplorer: (delta) => {
     const { explorerWidth, explorerCollapsed } = get();
@@ -89,5 +101,19 @@ export const usePanelStore = create<PanelState>((set, get) => ({
     const collapsed = !get().accessoryCollapsed;
     set({ accessoryCollapsed: collapsed });
     persist({ ...get(), accessoryCollapsed: collapsed });
+  },
+
+  toggleRailPin: () => {
+    const pinned = !get().railPinned;
+    set({ railPinned: pinned });
+    persist({ ...get(), railPinned: pinned });
+  },
+
+  resizeRail: (delta) => {
+    const { railWidth } = get();
+    const newWidth = railWidth + delta;
+    const clamped = Math.max(RAIL_MIN, Math.min(newWidth, RAIL_MAX));
+    set({ railWidth: clamped });
+    persist({ ...get(), railWidth: clamped });
   },
 }));
