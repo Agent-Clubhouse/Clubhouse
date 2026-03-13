@@ -35,6 +35,7 @@ interface UIState {
   pluginSettingsId: string | null;
   helpSectionId: string;
   helpTopicId: string | null;
+  helpSearchQuery: string;
   projectExplorerTab: Record<string, ExplorerTab>;
   setExplorerTab: (tab: ExplorerTab, projectId?: string) => void;
   restoreProjectView: (projectId: string) => void;
@@ -44,6 +45,7 @@ interface UIState {
   toggleHelp: () => void;
   setHelpSection: (id: string) => void;
   setHelpTopic: (id: string | null) => void;
+  setHelpSearchQuery: (query: string) => void;
   setShowHome: (show: boolean) => void;
   openAbout: () => void;
   openPluginSettings: (pluginId: string) => void;
@@ -64,6 +66,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   pluginSettingsId: null,
   helpSectionId: 'general',
   helpTopicId: null,
+  helpSearchQuery: '',
   projectExplorerTab: {},
 
   setExplorerTab: (tab, projectId?) => {
@@ -93,13 +96,14 @@ export const useUIStore = create<UIState>((set, get) => ({
   toggleHelp: () => {
     const { explorerTab, previousExplorerTab } = get();
     if (explorerTab !== 'help') {
-      set({ previousExplorerTab: explorerTab, explorerTab: 'help', helpSectionId: 'general', helpTopicId: null });
+      set({ previousExplorerTab: explorerTab, explorerTab: 'help', helpSectionId: 'general', helpTopicId: null, helpSearchQuery: '' });
     } else {
       set({ explorerTab: previousExplorerTab || 'agents', previousExplorerTab: null });
     }
   },
   setHelpSection: (id) => set({ helpSectionId: id, helpTopicId: null }),
   setHelpTopic: (id) => set({ helpTopicId: id }),
+  setHelpSearchQuery: (query) => set({ helpSearchQuery: query }),
   setShowHome: (show) => {
     set({ showHome: show });
     saveViewPrefs({ showHome: show });
