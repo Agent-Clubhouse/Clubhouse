@@ -84,8 +84,8 @@ describe('searchHelpTopics', () => {
   });
 
   it('matches across multiple sections', () => {
-    // "overview" appears in dashboard content, agents-overview title, and plugins-overview title
-    const results = searchHelpTopics(TEST_SECTIONS, 'overview');
+    // "agents" appears in agent section titles and dashboard content ("projects and agents")
+    const results = searchHelpTopics(TEST_SECTIONS, 'agents');
     const sectionIds = new Set(results.map((r) => r.sectionId));
     expect(sectionIds.size).toBeGreaterThanOrEqual(2);
   });
