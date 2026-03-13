@@ -61,6 +61,26 @@ async function getInnerRailWidth(): Promise<number> {
   return innerRail.evaluate((el) => el.getBoundingClientRect().width);
 }
 
+/** Check if the rail is currently pinned by reading the SVG fill attribute */
+async function isRailPinned(): Promise<boolean> {
+  const pinBtn = window.locator('[data-testid="rail-pin-button"]');
+  const svg = pinBtn.locator('svg');
+  const fill = await svg.getAttribute('fill');
+  return fill === 'currentColor';
+}
+
+/** Ensure rail is unpinned — click pin button if currently pinned */
+async function ensureUnpinned() {
+  if (await isRailPinned()) {
+    const pinBtn = window.locator('[data-testid="rail-pin-button"]');
+    await pinBtn.click();
+    await window.waitForTimeout(100);
+  }
+  // Move mouse away to let any hover state collapse
+  await moveMouseAway();
+  await window.waitForTimeout(400);
+}
+
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
@@ -84,24 +104,9 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Rail Pin Feature', () => {
-  // Ensure rail is unpinned before each test
-  test.beforeEach(async () => {
-    // Reset pin state via localStorage
-    await window.evaluate(() => {
-      const raw = localStorage.getItem('clubhouse_panel_sizes');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        parsed.railPinned = false;
-        localStorage.setItem('clubhouse_panel_sizes', JSON.stringify(parsed));
-      }
-    });
-    // Reload the store state to pick up the reset
-    await window.evaluate(() => {
-      // Directly update the zustand store if accessible
-      (window as unknown as { __zustand_panelStore?: { setState: (s: Record<string, unknown>) => void } }).__zustand_panelStore?.setState?.({
-        railPinned: false,
-      });
-    });
+  // Clean up pin state after each test to avoid bleed into other tests/files
+  test.afterEach(async () => {
+    await ensureUnpinned();
   });
 
   test('pin button is visible when rail is hover-expanded', async () => {
@@ -115,9 +120,6 @@ test.describe('Rail Pin Feature', () => {
       return window.getComputedStyle(el).opacity;
     });
     expect(Number(opacity)).toBeGreaterThan(0);
-
-    await moveMouseAway();
-    await window.waitForTimeout(300);
   });
 
   test('clicking pin keeps rail expanded after mouse leaves', async () => {
@@ -188,14 +190,15 @@ test.describe('Rail Pin Feature', () => {
     const startY = dividerBox!.y + dividerBox!.height / 2;
     await window.mouse.move(startX, startY);
     await window.mouse.down();
-    await window.mouse.move(startX + 80, startY, { steps: 5 });
+    // Use more steps for smoother drag simulation in CI
+    await window.mouse.move(startX + 80, startY, { steps: 10 });
     await window.mouse.up();
 
-    await window.waitForTimeout(200);
-    const widthAfter = await getInnerRailWidth();
-
-    // Width should have increased
-    expect(widthAfter).toBeGreaterThan(widthBefore);
+    // Poll for width change to handle CI timing
+    await expect(async () => {
+      const widthAfter = await getInnerRailWidth();
+      expect(widthAfter).toBeGreaterThan(widthBefore);
+    }).toPass({ timeout: 3_000 });
   });
 
   test('unpinning restores hover collapse behavior', async () => {
@@ -207,21 +210,23 @@ test.describe('Rail Pin Feature', () => {
     await window.waitForTimeout(300);
 
     // Verify it stays open
-    let width = await getInnerRailWidth();
-    expect(width).toBeGreaterThanOrEqual(140);
+    await expect(async () => {
+      const w = await getInnerRailWidth();
+      expect(w).toBeGreaterThanOrEqual(140);
+    }).toPass({ timeout: 3_000 });
 
-    // Now unpin by hovering back and clicking pin again
-    const railOuter = window.locator('[data-testid="project-rail"]');
-    await railOuter.hover();
-    await window.waitForTimeout(200);
+    // Now unpin by clicking pin again (it's visible because rail is pinned open)
     await pinBtn.click();
+    await window.waitForTimeout(100);
 
     // Move mouse away — rail should collapse
     await moveMouseAway();
-    await window.waitForTimeout(500);
 
-    width = await getInnerRailWidth();
-    expect(width).toBeLessThan(100);
+    // Poll for collapse
+    await expect(async () => {
+      const w = await getInnerRailWidth();
+      expect(w).toBeLessThan(100);
+    }).toPass({ timeout: 3_000 });
   });
 
   test('pin state persists in localStorage', async () => {
@@ -272,12 +277,16 @@ test.describe('Rail Pin Feature', () => {
   });
 
   test('pin button shows outline icon when unpinned', async () => {
+    // Ensure we start unpinned (afterEach from prior test should have handled this)
     await hoverRailUntilExpanded();
+
+    // Verify the rail is not pinned
+    const pinned = await isRailPinned();
+    expect(pinned).toBe(false);
+
     const pinBtn = window.locator('[data-testid="rail-pin-button"]');
     const svg = pinBtn.locator('svg');
     const fill = await svg.getAttribute('fill');
     expect(fill).toBe('none');
-    await moveMouseAway();
-    await window.waitForTimeout(300);
   });
 });
