@@ -40,7 +40,7 @@ async function addProject(dirPath: string) {
 
 /** Hover rail until it expands (600ms delay + animation) */
 async function hoverRailUntilExpanded() {
-  const railOuter = window.locator('[data-testid="project-rail"]');
+  const railOuter = window.locator('[data-testid="rail-container"]');
   await railOuter.hover();
   const innerRail = railOuter.locator('> div').first();
   await expect(async () => {
@@ -56,7 +56,7 @@ async function moveMouseAway() {
 
 /** Get current inner rail width */
 async function getInnerRailWidth(): Promise<number> {
-  const railOuter = window.locator('[data-testid="project-rail"]');
+  const railOuter = window.locator('[data-testid="rail-container"]');
   const innerRail = railOuter.locator('> div').first();
   return innerRail.evaluate((el) => el.getBoundingClientRect().width);
 }
@@ -255,7 +255,7 @@ test.describe('Rail Pin Feature', () => {
     await window.waitForTimeout(300);
 
     // The inner rail should not have position: absolute
-    const railOuter = window.locator('[data-testid="project-rail"]');
+    const railOuter = window.locator('[data-testid="rail-container"]');
     const innerRail = railOuter.locator('> div').first();
     const position = await innerRail.evaluate((el) => {
       return window.getComputedStyle(el).position;

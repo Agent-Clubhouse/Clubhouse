@@ -337,9 +337,9 @@ describe('ProjectRail pinned behavior', () => {
     expect(labelSpan!.className).toContain('opacity-0');
   });
 
-  it('data-testid project-rail is present on outer container', () => {
+  it('data-testid rail-container is present on outer container', () => {
     render(<ProjectRail />);
-    expect(screen.getByTestId('project-rail')).toBeInTheDocument();
+    expect(screen.getByTestId('rail-container')).toBeInTheDocument();
   });
 
   it('sets --rail-width CSS variable to railWidth when pinned', () => {

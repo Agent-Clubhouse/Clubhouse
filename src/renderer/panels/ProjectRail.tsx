@@ -401,7 +401,7 @@ export function ProjectRail() {
       className="relative h-full min-h-0"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      data-testid="project-rail"
+      data-testid="rail-container"
     >
       <div
         className={`
