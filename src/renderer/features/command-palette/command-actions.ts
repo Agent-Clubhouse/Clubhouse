@@ -49,6 +49,15 @@ export function getCommandActions(): CommandAction[] {
       id: 'add-project',
       execute: () => useProjectStore.getState().pickAndAddProject(),
     },
+    {
+      id: 'close-project',
+      execute: () => {
+        const { activeProjectId, removeProject } = useProjectStore.getState();
+        if (activeProjectId) {
+          removeProject(activeProjectId);
+        }
+      },
+    },
   ];
 
   // switch-agent-1..9

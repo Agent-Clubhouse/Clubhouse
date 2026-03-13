@@ -9,6 +9,72 @@ import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { AGENT_COLORS } from '../../shared/name-generator';
 
+function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
+  position: { x: number; y: number };
+  onClose: () => void;
+  onSettings: () => void;
+  onCloseProject: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  const style = useMemo(() => {
+    const menuWidth = 180;
+    const menuHeight = 2 * 32 + 8;
+    const x = Math.min(position.x, window.innerWidth - menuWidth - 8);
+    const y = Math.min(position.y, window.innerHeight - menuHeight - 8);
+    return { left: x, top: y };
+  }, [position]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-[180px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle"
+      style={style}
+      data-testid="project-context-menu"
+    >
+      <button
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); onSettings(); onClose(); }}
+        data-testid="ctx-project-settings"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span>Project Settings</span>
+      </button>
+      <button
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-1 hover:text-red-300 transition-colors cursor-pointer"
+        onClick={(e) => { e.stopPropagation(); onCloseProject(); onClose(); }}
+        data-testid="ctx-close-project"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+        <span>Close Project</span>
+      </button>
+    </div>
+  );
+}
+
 function getColorHex(colorId?: string): string {
   if (!colorId) return '#6366f1'; // indigo default
   return AGENT_COLORS.find((c) => c.id === colorId)?.hex || '#6366f1';
@@ -155,8 +221,10 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
 }
 
 export function ProjectRail() {
-  const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects } =
+  const { projects, activeProjectId, setActiveProject, pickAndAddProject, reorderProjects, removeProject } =
     useProjectStore();
+  const setSettingsContext = useUIStore((s) => s.setSettingsContext);
+  const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const toggleSettings = useUIStore((s) => s.toggleSettings);
   const toggleHelp = useUIStore((s) => s.toggleHelp);
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -259,6 +327,8 @@ export function ProjectRail() {
     }
     action();
   }, [inSettings, inHelp, isAppPlugin, previousExplorerTab, setExplorerTab]);
+
+  const [contextMenu, setContextMenu] = useState<{ projectId: string; x: number; y: number } | null>(null);
 
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -377,6 +447,10 @@ export function ProjectRail() {
               onDragEnd={handleDragEnd}
               onDragOver={(e) => handleDragOver(e, i)}
               onDrop={(e) => handleDrop(e, i)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ projectId: p.id, x: e.clientX, y: e.clientY });
+              }}
               className="relative flex-shrink-0"
             >
               {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
@@ -473,6 +547,19 @@ export function ProjectRail() {
           <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Settings</span>
         </button>
       </div>
+      {contextMenu && (
+        <ProjectContextMenu
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onClose={() => setContextMenu(null)}
+          onSettings={() => {
+            setActiveProject(contextMenu.projectId);
+            toggleSettings();
+            setSettingsContext('project');
+            setSettingsSubPage('project');
+          }}
+          onCloseProject={() => removeProject(contextMenu.projectId)}
+        />
+      )}
     </div>
   );
 }
