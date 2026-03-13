@@ -97,14 +97,10 @@ test.describe('Rail Pin Feature', () => {
     });
     // Reload the store state to pick up the reset
     await window.evaluate(() => {
-      const raw = localStorage.getItem('clubhouse_panel_sizes');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        // Directly update the zustand store if accessible
-        (window as unknown as { __zustand_panelStore?: { setState: (s: Record<string, unknown>) => void } }).__zustand_panelStore?.setState?.({
-          railPinned: false,
-        });
-      }
+      // Directly update the zustand store if accessible
+      (window as unknown as { __zustand_panelStore?: { setState: (s: Record<string, unknown>) => void } }).__zustand_panelStore?.setState?.({
+        railPinned: false,
+      });
     });
   });
 
