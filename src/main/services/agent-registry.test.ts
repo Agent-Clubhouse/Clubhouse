@@ -25,6 +25,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
+import * as path from 'path';
 import {
   agentRegistry,
   getAgentProjectPath,
