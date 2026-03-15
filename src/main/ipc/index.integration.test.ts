@@ -169,7 +169,7 @@ vi.mock('../services/materialization-service', () => ({
 }));
 
 vi.mock('../services/agent-system', () => ({
-  resolveOrchestrator: vi.fn(() => ({})),
+  resolveOrchestrator: vi.fn(async () => ({})),
 }));
 
 vi.mock('../services/annex-server', () => ({

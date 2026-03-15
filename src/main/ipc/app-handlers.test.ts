@@ -108,7 +108,7 @@ vi.mock('../services/materialization-service', () => ({
 }));
 
 vi.mock('../services/agent-system', () => ({
-  resolveOrchestrator: vi.fn(() => ({})),
+  resolveOrchestrator: vi.fn(async () => ({})),
 }));
 
 vi.mock('../services/annex-server', () => ({
@@ -563,7 +563,7 @@ describe('app-handlers', () => {
   it('SAVE_CLUBHOUSE_MODE_SETTINGS gracefully handles resolveOrchestrator failure on enable', async () => {
     vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(false);
     vi.mocked(clubhouseModeSettings.isClubhouseModeEnabled).mockReturnValueOnce(true);
-    vi.mocked(resolveOrchestrator).mockImplementationOnce(() => { throw new Error('no orchestrator'); });
+    vi.mocked(resolveOrchestrator).mockRejectedValueOnce(new Error('no orchestrator'));
 
     const handler = handleHandlers.get(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS)!;
     // Should not throw

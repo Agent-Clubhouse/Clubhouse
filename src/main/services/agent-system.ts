@@ -66,10 +66,10 @@ export function untrackAgent(agentId: string): void {
 }
 
 /** Read the project-level orchestrator setting from .clubhouse/settings.json */
-function readProjectOrchestrator(projectPath: string): OrchestratorId | undefined {
+async function readProjectOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
   try {
     const settingsPath = path.join(projectPath, '.clubhouse', 'settings.json');
-    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    const raw = JSON.parse(await fs.promises.readFile(settingsPath, 'utf-8'));
     return raw.orchestrator as OrchestratorId | undefined;
   } catch {
     return undefined;
@@ -82,12 +82,12 @@ function readProjectOrchestrator(projectPath: string): OrchestratorId | undefine
  * 2. Project-level setting
  * 3. App default ('claude-code')
  */
-export function resolveOrchestrator(
+export async function resolveOrchestrator(
   projectPath: string,
   agentOrchestrator?: OrchestratorId
-): OrchestratorProvider {
+): Promise<OrchestratorProvider> {
   const id = agentOrchestrator
-    || readProjectOrchestrator(projectPath)
+    || await readProjectOrchestrator(projectPath)
     || DEFAULT_ORCHESTRATOR;
 
   const provider = getProvider(id);
@@ -128,7 +128,7 @@ export function isStructuredAgent(agentId: string): boolean {
 }
 
 export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
-  const provider = resolveOrchestrator(params.projectPath, params.orchestrator);
+  const provider = await resolveOrchestrator(params.projectPath, params.orchestrator);
 
   // Resolve profile env early so it can be passed to checkAvailability.
   // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
@@ -365,7 +365,7 @@ export async function killAgent(agentId: string, projectPath: string, orchestrat
       return;
     }
     const tracked = agentRegistry.get(agentId)?.orchestrator;
-    const provider = resolveOrchestrator(projectPath, tracked || orchestrator);
+    const provider = await resolveOrchestrator(projectPath, tracked || orchestrator);
     const exitCmd = provider.getExitCommand();
     ptyManager.gracefulKill(agentId, exitCmd);
   } catch (err) {
@@ -379,7 +379,7 @@ export async function checkAvailability(
   projectPath?: string,
   orchestrator?: OrchestratorId
 ): Promise<{ available: boolean; error?: string }> {
-  const id = orchestrator || (projectPath ? readProjectOrchestrator(projectPath) : undefined) || DEFAULT_ORCHESTRATOR;
+  const id = orchestrator || (projectPath ? await readProjectOrchestrator(projectPath) : undefined) || DEFAULT_ORCHESTRATOR;
   const provider = getProvider(id);
   if (!provider) {
     return { available: false, error: `Unknown orchestrator: ${id}` };
@@ -425,7 +425,7 @@ export async function listSessions(
   const config = getDurableConfig(projectPath, agentId);
   if (!config) return [];
 
-  const provider = resolveOrchestrator(projectPath, orchestratorId || config.orchestrator);
+  const provider = await resolveOrchestrator(projectPath, orchestratorId || config.orchestrator);
   const cwd = config.worktreePath || projectPath;
 
   // Get Clubhouse-tracked session history (includes friendly names)
