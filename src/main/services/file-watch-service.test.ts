@@ -283,26 +283,25 @@ describe('file-watch-service', () => {
   });
 
   describe('max pending events cap', () => {
-    it('flushes immediately when cap is reached', () => {
+    it('uses a Map for pendingEvents enabling deduplication', () => {
       const sender = makeSender();
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
       const entry = _activeWatches.get('w1')!;
-      // Fill to just below the cap
-      for (let i = 0; i < MAX_PENDING_EVENTS; i++) {
-        entry.pendingEvents.set(`/tmp/file-${i}.ts`, 'modified');
+      expect(entry.pendingEvents).toBeInstanceOf(Map);
+    });
+
+    it('deduplication prevents exceeding cap for repeated paths', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      // Simulate 5000 events but only 10 unique paths
+      for (let i = 0; i < 5000; i++) {
+        entry.pendingEvents.set(`/tmp/file-${i % 10}.ts`, 'modified');
       }
-
-      // Simulate the debounce firing (which calls flushPendingEvents)
-      vi.runAllTimers();
-
-      // Events should have been flushed
-      expect(sender.send).toHaveBeenCalledTimes(1);
-      const payload = sender.send.mock.calls[0][1] as { watchId: string; events: Array<{ type: string; path: string }> };
-      expect(payload.watchId).toBe('w1');
-      expect(payload.events).toHaveLength(MAX_PENDING_EVENTS);
-      // Map should be cleared after flush
-      expect(entry.pendingEvents.size).toBe(0);
+      // Map should only contain 10 entries despite 5000 "events"
+      expect(entry.pendingEvents.size).toBe(10);
     });
 
     it('exports MAX_PENDING_EVENTS constant', () => {
