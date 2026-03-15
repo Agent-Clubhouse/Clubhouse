@@ -1,11 +1,11 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
-import { AgentList } from './AgentList';
+import { AgentList, useProjectAgentBuckets } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
@@ -188,6 +188,88 @@ describe('AgentList completed selector stability', () => {
     // Should render without errors even with no completed agents data
     expect(screen.getByTestId('agent-list')).toBeInTheDocument();
     expect(screen.getByText('Completed (0)')).toBeInTheDocument();
+  });
+});
+
+describe('useProjectAgentBuckets', () => {
+  const durableAgent: Agent = {
+    ...defaultAgent,
+    id: 'durable-1',
+    name: 'durable-agent',
+  };
+
+  const quickAgent: Agent = {
+    ...defaultAgent,
+    id: 'quick-1',
+    name: 'quick-agent',
+    kind: 'quick',
+    mission: 'Investigate issue',
+  };
+
+  const childQuickAgent: Agent = {
+    ...quickAgent,
+    id: 'quick-2',
+    name: 'child-quick-agent',
+    parentAgentId: durableAgent.id,
+  };
+
+  const otherProjectAgent: Agent = {
+    ...defaultAgent,
+    id: 'durable-2',
+    projectId: 'proj-2',
+    name: 'other-project-agent',
+  };
+
+  it('returns stable filtered arrays across unrelated rerenders', () => {
+    const agents = {
+      [durableAgent.id]: durableAgent,
+      [quickAgent.id]: quickAgent,
+      [childQuickAgent.id]: childQuickAgent,
+      [otherProjectAgent.id]: otherProjectAgent,
+    };
+    const { result, rerender } = renderHook(
+      ({ currentAgents, currentProjectId }) => useProjectAgentBuckets(currentAgents, currentProjectId),
+      {
+        initialProps: {
+          currentAgents: agents,
+          currentProjectId: 'proj-1' as string | null,
+        },
+      }
+    );
+
+    const initialBuckets = result.current;
+    rerender({ currentAgents: agents, currentProjectId: 'proj-1' });
+
+    expect(result.current.projectAgents).toBe(initialBuckets.projectAgents);
+    expect(result.current.durableAgents).toBe(initialBuckets.durableAgents);
+    expect(result.current.quickAgents).toBe(initialBuckets.quickAgents);
+    expect(result.current.orphanQuickAgents).toBe(initialBuckets.orphanQuickAgents);
+  });
+
+  it('recomputes filtered arrays when the active project changes', () => {
+    const agents = {
+      [durableAgent.id]: durableAgent,
+      [quickAgent.id]: quickAgent,
+      [otherProjectAgent.id]: otherProjectAgent,
+    };
+    const { result, rerender } = renderHook(
+      ({ currentAgents, currentProjectId }) => useProjectAgentBuckets(currentAgents, currentProjectId),
+      {
+        initialProps: {
+          currentAgents: agents,
+          currentProjectId: 'proj-1' as string | null,
+        },
+      }
+    );
+
+    const initialBuckets = result.current;
+    rerender({ currentAgents: agents, currentProjectId: 'proj-2' });
+
+    expect(result.current.projectAgents).not.toBe(initialBuckets.projectAgents);
+    expect(result.current.projectAgents).toEqual([otherProjectAgent]);
+    expect(result.current.durableAgents).toEqual([otherProjectAgent]);
+    expect(result.current.quickAgents).toEqual([]);
+    expect(result.current.orphanQuickAgents).toEqual([]);
   });
 });
 
