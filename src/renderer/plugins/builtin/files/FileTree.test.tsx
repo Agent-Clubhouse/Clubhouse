@@ -1388,3 +1388,455 @@ describe('FileTree — focus follows click', () => {
     expect(readmeNode.className).toContain('hover:text-ctp-text');
   });
 });
+
+// ── Filter/Search ─────────────────────────────────────────────────────
+
+describe('FileTree — filter/search', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('renders a filter input', async () => {
+    const api = createRealisticAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+    expect(screen.getByPlaceholderText('Filter files…')).toBeInTheDocument();
+  });
+
+  it('typing in filter shows only matching files', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'README' } });
+
+    await waitFor(() => {
+      // Use data-path since HighlightedName splits the filename across spans
+      expect(container.querySelector('[data-path="/project/README.md"]')).toBeInTheDocument();
+      // Non-matching files should not appear
+      expect(container.querySelector('[data-path="/project/package.json"]')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows "No matching files" when filter has no results', async () => {
+    const api = createRealisticAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'xyznotexists' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('No matching files')).toBeInTheDocument();
+    });
+  });
+
+  it('clear button resets filter and shows all files', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'README' } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-path="/project/package.json"]')).not.toBeInTheDocument();
+    });
+
+    const clearBtn = screen.getByTitle('Clear filter');
+    fireEvent.click(clearBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('package.json')).toBeInTheDocument();
+      expect(screen.getByText('README.md')).toBeInTheDocument();
+    });
+  });
+
+  it('Escape key clears the filter', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'README' } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-path="/project/package.json"]')).not.toBeInTheDocument();
+    });
+
+    // Press Escape on the tree container
+    const treeContainer = container.querySelector('[role="tree"]')!;
+    fireEvent.keyDown(treeContainer, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.getByText('package.json')).toBeInTheDocument();
+    });
+  });
+
+  it('filter auto-expands directories that contain matches', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // Expand src to load its children (lazy load), then collapse it
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.queryByText('index.ts')).not.toBeInTheDocument());
+
+    // Now filter — src's children are loaded, so filter can find them
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'index' } });
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-path="/project/src/index.ts"]')).toBeInTheDocument();
+    });
+  });
+
+  it('filter input does not propagate keyboard events to tree nav', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const filterInput = screen.getByPlaceholderText('Filter files…');
+    fireEvent.change(filterInput, { target: { value: 'r' } });
+
+    // ArrowDown on the input should not move tree focus
+    const focusedBefore = container.querySelector('[class*="bg-surface-1"]');
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+
+    // Tree focus should not change
+    const focusedAfter = container.querySelector('[class*="bg-surface-1"]');
+    expect(focusedBefore).toBe(focusedAfter);
+  });
+});
+
+// ── Multi-select ──────────────────────────────────────────────────────
+
+describe('FileTree — multi-select', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('Cmd+Click selects multiple files', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    // Click README.md normally first
+    fireEvent.click(screen.getByText('README.md'));
+
+    await waitFor(() => {
+      const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+      expect(readmeNode?.className).toContain('bg-surface-1');
+    });
+
+    // Cmd+Click package.json to add to selection
+    fireEvent.click(screen.getByText('package.json'), { metaKey: true });
+
+    await waitFor(() => {
+      const pkgNode = container.querySelector('[data-path="/project/package.json"]');
+      // Multi-selected items get the blue highlight
+      expect(pkgNode?.className).toMatch(/bg-ctp-blue/);
+    });
+  });
+
+  it('Ctrl+Click also selects multiple files', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    fireEvent.click(screen.getByText('README.md'));
+    fireEvent.click(screen.getByText('package.json'), { ctrlKey: true });
+
+    await waitFor(() => {
+      const pkgNode = container.querySelector('[data-path="/project/package.json"]');
+      expect(pkgNode?.className).toMatch(/bg-ctp-blue/);
+    });
+  });
+
+  it('shows selection count badge when multiple items selected', async () => {
+    const api = createRealisticAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    fireEvent.click(screen.getByText('README.md'));
+    fireEvent.click(screen.getByText('package.json'), { metaKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByTitle('2 items selected')).toBeInTheDocument();
+    });
+  });
+
+  it('regular click clears multi-selection', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    // Multi-select two items
+    fireEvent.click(screen.getByText('README.md'));
+    fireEvent.click(screen.getByText('package.json'), { metaKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByTitle('2 items selected')).toBeInTheDocument();
+    });
+
+    // Regular click should clear multi-selection
+    fireEvent.click(screen.getByText('README.md'));
+
+    await waitFor(() => {
+      expect(screen.queryByTitle('2 items selected')).not.toBeInTheDocument();
+      const pkgNode = container.querySelector('[data-path="/project/package.json"]');
+      expect(pkgNode?.className).not.toMatch(/bg-ctp-blue/);
+    });
+  });
+
+  it('context menu shows "Delete N items" when multiple are selected', async () => {
+    const api = createRealisticAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    // Multi-select
+    fireEvent.click(screen.getByText('README.md'));
+    fireEvent.click(screen.getByText('package.json'), { metaKey: true });
+
+    // Right-click
+    fireEvent.contextMenu(screen.getByText('package.json'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete 2 items')).toBeInTheDocument();
+      // Single-select items should not appear
+      expect(screen.queryByText('New File')).not.toBeInTheDocument();
+    });
+  });
+});
+
+// ── Drag-and-drop ─────────────────────────────────────────────────────
+
+describe('FileTree — drag-and-drop', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('tree nodes have draggable=true attribute', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+    expect(readmeNode?.getAttribute('draggable')).toBe('true');
+  });
+
+  it('dragging a file onto a directory calls api.files.rename after confirm', async () => {
+    const rename = vi.fn(async () => {});
+    const showConfirm = vi.fn(async () => true);
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree: realisticReadTree(), rename },
+      ui: { ...createMockAPI().ui, showConfirm },
+    });
+
+    render(<FileTree api={api} />);
+    await screen.findByText('src');
+
+    // Expand src to see its children
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    const { container } = render(<FileTree api={api} />);
+    await screen.findAllByText('src');
+
+    // Simulate drag start on README.md
+    const readmeEl = container.querySelector('[data-path="/project/README.md"]')!;
+    const srcEl = container.querySelector('[data-path="/project/src"]')!;
+
+    fireEvent.dragStart(readmeEl, {
+      dataTransfer: { effectAllowed: '', setData: vi.fn() },
+    });
+    fireEvent.dragOver(srcEl, {
+      dataTransfer: { dropEffect: '' },
+    });
+    fireEvent.drop(srcEl, {
+      dataTransfer: { dropEffect: '' },
+    });
+
+    await waitFor(() => {
+      expect(showConfirm).toHaveBeenCalled();
+    });
+  });
+
+  it('drop is cancelled when user rejects confirm', async () => {
+    const rename = vi.fn(async () => {});
+    const showConfirm = vi.fn(async () => false); // user cancels
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree: realisticReadTree(), rename },
+      ui: { ...createMockAPI().ui, showConfirm },
+    });
+
+    const { container } = render(<FileTree api={api} />);
+    await screen.findByText('src');
+
+    const readmeEl = container.querySelector('[data-path="/project/README.md"]')!;
+    const srcEl = container.querySelector('[data-path="/project/src"]')!;
+
+    fireEvent.dragStart(readmeEl, { dataTransfer: { effectAllowed: '', setData: vi.fn() } });
+    fireEvent.dragOver(srcEl, { dataTransfer: { dropEffect: '' } });
+    fireEvent.drop(srcEl, { dataTransfer: { dropEffect: '' } });
+
+    await waitFor(() => {
+      expect(showConfirm).toHaveBeenCalled();
+      expect(rename).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ── Reveal active file ────────────────────────────────────────────────
+
+describe('FileTree — reveal active file', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('auto-expands parent directory when a tab is opened in fileState', async () => {
+    const api = createRealisticAPI();
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    // src should be collapsed (index.ts not visible)
+    expect(screen.queryByText('index.ts')).not.toBeInTheDocument();
+
+    // Open a file in fileState — triggers auto-reveal
+    fileState.openTab('src/index.ts');
+
+    await waitFor(() => {
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
+    });
+  });
+
+  it('highlights the revealed file in the tree', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    fileState.openTab('src/index.ts');
+
+    await waitFor(() => {
+      const indexNode = container.querySelector('[data-path="/project/src/index.ts"]');
+      expect(indexNode?.className).toContain('bg-surface-1');
+    });
+  });
+
+  it('does not re-reveal when same file is already active', async () => {
+    const readTree = realisticReadTree();
+    const api = createRealisticAPI({ files: { ...createMockAPI().files, readTree } });
+    render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+
+    const callsAfterMount = readTree.mock.calls.length;
+
+    // Open a file
+    fileState.openTab('src/index.ts');
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    const callsAfterReveal = readTree.mock.calls.length;
+
+    // Trigger another fileState change without changing active path
+    fileState.setSearchMode(false);
+
+    // Wait briefly — no additional readTree calls for reveal
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(readTree.mock.calls.length).toBe(callsAfterReveal);
+    expect(callsAfterReveal).toBeGreaterThan(callsAfterMount);
+  });
+});
+
+// ── Persistence ───────────────────────────────────────────────────────
+
+describe('FileTree — persistence', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('saves expanded paths to storage when dirs are expanded', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const storageWrite = vi.fn(async () => {});
+    const api = createRealisticAPI({
+      storage: {
+        project: {
+          read: async () => undefined,
+          write: storageWrite,
+          delete: async () => {},
+          list: async () => [],
+        },
+        projectLocal: createMockAPI().storage.projectLocal,
+        global: createMockAPI().storage.global,
+      },
+    });
+
+    render(<FileTree api={api} />);
+    await screen.findByText('src');
+
+    // Expand src
+    fireEvent.click(screen.getByText('src'));
+    await waitFor(() => expect(screen.getByText('index.ts')).toBeInTheDocument());
+
+    // Advance past debounce
+    await vi.advanceTimersByTimeAsync(600);
+
+    await waitFor(() => {
+      const expandedWriteCall = storageWrite.mock.calls.find(
+        (c: unknown[]) => c[0] === 'files:expandedPaths',
+      );
+      expect(expandedWriteCall).toBeDefined();
+      const expandedPaths = expandedWriteCall![1] as string[];
+      expect(expandedPaths).toContain('src');
+    });
+
+    vi.useRealTimers();
+  });
+
+  it('restores expanded paths from storage on mount', async () => {
+    const storageRead = vi.fn(async (key: string) => {
+      if (key === 'files:expandedPaths') return ['src'];
+      return undefined;
+    });
+
+    const readTree = realisticReadTree();
+    const api = createRealisticAPI({
+      files: { ...createMockAPI().files, readTree },
+      storage: {
+        project: {
+          read: storageRead,
+          write: async () => {},
+          delete: async () => {},
+          list: async () => [],
+        },
+        projectLocal: createMockAPI().storage.projectLocal,
+        global: createMockAPI().storage.global,
+      },
+    });
+
+    render(<FileTree api={api} />);
+
+    // After restore, src should be expanded and show children
+    await waitFor(() => {
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+});

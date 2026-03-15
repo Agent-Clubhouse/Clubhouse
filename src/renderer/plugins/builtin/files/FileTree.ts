@@ -3,6 +3,7 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { FileNode } from '../../../../shared/types';
 import { fileState } from './state';
 import { getFileIconColor } from './file-icons';
+import { fuzzyMatch } from '../../../features/command-palette/fuzzy-match';
 
 // ── Icons ──────────────────────────────────────────────────────────────
 
@@ -170,6 +171,90 @@ function updateNodeChildren(nodes: FileNode[], dirPath: string, children: FileNo
   });
 }
 
+/**
+ * Filter the loaded tree nodes by a fuzzy query string.
+ * Returns matched file nodes (and ancestor directories) plus:
+ *   - matchInfos: map from node.path → matched char indices *within node.name*
+ *   - autoExpand: set of directory paths that must be expanded to show matches
+ */
+function filterTreeNodes(
+  nodes: FileNode[],
+  query: string,
+  projectPath: string,
+): {
+  filteredNodes: FileNode[];
+  matchInfos: Map<string, number[]>;
+  autoExpand: Set<string>;
+} {
+  const matchInfos = new Map<string, number[]>();
+  const autoExpand = new Set<string>();
+
+  function walk(items: FileNode[]): FileNode[] {
+    const results: FileNode[] = [];
+    for (const node of items) {
+      if (node.isDirectory) {
+        const filteredChildren = walk(node.children ?? []);
+        if (filteredChildren.length > 0) {
+          autoExpand.add(node.path);
+          results.push({ ...node, children: filteredChildren });
+        }
+      } else {
+        const relPath = getRelativePath(node.path, projectPath);
+        const result = fuzzyMatch(query, relPath);
+        if (result) {
+          // Map match indices from relPath into node.name
+          const nameStart = relPath.lastIndexOf('/') + 1;
+          const nameIndices = result.matches
+            .filter(i => i >= nameStart)
+            .map(i => i - nameStart);
+          matchInfos.set(node.path, nameIndices);
+          results.push(node);
+        }
+      }
+    }
+    return results;
+  }
+
+  return { filteredNodes: walk(nodes), matchInfos, autoExpand };
+}
+
+// ── HighlightedName ───────────────────────────────────────────────────
+
+/** Renders a filename with matched characters bolded/coloured. */
+function HighlightedName({ name, matches }: { name: string; matches: number[] }) {
+  if (!matches.length) {
+    return React.createElement('span', { className: 'truncate' }, name);
+  }
+
+  const matchSet = new Set(matches);
+  const parts: React.ReactNode[] = [];
+  let buf = '';
+  let inMatch = false;
+  let keyIdx = 0;
+
+  for (let i = 0; i <= name.length; i++) {
+    const charInMatch = i < name.length && matchSet.has(i);
+    if (i === name.length || charInMatch !== inMatch) {
+      if (buf) {
+        parts.push(
+          inMatch
+            ? React.createElement('span', {
+                key: keyIdx++,
+                className: 'text-ctp-warning font-bold',
+              }, buf)
+            : React.createElement('span', { key: keyIdx++ }, buf),
+        );
+      }
+      buf = i < name.length ? name[i] : '';
+      inMatch = charInMatch;
+    } else {
+      buf += name[i];
+    }
+  }
+
+  return React.createElement('span', { className: 'truncate' }, ...parts);
+}
+
 // ── Tree Node ─────────────────────────────────────────────────────────
 
 interface TreeNodeProps {
@@ -184,23 +269,51 @@ interface TreeNodeProps {
   gitMap: Map<string, string>;
   projectPath: string;
   onContextMenu: (e: React.MouseEvent, node: FileNode) => void;
+  // Multi-select
+  multiSelectedPaths: Set<string>;
+  onClickWithMods: (e: React.MouseEvent, node: FileNode) => void;
+  // Drag-and-drop
+  dropTargetPath: string | null;
+  onDragStart: (e: React.DragEvent, node: FileNode) => void;
+  onDragOver: (e: React.DragEvent, node: FileNode) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, node: FileNode) => void;
+  // Filter
+  filterMatchInfo: Map<string, number[]>;
 }
 
-const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onToggle, onSelect, onDoubleClick, selected, focused, gitMap, projectPath, onContextMenu }: TreeNodeProps) {
+const TreeNode = React.memo(function TreeNodeInner({
+  node, depth, expanded, onToggle, onSelect, onDoubleClick,
+  selected, focused, gitMap, projectPath, onContextMenu,
+  multiSelectedPaths, onClickWithMods,
+  dropTargetPath, onDragStart, onDragOver, onDragLeave, onDrop,
+  filterMatchInfo,
+}: TreeNodeProps) {
   const isExpanded = expanded.has(node.path);
   const isSelected = selected === node.path;
   const isFocused = focused === node.path;
+  const isMultiSelected = multiSelectedPaths.has(node.path);
+  const isDropTarget = dropTargetPath === node.path;
   const ext = getExtension(node.name);
   const relPath = getRelativePath(node.path, projectPath);
   const gitStatus = gitMap.get(relPath);
+  const filterMatches = filterMatchInfo.get(node.path);
 
-  const bgClass = isSelected
-    ? 'bg-surface-1 text-ctp-text font-medium'
-    : isFocused
-      ? 'bg-surface-1 text-ctp-text'
-      : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text';
+  const bgClass = isDropTarget
+    ? 'bg-ctp-blue/20 text-ctp-text ring-1 ring-inset ring-ctp-blue/50'
+    : isSelected
+      ? 'bg-surface-1 text-ctp-text font-medium'
+      : isMultiSelected
+        ? 'bg-ctp-blue/15 text-ctp-text'
+        : isFocused
+          ? 'bg-surface-1 text-ctp-text'
+          : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text';
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      onClickWithMods(e, node);
+      return;
+    }
     if (node.isDirectory) {
       onToggle(node.path);
     } else {
@@ -222,6 +335,10 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
     ? (isExpanded ? ChevronDown : ChevronRight)
     : React.createElement('span', { className: 'w-3' });
 
+  const nameEl = filterMatches && filterMatches.length > 0
+    ? React.createElement(HighlightedName, { name: node.name, matches: filterMatches })
+    : React.createElement('span', { className: 'truncate' }, node.name);
+
   const elements: React.ReactNode[] = [
     React.createElement('div', {
       key: node.path,
@@ -230,6 +347,12 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
       onClick: handleClick,
       onDoubleClick: handleDoubleClick,
       onContextMenu: (e: React.MouseEvent) => onContextMenu(e, node),
+      // Drag-and-drop
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => onDragStart(e, node),
+      onDragOver: (e: React.DragEvent) => onDragOver(e, node),
+      onDragLeave: (e: React.DragEvent) => onDragLeave(e),
+      onDrop: (e: React.DragEvent) => onDrop(e, node),
       'data-path': node.path,
       role: 'treeitem',
       tabIndex: -1,
@@ -239,9 +362,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
     },
       chevron,
       icon,
-      React.createElement('span', {
-        className: 'truncate',
-      }, node.name),
+      nameEl,
       gitStatus ? React.createElement(GitBadge, { status: gitStatus }) : null,
     ),
   ];
@@ -263,6 +384,14 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
           gitMap,
           projectPath,
           onContextMenu,
+          multiSelectedPaths,
+          onClickWithMods,
+          dropTargetPath,
+          onDragStart,
+          onDragOver,
+          onDragLeave,
+          onDrop,
+          filterMatchInfo,
         }),
       );
     }
@@ -282,9 +411,22 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const prevRel = getRelativePath(prev.node.path, prev.projectPath);
   if (prev.gitMap.get(prevRel) !== next.gitMap.get(prevRel)) return false;
 
+  if ((prev.multiSelectedPaths.has(prev.node.path)) !== (next.multiSelectedPaths.has(next.node.path))) return false;
+  if (prev.dropTargetPath === prev.node.path !== (next.dropTargetPath === next.node.path)) return false;
+
+  // Filter match info change
+  const prevMatch = prev.filterMatchInfo.get(prev.node.path);
+  const nextMatch = next.filterMatchInfo.get(next.node.path);
+  if (prevMatch !== nextMatch) {
+    if (!prevMatch || !nextMatch || prevMatch.length !== nextMatch.length) return false;
+  }
+
   // Expanded nodes must re-render when collections change (children may be affected)
   if (isExpanded && (prev.expanded !== next.expanded || prev.gitMap !== next.gitMap
-    || prev.selected !== next.selected || prev.focused !== next.focused)) return false;
+    || prev.selected !== next.selected || prev.focused !== next.focused
+    || prev.multiSelectedPaths !== next.multiSelectedPaths
+    || prev.dropTargetPath !== next.dropTargetPath
+    || prev.filterMatchInfo !== next.filterMatchInfo)) return false;
 
   return true;
 });
@@ -295,11 +437,12 @@ interface ContextMenuProps {
   x: number;
   y: number;
   node: FileNode;
+  multiSelectCount: number;
   onClose: () => void;
   onAction: (action: string) => void;
 }
 
-function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps) {
+function ContextMenu({ x, y, node: _node, multiSelectCount, onClose, onAction }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -312,16 +455,21 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const items = [
-    { label: 'New File', action: 'newFile' },
-    { label: 'New Folder', action: 'newFolder' },
-    { label: 'Rename', action: 'rename' },
-    { label: 'Copy', action: 'copy' },
-    { label: 'Delete', action: 'delete' },
-  ];
+  const isMulti = multiSelectCount > 1;
+  const items = isMulti
+    ? [
+        { label: `Delete ${multiSelectCount} items`, action: 'deleteSelected' },
+      ]
+    : [
+        { label: 'New File', action: 'newFile' },
+        { label: 'New Folder', action: 'newFolder' },
+        { label: 'Rename', action: 'rename' },
+        { label: 'Copy', action: 'copy' },
+        { label: 'Delete', action: 'delete' },
+      ];
 
   const style = useMemo(() => {
-    const menuWidth = 140;
+    const menuWidth = 160;
     const menuHeight = items.length * 24 + 8; // items × 24px + 8px padding
     return {
       left: Math.min(x, window.innerWidth - menuWidth - 8),
@@ -338,7 +486,7 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
       React.createElement('button', {
         key: item.action,
         className: `w-full text-left px-2.5 py-1 mx-1 rounded-sm text-xs transition-colors ${
-          item.action === 'delete'
+          item.action === 'delete' || item.action === 'deleteSelected'
             ? 'text-ctp-error hover:bg-ctp-error/10'
             : 'text-ctp-subtext1 hover:bg-ctp-surface1 hover:text-ctp-text'
         }`,
@@ -361,14 +509,41 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const [rootPath, setRootPath] = useState<string>('.');
   const [worktrees, setWorktrees] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>('');
+  // Filter
+  const [filterText, setFilterText] = useState<string>('');
+  // Multi-select
+  const [multiSelectedPaths, setMultiSelectedPaths] = useState<Set<string>>(new Set());
+  const lastClickedPathRef = useRef<string | null>(null);
+  const selectedPathRef = useRef<string | null>(null);
+  // Drag-and-drop
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const dragSourceRef = useRef<string | null>(null);
+  const dragEnterCounterRef = useRef<number>(0);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const watchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expandedRef = useRef<Set<string>>(expanded);
   expandedRef.current = expanded;
+  selectedPathRef.current = selectedPath;
+  const expandedSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const projectPath = api.context.projectPath || '';
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const loadVersionRef = useRef(0);
+
+  // Compute filtered view whenever filter text or tree changes
+  const filterResult = useMemo(() => {
+    if (!filterText.trim()) return null;
+    return filterTreeNodes(tree, filterText.trim(), projectPath);
+  }, [tree, filterText, projectPath]);
+
+  const displayTree = filterResult ? filterResult.filteredNodes : tree;
+  const filterMatchInfo = filterResult ? filterResult.matchInfos : new Map<string, number[]>();
+  // When filtering, auto-expand dirs with matches (merged with user-expanded set)
+  const effectiveExpanded = useMemo(() => {
+    if (!filterResult) return expanded;
+    return new Set([...expanded, ...filterResult.autoExpand]);
+  }, [expanded, filterResult]);
 
   // Collect all visible nodes for keyboard navigation
   const getVisibleNodes = useCallback((): FileNode[] => {
@@ -376,14 +551,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
     const collect = (nodes: FileNode[]) => {
       for (const node of nodes) {
         result.push(node);
-        if (node.isDirectory && expanded.has(node.path) && node.children) {
+        if (node.isDirectory && effectiveExpanded.has(node.path) && node.children) {
           collect(node.children);
         }
       }
     };
-    collect(tree);
+    collect(displayTree);
     return result;
-  }, [tree, expanded]);
+  }, [displayTree, effectiveExpanded]);
 
   // Load tree from API — fetches root + expanded children, then applies a single setTree
   const loadTree = useCallback(async () => {
@@ -468,6 +643,49 @@ export function FileTree({ api }: { api: PluginAPI }) {
     }
   }, [api]);
 
+  // Reveal a file in the tree — expand parents, scroll to it, set selected
+  const revealFile = useCallback(async (relPath: string) => {
+    if (!relPath) return;
+    const parts = relPath.split('/');
+    // Build list of ancestor absolute paths
+    const dirsToExpand: string[] = [];
+    let accRel = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      accRel = accRel ? `${accRel}/${parts[i]}` : parts[i];
+      dirsToExpand.push(`${projectPath}/${accRel}`);
+    }
+
+    // Load children for not-yet-expanded dirs and accumulate new expanded set
+    const newExpanded = new Set(expandedRef.current);
+    for (const dirPath of dirsToExpand) {
+      if (!newExpanded.has(dirPath)) {
+        const relDir = getRelativePath(dirPath, projectPath);
+        try {
+          const children = await api.files.readTree(relDir, { includeHidden: showHidden, depth: 1 });
+          setTree(prev => updateNodeChildren(prev, dirPath, children));
+          newExpanded.add(dirPath);
+        } catch {
+          // ignore — directory may not exist
+        }
+      }
+    }
+    setExpanded(newExpanded);
+
+    const absPath = `${projectPath}/${relPath}`;
+    setSelectedPath(absPath);
+    setFocusedPath(absPath);
+
+    requestAnimationFrame(() => {
+      if (containerRef.current) {
+        const el = containerRef.current.querySelector(`[data-path="${CSS.escape(absPath)}"]`);
+        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+  }, [api, projectPath, showHidden]);
+
+  const revealFileRef = useRef(revealFile);
+  revealFileRef.current = revealFile;
+
   // Restore persisted state on mount
   useEffect(() => {
     let cancelled = false;
@@ -478,6 +696,17 @@ export function FileTree({ api }: { api: PluginAPI }) {
         if (typeof savedRoot === 'string' && savedRoot) {
           setRootPath(savedRoot);
         }
+
+        // Restore expanded paths
+        const savedExpanded = await api.storage.project.read('files:expandedPaths');
+        if (!cancelled && Array.isArray(savedExpanded) && savedExpanded.length > 0) {
+          const validPaths = savedExpanded.filter((p: unknown) => typeof p === 'string') as string[];
+          const absExpanded = new Set(validPaths.map(p => `${projectPath}/${p}`));
+          setExpanded(absExpanded);
+          // Trigger loadTree so it picks up the restored expanded set
+          setTimeout(() => { if (!cancelled) loadTreeRef.current(); }, 50);
+        }
+
         // Tab restore is handled by FileViewer — sync selected from active tab
         const activeTab = fileState.getActiveTab();
         if (activeTab) {
@@ -491,6 +720,18 @@ export function FileTree({ api }: { api: PluginAPI }) {
     return () => { cancelled = true; };
   }, [api, projectPath]);
 
+  // Persist expanded state (debounced) — saves relative paths
+  useEffect(() => {
+    if (expandedSaveTimerRef.current) clearTimeout(expandedSaveTimerRef.current);
+    expandedSaveTimerRef.current = setTimeout(() => {
+      const relPaths = Array.from(expanded).map(p => getRelativePath(p, projectPath));
+      api.storage.project.write('files:expandedPaths', relPaths).catch(() => {});
+    }, 500);
+    return () => {
+      if (expandedSaveTimerRef.current) clearTimeout(expandedSaveTimerRef.current);
+    };
+  }, [expanded, api, projectPath]);
+
   // Load when meaningful dependencies change (rootPath, showHidden, api)
   useEffect(() => {
     loadTreeRef.current();
@@ -499,8 +740,9 @@ export function FileTree({ api }: { api: PluginAPI }) {
     loadWorktrees();
   }, [rootPath, showHidden, loadWorktrees]);
 
-  // Subscribe to fileState refresh signals
+  // Subscribe to fileState refresh signals + auto-reveal active file
   const lastRefreshRef = useRef(fileState.refreshCount);
+  const lastRevealedPathRef = useRef<string | null>(null);
   useEffect(() => {
     return fileState.subscribe(() => {
       // Sync selected path — convert relative to absolute for tree highlighting
@@ -513,6 +755,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
         loadTreeRef.current();
         loadGitStatusRef.current();
         loadBranchRef.current();
+      }
+
+      // Auto-reveal when the active file changes
+      const activeTab = fileState.getActiveTab();
+      const activePath = activeTab?.filePath ?? null;
+      if (activePath && activePath !== lastRevealedPathRef.current) {
+        lastRevealedPathRef.current = activePath;
+        revealFileRef.current(activePath);
       }
     });
   }, [projectPath]);
@@ -571,6 +821,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const selectFile = useCallback((path: string) => {
     setSelectedPath(path);
     setFocusedPath(path);
+    setMultiSelectedPaths(new Set());
     const relPath = getRelativePath(path, projectPath);
     fileState.openTab(relPath, { preview: true });
   }, [projectPath]);
@@ -579,9 +830,45 @@ export function FileTree({ api }: { api: PluginAPI }) {
   const openFilePermanently = useCallback((path: string) => {
     setSelectedPath(path);
     setFocusedPath(path);
+    setMultiSelectedPaths(new Set());
     const relPath = getRelativePath(path, projectPath);
     fileState.openTab(relPath, { preview: false });
   }, [projectPath]);
+
+  // Click with modifier keys (Cmd/Ctrl/Shift) — multi-select
+  const handleClickWithMods = useCallback((e: React.MouseEvent, node: FileNode) => {
+    if (e.shiftKey && lastClickedPathRef.current) {
+      // Range selection
+      const visible = getVisibleNodes();
+      const fromIdx = visible.findIndex(n => n.path === lastClickedPathRef.current);
+      const toIdx = visible.findIndex(n => n.path === node.path);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const start = Math.min(fromIdx, toIdx);
+        const end = Math.max(fromIdx, toIdx);
+        const newPaths = new Set<string>();
+        for (let i = start; i <= end; i++) {
+          newPaths.add(visible[i].path);
+        }
+        setMultiSelectedPaths(newPaths);
+      }
+    } else {
+      // Cmd/Ctrl toggle — include the primary selected item when starting a new multi-selection
+      setMultiSelectedPaths(prev => {
+        const next = new Set(prev);
+        if (next.size === 0 && selectedPathRef.current) {
+          next.add(selectedPathRef.current);
+        }
+        if (next.has(node.path)) {
+          next.delete(node.path);
+        } else {
+          next.add(node.path);
+        }
+        return next;
+      });
+    }
+    lastClickedPathRef.current = node.path;
+    setFocusedPath(node.path);
+  }, [getVisibleNodes]);
 
   // Handle root path change (worktree selector)
   const handleRootChange = useCallback((newRoot: string) => {
@@ -589,6 +876,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
     setExpanded(new Set());
     setSelectedPath(null);
     setFocusedPath(null);
+    setMultiSelectedPaths(new Set());
     fileState.setSelectedPath(null);
     api.storage.project.write('files:lastRootPath', newRoot).catch(() => {});
     api.storage.project.write('files:lastSelectedPath', '').catch(() => {});
@@ -726,11 +1014,92 @@ export function FileTree({ api }: { api: PluginAPI }) {
         await api.files.delete(getRelativePath(node.path, projectPath));
         break;
       }
+      case 'deleteSelected': {
+        // Multi-select delete — includes the right-clicked node plus all multi-selected
+        const pathsToDelete = new Set([node.path, ...multiSelectedPaths]);
+        const count = pathsToDelete.size;
+        const confirmed = await api.ui.showConfirm(`Delete ${count} item${count === 1 ? '' : 's'}? This cannot be undone.`);
+        if (!confirmed) return;
+        for (const p of pathsToDelete) {
+          try {
+            await api.files.delete(getRelativePath(p, projectPath));
+          } catch {
+            // continue deleting others
+          }
+        }
+        setMultiSelectedPaths(new Set());
+        break;
+      }
     }
 
     // Refresh tree after operation
     loadTree();
     loadGitStatus();
+  }, [api, projectPath, loadTree, loadGitStatus, multiSelectedPaths]);
+
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, node: FileNode) => {
+    dragSourceRef.current = node.path;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', node.path);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, node: FileNode) => {
+    if (!dragSourceRef.current) return;
+    if (!node.isDirectory) { e.preventDefault(); return; }
+    if (node.path === dragSourceRef.current) return;
+    // Prevent dropping a folder into itself or a descendant
+    const srcPath = dragSourceRef.current;
+    if (node.path.startsWith(srcPath + '/') || node.path === srcPath) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetPath(node.path);
+  }, []);
+
+  const handleDragLeave = useCallback((_e: React.DragEvent) => {
+    // Use a counter to handle nested drag enter/leave
+    dragEnterCounterRef.current -= 1;
+    if (dragEnterCounterRef.current <= 0) {
+      dragEnterCounterRef.current = 0;
+      setDropTargetPath(null);
+    }
+  }, []);
+
+  const handleDragEnter = useCallback((_e: React.DragEvent) => {
+    dragEnterCounterRef.current += 1;
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetNode: FileNode) => {
+    e.preventDefault();
+    dragEnterCounterRef.current = 0;
+    setDropTargetPath(null);
+
+    const srcPath = dragSourceRef.current;
+    dragSourceRef.current = null;
+
+    if (!srcPath || !targetNode.isDirectory) return;
+    if (targetNode.path === srcPath) return;
+    if (targetNode.path.startsWith(srcPath + '/')) return;
+
+    const srcRel = getRelativePath(srcPath, projectPath);
+    const fileName = srcRel.split('/').pop() ?? srcRel;
+    const destDir = getRelativePath(targetNode.path, projectPath);
+    const destRel = `${destDir}/${fileName}`;
+
+    if (srcRel === destRel) return;
+
+    const confirmed = await api.ui.showConfirm(
+      `Move "${fileName}" to "${destDir}"?`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.files.rename(srcRel, destRel);
+      loadTree();
+      loadGitStatus();
+    } catch (err) {
+      api.ui.showError(`Failed to move file: ${err}`);
+    }
   }, [api, projectPath, loadTree, loadGitStatus]);
 
   // Keyboard navigation
@@ -757,7 +1126,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         e.preventDefault();
         if (focusedPath) {
           const node = visible.find((n) => n.path === focusedPath);
-          if (node?.isDirectory && !expanded.has(node.path)) {
+          if (node?.isDirectory && !effectiveExpanded.has(node.path)) {
             toggleExpand(node.path);
           }
         }
@@ -767,7 +1136,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         e.preventDefault();
         if (focusedPath) {
           const node = visible.find((n) => n.path === focusedPath);
-          if (node?.isDirectory && expanded.has(node.path)) {
+          if (node?.isDirectory && effectiveExpanded.has(node.path)) {
             toggleExpand(node.path);
           }
         }
@@ -798,6 +1167,12 @@ export function FileTree({ api }: { api: PluginAPI }) {
         }
         break;
       }
+      case 'Escape': {
+        if (filterText) {
+          setFilterText('');
+        }
+        break;
+      }
       case 'Delete':
       case 'Backspace': {
         e.preventDefault();
@@ -810,7 +1185,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
         break;
       }
     }
-  }, [focusedPath, getVisibleNodes, toggleExpand, expanded, selectFile, openFilePermanently, handleContextAction]);
+  }, [focusedPath, filterText, getVisibleNodes, toggleExpand, effectiveExpanded, selectFile, openFilePermanently, handleContextAction]);
 
   // Initialize focus on container focus
   const handleFocus = useCallback(() => {
@@ -833,6 +1208,8 @@ export function FileTree({ api }: { api: PluginAPI }) {
     setContextMenu({ x: e.clientX, y: e.clientY, node });
   }, []);
 
+  const selectionCount = multiSelectedPaths.size;
+
   return React.createElement('div', {
     ref: containerRef,
     className: 'flex flex-col h-full bg-ctp-mantle text-ctp-text select-none focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ctp-blue/50',
@@ -840,6 +1217,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
     role: 'tree',
     onKeyDown: handleKeyDown,
     onFocus: handleFocus,
+    onDragEnter: handleDragEnter,
   },
     // Header
     React.createElement('div', {
@@ -884,6 +1262,13 @@ export function FileTree({ api }: { api: PluginAPI }) {
       React.createElement('div', {
         className: 'flex items-center justify-end gap-0.5 px-2 pb-1',
       },
+        // Selection count badge
+        selectionCount > 1
+          ? React.createElement('span', {
+              className: 'text-[10px] text-ctp-blue font-medium mr-auto pl-1',
+              title: `${selectionCount} items selected`,
+            }, `${selectionCount} selected`)
+          : null,
         // New File
         React.createElement('button', {
           className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
@@ -927,18 +1312,45 @@ export function FileTree({ api }: { api: PluginAPI }) {
           title: 'Refresh',
         }, RefreshIcon),
       ),
+
+      // Row 3: Filter input
+      React.createElement('div', {
+        className: 'flex items-center gap-1 px-2 pb-1',
+      },
+        React.createElement('div', { className: 'relative flex-1' },
+          React.createElement('input', {
+            type: 'text',
+            placeholder: 'Filter files…',
+            value: filterText,
+            onChange: (e: React.ChangeEvent<HTMLInputElement>) => setFilterText(e.target.value),
+            onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation(), // prevent tree keyboard nav while typing
+            className: 'w-full bg-ctp-surface0 text-ctp-text placeholder-ctp-subtext0 text-xs rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-ctp-blue/50 pr-5',
+            'aria-label': 'Filter files',
+          }),
+          filterText
+            ? React.createElement('button', {
+                className: 'absolute right-1 top-1/2 -translate-y-1/2 text-ctp-subtext0 hover:text-ctp-text leading-none',
+                onClick: () => setFilterText(''),
+                title: 'Clear filter',
+                tabIndex: -1,
+              }, '×')
+            : null,
+        ),
+      ),
     ),
 
     // Tree
     React.createElement('div', { className: 'flex-1 overflow-auto py-1' },
-      tree.length === 0
-        ? React.createElement('div', { className: 'px-3 py-4 text-xs text-ctp-subtext0 text-center' }, 'No files found')
-        : tree.map((node) =>
+      displayTree.length === 0
+        ? React.createElement('div', { className: 'px-3 py-4 text-xs text-ctp-subtext0 text-center' },
+            filterText ? 'No matching files' : 'No files found',
+          )
+        : displayTree.map((node) =>
             React.createElement(TreeNode, {
               key: node.path,
               node,
               depth: 0,
-              expanded,
+              expanded: effectiveExpanded,
               onToggle: toggleExpand,
               onSelect: selectFile,
               onDoubleClick: openFilePermanently,
@@ -947,6 +1359,14 @@ export function FileTree({ api }: { api: PluginAPI }) {
               gitMap,
               projectPath,
               onContextMenu: handleContextMenu,
+              multiSelectedPaths,
+              onClickWithMods: handleClickWithMods,
+              dropTargetPath,
+              onDragStart: handleDragStart,
+              onDragOver: handleDragOver,
+              onDragLeave: handleDragLeave,
+              onDrop: handleDrop,
+              filterMatchInfo,
             }),
           ),
     ),
@@ -957,6 +1377,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
           x: contextMenu.x,
           y: contextMenu.y,
           node: contextMenu.node,
+          multiSelectCount: multiSelectedPaths.size > 1 ? multiSelectedPaths.size : 0,
           onClose: () => setContextMenu(null),
           onAction: (action: string) => handleContextAction(action, contextMenu.node),
         })
