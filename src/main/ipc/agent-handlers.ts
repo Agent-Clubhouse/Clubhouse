@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -28,17 +28,17 @@ export function registerAgentHandlers(): void {
   );
 
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, async (_event, projectPath: string, agentId: string) => {
-    agentConfig.deleteDurable(projectPath, agentId);
+    return agentConfig.deleteDurable(projectPath, agentId);
   });
 
   ipcMain.handle(IPC.AGENT.RENAME_DURABLE, async (_event, projectPath: string, agentId: string, newName: string) => {
-    agentConfig.renameDurable(projectPath, agentId, newName);
+    return agentConfig.renameDurable(projectPath, agentId, newName);
   });
 
   ipcMain.handle(
     IPC.AGENT.UPDATE_DURABLE,
     async (_event, projectPath: string, agentId: string, updates: { name?: string; color?: string; icon?: string | null }) => {
-      agentConfig.updateDurable(projectPath, agentId, updates);
+      return agentConfig.updateDurable(projectPath, agentId, updates);
     }
   );
 
@@ -59,7 +59,7 @@ export function registerAgentHandlers(): void {
       '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
     };
     const mime = mimeMap[ext] || 'image/png';
-    const data = fs.readFileSync(filePath);
+    const data = await fsp.readFile(filePath);
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
@@ -72,7 +72,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.REMOVE_ICON, async (_event, projectPath: string, agentId: string) => {
-    agentConfig.removeAgentIcon(projectPath, agentId);
+    return agentConfig.removeAgentIcon(projectPath, agentId);
   });
 
   ipcMain.handle(IPC.AGENT.GET_DURABLE_CONFIG, async (_event, projectPath: string, agentId: string) => {
@@ -80,7 +80,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.UPDATE_DURABLE_CONFIG, async (_event, projectPath: string, agentId: string, updates: DurableConfigUpdates) => {
-    agentConfig.updateDurableConfig(projectPath, agentId, updates);
+    return agentConfig.updateDurableConfig(projectPath, agentId, updates);
   });
 
   ipcMain.handle(IPC.AGENT.REORDER_DURABLE, async (_event, projectPath: string, orderedIds: string[]) => {
@@ -200,7 +200,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(
     IPC.AGENT.UPDATE_SESSION_NAME,
     async (_event, projectPath: string, agentId: string, sessionId: string, friendlyName: string | null) => {
-      agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
+      return agentConfig.updateSessionName(projectPath, agentId, sessionId, friendlyName);
     }
   );
 
@@ -212,7 +212,7 @@ export function registerAgentHandlers(): void {
       try {
         const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
         if (!isSessionCapable(provider)) return null;
-        const config = agentConfig.getDurableConfig(projectPath, agentId);
+        const config = await agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
         const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
         if (!rawEvents) return null;
@@ -233,7 +233,7 @@ export function registerAgentHandlers(): void {
       try {
         const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
         if (!isSessionCapable(provider)) return null;
-        const config = agentConfig.getDurableConfig(projectPath, agentId);
+        const config = await agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
         const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
         if (!rawEvents) return null;

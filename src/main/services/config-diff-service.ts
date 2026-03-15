@@ -33,7 +33,7 @@ export async function computeConfigDiff(params: {
   provider: OrchestratorProvider;
 }): Promise<ConfigDiffResult> {
   const { projectPath, agentId, provider } = params;
-  const agent = getDurableConfig(projectPath, agentId);
+  const agent = await getDurableConfig(projectPath, agentId);
   if (!agent) {
     return { agentId, agentName: '', hasDiffs: false, items: [] };
   }
@@ -88,7 +88,7 @@ export async function propagateChanges(params: {
   provider: OrchestratorProvider;
 }): Promise<{ ok: boolean; message: string; propagatedCount: number }> {
   const { projectPath, agentId, selectedItemIds, provider } = params;
-  const agent = getDurableConfig(projectPath, agentId);
+  const agent = await getDurableConfig(projectPath, agentId);
   if (!agent) {
     return { ok: false, message: 'Agent not found', propagatedCount: 0 };
   }

@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { execSync } from 'child_process';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
@@ -10,22 +10,22 @@ import { appLog } from '../services/log-service';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
 export function registerProjectHandlers(): void {
-  ipcMain.handle(IPC.PROJECT.LIST, () => {
+  ipcMain.handle(IPC.PROJECT.LIST, async () => {
     return projectStore.list();
   });
 
-  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
-    const project = projectStore.add(dirPath);
+  ipcMain.handle(IPC.PROJECT.ADD, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    const project = await projectStore.add(dirPath);
     try {
-      ensureGitignore(dirPath);
+      await ensureGitignore(dirPath);
     } catch {
       // Non-fatal
     }
     return project;
   }));
 
-  ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], (_event, id: string) => {
-    projectStore.remove(id);
+  ipcMain.handle(IPC.PROJECT.REMOVE, withValidatedArgs([stringArg()], async (_event, id: string) => {
+    return projectStore.remove(id);
   }));
 
   ipcMain.handle(IPC.PROJECT.PICK_DIR, async () => {
@@ -39,8 +39,13 @@ export function registerProjectHandlers(): void {
     return result.filePaths[0];
   });
 
-  ipcMain.handle(IPC.PROJECT.CHECK_GIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
-    return fs.existsSync(path.join(dirPath, '.git'));
+  ipcMain.handle(IPC.PROJECT.CHECK_GIT, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    try {
+      await fsp.access(path.join(dirPath, '.git'));
+      return true;
+    } catch {
+      return false;
+    }
   }));
 
   ipcMain.handle(IPC.PROJECT.GIT_INIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
@@ -52,7 +57,7 @@ export function registerProjectHandlers(): void {
     }
   }));
 
-  ipcMain.handle(IPC.PROJECT.UPDATE, withValidatedArgs([stringArg(), objectArg<Record<string, unknown>>()], (_event, id: string, updates: Record<string, unknown>) => {
+  ipcMain.handle(IPC.PROJECT.UPDATE, withValidatedArgs([stringArg(), objectArg<Record<string, unknown>>()], async (_event, id: string, updates: Record<string, unknown>) => {
     return projectStore.update(id, updates as any);
   }));
 
@@ -68,11 +73,11 @@ export function registerProjectHandlers(): void {
     return projectStore.setIcon(projectId, result.filePaths[0]);
   }));
 
-  ipcMain.handle(IPC.PROJECT.REORDER, withValidatedArgs([arrayArg(stringArg())], (_event, orderedIds: string[]) => {
+  ipcMain.handle(IPC.PROJECT.REORDER, withValidatedArgs([arrayArg(stringArg())], async (_event, orderedIds: string[]) => {
     return projectStore.reorder(orderedIds);
   }));
 
-  ipcMain.handle(IPC.PROJECT.READ_ICON, withValidatedArgs([stringArg()], (_event, filename: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_ICON, withValidatedArgs([stringArg()], async (_event, filename: string) => {
     return projectStore.readIconData(filename);
   }));
 
@@ -92,46 +97,54 @@ export function registerProjectHandlers(): void {
       '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
     };
     const mime = mimeMap[ext] || 'image/png';
-    const data = fs.readFileSync(filePath);
+    const data = await fsp.readFile(filePath);
     return `data:${mime};base64,${data.toString('base64')}`;
   });
 
-  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg()], (_event, projectId: string, dataUrl: string) => {
+  ipcMain.handle(IPC.PROJECT.SAVE_CROPPED_ICON, withValidatedArgs([stringArg(), stringArg()], async (_event, projectId: string, dataUrl: string) => {
     return projectStore.saveCroppedIcon(projectId, dataUrl);
   }));
 
-  ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, withValidatedArgs([stringArg()], (_event, projectPath: string): string[] => {
+  ipcMain.handle(IPC.PROJECT.LIST_CLUBHOUSE_FILES, withValidatedArgs([stringArg()], async (_event, projectPath: string): Promise<string[]> => {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
-    if (!fs.existsSync(clubhouseDir)) return [];
+    try {
+      await fsp.access(clubhouseDir);
+    } catch {
+      return [];
+    }
     try {
       const results: string[] = [];
-      const walk = (dir: string, prefix: string) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const walk = async (dir: string, prefix: string) => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
           const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
           if (entry.isDirectory()) {
             results.push(rel + '/');
-            walk(path.join(dir, entry.name), rel);
+            await walk(path.join(dir, entry.name), rel);
           } else {
             results.push(rel);
           }
         }
       };
-      walk(clubhouseDir, '');
+      await walk(clubhouseDir, '');
       return results;
     } catch {
       return [];
     }
   }));
 
-  ipcMain.handle(IPC.PROJECT.RESET_PROJECT, withValidatedArgs([stringArg()], (_event, projectPath: string): boolean => {
+  ipcMain.handle(IPC.PROJECT.RESET_PROJECT, withValidatedArgs([stringArg()], async (_event, projectPath: string): Promise<boolean> => {
     const clubhouseDir = path.join(projectPath, '.clubhouse');
-    if (!fs.existsSync(clubhouseDir)) return true;
+    try {
+      await fsp.access(clubhouseDir);
+    } catch {
+      return true;
+    }
     try {
       appLog('core:project', 'warn', 'Resetting project .clubhouse directory', {
         meta: { projectPath },
       });
-      fs.rmSync(clubhouseDir, { recursive: true, force: true });
+      await fsp.rm(clubhouseDir, { recursive: true, force: true });
       return true;
     } catch (err) {
       appLog('core:project', 'error', 'Failed to reset project directory', {

@@ -12,36 +12,36 @@ import type {
 } from '../../shared/marketplace-types';
 
 export function registerMarketplaceHandlers(): void {
-  ipcMain.handle(IPC.MARKETPLACE.FETCH_REGISTRY, () => {
+  ipcMain.handle(IPC.MARKETPLACE.FETCH_REGISTRY, async () => {
     return marketplaceService.fetchRegistry();
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.INSTALL_PLUGIN, (_event, req: MarketplaceInstallRequest) => {
+  ipcMain.handle(IPC.MARKETPLACE.INSTALL_PLUGIN, async (_event, req: MarketplaceInstallRequest) => {
     return marketplaceService.installPlugin(req);
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.CHECK_PLUGIN_UPDATES, () => {
+  ipcMain.handle(IPC.MARKETPLACE.CHECK_PLUGIN_UPDATES, async () => {
     return pluginUpdateService.checkForPluginUpdates();
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.UPDATE_PLUGIN, (_event, req: PluginUpdateRequest) => {
+  ipcMain.handle(IPC.MARKETPLACE.UPDATE_PLUGIN, async (_event, req: PluginUpdateRequest) => {
     return pluginUpdateService.updatePlugin(req.pluginId);
   });
 
   // Custom marketplace CRUD
-  ipcMain.handle(IPC.MARKETPLACE.LIST_CUSTOM, () => {
+  ipcMain.handle(IPC.MARKETPLACE.LIST_CUSTOM, async () => {
     return customMarketplaceService.listCustomMarketplaces();
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.ADD_CUSTOM, (_event, req: CustomMarketplaceAddRequest) => {
+  ipcMain.handle(IPC.MARKETPLACE.ADD_CUSTOM, async (_event, req: CustomMarketplaceAddRequest) => {
     return customMarketplaceService.addCustomMarketplace(req);
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.REMOVE_CUSTOM, (_event, req: CustomMarketplaceRemoveRequest) => {
+  ipcMain.handle(IPC.MARKETPLACE.REMOVE_CUSTOM, async (_event, req: CustomMarketplaceRemoveRequest) => {
     return customMarketplaceService.removeCustomMarketplace(req);
   });
 
-  ipcMain.handle(IPC.MARKETPLACE.TOGGLE_CUSTOM, (_event, req: CustomMarketplaceToggleRequest) => {
+  ipcMain.handle(IPC.MARKETPLACE.TOGGLE_CUSTOM, async (_event, req: CustomMarketplaceToggleRequest) => {
     return customMarketplaceService.toggleCustomMarketplace(req);
   });
 }

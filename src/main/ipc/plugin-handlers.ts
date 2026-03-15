@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import type {
@@ -31,7 +31,7 @@ export function registerPluginHandlers(): void {
   pluginManifestRegistry.initializeTrustedManifests();
 
   // ── Discovery ────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.DISCOVER_COMMUNITY, () => {
+  ipcMain.handle(IPC.PLUGIN.DISCOVER_COMMUNITY, async () => {
     return pluginDiscovery.discoverCommunityPlugins();
   });
 
@@ -137,15 +137,15 @@ export function registerPluginHandlers(): void {
   }));
 
   // ── Gitignore ────────────────────────────────────────────────────────
-  ipcMain.handle(IPC.PLUGIN.GITIGNORE_ADD, withValidatedArgs([stringArg(), stringArg(), arrayArg(stringArg())], (_event, projectPath: string, pluginId: string, patterns: string[]) => {
-    gitignoreManager.addEntries(projectPath, pluginId, patterns);
+  ipcMain.handle(IPC.PLUGIN.GITIGNORE_ADD, withValidatedArgs([stringArg(), stringArg(), arrayArg(stringArg())], async (_event, projectPath: string, pluginId: string, patterns: string[]) => {
+    return gitignoreManager.addEntries(projectPath, pluginId, patterns);
   }));
 
-  ipcMain.handle(IPC.PLUGIN.GITIGNORE_REMOVE, withValidatedArgs([stringArg(), stringArg()], (_event, projectPath: string, pluginId: string) => {
-    gitignoreManager.removeEntries(projectPath, pluginId);
+  ipcMain.handle(IPC.PLUGIN.GITIGNORE_REMOVE, withValidatedArgs([stringArg(), stringArg()], async (_event, projectPath: string, pluginId: string) => {
+    return gitignoreManager.removeEntries(projectPath, pluginId);
   }));
 
-  ipcMain.handle(IPC.PLUGIN.GITIGNORE_CHECK, withValidatedArgs([stringArg(), stringArg()], (_event, projectPath: string, pattern: string) => {
+  ipcMain.handle(IPC.PLUGIN.GITIGNORE_CHECK, withValidatedArgs([stringArg(), stringArg()], async (_event, projectPath: string, pattern: string) => {
     return gitignoreManager.isIgnored(projectPath, pattern);
   }));
 
@@ -187,13 +187,13 @@ export function registerPluginHandlers(): void {
   // ── Module source loader (dev mode) ──────────────────────────────────
   // In dev mode the renderer can't import() file:// URLs cross-origin.
   // This handler reads plugin source files so the renderer can import via blob URL.
-  ipcMain.handle(IPC.PLUGIN.LOAD_MODULE_SOURCE, withValidatedArgs([stringArg()], (_event, filePath: string) => {
+  ipcMain.handle(IPC.PLUGIN.LOAD_MODULE_SOURCE, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
     const pluginsDir = path.join(app.getPath('home'), '.clubhouse', 'plugins');
     const resolved = path.resolve(filePath);
     if (!resolved.startsWith(pluginsDir)) {
       throw new Error(`Access denied: path "${filePath}" is outside the plugins directory`);
     }
-    return fs.readFileSync(resolved, 'utf-8');
+    return fsp.readFile(resolved, 'utf-8');
   }));
 
   // ── Manifest Registry ─────────────────────────────────────────────────
@@ -206,7 +206,7 @@ export function registerPluginHandlers(): void {
 
   // Re-read a plugin's manifest from disk and register it as trusted.
   // Used during hot-reload so the renderer doesn't need to send the manifest.
-  ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], (_event, pluginId: string) => {
+  ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
     return pluginDiscovery.refreshManifestFromDisk(pluginId);
   }));
 }

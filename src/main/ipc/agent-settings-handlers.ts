@@ -174,14 +174,14 @@ export function registerAgentSettingsHandlers(): void {
   // --- Materialization ---
 
   ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, async (_event, projectPath: string, agentId: string) => {
-    const agent = getDurableConfig(projectPath, agentId);
+    const agent = await getDurableConfig(projectPath, agentId);
     if (!agent) return;
     const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     await materializeAgent({ projectPath, agent, provider });
   });
 
   ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, async (_event, projectPath: string, agentId: string) => {
-    const agent = getDurableConfig(projectPath, agentId);
+    const agent = await getDurableConfig(projectPath, agentId);
     if (!agent) return null;
     const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return previewMaterialization({ projectPath, agent, provider });
@@ -190,14 +190,14 @@ export function registerAgentSettingsHandlers(): void {
   // --- Config diff detection ---
 
   ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, async (_event, projectPath: string, agentId: string) => {
-    const agent = getDurableConfig(projectPath, agentId);
+    const agent = await getDurableConfig(projectPath, agentId);
     if (!agent) return { agentId, agentName: '', hasDiffs: false, items: [] };
     const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return computeConfigDiff({ projectPath, agentId, provider });
   });
 
   ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, async (_event, projectPath: string, agentId: string, selectedItemIds: string[]) => {
-    const agent = getDurableConfig(projectPath, agentId);
+    const agent = await getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found', propagatedCount: 0 };
     const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return propagateChanges({ projectPath, agentId, selectedItemIds, provider });

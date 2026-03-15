@@ -1,13 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
+  mkdir: vi.fn(),
 }));
 
-import * as fs from 'fs';
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(),
+}));
+
+import * as fsp from 'fs/promises';
+import { pathExists } from './fs-utils';
 import {
   listCustomMarketplaces,
   addCustomMarketplace,
@@ -21,35 +25,37 @@ describe('custom-marketplace-service', () => {
   });
 
   describe('listCustomMarketplaces', () => {
-    it('returns empty array when file does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      expect(listCustomMarketplaces()).toEqual([]);
+    it('returns empty array when file does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      expect(await listCustomMarketplaces()).toEqual([]);
     });
 
-    it('returns parsed marketplace list', () => {
+    it('returns parsed marketplace list', async () => {
       const data = [
         { id: 'cm-1', name: 'My Store', url: 'https://example.com/registry.json', enabled: true },
       ];
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(data));
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(data));
 
-      const result = listCustomMarketplaces();
+      const result = await listCustomMarketplaces();
       expect(result).toEqual(data);
     });
 
-    it('returns empty array on parse error', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('not json');
+    it('returns empty array on parse error', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue('not json');
 
-      expect(listCustomMarketplaces()).toEqual([]);
+      expect(await listCustomMarketplaces()).toEqual([]);
     });
   });
 
   describe('addCustomMarketplace', () => {
-    it('adds a marketplace and persists it', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+    it('adds a marketplace and persists it', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
-      const result = addCustomMarketplace({
+      const result = await addCustomMarketplace({
         name: 'My Store',
         url: 'https://example.com/registry.json',
       });
@@ -59,17 +65,19 @@ describe('custom-marketplace-service', () => {
       expect(result.enabled).toBe(true);
       expect(result.id).toMatch(/^custom-/);
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('custom-marketplaces.json'),
         expect.stringContaining('My Store'),
         'utf-8',
       );
     });
 
-    it('auto-appends registry.json when URL does not end with .json', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+    it('auto-appends registry.json when URL does not end with .json', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
-      const result = addCustomMarketplace({
+      const result = await addCustomMarketplace({
         name: 'My Store',
         url: 'https://example.com/my-registry/',
       });
@@ -77,67 +85,71 @@ describe('custom-marketplace-service', () => {
       expect(result.url).toBe('https://example.com/my-registry/registry.json');
     });
 
-    it('throws on duplicate URL', () => {
+    it('throws on duplicate URL', async () => {
       const existing = [
         { id: 'cm-1', name: 'Existing', url: 'https://example.com/registry.json', enabled: true },
       ];
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(existing));
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(existing));
 
-      expect(() =>
+      await expect(
         addCustomMarketplace({
           name: 'New Name',
           url: 'https://example.com/registry.json',
         }),
-      ).toThrow('already exists');
+      ).rejects.toThrow('already exists');
     });
   });
 
   describe('removeCustomMarketplace', () => {
-    it('removes marketplace by id', () => {
+    it('removes marketplace by id', async () => {
       const data = [
         { id: 'cm-1', name: 'Store A', url: 'https://a.com/registry.json', enabled: true },
         { id: 'cm-2', name: 'Store B', url: 'https://b.com/registry.json', enabled: true },
       ];
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(data));
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(data));
+      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
-      removeCustomMarketplace({ id: 'cm-1' });
+      await removeCustomMarketplace({ id: 'cm-1' });
 
-      expect(fs.writeFileSync).toHaveBeenCalled();
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(fsp.writeFile).toHaveBeenCalled();
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written).toHaveLength(1);
       expect(written[0].id).toBe('cm-2');
     });
 
-    it('throws when marketplace not found', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('[]');
+    it('throws when marketplace not found', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
 
-      expect(() => removeCustomMarketplace({ id: 'nonexistent' })).toThrow('not found');
+      await expect(removeCustomMarketplace({ id: 'nonexistent' })).rejects.toThrow('not found');
     });
   });
 
   describe('toggleCustomMarketplace', () => {
-    it('toggles enabled state', () => {
+    it('toggles enabled state', async () => {
       const data = [
         { id: 'cm-1', name: 'Store', url: 'https://a.com/registry.json', enabled: true },
       ];
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(data));
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(data));
+      vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+      vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
-      const result = toggleCustomMarketplace({ id: 'cm-1', enabled: false });
+      const result = await toggleCustomMarketplace({ id: 'cm-1', enabled: false });
       expect(result.enabled).toBe(false);
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written[0].enabled).toBe(false);
     });
 
-    it('throws when marketplace not found', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue('[]');
+    it('throws when marketplace not found', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
 
-      expect(() => toggleCustomMarketplace({ id: 'nonexistent', enabled: true })).toThrow('not found');
+      await expect(toggleCustomMarketplace({ id: 'nonexistent', enabled: true })).rejects.toThrow('not found');
     });
   });
 });

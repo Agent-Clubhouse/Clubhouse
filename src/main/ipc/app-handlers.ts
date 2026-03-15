@@ -147,12 +147,12 @@ export function registerAppHandlers(): void {
     return autoUpdateService.applyUpdate();
   });
 
-  ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, () => {
+  ipcMain.handle(IPC.APP.GET_PENDING_RELEASE_NOTES, async () => {
     return autoUpdateService.getPendingReleaseNotes();
   });
 
-  ipcMain.handle(IPC.APP.CLEAR_PENDING_RELEASE_NOTES, () => {
-    autoUpdateService.clearPendingReleaseNotes();
+  ipcMain.handle(IPC.APP.CLEAR_PENDING_RELEASE_NOTES, async () => {
+    return autoUpdateService.clearPendingReleaseNotes();
   });
 
   ipcMain.handle(IPC.APP.GET_VERSION_HISTORY, () => {
@@ -243,7 +243,7 @@ export function registerAppHandlers(): void {
 
     // On disable: remove git excludes
     if (previousEnabled && !nowEnabled && projectPath) {
-      disableExclusions(projectPath);
+      await disableExclusions(projectPath);
     }
   });
 }
