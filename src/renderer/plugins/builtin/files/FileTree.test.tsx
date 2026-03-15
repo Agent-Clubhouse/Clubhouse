@@ -843,7 +843,7 @@ describe('FileTree — flicker prevention', () => {
       expect(fileState.selectedPath).toBe('README.md');
       // The selected node should still have the selected background
       const selected = document.querySelector('[data-path="/project/README.md"]');
-      expect(selected?.className).toContain('bg-ctp-surface1');
+      expect(selected?.className).toContain('bg-surface-1');
     });
   });
 
@@ -1110,14 +1110,14 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      // Focus uses ring-ctp-blue, not just bg-ctp-surface0
-      expect(srcNode?.className).toContain('ring-ctp-blue');
-      expect(srcNode?.className).toContain('bg-ctp-surface0/60');
+      // Focused items use the same solid highlight as the explorer pane
+      expect(srcNode?.className).toContain('bg-surface-1');
+      expect(srcNode?.className).toContain('text-ctp-text');
     });
 
-    // Non-focused items should NOT have the focus ring
+    // Non-focused items should NOT have the highlight background
     const docsNode = container.querySelector('[data-path="/project/docs"]');
-    expect(docsNode?.className).not.toContain('ring-ctp-blue');
+    expect(docsNode?.className).not.toContain('bg-surface-1');
   });
 });
 
@@ -1239,7 +1239,7 @@ describe('FileTree — accessibility', () => {
     await screen.findByText('README.md');
 
     const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
-    expect(readmeNode.className).toContain('hover:bg-ctp-surface0/70');
+    expect(readmeNode.className).toContain('hover:bg-surface-0');
     expect(readmeNode.className).toContain('hover:text-ctp-text');
     expect(readmeNode.className).toContain('rounded-sm');
     expect(readmeNode.className).toContain('transition-colors');
@@ -1254,7 +1254,8 @@ describe('FileTree — accessibility', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
-      expect(readmeNode.className).toContain('bg-ctp-surface1');
+      expect(readmeNode.className).toContain('bg-surface-1');
+      expect(readmeNode.className).toContain('font-medium');
     });
   });
 
@@ -1312,18 +1313,18 @@ describe('FileTree — focus follows click', () => {
     fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('ring-ctp-blue');
+      expect(srcNode?.className).toContain('bg-surface-1');
     });
 
-    // Now click README.md — focus should move there, src should lose focus ring
+    // Now click README.md — focus should move there, src should lose highlight
     fireEvent.click(screen.getByText('README.md'));
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]');
-      expect(readmeNode?.className).toContain('bg-ctp-surface1');
+      expect(readmeNode?.className).toContain('bg-surface-1');
 
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).not.toContain('ring-ctp-blue');
+      expect(srcNode?.className).not.toContain('bg-surface-1');
     });
   });
 
@@ -1340,21 +1341,20 @@ describe('FileTree — focus follows click', () => {
 
     await waitFor(() => {
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).toContain('ring-ctp-blue');
+      expect(docsNode?.className).toContain('bg-surface-1');
     });
 
     // Click src directory — focus should move to src
     fireEvent.click(screen.getByText('src'));
 
     await waitFor(() => {
-      // src should no longer have the focus ring (it has the keyboard focus
-      // but since toggleExpand sets focusedPath, the ring styling applies)
+      // src gets the focused highlight (toggleExpand sets focusedPath)
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('ring-ctp-blue');
+      expect(srcNode?.className).toContain('bg-surface-1');
 
-      // docs should lose focus ring
+      // docs should lose highlight
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).not.toContain('ring-ctp-blue');
+      expect(docsNode?.className).not.toContain('bg-surface-1');
     });
   });
 
@@ -1368,7 +1368,7 @@ describe('FileTree — focus follows click', () => {
 
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]');
-      expect(readmeNode?.className).toContain('bg-ctp-surface1');
+      expect(readmeNode?.className).toContain('bg-surface-1');
     });
 
     // Verify fileState tab was opened permanently
