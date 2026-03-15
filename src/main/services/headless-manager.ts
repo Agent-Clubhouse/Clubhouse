@@ -167,89 +167,83 @@ export function isHeadless(agentId: string): boolean {
   return sessions.has(agentId);
 }
 
-export async function spawnHeadless(
-  agentId: string,
-  cwd: string,
+// ── Spawn Helpers ───────────────────────────────────────────────────────────
+
+/** Mutable I/O state shared between stdout, stderr, and exit handlers. */
+interface IOState {
+  stdoutBytes: number;
+  stderrChunks: string[];
+  stderrChunkSizes: number[];
+  stderrBytes: number;
+}
+
+/** Build the cleaned environment for the spawned process. */
+function prepareSpawnEnv(extraEnv?: Record<string, string>): Record<string, string> {
+  return cleanSpawnEnv({ ...getShellEnvironment(), ...extraEnv });
+}
+
+/**
+ * Spawn the child process with the correct platform-specific strategy.
+ *
+ * On Windows, .cmd/.ps1 shims need to be run through cmd.exe.
+ * Using windowsVerbatimArguments avoids Node.js double-escaping the
+ * arguments which can mangle mission text and long system prompts.
+ *
+ * When a commandPrefix is provided on non-Windows, it is run in a shell
+ * so the prefix (e.g. ". ./init.sh") runs first, then exec replaces the
+ * shell with the agent binary.
+ */
+function spawnProcess(
   binary: string,
   args: string[],
-  extraEnv?: Record<string, string>,
-  outputKind: HeadlessOutputKind = 'stream-json',
-  onExit?: (agentId: string, exitCode: number) => void,
+  cwd: string,
+  env: Record<string, string>,
   commandPrefix?: string,
-): Promise<void> {
-  // Clean up any existing session
-  if (sessions.has(agentId)) {
-    kill(agentId);
-  }
-
-  await ensureLogsDir();
-  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
-
-  const env = cleanSpawnEnv({ ...getShellEnvironment(), ...extraEnv });
-
-  appLog('core:headless', 'info', `Spawning headless agent`, {
-    meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
-  });
-
+): ChildProcess {
   const isWin = process.platform === 'win32';
-  // On Windows, .cmd/.ps1 shims need to be run through cmd.exe.
-  // Using windowsVerbatimArguments avoids Node.js double-escaping the
-  // arguments which can mangle mission text and long system prompts.
-  let proc: ChildProcess;
+
   if (isWin) {
     const cmdLine = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
     const fullCmd = commandPrefix ? `${commandPrefix} & ${cmdLine}` : cmdLine;
-    proc = cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
+    return cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsVerbatimArguments: true,
     });
-  } else if (commandPrefix) {
-    // Wrap in shell so the prefix (e.g. ". ./init.sh") runs first,
-    // then exec replaces the shell with the agent binary.
-    proc = cpSpawn('sh', ['-c', `${commandPrefix} && exec "$@"`, '_', binary, ...args], {
-      cwd,
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-  } else {
-    proc = cpSpawn(binary, args, {
+  }
+
+  if (commandPrefix) {
+    return cpSpawn('sh', ['-c', `${commandPrefix} && exec "$@"`, '_', binary, ...args], {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
   }
 
-  // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.
-  // An open stdin pipe can cause Claude Code to wait for input.
-  proc.stdin?.end();
+  return cpSpawn(binary, args, {
+    cwd,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
 
-  if (!proc.pid) {
-    appLog('core:headless', 'error', `Failed to spawn — no PID (binary may not exist)`, {
-      meta: { agentId, binary },
-    });
-  } else {
-    appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
-  }
-
+/** Create and initialize a HeadlessSession record. */
+function createSessionRecord(
+  agentId: string,
+  proc: ChildProcess,
+  outputKind: HeadlessOutputKind,
+  transcriptPath: string,
+): HeadlessSession {
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
-  const transcript: StreamJsonEvent[] = [];
-  const transcriptLines: string[] = [];
-  const transcriptEventSizes: number[] = [];
-  let stdoutBytes = 0;
-  const stderrChunks: string[] = [];
-  const stderrChunkSizes: number[] = [];
-  let stderrBytes = 0;
-
-  const session: HeadlessSession = {
+  return {
     process: proc,
     agentId,
     outputKind,
     parser,
-    transcript,
-    transcriptLines,
-    transcriptEventSizes,
+    transcript: [],
+    transcriptLines: [],
+    transcriptEventSizes: [],
     transcriptBytes: 0,
     transcriptEvicted: false,
     totalTranscriptEvents: 0,
@@ -257,88 +251,120 @@ export async function spawnHeadless(
     transcriptPath,
     startedAt: Date.now(),
   };
-  sessions.set(agentId, session);
+}
 
-  // Open write stream for transcript persistence
-  const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
+/** Append a single event to the session transcript and persist it to disk. */
+function appendTranscriptEvent(
+  session: HeadlessSession,
+  event: StreamJsonEvent,
+  logStream: fs.WriteStream,
+): void {
+  const serialized = JSON.stringify(event);
+  const eventBytes = Buffer.byteLength(serialized, 'utf-8');
+
+  session.transcript.push(event);
+  session.transcriptLines.push(serialized);
+  session.transcriptEventSizes.push(eventBytes);
+  session.transcriptBytes += eventBytes;
+  session.totalTranscriptEvents++;
+  // Disk write is serialized + newline
+  session.totalTranscriptBytesWritten += eventBytes + 1;
+
+  logStream.write(serialized + '\n');
+}
+
+/**
+ * Wire the JSONL parser to the transcript, disk log, and hook event broadcast.
+ * Only attaches listeners when the session has a parser (stream-json mode).
+ */
+function setupTranscriptPipeline(
+  session: HeadlessSession,
+  logStream: fs.WriteStream,
+  agentId: string,
+): void {
+  if (!session.parser) return;
+
   // Track which content_block indices are tool_use (for matching content_block_stop)
   const activeToolBlocks = new Map<number, string>();
 
-  if (parser) {
-    parser.on('line', (event: StreamJsonEvent) => {
-      const serialized = JSON.stringify(event);
-      const eventBytes = Buffer.byteLength(serialized, 'utf-8');
+  session.parser.on('line', (event: StreamJsonEvent) => {
+    appendTranscriptEvent(session, event, logStream);
 
-      transcript.push(event);
-      transcriptLines.push(serialized);
-      transcriptEventSizes.push(eventBytes);
-      session.transcriptBytes += eventBytes;
-      session.totalTranscriptEvents++;
-      // Disk write is serialized + newline
-      session.totalTranscriptBytesWritten += eventBytes + 1;
+    // Log first event for diagnostics
+    if (session.transcript.length === 1) {
+      appLog('core:headless', 'info', `First JSONL event received`, {
+        meta: { agentId, type: event.type },
+      });
+    }
 
-      // Log first event for diagnostics
-      if (transcript.length === 1) {
-        appLog('core:headless', 'info', `First JSONL event received`, {
-          meta: { agentId, type: event.type },
-        });
-      }
+    // Evict old events if in-memory transcript exceeds the cap
+    if (session.transcriptBytes > maxTranscriptBytes) {
+      evictOldEvents(session);
+    }
 
-      // Persist to disk (always — disk is the source of truth)
-      logStream.write(serialized + '\n');
+    // Emit hook events to renderer + annex event bus for status tracking
+    const hookEvents = mapToHookEvent(event, activeToolBlocks);
+    for (const hookEvent of hookEvents) {
+      broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+      annexEventBus.emitHookEvent(agentId, hookEvent as any);
+    }
+  });
+}
 
-      // Evict old events if in-memory transcript exceeds the cap
-      if (session.transcriptBytes > maxTranscriptBytes) {
-        evictOldEvents(session);
-      }
+/** Emit initial notification for text mode so HeadlessAgentView shows activity. */
+function emitTextModeNotification(agentId: string, outputKind: HeadlessOutputKind): void {
+  if (outputKind !== 'text') return;
 
-      // Emit hook events to renderer + annex event bus for status tracking
-      const hookEvents = mapToHookEvent(event, activeToolBlocks);
-      for (const hookEvent of hookEvents) {
-        broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-        annexEventBus.emitHookEvent(agentId, hookEvent as any);
-      }
-    });
-  }
+  const textNotification = {
+    kind: 'notification' as const,
+    message: 'Agent running (text output — live events unavailable)',
+    timestamp: Date.now(),
+  };
+  broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, textNotification);
+  annexEventBus.emitHookEvent(agentId, textNotification);
+}
 
-  // Emit initial notification for text mode so HeadlessAgentView shows activity
-  if (outputKind === 'text') {
-    const textNotification = {
-      kind: 'notification' as const,
-      message: 'Agent running (text output — live events unavailable)',
-      timestamp: Date.now(),
-    };
-    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, textNotification);
-    annexEventBus.emitHookEvent(agentId, textNotification);
-  }
-
+/** Wire stdout data to the JSONL parser or text buffer. */
+function setupStdoutHandler(
+  proc: ChildProcess,
+  session: HeadlessSession,
+  agentId: string,
+  io: IOState,
+): void {
   proc.stdout?.on('data', (chunk: Buffer) => {
     const str = chunk.toString();
-    stdoutBytes += str.length;
-    if (stdoutBytes === str.length) {
+    io.stdoutBytes += str.length;
+    if (io.stdoutBytes === str.length) {
       // First stdout chunk — log it for diagnostics
       appLog('core:headless', 'info', `First stdout data`, {
         meta: { agentId, bytes: str.length, preview: str.slice(0, 200) },
       });
     }
-    if (parser) {
-      parser.feed(str);
+    if (session.parser) {
+      session.parser.feed(str);
     } else {
       session.textBuffer = (session.textBuffer || '') + str;
     }
   });
+}
 
+/** Wire stderr data to a bounded buffer and broadcast as notifications. */
+function setupStderrHandler(
+  proc: ChildProcess,
+  agentId: string,
+  io: IOState,
+): void {
   proc.stderr?.on('data', (chunk: Buffer) => {
     const msg = chunk.toString().trim();
     if (!msg) return;
 
     const msgBytes = Buffer.byteLength(msg, 'utf-8');
-    stderrChunks.push(msg);
-    stderrChunkSizes.push(msgBytes);
-    stderrBytes += msgBytes;
+    io.stderrChunks.push(msg);
+    io.stderrChunkSizes.push(msgBytes);
+    io.stderrBytes += msgBytes;
 
-    if (stderrBytes > maxStderrBytes) {
-      stderrBytes = evictOldStderrChunks(stderrChunks, stderrChunkSizes, stderrBytes);
+    if (io.stderrBytes > maxStderrBytes) {
+      io.stderrBytes = evictOldStderrChunks(io.stderrChunks, io.stderrChunkSizes, io.stderrBytes);
     }
 
     appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
@@ -352,15 +378,32 @@ export async function spawnHeadless(
     broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, stderrNotification);
     annexEventBus.emitHookEvent(agentId, stderrNotification);
   });
+}
 
+/**
+ * Wire the process close and error handlers.
+ *
+ * Handles parser flushing, text-mode result synthesis, session cleanup,
+ * and exit broadcasting. Guards against the CQ-2 race condition where an
+ * old process's close handler fires after a replacement session is stored.
+ */
+function setupExitHandlers(
+  proc: ChildProcess,
+  session: HeadlessSession,
+  logStream: fs.WriteStream,
+  agentId: string,
+  outputKind: HeadlessOutputKind,
+  io: IOState,
+  onExit?: (agentId: string, exitCode: number) => void,
+): void {
   let exited = false;
 
   proc.on('close', (code) => {
     if (exited) return;
     exited = true;
 
-    if (parser) {
-      parser.flush();
+    if (session.parser) {
+      session.parser.flush();
     }
 
     // For text mode, synthesize a result transcript entry from buffered output
@@ -371,15 +414,7 @@ export async function spawnHeadless(
         duration_ms: Date.now() - session.startedAt,
         cost_usd: 0,
       };
-      const serialized = JSON.stringify(resultEvent);
-      const eventBytes = Buffer.byteLength(serialized, 'utf-8');
-      transcript.push(resultEvent);
-      transcriptLines.push(serialized);
-      transcriptEventSizes.push(eventBytes);
-      session.transcriptBytes += eventBytes;
-      session.totalTranscriptEvents++;
-      session.totalTranscriptBytesWritten += eventBytes + 1;
-      logStream.write(serialized + '\n');
+      appendTranscriptEvent(session, resultEvent, logStream);
 
       const stopEvent = {
         kind: 'stop' as const,
@@ -401,7 +436,7 @@ export async function spawnHeadless(
       cleanupHeadlessSession(agentId);
 
       appLog('core:headless', 'info', `Process exited`, {
-        meta: { agentId, exitCode: code, stdoutBytes, events: transcript.length, stderr: stderrChunks.join('\n').slice(0, 500) },
+        meta: { agentId, exitCode: code, stdoutBytes: io.stdoutBytes, events: session.transcript.length, stderr: io.stderrChunks.join('\n').slice(0, 500) },
       });
 
       onExit?.(agentId, code ?? 0);
@@ -432,6 +467,71 @@ export async function spawnHeadless(
     }
   });
 }
+
+// ── Main Entry Point ────────────────────────────────────────────────────────
+
+export async function spawnHeadless(
+  agentId: string,
+  cwd: string,
+  binary: string,
+  args: string[],
+  extraEnv?: Record<string, string>,
+  outputKind: HeadlessOutputKind = 'stream-json',
+  onExit?: (agentId: string, exitCode: number) => void,
+  commandPrefix?: string,
+): Promise<void> {
+  // Clean up any existing session
+  if (sessions.has(agentId)) {
+    kill(agentId);
+  }
+
+  await ensureLogsDir();
+  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
+  const env = prepareSpawnEnv(extraEnv);
+
+  appLog('core:headless', 'info', `Spawning headless agent`, {
+    meta: { agentId, binary, args: args.join(' '), cwd, hasAnthropicKey: !!env.ANTHROPIC_API_KEY },
+  });
+
+  const proc = spawnProcess(binary, args, cwd, env, commandPrefix);
+
+  // Close stdin immediately — `-p` mode uses the CLI argument, not stdin.
+  // An open stdin pipe can cause Claude Code to wait for input.
+  proc.stdin?.end();
+
+  if (!proc.pid) {
+    appLog('core:headless', 'error', `Failed to spawn — no PID (binary may not exist)`, {
+      meta: { agentId, binary },
+    });
+  } else {
+    appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
+  }
+
+  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath);
+  sessions.set(agentId, session);
+
+  const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
+  const io: IOState = { stdoutBytes: 0, stderrChunks: [], stderrChunkSizes: [], stderrBytes: 0 };
+
+  setupTranscriptPipeline(session, logStream, agentId);
+  emitTextModeNotification(agentId, outputKind);
+  setupStdoutHandler(proc, session, agentId, io);
+  setupStderrHandler(proc, agentId, io);
+  setupExitHandlers(proc, session, logStream, agentId, outputKind, io, onExit);
+}
+
+/** @internal — exported for testing only */
+export const _internal = {
+  prepareSpawnEnv,
+  spawnProcess,
+  createSessionRecord,
+  appendTranscriptEvent,
+  emitTextModeNotification,
+  setupTranscriptPipeline,
+  setupStdoutHandler,
+  setupStderrHandler,
+  setupExitHandlers,
+};
 
 export function kill(agentId: string): void {
   const session = sessions.get(agentId);
