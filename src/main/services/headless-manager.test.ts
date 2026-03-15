@@ -43,6 +43,7 @@ vi.mock('fs/promises', () => mockFsPromises);
 vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: '/usr/local/bin' })),
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  winQuoteArg: vi.fn((arg: string) => arg.length === 0 ? '""' : '"' + arg.replace(/"/g, '""') + '"'),
 }));
 
 // Mock log service

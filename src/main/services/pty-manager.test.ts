@@ -20,6 +20,7 @@ vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ ...process.env })),
   getDefaultShell: vi.fn(() => process.platform === 'win32' ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh')),
   cleanSpawnEnv: vi.fn((env: Record<string, string>) => { delete env.CLAUDECODE; delete env.CLAUDE_CODE_ENTRYPOINT; return env; }),
+  winQuoteArg: vi.fn((arg: string) => arg.length === 0 ? '""' : '"' + arg.replace(/"/g, '""') + '"'),
 }));
 
 // Mock the IPC channels
