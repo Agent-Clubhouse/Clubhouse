@@ -5,34 +5,34 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../services/agent-settings-service', () => ({
-  readClaudeMd: vi.fn(() => '# Instructions'),
-  writeClaudeMd: vi.fn(),
-  readMcpConfig: vi.fn(() => [{ name: 'server-1' }]),
-  listSkills: vi.fn(() => ['skill-a']),
-  listAgentTemplates: vi.fn(() => ['template-a']),
-  listSourceSkills: vi.fn(() => ['src-skill']),
-  listSourceAgentTemplates: vi.fn(() => ['src-template']),
-  createSkillDir: vi.fn(() => '/path/to/skill'),
-  createAgentTemplateDir: vi.fn(() => '/path/to/template'),
-  readPermissions: vi.fn(() => ({ allow: ['read'] })),
-  writePermissions: vi.fn(),
-  readSkillContent: vi.fn(() => 'skill content'),
-  writeSkillContent: vi.fn(),
-  deleteSkill: vi.fn(),
-  readAgentTemplateContent: vi.fn(() => 'template content'),
-  writeAgentTemplateContent: vi.fn(),
-  deleteAgentTemplate: vi.fn(),
-  listAgentTemplateFiles: vi.fn(() => ['file.md']),
-  readMcpRawJson: vi.fn(() => '{"mcpServers": {}}'),
-  writeMcpRawJson: vi.fn(),
-  readProjectAgentDefaults: vi.fn(() => ({ model: 'default' })),
-  writeProjectAgentDefaults: vi.fn(),
-  readSourceSkillContent: vi.fn(() => 'src skill content'),
-  writeSourceSkillContent: vi.fn(),
-  deleteSourceSkill: vi.fn(),
-  readSourceAgentTemplateContent: vi.fn(() => 'src template content'),
-  writeSourceAgentTemplateContent: vi.fn(),
-  deleteSourceAgentTemplate: vi.fn(),
+  readClaudeMd: vi.fn(async () => '# Instructions'),
+  writeClaudeMd: vi.fn(async () => undefined),
+  readMcpConfig: vi.fn(async () => [{ name: 'server-1' }]),
+  listSkills: vi.fn(async () => ['skill-a']),
+  listAgentTemplates: vi.fn(async () => ['template-a']),
+  listSourceSkills: vi.fn(async () => ['src-skill']),
+  listSourceAgentTemplates: vi.fn(async () => ['src-template']),
+  createSkillDir: vi.fn(async () => '/path/to/skill'),
+  createAgentTemplateDir: vi.fn(async () => '/path/to/template'),
+  readPermissions: vi.fn(async () => ({ allow: ['read'] })),
+  writePermissions: vi.fn(async () => undefined),
+  readSkillContent: vi.fn(async () => 'skill content'),
+  writeSkillContent: vi.fn(async () => undefined),
+  deleteSkill: vi.fn(async () => undefined),
+  readAgentTemplateContent: vi.fn(async () => 'template content'),
+  writeAgentTemplateContent: vi.fn(async () => undefined),
+  deleteAgentTemplate: vi.fn(async () => undefined),
+  listAgentTemplateFiles: vi.fn(async () => ['file.md']),
+  readMcpRawJson: vi.fn(async () => '{"mcpServers": {}}'),
+  writeMcpRawJson: vi.fn(async () => undefined),
+  readProjectAgentDefaults: vi.fn(async () => ({ model: 'default' })),
+  writeProjectAgentDefaults: vi.fn(async () => undefined),
+  readSourceSkillContent: vi.fn(async () => 'src skill content'),
+  writeSourceSkillContent: vi.fn(async () => undefined),
+  deleteSourceSkill: vi.fn(async () => undefined),
+  readSourceAgentTemplateContent: vi.fn(async () => 'src template content'),
+  writeSourceAgentTemplateContent: vi.fn(async () => undefined),
+  deleteSourceAgentTemplate: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/agent-system', () => ({
@@ -48,14 +48,14 @@ vi.mock('../services/agent-config', () => ({
 }));
 
 vi.mock('../services/materialization-service', () => ({
-  materializeAgent: vi.fn(),
-  previewMaterialization: vi.fn(() => ({ instructions: 'merged', permissions: {}, mcpJson: null, skills: [], agentTemplates: [] })),
-  resetProjectAgentDefaults: vi.fn(),
+  materializeAgent: vi.fn(async () => undefined),
+  previewMaterialization: vi.fn(async () => ({ instructions: 'merged', permissions: {}, mcpJson: null, skills: [], agentTemplates: [] })),
+  resetProjectAgentDefaults: vi.fn(async () => undefined),
 }));
 
 vi.mock('../services/config-diff-service', () => ({
-  computeConfigDiff: vi.fn(() => ({ agentId: 'a1', agentName: 'Bot', hasDiffs: true, items: [{ id: 'i1' }] })),
-  propagateChanges: vi.fn(() => ({ ok: true, message: 'done', propagatedCount: 2 })),
+  computeConfigDiff: vi.fn(async () => ({ agentId: 'a1', agentName: 'Bot', hasDiffs: true, items: [{ id: 'i1' }] })),
+  propagateChanges: vi.fn(async () => ({ ok: true, message: 'done', propagatedCount: 2 })),
 }));
 
 vi.mock('../services/log-service', () => ({
