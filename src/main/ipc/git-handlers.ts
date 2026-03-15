@@ -3,9 +3,19 @@ import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
 import { booleanArg, stringArg, withValidatedArgs } from './validation';
 
+function deferInvocation<Result>(operation: () => Promise<Result> | Result): Promise<Result> {
+  return new Promise((resolve, reject) => {
+    setImmediate(() => {
+      void Promise.resolve()
+        .then(operation)
+        .then(resolve, reject);
+    });
+  });
+}
+
 export function registerGitHandlers(): void {
-  ipcMain.handle(IPC.GIT.INFO, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
-    return gitService.getGitInfo(dirPath);
+  ipcMain.handle(IPC.GIT.INFO, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    return deferInvocation(() => gitService.getGitInfo(dirPath));
   }));
 
   ipcMain.handle(IPC.GIT.CHECKOUT, withValidatedArgs([stringArg(), stringArg()], (_event, dirPath: string, branch: string) => {

@@ -57,6 +57,23 @@ describe('git-handlers', () => {
     expect(result).toEqual({ branch: 'main' });
   });
 
+  it('INFO defers gitService.getGitInfo to an async boundary', async () => {
+    vi.useFakeTimers();
+    try {
+      const handler = handlers.get(IPC.GIT.INFO)!;
+      const resultPromise = handler({}, '/project');
+
+      expect(gitService.getGitInfo).not.toHaveBeenCalled();
+
+      await vi.runAllTimersAsync();
+
+      expect(gitService.getGitInfo).toHaveBeenCalledWith('/project');
+      await expect(resultPromise).resolves.toEqual({ branch: 'main' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('CHECKOUT delegates to gitService.checkout', async () => {
     const handler = handlers.get(IPC.GIT.CHECKOUT)!;
     await handler({}, '/project', 'feature');
