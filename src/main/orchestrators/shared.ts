@@ -166,6 +166,31 @@ export function applyLaunchWrapper(
   return { binary: config.binary, args };
 }
 
+/**
+ * Parse model choices from CLI `--help` output.
+ *
+ * Extracts quoted model IDs from a "(choices: ...)" section matched by the
+ * given regex pattern.  The pattern must have one capture group that isolates
+ * the choices list (the text inside the parentheses).
+ *
+ * Used by Copilot CLI and Codex CLI providers — each passes a slightly
+ * different regex to account for variations in their help output format.
+ */
+export function parseModelChoicesFromHelp(
+  helpText: string,
+  pattern: RegExp,
+): Array<{ id: string; label: string }> | null {
+  const match = helpText.match(pattern);
+  if (!match) return null;
+  const raw = match[1].replace(/\n/g, ' ');
+  const ids = [...raw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  if (ids.length === 0) return null;
+  return [
+    { id: 'default', label: 'Default' },
+    ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
+  ];
+}
+
 /** Common home-relative path builder */
 export function homePath(...segments: string[]): string {
   return path.join(app.getPath('home'), ...segments);

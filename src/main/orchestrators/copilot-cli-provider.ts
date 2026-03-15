@@ -15,7 +15,7 @@ import {
 } from './types';
 import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
-import { homePath, humanizeModelId } from './shared';
+import { homePath, parseModelChoicesFromHelp } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -35,18 +35,7 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'gpt-5-mini', label: 'GPT 5 Mini' },
 ];
 
-/** Parse model choices from `copilot --help` output */
-function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label: string }> | null {
-  const match = helpText.match(/--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/);
-  if (!match) return null;
-  const raw = match[1].replace(/\n/g, ' ');
-  const ids = [...raw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  if (ids.length === 0) return null;
-  return [
-    { id: 'default', label: 'Default' },
-    ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
-  ];
-}
+const COPILOT_MODEL_CHOICES_PATTERN = /--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/;
 
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)', 'read', 'edit', 'search'];
@@ -105,7 +94,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
 
   protected readonly modelFetchConfig = {
     args: ['--help'],
-    parser: parseModelChoicesFromHelp,
+    parser: (help: string) => parseModelChoicesFromHelp(help, COPILOT_MODEL_CHOICES_PATTERN),
   };
 
   // ── Core interface ──────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ import {
   HeadlessCapable,
 } from './types';
 import { BaseProvider } from './base-provider';
-import { homePath, humanizeModelId } from './shared';
+import { homePath, parseModelChoicesFromHelp } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -30,19 +30,7 @@ const FALLBACK_MODEL_OPTIONS = [
   { id: 'gpt-5', label: 'GPT 5' },
 ];
 
-/** Parse model choices from `codex --help` output */
-function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label: string }> | null {
-  // Codex --help lists models in a choices-like format
-  const match = helpText.match(/--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/);
-  if (!match) return null;
-  const raw = match[1].replace(/\n/g, ' ');
-  const ids = [...raw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  if (ids.length === 0) return null;
-  return [
-    { id: 'default', label: 'Default' },
-    ...ids.map((id) => ({ id, label: humanizeModelId(id) })),
-  ];
-}
+const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/;
 
 // Codex uses sandbox-based permissions rather than per-tool permissions.
 // These map to general categories for compatibility with the permission UI.
@@ -109,7 +97,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable {
 
   protected readonly modelFetchConfig = {
     args: ['--help'],
-    parser: parseModelChoicesFromHelp,
+    parser: (help: string) => parseModelChoicesFromHelp(help, CODEX_MODEL_CHOICES_PATTERN),
   };
 
   // ── Core interface ──────────────────────────────────────────────────────

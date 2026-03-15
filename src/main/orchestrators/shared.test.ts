@@ -21,7 +21,7 @@ vi.mock('../util/shell', () => ({
 
 import * as fs from 'fs';
 import { execSync } from 'child_process';
-import { findBinaryInPath, homePath, humanizeModelId, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper } from './shared';
+import { findBinaryInPath, homePath, humanizeModelId, parseModelChoicesFromHelp, buildSummaryInstruction, readQuickSummary, applyLaunchWrapper } from './shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 
 describe('shared orchestrator utilities', () => {
@@ -226,6 +226,68 @@ describe('shared orchestrator utilities', () => {
       );
       expect(result.args).toEqual([
         'claude', '--mcp', 'ado', '--mcp', 'kusto', '--mcp', 'workiq', '--mcp', 'icm', '--',
+      ]);
+    });
+  });
+
+  describe('parseModelChoicesFromHelp', () => {
+    const COPILOT_PATTERN = /--model\s+<model>\s+.*?\(choices:\s*([\s\S]*?)\)/;
+    const CODEX_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s\S]*?)\)/;
+
+    const COPILOT_HELP = `Usage: copilot [options]
+
+Options:
+  --model <model>   Model to use (choices: "gpt-5", "claude-sonnet-4.5",
+                    "claude-opus-4.6")
+  --help            Show help`;
+
+    const CODEX_HELP = `Usage: codex [options]
+
+Options:
+  --model <model>   Model to use (choices: "gpt-5.3-codex", "gpt-5.2-codex",
+                    "codex-mini-latest")
+  --help            Show help`;
+
+    it('parses model choices from Copilot help output', () => {
+      const result = parseModelChoicesFromHelp(COPILOT_HELP, COPILOT_PATTERN);
+      expect(result).toEqual([
+        { id: 'default', label: 'Default' },
+        { id: 'gpt-5', label: 'Gpt 5' },
+        { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
+        { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
+      ]);
+    });
+
+    it('parses model choices from Codex help output', () => {
+      const result = parseModelChoicesFromHelp(CODEX_HELP, CODEX_PATTERN);
+      expect(result).toEqual([
+        { id: 'default', label: 'Default' },
+        { id: 'gpt-5.3-codex', label: 'Gpt 5.3 Codex' },
+        { id: 'gpt-5.2-codex', label: 'Gpt 5.2 Codex' },
+        { id: 'codex-mini-latest', label: 'Codex Mini Latest' },
+      ]);
+    });
+
+    it('returns null when pattern does not match', () => {
+      expect(parseModelChoicesFromHelp('no model flag here', COPILOT_PATTERN)).toBeNull();
+    });
+
+    it('returns null when choices section has no quoted IDs', () => {
+      const help = '--model <model>   Model to use (choices: )';
+      expect(parseModelChoicesFromHelp(help, COPILOT_PATTERN)).toBeNull();
+    });
+
+    it('always prepends a default entry', () => {
+      const result = parseModelChoicesFromHelp(COPILOT_HELP, COPILOT_PATTERN);
+      expect(result![0]).toEqual({ id: 'default', label: 'Default' });
+    });
+
+    it('handles single model in choices', () => {
+      const help = '--model <model>   Model to use (choices: "only-one")';
+      const result = parseModelChoicesFromHelp(help, COPILOT_PATTERN);
+      expect(result).toEqual([
+        { id: 'default', label: 'Default' },
+        { id: 'only-one', label: 'Only One' },
       ]);
     });
   });
