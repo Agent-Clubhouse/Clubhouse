@@ -360,8 +360,10 @@ describe('App.tsx – global dialog presence in all return paths', () => {
 describe('App.tsx – selector discipline', () => {
   const selectors = findStoreSelectors(appFn.body!);
 
-  it('should have at most 15 store selector calls (layout-only)', () => {
-    expect(selectors.length).toBeLessThanOrEqual(15);
+  it('should have at most 5 store selector calls (routing-only)', () => {
+    // After extracting TitleBar, RailSection, and ProjectPanelLayout:
+    // projects, activeProjectId, explorerTab = 3 selectors
+    expect(selectors.length).toBeLessThanOrEqual(5);
   });
 
   it('should NOT subscribe to agentStore for event handler functions', () => {
