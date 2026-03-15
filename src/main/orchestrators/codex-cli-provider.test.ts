@@ -373,11 +373,13 @@ describe('CodexCliProvider', () => {
   });
 
   describe('writeInstructions', () => {
+    const projectDir = path.join('/project');
+
     it('writes AGENTS.md at project root', () => {
       // Parent dir (/project) exists so no mkdir needed
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return isCodexPath(s) || s === '/project';
+        return isCodexPath(s) || s === projectDir;
       });
 
       provider.writeInstructions('/project', 'new instructions');
@@ -392,7 +394,7 @@ describe('CodexCliProvider', () => {
     it('does not create subdirectories when parent dir exists', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return isCodexPath(s) || s === '/project';
+        return isCodexPath(s) || s === projectDir;
       });
 
       provider.writeInstructions('/project', 'test');
@@ -402,7 +404,7 @@ describe('CodexCliProvider', () => {
     it('round-trip: write then read returns same content', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return isCodexPath(s) || s === '/project';
+        return isCodexPath(s) || s === projectDir;
       });
 
       const content = 'My custom instructions\nWith multiple lines';

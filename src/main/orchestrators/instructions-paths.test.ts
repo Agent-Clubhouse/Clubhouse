@@ -27,6 +27,9 @@ import { CodexCliProvider } from './codex-cli-provider';
 import { OpenCodeProvider } from './opencode-provider';
 
 describe('Instructions path resolution', () => {
+  // path.join normalizes separators for cross-platform compat ('\project' on Windows)
+  const projectDir = path.join('/project');
+
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: binaries found at standard paths
@@ -62,7 +65,7 @@ describe('Instructions path resolution', () => {
     it('writes CLAUDE.md at project root', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
       });
 
       provider.writeInstructions('/project', 'new instructions');
@@ -77,7 +80,7 @@ describe('Instructions path resolution', () => {
     it('does not write to .claude/CLAUDE.local.md', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
       });
 
       provider.writeInstructions('/project', 'test');
@@ -90,7 +93,7 @@ describe('Instructions path resolution', () => {
     it('round-trip: write then read returns same content', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
       });
 
       const content = 'My custom instructions\nWith multiple lines';
@@ -160,7 +163,7 @@ describe('Instructions path resolution', () => {
     it('writes to AGENTS.md at project root', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
       });
 
       provider.writeInstructions('/project', 'new codex instructions');
@@ -180,7 +183,7 @@ describe('Instructions path resolution', () => {
     it('round-trip: write then read returns same content', () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === projectDir;
       });
 
       const content = 'Codex-specific instructions\nWith multiple lines';

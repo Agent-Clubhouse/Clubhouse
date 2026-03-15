@@ -224,9 +224,10 @@ describe('BaseProvider', () => {
     });
 
     it('does not create subdirectories when instructions are at root', () => {
+      const projectDir = path.join('/project');
       vi.mocked(fs.existsSync).mockImplementation((p) => {
         const s = String(p);
-        return isBinaryPath(s) || s === '/project';
+        return isBinaryPath(s) || s === projectDir;
       });
 
       rootProvider.writeInstructions('/project', 'root content');
