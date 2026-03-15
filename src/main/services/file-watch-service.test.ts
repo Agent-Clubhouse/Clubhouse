@@ -309,8 +309,9 @@ describe('file-watch-service', () => {
       const glob = path.join(tmpDir, 'src', '**', '*.ts');
       startWatch('ar2', glob, sender as any);
 
-      // Wait for watcher to settle
-      await new Promise((r) => setTimeout(r, 100));
+      // Wait for watcher to settle and flush any creation events
+      await new Promise((r) => setTimeout(r, 500));
+      sender.send.mockClear();
 
       // Delete the file — fs.watch will emit a 'rename' event
       fs.unlinkSync(filePath);
