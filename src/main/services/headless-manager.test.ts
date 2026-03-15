@@ -1046,7 +1046,7 @@ describe('headless-manager', () => {
       expect(info!.fileSizeBytes).toBe(diskData.length);
     });
 
-    it('falls back to disk when session has evicted events', async () => {
+    it('uses running counters when session has evicted events (no disk I/O)', async () => {
       setMaxTranscriptBytes(200);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -1056,13 +1056,14 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-      const diskData = '{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n';
-      mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
-
+      // Should NOT read from disk — running counters are used instead
       const info = await getTranscriptInfo('test-agent');
       expect(info).not.toBeNull();
       expect(info!.totalEvents).toBe(5);
+      expect(info!.fileSizeBytes).toBeGreaterThan(0);
+      // Verify no disk reads were attempted
+      expect(mockFsPromises.stat).not.toHaveBeenCalled();
+      expect(mockCreateReadStream).not.toHaveBeenCalled();
     });
   });
 
