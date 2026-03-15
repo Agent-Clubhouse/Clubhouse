@@ -92,6 +92,7 @@ vi.mock('./log-service', () => ({
 }));
 
 // Mock fs for readProjectOrchestrator
+const mockReadFile = vi.fn(() => Promise.reject(new Error('ENOENT')));
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
@@ -100,6 +101,10 @@ vi.mock('fs', async () => {
     existsSync: vi.fn(() => false),
     mkdirSync: vi.fn(),
     writeFileSync: vi.fn(),
+    promises: {
+      ...actual.promises,
+      readFile: (...args: unknown[]) => mockReadFile(...args),
+    },
   };
 });
 
@@ -187,34 +192,34 @@ describe('agent-system', () => {
   });
 
   describe('resolveOrchestrator', () => {
-    it('uses agent-level override when provided', () => {
-      const provider = resolveOrchestrator('/project', 'opencode');
+    it('uses agent-level override when provided', async () => {
+      const provider = await resolveOrchestrator('/project', 'opencode');
       expect(provider.id).toBe('opencode');
     });
 
-    it('falls back to project-level setting', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+    it('falls back to project-level setting', async () => {
+      mockReadFile.mockResolvedValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
       );
-      const provider = resolveOrchestrator('/project');
+      const provider = await resolveOrchestrator('/project');
       expect(provider.id).toBe('opencode');
     });
 
-    it('falls back to default (claude-code)', () => {
-      const provider = resolveOrchestrator('/project');
+    it('falls back to default (claude-code)', async () => {
+      const provider = await resolveOrchestrator('/project');
       expect(provider.id).toBe('claude-code');
     });
 
-    it('throws for unknown orchestrator', () => {
-      expect(() => resolveOrchestrator('/project', 'nonexistent'))
-        .toThrowError('Unknown orchestrator: nonexistent');
+    it('throws for unknown orchestrator', async () => {
+      await expect(resolveOrchestrator('/project', 'nonexistent'))
+        .rejects.toThrowError('Unknown orchestrator: nonexistent');
     });
 
-    it('agent override takes priority over project setting', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+    it('agent override takes priority over project setting', async () => {
+      mockReadFile.mockResolvedValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
       );
-      const provider = resolveOrchestrator('/project', 'claude-code');
+      const provider = await resolveOrchestrator('/project', 'claude-code');
       expect(provider.id).toBe('claude-code');
     });
   });
@@ -252,7 +257,7 @@ describe('agent-system', () => {
     });
 
     it('tracks project-level orchestrator from settings.json', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+      mockReadFile.mockResolvedValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
       );
       await spawnAgent({
@@ -534,7 +539,7 @@ describe('agent-system', () => {
 
     it('uses tracked project-level orchestrator when spawned from settings', async () => {
       // Spawn with orchestrator resolved from project settings (opencode)
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+      mockReadFile.mockResolvedValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
       );
       await spawnAgent({
@@ -598,7 +603,7 @@ describe('agent-system', () => {
     });
 
     it('reads project-level orchestrator setting', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(
+      mockReadFile.mockResolvedValueOnce(
         JSON.stringify({ orchestrator: 'opencode' })
       );
       await checkAvailability('/project');

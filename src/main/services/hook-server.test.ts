@@ -183,7 +183,7 @@ describe('hook-server', () => {
       mockGetAgentProjectPath.mockReturnValue('/my/project');
       mockGetAgentOrchestrator.mockReturnValue('claude-code');
       mockGetAgentNonce.mockReturnValue(VALID_NONCE);
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => mockNormalized),
         toolVerb: vi.fn((name: string) => name === 'Bash' ? 'Running command' : undefined),
       });
@@ -225,7 +225,7 @@ describe('hook-server', () => {
         toolInput: undefined,
         message: undefined,
       }));
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent,
         toolVerb: vi.fn(() => 'Running command'),
       });
@@ -251,7 +251,7 @@ describe('hook-server', () => {
 
     it('does not override existing hook_event_name with URL hint', async () => {
       const parseHookEvent = vi.fn(() => mockNormalized);
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent,
         toolVerb: vi.fn(() => 'Running command'),
       });
@@ -270,7 +270,7 @@ describe('hook-server', () => {
     });
 
     it('uses fallback verb when provider returns undefined', async () => {
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'pre_tool',
           toolName: 'CustomTool',
@@ -414,7 +414,7 @@ describe('hook-server', () => {
       mockGetAgentProjectPath.mockReturnValue('/my/project');
       mockGetAgentOrchestrator.mockReturnValue('claude-code');
       mockGetAgentNonce.mockReturnValue(undefined);
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => { throw new Error('Parse error'); }),
         toolVerb: vi.fn(),
       });
@@ -443,7 +443,7 @@ describe('hook-server', () => {
         requestId: 'req-1',
         decision: decisionPromise,
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: 'Bash',
@@ -485,7 +485,7 @@ describe('hook-server', () => {
         requestId: 'req-2',
         decision: Promise.resolve('deny'),
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: 'Bash',
@@ -508,7 +508,7 @@ describe('hook-server', () => {
         requestId: 'req-3',
         decision: Promise.resolve('timeout'),
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: 'Write',
@@ -531,7 +531,7 @@ describe('hook-server', () => {
         requestId: 'req-4',
         decision: Promise.resolve('allow'),
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: undefined,
@@ -559,7 +559,7 @@ describe('hook-server', () => {
         requestId: 'req-5',
         decision: Promise.resolve('allow'),
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: 'Bash',
@@ -589,7 +589,7 @@ describe('hook-server', () => {
         requestId: 'req-err',
         decision: decisionPromise,
       });
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'permission_request',
           toolName: 'Bash',
@@ -641,7 +641,7 @@ describe('hook-server', () => {
     });
 
     it('returns 200 but does not broadcast when parseHookEvent returns null', async () => {
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => null),
         toolVerb: vi.fn(),
       });
@@ -657,7 +657,7 @@ describe('hook-server', () => {
 
     it('does not call toolVerb when parseHookEvent returns null', async () => {
       const mockToolVerb = vi.fn();
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => null),
         toolVerb: mockToolVerb,
       });
@@ -692,7 +692,7 @@ describe('hook-server', () => {
     });
 
     it('emits hook event to annex event bus', async () => {
-      mockResolveOrchestrator.mockReturnValue({
+      mockResolveOrchestrator.mockResolvedValue({
         parseHookEvent: vi.fn(() => ({
           kind: 'pre_tool',
           toolName: 'Read',

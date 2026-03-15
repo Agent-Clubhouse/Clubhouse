@@ -219,7 +219,7 @@ export function registerAppHandlers(): void {
     return clubhouseModeSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
+  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, async (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
     const previousEnabled = projectPath
       ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
       : clubhouseModeSettings.getSettings().enabled;
@@ -234,7 +234,7 @@ export function registerAppHandlers(): void {
     if (!previousEnabled && nowEnabled && projectPath) {
       ensureDefaultTemplates(projectPath);
       try {
-        const provider = resolveOrchestrator(projectPath);
+        const provider = await resolveOrchestrator(projectPath);
         enableExclusions(projectPath, provider);
       } catch {
         // Orchestrator not available
