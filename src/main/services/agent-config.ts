@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
@@ -9,9 +9,18 @@ import { resolveOrchestrator } from './agent-system';
 import { pathExists } from './fs-utils';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
-function execGitAsync(cmd: string, cwd: string, opts?: { maxBuffer?: number }): Promise<string> {
+function execGitAsync(cmd: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec(cmd, { cwd, encoding: 'utf-8', ...opts }, (error, stdout) => {
+    exec(cmd, { cwd, encoding: 'utf-8' }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
+function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer }, (error, stdout) => {
       if (error) reject(error);
       else resolve(stdout);
     });
@@ -72,6 +81,7 @@ interface CacheEntry {
   agents: DurableAgentConfig[];
   dirty: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
+  pendingFlush: Promise<void> | null;
 }
 
 const configCache = new Map<string, CacheEntry>();
@@ -103,10 +113,31 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
     clearTimeout(entry.flushTimer);
     entry.flushTimer = null;
   }
-  if (entry.dirty) {
-    await writeAgentsToDisk(projectPath, entry.agents);
-    entry.dirty = false;
+  if (entry.pendingFlush) {
+    await entry.pendingFlush;
   }
+  if (!entry.dirty) {
+    return;
+  }
+
+  const flushPromise = writeAgentsToDisk(projectPath, entry.agents)
+    .then(() => {
+      entry.dirty = false;
+    })
+    .catch((err) => {
+      appLog('core:agent-config', 'error', 'Failed to write agents.json', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    })
+    .finally(() => {
+      if (entry.pendingFlush === flushPromise) {
+        entry.pendingFlush = null;
+      }
+    });
+
+  entry.pendingFlush = flushPromise;
+  await flushPromise;
 }
 
 function scheduleFlush(projectPath: string, entry: CacheEntry): void {
@@ -114,14 +145,14 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
     clearTimeout(entry.flushTimer);
   }
   entry.flushTimer = setTimeout(() => {
-    flushEntry(projectPath, entry);
+    void flushEntry(projectPath, entry);
   }, FLUSH_DELAY_MS);
 }
 
 async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null };
+    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   }
   return entry.agents;
@@ -130,12 +161,12 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
 async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents, dirty: true, flushTimer: null };
+    entry = { agents, dirty: true, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   } else {
     entry.agents = agents;
-    entry.dirty = true;
   }
+  entry.dirty = true;
   scheduleFlush(projectPath, entry);
 }
 
@@ -149,9 +180,7 @@ export async function flushAgentConfig(projectPath: string): Promise<void> {
 
 /** Flush all pending writes across all project paths */
 export async function flushAllAgentConfigs(): Promise<void> {
-  for (const [projectPath, entry] of configCache) {
-    await flushEntry(projectPath, entry);
-  }
+  await Promise.all([...configCache.entries()].map(([projectPath, entry]) => flushEntry(projectPath, entry)));
 }
 
 /** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
@@ -475,7 +504,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
   const hasGit = await pathExists(path.join(projectPath, '.git'));
   if (hasGit) {
     try {
-      await execGitAsync(`git worktree remove "${agent.worktreePath}" --force`, projectPath);
+      await execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath);
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
         meta: {
@@ -488,7 +517,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
     // Optionally delete branch
     if (agent.branch) {
       try {
-        await execGitAsync(`git branch -D "${agent.branch}"`, projectPath);
+        await execGitFileAsync(['branch', '-D', agent.branch], projectPath);
       } catch (err) {
         appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
           meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
@@ -510,7 +539,7 @@ async function detectBaseBranch(projectPath: string): Promise<string> {
   // Try main, then master, then fallback to HEAD
   for (const candidate of ['main', 'master']) {
     try {
-      await execGitAsync(`git rev-parse --verify ${candidate}`, projectPath);
+      await execGitFileAsync(['rev-parse', '--verify', candidate], projectPath);
       return candidate;
     } catch {
       // not found
@@ -562,9 +591,9 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
 
   // Run git status, base branch detection, and remote check in parallel
   const [statusResult, base, remoteResult] = await Promise.all([
-    execGitAsync('git status --porcelain', wt).catch(() => ''),
+    execGitFileAsync(['status', '--porcelain'], wt).catch(() => ''),
     detectBaseBranch(projectPath),
-    execGitAsync('git remote', wt).catch(() => ''),
+    execGitFileAsync(['remote'], wt).catch(() => ''),
   ]);
 
   // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
@@ -575,8 +604,8 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   // Get unpushed commits (depends on base branch result)
   let unpushedCommits: GitLogEntry[] = [];
   try {
-    const logOut = await execGitAsync(
-      `git log ${base}..HEAD --format="%H|%h|%s|%an|%ai"`,
+    const logOut = await execGitFileAsync(
+      ['log', `${base}..HEAD`, '--format=%H|%h|%s|%an|%ai'],
       wt,
     );
     unpushedCommits = logOut.trim().split('\n').filter(Boolean)
@@ -608,18 +637,18 @@ export async function deleteCommitAndPush(projectPath: string, agentId: string):
 
   try {
     // Stage all and commit
-    await execGitAsync('git add -A', wt);
+    await execGitFileAsync(['add', '-A'], wt);
     try {
-      await execGitAsync('git commit -m "Save work before deletion"', wt);
+      await execGitFileAsync(['commit', '-m', 'Save work before deletion'], wt);
     } catch {
       // Nothing to commit is OK
     }
 
     // Push if remote exists
     try {
-      const remoteOut = await execGitAsync('git remote', wt);
+      const remoteOut = await execGitFileAsync(['remote'], wt);
       if (remoteOut.trim() && agent.branch) {
-        await execGitAsync(`git push -u origin "${agent.branch}"`, wt);
+        await execGitFileAsync(['push', '-u', 'origin', agent.branch], wt);
       }
     } catch (pushErr) {
       appLog('core:agent-config', 'warn', 'Push failed during delete-commit-push, work saved locally', {
@@ -653,25 +682,25 @@ export async function deleteWithCleanupBranch(projectPath: string, agentId: stri
   try {
     // Create and checkout cleanup branch
     try {
-      await execGitAsync(`git checkout -b "${cleanupBranch}"`, wt);
+      await execGitFileAsync(['checkout', '-b', cleanupBranch], wt);
     } catch {
       // Branch may exist, try just checking out
-      await execGitAsync(`git checkout "${cleanupBranch}"`, wt);
+      await execGitFileAsync(['checkout', cleanupBranch], wt);
     }
 
     // Stage all and commit
-    await execGitAsync('git add -A', wt);
+    await execGitFileAsync(['add', '-A'], wt);
     try {
-      await execGitAsync('git commit -m "Cleanup: save work before agent deletion"', wt);
+      await execGitFileAsync(['commit', '-m', 'Cleanup: save work before agent deletion'], wt);
     } catch {
       // Nothing to commit
     }
 
     // Push if remote exists
     try {
-      const remoteOut = await execGitAsync('git remote', wt);
+      const remoteOut = await execGitFileAsync(['remote'], wt);
       if (remoteOut.trim()) {
-        await execGitAsync(`git push -u origin "${cleanupBranch}"`, wt);
+        await execGitFileAsync(['push', '-u', 'origin', cleanupBranch], wt);
       }
     } catch (pushErr) {
       appLog('core:agent-config', 'warn', 'Push failed during cleanup-branch deletion, work saved locally', {
@@ -705,11 +734,11 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
   try {
     let patchContent = '';
 
-    const largeBuffer = { maxBuffer: 50 * 1024 * 1024 };
+    const largeBuffer = 50 * 1024 * 1024;
 
     // Get diff of uncommitted changes
     try {
-      const diff = await execGitAsync('git diff HEAD', wt, largeBuffer);
+      const diff = await execGitFileAsync(['diff', 'HEAD'], wt, largeBuffer);
       if (diff.trim()) {
         patchContent += `# Uncommitted changes\n${diff}\n`;
       }
@@ -719,16 +748,16 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
 
     // Get untracked files diff
     try {
-      const untracked = await execGitAsync('git ls-files --others --exclude-standard', wt);
+      const untracked = await execGitFileAsync(['ls-files', '--others', '--exclude-standard'], wt);
       if (untracked.trim()) {
         // Stage untracked so we can diff them
-        await execGitAsync('git add -A', wt);
-        const stagedDiff = await execGitAsync('git diff --cached', wt, largeBuffer);
+        await execGitFileAsync(['add', '-A'], wt);
+        const stagedDiff = await execGitFileAsync(['diff', '--cached'], wt, largeBuffer);
         if (stagedDiff.trim()) {
           patchContent += `# Staged changes (including untracked)\n${stagedDiff}\n`;
         }
         // Reset staging
-        await execGitAsync('git reset HEAD', wt);
+        await execGitFileAsync(['reset', 'HEAD'], wt);
       }
     } catch {
       // ignore
@@ -736,8 +765,8 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
 
     // Get format-patch for committed but not in base
     try {
-      const patches = await execGitAsync(
-        `git format-patch ${base}..HEAD --stdout`,
+      const patches = await execGitFileAsync(
+        ['format-patch', `${base}..HEAD`, '--stdout'],
         wt,
         largeBuffer,
       );

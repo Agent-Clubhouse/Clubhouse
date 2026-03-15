@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock node-pty
 const mockProcess = {
+  pid: 12345,
   onData: vi.fn(),
   onExit: vi.fn(),
   write: vi.fn(),
@@ -957,10 +958,14 @@ describe('pty-manager', () => {
 
       // Mock process.kill to throw (simulating dead process)
       const originalKill = process.kill;
-      process.kill = vi.fn(() => { throw new Error('ESRCH'); }) as any;
+      const killSpy = vi.fn(() => { throw new Error('ESRCH'); });
+      process.kill = killSpy as any;
 
       startStaleSweep();
       vi.advanceTimersByTime(30_000);
+
+      // Verify process.kill was called with the mock pid and signal 0
+      expect(killSpy).toHaveBeenCalledWith(mockProcess.pid, 0);
 
       // Session should have been cleaned up
       expect(isRunning('agent_stale_sweep')).toBe(false);
@@ -975,10 +980,14 @@ describe('pty-manager', () => {
 
       // Mock process.kill to succeed (process is alive)
       const originalKill = process.kill;
-      process.kill = vi.fn(() => true) as any;
+      const killSpy = vi.fn(() => true);
+      process.kill = killSpy as any;
 
       startStaleSweep();
       vi.advanceTimersByTime(30_000);
+
+      // Verify process.kill was called with the mock pid and signal 0
+      expect(killSpy).toHaveBeenCalledWith(mockProcess.pid, 0);
 
       // Session should still exist
       expect(isRunning('agent_alive_sweep')).toBe(true);

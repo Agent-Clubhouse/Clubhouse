@@ -5,20 +5,20 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('../services/git-service', () => ({
-  getGitInfo: vi.fn(async () => ({ branch: 'main' })),
-  checkout: vi.fn(async () => {}),
-  stage: vi.fn(async () => {}),
-  unstage: vi.fn(async () => {}),
-  stageAll: vi.fn(async () => {}),
-  unstageAll: vi.fn(async () => {}),
-  discardFile: vi.fn(async () => {}),
-  commit: vi.fn(async () => {}),
-  push: vi.fn(async () => {}),
-  pull: vi.fn(async () => {}),
-  getFileDiff: vi.fn(async () => 'diff --git a/file'),
-  createBranch: vi.fn(async () => {}),
-  stash: vi.fn(async () => {}),
-  stashPop: vi.fn(async () => {}),
+  getGitInfo: vi.fn(() => ({ branch: 'main' })),
+  checkout: vi.fn(),
+  stage: vi.fn(),
+  unstage: vi.fn(),
+  stageAll: vi.fn(),
+  unstageAll: vi.fn(),
+  discardFile: vi.fn(),
+  commit: vi.fn(),
+  push: vi.fn(),
+  pull: vi.fn(),
+  getFileDiff: vi.fn(() => 'diff --git a/file'),
+  createBranch: vi.fn(),
+  stash: vi.fn(),
+  stashPop: vi.fn(),
 }));
 
 import { ipcMain } from 'electron';
