@@ -23,7 +23,7 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
   });
 
   it('shows Experimental nav item on beta builds', async () => {
-    vi.mocked(window.clubhouse.app.getVersion).mockResolvedValue('0.36.0-beta.2');
+    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.36.0-beta.2');
     const { unmount } = render(<AccessoryPanel />);
     await waitFor(() => {
       expect(screen.getByText('Experimental')).toBeInTheDocument();
@@ -32,7 +32,7 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
   });
 
   it('hides Experimental nav item on stable builds', async () => {
-    vi.mocked(window.clubhouse.app.getVersion).mockResolvedValue('1.0.0');
+    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('1.0.0');
     const { unmount } = render(<AccessoryPanel />);
     // Wait for the version check to resolve
     await waitFor(() => {
@@ -43,7 +43,7 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
   });
 
   it('shows Experimental nav item on rc builds', async () => {
-    vi.mocked(window.clubhouse.app.getVersion).mockResolvedValue('0.37.0-rc.1');
+    window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('0.37.0-rc.1');
     const { unmount } = render(<AccessoryPanel />);
     await waitFor(() => {
       expect(screen.getByText('Experimental')).toBeInTheDocument();
