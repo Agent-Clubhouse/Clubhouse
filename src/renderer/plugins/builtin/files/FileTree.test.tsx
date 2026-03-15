@@ -1112,7 +1112,7 @@ describe('FileTree — keyboard navigation', () => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
       // Focus uses ring-ctp-blue, not just bg-ctp-surface0
       expect(srcNode?.className).toContain('ring-ctp-blue');
-      expect(srcNode?.className).toContain('bg-ctp-surface1/60');
+      expect(srcNode?.className).toContain('bg-ctp-surface0/60');
     });
 
     // Non-focused items should NOT have the focus ring
@@ -1239,12 +1239,13 @@ describe('FileTree — accessibility', () => {
     await screen.findByText('README.md');
 
     const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
-    expect(readmeNode.className).toContain('hover:bg-ctp-surface0');
+    expect(readmeNode.className).toContain('hover:bg-ctp-surface0/70');
+    expect(readmeNode.className).toContain('hover:text-ctp-text');
     expect(readmeNode.className).toContain('rounded-sm');
     expect(readmeNode.className).toContain('transition-colors');
   });
 
-  it('selected tree items retain a hover state', async () => {
+  it('selected tree items have solid background', async () => {
     const api = createFilesAPI();
     const { container } = render(<FileTree api={api} />);
 
@@ -1254,7 +1255,6 @@ describe('FileTree — accessibility', () => {
     await waitFor(() => {
       const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
       expect(readmeNode.className).toContain('bg-ctp-surface1');
-      expect(readmeNode.className).toContain('hover:bg-ctp-surface2/50');
     });
   });
 
@@ -1270,7 +1270,9 @@ describe('FileTree — accessibility', () => {
     });
 
     const renameButton = screen.getByText('Rename');
+    expect(renameButton.className).toContain('text-ctp-subtext1');
     expect(renameButton.className).toContain('hover:bg-ctp-surface1');
+    expect(renameButton.className).toContain('hover:text-ctp-text');
     expect(renameButton.className).toContain('rounded-sm');
     expect(renameButton.className).toContain('transition-colors');
   });
@@ -1289,5 +1291,100 @@ describe('FileTree — accessibility', () => {
     const deleteButton = screen.getByText('Delete');
     expect(deleteButton.className).toContain('text-ctp-error');
     expect(deleteButton.className).toContain('hover:bg-ctp-error/10');
+  });
+});
+
+// ── Focus follows click ─────────────────────────────────────────────
+
+describe('FileTree — focus follows click', () => {
+  beforeEach(() => {
+    fileState.reset();
+  });
+
+  it('clicking a file sets focus to that item (no stale focus ring)', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Use keyboard to focus on src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
+    await waitFor(() => {
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      expect(srcNode?.className).toContain('ring-ctp-blue');
+    });
+
+    // Now click README.md — focus should move there, src should lose focus ring
+    fireEvent.click(screen.getByText('README.md'));
+
+    await waitFor(() => {
+      const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+      expect(readmeNode?.className).toContain('bg-ctp-surface1');
+
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      expect(srcNode?.className).not.toContain('ring-ctp-blue');
+    });
+  });
+
+  it('clicking a directory moves focus to that directory', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('src');
+    const treeContainer = container.querySelector('[role="tree"]')!;
+
+    // Use keyboard to move focus to docs
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → src
+    fireEvent.keyDown(treeContainer, { key: 'ArrowDown' }); // → docs
+
+    await waitFor(() => {
+      const docsNode = container.querySelector('[data-path="/project/docs"]');
+      expect(docsNode?.className).toContain('ring-ctp-blue');
+    });
+
+    // Click src directory — focus should move to src
+    fireEvent.click(screen.getByText('src'));
+
+    await waitFor(() => {
+      // src should no longer have the focus ring (it has the keyboard focus
+      // but since toggleExpand sets focusedPath, the ring styling applies)
+      const srcNode = container.querySelector('[data-path="/project/src"]');
+      expect(srcNode?.className).toContain('ring-ctp-blue');
+
+      // docs should lose focus ring
+      const docsNode = container.querySelector('[data-path="/project/docs"]');
+      expect(docsNode?.className).not.toContain('ring-ctp-blue');
+    });
+  });
+
+  it('double-clicking a file moves focus to that item', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    fireEvent.doubleClick(screen.getByText('README.md'));
+
+    await waitFor(() => {
+      const readmeNode = container.querySelector('[data-path="/project/README.md"]');
+      expect(readmeNode?.className).toContain('bg-ctp-surface1');
+    });
+
+    // Verify fileState tab was opened permanently
+    const tab = fileState.getTabByPath('README.md');
+    expect(tab).toBeDefined();
+    expect(tab!.isPreview).toBe(false);
+  });
+
+  it('unselected items use dimmer text that brightens on hover class', async () => {
+    const api = createRealisticAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    await screen.findByText('README.md');
+
+    const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
+    expect(readmeNode.className).toContain('text-ctp-subtext1');
+    expect(readmeNode.className).toContain('hover:text-ctp-text');
   });
 });
