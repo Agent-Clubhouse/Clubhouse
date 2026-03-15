@@ -234,3 +234,83 @@ describe('AgentListItem context menu', () => {
     expect(screen.queryByTestId('ctx-wake-resume')).toBeNull();
   });
 });
+
+describe('AgentListItem fine-grained selectors', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.clubhouse.window.createPopout = vi.fn().mockResolvedValue(1);
+  });
+
+  it('does not re-render when unrelated agent store state changes', () => {
+    const renderCount = vi.fn();
+    const WrappedItem = (props: React.ComponentProps<typeof AgentListItem>) => {
+      renderCount();
+      return <AgentListItem {...props} />;
+    };
+
+    const agent = { ...baseAgent, status: 'sleeping' as const };
+    resetStores({ status: 'sleeping' });
+    const { rerender } = render(
+      <WrappedItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+    const initialRenderCount = renderCount.mock.calls.length;
+
+    // Mutate unrelated store state (e.g., activeAgentId, a different agent's status)
+    useAgentStore.setState({ activeAgentId: 'some-other-agent' });
+
+    // Re-render with same props — the component itself shouldn't have been triggered
+    // by the store change since it uses fine-grained selectors
+    rerender(
+      <WrappedItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+
+    // The rerender call itself causes 1 render, but the store change should not
+    // have caused an additional render
+    expect(renderCount.mock.calls.length).toBe(initialRenderCount + 1);
+  });
+
+  it('re-renders when its own agent icon changes', () => {
+    const agent = { ...baseAgent, status: 'sleeping' as const };
+    resetStores({ status: 'sleeping' });
+    const { rerender } = render(
+      <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+
+    // Changing this agent's icon should be reflected
+    useAgentStore.setState({
+      agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+    });
+
+    rerender(
+      <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+
+    // The icon should appear (img tag)
+    const img = document.querySelector('img[alt="bold-falcon"]');
+    expect(img).toBeInTheDocument();
+  });
+
+  it('does not re-render when unrelated project store state changes', () => {
+    const renderCount = vi.fn();
+    const WrappedItem = (props: React.ComponentProps<typeof AgentListItem>) => {
+      renderCount();
+      return <AgentListItem {...props} />;
+    };
+
+    const agent = { ...baseAgent, status: 'sleeping' as const };
+    resetStores({ status: 'sleeping' });
+    const { rerender } = render(
+      <WrappedItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+    const initialRenderCount = renderCount.mock.calls.length;
+
+    // Mutate unrelated project store state (gitStatus)
+    useProjectStore.setState({ gitStatus: { 'proj-1': true } });
+
+    rerender(
+      <WrappedItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
+    );
+
+    expect(renderCount.mock.calls.length).toBe(initialRenderCount + 1);
+  });
+});

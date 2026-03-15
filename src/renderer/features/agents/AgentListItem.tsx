@@ -127,15 +127,21 @@ function ContextMenu({ actions, position, onClose }: {
 // ── Main component ─────────────────────────────────────────────────
 
 export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
-  const { killAgent, removeAgent, spawnDurableAgent, openAgentSettings, openDeleteDialog, agentDetailedStatus, agentIcons } = useAgentStore();
-  const iconDataUrl = agentIcons[agent.id];
-  const { projects, activeProjectId } = useProjectStore();
+  // Fine-grained selectors: subscribe only to the specific state/actions needed
+  const killAgent = useAgentStore((s) => s.killAgent);
+  const removeAgent = useAgentStore((s) => s.removeAgent);
+  const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
+  const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
+  const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
+  const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const projects = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
   const statusInfo = STATUS_CONFIG[agent.status] || STATUS_CONFIG.sleeping;
-  const detailed = agentDetailedStatus[agent.id];
   const baseRingColor = STATUS_RING_COLOR[agent.status] || STATUS_RING_COLOR.sleeping;
   const ringColor = agent.status === 'running' && detailed?.state === 'needs_permission' ? '#f97316'
     : agent.status === 'running' && detailed?.state === 'tool_error' ? '#facc15'
