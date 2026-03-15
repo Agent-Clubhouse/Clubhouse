@@ -1230,4 +1230,64 @@ describe('FileTree — accessibility', () => {
       expect(srcNode.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', behavior: 'smooth' });
     });
   });
+
+  // ── Hover state tests ──────────────────────────────────────────────
+
+  it('tree items have hover class when not selected', async () => {
+    const api = createFilesAPI();
+    const { container } = render(<FileTree api={api} />);
+    await screen.findByText('README.md');
+
+    const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
+    expect(readmeNode.className).toContain('hover:bg-ctp-surface0');
+    expect(readmeNode.className).toContain('rounded-sm');
+    expect(readmeNode.className).toContain('transition-colors');
+  });
+
+  it('selected tree items retain a hover state', async () => {
+    const api = createFilesAPI();
+    const { container } = render(<FileTree api={api} />);
+
+    const readme = await screen.findByText('README.md');
+    fireEvent.click(readme);
+
+    await waitFor(() => {
+      const readmeNode = container.querySelector('[data-path="/project/README.md"]') as HTMLElement;
+      expect(readmeNode.className).toContain('bg-ctp-surface1');
+      expect(readmeNode.className).toContain('hover:bg-ctp-surface2/50');
+    });
+  });
+
+  it('context menu items have rounded hover styling', async () => {
+    const api = createFilesAPI();
+    render(<FileTree api={api} />);
+
+    const readme = await screen.findByText('README.md');
+    fireEvent.contextMenu(readme);
+
+    await waitFor(() => {
+      expect(screen.getByText('Rename')).toBeInTheDocument();
+    });
+
+    const renameButton = screen.getByText('Rename');
+    expect(renameButton.className).toContain('hover:bg-ctp-surface1');
+    expect(renameButton.className).toContain('rounded-sm');
+    expect(renameButton.className).toContain('transition-colors');
+  });
+
+  it('context menu delete item has themed hover', async () => {
+    const api = createFilesAPI();
+    render(<FileTree api={api} />);
+
+    const readme = await screen.findByText('README.md');
+    fireEvent.contextMenu(readme);
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete')).toBeInTheDocument();
+    });
+
+    const deleteButton = screen.getByText('Delete');
+    expect(deleteButton.className).toContain('text-ctp-error');
+    expect(deleteButton.className).toContain('hover:bg-ctp-error/10');
+  });
 });

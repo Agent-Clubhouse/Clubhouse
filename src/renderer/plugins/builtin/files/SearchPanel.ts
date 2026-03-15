@@ -104,7 +104,7 @@ function FileResultGroup({ result, onMatchClick }: {
   return React.createElement('div', { className: 'mb-0.5' },
     // File header
     React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-0.5 cursor-pointer hover:bg-ctp-surface0 transition-colors',
+      className: 'flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm hover:bg-ctp-surface0 transition-colors',
       onClick: () => setCollapsed(!collapsed),
     },
       collapsed ? ChevronRight : ChevronDown,
@@ -123,7 +123,7 @@ function FileResultGroup({ result, onMatchClick }: {
       ...result.matches.slice(0, 100).map((match, i) =>
         React.createElement('div', {
           key: `${match.line}-${match.column}-${i}`,
-          className: 'flex items-start gap-1 px-2 py-px cursor-pointer hover:bg-ctp-surface0 transition-colors text-[11px]',
+          className: 'flex items-start gap-1 px-2 py-px cursor-pointer rounded-sm hover:bg-ctp-surface0 transition-colors text-[11px]',
           onClick: () => onMatchClick(result.filePath, match.line),
         },
           React.createElement('span', {

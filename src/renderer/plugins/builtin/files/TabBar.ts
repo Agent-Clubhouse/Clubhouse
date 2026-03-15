@@ -107,7 +107,8 @@ function TabContextMenu({ x, y, tab, onClose, onAction }: TabContextMenuProps) {
       }
       return React.createElement('button', {
         key: item.action,
-        className: 'w-full text-left px-3 py-1 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors',
+        className: 'w-full text-left px-2 py-1 mx-1 rounded-sm text-xs text-ctp-text hover:bg-ctp-surface1 hover:text-ctp-text transition-colors',
+        style: { width: 'calc(100% - 8px)' },
         onClick: () => { onAction(item.action); onClose(); },
       }, item.label);
     }),

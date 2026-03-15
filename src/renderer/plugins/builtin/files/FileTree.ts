@@ -194,7 +194,11 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const relPath = getRelativePath(node.path, projectPath);
   const gitStatus = gitMap.get(relPath);
 
-  const bgClass = isSelected ? 'bg-ctp-surface1' : isFocused ? 'bg-ctp-surface1/60 ring-1 ring-inset ring-ctp-blue' : 'hover:bg-ctp-surface0';
+  const bgClass = isSelected
+    ? 'bg-ctp-surface1 hover:bg-ctp-surface2/50'
+    : isFocused
+      ? 'bg-ctp-surface1/60 ring-1 ring-inset ring-ctp-blue hover:bg-ctp-surface1/80'
+      : 'hover:bg-ctp-surface0';
 
   const handleClick = () => {
     if (node.isDirectory) {
@@ -221,7 +225,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const elements: React.ReactNode[] = [
     React.createElement('div', {
       key: node.path,
-      className: `flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none text-xs ${bgClass} transition-colors`,
+      className: `flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none text-xs rounded-sm ${bgClass} transition-colors`,
       style: { paddingLeft: `${8 + depth * 12}px` },
       onClick: handleClick,
       onDoubleClick: handleDoubleClick,
@@ -333,7 +337,12 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
     ...items.map((item) =>
       React.createElement('button', {
         key: item.action,
-        className: `w-full text-left px-3 py-1 text-xs text-ctp-text hover:bg-ctp-surface0 transition-colors ${item.action === 'delete' ? 'text-ctp-error' : ''}`,
+        className: `w-full text-left px-2 py-1 mx-1 rounded-sm text-xs transition-colors ${
+          item.action === 'delete'
+            ? 'text-ctp-error hover:bg-ctp-error/10'
+            : 'text-ctp-text hover:bg-ctp-surface1 hover:text-ctp-text'
+        }`,
+        style: { width: 'calc(100% - 8px)' },
         onClick: () => { onAction(item.action); onClose(); },
       }, item.label),
     ),
