@@ -35,8 +35,13 @@ export function stringArg(options: { minLength?: number; maxLength?: number; opt
   };
 }
 
-export function booleanArg(): ArgValidator<boolean> {
+export function booleanArg(options: { optional: true }): ArgValidator<boolean | undefined>;
+export function booleanArg(options?: { optional?: false }): ArgValidator<boolean>;
+export function booleanArg(options: { optional?: boolean } = {}): ArgValidator<boolean | undefined> {
+  const { optional = false } = options;
+
   return (value, argName) => {
+    if (optional && value === undefined) return undefined;
     if (typeof value !== 'boolean') {
       fail(argName, `must be a boolean, received ${describeType(value)}`);
     }

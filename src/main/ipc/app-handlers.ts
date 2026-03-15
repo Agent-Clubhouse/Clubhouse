@@ -18,11 +18,15 @@ import { ClipboardSettings, ClubhouseModeSettings, SoundEvent, SoundSettings, Up
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
+import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
 
 export function registerAppHandlers(): void {
-  ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, (_event, url: string) => {
-    return shell.openExternal(url);
-  });
+  ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
+    [stringArg()],
+    (_event, url) => {
+      return shell.openExternal(url);
+    },
+  ));
 
   ipcMain.handle(IPC.APP.GET_VERSION, () => {
     return app.getVersion();
@@ -45,63 +49,96 @@ export function registerAppHandlers(): void {
     return notificationService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_NOTIFICATION_SETTINGS, async (_event, settings: NotificationSettings) => {
-    await notificationService.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_NOTIFICATION_SETTINGS, withValidatedArgs(
+    [objectArg<NotificationSettings>()],
+    async (_event, settings) => {
+      await notificationService.saveSettings(settings);
+    },
+  ));
 
-  ipcMain.handle(IPC.APP.SEND_NOTIFICATION, (_event, title: string, body: string, silent: boolean, agentId?: string, projectId?: string) => {
-    notificationService.sendNotification(title, body, silent, agentId, projectId);
-  });
+  ipcMain.handle(IPC.APP.SEND_NOTIFICATION, withValidatedArgs(
+    [stringArg(), stringArg({ minLength: 0 }), booleanArg(), stringArg({ optional: true }), stringArg({ optional: true })],
+    (_event, title, body, silent, agentId, projectId) => {
+      notificationService.sendNotification(title, body, silent, agentId, projectId);
+    },
+  ));
 
-  ipcMain.handle(IPC.APP.CLOSE_NOTIFICATION, (_event, agentId: string, projectId: string) => {
-    notificationService.closeNotification(agentId, projectId);
-  });
+  ipcMain.handle(IPC.APP.CLOSE_NOTIFICATION, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (_event, agentId, projectId) => {
+      notificationService.closeNotification(agentId, projectId);
+    },
+  ));
 
   ipcMain.handle(IPC.APP.GET_THEME, () => {
     return themeService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_THEME, async (_event, settings: { themeId: string }) => {
-    await themeService.saveSettings(settings as any);
-    annexServer.broadcastThemeChanged();
-  });
+  ipcMain.handle(IPC.APP.SAVE_THEME, withValidatedArgs(
+    [objectArg<{ themeId: string }>({
+      validate: (v, name) => {
+        if (typeof v.themeId !== 'string' || !v.themeId) throw new Error(`${name}.themeId must be a non-empty string`);
+      },
+    })],
+    async (_event, settings) => {
+      await themeService.saveSettings(settings as any);
+      annexServer.broadcastThemeChanged();
+    },
+  ));
 
   // Update the Windows title bar overlay colors on ALL windows when the theme changes
-  ipcMain.handle(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, (_event, colors: { color: string; symbolColor: string }) => {
-    if (process.platform !== 'win32') return;
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.setTitleBarOverlay({
-          color: colors.color,
-          symbolColor: colors.symbolColor,
-        });
+  ipcMain.handle(IPC.APP.UPDATE_TITLE_BAR_OVERLAY, withValidatedArgs(
+    [objectArg<{ color: string; symbolColor: string }>({
+      validate: (v, name) => {
+        if (typeof v.color !== 'string') throw new Error(`${name}.color must be a string`);
+        if (typeof v.symbolColor !== 'string') throw new Error(`${name}.symbolColor must be a string`);
+      },
+    })],
+    (_event, colors) => {
+      if (process.platform !== 'win32') return;
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.setTitleBarOverlay({
+            color: colors.color,
+            symbolColor: colors.symbolColor,
+          });
+        }
       }
-    }
-  });
+    },
+  ));
 
   ipcMain.handle(IPC.APP.GET_ORCHESTRATOR_SETTINGS, () => {
     return orchestratorSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, async (_event, settings: orchestratorSettings.OrchestratorSettings) => {
-    await orchestratorSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, withValidatedArgs(
+    [objectArg<orchestratorSettings.OrchestratorSettings>()],
+    async (_event, settings) => {
+      await orchestratorSettings.saveSettings(settings);
+    },
+  ));
 
   ipcMain.handle(IPC.APP.GET_HEADLESS_SETTINGS, () => {
     return headlessSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_HEADLESS_SETTINGS, async (_event, settings: headlessSettings.HeadlessSettings) => {
-    await headlessSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_HEADLESS_SETTINGS, withValidatedArgs(
+    [objectArg<headlessSettings.HeadlessSettings>()],
+    async (_event, settings) => {
+      await headlessSettings.saveSettings(settings);
+    },
+  ));
 
   ipcMain.handle(IPC.APP.GET_BADGE_SETTINGS, () => {
     return badgeSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_BADGE_SETTINGS, async (_event, settings: BadgeSettings) => {
-    await badgeSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_BADGE_SETTINGS, withValidatedArgs(
+    [objectArg<BadgeSettings>()],
+    async (_event, settings) => {
+      await badgeSettings.saveSettings(settings);
+    },
+  ));
 
   // Clipboard settings are now managed via createManagedSettings() in settings-handlers.ts.
   // Legacy IPC channels preserved for backward compatibility with any external consumers.
@@ -109,31 +146,40 @@ export function registerAppHandlers(): void {
     return clipboardSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_CLIPBOARD_SETTINGS, async (_event, settings: ClipboardSettings) => {
-    await clipboardSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_CLIPBOARD_SETTINGS, withValidatedArgs(
+    [objectArg<ClipboardSettings>()],
+    async (_event, settings) => {
+      await clipboardSettings.saveSettings(settings);
+    },
+  ));
 
-  ipcMain.handle(IPC.APP.SET_DOCK_BADGE, (_event, count: number) => {
-    if (process.platform === 'darwin') {
-      app.dock.setBadge(count > 0 ? String(count) : '');
-    } else {
-      app.setBadgeCount(count);
-    }
-  });
+  ipcMain.handle(IPC.APP.SET_DOCK_BADGE, withValidatedArgs(
+    [numberArg({ integer: true, min: 0 })],
+    (_event, count) => {
+      if (process.platform === 'darwin') {
+        app.dock.setBadge(count > 0 ? String(count) : '');
+      } else {
+        app.setBadgeCount(count);
+      }
+    },
+  ));
 
   // --- Auto-update ---
   ipcMain.handle(IPC.APP.GET_UPDATE_SETTINGS, () => {
     return autoUpdateService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, async (_event, settings: UpdateSettings) => {
-    await autoUpdateService.saveSettings(settings);
-    if (settings.autoUpdate) {
-      await autoUpdateService.startPeriodicChecks();
-    } else {
-      autoUpdateService.stopPeriodicChecks();
-    }
-  });
+  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, withValidatedArgs(
+    [objectArg<UpdateSettings>()],
+    async (_event, settings) => {
+      await autoUpdateService.saveSettings(settings);
+      if (settings.autoUpdate) {
+        await autoUpdateService.startPeriodicChecks();
+      } else {
+        autoUpdateService.stopPeriodicChecks();
+      }
+    },
+  ));
 
   ipcMain.handle(IPC.APP.CHECK_FOR_UPDATES, () => {
     return autoUpdateService.checkForUpdates(true);
@@ -160,17 +206,23 @@ export function registerAppHandlers(): void {
   });
 
   // --- Logging ---
-  ipcMain.on(IPC.LOG.LOG_WRITE, (_event, entry: LogEntry) => {
-    logService.log(entry);
-  });
+  ipcMain.on(IPC.LOG.LOG_WRITE, withValidatedArgs(
+    [objectArg<LogEntry>()],
+    (_event, entry) => {
+      logService.log(entry);
+    },
+  ));
 
   ipcMain.handle(IPC.LOG.GET_LOG_SETTINGS, () => {
     return logSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.LOG.SAVE_LOG_SETTINGS, async (_event, settings: LoggingSettings) => {
-    await logSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.LOG.SAVE_LOG_SETTINGS, withValidatedArgs(
+    [objectArg<LoggingSettings>()],
+    async (_event, settings) => {
+      await logSettings.saveSettings(settings);
+    },
+  ));
 
   ipcMain.handle(IPC.LOG.GET_LOG_NAMESPACES, () => {
     return logService.getNamespaces();
@@ -185,9 +237,12 @@ export function registerAppHandlers(): void {
     return soundService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_SOUND_SETTINGS, async (_event, settings: SoundSettings) => {
-    await soundService.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_SOUND_SETTINGS, withValidatedArgs(
+    [objectArg<SoundSettings>()],
+    async (_event, settings) => {
+      await soundService.saveSettings(settings);
+    },
+  ));
 
   ipcMain.handle(IPC.APP.LIST_SOUND_PACKS, () => {
     return soundService.getAllSoundPacks();
@@ -197,53 +252,65 @@ export function registerAppHandlers(): void {
     return soundService.importSoundPack();
   });
 
-  ipcMain.handle(IPC.APP.DELETE_SOUND_PACK, (_event, packId: string) => {
-    return soundService.deleteSoundPack(packId);
-  });
+  ipcMain.handle(IPC.APP.DELETE_SOUND_PACK, withValidatedArgs(
+    [stringArg()],
+    (_event, packId) => {
+      return soundService.deleteSoundPack(packId);
+    },
+  ));
 
-  ipcMain.handle(IPC.APP.GET_SOUND_DATA, (_event, packId: string, event: SoundEvent) => {
-    return soundService.getSoundData(packId, event);
-  });
+  ipcMain.handle(IPC.APP.GET_SOUND_DATA, withValidatedArgs(
+    [stringArg(), stringArg()],
+    (_event, packId, event) => {
+      return soundService.getSoundData(packId, event as SoundEvent);
+    },
+  ));
 
   // --- Session Settings ---
   ipcMain.handle(IPC.APP.GET_SESSION_SETTINGS, () => {
     return sessionSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_SESSION_SETTINGS, async (_event, settings: sessionSettings.SessionSettings) => {
-    await sessionSettings.saveSettings(settings);
-  });
+  ipcMain.handle(IPC.APP.SAVE_SESSION_SETTINGS, withValidatedArgs(
+    [objectArg<sessionSettings.SessionSettings>()],
+    async (_event, settings) => {
+      await sessionSettings.saveSettings(settings);
+    },
+  ));
 
   // --- Clubhouse Mode ---
   ipcMain.handle(IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS, () => {
     return clubhouseModeSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, async (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
-    const previousEnabled = projectPath
-      ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
-      : clubhouseModeSettings.getSettings().enabled;
+  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, withValidatedArgs(
+    [objectArg<ClubhouseModeSettings>(), stringArg({ optional: true })],
+    async (_event, settings, projectPath) => {
+      const previousEnabled = projectPath
+        ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
+        : clubhouseModeSettings.getSettings().enabled;
 
-    await clubhouseModeSettings.saveSettings(settings);
+      await clubhouseModeSettings.saveSettings(settings);
 
-    const nowEnabled = projectPath
-      ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
-      : settings.enabled;
+      const nowEnabled = projectPath
+        ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
+        : settings.enabled;
 
-    // On first enable: create default templates and enable git excludes
-    if (!previousEnabled && nowEnabled && projectPath) {
-      await ensureDefaultTemplates(projectPath);
-      try {
-        const provider = await resolveOrchestrator(projectPath);
-        enableExclusions(projectPath, provider);
-      } catch {
-        // Orchestrator not available
+      // On first enable: create default templates and enable git excludes
+      if (!previousEnabled && nowEnabled && projectPath) {
+        await ensureDefaultTemplates(projectPath);
+        try {
+          const provider = await resolveOrchestrator(projectPath);
+          enableExclusions(projectPath, provider);
+        } catch {
+          // Orchestrator not available
+        }
       }
-    }
 
-    // On disable: remove git excludes
-    if (previousEnabled && !nowEnabled && projectPath) {
-      await disableExclusions(projectPath);
-    }
-  });
+      // On disable: remove git excludes
+      if (previousEnabled && !nowEnabled && projectPath) {
+        await disableExclusions(projectPath);
+      }
+    },
+  ));
 }

@@ -118,6 +118,18 @@ describe('annex-handlers', () => {
     expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.STATUS_CHANGED, expect.anything());
     expect(result).toEqual({ advertising: true, port: 3000, pin: '1234', connectedCount: 0 });
   });
+
+  // --- Input validation ---
+
+  it('rejects non-object settings for SAVE_SETTINGS', () => {
+    const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects null for SAVE_SETTINGS', () => {
+    const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+    expect(() => handler({}, null)).toThrow('must be an object');
+  });
 });
 
 describe('maybeStartAnnex', () => {
