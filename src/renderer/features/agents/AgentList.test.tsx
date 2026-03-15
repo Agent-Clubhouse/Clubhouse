@@ -9,10 +9,15 @@ import { AgentList } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
+const isThinkingCaptures: boolean[] = [];
+
 vi.mock('./AgentListItem', () => ({
-  AgentListItem: (props: any) => (
-    <div data-testid={`agent-item-${props.agent.id}`}>{props.agent.name}</div>
-  ),
+  AgentListItem: (props: any) => {
+    isThinkingCaptures.push(props.isThinking);
+    return (
+      <div data-testid={`agent-item-${props.agent.id}`} data-thinking={props.isThinking}>{props.agent.name}</div>
+    );
+  },
 }));
 
 vi.mock('./AddAgentDialog', () => ({
@@ -346,5 +351,56 @@ describe('AgentList activity tick optimization', () => {
     expect(tickIntervals).toHaveLength(0);
 
     setIntervalSpy.mockRestore();
+  });
+});
+
+describe('AgentList isThinking callback stability', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    isThinkingCaptures.length = 0;
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  it('reflects thinking state when agentActivity has recent timestamp', () => {
+    useAgentStore.setState({
+      agentActivity: { 'agent-1': Date.now() },
+    });
+
+    render(<AgentList />);
+    // The agent should be rendered as "thinking" since activity is recent
+    const lastCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
+    expect(lastCapture).toBe(true);
+  });
+
+  it('updates thinking state when agentActivity changes from empty to active', () => {
+    useAgentStore.setState({ agentActivity: {} });
+    render(<AgentList />);
+
+    // Initially not thinking
+    const initialCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
+    expect(initialCapture).toBe(false);
+
+    // Simulate activity update via store change
+    act(() => {
+      useAgentStore.setState({
+        agentActivity: { 'agent-1': Date.now() },
+      });
+    });
+
+    // After agentActivity updates, the ref-based callback should read the new value
+    const updatedCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
+    expect(updatedCapture).toBe(true);
+  });
+
+  it('shows not-thinking when activity timestamp is stale', () => {
+    // Activity from 10 seconds ago — well past the 3s threshold
+    useAgentStore.setState({
+      agentActivity: { 'agent-1': Date.now() - 10000 },
+    });
+
+    render(<AgentList />);
+    const lastCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
+    expect(lastCapture).toBe(false);
   });
 });

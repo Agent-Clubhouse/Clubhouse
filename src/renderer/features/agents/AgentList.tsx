@@ -211,11 +211,14 @@ export function AgentList() {
     }
   };
 
+  const agentActivityRef = useRef(agentActivity);
+  agentActivityRef.current = agentActivity;
+
   const isThinking = useCallback((id: string) => {
-    const last = agentActivity[id];
+    const last = agentActivityRef.current[id];
     if (!last) return false;
     return Date.now() - last < 3000;
-  }, [agentActivity]);
+  }, []);
 
   // Drag-to-reorder handlers for durable agents
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
