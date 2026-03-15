@@ -526,6 +526,23 @@ describe('pty-manager', () => {
 
       vi.useRealTimers();
     });
+
+    it('invokes onExit callback from 9s kill timer so registry is cleaned up (#566)', () => {
+      vi.useFakeTimers();
+      const onExit = vi.fn();
+      spawn('agent_gk_onexit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+
+      gracefulKill('agent_gk_onexit');
+
+      // Advance to the 9s kill timer
+      vi.advanceTimersByTime(9000);
+
+      // onExit should be called so agent-system can untrack from registry
+      expect(onExit).toHaveBeenCalledWith('agent_gk_onexit', 1, '');
+      expect(isRunning('agent_gk_onexit')).toBe(false);
+
+      vi.useRealTimers();
+    });
   });
 
   describe('kill', () => {
@@ -992,6 +1009,26 @@ describe('pty-manager', () => {
 
       // Session should still exist
       expect(isRunning('agent_alive_sweep')).toBe(true);
+
+      process.kill = originalKill;
+    });
+
+    it('sweep invokes onExit callback so registry is cleaned up (#566)', () => {
+      vi.useFakeTimers();
+      const onExit = vi.fn();
+      spawn('agent_stale_exit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      expect(isRunning('agent_stale_exit')).toBe(true);
+
+      // Mock process.kill to throw (simulating dead process)
+      const originalKill = process.kill;
+      process.kill = vi.fn(() => { throw new Error('ESRCH'); }) as any;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Session should be cleaned up and onExit should have been called
+      expect(isRunning('agent_stale_exit')).toBe(false);
+      expect(onExit).toHaveBeenCalledWith('agent_stale_exit', 1, '');
 
       process.kill = originalKill;
     });

@@ -110,6 +110,18 @@ describe('agent-registry', () => {
       untrackAgent('agent-1');
       expect(getAgentProjectPath('agent-1')).toBeUndefined();
     });
+
+    it('untrack is idempotent — calling twice does not throw (#566)', () => {
+      agentRegistry.register('agent-1', {
+        projectPath: '/project/a',
+        orchestrator: 'claude-code',
+        runtime: 'pty',
+      });
+
+      untrackAgent('agent-1');
+      untrackAgent('agent-1'); // second call is a no-op
+      expect(getAgentProjectPath('agent-1')).toBeUndefined();
+    });
   });
 
   describe('DEFAULT_ORCHESTRATOR', () => {
