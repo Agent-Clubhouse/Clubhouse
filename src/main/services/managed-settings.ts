@@ -17,12 +17,12 @@
  *
  *   // Use
  *   clipboardSettings.getSettings();
- *   clipboardSettings.saveSettings(v);
+ *   await clipboardSettings.saveSettings(v);
  *
  * For settings with side effects on save:
  *   const updateSettings = createManagedSettings(UPDATE_SETTINGS, {
  *     onSave: (settings) => {
- *       if (settings.autoUpdate) startPeriodicChecks();
+ *       if (settings.autoUpdate) void startPeriodicChecks();
  *     },
  *   });
  */
@@ -34,7 +34,7 @@ export interface ManagedSettings<T> {
   /** Read current settings from disk (with defaults fallback). */
   getSettings(): T;
   /** Persist settings to disk. */
-  saveSettings(settings: T): void;
+  saveSettings(settings: T): Promise<void>;
   /** The underlying SettingsStore (for advanced use: update, etc.). */
   store: SettingsStore<T>;
   /** Register IPC handlers. Call once during handler bootstrap. */
@@ -86,8 +86,8 @@ export function createManagedSettings<T>(
 
       ipcMain.handle(channels.get, () => store.get());
 
-      ipcMain.handle(channels.save, (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
-        store.save(settings);
+      ipcMain.handle(channels.save, async (_event: Electron.IpcMainInvokeEvent, settings: T, ...extraArgs: unknown[]) => {
+        await store.save(settings);
         options?.onSave?.(settings, ...extraArgs);
       });
     },

@@ -45,8 +45,8 @@ export function registerAppHandlers(): void {
     return notificationService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_NOTIFICATION_SETTINGS, (_event, settings: NotificationSettings) => {
-    notificationService.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_NOTIFICATION_SETTINGS, async (_event, settings: NotificationSettings) => {
+    await notificationService.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.APP.SEND_NOTIFICATION, (_event, title: string, body: string, silent: boolean, agentId?: string, projectId?: string) => {
@@ -61,8 +61,8 @@ export function registerAppHandlers(): void {
     return themeService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_THEME, (_event, settings: { themeId: string }) => {
-    themeService.saveSettings(settings as any);
+  ipcMain.handle(IPC.APP.SAVE_THEME, async (_event, settings: { themeId: string }) => {
+    await themeService.saveSettings(settings as any);
     annexServer.broadcastThemeChanged();
   });
 
@@ -83,24 +83,24 @@ export function registerAppHandlers(): void {
     return orchestratorSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, (_event, settings: orchestratorSettings.OrchestratorSettings) => {
-    orchestratorSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_ORCHESTRATOR_SETTINGS, async (_event, settings: orchestratorSettings.OrchestratorSettings) => {
+    await orchestratorSettings.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.APP.GET_HEADLESS_SETTINGS, () => {
     return headlessSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_HEADLESS_SETTINGS, (_event, settings: headlessSettings.HeadlessSettings) => {
-    headlessSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_HEADLESS_SETTINGS, async (_event, settings: headlessSettings.HeadlessSettings) => {
+    await headlessSettings.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.APP.GET_BADGE_SETTINGS, () => {
     return badgeSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_BADGE_SETTINGS, (_event, settings: BadgeSettings) => {
-    badgeSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_BADGE_SETTINGS, async (_event, settings: BadgeSettings) => {
+    await badgeSettings.saveSettings(settings);
   });
 
   // Clipboard settings are now managed via createManagedSettings() in settings-handlers.ts.
@@ -109,8 +109,8 @@ export function registerAppHandlers(): void {
     return clipboardSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_CLIPBOARD_SETTINGS, (_event, settings: ClipboardSettings) => {
-    clipboardSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_CLIPBOARD_SETTINGS, async (_event, settings: ClipboardSettings) => {
+    await clipboardSettings.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.APP.SET_DOCK_BADGE, (_event, count: number) => {
@@ -126,10 +126,10 @@ export function registerAppHandlers(): void {
     return autoUpdateService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, (_event, settings: UpdateSettings) => {
-    autoUpdateService.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_UPDATE_SETTINGS, async (_event, settings: UpdateSettings) => {
+    await autoUpdateService.saveSettings(settings);
     if (settings.autoUpdate) {
-      autoUpdateService.startPeriodicChecks();
+      await autoUpdateService.startPeriodicChecks();
     } else {
       autoUpdateService.stopPeriodicChecks();
     }
@@ -168,8 +168,8 @@ export function registerAppHandlers(): void {
     return logSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.LOG.SAVE_LOG_SETTINGS, (_event, settings: LoggingSettings) => {
-    logSettings.saveSettings(settings);
+  ipcMain.handle(IPC.LOG.SAVE_LOG_SETTINGS, async (_event, settings: LoggingSettings) => {
+    await logSettings.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.LOG.GET_LOG_NAMESPACES, () => {
@@ -185,8 +185,8 @@ export function registerAppHandlers(): void {
     return soundService.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_SOUND_SETTINGS, (_event, settings: SoundSettings) => {
-    soundService.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_SOUND_SETTINGS, async (_event, settings: SoundSettings) => {
+    await soundService.saveSettings(settings);
   });
 
   ipcMain.handle(IPC.APP.LIST_SOUND_PACKS, () => {
@@ -210,8 +210,8 @@ export function registerAppHandlers(): void {
     return sessionSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_SESSION_SETTINGS, (_event, settings: sessionSettings.SessionSettings) => {
-    sessionSettings.saveSettings(settings);
+  ipcMain.handle(IPC.APP.SAVE_SESSION_SETTINGS, async (_event, settings: sessionSettings.SessionSettings) => {
+    await sessionSettings.saveSettings(settings);
   });
 
   // --- Clubhouse Mode ---
@@ -224,7 +224,7 @@ export function registerAppHandlers(): void {
       ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
       : clubhouseModeSettings.getSettings().enabled;
 
-    clubhouseModeSettings.saveSettings(settings);
+    await clubhouseModeSettings.saveSettings(settings);
 
     const nowEnabled = projectPath
       ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)

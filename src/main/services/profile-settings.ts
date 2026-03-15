@@ -13,8 +13,8 @@ export function getSettings(): ProfilesSettings {
   return store.get();
 }
 
-export function saveSettings(settings: ProfilesSettings): void {
-  store.save(settings);
+export function saveSettings(settings: ProfilesSettings): Promise<void> {
+  return store.save(settings);
 }
 
 export function getProfiles(): OrchestratorProfile[] {
@@ -25,7 +25,7 @@ export function getProfile(profileId: string): OrchestratorProfile | undefined {
   return store.get().profiles.find((p) => p.id === profileId);
 }
 
-export function saveProfile(profile: OrchestratorProfile): void {
+export function saveProfile(profile: OrchestratorProfile): Promise<void> {
   const settings = store.get();
   const idx = settings.profiles.findIndex((p) => p.id === profile.id);
   if (idx >= 0) {
@@ -33,13 +33,13 @@ export function saveProfile(profile: OrchestratorProfile): void {
   } else {
     settings.profiles.push(profile);
   }
-  store.save(settings);
+  return store.save(settings);
 }
 
-export function deleteProfile(profileId: string): void {
+export function deleteProfile(profileId: string): Promise<void> {
   const settings = store.get();
   settings.profiles = settings.profiles.filter((p) => p.id !== profileId);
-  store.save(settings);
+  return store.save(settings);
 }
 
 /** Expand ~ in env var values to the user's home directory */

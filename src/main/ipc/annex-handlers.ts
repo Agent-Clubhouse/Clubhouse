@@ -16,9 +16,9 @@ export function registerAnnexHandlers(): void {
     return annexSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, (_event, settings: AnnexSettings) => {
+  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, async (_event, settings: AnnexSettings) => {
     const previous = annexSettings.getSettings();
-    annexSettings.saveSettings(settings);
+    await annexSettings.saveSettings(settings);
 
     // Start or stop server based on enabled state
     if (settings.enabled && !previous.enabled) {

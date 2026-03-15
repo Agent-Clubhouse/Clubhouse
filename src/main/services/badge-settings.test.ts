@@ -8,19 +8,23 @@ vi.mock('electron', () => ({
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  writeFileSync: vi.fn(),
+  promises: {
+    writeFile: vi.fn(async () => {}),
+  },
 }));
 
 import * as fs from 'fs';
+import { resetAllSettingsStoresForTests } from './settings-store';
 import { getSettings, saveSettings } from './badge-settings';
 
 describe('badge-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAllSettingsStoresForTests();
   });
 
   describe('getSettings', () => {
-    it('returns defaults when no file exists', () => {
+    it('returns defaults when no file exists', async () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const result = getSettings();
       expect(result).toEqual({
@@ -30,7 +34,7 @@ describe('badge-settings', () => {
       });
     });
 
-    it('returns saved settings from file', () => {
+    it('returns saved settings from file', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(
         JSON.stringify({ enabled: false, pluginBadges: false, projectRailBadges: false }),
       );
@@ -40,7 +44,7 @@ describe('badge-settings', () => {
       expect(result.projectRailBadges).toBe(false);
     });
 
-    it('returns defaults on corrupt JSON', () => {
+    it('returns defaults on corrupt JSON', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue('{{invalid');
       vi.mocked(fs.existsSync).mockReturnValue(true);
       const result = getSettings();
@@ -49,7 +53,7 @@ describe('badge-settings', () => {
       expect(result.projectRailBadges).toBe(true);
     });
 
-    it('merges partial settings with defaults', () => {
+    it('merges partial settings with defaults', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ enabled: false }));
       const result = getSettings();
       expect(result.enabled).toBe(false);
@@ -57,7 +61,7 @@ describe('badge-settings', () => {
       expect(result.projectRailBadges).toBe(true);
     });
 
-    it('preserves projectOverrides when present', () => {
+    it('preserves projectOverrides when present', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
         enabled: true,
         pluginBadges: true,
@@ -70,13 +74,13 @@ describe('badge-settings', () => {
       expect(result.projectOverrides).toEqual({ '/my/project': { enabled: false } });
     });
 
-    it('does not include projectOverrides by default', () => {
+    it('does not include projectOverrides by default', async () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       const result = getSettings();
       expect(result.projectOverrides).toBeUndefined();
     });
 
-    it('reads from the correct file path', () => {
+    it('reads from the correct file path', async () => {
       vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
       getSettings();
       expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
@@ -87,42 +91,42 @@ describe('badge-settings', () => {
   });
 
   describe('saveSettings', () => {
-    it('writes settings as JSON', () => {
-      saveSettings({ enabled: false, pluginBadges: true, projectRailBadges: false });
-      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+    it('writes settings as JSON', async () => {
+      await saveSettings({ enabled: false, pluginBadges: true, projectRailBadges: false });
+      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
         expect.stringContaining('badge-settings.json'),
         expect.any(String),
         'utf-8',
       );
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.enabled).toBe(false);
       expect(written.pluginBadges).toBe(true);
       expect(written.projectRailBadges).toBe(false);
     });
 
-    it('round-trips: saved settings can be read back', () => {
+    it('round-trips: saved settings can be read back', async () => {
       const settings = { enabled: false, pluginBadges: false, projectRailBadges: true };
-      saveSettings(settings);
-      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      await saveSettings(settings);
+      const written = vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string;
       vi.mocked(fs.readFileSync).mockReturnValue(written);
       expect(getSettings()).toEqual(settings);
     });
 
-    it('can save settings with projectOverrides', () => {
+    it('can save settings with projectOverrides', async () => {
       const settings = {
         enabled: true,
         pluginBadges: true,
         projectRailBadges: true,
         projectOverrides: { '/project': { enabled: false, pluginBadges: false } },
       };
-      saveSettings(settings);
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      await saveSettings(settings);
+      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.projectOverrides).toEqual({ '/project': { enabled: false, pluginBadges: false } });
     });
 
-    it('can toggle individual badge types independently', () => {
-      saveSettings({ enabled: true, pluginBadges: false, projectRailBadges: true });
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    it('can toggle individual badge types independently', async () => {
+      await saveSettings({ enabled: true, pluginBadges: false, projectRailBadges: true });
+      const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.pluginBadges).toBe(false);
       expect(written.projectRailBadges).toBe(true);
     });

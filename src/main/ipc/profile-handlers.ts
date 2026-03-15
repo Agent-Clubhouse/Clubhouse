@@ -9,12 +9,12 @@ export function registerProfileHandlers(): void {
     return profileSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.PROFILE.SAVE_PROFILE, (_event, profile: OrchestratorProfile) => {
-    profileSettings.saveProfile(profile);
+  ipcMain.handle(IPC.PROFILE.SAVE_PROFILE, async (_event, profile: OrchestratorProfile) => {
+    await profileSettings.saveProfile(profile);
   });
 
-  ipcMain.handle(IPC.PROFILE.DELETE_PROFILE, (_event, profileId: string) => {
-    profileSettings.deleteProfile(profileId);
+  ipcMain.handle(IPC.PROFILE.DELETE_PROFILE, async (_event, profileId: string) => {
+    await profileSettings.deleteProfile(profileId);
   });
 
   ipcMain.handle(IPC.PROFILE.GET_PROFILE_ENV_KEYS, (_event, orchestratorId: string) => {

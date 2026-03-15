@@ -448,7 +448,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
         meta: { currentVersion, latestVersion: manifest.version },
       });
       setState('idle');
-      saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       return status;
     }
 
@@ -458,7 +458,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
         meta: { version: manifest.version },
       });
       setState('idle');
-      saveSettings({ ...settings, lastCheck: new Date().toISOString() });
+      await saveSettings({ ...settings, lastCheck: new Date().toISOString() });
       return status;
     }
 
@@ -476,7 +476,7 @@ export async function checkForUpdates(manual = false): Promise<UpdateStatus> {
       meta: { currentVersion, newVersion: manifest.version },
     });
 
-    saveSettings({ ...settings, lastCheck: new Date().toISOString(), dismissedVersion: null });
+    await saveSettings({ ...settings, lastCheck: new Date().toISOString(), dismissedVersion: null });
 
     // On Windows, use Squirrel native update — skip our own download.
     // Update.exe will download the nupkg when we apply.
@@ -865,10 +865,10 @@ export function applyUpdateOnQuit(): void {
 // Dismiss
 // ---------------------------------------------------------------------------
 
-export function dismissUpdate(): void {
+export async function dismissUpdate(): Promise<void> {
   if (status.availableVersion) {
     const settings = getSettings();
-    saveSettings({ ...settings, dismissedVersion: status.availableVersion });
+    await saveSettings({ ...settings, dismissedVersion: status.availableVersion });
   }
   setState('idle', {
     availableVersion: null,
@@ -1074,20 +1074,22 @@ export function getStatus(): UpdateStatus {
   return { ...status };
 }
 
-export function startPeriodicChecks(): void {
+export async function startPeriodicChecks(): Promise<void> {
   if (checkTimer) return;
 
-  const settings = getSettings();
+  let settings = getSettings();
 
   // Seed lastSeenVersion on first launch to prevent What's New on fresh install
   if (settings.lastSeenVersion === null) {
-    saveSettings({ ...settings, lastSeenVersion: app.getVersion() });
+    settings = { ...settings, lastSeenVersion: app.getVersion() };
+    await saveSettings(settings);
   }
 
   // Clear dismissedVersion on startup so the banner always shows if an update
   // is already downloaded. The dismiss is session-scoped (renderer-side timer).
   if (settings.dismissedVersion) {
-    saveSettings({ ...settings, dismissedVersion: null });
+    settings = { ...settings, dismissedVersion: null };
+    await saveSettings(settings);
   }
 
   // Detect previous apply attempt that failed silently (app restarted but

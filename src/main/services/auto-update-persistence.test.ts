@@ -163,9 +163,9 @@ describe('dismissUpdate', () => {
     expect(typeof dismissUpdate).toBe('function');
   });
 
-  it('resets status to idle after dismiss', () => {
+  it('resets status to idle after dismiss', async () => {
     // dismissUpdate resets state to idle regardless
-    dismissUpdate();
+    await dismissUpdate();
     const s = getStatus();
     expect(s.state).toBe('idle');
     expect(s.availableVersion).toBeNull();

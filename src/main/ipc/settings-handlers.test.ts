@@ -19,10 +19,13 @@ vi.mock('electron', () => ({
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  writeFileSync: vi.fn(),
+  promises: {
+    writeFile: vi.fn(async () => {}),
+  },
 }));
 
 import * as fs from 'fs';
+import { resetAllSettingsStoresForTests } from '../services/settings-store';
 import { clipboardSettings, CLIPBOARD_SETTINGS, registerSettingsHandlers } from './settings-handlers';
 
 // IPC handlers are deferred — call register to bind them
@@ -32,6 +35,8 @@ beforeAll(() => {
 
 describe('settings-handlers', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    resetAllSettingsStoresForTests();
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
   });
 
@@ -80,10 +85,10 @@ describe('settings-handlers', () => {
       expect(handler({} as any)).toEqual({ clipboardCompat: true });
     });
 
-    it('save handler persists settings', () => {
+    it('save handler persists settings', async () => {
       const handler = registeredHandlers.get('settings:clipboard:save')!;
-      handler({} as any, { clipboardCompat: true });
-      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+      await handler({} as any, { clipboardCompat: true });
+      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
         path.join('/tmp/test-app', 'clipboard-settings.json'),
         JSON.stringify({ clipboardCompat: true }, null, 2),
         'utf-8',
