@@ -12,11 +12,14 @@ vi.mock('electron', () => ({
 vi.mock('fs', () => ({
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  writeFileSync: vi.fn(),
+  promises: {
+    writeFile: vi.fn(async () => {}),
+  },
 }));
 
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
+import { resetAllSettingsStoresForTests } from './settings-store';
 import { createManagedSettings } from './managed-settings';
 import type { SettingsDefinition } from '../../shared/settings-definitions';
 
@@ -34,6 +37,7 @@ const TEST_DEF: SettingsDefinition<TestSettings> = {
 describe('managed-settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAllSettingsStoresForTests();
     // Reset readFileSync to throw ENOENT (file not found)
     vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
   });
@@ -94,7 +98,7 @@ describe('managed-settings', () => {
       expect(getHandler({} as any)).toEqual(TEST_DEF.defaults);
     });
 
-    it('save handler persists settings', () => {
+    it('save handler persists settings', async () => {
       const managed = createManagedSettings(TEST_DEF);
       managed.register();
 
@@ -103,9 +107,9 @@ describe('managed-settings', () => {
       )![1];
 
       const newSettings: TestSettings = { enabled: true, name: 'updated' };
-      saveHandler({} as any, newSettings);
+      await saveHandler({} as any, newSettings);
 
-      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
         path.join('/tmp/test-app', 'test-settings.json'),
         JSON.stringify(newSettings, null, 2),
         'utf-8',
@@ -122,11 +126,11 @@ describe('managed-settings', () => {
       );
     });
 
-    it('saveSettings persists to the correct file', () => {
+    it('saveSettings persists to the correct file', async () => {
       const managed = createManagedSettings(TEST_DEF);
-      managed.saveSettings({ enabled: true, name: 'direct' });
+      await managed.saveSettings({ enabled: true, name: 'direct' });
 
-      expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+      expect(vi.mocked(fs.promises.writeFile)).toHaveBeenCalledWith(
         path.join('/tmp/test-app', 'test-settings.json'),
         expect.any(String),
         'utf-8',
@@ -135,7 +139,7 @@ describe('managed-settings', () => {
   });
 
   describe('onSave callback', () => {
-    it('calls onSave after saving via IPC handler', () => {
+    it('calls onSave after saving via IPC handler', async () => {
       const onSave = vi.fn();
       const managed = createManagedSettings(TEST_DEF, { onSave });
       managed.register();
@@ -145,12 +149,12 @@ describe('managed-settings', () => {
       )![1];
 
       const newSettings: TestSettings = { enabled: true, name: 'callback' };
-      saveHandler({} as any, newSettings);
+      await saveHandler({} as any, newSettings);
 
       expect(onSave).toHaveBeenCalledWith(newSettings);
     });
 
-    it('passes extra args to onSave', () => {
+    it('passes extra args to onSave', async () => {
       const onSave = vi.fn();
       const managed = createManagedSettings(TEST_DEF, { onSave });
       managed.register();
@@ -160,16 +164,16 @@ describe('managed-settings', () => {
       )![1];
 
       const newSettings: TestSettings = { enabled: true, name: 'extra' };
-      saveHandler({} as any, newSettings, '/some/path');
+      await saveHandler({} as any, newSettings, '/some/path');
 
       expect(onSave).toHaveBeenCalledWith(newSettings, '/some/path');
     });
 
-    it('does not call onSave when saving directly via saveSettings', () => {
+    it('does not call onSave when saving directly via saveSettings', async () => {
       const onSave = vi.fn();
       const managed = createManagedSettings(TEST_DEF, { onSave });
 
-      managed.saveSettings({ enabled: true, name: 'direct' });
+      await managed.saveSettings({ enabled: true, name: 'direct' });
 
       // onSave is only triggered via IPC, not direct calls
       expect(onSave).not.toHaveBeenCalled();
@@ -221,11 +225,11 @@ describe('managed-settings', () => {
       expect(typeof managed.store.update).toBe('function');
     });
 
-    it('store.update works for read-modify-write', () => {
+    it('store.update works for read-modify-write', async () => {
       vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ enabled: false, name: 'original' }));
 
       const managed = createManagedSettings(TEST_DEF);
-      const result = managed.store.update((current) => ({ ...current, enabled: true }));
+      const result = await managed.store.update((current) => ({ ...current, enabled: true }));
 
       expect(result.enabled).toBe(true);
       expect(result.name).toBe('original');

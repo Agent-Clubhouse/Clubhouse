@@ -16,7 +16,16 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('fs');
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  readdirSync: vi.fn(),
+  rmSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  promises: {
+    writeFile: vi.fn(async () => {}),
+  },
+}));
 
 import {
   getSettings,
@@ -30,17 +39,19 @@ import {
   resolveSlotPack,
   resolveActivePack,
 } from './sound-service';
+import { resetAllSettingsStoresForTests } from './settings-store';
 
 describe('sound-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetAllSettingsStoresForTests();
 
     // Default: readFileSync throws (file not found)
     vi.mocked(fs.readFileSync).mockImplementation(() => {
       throw new Error('ENOENT');
     });
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(fs.writeFileSync).mockImplementation(() => {});
+    vi.mocked(fs.promises.writeFile).mockResolvedValue(undefined);
   });
 
   describe('getSettings / saveSettings', () => {
@@ -59,11 +70,11 @@ describe('sound-service', () => {
       expect(settings.eventSettings.notification.enabled).toBe(true);
     });
 
-    it('saves settings to file', () => {
+    it('saves settings to file', async () => {
       const settings = getSettings();
       settings.slotAssignments = { 'agent-done': { packId: 'my-pack' } };
-      saveSettings(settings);
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      await saveSettings(settings);
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('sound-settings.json'),
         expect.stringContaining('"my-pack"'),
         'utf-8',
@@ -256,7 +267,7 @@ describe('sound-service', () => {
   });
 
   describe('deleteSoundPack', () => {
-    it('deletes a user sound pack and cleans slot assignments', () => {
+    it('deletes a user sound pack and cleans slot assignments', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.rmSync).mockImplementation(() => {});
       vi.mocked(fs.readFileSync).mockImplementation((p) => {
@@ -273,24 +284,24 @@ describe('sound-service', () => {
         throw new Error('ENOENT');
       });
 
-      const result = deleteSoundPack('my-pack');
+      const result = await deleteSoundPack('my-pack');
       expect(result).toBe(true);
       expect(fs.rmSync).toHaveBeenCalled();
       // Should save cleaned settings
-      expect(fs.writeFileSync).toHaveBeenCalled();
-      const savedJson = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(fs.promises.writeFile).toHaveBeenCalled();
+      const savedJson = vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string;
       const savedSettings = JSON.parse(savedJson);
       expect(savedSettings.slotAssignments['agent-done']).toBeUndefined();
       expect(savedSettings.slotAssignments.error?.packId).toBe('other-pack');
     });
 
-    it('refuses to delete plugin packs', () => {
-      expect(deleteSoundPack('plugin:test')).toBe(false);
+    it('refuses to delete plugin packs', async () => {
+      await expect(deleteSoundPack('plugin:test')).resolves.toBe(false);
     });
 
-    it('returns false for non-existent packs', () => {
+    it('returns false for non-existent packs', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
-      expect(deleteSoundPack('nonexistent')).toBe(false);
+      await expect(deleteSoundPack('nonexistent')).resolves.toBe(false);
     });
   });
 

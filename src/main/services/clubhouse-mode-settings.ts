@@ -16,15 +16,15 @@ export function isClubhouseModeEnabled(projectPath?: string): boolean {
   return settings.enabled;
 }
 
-export function setProjectOverride(projectPath: string, enabled: boolean): void {
+export async function setProjectOverride(projectPath: string, enabled: boolean): Promise<void> {
   const settings = getSettings();
   const overrides = { ...settings.projectOverrides, [projectPath]: enabled };
-  saveSettings({ ...settings, projectOverrides: overrides });
+  await saveSettings({ ...settings, projectOverrides: overrides });
 }
 
-export function clearProjectOverride(projectPath: string): void {
+export async function clearProjectOverride(projectPath: string): Promise<void> {
   const settings = getSettings();
   if (!settings.projectOverrides) return;
   const { [projectPath]: _, ...rest } = settings.projectOverrides;
-  saveSettings({ ...settings, projectOverrides: Object.keys(rest).length > 0 ? rest : undefined });
+  await saveSettings({ ...settings, projectOverrides: Object.keys(rest).length > 0 ? rest : undefined });
 }

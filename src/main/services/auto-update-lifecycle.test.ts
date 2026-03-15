@@ -88,39 +88,54 @@ describe('startPeriodicChecks / stopPeriodicChecks', () => {
     vi.useRealTimers();
   });
 
-  it('seeds lastSeenVersion on first launch', () => {
+  it('seeds lastSeenVersion on first launch', async () => {
     mockSettings.lastSeenVersion = null;
-    startPeriodicChecks();
+    await startPeriodicChecks();
     expect(mockSave).toHaveBeenCalledWith(
       expect.objectContaining({ lastSeenVersion: expect.any(String) }),
     );
   });
 
-  it('clears dismissedVersion on startup', () => {
+  it('clears dismissedVersion on startup', async () => {
     mockSettings.dismissedVersion = '0.30.0';
-    startPeriodicChecks();
+    await startPeriodicChecks();
     expect(mockSave).toHaveBeenCalledWith(
       expect.objectContaining({ dismissedVersion: null }),
     );
   });
 
-  it('returns early without scheduling when autoUpdate is false', () => {
+  it('preserves lastSeenVersion when clearing dismissedVersion in the same startup pass', async () => {
+    mockSettings.lastSeenVersion = null;
+    mockSettings.dismissedVersion = '0.30.0';
+
+    await startPeriodicChecks();
+
+    expect(mockSave).toHaveBeenCalledTimes(2);
+    expect(mockSave.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        lastSeenVersion: expect.any(String),
+        dismissedVersion: null,
+      }),
+    );
+  });
+
+  it('returns early without scheduling when autoUpdate is false', async () => {
     mockSettings.autoUpdate = false;
     // Should not throw and should return early
-    startPeriodicChecks();
+    await startPeriodicChecks();
     // stopPeriodicChecks is safe even when no timer was created
     expect(() => stopPeriodicChecks()).not.toThrow();
   });
 
-  it('stopPeriodicChecks is safe to call multiple times', () => {
-    startPeriodicChecks();
+  it('stopPeriodicChecks is safe to call multiple times', async () => {
+    await startPeriodicChecks();
     stopPeriodicChecks();
     expect(() => stopPeriodicChecks()).not.toThrow();
   });
 
-  it('calling startPeriodicChecks twice does not create duplicate timers', () => {
-    startPeriodicChecks();
-    startPeriodicChecks(); // second call should be a no-op
+  it('calling startPeriodicChecks twice does not create duplicate timers', async () => {
+    await startPeriodicChecks();
+    await startPeriodicChecks(); // second call should be a no-op
     stopPeriodicChecks();
   });
 });

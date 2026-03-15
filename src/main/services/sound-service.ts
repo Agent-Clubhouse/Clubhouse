@@ -262,7 +262,7 @@ export async function importSoundPack(): Promise<SoundPackInfo | null> {
   };
 }
 
-export function deleteSoundPack(packId: string): boolean {
+export async function deleteSoundPack(packId: string): Promise<boolean> {
   // Don't allow deleting plugin packs through this method
   if (packId.startsWith('plugin:')) return false;
 
@@ -300,7 +300,7 @@ export function deleteSoundPack(packId: string): boolean {
   }
 
   if (changed) {
-    saveSettings({ ...settings, slotAssignments: slots, projectOverrides: overrides });
+    await saveSettings({ ...settings, slotAssignments: slots, projectOverrides: overrides });
   }
 
   return true;

@@ -31,8 +31,8 @@ export function getSpawnMode(projectPath?: string): SpawnMode {
   return resolveDefaultMode(settings);
 }
 
-export function setProjectSpawnMode(projectPath: string, mode: SpawnMode): void {
+export async function setProjectSpawnMode(projectPath: string, mode: SpawnMode): Promise<void> {
   const settings = getSettings();
   const overrides = { ...settings.projectOverrides, [projectPath]: mode };
-  saveSettings({ ...settings, projectOverrides: overrides });
+  await saveSettings({ ...settings, projectOverrides: overrides });
 }
