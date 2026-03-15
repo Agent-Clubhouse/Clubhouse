@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import * as path from 'path';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
 
@@ -17,11 +17,11 @@ let buffer: string[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 const seenNamespaces = new Set<string>();
 
-function ensureLogDir(): void {
+async function ensureLogDir(): Promise<void> {
   if (!logDir) {
     logDir = path.join(app.getPath('home'), '.clubhouse', 'logs');
   }
-  fs.mkdirSync(logDir, { recursive: true });
+  await fsp.mkdir(logDir, { recursive: true });
 }
 
 function buildFilePath(chunk: number): string {
@@ -29,28 +29,28 @@ function buildFilePath(chunk: number): string {
   return path.join(logDir, `session-${sessionBase}.${chunk}.jsonl`);
 }
 
-function openSessionFile(): void {
+async function openSessionFile(): Promise<void> {
   currentFilePath = buildFilePath(currentChunk);
   try {
-    const stat = fs.statSync(currentFilePath);
+    const stat = await fsp.stat(currentFilePath);
     currentFileSize = stat.size;
   } catch {
     currentFileSize = 0;
   }
 }
 
-function rotate(): void {
+async function rotate(): Promise<void> {
   currentChunk += 1;
-  openSessionFile();
+  await openSessionFile();
 }
 
-function cleanup(): void {
+async function cleanup(): Promise<void> {
   const settings = logSettings.getSettings();
   const tier = LOG_RETENTION_TIERS[settings.retention] ?? LOG_RETENTION_TIERS.medium;
 
-  let entries: fs.Dirent[];
+  let entries: Awaited<ReturnType<typeof fsp.readdir<{ withFileTypes: true }>>>;
   try {
-    entries = fs.readdirSync(logDir, { withFileTypes: true });
+    entries = await fsp.readdir(logDir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -63,7 +63,7 @@ function cleanup(): void {
     }
     const filePath = path.join(logDir, entry.name);
     try {
-      const stat = fs.statSync(filePath);
+      const stat = await fsp.stat(filePath);
       files.push({ filePath, mtimeMs: stat.mtimeMs, size: stat.size });
     } catch {
       // ignore stat errors
@@ -75,7 +75,7 @@ function cleanup(): void {
     const cutoff = Date.now() - tier.retentionDays * 24 * 60 * 60 * 1000;
     for (let i = files.length - 1; i >= 0; i--) {
       if (files[i].mtimeMs < cutoff) {
-        try { fs.unlinkSync(files[i].filePath); } catch { /* ignore */ }
+        try { await fsp.unlink(files[i].filePath); } catch { /* ignore */ }
         files.splice(i, 1);
       }
     }
@@ -88,21 +88,21 @@ function cleanup(): void {
     let totalSize = files.reduce((sum, f) => sum + f.size, 0);
     while (totalSize > tier.maxTotalBytes && files.length > 0) {
       const oldest = files.shift()!;
-      try { fs.unlinkSync(oldest.filePath); } catch { /* ignore */ }
+      try { await fsp.unlink(oldest.filePath); } catch { /* ignore */ }
       totalSize -= oldest.size;
     }
   }
 }
 
-export function flush(): void {
+export async function flush(): Promise<void> {
   if (buffer.length === 0) return;
   const data = buffer.join('\n') + '\n';
   buffer = [];
   try {
-    fs.appendFileSync(currentFilePath, data, 'utf-8');
+    await fsp.appendFile(currentFilePath, data, 'utf-8');
     currentFileSize += Buffer.byteLength(data, 'utf-8');
     if (currentFileSize >= MAX_FILE_SIZE) {
-      rotate();
+      await rotate();
     }
   } catch (err) {
     // If we can't write, drop the entries rather than crashing.
@@ -155,12 +155,12 @@ export function getNamespaces(): string[] {
   return [...seenNamespaces].sort();
 }
 
-export function init(): void {
-  ensureLogDir();
+export async function init(): Promise<void> {
+  await ensureLogDir();
   sessionBase = new Date().toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, '');
   currentChunk = 0;
-  openSessionFile();
-  cleanup();
+  await openSessionFile();
+  await cleanup();
 
   flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
 

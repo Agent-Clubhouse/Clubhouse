@@ -1,7 +1,8 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { OrchestratorProvider } from '../orchestrators/types';
 import { appLog } from './log-service';
+import { pathExists } from './fs-utils';
 
 interface FileSnapshot {
   originalContent: string | null; // null = file didn't exist before us
@@ -17,13 +18,13 @@ const agentFiles = new Map<string, Set<string>>();
  * Snapshot a config file before the first agent writes to it.
  * Increments refCount for subsequent agents referencing the same file.
  */
-export function snapshotFile(agentId: string, filePath: string): void {
+export async function snapshotFile(agentId: string, filePath: string): Promise<void> {
   const absPath = path.resolve(filePath);
 
   if (!snapshots.has(absPath)) {
     let originalContent: string | null = null;
     try {
-      originalContent = fs.readFileSync(absPath, 'utf-8');
+      originalContent = await fsp.readFile(absPath, 'utf-8');
     } catch {
       // File doesn't exist yet — we'll delete it on restore
     }
@@ -48,7 +49,7 @@ export function snapshotFile(agentId: string, filePath: string): void {
  * Restore config files for a single agent.
  * Decrements refCount; when it hits 0, restores the original file.
  */
-export function restoreForAgent(agentId: string): void {
+export async function restoreForAgent(agentId: string): Promise<void> {
   const files = agentFiles.get(agentId);
   if (!files) return;
 
@@ -64,7 +65,7 @@ export function restoreForAgent(agentId: string): void {
       // Remove from map before restoring — atomic decrement-and-check
       // prevents a concurrent caller from finding and restoring the same snapshot
       snapshots.delete(absPath);
-      restoreSnapshot(absPath, snapshot);
+      await restoreSnapshot(absPath, snapshot);
     }
   }
 }
@@ -72,9 +73,9 @@ export function restoreForAgent(agentId: string): void {
 /**
  * Restore all snapshots immediately (for app quit).
  */
-export function restoreAll(): void {
+export async function restoreAll(): Promise<void> {
   for (const [absPath, snapshot] of snapshots) {
-    restoreSnapshot(absPath, snapshot);
+    await restoreSnapshot(absPath, snapshot);
   }
   snapshots.clear();
   agentFiles.clear();
@@ -161,27 +162,27 @@ export function stripClubhouseHooks(settings: Record<string, unknown>): Record<s
   return result;
 }
 
-function restoreSnapshot(absPath: string, snapshot: FileSnapshot): void {
+async function restoreSnapshot(absPath: string, snapshot: FileSnapshot): Promise<void> {
   try {
     if (snapshot.originalContent === null) {
       // File didn't exist before us — do a smart cleanup of the current file
       // instead of deleting it, since permissions or other settings may have
       // been written after the snapshot was taken.
-      if (fs.existsSync(absPath)) {
+      if (await pathExists(absPath)) {
         try {
-          const current = JSON.parse(fs.readFileSync(absPath, 'utf-8'));
+          const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
           const cleaned = stripClubhouseHooks(current);
           // If only hooks existed and they were all ours, delete the file
           if (Object.keys(cleaned).length === 0) {
-            fs.unlinkSync(absPath);
+            await fsp.unlink(absPath);
             appLog('core:config-pipeline', 'info', `Restored (deleted, no remaining settings)`, { meta: { filePath: absPath } });
           } else {
-            fs.writeFileSync(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+            await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
             appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks, preserved other settings)`, { meta: { filePath: absPath } });
           }
         } catch {
           // File isn't valid JSON — fall back to deleting
-          fs.unlinkSync(absPath);
+          await fsp.unlink(absPath);
           appLog('core:config-pipeline', 'info', `Restored (deleted, not valid JSON)`, { meta: { filePath: absPath } });
         }
       }
@@ -190,13 +191,13 @@ function restoreSnapshot(absPath: string, snapshot: FileSnapshot): void {
       // merge with any settings that were in the original snapshot.
       // This preserves permissions and other settings added after snapshot.
       try {
-        const current = JSON.parse(fs.readFileSync(absPath, 'utf-8'));
+        const current = JSON.parse(await fsp.readFile(absPath, 'utf-8'));
         const cleaned = stripClubhouseHooks(current);
-        fs.writeFileSync(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
+        await fsp.writeFile(absPath, JSON.stringify(cleaned, null, 2), 'utf-8');
         appLog('core:config-pipeline', 'info', `Restored (stripped Clubhouse hooks)`, { meta: { filePath: absPath } });
       } catch {
         // Current file is corrupt — fall back to original snapshot
-        fs.writeFileSync(absPath, snapshot.originalContent, 'utf-8');
+        await fsp.writeFile(absPath, snapshot.originalContent, 'utf-8');
         appLog('core:config-pipeline', 'info', `Restored original (current file corrupt)`, { meta: { filePath: absPath } });
       }
     }

@@ -26,10 +26,6 @@ vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
     ...actual,
-    existsSync: vi.fn(() => true),
-    mkdirSync: vi.fn(),
-    readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-    writeFileSync: vi.fn(),
     createWriteStream: vi.fn(() => mockWriteStream),
     createReadStream: mockCreateReadStream,
   };
@@ -37,6 +33,7 @@ vi.mock('fs', async () => {
 
 // Mock fs/promises for async transcript APIs
 const mockFsPromises = vi.hoisted(() => ({
+  mkdir: vi.fn((): Promise<string | undefined> => Promise.resolve(undefined)),
   stat: vi.fn((): Promise<{ size: number }> => Promise.reject(new Error('ENOENT'))),
   readFile: vi.fn((): Promise<string> => Promise.reject(new Error('ENOENT'))),
 }));
@@ -132,18 +129,18 @@ describe('headless-manager', () => {
   // stream-json mode (existing behavior, regression tests)
   // ============================================================
   describe('stream-json mode', () => {
-    it('creates session and tracks agent as headless', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('creates session and tracks agent as headless', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
     });
 
-    it('closes stdin immediately after spawn', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('closes stdin immediately after spawn', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
       expect(mockProcess.stdin!.end).toHaveBeenCalled();
     });
 
-    it('parses JSONL from stdout and persists to transcript', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('parses JSONL from stdout and persists to transcript', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
@@ -154,8 +151,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits pre_tool hook events for tool_use in assistant messages', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits pre_tool hook events for tool_use in assistant messages', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = {
         type: 'assistant',
@@ -176,8 +173,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits stop hook event for result events', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits stop hook event for result events', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'result', result: 'Done!', cost_usd: 0.05, duration_ms: 3000 };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
@@ -192,8 +189,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits PTY.EXIT on process close and cleans up session', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits PTY.EXIT on process close and cleans up session', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
 
       mockProcess.emit('close', 0);
@@ -202,8 +199,8 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(false);
     });
 
-    it('flushes parser on close to capture final incomplete line', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('flushes parser on close to capture final incomplete line', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Send data without trailing newline — should be buffered
       const event = { type: 'result', result: 'Final' };
@@ -219,8 +216,8 @@ describe('headless-manager', () => {
       expect(mockWriteStream.write.mock.calls.length).toBeGreaterThan(writesBefore);
     });
 
-    it('does NOT emit text-mode notification for stream-json', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('does NOT emit text-mode notification for stream-json', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const notificationCalls = mockSend.mock.calls.filter(
         (call) => call[0] === IPC.AGENT.HOOK_EVENT &&
@@ -229,8 +226,8 @@ describe('headless-manager', () => {
       expect(notificationCalls).toHaveLength(0);
     });
 
-    it('forwards stderr as notification events', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('forwards stderr as notification events', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.stderr!.emit('data', Buffer.from('Warning: something happened'));
 
@@ -244,8 +241,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('handles multiple events in a single chunk', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('handles multiple events in a single chunk', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event1 = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } };
       const event2 = { type: 'result', result: 'Done' };
@@ -257,8 +254,8 @@ describe('headless-manager', () => {
       expect(mockWriteStream.write).toHaveBeenCalledTimes(2);
     });
 
-    it('emits post_tool for tool_result in user messages', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits post_tool for tool_result in user messages', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = {
         type: 'user',
@@ -280,13 +277,13 @@ describe('headless-manager', () => {
   // text mode (NEW — the core change in this stage)
   // ============================================================
   describe('text mode', () => {
-    it('creates session and tracks agent as headless', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('creates session and tracks agent as headless', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
       expect(isHeadless('test-agent')).toBe(true);
     });
 
-    it('emits initial notification for text mode', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('emits initial notification for text mode', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       expect(mockSend).toHaveBeenCalledWith(
         IPC.AGENT.HOOK_EVENT,
@@ -298,8 +295,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('buffers stdout instead of parsing as JSONL', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('buffers stdout instead of parsing as JSONL', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       // Send plain text (not JSON)
       mockProcess.stdout!.emit('data', Buffer.from('Working on fixing the bug...\n'));
@@ -313,8 +310,8 @@ describe('headless-manager', () => {
       expect(transcriptWrites).toHaveLength(0);
     });
 
-    it('does not crash on non-JSON stdout in text mode', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('does not crash on non-JSON stdout in text mode', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       // This would throw in stream-json mode if fed to JsonlParser incorrectly
       expect(() => {
@@ -323,8 +320,8 @@ describe('headless-manager', () => {
       }).not.toThrow();
     });
 
-    it('synthesizes result event on close from buffered text', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('synthesizes result event on close from buffered text', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.stdout!.emit('data', Buffer.from('Fixed the auth bug.\n'));
       mockProcess.stdout!.emit('data', Buffer.from('Updated 3 files.'));
@@ -344,8 +341,8 @@ describe('headless-manager', () => {
       expect(resultEvent.duration_ms).toBeGreaterThanOrEqual(0);
     });
 
-    it('emits stop hook event on close with truncated message', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('emits stop hook event on close with truncated message', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.stdout!.emit('data', Buffer.from('Short result.'));
       mockProcess.emit('close', 0);
@@ -360,8 +357,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('truncates stop message to 500 chars for large text output', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('truncates stop message to 500 chars for large text output', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       const longOutput = 'x'.repeat(1000);
       mockProcess.stdout!.emit('data', Buffer.from(longOutput));
@@ -374,8 +371,8 @@ describe('headless-manager', () => {
       expect(stopCall![2].message.length).toBe(500);
     });
 
-    it('does not synthesize result when text buffer is empty', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('does not synthesize result when text buffer is empty', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       // No stdout data emitted
       mockProcess.emit('close', 0);
@@ -387,30 +384,30 @@ describe('headless-manager', () => {
       expect(resultWrite).toBeUndefined();
     });
 
-    it('emits PTY.EXIT on close just like stream-json mode', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('emits PTY.EXIT on close just like stream-json mode', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.emit('close', 0);
       expect(mockSend).toHaveBeenCalledWith(IPC.PTY.EXIT, 'test-agent', 0);
     });
 
-    it('cleans up session on close', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('cleans up session on close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
       expect(isHeadless('test-agent')).toBe(true);
 
       mockProcess.emit('close', 0);
       expect(isHeadless('test-agent')).toBe(false);
     });
 
-    it('closes log stream on close', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('closes log stream on close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.emit('close', 0);
       expect(mockWriteStream.end).toHaveBeenCalled();
     });
 
-    it('still forwards stderr as notification in text mode', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('still forwards stderr as notification in text mode', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.stderr!.emit('data', Buffer.from('Error: API key invalid'));
 
@@ -424,8 +421,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('handles non-zero exit code', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('handles non-zero exit code', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       mockProcess.stdout!.emit('data', Buffer.from('partial output'));
       mockProcess.emit('close', 1);
@@ -443,8 +440,8 @@ describe('headless-manager', () => {
   // outputKind defaults
   // ============================================================
   describe('outputKind default', () => {
-    it('defaults to stream-json when outputKind not specified', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('defaults to stream-json when outputKind not specified', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Should behave as stream-json: parse JSONL, no text-mode notification
       const notificationCalls = mockSend.mock.calls.filter(
@@ -466,31 +463,31 @@ describe('headless-manager', () => {
   // Session lifecycle
   // ============================================================
   describe('session lifecycle', () => {
-    it('kills existing session before spawning new one with same agentId', () => {
+    it('kills existing session before spawning new one with same agentId', async () => {
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
 
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2'], {}, 'text');
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2'], {}, 'text');
 
       // First process should have been killed
       expect(proc1.kill).toHaveBeenCalledWith('SIGTERM');
     });
 
-    it('kill() sends SIGTERM to process', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
+    it('kill() sends SIGTERM to process', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'text');
       kill('test-agent');
       expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
     });
 
-    it('kill() is a no-op for unknown agentId', () => {
+    it('kill() is a no-op for unknown agentId', async () => {
       expect(() => kill('nonexistent-agent')).not.toThrow();
     });
 
-    it('handles process error event', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('handles process error event', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       mockProcess.emit('error', new Error('spawn failed'));
 
@@ -498,18 +495,18 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(false);
     });
 
-    it('error handler calls onExit callback', () => {
+    it('error handler calls onExit callback', async () => {
       const onExit = vi.fn();
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
 
       mockProcess.emit('error', new Error('spawn failed'));
 
       expect(onExit).toHaveBeenCalledWith('test-agent', 1);
     });
 
-    it('does not double-cleanup when both error and close fire', () => {
+    it('does not double-cleanup when both error and close fire', async () => {
       const onExit = vi.fn();
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
 
       // Both events fire (race condition)
       mockProcess.emit('error', new Error('spawn failed'));
@@ -520,9 +517,9 @@ describe('headless-manager', () => {
       expect(mockWriteStream.end).toHaveBeenCalledTimes(1);
     });
 
-    it('does not double-cleanup when close fires before error', () => {
+    it('does not double-cleanup when close fires before error', async () => {
       const onExit = vi.fn();
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
 
       // close fires first, then error
       mockProcess.emit('close', 0);
@@ -549,7 +546,7 @@ describe('headless-manager', () => {
     });
 
     it('returns in-memory transcript for active session', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'result', result: 'ok' };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
@@ -560,7 +557,7 @@ describe('headless-manager', () => {
     });
 
     it('returns in-memory transcript for text mode active session', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       // In text mode, transcript is empty until close
       const transcript = await readTranscript('test-agent');
@@ -601,8 +598,8 @@ describe('headless-manager', () => {
   // Environment handling
   // ============================================================
   describe('environment', () => {
-    it('passes extra env vars and removes CLAUDECODE/CLAUDE_CODE_ENTRYPOINT', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test'], {
+    it('passes extra env vars and removes CLAUDECODE/CLAUDE_CODE_ENTRYPOINT', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test'], {
         ANTHROPIC_API_KEY: 'sk-test',
         CLUBHOUSE_AGENT_ID: 'test-agent',
       });
@@ -645,8 +642,8 @@ describe('headless-manager', () => {
   // Windows shell wrapping
   // ============================================================
   describe('Windows spawn options', () => {
-    it('uses cmd.exe with windowsVerbatimArguments on Windows', () => {
-      spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
+    it('uses cmd.exe with windowsVerbatimArguments on Windows', async () => {
+      await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'test']);
 
       if (process.platform === 'win32') {
         // On Windows, binary and args are wrapped in cmd.exe /d /s /c "..."
@@ -666,8 +663,8 @@ describe('headless-manager', () => {
       }
     });
 
-    it('non-Windows platforms spawn binary directly without shell', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('non-Windows platforms spawn binary directly without shell', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       if (process.platform !== 'win32') {
         const spawnArgs = (mockCpSpawn.mock.calls[0] as any[]);
@@ -679,10 +676,10 @@ describe('headless-manager', () => {
       }
     });
 
-    it('properly quotes arguments with spaces in Windows command line', () => {
+    it('properly quotes arguments with spaces in Windows command line', async () => {
       if (process.platform !== 'win32') return; // Windows-only test
 
-      spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
+      await spawnHeadless('test-agent', '/project', 'C:\\npm\\claude.cmd', ['-p', 'Fix the login bug', '--verbose']);
 
       const cmdLine = (mockCpSpawn.mock.calls[0] as any[])[1][3] as string;
       // Mission text should be wrapped in double quotes
@@ -694,8 +691,8 @@ describe('headless-manager', () => {
   // Annex event bus bridge (headless → WebSocket pipeline)
   // ============================================================
   describe('annex event bus bridge', () => {
-    it('emits hook events to annex event bus for stream-json tool_use', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits hook events to annex event bus for stream-json tool_use', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = {
         type: 'assistant',
@@ -711,8 +708,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits hook events to annex event bus for result/stop', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits hook events to annex event bus for result/stop', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'result', result: 'Done!', cost_usd: 0.05, duration_ms: 3000 };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
@@ -723,8 +720,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits hook events to annex event bus for post_tool (user tool_result)', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits hook events to annex event bus for post_tool (user tool_result)', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = {
         type: 'user',
@@ -738,8 +735,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits text-mode initial notification to annex event bus', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('emits text-mode initial notification to annex event bus', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       expect(mockEmitHookEvent).toHaveBeenCalledWith(
         'test-agent',
@@ -750,8 +747,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits stderr notification to annex event bus', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits stderr notification to annex event bus', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.stderr!.emit('data', Buffer.from('Warning: rate limit'));
 
@@ -764,8 +761,8 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits text-mode stop event to annex event bus on close', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
+    it('emits text-mode stop event to annex event bus on close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
       mockEmitHookEvent.mockClear(); // clear initial notification
 
       mockProcess.stdout!.emit('data', Buffer.from('Fixed it.'));
@@ -777,32 +774,32 @@ describe('headless-manager', () => {
       );
     });
 
-    it('emits emitPtyExit to annex event bus on normal close', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits emitPtyExit to annex event bus on normal close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.emit('close', 0);
 
       expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 0);
     });
 
-    it('emits emitPtyExit to annex event bus on non-zero close', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits emitPtyExit to annex event bus on non-zero close', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.emit('close', 1);
 
       expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 1);
     });
 
-    it('emits emitPtyExit to annex event bus on process error', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits emitPtyExit to annex event bus on process error', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.emit('error', new Error('spawn failed'));
 
       expect(mockEmitPtyExit).toHaveBeenCalledWith('test-agent', 1);
     });
 
-    it('emits emitPtyExit only once when both error and close fire', () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+    it('emits emitPtyExit only once when both error and close fire', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.emit('error', new Error('spawn failed'));
       mockProcess.emit('close', 1);
@@ -817,7 +814,7 @@ describe('headless-manager', () => {
   describe('transcript memory cap', () => {
     it('tracks transcriptBytes as events are pushed', async () => {
       setMaxTranscriptBytes(1024 * 1024); // 1MB — high enough to not trigger eviction
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
 
@@ -839,7 +836,7 @@ describe('headless-manager', () => {
     it('evicts old events when transcript exceeds cap', async () => {
       // Set a very small cap to trigger eviction quickly
       setMaxTranscriptBytes(500);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push events that collectively exceed 500 bytes
       for (let i = 0; i < 10; i++) {
@@ -859,7 +856,7 @@ describe('headless-manager', () => {
 
     it('keeps most recent events after eviction', async () => {
       setMaxTranscriptBytes(500);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push numbered events
       for (let i = 0; i < 10; i++) {
@@ -867,7 +864,11 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
+<<<<<<< HEAD
       // readTranscript falls through to partial in-memory (disk mock rejects)
+=======
+      // readTranscript falls through to partial in-memory (disk mock throws)
+>>>>>>> e105f3c (perf: convert synchronous fs calls to async across main services)
       const transcript = await readTranscript('test-agent');
       // The last event should still be present
       expect(transcript).toContain('event-9');
@@ -875,9 +876,9 @@ describe('headless-manager', () => {
       expect(transcript).not.toContain('event-0');
     });
 
-    it('logs warning on first eviction', () => {
+    it('logs warning on first eviction', async () => {
       setMaxTranscriptBytes(200);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push enough data to trigger eviction
       for (let i = 0; i < 5; i++) {
@@ -901,7 +902,7 @@ describe('headless-manager', () => {
 
     it('readTranscript falls back to disk when transcript is evicted', async () => {
       setMaxTranscriptBytes(200);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push enough data to trigger eviction
       for (let i = 0; i < 5; i++) {
@@ -909,7 +910,11 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
+<<<<<<< HEAD
       // Now make fsPromises.readFile return full transcript data
+=======
+      // Now make readFile return full transcript data
+>>>>>>> e105f3c (perf: convert synchronous fs calls to async across main services)
       const fullTranscript = '{"type":"result","result":"full-disk-data"}\n';
       mockFsPromises.readFile.mockResolvedValueOnce(fullTranscript);
 
@@ -923,7 +928,7 @@ describe('headless-manager', () => {
 
     it('does not evict when under the cap', async () => {
       setMaxTranscriptBytes(1024 * 1024); // 1MB
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push a few small events — well under 1MB
       for (let i = 0; i < 5; i++) {
@@ -947,7 +952,7 @@ describe('headless-manager', () => {
     it('setMaxTranscriptBytes changes the cap', async () => {
       // Start with a high cap
       setMaxTranscriptBytes(1024 * 1024);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push small events (~40 bytes each) under the high cap
       for (let i = 0; i < 5; i++) {
@@ -1051,7 +1056,7 @@ describe('headless-manager', () => {
     });
 
     it('returns in-memory info for active session', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event1 = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
       const event2 = { type: 'result', result: 'Done' };
@@ -1077,7 +1082,7 @@ describe('headless-manager', () => {
 
     it('uses running counters when session has evicted events (no disk I/O)', async () => {
       setMaxTranscriptBytes(200);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       // Push enough to trigger eviction
       for (let i = 0; i < 5; i++) {
@@ -1112,7 +1117,7 @@ describe('headless-manager', () => {
     });
 
     it('returns sliced events from in-memory session', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       for (let i = 0; i < 5; i++) {
         const event = { type: 'result', result: `event-${i}` };
@@ -1128,7 +1133,7 @@ describe('headless-manager', () => {
     });
 
     it('returns empty events when offset exceeds total', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'result', result: 'only' };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
@@ -1155,7 +1160,7 @@ describe('headless-manager', () => {
     });
 
     it('clamps page to available events', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       for (let i = 0; i < 3; i++) {
         const event = { type: 'result', result: `e-${i}` };
@@ -1171,7 +1176,7 @@ describe('headless-manager', () => {
 
     it('falls back to disk when session has evicted events', async () => {
       setMaxTranscriptBytes(200);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       for (let i = 0; i < 5; i++) {
         const event = { type: 'result', result: `msg-${i}-${'x'.repeat(100)}` };
@@ -1234,11 +1239,11 @@ describe('headless-manager', () => {
   // kill() timer race condition (Issue #326)
   // ============================================================
   describe('kill() — process identity guard', () => {
-    it('does not delete replacement session when old kill timer fires', () => {
+    it('does not delete replacement session when old kill timer fires', async () => {
       // Spawn agent → kill it → spawn replacement
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
 
       // Kill the first session (starts 5s force-kill timer)
@@ -1250,7 +1255,7 @@ describe('headless-manager', () => {
       // Spawn a replacement session with the same agentId
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
       expect(isHeadless('test-agent')).toBe(true);
 
       // Advance past the 5s force-kill timer from the first kill()
@@ -1260,8 +1265,8 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(true);
     });
 
-    it('force-kills the correct process when timer fires on same session', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('force-kills the correct process when timer fires on same session', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       kill('test-agent');
       mockProcess.kill.mockClear();
@@ -1275,8 +1280,8 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(false);
     });
 
-    it('clears kill timer when process exits via close event', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('clears kill timer when process exits via close event', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       kill('test-agent');
       mockProcess.kill.mockClear();
@@ -1290,8 +1295,8 @@ describe('headless-manager', () => {
       expect(mockProcess.kill).not.toHaveBeenCalledWith('SIGKILL');
     });
 
-    it('double kill() clears the first timer', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('double kill() clears the first timer', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       // Kill twice rapidly
       kill('test-agent');
@@ -1311,17 +1316,17 @@ describe('headless-manager', () => {
   // close/error handler race condition (CQ-2)
   // ============================================================
   describe('close/error handler — session replacement guard', () => {
-    it('old process close handler does not delete replacement session', () => {
+    it('old process close handler does not delete replacement session', async () => {
       // Spawn first session
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
 
       // Spawn replacement — this kills the old process and creates new session
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
       expect(isHeadless('test-agent')).toBe(true);
 
       // Old process close handler fires AFTER replacement is stored
@@ -1331,14 +1336,14 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(true);
     });
 
-    it('old process close handler does not broadcast PTY.EXIT for replaced session', () => {
+    it('old process close handler does not broadcast PTY.EXIT for replaced session', async () => {
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
 
       mockSend.mockClear();
       mockEmitPtyExit.mockClear();
@@ -1354,15 +1359,15 @@ describe('headless-manager', () => {
       expect(mockEmitPtyExit).not.toHaveBeenCalled();
     });
 
-    it('old process close handler does not call onExit for replaced session', () => {
+    it('old process close handler does not call onExit for replaced session', async () => {
       const onExit = vi.fn();
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
 
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2'], {}, 'stream-json', onExit);
 
       // Old process closes after replacement
       proc1.emit('close', 0);
@@ -1371,14 +1376,14 @@ describe('headless-manager', () => {
       expect(onExit).not.toHaveBeenCalled();
     });
 
-    it('old process error handler does not delete replacement session', () => {
+    it('old process error handler does not delete replacement session', async () => {
       const proc1 = createMockProcess();
       mockProcess = proc1;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
 
       const proc2 = createMockProcess();
       mockProcess = proc2;
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test2']);
 
       // Old process error fires after replacement
       proc1.emit('error', new Error('spawn failed'));
@@ -1387,9 +1392,9 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(true);
     });
 
-    it('current session close handler still cleans up normally', () => {
+    it('current session close handler still cleans up normally', async () => {
       const onExit = vi.fn();
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], {}, 'stream-json', onExit);
       expect(isHeadless('test-agent')).toBe(true);
 
       mockProcess.emit('close', 0);
@@ -1403,15 +1408,15 @@ describe('headless-manager', () => {
   // Stale session sweep (Issue #326)
   // ============================================================
   describe('stale session sweep', () => {
-    it('startStaleSweep and stopStaleSweep are idempotent', () => {
+    it('startStaleSweep and stopStaleSweep are idempotent', async () => {
       startStaleSweep();
       startStaleSweep();
       stopStaleSweep();
       stopStaleSweep();
     });
 
-    it('sweep cleans up sessions whose processes have exited without close event', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('sweep cleans up sessions whose processes have exited without close event', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
 
       // Simulate process exiting without firing close/error event
@@ -1425,8 +1430,8 @@ describe('headless-manager', () => {
       expect(isHeadless('test-agent')).toBe(false);
     });
 
-    it('sweep does not remove sessions with live processes', () => {
-      spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
+    it('sweep does not remove sessions with live processes', async () => {
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test']);
       expect(isHeadless('test-agent')).toBe(true);
       // exitCode is null for running processes (set by createMockProcess)
       expect(mockProcess.exitCode).toBeNull();
@@ -1443,7 +1448,7 @@ describe('headless-manager', () => {
   // command prefix
   // ============================================================
   describe('command prefix', () => {
-    it('wraps spawn via shell with prefix on Unix', () => {
+    it('wraps spawn via shell with prefix on Unix', async () => {
       if (process.platform === 'win32') return;
 
       spawnHeadless(
@@ -1462,7 +1467,7 @@ describe('headless-manager', () => {
       );
     });
 
-    it('prepends prefix in cmd.exe command line on Windows', () => {
+    it('prepends prefix in cmd.exe command line on Windows', async () => {
       if (process.platform !== 'win32') return;
 
       spawnHeadless(
@@ -1477,7 +1482,7 @@ describe('headless-manager', () => {
       expect(cmdLine).toContain('. .\\init.ps1 & ');
     });
 
-    it('spawns directly when no prefix is set', () => {
+    it('spawns directly when no prefix is set', async () => {
       if (process.platform === 'win32') return;
 
       spawnHeadless(

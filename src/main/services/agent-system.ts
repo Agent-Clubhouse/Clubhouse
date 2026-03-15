@@ -1,5 +1,5 @@
 import * as path from 'path';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady } from './hook-server';
@@ -69,7 +69,7 @@ export function untrackAgent(agentId: string): void {
 async function readProjectOrchestrator(projectPath: string): Promise<OrchestratorId | undefined> {
   try {
     const settingsPath = path.join(projectPath, '.clubhouse', 'settings.json');
-    const raw = JSON.parse(await fs.promises.readFile(settingsPath, 'utf-8'));
+    const raw = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
     return raw.orchestrator as OrchestratorId | undefined;
   } catch {
     return undefined;
@@ -228,7 +228,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
           headlessArgs = wrapped.args;
         }
         const spawnEnv = { ...headlessResult.env, ...profileEnv, ...wrapperConfig?.env, CLUBHOUSE_AGENT_ID: params.agentId };
-        headlessManager.spawnHeadless(
+        await headlessManager.spawnHeadless(
           params.agentId,
           params.cwd,
           headlessBin,

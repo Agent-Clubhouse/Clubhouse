@@ -1,7 +1,8 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 import { appLog } from './log-service';
+import { pathExists } from './fs-utils';
 import type {
   CustomMarketplace,
   CustomMarketplaceAddRequest,
@@ -27,11 +28,11 @@ function getStoragePath(): string {
   );
 }
 
-function readMarketplaces(): CustomMarketplace[] {
+async function readMarketplaces(): Promise<CustomMarketplace[]> {
   const filePath = getStoragePath();
   try {
-    if (!fs.existsSync(filePath)) return [];
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    if (!await pathExists(filePath)) return [];
+    const raw = await fsp.readFile(filePath, 'utf-8');
     const data = JSON.parse(raw);
     if (!Array.isArray(data)) return [];
     return data;
@@ -41,11 +42,11 @@ function readMarketplaces(): CustomMarketplace[] {
   }
 }
 
-function writeMarketplaces(marketplaces: CustomMarketplace[]): void {
+async function writeMarketplaces(marketplaces: CustomMarketplace[]): Promise<void> {
   const filePath = getStoragePath();
   const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(marketplaces, null, 2), 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(filePath, JSON.stringify(marketplaces, null, 2), 'utf-8');
 }
 
 function generateId(): string {
@@ -61,12 +62,12 @@ function normalizeUrl(url: string): string {
   return u;
 }
 
-export function listCustomMarketplaces(): CustomMarketplace[] {
+export async function listCustomMarketplaces(): Promise<CustomMarketplace[]> {
   return readMarketplaces();
 }
 
-export function addCustomMarketplace(req: CustomMarketplaceAddRequest): CustomMarketplace {
-  const marketplaces = readMarketplaces();
+export async function addCustomMarketplace(req: CustomMarketplaceAddRequest): Promise<CustomMarketplace> {
+  const marketplaces = await readMarketplaces();
 
   const normalizedUrl = normalizeUrl(req.url);
 
@@ -84,34 +85,34 @@ export function addCustomMarketplace(req: CustomMarketplaceAddRequest): CustomMa
   };
 
   marketplaces.push(marketplace);
-  writeMarketplaces(marketplaces);
+  await writeMarketplaces(marketplaces);
 
   appLog('marketplace:custom', 'info', `Added custom marketplace: ${marketplace.name} (${marketplace.url})`);
   return marketplace;
 }
 
-export function removeCustomMarketplace(req: CustomMarketplaceRemoveRequest): void {
-  const marketplaces = readMarketplaces();
+export async function removeCustomMarketplace(req: CustomMarketplaceRemoveRequest): Promise<void> {
+  const marketplaces = await readMarketplaces();
   const idx = marketplaces.findIndex((m) => m.id === req.id);
   if (idx === -1) {
     throw new Error(`Custom marketplace not found: ${req.id}`);
   }
 
   const removed = marketplaces.splice(idx, 1)[0];
-  writeMarketplaces(marketplaces);
+  await writeMarketplaces(marketplaces);
 
   appLog('marketplace:custom', 'info', `Removed custom marketplace: ${removed.name}`);
 }
 
-export function toggleCustomMarketplace(req: CustomMarketplaceToggleRequest): CustomMarketplace {
-  const marketplaces = readMarketplaces();
+export async function toggleCustomMarketplace(req: CustomMarketplaceToggleRequest): Promise<CustomMarketplace> {
+  const marketplaces = await readMarketplaces();
   const marketplace = marketplaces.find((m) => m.id === req.id);
   if (!marketplace) {
     throw new Error(`Custom marketplace not found: ${req.id}`);
   }
 
   marketplace.enabled = req.enabled;
-  writeMarketplaces(marketplaces);
+  await writeMarketplaces(marketplaces);
 
   appLog('marketplace:custom', 'info', `${req.enabled ? 'Enabled' : 'Disabled'} custom marketplace: ${marketplace.name}`);
   return marketplace;

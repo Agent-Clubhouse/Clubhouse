@@ -1,10 +1,11 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 import type { PluginManifest } from '../../shared/plugin-types';
 import { getGlobalPluginDataDir } from './plugin-storage';
 import * as agentSettings from './agent-settings-service';
 import { registerTrustedManifest } from './plugin-manifest-registry';
+import { pathExists } from './fs-utils';
 
 function getCommunityPluginsDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'plugins');
@@ -17,31 +18,31 @@ export interface DiscoveredPlugin {
   fromMarketplace: boolean;
 }
 
-export function discoverCommunityPlugins(): DiscoveredPlugin[] {
+export async function discoverCommunityPlugins(): Promise<DiscoveredPlugin[]> {
   const pluginsDir = getCommunityPluginsDir();
-  if (!fs.existsSync(pluginsDir)) return [];
+  if (!await pathExists(pluginsDir)) return [];
 
   const results: DiscoveredPlugin[] = [];
   try {
-    const dirs = fs.readdirSync(pluginsDir, { withFileTypes: true });
+    const dirs = await fsp.readdir(pluginsDir, { withFileTypes: true });
     for (const dir of dirs) {
       // Symlinks need stat() to check if target is a directory
       if (!dir.isDirectory()) {
         if (!dir.isSymbolicLink()) continue;
         try {
-          const resolved = fs.statSync(path.join(pluginsDir, dir.name));
+          const resolved = await fsp.stat(path.join(pluginsDir, dir.name));
           if (!resolved.isDirectory()) continue;
         } catch {
           continue; // broken symlink
         }
       }
       const manifestPath = path.join(pluginsDir, dir.name, 'manifest.json');
-      if (!fs.existsSync(manifestPath)) continue;
+      if (!await pathExists(manifestPath)) continue;
       try {
-        const raw = fs.readFileSync(manifestPath, 'utf-8');
+        const raw = await fsp.readFile(manifestPath, 'utf-8');
         const manifest = JSON.parse(raw) as PluginManifest;
         const pluginDir = path.join(pluginsDir, dir.name);
-        const fromMarketplace = fs.existsSync(path.join(pluginDir, '.marketplace'));
+        const fromMarketplace = await pathExists(path.join(pluginDir, '.marketplace'));
         // Register manifest as trusted in main-process registry.
         // This is the authoritative source for security-sensitive fields
         // like allowedCommands — the renderer cannot override these.
@@ -70,7 +71,7 @@ export function discoverCommunityPlugins(): DiscoveredPlugin[] {
  *
  * Returns the refreshed manifest, or null if the plugin was not found on disk.
  */
-export function refreshManifestFromDisk(pluginId: string): PluginManifest | null {
+export async function refreshManifestFromDisk(pluginId: string): Promise<PluginManifest | null> {
   const pluginsDir = getCommunityPluginsDir();
   const pluginDir = path.join(pluginsDir, pluginId);
   const manifestPath = path.join(pluginDir, 'manifest.json');
@@ -78,13 +79,13 @@ export function refreshManifestFromDisk(pluginId: string): PluginManifest | null
   try {
     // Verify the plugin directory is actually inside the plugins directory
     // to prevent path traversal attacks.
-    const resolvedDir = fs.realpathSync(pluginDir);
-    const resolvedPluginsDir = fs.realpathSync(pluginsDir);
+    const resolvedDir = await fsp.realpath(pluginDir);
+    const resolvedPluginsDir = await fsp.realpath(pluginsDir);
     if (!resolvedDir.startsWith(resolvedPluginsDir + path.sep) && resolvedDir !== resolvedPluginsDir) {
       return null;
     }
 
-    const raw = fs.readFileSync(manifestPath, 'utf-8');
+    const raw = await fsp.readFile(manifestPath, 'utf-8');
     const manifest = JSON.parse(raw) as PluginManifest;
     if (manifest.id) {
       registerTrustedManifest(manifest.id, manifest);
@@ -98,24 +99,24 @@ export function refreshManifestFromDisk(pluginId: string): PluginManifest | null
 export async function uninstallPlugin(pluginId: string): Promise<void> {
   const pluginDir = path.join(getCommunityPluginsDir(), pluginId);
 
-  let stat: fs.Stats;
+  let stat: Awaited<ReturnType<typeof fsp.lstat>>;
   try {
-    stat = await fs.promises.lstat(pluginDir);
+    stat = await fsp.lstat(pluginDir);
   } catch {
     return; // path doesn't exist — nothing to do
   }
 
   if (stat.isSymbolicLink()) {
     // Remove only the symlink, not the target directory
-    await fs.promises.unlink(pluginDir);
+    await fsp.unlink(pluginDir);
   } else {
-    await fs.promises.rm(pluginDir, { recursive: true, force: true });
+    await fsp.rm(pluginDir, { recursive: true, force: true });
   }
 
   // Clean up the plugin's data directory (storage + files dataDir)
   const dataDir = path.join(getGlobalPluginDataDir(), pluginId);
   try {
-    await fs.promises.rm(dataDir, { recursive: true, force: true });
+    await fsp.rm(dataDir, { recursive: true, force: true });
   } catch {
     // Best-effort — data dir may not exist
   }
@@ -263,7 +264,7 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
   // 4. Delete the _agentconfig storage directory for this plugin in the project
   const agentConfigDataDir = path.join(projectPath, '.clubhouse', 'plugin-data', `_agentconfig:${pluginId}`);
   try {
-    await fs.promises.rm(agentConfigDataDir, { recursive: true, force: true });
+    await fsp.rm(agentConfigDataDir, { recursive: true, force: true });
   } catch { /* Best-effort — directory may not exist */ }
 }
 
@@ -283,7 +284,7 @@ export async function listOrphanedPluginIds(projectPath: string, knownPluginIds:
   // Check _agentconfig:xxx storage directories — these track injection metadata
   const pluginDataDir = path.join(projectPath, '.clubhouse', 'plugin-data');
   try {
-    const entries = fs.readdirSync(pluginDataDir, { withFileTypes: true });
+    const entries = await fsp.readdir(pluginDataDir, { withFileTypes: true });
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name.startsWith('_agentconfig:')) {
         const pluginId = entry.name.slice('_agentconfig:'.length);

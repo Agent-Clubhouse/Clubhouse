@@ -91,22 +91,11 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-// Mock fs for readProjectOrchestrator
+// Mock fs/promises for readProjectOrchestrator
 const mockReadFile = vi.fn(() => Promise.reject(new Error('ENOENT')));
-vi.mock('fs', async () => {
-  const actual = await vi.importActual<typeof import('fs')>('fs');
-  return {
-    ...actual,
-    readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-    existsSync: vi.fn(() => false),
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
-    promises: {
-      ...actual.promises,
-      readFile: (...args: unknown[]) => mockReadFile(...args),
-    },
-  };
-});
+vi.mock('fs/promises', () => ({
+  readFile: (...args: unknown[]) => mockReadFile(...args),
+}));
 
 // Mock the orchestrator registry
 const mockProvider = {

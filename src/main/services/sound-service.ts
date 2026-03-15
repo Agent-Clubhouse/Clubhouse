@@ -1,7 +1,9 @@
 import { app, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { createSettingsStore } from './settings-store';
+import { pathExists } from './fs-utils';
 import {
   SoundSettings,
   SoundPackInfo,
@@ -92,11 +94,9 @@ function getSoundPacksDir(): string {
   return path.join(app.getPath('home'), '.clubhouse', 'sounds');
 }
 
-function ensureSoundPacksDir(): string {
+async function ensureSoundPacksDir(): Promise<string> {
   const dir = getSoundPacksDir();
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fsp.mkdir(dir, { recursive: true });
   return dir;
 }
 
@@ -105,11 +105,11 @@ function isSupportedSoundFile(filename: string): boolean {
   return (SUPPORTED_SOUND_EXTENSIONS as readonly string[]).includes(ext);
 }
 
-function readPackManifest(packDir: string): { name?: string; description?: string; author?: string } {
+async function readPackManifest(packDir: string): Promise<{ name?: string; description?: string; author?: string }> {
   const manifestPath = path.join(packDir, 'manifest.json');
   try {
-    if (fs.existsSync(manifestPath)) {
-      return JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    if (await pathExists(manifestPath)) {
+      return JSON.parse(await fsp.readFile(manifestPath, 'utf-8'));
     }
   } catch {
     // Ignore parse errors
@@ -117,10 +117,10 @@ function readPackManifest(packDir: string): { name?: string; description?: strin
   return {};
 }
 
-function discoverSoundsInPack(packDir: string): Partial<Record<SoundEvent, string>> {
+async function discoverSoundsInPack(packDir: string): Promise<Partial<Record<SoundEvent, string>>> {
   const sounds: Partial<Record<SoundEvent, string>> = {};
   try {
-    const files = fs.readdirSync(packDir);
+    const files = await fsp.readdir(packDir);
     for (const event of ALL_SOUND_EVENTS) {
       const match = files.find((f) => {
         const name = path.basename(f, path.extname(f));
@@ -138,18 +138,18 @@ function discoverSoundsInPack(packDir: string): Partial<Record<SoundEvent, strin
 
 // ── Public API ────────────────────────────────────────────────────────
 
-export function listSoundPacks(): SoundPackInfo[] {
+export async function listSoundPacks(): Promise<SoundPackInfo[]> {
   const dir = getSoundPacksDir();
-  if (!fs.existsSync(dir)) return [];
+  if (!await pathExists(dir)) return [];
 
   const packs: SoundPackInfo[] = [];
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const entries = await fsp.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const packDir = path.join(dir, entry.name);
-      const manifest = readPackManifest(packDir);
-      const sounds = discoverSoundsInPack(packDir);
+      const manifest = await readPackManifest(packDir);
+      const sounds = await discoverSoundsInPack(packDir);
 
       // Only include directories that have at least one sound file
       if (Object.keys(sounds).length === 0) continue;
@@ -175,14 +175,14 @@ export function listSoundPacks(): SoundPackInfo[] {
  */
 const pluginSoundPacks = new Map<string, SoundPackInfo>();
 
-export function registerPluginSounds(pluginId: string, pluginPath: string, packName?: string): SoundPackInfo | null {
+export async function registerPluginSounds(pluginId: string, pluginPath: string, packName?: string): Promise<SoundPackInfo | null> {
   const soundsDir = path.join(pluginPath, 'sounds');
-  if (!fs.existsSync(soundsDir)) return null;
+  if (!await pathExists(soundsDir)) return null;
 
-  const sounds = discoverSoundsInPack(soundsDir);
+  const sounds = await discoverSoundsInPack(soundsDir);
   if (Object.keys(sounds).length === 0) return null;
 
-  const manifest = readPackManifest(soundsDir);
+  const manifest = await readPackManifest(soundsDir);
   const pack: SoundPackInfo = {
     id: `plugin:${pluginId}`,
     name: packName || manifest.name || pluginId,
@@ -200,8 +200,8 @@ export function unregisterPluginSounds(pluginId: string): void {
   pluginSoundPacks.delete(pluginId);
 }
 
-export function getAllSoundPacks(): SoundPackInfo[] {
-  const userPacks = listSoundPacks();
+export async function getAllSoundPacks(): Promise<SoundPackInfo[]> {
+  const userPacks = await listSoundPacks();
   const pluginPacks = Array.from(pluginSoundPacks.values());
   return [...userPacks, ...pluginPacks];
 }
@@ -221,10 +221,10 @@ export async function importSoundPack(): Promise<SoundPackInfo | null> {
 
   const sourcePath = result.filePaths[0];
   const dirName = path.basename(sourcePath);
-  const targetDir = path.join(ensureSoundPacksDir(), dirName);
+  const targetDir = path.join(await ensureSoundPacksDir(), dirName);
 
   // Check if pack already exists
-  if (fs.existsSync(targetDir)) {
+  if (await pathExists(targetDir)) {
     const overwrite = dialog.showMessageBoxSync({
       type: 'question',
       buttons: ['Replace', 'Cancel'],
@@ -233,16 +233,16 @@ export async function importSoundPack(): Promise<SoundPackInfo | null> {
       message: `A sound pack named "${dirName}" already exists. Replace it?`,
     });
     if (overwrite !== 0) return null;
-    fs.rmSync(targetDir, { recursive: true, force: true });
+    await fsp.rm(targetDir, { recursive: true, force: true });
   }
 
   // Copy directory
   fs.cpSync(sourcePath, targetDir, { recursive: true });
 
   // Validate it has sounds
-  const sounds = discoverSoundsInPack(targetDir);
+  const sounds = await discoverSoundsInPack(targetDir);
   if (Object.keys(sounds).length === 0) {
-    fs.rmSync(targetDir, { recursive: true, force: true });
+    await fsp.rm(targetDir, { recursive: true, force: true });
     dialog.showMessageBoxSync({
       type: 'warning',
       title: 'No Sound Files Found',
@@ -251,7 +251,7 @@ export async function importSoundPack(): Promise<SoundPackInfo | null> {
     return null;
   }
 
-  const manifest = readPackManifest(targetDir);
+  const manifest = await readPackManifest(targetDir);
   return {
     id: dirName,
     name: manifest.name || dirName,
@@ -267,9 +267,9 @@ export async function deleteSoundPack(packId: string): Promise<boolean> {
   if (packId.startsWith('plugin:')) return false;
 
   const packDir = path.join(getSoundPacksDir(), packId);
-  if (!fs.existsSync(packDir)) return false;
+  if (!await pathExists(packDir)) return false;
 
-  fs.rmSync(packDir, { recursive: true, force: true });
+  await fsp.rm(packDir, { recursive: true, force: true });
 
   // Remove this pack from any slot assignments
   const settings = getSettings();
@@ -310,7 +310,7 @@ export async function deleteSoundPack(packId: string): Promise<boolean> {
  * Read a sound file and return it as a base64 data URL.
  * Returns null if the sound file doesn't exist.
  */
-export function getSoundData(packId: string, event: SoundEvent): string | null {
+export async function getSoundData(packId: string, event: SoundEvent): Promise<string | null> {
   let packDir: string;
 
   if (packId.startsWith('plugin:')) {
@@ -318,18 +318,18 @@ export function getSoundData(packId: string, event: SoundEvent): string | null {
     const pack = pluginSoundPacks.get(pluginId);
     if (!pack) return null;
     // Plugin sounds live in the plugin's sounds/ directory
-    const pluginPath = pack.pluginId ? getPluginSoundsDir(pluginId) : null;
+    const pluginPath = await getPluginSoundsDir(pluginId);
     if (!pluginPath) return null;
     packDir = pluginPath;
   } else {
     packDir = path.join(getSoundPacksDir(), packId);
   }
 
-  if (!fs.existsSync(packDir)) return null;
+  if (!await pathExists(packDir)) return null;
 
   // Find the sound file for this event
   try {
-    const files = fs.readdirSync(packDir);
+    const files = await fsp.readdir(packDir);
     const match = files.find((f) => {
       const name = path.basename(f, path.extname(f));
       return name === event && isSupportedSoundFile(f);
@@ -338,7 +338,7 @@ export function getSoundData(packId: string, event: SoundEvent): string | null {
     if (!match) return null;
 
     const filePath = path.join(packDir, match);
-    const buffer = fs.readFileSync(filePath);
+    const buffer = await fsp.readFile(filePath);
     const ext = path.extname(match).toLowerCase();
     const mimeType = ext === '.mp3' ? 'audio/mpeg' : ext === '.wav' ? 'audio/wav' : 'audio/ogg';
     return `data:${mimeType};base64,${buffer.toString('base64')}`;
@@ -347,14 +347,14 @@ export function getSoundData(packId: string, event: SoundEvent): string | null {
   }
 }
 
-function getPluginSoundsDir(pluginId: string): string | null {
+async function getPluginSoundsDir(pluginId: string): Promise<string | null> {
   const pack = pluginSoundPacks.get(pluginId);
   if (!pack) return null;
   // Reconstruct the sounds dir from the plugin registry
   // Plugin packs store their path during registration
   const pluginsDir = path.join(app.getPath('home'), '.clubhouse', 'plugins');
   const pluginDir = path.join(pluginsDir, pluginId, 'sounds');
-  return fs.existsSync(pluginDir) ? pluginDir : null;
+  return await pathExists(pluginDir) ? pluginDir : null;
 }
 
 /**

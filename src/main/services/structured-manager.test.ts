@@ -14,9 +14,11 @@ const mockWriteStream = {
 };
 
 vi.mock('fs', () => ({
-  existsSync: vi.fn(() => true),
-  mkdirSync: vi.fn(),
   createWriteStream: vi.fn(() => mockWriteStream),
+}));
+
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 const mockBroadcastToAllWindows = vi.fn();

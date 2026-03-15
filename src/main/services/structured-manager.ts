@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
@@ -24,10 +25,8 @@ const sessions = new Map<string, StructuredSession>();
 
 const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
 
-function ensureLogsDir(): void {
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-  }
+async function ensureLogsDir(): Promise<void> {
+  await fsp.mkdir(LOGS_DIR, { recursive: true });
 }
 
 // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -50,7 +49,7 @@ export async function startStructuredSession(
     await cancelSession(agentId);
   }
 
-  ensureLogsDir();
+  await ensureLogsDir();
   const transcriptPath = path.join(LOGS_DIR, `${agentId}-structured.jsonl`);
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
   const abortController = new AbortController();

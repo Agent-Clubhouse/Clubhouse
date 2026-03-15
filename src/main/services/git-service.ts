@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult } from '../../shared/types';
 import { appLog } from './log-service';
+import { pathExists } from './fs-utils';
 
 // Conflict status codes from git porcelain format
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
@@ -71,7 +72,7 @@ async function runResult(args: string[], cwd: string, timeout = 30000): Promise<
 }
 
 export async function getGitInfo(dirPath: string): Promise<GitInfo> {
-  const hasGit = fs.existsSync(path.join(dirPath, '.git'));
+  const hasGit = await pathExists(path.join(dirPath, '.git'));
   if (!hasGit) {
     return { branch: '', branches: [], status: [], log: [], hasGit: false, ahead: 0, behind: 0, remote: '', stashCount: 0, hasConflicts: false };
   }

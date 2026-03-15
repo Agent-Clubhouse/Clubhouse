@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 
 /**
@@ -6,14 +6,14 @@ import * as path from 'path';
  * no commit required, untracked).
  */
 
-function getExcludePath(projectPath: string): string {
+async function getExcludePath(projectPath: string): Promise<string> {
   // Resolve the real .git dir (handles worktrees where .git is a file)
   const gitPath = path.join(projectPath, '.git');
   try {
-    const stat = fs.statSync(gitPath);
+    const stat = await fsp.stat(gitPath);
     if (stat.isFile()) {
       // Worktree: .git is a file containing "gitdir: /path/to/real/.git/worktrees/..."
-      const content = fs.readFileSync(gitPath, 'utf-8').trim();
+      const content = (await fsp.readFile(gitPath, 'utf-8')).trim();
       const match = content.match(/^gitdir:\s*(.+)$/);
       if (match) {
         // Navigate up from worktrees/<name> to the real .git dir
@@ -32,20 +32,18 @@ function tagFor(tag: string): string {
   return `# ${tag}`;
 }
 
-export function addExclusions(projectPath: string, tag: string, patterns: string[]): void {
-  const excludePath = getExcludePath(projectPath);
+export async function addExclusions(projectPath: string, tag: string, patterns: string[]): Promise<void> {
+  const excludePath = await getExcludePath(projectPath);
   const marker = tagFor(tag);
   const newLines = patterns.map((p) => `${p} ${marker}`);
 
   // Ensure the info/ directory exists
   const dir = path.dirname(excludePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fsp.mkdir(dir, { recursive: true });
 
   let existing = '';
   try {
-    existing = fs.readFileSync(excludePath, 'utf-8');
+    existing = await fsp.readFile(excludePath, 'utf-8');
   } catch {
     // File doesn't exist yet
   }
@@ -54,16 +52,16 @@ export function addExclusions(projectPath: string, tag: string, patterns: string
   if (linesToAdd.length === 0) return;
 
   const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
-  fs.writeFileSync(excludePath, existing + separator + linesToAdd.join('\n') + '\n', 'utf-8');
+  await fsp.writeFile(excludePath, existing + separator + linesToAdd.join('\n') + '\n', 'utf-8');
 }
 
-export function removeExclusions(projectPath: string, tag: string): void {
-  const excludePath = getExcludePath(projectPath);
+export async function removeExclusions(projectPath: string, tag: string): Promise<void> {
+  const excludePath = await getExcludePath(projectPath);
   const marker = tagFor(tag);
 
   let existing: string;
   try {
-    existing = fs.readFileSync(excludePath, 'utf-8');
+    existing = await fsp.readFile(excludePath, 'utf-8');
   } catch {
     return; // No exclude file
   }
@@ -76,5 +74,5 @@ export function removeExclusions(projectPath: string, tag: string): void {
     filtered.pop();
   }
 
-  fs.writeFileSync(excludePath, filtered.join('\n') + (filtered.length > 0 ? '\n' : ''), 'utf-8');
+  await fsp.writeFile(excludePath, filtered.join('\n') + (filtered.length > 0 ? '\n' : ''), 'utf-8');
 }

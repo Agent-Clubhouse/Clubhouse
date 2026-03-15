@@ -100,10 +100,8 @@ export function stopStaleSweep(): void {
 
 const LOGS_DIR = path.join(app.getPath('userData'), 'agent-logs');
 
-function ensureLogsDir(): void {
-  if (!fs.existsSync(LOGS_DIR)) {
-    fs.mkdirSync(LOGS_DIR, { recursive: true });
-  }
+async function ensureLogsDir(): Promise<void> {
+  await fsPromises.mkdir(LOGS_DIR, { recursive: true });
 }
 
 /**
@@ -180,7 +178,7 @@ export function isHeadless(agentId: string): boolean {
   return sessions.has(agentId);
 }
 
-export function spawnHeadless(
+export async function spawnHeadless(
   agentId: string,
   cwd: string,
   binary: string,
@@ -189,13 +187,13 @@ export function spawnHeadless(
   outputKind: HeadlessOutputKind = 'stream-json',
   onExit?: (agentId: string, exitCode: number) => void,
   commandPrefix?: string,
-): void {
+): Promise<void> {
   // Clean up any existing session
   if (sessions.has(agentId)) {
     kill(agentId);
   }
 
-  ensureLogsDir();
+  await ensureLogsDir();
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
 
   const env = cleanSpawnEnv({ ...getShellEnvironment(), ...extraEnv });

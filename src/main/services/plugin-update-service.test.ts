@@ -15,17 +15,13 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readdirSync: vi.fn(),
-  readFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  rmSync: vi.fn(),
-  rmdirSync: vi.fn(),
-  renameSync: vi.fn(),
-  unlinkSync: vi.fn(),
-  statSync: vi.fn(),
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  readdir: vi.fn(),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(),
 }));
 
 vi.mock('child_process', () => ({
@@ -61,7 +57,8 @@ vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { pathExists } from './fs-utils';
 import { fetchAllRegistries, installPlugin } from './marketplace-service';
 import {
   checkForPluginUpdates,
@@ -140,11 +137,11 @@ describe('plugin-update-service', () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
       // Simulate installed plugins dir
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
       );
 
@@ -160,11 +157,11 @@ describe('plugin-update-service', () => {
     it('returns no updates when plugins are up to date', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '2.0.0' })
       );
 
@@ -175,11 +172,11 @@ describe('plugin-update-service', () => {
     it('skips plugins not in the registry', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'unknown-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'unknown-plugin', name: 'Unknown', version: '1.0.0' })
       );
 
@@ -189,7 +186,7 @@ describe('plugin-update-service', () => {
 
     it('returns empty when no plugins are installed', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(pathExists).mockResolvedValue(false);
 
       const result = await checkForPluginUpdates();
       expect(result.updates).toHaveLength(0);
@@ -197,7 +194,7 @@ describe('plugin-update-service', () => {
 
     it('handles registry fetch failure gracefully', async () => {
       vi.mocked(fetchAllRegistries).mockRejectedValue(new Error('Network error'));
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(pathExists).mockResolvedValue(false);
 
       const result = await checkForPluginUpdates();
       expect(result.updates).toHaveLength(0);
@@ -210,11 +207,11 @@ describe('plugin-update-service', () => {
     it('skips malformed manifest files', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'bad-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue('not json');
+      vi.mocked(fsp.readFile).mockResolvedValue('not json');
 
       const result = await checkForPluginUpdates();
       expect(result.updates).toHaveLength(0);
@@ -223,11 +220,11 @@ describe('plugin-update-service', () => {
     it('includes api field in PluginUpdateInfo', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
       );
 
@@ -268,11 +265,11 @@ describe('plugin-update-service', () => {
         allPlugins: [incompatiblePlugin],
       } as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'future-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' })
       );
 
@@ -318,11 +315,11 @@ describe('plugin-update-service', () => {
         allPlugins: [incompatiblePlugin],
       } as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'future-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' })
       );
 
@@ -367,12 +364,12 @@ describe('plugin-update-service', () => {
         allPlugins: mixedPlugins,
       } as any);
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true },
         { name: 'future-plugin', isDirectory: () => true },
       ] as any);
-      vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s.includes('my-plugin')) return JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' });
         if (s.includes('future-plugin')) return JSON.stringify({ id: 'future-plugin', name: 'Future Plugin', version: '1.0.0' });
@@ -422,15 +419,12 @@ describe('plugin-update-service', () => {
         allPlugins: extendedPlugins,
       } as any);
 
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
-        const s = String(p);
-        return s.includes('plugins') || s.includes('manifest');
-      });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true },
         { name: 'third-plugin', isDirectory: () => true },
       ] as any);
-      vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s.includes('my-plugin')) return JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' });
         if (s.includes('third-plugin')) return JSON.stringify({ id: 'third-plugin', name: 'Third', version: '1.0.0' });
@@ -454,11 +448,11 @@ describe('plugin-update-service', () => {
     it('calls installPlugin and returns success', async () => {
       // First, set up an available update
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
       );
 
@@ -483,11 +477,11 @@ describe('plugin-update-service', () => {
 
     it('returns error when installation fails', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
       );
 
@@ -509,11 +503,11 @@ describe('plugin-update-service', () => {
 
     it('clears updating state on failure', async () => {
       vi.mocked(fetchAllRegistries).mockResolvedValue(sampleAllRegistriesResult as any);
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true } as any,
       ]);
-      vi.mocked(fs.readFileSync).mockReturnValue(
+      vi.mocked(fsp.readFile).mockResolvedValue(
         JSON.stringify({ id: 'my-plugin', name: 'My Plugin', version: '1.0.0' })
       );
 

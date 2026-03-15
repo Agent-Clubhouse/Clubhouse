@@ -18,7 +18,21 @@ vi.mock('fs', async () => {
   };
 });
 
-import * as fs from 'fs';
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => undefined),
+  mkdir: vi.fn(async () => undefined),
+  access: vi.fn(async () => { throw new Error('ENOENT'); }),
+  rm: vi.fn(async () => undefined),
+  readdir: vi.fn(async () => []),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(async () => false),
+}));
+
+import * as fsp from 'fs/promises';
 import {
   writeApplyAttempt,
   readApplyAttempt,
@@ -39,53 +53,53 @@ describe('apply attempt persistence', () => {
   });
 
   describe('writeApplyAttempt', () => {
-    it('writes attempt as JSON to the correct path', () => {
+    it('writes attempt as JSON to the correct path', async () => {
       const attempt = { version: '0.30.0', artifactUrl: 'https://example.com/a.zip', attemptedAt: '2026-01-01T00:00:00Z' };
-      writeApplyAttempt(attempt);
+      await writeApplyAttempt(attempt);
       // Find the call that wrote to the apply-attempt file
-      const calls = vi.mocked(fs.writeFileSync).mock.calls;
+      const calls = vi.mocked(fsp.writeFile).mock.calls;
       const call = calls.find((c) => String(c[0]).includes('update-apply-attempt.json'));
       expect(call).toBeDefined();
       expect(call![1]).toBe(JSON.stringify(attempt));
     });
 
-    it('does not throw on write failure', () => {
-      vi.mocked(fs.writeFileSync).mockImplementation(() => { throw new Error('EPERM'); });
-      expect(() => writeApplyAttempt({
+    it('does not throw on write failure', async () => {
+      vi.mocked(fsp.writeFile).mockRejectedValue(new Error('EPERM'));
+      await expect(writeApplyAttempt({
         version: '0.30.0', artifactUrl: null, attemptedAt: '2026-01-01T00:00:00Z',
-      })).not.toThrow();
+      })).resolves.not.toThrow();
     });
   });
 
   describe('readApplyAttempt', () => {
-    it('returns null when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(readApplyAttempt()).toBeNull();
+    it('returns null when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await readApplyAttempt()).toBeNull();
     });
 
-    it('returns parsed attempt when file exists', () => {
+    it('returns parsed attempt when file exists', async () => {
       const attempt = { version: '0.30.0', artifactUrl: 'https://example.com/a.zip', attemptedAt: '2026-01-01T00:00:00Z' };
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(attempt));
-      expect(readApplyAttempt()).toEqual(attempt);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(attempt));
+      expect(await readApplyAttempt()).toEqual(attempt);
     });
 
-    it('returns null on invalid JSON', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('not json');
-      expect(readApplyAttempt()).toBeNull();
+    it('returns null on invalid JSON', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('not json');
+      expect(await readApplyAttempt()).toBeNull();
     });
   });
 
   describe('clearApplyAttempt', () => {
-    it('unlinks the attempt file', () => {
-      clearApplyAttempt();
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+    it('unlinks the attempt file', async () => {
+      await clearApplyAttempt();
+      expect(fsp.unlink).toHaveBeenCalledWith(
         expect.stringContaining('update-apply-attempt.json'),
       );
     });
 
-    it('does not throw when file does not exist', () => {
-      vi.mocked(fs.unlinkSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(() => clearApplyAttempt()).not.toThrow();
+    it('does not throw when file does not exist', async () => {
+      vi.mocked(fsp.unlink).mockRejectedValue(new Error('ENOENT'));
+      await expect(clearApplyAttempt()).resolves.not.toThrow();
     });
   });
 });
@@ -100,34 +114,34 @@ describe('pending release notes persistence', () => {
   });
 
   describe('getPendingReleaseNotes', () => {
-    it('returns null when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(getPendingReleaseNotes()).toBeNull();
+    it('returns null when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await getPendingReleaseNotes()).toBeNull();
     });
 
-    it('returns parsed notes when file exists', () => {
+    it('returns parsed notes when file exists', async () => {
       const notes = { version: '0.30.0', releaseNotes: '## Bug fixes\n- Fixed a bug' };
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(notes));
-      expect(getPendingReleaseNotes()).toEqual(notes);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(notes));
+      expect(await getPendingReleaseNotes()).toEqual(notes);
     });
 
-    it('returns null on invalid JSON', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('{bad');
-      expect(getPendingReleaseNotes()).toBeNull();
+    it('returns null on invalid JSON', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{bad');
+      expect(await getPendingReleaseNotes()).toBeNull();
     });
   });
 
   describe('clearPendingReleaseNotes', () => {
-    it('unlinks the notes file', () => {
-      clearPendingReleaseNotes();
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+    it('unlinks the notes file', async () => {
+      await clearPendingReleaseNotes();
+      expect(fsp.unlink).toHaveBeenCalledWith(
         expect.stringContaining('pending-release-notes.json'),
       );
     });
 
-    it('does not throw when file does not exist', () => {
-      vi.mocked(fs.unlinkSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(() => clearPendingReleaseNotes()).not.toThrow();
+    it('does not throw when file does not exist', async () => {
+      vi.mocked(fsp.unlink).mockRejectedValue(new Error('ENOENT'));
+      await expect(clearPendingReleaseNotes()).resolves.not.toThrow();
     });
   });
 });

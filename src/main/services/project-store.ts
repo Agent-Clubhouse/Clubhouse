@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { app } from 'electron';
@@ -6,6 +6,7 @@ import { Project } from '../../shared/types';
 import { appLog } from './log-service';
 import { getSettings as getBadgeSettings, saveSettings as saveBadgeSettings } from './badge-settings';
 import { getSettings as getSoundSettings, saveSettings as saveSoundSettings } from './sound-service';
+import { pathExists } from './fs-utils';
 
 const CURRENT_VERSION = 1;
 
@@ -14,24 +15,20 @@ interface ProjectStoreV1 {
   projects: Project[];
 }
 
-function getBaseDir(): string {
+async function getBaseDir(): Promise<string> {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
   const dir = path.join(app.getPath('home'), dirName);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fsp.mkdir(dir, { recursive: true });
   return dir;
 }
 
-function getStorePath(): string {
-  return path.join(getBaseDir(), 'projects.json');
+async function getStorePath(): Promise<string> {
+  return path.join(await getBaseDir(), 'projects.json');
 }
 
-function getIconsDir(): string {
-  const dir = path.join(getBaseDir(), 'project-icons');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+async function getIconsDir(): Promise<string> {
+  const dir = path.join(await getBaseDir(), 'project-icons');
+  await fsp.mkdir(dir, { recursive: true });
   return dir;
 }
 
@@ -44,15 +41,15 @@ function pathHash(dirPath: string): string {
  * Rename a project's icon file to a path-based preserved name so it can be
  * restored when the same directory is re-added as a project.
  */
-function preserveIcon(project: Project): void {
-  const iconsDir = getIconsDir();
+async function preserveIcon(project: Project): Promise<void> {
+  const iconsDir = await getIconsDir();
   try {
-    const files = fs.readdirSync(iconsDir);
+    const files = await fsp.readdir(iconsDir);
     const hash = pathHash(project.path);
     for (const file of files) {
       if (file.startsWith(project.id + '.')) {
         const ext = path.extname(file);
-        fs.renameSync(
+        await fsp.rename(
           path.join(iconsDir, file),
           path.join(iconsDir, `_preserved_${hash}${ext}`),
         );
@@ -69,7 +66,7 @@ function preserveIcon(project: Project): void {
  * cycle at the same path. The old ID is needed to migrate ID-keyed overrides
  * in external settings files (badge-settings, sound-settings).
  */
-function preserveSettings(project: Project): void {
+async function preserveSettings(project: Project): Promise<void> {
   const settings: Record<string, string> = {};
   // Always save the project ID so we can migrate ID-keyed overrides on restore
   settings._previousId = project.id;
@@ -78,8 +75,8 @@ function preserveSettings(project: Project): void {
   if (project.orchestrator) settings.orchestrator = project.orchestrator;
 
   const hash = pathHash(project.path);
-  const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(settings), 'utf-8');
+  const filePath = path.join(await getBaseDir(), `_preserved_${hash}.json`);
+  await fsp.writeFile(filePath, JSON.stringify(settings), 'utf-8');
 }
 
 interface PreservedSettings extends Partial<Pick<Project, 'displayName' | 'color' | 'orchestrator'>> {
@@ -91,13 +88,13 @@ interface PreservedSettings extends Partial<Pick<Project, 'displayName' | 'color
  * fields (plus _previousId for override migration) and removes the stash
  * file. Returns empty object if none found.
  */
-function restorePreservedSettings(project: Project): PreservedSettings {
+async function restorePreservedSettings(project: Project): Promise<PreservedSettings> {
   const hash = pathHash(project.path);
-  const filePath = path.join(getBaseDir(), `_preserved_${hash}.json`);
+  const filePath = path.join(await getBaseDir(), `_preserved_${hash}.json`);
   try {
-    if (!fs.existsSync(filePath)) return {};
-    const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    fs.unlinkSync(filePath);
+    if (!await pathExists(filePath)) return {};
+    const data = JSON.parse(await fsp.readFile(filePath, 'utf-8'));
+    await fsp.unlink(filePath);
     return data;
   } catch {
     return {};
@@ -138,16 +135,16 @@ function migrateProjectOverrides(oldId: string, newId: string): void {
  * Check for a preserved icon for the given project path and, if found,
  * rename it to use the new project ID. Returns the new filename or null.
  */
-function restorePreservedIcon(project: Project): string | null {
-  const iconsDir = getIconsDir();
+async function restorePreservedIcon(project: Project): Promise<string | null> {
+  const iconsDir = await getIconsDir();
   const hash = pathHash(project.path);
   try {
-    const files = fs.readdirSync(iconsDir);
+    const files = await fsp.readdir(iconsDir);
     for (const file of files) {
       if (file.startsWith(`_preserved_${hash}.`)) {
         const ext = path.extname(file);
         const newName = `${project.id}${ext}`;
-        fs.renameSync(
+        await fsp.rename(
           path.join(iconsDir, file),
           path.join(iconsDir, newName),
         );
@@ -186,20 +183,20 @@ function migrate(raw: unknown): ProjectStoreV1 {
   return { version: CURRENT_VERSION, projects: [] };
 }
 
-function readStore(): ProjectStoreV1 {
-  const storePath = getStorePath();
-  if (!fs.existsSync(storePath)) {
+async function readStore(): Promise<ProjectStoreV1> {
+  const storePath = await getStorePath();
+  if (!await pathExists(storePath)) {
     return { version: CURRENT_VERSION, projects: [] };
   }
   try {
-    const raw = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    const raw = JSON.parse(await fsp.readFile(storePath, 'utf-8'));
     const store = migrate(raw);
     // Re-write if we migrated from an older format
     if (!raw.version || raw.version !== CURRENT_VERSION) {
       appLog('core:project-store', 'info', 'Migrated project store from older format', {
         meta: { fromVersion: raw.version, toVersion: CURRENT_VERSION },
       });
-      writeStore(store);
+      await writeStore(store);
     }
     return store;
   } catch (err) {
@@ -210,17 +207,17 @@ function readStore(): ProjectStoreV1 {
   }
 }
 
-function writeStore(store: ProjectStoreV1): void {
-  const storePath = getStorePath();
-  fs.writeFileSync(storePath, JSON.stringify(store, null, 2), 'utf-8');
+async function writeStore(store: ProjectStoreV1): Promise<void> {
+  const storePath = await getStorePath();
+  await fsp.writeFile(storePath, JSON.stringify(store, null, 2), 'utf-8');
 }
 
-function readProjects(): Project[] {
-  return readStore().projects;
+async function readProjects(): Promise<Project[]> {
+  return (await readStore()).projects;
 }
 
-function writeProjects(projects: Project[]): void {
-  writeStore({ version: CURRENT_VERSION, projects });
+async function writeProjects(projects: Project[]): Promise<void> {
+  await writeStore({ version: CURRENT_VERSION, projects });
 }
 
 /**
@@ -229,24 +226,24 @@ function writeProjects(projects: Project[]): void {
  * projects array and must return a new array that will be written back to disk.
  * Callbacks should be pure transforms — avoid filesystem side effects inside.
  */
-function updateProjects(fn: (projects: Project[]) => Project[]): Project[] {
-  const projects = readProjects();
+async function updateProjects(fn: (projects: Project[]) => Project[]): Promise<Project[]> {
+  const projects = await readProjects();
   const updated = fn(projects);
-  writeProjects(updated);
+  await writeProjects(updated);
   return updated;
 }
 
-export function list(): Project[] {
+export async function list(): Promise<Project[]> {
   return readProjects();
 }
 
-export function add(dirPath: string): Project {
+export async function add(dirPath: string): Promise<Project> {
   const name = path.basename(dirPath);
   const id = `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const project: Project = { id, name, path: dirPath };
 
   // Restore preserved settings (displayName, color, orchestrator) from a previous session
-  const restoredSettings = restorePreservedSettings(project);
+  const restoredSettings = await restorePreservedSettings(project);
   if (restoredSettings.displayName) project.displayName = restoredSettings.displayName;
   if (restoredSettings.color) project.color = restoredSettings.color;
   if (restoredSettings.orchestrator) project.orchestrator = restoredSettings.orchestrator;
@@ -257,39 +254,39 @@ export function add(dirPath: string): Project {
   }
 
   // Restore a preserved icon from a previous session at this path
-  const restoredIcon = restorePreservedIcon(project);
+  const restoredIcon = await restorePreservedIcon(project);
   if (restoredIcon) {
     project.icon = restoredIcon;
   }
 
-  updateProjects((projects) => [...projects, project]);
+  await updateProjects((projects) => [...projects, project]);
   return project;
 }
 
-export function remove(id: string): void {
+export async function remove(id: string): Promise<void> {
   let removedProject: Project | undefined;
-  updateProjects((projects) => {
+  await updateProjects((projects) => {
     removedProject = projects.find((p) => p.id === id);
     return projects.filter((p) => p.id !== id);
   });
 
   if (removedProject) {
     // Preserve user-configured settings for later re-add at the same path
-    preserveSettings(removedProject);
+    await preserveSettings(removedProject);
   }
 
   // Preserve the icon for later re-add at the same path; delete if no icon
   if (removedProject?.icon) {
-    preserveIcon(removedProject);
+    await preserveIcon(removedProject);
   } else {
-    removeIconFile(id);
+    await removeIconFile(id);
   }
 }
 
-export function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Project[] {
+export async function update(id: string, updates: Partial<Pick<Project, 'color' | 'icon' | 'name' | 'displayName' | 'orchestrator'>>): Promise<Project[]> {
   let shouldRemoveIcon = false;
 
-  const result = updateProjects((projects) => {
+  const result = await updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== id) return p;
 
@@ -332,21 +329,21 @@ export function update(id: string, updates: Partial<Pick<Project, 'color' | 'ico
 
   // Perform filesystem side effect after the state write succeeds
   if (shouldRemoveIcon) {
-    removeIconFile(id);
+    await removeIconFile(id);
   }
 
   return result;
 }
 
-export function setIcon(projectId: string, sourcePath: string): string {
-  removeIconFile(projectId);
+export async function setIcon(projectId: string, sourcePath: string): Promise<string> {
+  await removeIconFile(projectId);
 
   const ext = path.extname(sourcePath).toLowerCase() || '.png';
   const filename = `${projectId}${ext}`;
-  const dest = path.join(getIconsDir(), filename);
-  fs.copyFileSync(sourcePath, dest);
+  const dest = path.join(await getIconsDir(), filename);
+  await fsp.copyFile(sourcePath, dest);
 
-  updateProjects((projects) => {
+  await updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== projectId) return p;
       return { ...p, icon: filename };
@@ -356,13 +353,13 @@ export function setIcon(projectId: string, sourcePath: string): string {
   return filename;
 }
 
-export function removeIconFile(projectId: string): void {
-  const iconsDir = getIconsDir();
+export async function removeIconFile(projectId: string): Promise<void> {
+  const iconsDir = await getIconsDir();
   try {
-    const files = fs.readdirSync(iconsDir);
+    const files = await fsp.readdir(iconsDir);
     for (const file of files) {
       if (file.startsWith(projectId + '.')) {
-        fs.unlinkSync(path.join(iconsDir, file));
+        await fsp.unlink(path.join(iconsDir, file));
       }
     }
   } catch {
@@ -370,13 +367,13 @@ export function removeIconFile(projectId: string): void {
   }
 }
 
-export function readIconData(filename: string): string | null {
-  const iconsDir = getIconsDir();
+export async function readIconData(filename: string): Promise<string | null> {
+  const iconsDir = await getIconsDir();
   const filePath = path.resolve(iconsDir, filename);
   if (!filePath.startsWith(iconsDir + path.sep) && filePath !== iconsDir) {
     return null;
   }
-  if (!fs.existsSync(filePath)) return null;
+  if (!await pathExists(filePath)) return null;
 
   const ext = path.extname(filename).toLowerCase();
   const mimeMap: Record<string, string> = {
@@ -389,21 +386,21 @@ export function readIconData(filename: string): string | null {
     '.ico': 'image/x-icon',
   };
   const mime = mimeMap[ext] || 'image/png';
-  const data = fs.readFileSync(filePath);
+  const data = await fsp.readFile(filePath);
   return `data:${mime};base64,${data.toString('base64')}`;
 }
 
 /** Save a cropped PNG data URL as the project icon. Returns the filename. */
-export function saveCroppedIcon(projectId: string, dataUrl: string): string {
-  removeIconFile(projectId);
+export async function saveCroppedIcon(projectId: string, dataUrl: string): Promise<string> {
+  await removeIconFile(projectId);
 
   const filename = `${projectId}.png`;
-  const dest = path.join(getIconsDir(), filename);
+  const dest = path.join(await getIconsDir(), filename);
 
   const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-  fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
+  await fsp.writeFile(dest, Buffer.from(base64, 'base64'));
 
-  updateProjects((projects) => {
+  await updateProjects((projects) => {
     return projects.map((p) => {
       if (p.id !== projectId) return p;
       return { ...p, icon: filename };
@@ -413,7 +410,7 @@ export function saveCroppedIcon(projectId: string, dataUrl: string): string {
   return filename;
 }
 
-export function reorder(orderedIds: string[]): Project[] {
+export async function reorder(orderedIds: string[]): Promise<Project[]> {
   return updateProjects((projects) => {
     const byId = new Map(projects.map((p) => [p.id, p]));
 

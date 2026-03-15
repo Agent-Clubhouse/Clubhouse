@@ -1,23 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
-vi.mock('fs', () => ({
-  promises: {
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    mkdir: vi.fn(),
-    readdir: vi.fn(async () => []),
-    rm: vi.fn(),
-    unlink: vi.fn(),
-    access: vi.fn(),
-  },
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
+  mkdir: vi.fn(),
+  readdir: vi.fn(() => Promise.resolve([])),
+  rm: vi.fn(),
+  unlink: vi.fn(),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(),
 }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { pathExists } from './fs-utils';
 import { appLog } from './log-service';
 import {
   readClaudeMd, writeClaudeMd, readPermissions, writePermissions,
@@ -29,7 +31,6 @@ import {
   SettingsConventions,
 } from './agent-settings-service';
 
-const fsp = fs.promises;
 const WORKTREE = '/test/worktree';
 
 describe('readClaudeMd', () => {
@@ -155,6 +156,7 @@ describe('writePermissions', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo test' }] }] },
     }));
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await writePermissions(WORKTREE, { allow: ['Bash(git:*)'] });
 
@@ -168,6 +170,7 @@ describe('writePermissions', () => {
       permissions: { allow: ['Read'] },
       hooks: {},
     }));
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await writePermissions(WORKTREE, { allow: [], deny: [] });
 
@@ -306,7 +309,7 @@ describe('deleteAgentTemplate', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('removes both .md file and directory forms', async () => {
-    vi.mocked(fsp.access).mockResolvedValue(undefined);
+    vi.mocked(pathExists).mockResolvedValue(true);
     await deleteAgentTemplate(WORKTREE, 'old-agent');
     expect(fsp.unlink).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'agents', 'old-agent.md'),
@@ -326,7 +329,7 @@ describe('listAgentTemplateFiles', () => {
       { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
       { name: 'builder', isFile: () => false, isDirectory: () => true },
     ] as any);
-    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(pathExists).mockResolvedValue(false);
 
     const result = await listAgentTemplateFiles(WORKTREE);
     expect(result).toHaveLength(2);
@@ -424,6 +427,8 @@ describe('writeProjectAgentDefaults', () => {
       defaults: {},
       quickOverrides: {},
     }));
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await writeProjectAgentDefaults(PROJECT, {
       instructions: '# Template',
@@ -445,6 +450,7 @@ describe('applyAgentDefaults', () => {
       quickOverrides: {},
       agentDefaults: { instructions: '# Agent Template' },
     }));
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await applyAgentDefaults(WORKTREE, PROJECT);
 
@@ -457,14 +463,15 @@ describe('applyAgentDefaults', () => {
   it('writes permissions to settings.local.json', async () => {
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).includes('settings.json') && !String(p).includes('settings.local')) {
-        return JSON.stringify({
+        return Promise.resolve(JSON.stringify({
           defaults: {},
           quickOverrides: {},
           agentDefaults: { permissions: { allow: ['Read'], deny: ['WebFetch'] } },
-        });
+        }));
       }
-      return '{}';
+      return Promise.resolve('{}');
     });
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await applyAgentDefaults(WORKTREE, PROJECT);
 
@@ -483,6 +490,8 @@ describe('applyAgentDefaults', () => {
       quickOverrides: {},
       agentDefaults: { mcpJson: mcpContent },
     }));
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await applyAgentDefaults(WORKTREE, PROJECT);
 
@@ -524,7 +533,7 @@ describe('orchestrator convention routing', () => {
     vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'my-skill', isDirectory: () => true, isFile: () => false },
     ] as any);
-    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(pathExists).mockResolvedValue(false);
 
     const result = await listSkills(WORKTREE, COPILOT_CONVENTIONS);
     expect(fsp.readdir).toHaveBeenCalledWith(
@@ -538,7 +547,7 @@ describe('orchestrator convention routing', () => {
     vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'builder', isDirectory: () => true, isFile: () => false },
     ] as any);
-    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(pathExists).mockResolvedValue(false);
 
     const result = await listAgentTemplates(WORKTREE, COPILOT_CONVENTIONS);
     expect(fsp.readdir).toHaveBeenCalledWith(
@@ -604,7 +613,7 @@ describe('orchestrator convention routing', () => {
   });
 
   it('deleteAgentTemplate uses convention paths', async () => {
-    vi.mocked(fsp.access).mockResolvedValue(undefined);
+    vi.mocked(pathExists).mockResolvedValue(true);
     await deleteAgentTemplate(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
     expect(fsp.unlink).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
@@ -619,7 +628,7 @@ describe('orchestrator convention routing', () => {
     vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
     ] as any);
-    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(pathExists).mockResolvedValue(false);
 
     await listAgentTemplateFiles(WORKTREE, COPILOT_CONVENTIONS);
     expect(fsp.readdir).toHaveBeenCalledWith(
@@ -692,17 +701,19 @@ describe('orchestrator convention routing', () => {
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.includes('settings.json') && !s.includes('settings.local') && !s.includes('hooks')) {
-        return JSON.stringify({
+        return Promise.resolve(JSON.stringify({
           defaults: {},
           quickOverrides: {},
           agentDefaults: {
             mcpJson: mcpContent,
             permissions: { allow: ['Read'] },
           },
-        });
+        }));
       }
-      return '{}';
+      return Promise.resolve('{}');
     });
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     const writeInstructions = vi.fn();
     await applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, COPILOT_CONVENTIONS);
@@ -767,7 +778,7 @@ describe('TOML settingsFormat guard', () => {
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.includes('settings.json') && !s.includes('config.toml')) {
-        return JSON.stringify({
+        return Promise.resolve(JSON.stringify({
           defaults: {},
           quickOverrides: {},
           agentDefaults: {
@@ -775,9 +786,9 @@ describe('TOML settingsFormat guard', () => {
             mcpJson: '{"mcpServers": {"test": {}}}',
             permissions: { allow: ['shell(git:*)'] },
           },
-        });
+        }));
       }
-      throw new Error('ENOENT');
+      return Promise.reject(new Error('ENOENT'));
     });
 
     const writeInstructions = vi.fn();

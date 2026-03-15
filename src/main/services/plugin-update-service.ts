@@ -1,6 +1,7 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
+import { pathExists } from './fs-utils';
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -50,21 +51,21 @@ function getCommunityPluginsDir(): string {
  * Read installed community plugin manifests from disk.
  * Returns a map of pluginId -> { version, pluginPath }.
  */
-function getInstalledPlugins(): Map<string, { version: string; name: string; pluginPath: string }> {
+async function getInstalledPlugins(): Promise<Map<string, { version: string; name: string; pluginPath: string }>> {
   const pluginsDir = getCommunityPluginsDir();
   const installed = new Map<string, { version: string; name: string; pluginPath: string }>();
 
-  if (!fs.existsSync(pluginsDir)) return installed;
+  if (!await pathExists(pluginsDir)) return installed;
 
-  const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+  const entries = await fsp.readdir(pluginsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
     const manifestPath = path.join(pluginsDir, entry.name, 'manifest.json');
-    if (!fs.existsSync(manifestPath)) continue;
+    if (!await pathExists(manifestPath)) continue;
 
     try {
-      const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const raw = JSON.parse(await fsp.readFile(manifestPath, 'utf-8'));
       if (raw.id && raw.version) {
         installed.set(raw.id, {
           version: raw.version,
@@ -101,7 +102,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
   try {
     const customMarketplaces = listCustomMarketplaces();
     const { allPlugins } = await fetchAllRegistries(customMarketplaces);
-    const installed = getInstalledPlugins();
+    const installed = await getInstalledPlugins();
     const updates: PluginUpdateInfo[] = [];
     const incompatibleUpdates: IncompatiblePluginUpdate[] = [];
 

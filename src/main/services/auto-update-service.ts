@@ -9,6 +9,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { UpdateSettings, UpdateStatus, UpdateState, UpdateManifest, UpdateArtifact, PendingReleaseNotes, VersionHistoryEntry } from '../../shared/types';
 import { createSettingsStore } from './settings-store';
 import { appLog, flush as flushLogs } from './log-service';
+import { pathExists } from './fs-utils';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -533,7 +534,7 @@ async function downloadUpdate(
       const valid = await verifySHA256(destPath, artifact.sha256);
       if (valid) {
         appLog('update:download', 'info', 'Update already downloaded and verified');
-        writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+        await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
         setState('ready', {
           availableVersion: version,
           releaseNotes,
@@ -581,12 +582,12 @@ async function downloadUpdate(
 
     const valid = await verifySHA256(destPath, artifact.sha256);
     if (!valid) {
-      fs.unlinkSync(destPath);
+      await fsp.unlink(destPath);
       throw new Error('SHA-256 checksum verification failed');
     }
 
     appLog('update:download', 'info', 'Update verified and ready to install');
-    writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
+    await writePendingUpdateInfo({ version, downloadPath: destPath, releaseNotes, releaseMessage, artifactUrl: artifact.url });
     setState('ready', {
       downloadProgress: 100,
       downloadPath: destPath,
@@ -615,16 +616,16 @@ export async function applyUpdate(): Promise<void> {
 
   // Persist release notes for the What's New dialog after restart
   if (status.availableVersion && status.releaseNotes) {
-    writePendingReleaseNotes({
+    await writePendingReleaseNotes({
       version: status.availableVersion,
       releaseNotes: status.releaseNotes,
     });
   }
 
-  clearPendingUpdateInfo();
+  await clearPendingUpdateInfo();
 
   // Record apply attempt so we can detect silent failures on next launch
-  writeApplyAttempt({
+  await writeApplyAttempt({
     version: savedVersion!,
     artifactUrl: savedArtifactUrl,
     attemptedAt: new Date().toISOString(),
@@ -651,7 +652,7 @@ export async function applyUpdate(): Promise<void> {
       // We need /Applications/Clubhouse.app
       const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
 
-      if (appBundlePath.endsWith('.app') && fs.existsSync(downloadPath)) {
+      if (appBundlePath.endsWith('.app') && await pathExists(downloadPath)) {
         const { execSync } = require('child_process');
         const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
 
@@ -671,7 +672,7 @@ export async function applyUpdate(): Promise<void> {
         // Replace: remove old, move new
         // Use a small shell script that runs after the app quits
         const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        fs.writeFileSync(script, buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
+        await fsp.writeFile(script, buildMacUpdateScript(appBundlePath, newAppPath, tmpExtract, downloadPath, script), { mode: 0o755 });
 
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
@@ -696,7 +697,7 @@ export async function applyUpdate(): Promise<void> {
     try {
       const updateExe = getSquirrelUpdateExePath();
 
-      if (!fs.existsSync(updateExe)) {
+      if (!await pathExists(updateExe)) {
         throw new Error('Update.exe not found. Please reinstall the app from https://www.agent-clubhouse.com/reinstall');
       }
 
@@ -773,7 +774,7 @@ export async function applyUpdate(): Promise<void> {
 // Apply update silently on quit (no relaunch)
 // ---------------------------------------------------------------------------
 
-export function applyUpdateOnQuit(): void {
+export async function applyUpdateOnQuit(): Promise<void> {
   if (status.state !== 'ready') {
     return; // No update ready — nothing to do
   }
@@ -782,16 +783,16 @@ export function applyUpdateOnQuit(): void {
 
   // Persist release notes for the What's New dialog after next launch
   if (status.availableVersion && status.releaseNotes) {
-    writePendingReleaseNotes({
+    await writePendingReleaseNotes({
       version: status.availableVersion,
       releaseNotes: status.releaseNotes,
     });
   }
 
-  clearPendingUpdateInfo();
+  await clearPendingUpdateInfo();
 
   // Record apply attempt so we can detect silent failures on next launch
-  writeApplyAttempt({
+  await writeApplyAttempt({
     version: status.availableVersion!,
     artifactUrl: status.artifactUrl,
     attemptedAt: new Date().toISOString(),
@@ -806,14 +807,14 @@ export function applyUpdateOnQuit(): void {
       const appPath = app.getPath('exe');
       const appBundlePath = appPath.replace(/\/Contents\/MacOS\/.*$/, '');
 
-      if (appBundlePath.endsWith('.app') && fs.existsSync(downloadPath)) {
+      if (appBundlePath.endsWith('.app') && await pathExists(downloadPath)) {
         const tmpExtract = path.join(app.getPath('temp'), 'clubhouse-update-extract');
 
         // Write a shell script that extracts and applies the update after
         // the app has exited.  All heavy work (unzip) happens in the
         // detached script so the main process never blocks during quit.
         const script = path.join(app.getPath('temp'), 'clubhouse-update.sh');
-        fs.writeFileSync(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
+        await fsp.writeFile(script, buildMacQuitUpdateScript(appBundlePath, downloadPath, tmpExtract, script), { mode: 0o755 });
 
         const { spawn } = require('child_process');
         spawn('bash', [script], { detached: true, stdio: 'ignore' }).unref();
@@ -827,7 +828,7 @@ export function applyUpdateOnQuit(): void {
     // immediately without blocking on Squirrel's download/apply cycle.
     try {
       const updateExe = getSquirrelUpdateExePath();
-      if (!fs.existsSync(updateExe)) {
+      if (!await pathExists(updateExe)) {
         appLog('update:apply-on-quit', 'warn', 'Update.exe not found, skipping quit-update', {
           meta: { expectedPath: updateExe },
         });
@@ -897,26 +898,26 @@ function pendingUpdateInfoPath(): string {
   return path.join(app.getPath('userData'), 'pending-update-info.json');
 }
 
-export function writePendingUpdateInfo(info: PendingUpdateInfo): void {
+export async function writePendingUpdateInfo(info: PendingUpdateInfo): Promise<void> {
   try {
-    fs.writeFileSync(pendingUpdateInfoPath(), JSON.stringify(info), 'utf-8');
+    await fsp.writeFile(pendingUpdateInfoPath(), JSON.stringify(info), 'utf-8');
   } catch {
     // Non-critical
   }
 }
 
-export function readPendingUpdateInfo(): PendingUpdateInfo | null {
+export async function readPendingUpdateInfo(): Promise<PendingUpdateInfo | null> {
   try {
-    const data = fs.readFileSync(pendingUpdateInfoPath(), 'utf-8');
+    const data = await fsp.readFile(pendingUpdateInfoPath(), 'utf-8');
     return JSON.parse(data) as PendingUpdateInfo;
   } catch {
     return null;
   }
 }
 
-export function clearPendingUpdateInfo(): void {
+export async function clearPendingUpdateInfo(): Promise<void> {
   try {
-    fs.unlinkSync(pendingUpdateInfoPath());
+    await fsp.unlink(pendingUpdateInfoPath());
   } catch {
     // File may not exist
   }
@@ -936,26 +937,26 @@ function applyAttemptPath(): string {
   return path.join(app.getPath('userData'), 'update-apply-attempt.json');
 }
 
-export function writeApplyAttempt(attempt: ApplyAttempt): void {
+export async function writeApplyAttempt(attempt: ApplyAttempt): Promise<void> {
   try {
-    fs.writeFileSync(applyAttemptPath(), JSON.stringify(attempt), 'utf-8');
+    await fsp.writeFile(applyAttemptPath(), JSON.stringify(attempt), 'utf-8');
   } catch {
     // Non-critical
   }
 }
 
-export function readApplyAttempt(): ApplyAttempt | null {
+export async function readApplyAttempt(): Promise<ApplyAttempt | null> {
   try {
-    const data = fs.readFileSync(applyAttemptPath(), 'utf-8');
+    const data = await fsp.readFile(applyAttemptPath(), 'utf-8');
     return JSON.parse(data) as ApplyAttempt;
   } catch {
     return null;
   }
 }
 
-export function clearApplyAttempt(): void {
+export async function clearApplyAttempt(): Promise<void> {
   try {
-    fs.unlinkSync(applyAttemptPath());
+    await fsp.unlink(applyAttemptPath());
   } catch {
     // File may not exist
   }
@@ -969,26 +970,26 @@ function pendingNotesPath(): string {
   return path.join(app.getPath('userData'), 'pending-release-notes.json');
 }
 
-function writePendingReleaseNotes(notes: PendingReleaseNotes): void {
+async function writePendingReleaseNotes(notes: PendingReleaseNotes): Promise<void> {
   try {
-    fs.writeFileSync(pendingNotesPath(), JSON.stringify(notes), 'utf-8');
+    await fsp.writeFile(pendingNotesPath(), JSON.stringify(notes), 'utf-8');
   } catch {
     // Non-critical — dialog just won't show
   }
 }
 
-export function getPendingReleaseNotes(): PendingReleaseNotes | null {
+export async function getPendingReleaseNotes(): Promise<PendingReleaseNotes | null> {
   try {
-    const data = fs.readFileSync(pendingNotesPath(), 'utf-8');
+    const data = await fsp.readFile(pendingNotesPath(), 'utf-8');
     return JSON.parse(data) as PendingReleaseNotes;
   } catch {
     return null;
   }
 }
 
-export function clearPendingReleaseNotes(): void {
+export async function clearPendingReleaseNotes(): Promise<void> {
   try {
-    fs.unlinkSync(pendingNotesPath());
+    await fsp.unlink(pendingNotesPath());
   } catch {
     // File may not exist
   }
@@ -1094,7 +1095,7 @@ export async function startPeriodicChecks(): Promise<void> {
 
   // Detect previous apply attempt that failed silently (app restarted but
   // version didn't change).  If found, flag it so the UI shows manual download.
-  const attempt = readApplyAttempt();
+  const attempt = await readApplyAttempt();
   const currentVersion = app.getVersion();
   let previousAttemptFailed = false;
 
@@ -1108,18 +1109,18 @@ export async function startPeriodicChecks(): Promise<void> {
       // Keep the marker — it will be cleared when we successfully update
     } else {
       // Update succeeded (or we moved past that version) — clean up
-      clearApplyAttempt();
+      await clearApplyAttempt();
     }
   }
 
   // Restore ready state immediately if a pending update was downloaded in a
   // previous session and the file is still on disk.
-  const pending = readPendingUpdateInfo();
+  const pending = await readPendingUpdateInfo();
   // On Windows, Update.exe handles downloads so downloadPath is empty.
   // On macOS, the downloaded file must still exist on disk.
   const pendingReady = pending && (
     process.platform === 'win32' ||
-    (pending.downloadPath && fs.existsSync(pending.downloadPath))
+    (pending.downloadPath && await pathExists(pending.downloadPath))
   );
   if (pending && pendingReady) {
     if (isNewerVersion(pending.version, currentVersion)) {
@@ -1138,7 +1139,7 @@ export async function startPeriodicChecks(): Promise<void> {
       });
     } else {
       // The pending update is for a version we already have (or older) — clean up
-      clearPendingUpdateInfo();
+      await clearPendingUpdateInfo();
     }
   } else if (previousAttemptFailed && attempt) {
     // No pending download file but we know a previous apply failed —

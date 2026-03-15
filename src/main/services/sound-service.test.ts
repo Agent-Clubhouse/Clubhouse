@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 
 // Mock electron before importing
 vi.mock('electron', () => ({
@@ -16,17 +17,11 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-  rmSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  promises: {
-    writeFile: vi.fn(async () => {}),
-  },
-}));
+vi.mock('fs');
+vi.mock('fs/promises');
+vi.mock('./fs-utils');
 
+import { pathExists } from './fs-utils';
 import {
   getSettings,
   saveSettings,
@@ -51,7 +46,12 @@ describe('sound-service', () => {
       throw new Error('ENOENT');
     });
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(fs.promises.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFileSync).mockImplementation(() => {});
+    vi.mocked(pathExists).mockResolvedValue(false);
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.rm).mockResolvedValue(undefined);
   });
 
   describe('getSettings / saveSettings', () => {
@@ -148,31 +148,31 @@ describe('sound-service', () => {
   });
 
   describe('listSoundPacks', () => {
-    it('returns empty array when sounds directory does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      expect(listSoundPacks()).toEqual([]);
+    it('returns empty array when sounds directory does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      expect(await listSoundPacks()).toEqual([]);
     });
 
-    it('discovers packs with valid sound files', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+    it('discovers packs with valid sound files', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds') || s.endsWith('/my-pack')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockImplementation((p) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'my-pack', isDirectory: () => true } as unknown as fs.Dirent,
-          ] as unknown as fs.Dirent[];
+          ] as unknown as fs.Dirent[] as any;
         }
         if (s.endsWith('/my-pack')) {
-          return ['agent-done.mp3', 'error.wav', 'agent-wake.ogg', 'readme.txt'] as unknown as string[];
+          return ['agent-done.mp3', 'error.wav', 'agent-wake.ogg', 'readme.txt'] as unknown as string[] as any;
         }
-        return [];
+        return [] as any;
       });
 
-      const packs = listSoundPacks();
+      const packs = await listSoundPacks();
       expect(packs).toHaveLength(1);
       expect(packs[0].id).toBe('my-pack');
       expect(packs[0].name).toBe('my-pack');
@@ -182,67 +182,67 @@ describe('sound-service', () => {
       expect(packs[0].source).toBe('user');
     });
 
-    it('reads name from manifest.json if available', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+    it('reads name from manifest.json if available', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds') || s.endsWith('/custom') || s.includes('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockImplementation((p) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'custom', isDirectory: () => true } as unknown as fs.Dirent,
-          ] as unknown as fs.Dirent[];
+          ] as unknown as fs.Dirent[] as any;
         }
         if (s.endsWith('/custom')) {
-          return ['agent-done.ogg', 'manifest.json'] as unknown as string[];
+          return ['agent-done.ogg', 'manifest.json'] as unknown as string[] as any;
         }
-        return [];
+        return [] as any;
       });
-      vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p, enc?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.includes('manifest.json')) return JSON.stringify({ name: 'Custom Pack', author: 'Test' });
         throw new Error('ENOENT');
       });
 
-      const packs = listSoundPacks();
+      const packs = await listSoundPacks();
       expect(packs[0].name).toBe('Custom Pack');
       expect(packs[0].author).toBe('Test');
     });
 
-    it('skips directories with no valid sound files', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+    it('skips directories with no valid sound files', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p) => {
         const s = String(p).replace(/\\/g, '/');
         return s.endsWith('/sounds') || s.endsWith('/empty-dir');
       });
-      vi.mocked(fs.readdirSync).mockImplementation((p) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
             { name: 'empty-dir', isDirectory: () => true } as unknown as fs.Dirent,
-          ] as unknown as fs.Dirent[];
+          ] as unknown as fs.Dirent[] as any;
         }
         if (s.endsWith('/empty-dir')) {
-          return ['readme.txt', 'notes.md'] as unknown as string[];
+          return ['readme.txt', 'notes.md'] as unknown as string[] as any;
         }
-        return [];
+        return [] as any;
       });
 
-      expect(listSoundPacks()).toEqual([]);
+      expect(await listSoundPacks()).toEqual([]);
     });
   });
 
   describe('registerPluginSounds / unregisterPluginSounds', () => {
-    it('registers and unregisters plugin sounds', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
+    it('registers and unregisters plugin sounds', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p) => {
         return String(p).replace(/\\/g, '/').endsWith('/sounds');
       });
-      vi.mocked(fs.readdirSync).mockImplementation(() => {
-        return ['agent-done.mp3', 'error.mp3'] as unknown as string[];
+      vi.mocked(fsp.readdir).mockImplementation(async () => {
+        return ['agent-done.mp3', 'error.mp3'] as unknown as string[] as any;
       });
 
-      const pack = registerPluginSounds('test-plugin', '/plugins/test-plugin', 'Test Plugin Sounds');
+      const pack = await registerPluginSounds('test-plugin', '/plugins/test-plugin', 'Test Plugin Sounds');
       expect(pack).not.toBeNull();
       expect(pack!.id).toBe('plugin:test-plugin');
       expect(pack!.name).toBe('Test Plugin Sounds');
@@ -250,26 +250,26 @@ describe('sound-service', () => {
       expect(pack!.pluginId).toBe('test-plugin');
 
       // Should appear in getAllSoundPacks
-      const allPacks = getAllSoundPacks();
+      const allPacks = await getAllSoundPacks();
       expect(allPacks.some((p) => p.id === 'plugin:test-plugin')).toBe(true);
 
       // Unregister
       unregisterPluginSounds('test-plugin');
-      const afterUnregister = getAllSoundPacks();
+      const afterUnregister = await getAllSoundPacks();
       expect(afterUnregister.some((p) => p.id === 'plugin:test-plugin')).toBe(false);
     });
 
-    it('returns null when plugin has no sounds directory', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      const pack = registerPluginSounds('no-sounds', '/plugins/no-sounds');
+    it('returns null when plugin has no sounds directory', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      const pack = await registerPluginSounds('no-sounds', '/plugins/no-sounds');
       expect(pack).toBeNull();
     });
   });
 
   describe('deleteSoundPack', () => {
     it('deletes a user sound pack and cleans slot assignments', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.rmSync).mockImplementation(() => {});
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
       vi.mocked(fs.readFileSync).mockImplementation((p) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.includes('sound-settings.json')) {
@@ -286,7 +286,7 @@ describe('sound-service', () => {
 
       const result = await deleteSoundPack('my-pack');
       expect(result).toBe(true);
-      expect(fs.rmSync).toHaveBeenCalled();
+      expect(fsp.rm).toHaveBeenCalled();
       // Should save cleaned settings
       expect(fs.promises.writeFile).toHaveBeenCalled();
       const savedJson = vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string;
@@ -296,43 +296,43 @@ describe('sound-service', () => {
     });
 
     it('refuses to delete plugin packs', async () => {
-      await expect(deleteSoundPack('plugin:test')).resolves.toBe(false);
+      expect(await deleteSoundPack('plugin:test')).toBe(false);
     });
 
     it('returns false for non-existent packs', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      await expect(deleteSoundPack('nonexistent')).resolves.toBe(false);
+      vi.mocked(pathExists).mockResolvedValue(false);
+      expect(await deleteSoundPack('nonexistent')).toBe(false);
     });
   });
 
   describe('getSoundData', () => {
-    it('returns base64 data URL for existing sound file', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue(['agent-done.mp3'] as unknown as fs.Dirent[]);
-      vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('fake-audio'));
+    it('returns base64 data URL for existing sound file', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue(['agent-done.mp3'] as unknown as fs.Dirent[] as any);
+      vi.mocked(fsp.readFile).mockResolvedValue(Buffer.from('fake-audio'));
 
-      const data = getSoundData('my-pack', 'agent-done');
+      const data = await getSoundData('my-pack', 'agent-done');
       expect(data).toMatch(/^data:audio\/mpeg;base64,/);
     });
 
-    it('returns null when pack directory does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      expect(getSoundData('missing', 'agent-done')).toBeNull();
+    it('returns null when pack directory does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      expect(await getSoundData('missing', 'agent-done')).toBeNull();
     });
 
-    it('returns null when event sound file does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue(['error.mp3'] as unknown as fs.Dirent[]);
+    it('returns null when event sound file does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue(['error.mp3'] as unknown as fs.Dirent[] as any);
 
-      expect(getSoundData('my-pack', 'agent-done')).toBeNull();
+      expect(await getSoundData('my-pack', 'agent-done')).toBeNull();
     });
 
-    it('returns data for new event types', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue(['agent-wake.wav'] as unknown as fs.Dirent[]);
-      vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('wake-audio'));
+    it('returns data for new event types', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue(['agent-wake.wav'] as unknown as fs.Dirent[] as any);
+      vi.mocked(fsp.readFile).mockResolvedValue(Buffer.from('wake-audio'));
 
-      const data = getSoundData('my-pack', 'agent-wake');
+      const data = await getSoundData('my-pack', 'agent-wake');
       expect(data).toMatch(/^data:audio\/wav;base64,/);
     });
   });

@@ -1,5 +1,6 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { pathExists } from './fs-utils';
 import { DurableAgentConfig, MaterializationPreview, ProjectAgentDefaults, SourceControlProvider } from '../../shared/types';
 import { WildcardContext, replaceWildcards } from '../../shared/wildcard-replacer';
 import { OrchestratorProvider } from '../orchestrators/types';
@@ -296,8 +297,8 @@ export async function materializeAgent(params: {
       JSON.parse(resolved); // Validate
       const mcpPath = path.join(worktreePath, conv.mcpConfigFile);
       const dir = path.dirname(mcpPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(mcpPath, resolved, 'utf-8');
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.writeFile(mcpPath, resolved, 'utf-8');
     } catch {
       appLog('core:materialization', 'warn', 'Skipping invalid MCP JSON during materialization', {
         meta: { agentName: agent.name },
@@ -393,30 +394,28 @@ async function copySourceDir(
 
   for (const source of sources) {
     const targetDir = path.join(targetBaseDir, source.name);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-    copyDirRecursive(source.path, targetDir, ctx);
+    await fsp.mkdir(targetDir, { recursive: true });
+    await copyDirRecursive(source.path, targetDir, ctx);
   }
 }
 
-function copyDirRecursive(src: string, dest: string, ctx: WildcardContext): void {
+async function copyDirRecursive(src: string, dest: string, ctx: WildcardContext): Promise<void> {
   try {
-    const entries = fs.readdirSync(src, { withFileTypes: true });
+    const entries = await fsp.readdir(src, { withFileTypes: true });
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
       if (entry.isDirectory()) {
-        if (!fs.existsSync(destPath)) fs.mkdirSync(destPath, { recursive: true });
-        copyDirRecursive(srcPath, destPath, ctx);
+        await fsp.mkdir(destPath, { recursive: true });
+        await copyDirRecursive(srcPath, destPath, ctx);
       } else {
         // Apply wildcard replacement to text files
         try {
-          const content = fs.readFileSync(srcPath, 'utf-8');
-          fs.writeFileSync(destPath, replaceWildcards(content, ctx), 'utf-8');
+          const content = await fsp.readFile(srcPath, 'utf-8');
+          await fsp.writeFile(destPath, replaceWildcards(content, ctx), 'utf-8');
         } catch {
           // Binary file or read error — copy as-is
-          fs.copyFileSync(srcPath, destPath);
+          await fsp.copyFile(srcPath, destPath);
         }
       }
     }
@@ -501,7 +500,7 @@ export async function ensureDefaultTemplates(projectPath: string): Promise<void>
   }
 
   // Always ensure default skills exist (even when defaults already exist)
-  ensureDefaultSkills(projectPath);
+  await ensureDefaultSkills(projectPath);
 }
 
 /**
@@ -511,7 +510,7 @@ export async function ensureDefaultTemplates(projectPath: string): Promise<void>
  */
 export async function resetProjectAgentDefaults(projectPath: string): Promise<void> {
   await writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
-  resetDefaultSkills(projectPath);
+  await resetDefaultSkills(projectPath);
 }
 
 /** All default skill definitions. */
@@ -529,24 +528,24 @@ const DEFAULT_SKILLS: Array<{ name: string; content: string }> = [
  * Ensure all default skills exist in the project's source skills directory.
  * Creates any missing skill files without overwriting existing ones.
  */
-export function ensureDefaultSkills(projectPath: string): void {
-  writeDefaultSkills(projectPath, false);
+export async function ensureDefaultSkills(projectPath: string): Promise<void> {
+  await writeDefaultSkills(projectPath, false);
 }
 
 /**
  * Reset all default skills to their built-in content, overwriting any
  * existing customizations.
  */
-export function resetDefaultSkills(projectPath: string): void {
-  writeDefaultSkills(projectPath, true);
+export async function resetDefaultSkills(projectPath: string): Promise<void> {
+  await writeDefaultSkills(projectPath, true);
 }
 
-function writeDefaultSkills(projectPath: string, force: boolean): void {
+async function writeDefaultSkills(projectPath: string, force: boolean): Promise<void> {
   const clubhouseDir = path.join(projectPath, '.clubhouse');
   const skillsDir = path.join(clubhouseDir, 'skills');
 
   for (const skill of DEFAULT_SKILLS) {
-    writeSkillFile(skillsDir, skill.name, skill.content, force);
+    await writeSkillFile(skillsDir, skill.name, skill.content, force);
   }
 
   // Ensure the source skills path is set in project settings
@@ -554,14 +553,14 @@ function writeDefaultSkills(projectPath: string, force: boolean): void {
   try {
     let settings: Record<string, unknown> = {};
     try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      settings = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
     } catch {
       // File doesn't exist
     }
     if (!settings.defaultSkillsPath) {
       settings.defaultSkillsPath = 'skills';
-      if (!fs.existsSync(clubhouseDir)) fs.mkdirSync(clubhouseDir, { recursive: true });
-      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+      await fsp.mkdir(clubhouseDir, { recursive: true });
+      await fsp.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
     }
   } catch {
     // Best effort
@@ -571,17 +570,15 @@ function writeDefaultSkills(projectPath: string, force: boolean): void {
 /**
  * Write a single skill file. When force is false, skip if the file already exists.
  */
-function writeSkillFile(skillsDir: string, name: string, content: string, force: boolean): void {
+async function writeSkillFile(skillsDir: string, name: string, content: string, force: boolean): Promise<void> {
   const dir = path.join(skillsDir, name);
   const filePath = path.join(dir, 'SKILL.md');
 
-  if (!force && fs.existsSync(filePath)) return;
+  if (!force && await pathExists(filePath)) return;
 
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fsp.mkdir(dir, { recursive: true });
 
-  fs.writeFileSync(filePath, content, 'utf-8');
+  await fsp.writeFile(filePath, content, 'utf-8');
 }
 
 // ── Git exclusions ───────────────────────────────────────────────────────

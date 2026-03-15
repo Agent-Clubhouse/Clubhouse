@@ -45,17 +45,10 @@ vi.mock('./headless-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
-// Mock fs
-vi.mock('fs', async () => {
-  const actual = await vi.importActual<typeof import('fs')>('fs');
-  return {
-    ...actual,
-    readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-    existsSync: vi.fn(() => false),
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
-  };
-});
+// Mock fs/promises for readProjectOrchestrator
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(() => { throw new Error('ENOENT'); }),
+}));
 
 // Mock the orchestrator registry with a provider that supports headless
 const mockBuildHeadlessCommand = vi.fn();

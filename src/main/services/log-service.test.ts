@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
-vi.mock('fs', () => ({
-  mkdirSync: vi.fn(),
-  statSync: vi.fn(),
-  appendFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-  unlinkSync: vi.fn(),
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn(),
+  stat: vi.fn(),
+  appendFile: vi.fn(),
+  readdir: vi.fn(),
+  unlink: vi.fn(),
 }));
 
 vi.mock('./log-settings', () => ({
   getSettings: vi.fn(),
 }));
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as logSettings from './log-settings';
 import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-service';
 
@@ -22,12 +22,12 @@ import { init, log, flush, appLog, getLogPath, getNamespaces } from './log-servi
 const EXPECTED_LOG_DIR = path.join(os.tmpdir(), 'clubhouse-test-home', '.clubhouse', 'logs');
 
 describe('log-service', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
 
     // Flush any stale buffer from prior tests before resetting mocks
-    flush();
+    await flush();
     vi.clearAllMocks();
 
     // Default: logging enabled, no namespace filters, medium retention, info level
@@ -38,19 +38,17 @@ describe('log-service', () => {
       minLogLevel: 'info',
     });
 
-    // statSync throws by default (file doesn't exist yet)
-    vi.mocked(fs.statSync).mockImplementation(() => {
-      throw new Error('ENOENT');
-    });
+    // stat rejects by default (file doesn't exist yet)
+    vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
 
-    // readdirSync returns empty by default
-    vi.mocked(fs.readdirSync).mockReturnValue([]);
+    // readdir returns empty by default
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
 
-    init();
+    await init();
     // Clear the init-related mock calls so each test starts with a clean count
-    vi.mocked(fs.mkdirSync).mockClear();
-    vi.mocked(fs.readdirSync).mockClear();
-    vi.mocked(fs.appendFileSync).mockClear();
+    vi.mocked(fsp.mkdir).mockClear();
+    vi.mocked(fsp.readdir).mockClear();
+    vi.mocked(fsp.appendFile).mockClear();
   });
 
   afterEach(() => {
@@ -58,19 +56,19 @@ describe('log-service', () => {
   });
 
   describe('init', () => {
-    it('creates the log directory', () => {
-      vi.mocked(fs.mkdirSync).mockClear();
-      init();
-      expect(vi.mocked(fs.mkdirSync)).toHaveBeenCalledWith(
+    it('creates the log directory', async () => {
+      vi.mocked(fsp.mkdir).mockClear();
+      await init();
+      expect(vi.mocked(fsp.mkdir)).toHaveBeenCalledWith(
         EXPECTED_LOG_DIR,
         { recursive: true },
       );
     });
 
-    it('runs cleanup on startup (reads log dir)', () => {
-      vi.mocked(fs.readdirSync).mockClear();
-      init();
-      expect(vi.mocked(fs.readdirSync)).toHaveBeenCalledWith(
+    it('runs cleanup on startup (reads log dir)', async () => {
+      vi.mocked(fsp.readdir).mockClear();
+      await init();
+      expect(vi.mocked(fsp.readdir)).toHaveBeenCalledWith(
         EXPECTED_LOG_DIR,
         { withFileTypes: true },
       );
@@ -115,7 +113,7 @@ describe('log-service', () => {
   });
 
   describe('log', () => {
-    it('does not write when logging is disabled', () => {
+    it('does not write when logging is disabled', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: false,
         namespaces: {},
@@ -124,12 +122,12 @@ describe('log-service', () => {
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
     });
 
-    it('does not write when namespace is explicitly disabled', () => {
+    it('does not write when namespace is explicitly disabled', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: { 'app:noisy': false },
@@ -138,19 +136,19 @@ describe('log-service', () => {
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:noisy', level: 'info', msg: 'filtered' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
     });
 
-    it('writes when namespace is not in filter (default: all enabled)', () => {
+    it('writes when namespace is not in filter (default: all enabled)', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
-    it('writes when namespace is explicitly enabled', () => {
+    it('writes when namespace is explicitly enabled', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: { 'app:test': true },
@@ -159,9 +157,9 @@ describe('log-service', () => {
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
     it('still records namespace even when disabled', () => {
@@ -177,21 +175,21 @@ describe('log-service', () => {
       expect(getNamespaces()).toContain('app:hidden');
     });
 
-    it('skips debug entries when minLogLevel is info', () => {
+    it('skips debug entries when minLogLevel is info', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
     });
 
-    it('passes warn entries when minLogLevel is info', () => {
+    it('passes warn entries when minLogLevel is info', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'warn', msg: 'warning' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
-    it('passes debug entries when minLogLevel is debug', () => {
+    it('passes debug entries when minLogLevel is debug', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: {},
@@ -200,9 +198,9 @@ describe('log-service', () => {
       });
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'debug', msg: 'verbose' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
     it('does not record namespace when logging globally disabled', () => {
@@ -222,13 +220,13 @@ describe('log-service', () => {
   });
 
   describe('flush', () => {
-    it('writes buffered entries as JSON lines', () => {
+    it('writes buffered entries as JSON lines', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'one' });
       log({ ts: '2026-01-01T00:00:01Z', ns: 'app:test', level: 'warn', msg: 'two' });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const lines = written.trim().split('\n');
       expect(lines).toHaveLength(2);
 
@@ -242,79 +240,80 @@ describe('log-service', () => {
       expect(parsed1.msg).toBe('two');
     });
 
-    it('is a no-op when buffer is empty', () => {
-      flush();
-      expect(vi.mocked(fs.appendFileSync)).not.toHaveBeenCalled();
+    it('is a no-op when buffer is empty', async () => {
+      await flush();
+      expect(vi.mocked(fsp.appendFile)).not.toHaveBeenCalled();
     });
 
-    it('clears the buffer after writing', () => {
+    it('clears the buffer after writing', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      flush();
-      flush(); // second flush should be a no-op
+      await flush();
+      await flush(); // second flush should be a no-op
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
-    it('does not throw when appendFileSync fails', () => {
-      vi.mocked(fs.appendFileSync).mockImplementation(() => {
-        throw new Error('disk full');
-      });
+    it('does not throw when appendFile fails', async () => {
+      vi.mocked(fsp.appendFile).mockRejectedValue(new Error('disk full'));
 
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      expect(() => flush()).not.toThrow();
+      await expect(flush()).resolves.not.toThrow();
     });
 
-    it('writes to a file with session- prefix', () => {
+    it('writes to a file with session- prefix', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
-      flush();
+      await flush();
 
-      const filePath = vi.mocked(fs.appendFileSync).mock.calls[0][0] as string;
+      const filePath = vi.mocked(fsp.appendFile).mock.calls[0][0] as string;
       expect(filePath).toMatch(/session-.*\.jsonl$/);
       expect(filePath).toContain(EXPECTED_LOG_DIR);
     });
   });
 
   describe('auto-flush', () => {
-    it('flushes on timer interval', () => {
+    it('flushes on timer interval', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: 'hello' });
 
       // Advance timer by 1 second (flush interval)
-      vi.advanceTimersByTime(1000);
+      await vi.advanceTimersByTimeAsync(1000);
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
     });
 
-    it('auto-flushes when buffer reaches 50 entries', () => {
+    it('auto-flushes when buffer reaches 50 entries', async () => {
       for (let i = 0; i < 50; i++) {
         log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: `entry ${i}` });
       }
 
+      // flush is async now, need to await the pending promise
+      await vi.advanceTimersByTimeAsync(0);
+
       // Should have flushed automatically at 50 entries
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const lines = written.trim().split('\n');
       expect(lines).toHaveLength(50);
     });
   });
 
   describe('file rotation', () => {
-    it('rotates to a new chunk when file exceeds 2 MB', () => {
-      // Mock statSync to return a file near the size limit
-      vi.mocked(fs.statSync).mockReturnValue({ size: 0 } as fs.Stats);
+    it('rotates to a new chunk when file exceeds 2 MB', async () => {
+      // Mock stat to return a file near the size limit
+      vi.mocked(fsp.stat).mockResolvedValue({ size: 0 } as any);
 
       // Re-init to pick up the mock
-      init();
+      await init();
 
       // Write a large entry that would push past 2 MB when combined with file size
       const bigMsg = 'x'.repeat(2 * 1024 * 1024 + 1);
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:test', level: 'info', msg: bigMsg });
-      flush();
+      await flush();
 
       // Second write should go to a new file
       log({ ts: '2026-01-01T00:00:01Z', ns: 'app:test', level: 'info', msg: 'after rotation' });
-      flush();
+      await flush();
 
-      const calls = vi.mocked(fs.appendFileSync).mock.calls;
+      const calls = vi.mocked(fsp.appendFile).mock.calls;
       expect(calls.length).toBe(2);
       const firstFile = calls[0][0] as string;
       const secondFile = calls[1][0] as string;
@@ -324,42 +323,42 @@ describe('log-service', () => {
   });
 
   describe('cleanup', () => {
-    it('deletes log files older than 7 days on init (medium tier)', () => {
+    it('deletes log files older than 7 days on init (medium tier)', async () => {
       const now = Date.now();
       const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
 
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'session-old.jsonl', isFile: () => true } as unknown as fs.Dirent,
-        { name: 'session-new.jsonl', isFile: () => true } as unknown as fs.Dirent,
-        { name: 'not-a-log.txt', isFile: () => true } as unknown as fs.Dirent,
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'session-old.jsonl', isFile: () => true } as unknown as any,
+        { name: 'session-new.jsonl', isFile: () => true } as unknown as any,
+        { name: 'not-a-log.txt', isFile: () => true } as unknown as any,
       ]);
 
-      vi.mocked(fs.statSync).mockImplementation((filePath) => {
+      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
         const fp = filePath as string;
         if (fp.includes('session-old')) {
-          return { size: 100, mtimeMs: eightDaysAgo } as fs.Stats;
+          return { size: 100, mtimeMs: eightDaysAgo } as any;
         }
         if (fp.includes('session-new')) {
-          return { size: 100, mtimeMs: now } as fs.Stats;
+          return { size: 100, mtimeMs: now } as any;
         }
         throw new Error('ENOENT');
       });
 
-      init();
+      await init();
 
-      expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
         expect.stringContaining('session-old.jsonl'),
       );
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('session-new.jsonl'),
       );
       // Should skip non-session files
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('not-a-log.txt'),
       );
     });
 
-    it('deletes files older than 3 days with low retention', () => {
+    it('deletes files older than 3 days with low retention', async () => {
       const now = Date.now();
       const fourDaysAgo = now - 4 * 24 * 60 * 60 * 1000;
 
@@ -370,33 +369,33 @@ describe('log-service', () => {
         minLogLevel: 'info',
       });
 
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'session-old.jsonl', isFile: () => true } as unknown as fs.Dirent,
-        { name: 'session-new.jsonl', isFile: () => true } as unknown as fs.Dirent,
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'session-old.jsonl', isFile: () => true } as unknown as any,
+        { name: 'session-new.jsonl', isFile: () => true } as unknown as any,
       ]);
 
-      vi.mocked(fs.statSync).mockImplementation((filePath) => {
+      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
         const fp = filePath as string;
         if (fp.includes('session-old')) {
-          return { size: 100, mtimeMs: fourDaysAgo } as fs.Stats;
+          return { size: 100, mtimeMs: fourDaysAgo } as any;
         }
         if (fp.includes('session-new')) {
-          return { size: 100, mtimeMs: now } as fs.Stats;
+          return { size: 100, mtimeMs: now } as any;
         }
         throw new Error('ENOENT');
       });
 
-      init();
+      await init();
 
-      expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
         expect.stringContaining('session-old.jsonl'),
       );
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('session-new.jsonl'),
       );
     });
 
-    it('does not age-prune with unlimited retention', () => {
+    it('does not age-prune with unlimited retention', async () => {
       const now = Date.now();
       const yearAgo = now - 365 * 24 * 60 * 60 * 1000;
 
@@ -407,24 +406,24 @@ describe('log-service', () => {
         minLogLevel: 'info',
       });
 
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'session-ancient.jsonl', isFile: () => true } as unknown as fs.Dirent,
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'session-ancient.jsonl', isFile: () => true } as unknown as any,
       ]);
 
-      vi.mocked(fs.statSync).mockImplementation((filePath) => {
+      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
         const fp = filePath as string;
         if (fp.includes('session-ancient')) {
-          return { size: 100, mtimeMs: yearAgo } as fs.Stats;
+          return { size: 100, mtimeMs: yearAgo } as any;
         }
         throw new Error('ENOENT');
       });
 
-      init();
+      await init();
 
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalled();
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalled();
     });
 
-    it('size-prunes oldest files when total exceeds cap', () => {
+    it('size-prunes oldest files when total exceeds cap', async () => {
       const now = Date.now();
       const MB = 1024 * 1024;
 
@@ -434,60 +433,58 @@ describe('log-service', () => {
         retention: 'low', // 50 MB cap
       });
 
-      vi.mocked(fs.readdirSync).mockReturnValue([
-        { name: 'session-a.jsonl', isFile: () => true } as unknown as fs.Dirent,
-        { name: 'session-b.jsonl', isFile: () => true } as unknown as fs.Dirent,
-        { name: 'session-c.jsonl', isFile: () => true } as unknown as fs.Dirent,
+      vi.mocked(fsp.readdir).mockResolvedValue([
+        { name: 'session-a.jsonl', isFile: () => true } as unknown as any,
+        { name: 'session-b.jsonl', isFile: () => true } as unknown as any,
+        { name: 'session-c.jsonl', isFile: () => true } as unknown as any,
       ]);
 
-      vi.mocked(fs.statSync).mockImplementation((filePath) => {
+      vi.mocked(fsp.stat).mockImplementation(async (filePath) => {
         const fp = filePath as string;
         if (fp.includes('session-a')) {
-          return { size: 20 * MB, mtimeMs: now - 1000 } as fs.Stats; // oldest
+          return { size: 20 * MB, mtimeMs: now - 1000 } as any; // oldest
         }
         if (fp.includes('session-b')) {
-          return { size: 20 * MB, mtimeMs: now - 500 } as fs.Stats;
+          return { size: 20 * MB, mtimeMs: now - 500 } as any;
         }
         if (fp.includes('session-c')) {
-          return { size: 20 * MB, mtimeMs: now } as fs.Stats; // newest
+          return { size: 20 * MB, mtimeMs: now } as any; // newest
         }
         throw new Error('ENOENT');
       });
 
-      init();
+      await init();
 
       // Total = 60 MB, cap = 50 MB → oldest file (session-a) should be deleted
-      expect(vi.mocked(fs.unlinkSync)).toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).toHaveBeenCalledWith(
         expect.stringContaining('session-a.jsonl'),
       );
       // After removing session-a, total = 40 MB < 50 MB cap, so b and c stay
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('session-b.jsonl'),
       );
-      expect(vi.mocked(fs.unlinkSync)).not.toHaveBeenCalledWith(
+      expect(vi.mocked(fsp.unlink)).not.toHaveBeenCalledWith(
         expect.stringContaining('session-c.jsonl'),
       );
     });
 
-    it('ignores errors during cleanup', () => {
-      vi.mocked(fs.readdirSync).mockImplementation(() => {
-        throw new Error('permission denied');
-      });
+    it('ignores errors during cleanup', async () => {
+      vi.mocked(fsp.readdir).mockRejectedValue(new Error('permission denied'));
 
-      expect(() => init()).not.toThrow();
+      await expect(init()).resolves.not.toThrow();
     });
   });
 
   describe('appLog', () => {
-    it('creates a properly structured log entry', () => {
+    it('creates a properly structured log entry', async () => {
       appLog('app:ipc', 'info', 'Connection established', {
         projectId: 'proj-1',
         meta: { sessionId: 's1' },
       });
-      flush();
+      await flush();
 
-      expect(vi.mocked(fs.appendFileSync)).toHaveBeenCalledTimes(1);
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      expect(vi.mocked(fsp.appendFile)).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const parsed = JSON.parse(written.trim());
 
       expect(parsed.ns).toBe('app:ipc');
@@ -498,7 +495,7 @@ describe('log-service', () => {
       expect(parsed.ts).toBeDefined();
     });
 
-    it('works without optional fields', () => {
+    it('works without optional fields', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: {},
@@ -507,9 +504,9 @@ describe('log-service', () => {
       });
 
       appLog('app:test', 'debug', 'simple message');
-      flush();
+      await flush();
 
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const parsed = JSON.parse(written.trim());
 
       expect(parsed.ns).toBe('app:test');
@@ -519,7 +516,7 @@ describe('log-service', () => {
       expect(parsed.meta).toBeUndefined();
     });
 
-    it('supports all log levels', () => {
+    it('supports all log levels', async () => {
       vi.mocked(logSettings.getSettings).mockReturnValue({
         enabled: true,
         namespaces: {},
@@ -531,15 +528,15 @@ describe('log-service', () => {
       for (const level of levels) {
         vi.clearAllMocks();
         appLog('app:test', level, `msg-${level}`);
-        flush();
-        const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+        await flush();
+        const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
         expect(JSON.parse(written.trim()).level).toBe(level);
       }
     });
   });
 
   describe('JSON line format', () => {
-    it('each entry is valid JSON', () => {
+    it('each entry is valid JSON', async () => {
       log({
         ts: '2026-02-15T10:30:00.123Z',
         ns: 'plugin:terminal',
@@ -548,9 +545,9 @@ describe('log-service', () => {
         projectId: 'abc123',
         meta: { sessionId: 's1' },
       });
-      flush();
+      await flush();
 
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const parsed = JSON.parse(written.trim());
       expect(parsed).toEqual({
         ts: '2026-02-15T10:30:00.123Z',
@@ -562,12 +559,12 @@ describe('log-service', () => {
       });
     });
 
-    it('each line is exactly one JSON object (no pretty-printing)', () => {
+    it('each line is exactly one JSON object (no pretty-printing)', async () => {
       log({ ts: '2026-01-01T00:00:00Z', ns: 'app:a', level: 'info', msg: 'first' });
       log({ ts: '2026-01-01T00:00:01Z', ns: 'app:b', level: 'warn', msg: 'second' });
-      flush();
+      await flush();
 
-      const written = vi.mocked(fs.appendFileSync).mock.calls[0][1] as string;
+      const written = vi.mocked(fsp.appendFile).mock.calls[0][1] as string;
       const lines = written.trim().split('\n');
       expect(lines).toHaveLength(2);
       for (const line of lines) {

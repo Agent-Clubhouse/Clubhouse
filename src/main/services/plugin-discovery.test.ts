@@ -2,18 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as os from 'os';
 import * as path from 'path';
 
-vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-  realpathSync: vi.fn(),
-  statSync: vi.fn(),
-  rmSync: vi.fn(),
-  promises: {
-    lstat: vi.fn(),
-    unlink: vi.fn(),
-    rm: vi.fn(),
-  },
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(),
+  readdir: vi.fn(),
+  realpath: vi.fn(),
+  stat: vi.fn(),
+  lstat: vi.fn(),
+  unlink: vi.fn(),
+  rm: vi.fn(),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(),
 }));
 
 vi.mock('./plugin-manifest-registry', () => ({
@@ -29,7 +29,8 @@ vi.mock('./agent-settings-service', () => ({
   writeProjectAgentDefaults: vi.fn(async () => undefined),
 }));
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { pathExists } from './fs-utils';
 import * as agentSettings from './agent-settings-service';
 import { registerTrustedManifest } from './plugin-manifest-registry';
 import {
@@ -50,22 +51,22 @@ describe('plugin-discovery', () => {
   });
 
   describe('discoverCommunityPlugins', () => {
-    it('returns empty array when plugins dir does not exist', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      expect(discoverCommunityPlugins()).toEqual([]);
+    it('returns empty array when plugins dir does not exist', async () => {
+      vi.mocked(pathExists).mockResolvedValue(false);
+      expect(await discoverCommunityPlugins()).toEqual([]);
     });
 
-    it('discovers plugins with valid manifest.json', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('discovers plugins with valid manifest.json', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'my-plugin',
         name: 'My Plugin',
         version: '1.0.0',
@@ -73,25 +74,25 @@ describe('plugin-discovery', () => {
         scope: 'project',
       }));
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toHaveLength(1);
       expect(result[0].manifest.id).toBe('my-plugin');
       expect(result[0].pluginPath).toBe(path.join(PLUGINS_DIR, 'my-plugin'));
       expect(result[0].fromMarketplace).toBe(false);
     });
 
-    it('sets fromMarketplace true when .marketplace marker exists', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('sets fromMarketplace true when .marketplace marker exists', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         if (s.endsWith('.marketplace')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'market-plugin', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'market-plugin',
         name: 'Market Plugin',
         version: '1.0.0',
@@ -99,23 +100,23 @@ describe('plugin-discovery', () => {
         scope: 'project',
       }));
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toHaveLength(1);
       expect(result[0].fromMarketplace).toBe(true);
     });
 
-    it('sets fromMarketplace false when .marketplace marker is absent', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('sets fromMarketplace false when .marketplace marker is absent', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         if (s.endsWith('.marketplace')) return false;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'local-plugin', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'local-plugin',
         name: 'Local Plugin',
         version: '1.0.0',
@@ -123,54 +124,54 @@ describe('plugin-discovery', () => {
         scope: 'project',
       }));
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toHaveLength(1);
       expect(result[0].fromMarketplace).toBe(false);
     });
 
-    it('skips non-directory entries', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+    it('skips non-directory entries', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'readme.md', isDirectory: () => false, isSymbolicLink: () => false },
       ] as any);
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toEqual([]);
     });
 
-    it('skips directories without manifest.json', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('skips directories without manifest.json', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return false;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'incomplete', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toEqual([]);
     });
 
-    it('skips plugins with invalid JSON', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+    it('skips plugins with invalid JSON', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'bad-json', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue('{{not valid json');
+      vi.mocked(fsp.readFile).mockResolvedValue('{{not valid json');
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toEqual([]);
     });
 
-    it('discovers multiple plugins', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+    it('discovers multiple plugins', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'plugin-a', isDirectory: () => true, isSymbolicLink: () => false },
         { name: 'plugin-b', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s.includes('plugin-a')) {
           return JSON.stringify({ id: 'plugin-a', name: 'A', version: '1.0.0', engine: { api: 0.1 }, scope: 'project' });
@@ -178,23 +179,23 @@ describe('plugin-discovery', () => {
         return JSON.stringify({ id: 'plugin-b', name: 'B', version: '2.0.0', engine: { api: 0.1 }, scope: 'app' });
       });
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toHaveLength(2);
       expect(result.map((r) => r.manifest.id)).toEqual(['plugin-a', 'plugin-b']);
     });
 
-    it('discovers symlinked plugin directories', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('discovers symlinked plugin directories', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => false, isSymbolicLink: () => true },
       ] as any);
-      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.stat).mockResolvedValue({ isDirectory: () => true } as any);
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'my-plugin',
         name: 'My Plugin',
         version: '1.0.0',
@@ -202,107 +203,107 @@ describe('plugin-discovery', () => {
         scope: 'project',
       }));
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toHaveLength(1);
       expect(result[0].manifest.id).toBe('my-plugin');
-      expect(fs.statSync).toHaveBeenCalledWith(path.join(PLUGINS_DIR, 'my-plugin'));
+      expect(fsp.stat).toHaveBeenCalledWith(path.join(PLUGINS_DIR, 'my-plugin'));
     });
 
-    it('skips symlinks pointing to non-directories', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+    it('skips symlinks pointing to non-directories', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'some-file', isDirectory: () => false, isSymbolicLink: () => true },
       ] as any);
-      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => false } as any);
+      vi.mocked(fsp.stat).mockResolvedValue({ isDirectory: () => false } as any);
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toEqual([]);
     });
 
-    it('skips broken symlinks', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockReturnValue([
+    it('skips broken symlinks', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'broken-link', isDirectory: () => false, isSymbolicLink: () => true },
       ] as any);
-      vi.mocked(fs.statSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(fsp.stat).mockRejectedValue(new Error('ENOENT'));
 
-      const result = discoverCommunityPlugins();
+      const result = await discoverCommunityPlugins();
       expect(result).toEqual([]);
     });
 
-    it('handles unreadable plugins dir gracefully', () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
-      expect(discoverCommunityPlugins()).toEqual([]);
+    it('handles unreadable plugins dir gracefully', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
+      expect(await discoverCommunityPlugins()).toEqual([]);
     });
   });
 
   describe('uninstallPlugin', () => {
     it('removes plugin directory recursively with async rm', async () => {
-      vi.mocked(fs.promises.lstat).mockResolvedValue({
+      vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => false,
       } as any);
-      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
 
       await uninstallPlugin('my-plugin');
 
-      expect(fs.promises.rm).toHaveBeenCalledWith(
+      expect(fsp.rm).toHaveBeenCalledWith(
         path.join(PLUGINS_DIR, 'my-plugin'),
         { recursive: true, force: true },
       );
-      expect(fs.promises.unlink).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
     it('removes only the symlink when plugin is a symlink', async () => {
-      vi.mocked(fs.promises.lstat).mockResolvedValue({
+      vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => true,
       } as any);
-      vi.mocked(fs.promises.unlink).mockResolvedValue(undefined);
-      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
 
       await uninstallPlugin('linked-plugin');
 
-      expect(fs.promises.unlink).toHaveBeenCalledWith(
+      expect(fsp.unlink).toHaveBeenCalledWith(
         path.join(PLUGINS_DIR, 'linked-plugin'),
       );
       // rm is still called for data dir cleanup
-      expect(fs.promises.rm).toHaveBeenCalledWith(
+      expect(fsp.rm).toHaveBeenCalledWith(
         path.join(PLUGIN_DATA_DIR, 'linked-plugin'),
         { recursive: true, force: true },
       );
     });
 
     it('does nothing when plugin path does not exist', async () => {
-      vi.mocked(fs.promises.lstat).mockRejectedValue(
+      vi.mocked(fsp.lstat).mockRejectedValue(
         Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
       );
 
       await uninstallPlugin('nonexistent');
 
-      expect(fs.promises.rm).not.toHaveBeenCalled();
-      expect(fs.promises.unlink).not.toHaveBeenCalled();
+      expect(fsp.rm).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
     it('cleans up plugin data directory on uninstall', async () => {
-      vi.mocked(fs.promises.lstat).mockResolvedValue({
+      vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => false,
       } as any);
-      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
 
       await uninstallPlugin('my-plugin');
 
-      expect(fs.promises.rm).toHaveBeenCalledWith(
+      expect(fsp.rm).toHaveBeenCalledWith(
         path.join(PLUGIN_DATA_DIR, 'my-plugin'),
         { recursive: true, force: true },
       );
     });
 
     it('does not fail if data directory cleanup throws', async () => {
-      vi.mocked(fs.promises.lstat).mockResolvedValue({
+      vi.mocked(fsp.lstat).mockResolvedValue({
         isSymbolicLink: () => false,
       } as any);
       let callCount = 0;
-      vi.mocked(fs.promises.rm).mockImplementation(async () => {
+      vi.mocked(fsp.rm).mockImplementation(async () => {
         callCount++;
         if (callCount === 2) throw new Error('ENOENT');
       });
@@ -397,7 +398,7 @@ describe('plugin-discovery', () => {
     const PROJECT_PATH = '/my/project';
 
     beforeEach(() => {
-      vi.mocked(fs.promises.rm).mockResolvedValue(undefined);
+      vi.mocked(fsp.rm).mockResolvedValue(undefined);
     });
 
     it('deletes source skills with the plugin prefix', async () => {
@@ -473,7 +474,7 @@ describe('plugin-discovery', () => {
 
       await cleanupProjectPluginInjections('my-plugin', PROJECT_PATH);
 
-      expect(fs.promises.rm).toHaveBeenCalledWith(
+      expect(fsp.rm).toHaveBeenCalledWith(
         path.join(PROJECT_PATH, '.clubhouse', 'plugin-data', '_agentconfig:my-plugin'),
         { recursive: true, force: true },
       );
@@ -496,7 +497,7 @@ describe('plugin-discovery', () => {
     const PROJECT_PATH = '/my/project';
 
     it('returns empty array when no plugin-data dir exists', async () => {
-      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(fsp.readdir).mockRejectedValue(new Error('ENOENT'));
       vi.mocked(agentSettings.readProjectAgentDefaults).mockResolvedValue({});
 
       const result = await listOrphanedPluginIds(PROJECT_PATH, ['plugin-a']);
@@ -504,7 +505,7 @@ describe('plugin-discovery', () => {
     });
 
     it('finds orphaned _agentconfig directories', async () => {
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: '_agentconfig:orphan-plugin', isDirectory: () => true } as any,
         { name: '_agentconfig:known-plugin', isDirectory: () => true } as any,
         { name: 'other-dir', isDirectory: () => true } as any,
@@ -517,7 +518,7 @@ describe('plugin-discovery', () => {
     });
 
     it('finds orphaned plugin IDs from instruction markers', async () => {
-      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(fsp.readdir).mockRejectedValue(new Error('ENOENT'));
       vi.mocked(agentSettings.readProjectAgentDefaults).mockResolvedValue({
         instructions: '<!-- plugin:ghost-plugin:start -->\nHello\n<!-- plugin:ghost-plugin:end -->',
       });
@@ -527,7 +528,7 @@ describe('plugin-discovery', () => {
     });
 
     it('finds orphaned plugin IDs from permission rule comments', async () => {
-      vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(fsp.readdir).mockRejectedValue(new Error('ENOENT'));
       vi.mocked(agentSettings.readProjectAgentDefaults).mockResolvedValue({
         permissions: { allow: ['Bash(read:**) /* plugin:ghost-plugin */'] },
       });
@@ -537,7 +538,7 @@ describe('plugin-discovery', () => {
     });
 
     it('does not flag known plugins as orphans', async () => {
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: '_agentconfig:known-plugin', isDirectory: () => true } as any,
       ]);
       vi.mocked(agentSettings.readProjectAgentDefaults).mockResolvedValue({
@@ -553,17 +554,17 @@ describe('plugin-discovery', () => {
   // ── Trusted manifest registration during discovery ─────────────────
 
   describe('trusted manifest registration', () => {
-    it('registers discovered manifests as trusted during discovery', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('registers discovered manifests as trusted during discovery', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'my-plugin', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'my-plugin',
         name: 'My Plugin',
         version: '1.0.0',
@@ -572,7 +573,7 @@ describe('plugin-discovery', () => {
         allowedCommands: ['git'],
       }));
 
-      discoverCommunityPlugins();
+      await discoverCommunityPlugins();
 
       expect(registerTrustedManifest).toHaveBeenCalledWith('my-plugin', expect.objectContaining({
         id: 'my-plugin',
@@ -580,24 +581,24 @@ describe('plugin-discovery', () => {
       }));
     });
 
-    it('does not register manifest without an id', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p: any) => {
+    it('does not register manifest without an id', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s === PLUGINS_DIR) return true;
         if (s.endsWith('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fs.readdirSync).mockReturnValue([
+      vi.mocked(fsp.readdir).mockResolvedValue([
         { name: 'no-id-plugin', isDirectory: () => true, isSymbolicLink: () => false },
       ] as any);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         name: 'No ID',
         version: '1.0.0',
         engine: { api: 0.5 },
         scope: 'project',
       }));
 
-      discoverCommunityPlugins();
+      await discoverCommunityPlugins();
 
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
@@ -606,9 +607,9 @@ describe('plugin-discovery', () => {
   // ── refreshManifestFromDisk ──────────────────────────────────────────
 
   describe('refreshManifestFromDisk', () => {
-    it('reads manifest from disk and registers as trusted', () => {
-      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+    it('reads manifest from disk and registers as trusted', async () => {
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
         id: 'my-plugin',
         name: 'My Plugin',
         version: '2.0.0',
@@ -617,7 +618,7 @@ describe('plugin-discovery', () => {
         allowedCommands: ['node'],
       }));
 
-      const result = refreshManifestFromDisk('my-plugin');
+      const result = await refreshManifestFromDisk('my-plugin');
 
       expect(result).not.toBeNull();
       expect(result!.id).toBe('my-plugin');
@@ -628,35 +629,35 @@ describe('plugin-discovery', () => {
       }));
     });
 
-    it('returns null when manifest file does not exist', () => {
-      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    it('returns null when manifest file does not exist', async () => {
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-      const result = refreshManifestFromDisk('nonexistent-plugin');
+      const result = await refreshManifestFromDisk('nonexistent-plugin');
 
       expect(result).toBeNull();
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
-    it('returns null for path traversal attempts', () => {
+    it('returns null for path traversal attempts', async () => {
       // Simulate a pluginId that resolves outside the plugins directory
-      vi.mocked(fs.realpathSync).mockImplementation((p: any) => {
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => {
         const s = String(p);
         if (s.includes('plugins') && !s.includes('..')) return s;
         return '/etc/evil';
       });
 
-      const result = refreshManifestFromDisk('../../../etc/passwd');
+      const result = await refreshManifestFromDisk('../../../etc/passwd');
 
       expect(result).toBeNull();
       expect(registerTrustedManifest).not.toHaveBeenCalled();
     });
 
-    it('returns null for invalid JSON in manifest', () => {
-      vi.mocked(fs.realpathSync).mockImplementation((p: any) => String(p));
-      vi.mocked(fs.readFileSync).mockReturnValue('{{invalid json');
+    it('returns null for invalid JSON in manifest', async () => {
+      vi.mocked(fsp.realpath).mockImplementation(async (p: any) => String(p));
+      vi.mocked(fsp.readFile).mockResolvedValue('{{invalid json');
 
-      const result = refreshManifestFromDisk('bad-plugin');
+      const result = await refreshManifestFromDisk('bad-plugin');
 
       expect(result).toBeNull();
     });

@@ -1,20 +1,11 @@
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry } from '../../shared/types';
 import { appLog } from './log-service';
+import { pathExists } from './fs-utils';
 
-const fsp = fs.promises;
 const LOG_NS = 'core:agent-settings';
-
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await fsp.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Orchestrator convention paths used by settings functions.
