@@ -45,30 +45,33 @@ function gitExec(args: string[], cwd: string, timeout = 10000): Promise<string> 
   });
 }
 
-async function run(args: string[], cwd: string): Promise<string> {
-  try {
-    const output = await gitExec(args, cwd);
-    return output.trim();
-  } catch (err: any) {
-    const msg = err?.stderr?.toString?.() || err?.message || 'Unknown error';
-    appLog('core:git', 'warn', 'Git command failed', {
-      meta: { cmd: `git ${args.slice(0, 2).join(' ')}`, cwd, error: msg.trim() },
-    });
-    return '';
-  }
+/** Extract a human-readable error message from a git command failure. */
+function extractGitError(err: unknown): string {
+  const e = err as any;
+  return (e?.stderr?.toString?.() || e?.message || 'Unknown error').trim();
+}
+
+/** Format the command prefix used in log messages (e.g. "git rev-parse --abbrev-ref"). */
+function formatCmd(args: string[]): string {
+  return `git ${args.slice(0, 2).join(' ')}`;
 }
 
 async function runResult(args: string[], cwd: string, timeout = 30000): Promise<GitOpResult> {
   try {
     const output = await gitExec(args, cwd, timeout);
     return { ok: true, message: output.trim() };
-  } catch (err: any) {
-    const msg = err?.stderr?.toString?.() || err?.message || 'Unknown error';
+  } catch (err: unknown) {
+    const msg = extractGitError(err);
     appLog('core:git', 'warn', 'Git operation failed', {
-      meta: { cmd: `git ${args.slice(0, 2).join(' ')}`, cwd, error: msg.trim() },
+      meta: { cmd: formatCmd(args), cwd, error: msg },
     });
-    return { ok: false, message: msg.trim() };
+    return { ok: false, message: msg };
   }
+}
+
+async function run(args: string[], cwd: string): Promise<string> {
+  const result = await runResult(args, cwd);
+  return result.ok ? result.message : '';
 }
 
 export async function getGitInfo(dirPath: string): Promise<GitInfo> {
