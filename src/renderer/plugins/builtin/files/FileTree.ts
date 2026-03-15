@@ -195,10 +195,10 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const gitStatus = gitMap.get(relPath);
 
   const bgClass = isSelected
-    ? 'bg-ctp-surface1 hover:bg-ctp-surface2/50'
+    ? 'bg-ctp-surface1'
     : isFocused
-      ? 'bg-ctp-surface1/60 ring-1 ring-inset ring-ctp-blue hover:bg-ctp-surface1/80'
-      : 'hover:bg-ctp-surface0';
+      ? 'bg-ctp-surface0/60 ring-1 ring-inset ring-ctp-blue/50 hover:bg-ctp-surface0'
+      : 'text-ctp-subtext1 hover:bg-ctp-surface0/70 hover:text-ctp-text';
 
   const handleClick = () => {
     if (node.isDirectory) {
@@ -240,7 +240,7 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
       chevron,
       icon,
       React.createElement('span', {
-        className: 'truncate text-ctp-text',
+        className: 'truncate',
       }, node.name),
       gitStatus ? React.createElement(GitBadge, { status: gitStatus }) : null,
     ),
@@ -337,10 +337,10 @@ function ContextMenu({ x, y, node: _node, onClose, onAction }: ContextMenuProps)
     ...items.map((item) =>
       React.createElement('button', {
         key: item.action,
-        className: `w-full text-left px-2 py-1 mx-1 rounded-sm text-xs transition-colors ${
+        className: `w-full text-left px-2.5 py-1 mx-1 rounded-sm text-xs transition-colors ${
           item.action === 'delete'
             ? 'text-ctp-error hover:bg-ctp-error/10'
-            : 'text-ctp-text hover:bg-ctp-surface1 hover:text-ctp-text'
+            : 'text-ctp-subtext1 hover:bg-ctp-surface1 hover:text-ctp-text'
         }`,
         style: { width: 'calc(100% - 8px)' },
         onClick: () => { onAction(item.action); onClose(); },
@@ -546,6 +546,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
   // Expand directory — lazy load children
   const toggleExpand = useCallback(async (dirPath: string) => {
+    setFocusedPath(dirPath);
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(dirPath)) {
@@ -569,6 +570,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Select file — single-click opens as preview tab
   const selectFile = useCallback((path: string) => {
     setSelectedPath(path);
+    setFocusedPath(path);
     const relPath = getRelativePath(path, projectPath);
     fileState.openTab(relPath, { preview: true });
   }, [projectPath]);
@@ -576,6 +578,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
   // Double-click — opens as permanent (pinned) tab
   const openFilePermanently = useCallback((path: string) => {
     setSelectedPath(path);
+    setFocusedPath(path);
     const relPath = getRelativePath(path, projectPath);
     fileState.openTab(relPath, { preview: false });
   }, [projectPath]);
