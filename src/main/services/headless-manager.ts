@@ -52,6 +52,10 @@ interface HeadlessSession {
   transcriptBytes: number;
   /** True once events have been evicted from the in-memory transcript. */
   transcriptEvicted: boolean;
+  /** Total events ever written (including evicted). Used for O(1) metadata lookups. */
+  totalTranscriptEvents: number;
+  /** Total bytes written to the transcript file on disk. */
+  totalTranscriptBytesWritten: number;
   transcriptPath: string;
   startedAt: number;
   textBuffer?: string;
@@ -256,6 +260,8 @@ export function spawnHeadless(
     transcriptEventSizes,
     transcriptBytes: 0,
     transcriptEvicted: false,
+    totalTranscriptEvents: 0,
+    totalTranscriptBytesWritten: 0,
     transcriptPath,
     startedAt: Date.now(),
   };
@@ -274,6 +280,9 @@ export function spawnHeadless(
       transcript.push(event);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
+      session.totalTranscriptEvents++;
+      // Disk write is serialized + newline
+      session.totalTranscriptBytesWritten += eventBytes + 1;
 
       // Log first event for diagnostics
       if (transcript.length === 1) {
@@ -374,6 +383,8 @@ export function spawnHeadless(
       transcript.push(resultEvent);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
+      session.totalTranscriptEvents++;
+      session.totalTranscriptBytesWritten += eventBytes + 1;
       logStream.write(serialized + '\n');
 
       const stopEvent = {
@@ -490,21 +501,22 @@ export interface TranscriptPage {
 
 /**
  * Return metadata about a transcript without loading event data.
- * Streams the file line-by-line to count events without buffering the entire
- * file contents in memory.
+ * For active sessions, returns O(1) running counters maintained as events
+ * are appended — no file I/O required even when old events have been evicted.
+ * For completed sessions (no in-memory session), falls back to disk.
  */
 export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo | null> {
-  // Check in-memory session first
+  // Active session — use running counters (O(1), no file I/O)
   const session = sessions.get(agentId);
-  if (session && !session.transcriptEvicted) {
+  if (session) {
     return {
-      totalEvents: session.transcript.length,
-      fileSizeBytes: session.transcriptBytes,
+      totalEvents: session.totalTranscriptEvents,
+      fileSizeBytes: session.totalTranscriptBytesWritten,
     };
   }
 
-  // Stream from disk (evicted session or completed session)
-  const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
+  // Completed session — stream from disk
+  const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     const stat = await fsPromises.stat(transcriptPath);
     const stream = fs.createReadStream(transcriptPath, { encoding: 'utf-8' });
