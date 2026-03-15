@@ -98,6 +98,7 @@ import {
   setMaxStderrBytes,
   startStaleSweep,
   stopStaleSweep,
+  _internal,
 } from './headless-manager';
 
 describe('headless-manager', () => {
@@ -1505,6 +1506,201 @@ describe('headless-manager', () => {
         ['-p', 'test'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
+    });
+  });
+});
+
+// ============================================================
+// Extracted helper unit tests
+// ============================================================
+
+describe('headless-manager _internal helpers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-15T10:00:00Z'));
+    mockProcess = createMockProcess();
+    mockWriteStream.write.mockClear();
+    mockWriteStream.end.mockClear();
+    mockEmitHookEvent.mockClear();
+    mockEmitPtyExit.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe('prepareSpawnEnv', () => {
+    it('merges shell environment with extra env and cleans the result', () => {
+      const result = _internal.prepareSpawnEnv({ API_KEY: 'secret' });
+
+      // cleanSpawnEnv removes CLAUDECODE and CLAUDE_CODE_ENTRYPOINT
+      expect(result).toHaveProperty('PATH', '/usr/local/bin');
+      expect(result).toHaveProperty('API_KEY', 'secret');
+      expect(result).not.toHaveProperty('CLAUDECODE');
+    });
+
+    it('works without extra env', () => {
+      const result = _internal.prepareSpawnEnv();
+      expect(result).toHaveProperty('PATH', '/usr/local/bin');
+    });
+  });
+
+  describe('spawnProcess', () => {
+    const env = { PATH: '/usr/bin' };
+    const cwd = '/test/project';
+
+    it('spawns directly when no commandPrefix on non-Windows', () => {
+      if (process.platform === 'win32') return;
+
+      _internal.spawnProcess('/usr/bin/claude', ['--flag'], cwd, env);
+
+      expect(mockCpSpawn).toHaveBeenCalledWith('/usr/bin/claude', ['--flag'], {
+        cwd,
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    });
+
+    it('spawns via shell with commandPrefix on non-Windows', () => {
+      if (process.platform === 'win32') return;
+
+      _internal.spawnProcess('/usr/bin/claude', ['--flag'], cwd, env, '. ./init.sh');
+
+      expect(mockCpSpawn).toHaveBeenCalledWith(
+        'sh',
+        ['-c', '. ./init.sh && exec "$@"', '_', '/usr/bin/claude', '--flag'],
+        { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+    });
+
+    it('returns the spawned ChildProcess', () => {
+      const proc = _internal.spawnProcess('/usr/bin/claude', [], cwd, env);
+      expect(proc).toBe(mockProcess);
+    });
+  });
+
+  describe('createSessionRecord', () => {
+    it('creates a session with stream-json parser', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+
+      expect(session.agentId).toBe('agent-1');
+      expect(session.process).toBe(mockProcess);
+      expect(session.outputKind).toBe('stream-json');
+      expect(session.parser).not.toBeNull();
+      expect(session.transcript).toEqual([]);
+      expect(session.transcriptLines).toEqual([]);
+      expect(session.transcriptEventSizes).toEqual([]);
+      expect(session.transcriptBytes).toBe(0);
+      expect(session.transcriptEvicted).toBe(false);
+      expect(session.totalTranscriptEvents).toBe(0);
+      expect(session.totalTranscriptBytesWritten).toBe(0);
+      expect(session.transcriptPath).toBe('/tmp/t.jsonl');
+      expect(session.startedAt).toBeGreaterThan(0);
+    });
+
+    it('creates a session without parser for text mode', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'text', '/tmp/t.jsonl');
+
+      expect(session.parser).toBeNull();
+      expect(session.outputKind).toBe('text');
+    });
+  });
+
+  describe('appendTranscriptEvent', () => {
+    it('appends event to session arrays and writes to log stream', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      const event = { type: 'assistant', message: { role: 'assistant', content: [] } };
+
+      _internal.appendTranscriptEvent(session, event, mockWriteStream as any);
+
+      expect(session.transcript).toHaveLength(1);
+      expect(session.transcript[0]).toBe(event);
+      expect(session.transcriptLines).toHaveLength(1);
+      expect(session.transcriptEventSizes).toHaveLength(1);
+      expect(session.transcriptBytes).toBeGreaterThan(0);
+      expect(session.totalTranscriptEvents).toBe(1);
+      expect(session.totalTranscriptBytesWritten).toBeGreaterThan(0);
+      expect(mockWriteStream.write).toHaveBeenCalledWith(JSON.stringify(event) + '\n');
+    });
+
+    it('accumulates bytes across multiple events', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+
+      _internal.appendTranscriptEvent(session, { type: 'assistant' }, mockWriteStream as any);
+      const bytesAfterFirst = session.transcriptBytes;
+
+      _internal.appendTranscriptEvent(session, { type: 'result', result: 'done' }, mockWriteStream as any);
+      expect(session.transcriptBytes).toBeGreaterThan(bytesAfterFirst);
+      expect(session.totalTranscriptEvents).toBe(2);
+      expect(session.transcript).toHaveLength(2);
+    });
+  });
+
+  describe('emitTextModeNotification', () => {
+    it('broadcasts notification for text output mode', () => {
+      _internal.emitTextModeNotification('agent-1', 'text');
+
+      expect(mockSend).toHaveBeenCalledWith(
+        IPC.AGENT.HOOK_EVENT,
+        'agent-1',
+        expect.objectContaining({
+          kind: 'notification',
+          message: 'Agent running (text output — live events unavailable)',
+        }),
+      );
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'agent-1',
+        expect.objectContaining({ kind: 'notification' }),
+      );
+    });
+
+    it('does nothing for stream-json mode', () => {
+      _internal.emitTextModeNotification('agent-1', 'stream-json');
+
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(mockEmitHookEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setupTranscriptPipeline', () => {
+    it('wires parser line events to transcript and log stream', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      _internal.setupTranscriptPipeline(session, mockWriteStream as any, 'agent-1');
+
+      const event = { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } };
+      session.parser!.emit('line', event);
+
+      expect(session.transcript).toHaveLength(1);
+      expect(mockWriteStream.write).toHaveBeenCalledWith(JSON.stringify(event) + '\n');
+    });
+
+    it('emits hook events for tool_use blocks', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'stream-json', '/tmp/t.jsonl');
+      _internal.setupTranscriptPipeline(session, mockWriteStream as any, 'agent-1');
+
+      const event = {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/foo' } }],
+        },
+      };
+      session.parser!.emit('line', event);
+
+      expect(mockSend).toHaveBeenCalledWith(
+        IPC.AGENT.HOOK_EVENT,
+        'agent-1',
+        expect.objectContaining({ kind: 'pre_tool', toolName: 'Read' }),
+      );
+    });
+
+    it('does nothing when session has no parser (text mode)', () => {
+      const session = _internal.createSessionRecord('agent-1', mockProcess as any, 'text', '/tmp/t.jsonl');
+      _internal.setupTranscriptPipeline(session, mockWriteStream as any, 'agent-1');
+
+      // No parser means no listeners attached — nothing to emit
+      expect(session.parser).toBeNull();
+      expect(mockWriteStream.write).not.toHaveBeenCalled();
     });
   });
 });
