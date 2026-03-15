@@ -864,11 +864,7 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-<<<<<<< HEAD
       // readTranscript falls through to partial in-memory (disk mock rejects)
-=======
-      // readTranscript falls through to partial in-memory (disk mock throws)
->>>>>>> e105f3c (perf: convert synchronous fs calls to async across main services)
       const transcript = await readTranscript('test-agent');
       // The last event should still be present
       expect(transcript).toContain('event-9');
@@ -910,11 +906,7 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-<<<<<<< HEAD
       // Now make fsPromises.readFile return full transcript data
-=======
-      // Now make readFile return full transcript data
->>>>>>> e105f3c (perf: convert synchronous fs calls to async across main services)
       const fullTranscript = '{"type":"result","result":"full-disk-data"}\n';
       mockFsPromises.readFile.mockResolvedValueOnce(fullTranscript);
 
@@ -983,9 +975,9 @@ describe('headless-manager', () => {
   });
 
   describe('stderr memory cap', () => {
-    it('retains recent stderr output when the buffer exceeds the cap', () => {
+    it('retains recent stderr output when the buffer exceeds the cap', async () => {
       setMaxStderrBytes(70);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.stderr!.emit('data', Buffer.from(`first-${'x'.repeat(30)}`));
       mockProcess.stderr!.emit('data', Buffer.from(`second-${'y'.repeat(30)}`));
@@ -1017,9 +1009,9 @@ describe('headless-manager', () => {
       );
     });
 
-    it('setMaxStderrBytes changes the retention cap', () => {
+    it('setMaxStderrBytes changes the retention cap', async () => {
       setMaxStderrBytes(20);
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       mockProcess.stderr!.emit('data', Buffer.from('alpha-alpha-alpha'));
       mockProcess.stderr!.emit('data', Buffer.from('beta'));
@@ -1451,7 +1443,7 @@ describe('headless-manager', () => {
     it('wraps spawn via shell with prefix on Unix', async () => {
       if (process.platform === 'win32') return;
 
-      spawnHeadless(
+      await spawnHeadless(
         'test-agent', '/project', '/usr/local/bin/claude',
         ['-p', 'test'], undefined, 'stream-json', undefined,
         '. ./init.sh',
@@ -1470,7 +1462,7 @@ describe('headless-manager', () => {
     it('prepends prefix in cmd.exe command line on Windows', async () => {
       if (process.platform !== 'win32') return;
 
-      spawnHeadless(
+      await spawnHeadless(
         'test-agent', '/project', 'C:\\path\\claude.cmd',
         ['-p', 'test'], undefined, 'stream-json', undefined,
         '. .\\init.ps1',
@@ -1485,7 +1477,7 @@ describe('headless-manager', () => {
     it('spawns directly when no prefix is set', async () => {
       if (process.platform === 'win32') return;
 
-      spawnHeadless(
+      await spawnHeadless(
         'test-agent', '/project', '/usr/local/bin/claude',
         ['-p', 'test'], undefined, 'stream-json', undefined,
         undefined,

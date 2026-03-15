@@ -5,12 +5,16 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  promises: {
-    readFile: vi.fn(),
-    unlink: vi.fn(),
-  },
-}));
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    promises: {
+      readFile: vi.fn(),
+      unlink: vi.fn(),
+    },
+  };
+});
 
 vi.mock('./fs-utils', () => ({
   pathExists: vi.fn(),

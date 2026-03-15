@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import * as path from 'path';
+import type { Dirent } from 'fs';
 import * as fsp from 'fs/promises';
 import { LogEntry, LOG_RETENTION_TIERS, LOG_LEVEL_PRIORITY } from '../../shared/types';
 import * as logSettings from './log-settings';
@@ -48,7 +49,7 @@ async function cleanup(): Promise<void> {
   const settings = logSettings.getSettings();
   const tier = LOG_RETENTION_TIERS[settings.retention] ?? LOG_RETENTION_TIERS.medium;
 
-  let entries: Awaited<ReturnType<typeof fsp.readdir<{ withFileTypes: true }>>>;
+  let entries: Dirent[];
   try {
     entries = await fsp.readdir(logDir, { withFileTypes: true });
   } catch {
