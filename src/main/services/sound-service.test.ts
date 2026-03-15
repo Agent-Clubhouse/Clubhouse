@@ -159,7 +159,7 @@ describe('sound-service', () => {
         if (s.endsWith('/sounds') || s.endsWith('/my-pack')) return true;
         return false;
       });
-      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, _opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
@@ -188,7 +188,7 @@ describe('sound-service', () => {
         if (s.endsWith('/sounds') || s.endsWith('/custom') || s.includes('manifest.json')) return true;
         return false;
       });
-      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, _opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [
@@ -200,7 +200,7 @@ describe('sound-service', () => {
         }
         return [] as any;
       });
-      vi.mocked(fsp.readFile).mockImplementation(async (p, enc?) => {
+      vi.mocked(fsp.readFile).mockImplementation(async (p, _enc?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.includes('manifest.json')) return JSON.stringify({ name: 'Custom Pack', author: 'Test' });
         throw new Error('ENOENT');
@@ -216,7 +216,7 @@ describe('sound-service', () => {
         const s = String(p).replace(/\\/g, '/');
         return s.endsWith('/sounds') || s.endsWith('/empty-dir');
       });
-      vi.mocked(fsp.readdir).mockImplementation(async (p, opts?) => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p, _opts?) => {
         const s = String(p).replace(/\\/g, '/');
         if (s.endsWith('/sounds')) {
           return [

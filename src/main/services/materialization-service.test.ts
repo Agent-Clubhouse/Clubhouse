@@ -54,7 +54,6 @@ vi.mock('./clubhouse-mode-settings', () => ({
   isClubhouseModeEnabled: vi.fn(() => false),
 }));
 
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
 import {
