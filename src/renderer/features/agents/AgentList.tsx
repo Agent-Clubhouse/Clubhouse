@@ -15,6 +15,11 @@ import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
 const EMPTY_AGENTS: Agent[] = [];
 
+// Module-level activity map — bypasses Zustand to avoid store updates on
+// every PTY chunk. Re-renders are driven by a boolean idle→active transition
+// and a 2-second tick interval, not by individual activity recordings.
+export const activityTimestamps: Record<string, number> = {};
+
 type ProjectAgentBuckets = {
   projectAgents: Agent[];
   durableAgents: Agent[];
@@ -57,8 +62,6 @@ export function AgentList() {
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const loadDurableAgents = useAgentStore((s) => s.loadDurableAgents);
-  const agentActivity = useAgentStore((s) => s.agentActivity);
-  const recordActivity = useAgentStore((s) => s.recordActivity);
   const deleteDialogAgent = useAgentStore((s) => s.deleteDialogAgent);
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
@@ -87,18 +90,8 @@ export function AgentList() {
   const missionInputRef = useRef<HTMLInputElement>(null);
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
-
-  // Only tick when at least one project agent has recent activity, so we
-  // avoid unconditional 2-second re-renders when the app is idle.
-  const hasRecentActivity = useMemo(() => {
-    const now = Date.now();
-    return Object.keys(agentActivity).some((id) => {
-      const last = agentActivity[id];
-      // Use 5 s window (> the 3 s isThinking threshold) to keep ticking
-      // until all agents have fully transitioned out of "thinking" state.
-      return last !== undefined && now - last < 5000;
-    });
-  }, [agentActivity]);
+  const isTickActiveRef = useRef(false);
+  const [isTickActive, setIsTickActive] = useState(false);
 
   // Drag-to-reorder state for durable agents
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -128,24 +121,33 @@ export function AgentList() {
     }
   }, [activeProject, loadDurableAgents]);
 
-  // Track activity from pty data (throttled per agent to avoid excessive store updates)
+  // Track activity from pty data — writes to module-level map (no store
+  // updates) and flips isTickActive on the first event to start the tick.
   const lastActivityRef = useRef<Record<string, number>>({});
   useEffect(() => {
     const THROTTLE_MS = 150;
     const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const record = (agentId: string) => {
+      activityTimestamps[agentId] = Date.now();
+      if (!isTickActiveRef.current) {
+        isTickActiveRef.current = true;
+        setIsTickActive(true);
+      }
+    };
 
     const unsub = window.clubhouse.pty.onData((agentId: string) => {
       const now = Date.now();
       const last = lastActivityRef.current[agentId] ?? 0;
       if (now - last >= THROTTLE_MS) {
         lastActivityRef.current[agentId] = now;
-        recordActivity(agentId);
+        record(agentId);
       } else if (!pendingTimers.has(agentId)) {
         // Schedule a trailing call so we don't miss the last burst of activity
         const delay = THROTTLE_MS - (now - last);
         pendingTimers.set(agentId, setTimeout(() => {
           lastActivityRef.current[agentId] = Date.now();
-          recordActivity(agentId);
+          record(agentId);
           pendingTimers.delete(agentId);
         }, delay));
       }
@@ -156,14 +158,26 @@ export function AgentList() {
       for (const timer of pendingTimers.values()) clearTimeout(timer);
       pendingTimers.clear();
     };
-  }, [recordActivity]);
+  }, []);
 
-  // Tick for activity status refresh — only while agents have recent activity
+  // Tick for activity status refresh — only while agents have recent activity.
+  // The tick also auto-stops after 5 s of inactivity so we don't re-render
+  // when the app is idle.
   useEffect(() => {
-    if (!hasRecentActivity) return;
-    const interval = setInterval(() => setTick((t) => t + 1), 2000);
+    if (!isTickActive) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const anyRecent = Object.values(activityTimestamps).some(
+        (last) => now - last < 5000
+      );
+      if (!anyRecent) {
+        isTickActiveRef.current = false;
+        setIsTickActive(false);
+      }
+      setTick((t) => t + 1);
+    }, 2000);
     return () => clearInterval(interval);
-  }, [hasRecentActivity]);
+  }, [isTickActive]);
 
   const { durableAgents, quickAgents, orphanQuickAgents } = useProjectAgentBuckets(
     agents,
@@ -244,11 +258,8 @@ export function AgentList() {
     }
   };
 
-  const agentActivityRef = useRef(agentActivity);
-  agentActivityRef.current = agentActivity;
-
   const isThinking = useCallback((id: string) => {
-    const last = agentActivityRef.current[id];
+    const last = activityTimestamps[id];
     if (!last) return false;
     return Date.now() - last < 3000;
   }, []);

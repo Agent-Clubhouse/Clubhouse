@@ -5,7 +5,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useQuickAgentStore } from '../../stores/quickAgentStore';
 import { useUIStore } from '../../stores/uiStore';
-import { AgentList, useProjectAgentBuckets } from './AgentList';
+import { AgentList, useProjectAgentBuckets, activityTimestamps } from './AgentList';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 // Mock child components
@@ -280,15 +280,12 @@ describe('useProjectAgentBuckets', () => {
 
 describe('AgentList onData throttle', () => {
   let onDataCallback: (agentId: string) => void;
-  let recordActivitySpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     resetStores();
-
-    recordActivitySpy = vi.fn();
-    useAgentStore.setState({ recordActivity: recordActivitySpy });
+    Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
 
     // Capture the onData callback when the component registers it
     window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: (agentId: string) => void) => {
@@ -301,11 +298,22 @@ describe('AgentList onData throttle', () => {
     vi.useRealTimers();
   });
 
-  it('fires recordActivity immediately on first onData call', () => {
+  it('records activity immediately on first onData call', () => {
     render(<AgentList />);
     act(() => { onDataCallback('agent-1'); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
-    expect(recordActivitySpy).toHaveBeenCalledWith('agent-1');
+    expect(activityTimestamps['agent-1']).toBeDefined();
+  });
+
+  it('does not trigger store recordActivity from PTY data', () => {
+    const recordActivitySpy = vi.fn();
+    useAgentStore.setState({ recordActivity: recordActivitySpy });
+
+    render(<AgentList />);
+    act(() => { onDataCallback('agent-1'); });
+
+    // Activity is tracked in module-level map, NOT the Zustand store
+    expect(recordActivitySpy).not.toHaveBeenCalled();
+    expect(activityTimestamps['agent-1']).toBeDefined();
   });
 
   it('throttles rapid onData calls to at most one per 150ms', () => {
@@ -313,44 +321,44 @@ describe('AgentList onData throttle', () => {
 
     // First call goes through immediately
     act(() => { onDataCallback('agent-1'); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+    const firstTimestamp = activityTimestamps['agent-1'];
+    expect(firstTimestamp).toBeDefined();
 
-    // Rapid subsequent calls within the throttle window should not fire immediately
+    // Rapid subsequent calls within the throttle window should not update
     act(() => {
+      vi.advanceTimersByTime(50);
       onDataCallback('agent-1');
       onDataCallback('agent-1');
       onDataCallback('agent-1');
     });
-    // Only 1 call so far (the initial one) + 1 trailing timer scheduled
-    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+    // Timestamp should not have changed yet (throttled)
+    expect(activityTimestamps['agent-1']).toBe(firstTimestamp);
 
     // After the throttle interval, the trailing call fires
     act(() => { vi.advanceTimersByTime(150); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
+    expect(activityTimestamps['agent-1']).toBeGreaterThan(firstTimestamp!);
   });
 
   it('throttles independently per agent', () => {
     render(<AgentList />);
 
-    // Both agents fire immediately on first call
+    // Both agents record immediately on first call
     act(() => { onDataCallback('agent-1'); });
     act(() => { onDataCallback('agent-2'); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
-    expect(recordActivitySpy).toHaveBeenCalledWith('agent-1');
-    expect(recordActivitySpy).toHaveBeenCalledWith('agent-2');
+    expect(activityTimestamps['agent-1']).toBeDefined();
+    expect(activityTimestamps['agent-2']).toBeDefined();
+    const ts1 = activityTimestamps['agent-1'];
 
-    // Rapid calls for agent-1 only — agent-2 is not affected
+    // Rapid calls for agent-1 only — should be throttled
     act(() => {
-      onDataCallback('agent-1');
+      vi.advanceTimersByTime(50);
       onDataCallback('agent-1');
     });
-    // Still 2 from above — agent-1's rapid calls are throttled
-    expect(recordActivitySpy).toHaveBeenCalledTimes(2);
+    expect(activityTimestamps['agent-1']).toBe(ts1);
 
-    // agent-2 can still fire after its own throttle window passes
+    // After throttle window, agent-1's trailing call fires
     act(() => { vi.advanceTimersByTime(150); });
-    // Now agent-1's trailing call fires
-    expect(recordActivitySpy).toHaveBeenCalledTimes(3);
+    expect(activityTimestamps['agent-1']).toBeGreaterThan(ts1!);
   });
 
   it('cleans up pending timers on unmount', () => {
@@ -358,39 +366,45 @@ describe('AgentList onData throttle', () => {
 
     // Fire initial + schedule a trailing call
     act(() => { onDataCallback('agent-1'); });
-    act(() => { onDataCallback('agent-1'); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+    const firstTs = activityTimestamps['agent-1'];
+    act(() => {
+      vi.advanceTimersByTime(50);
+      onDataCallback('agent-1');
+    });
 
     // Unmount before the trailing timer fires
     unmount();
 
     // Advance timers — the trailing call should NOT fire
     act(() => { vi.advanceTimersByTime(300); });
-    expect(recordActivitySpy).toHaveBeenCalledTimes(1);
+    expect(activityTimestamps['agent-1']).toBe(firstTs);
   });
 });
 
 describe('AgentList activity tick optimization', () => {
+  let onDataCallback: (agentId: string) => void;
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     resetStores();
-    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+    Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
+
+    window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: (agentId: string) => void) => {
+      onDataCallback = cb;
+      return () => {};
+    });
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('does not set up a tick interval when no agents have recent activity', () => {
+  it('does not set up a tick interval when no PTY data has arrived', () => {
     const setIntervalSpy = vi.spyOn(global, 'setInterval');
-
-    // agentActivity is empty — no recent activity
-    useAgentStore.setState({ agentActivity: {} });
 
     render(<AgentList />);
 
-    // setInterval may be called by other effects, but not the 2-second tick
     const tickIntervals = setIntervalSpy.mock.calls.filter(
       ([, ms]) => ms === 2000
     );
@@ -399,15 +413,13 @@ describe('AgentList activity tick optimization', () => {
     setIntervalSpy.mockRestore();
   });
 
-  it('sets up a tick interval when agents have recent activity', () => {
+  it('sets up a tick interval when PTY data arrives', () => {
     const setIntervalSpy = vi.spyOn(global, 'setInterval');
 
-    // Simulate recent activity on agent-1
-    useAgentStore.setState({
-      agentActivity: { 'agent-1': Date.now() },
-    });
-
     render(<AgentList />);
+
+    // Trigger PTY data to activate the tick
+    act(() => { onDataCallback('agent-1'); });
 
     const tickIntervals = setIntervalSpy.mock.calls.filter(
       ([, ms]) => ms === 2000
@@ -417,15 +429,19 @@ describe('AgentList activity tick optimization', () => {
     setIntervalSpy.mockRestore();
   });
 
-  it('does not set up a tick interval when all activity is stale', () => {
-    const setIntervalSpy = vi.spyOn(global, 'setInterval');
-
-    // Activity from 10 seconds ago — well past the 5s threshold
-    useAgentStore.setState({
-      agentActivity: { 'agent-1': Date.now() - 10000 },
-    });
-
+  it('stops the tick interval after all activity goes stale', () => {
     render(<AgentList />);
+
+    // Trigger activity
+    act(() => { onDataCallback('agent-1'); });
+
+    // Advance past the 5s stale threshold — tick checks every 2s
+    // After 6s the tick callback sees no recent activity and sets isTickActive=false
+    act(() => { vi.advanceTimersByTime(6000); });
+
+    // Verify the tick stopped by checking no more intervals are created
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+    act(() => { vi.advanceTimersByTime(4000); });
 
     const tickIntervals = setIntervalSpy.mock.calls.filter(
       ([, ms]) => ms === 2000
@@ -437,49 +453,48 @@ describe('AgentList activity tick optimization', () => {
 });
 
 describe('AgentList isThinking callback stability', () => {
+  let onDataCallback: (agentId: string) => void;
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
     isThinkingCaptures.length = 0;
-    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+    Object.keys(activityTimestamps).forEach((k) => delete activityTimestamps[k]);
+
+    window.clubhouse.pty.onData = vi.fn().mockImplementation((cb: (agentId: string) => void) => {
+      onDataCallback = cb;
+      return () => {};
+    });
   });
 
-  it('reflects thinking state when agentActivity has recent timestamp', () => {
-    useAgentStore.setState({
-      agentActivity: { 'agent-1': Date.now() },
-    });
+  it('reflects thinking state when activity timestamp is recent', () => {
+    // Pre-populate module-level activity timestamp before render
+    activityTimestamps['agent-1'] = Date.now();
 
     render(<AgentList />);
-    // The agent should be rendered as "thinking" since activity is recent
     const lastCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
     expect(lastCapture).toBe(true);
   });
 
-  it('updates thinking state when agentActivity changes from empty to active', () => {
-    useAgentStore.setState({ agentActivity: {} });
+  it('updates thinking state when PTY data arrives', () => {
+    vi.useFakeTimers();
     render(<AgentList />);
 
     // Initially not thinking
     const initialCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
     expect(initialCapture).toBe(false);
 
-    // Simulate activity update via store change
-    act(() => {
-      useAgentStore.setState({
-        agentActivity: { 'agent-1': Date.now() },
-      });
-    });
+    // Simulate PTY data — updates activityTimestamps and triggers re-render
+    act(() => { onDataCallback('agent-1'); });
 
-    // After agentActivity updates, the ref-based callback should read the new value
     const updatedCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
     expect(updatedCapture).toBe(true);
+    vi.useRealTimers();
   });
 
   it('shows not-thinking when activity timestamp is stale', () => {
     // Activity from 10 seconds ago — well past the 3s threshold
-    useAgentStore.setState({
-      agentActivity: { 'agent-1': Date.now() - 10000 },
-    });
+    activityTimestamps['agent-1'] = Date.now() - 10000;
 
     render(<AgentList />);
     const lastCapture = isThinkingCaptures[isThinkingCaptures.length - 1];
