@@ -195,10 +195,10 @@ const TreeNode = React.memo(function TreeNodeInner({ node, depth, expanded, onTo
   const gitStatus = gitMap.get(relPath);
 
   const bgClass = isSelected
-    ? 'bg-ctp-surface1'
+    ? 'bg-surface-1 text-ctp-text font-medium'
     : isFocused
-      ? 'bg-ctp-surface0/60 ring-1 ring-inset ring-ctp-blue/50 hover:bg-ctp-surface0'
-      : 'text-ctp-subtext1 hover:bg-ctp-surface0/70 hover:text-ctp-text';
+      ? 'bg-surface-1 text-ctp-text'
+      : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text';
 
   const handleClick = () => {
     if (node.isDirectory) {
