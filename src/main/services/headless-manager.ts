@@ -240,6 +240,7 @@ function createSessionRecord(
   proc: ChildProcess,
   outputKind: HeadlessOutputKind,
   transcriptPath: string,
+  onExit?: (agentId: string, exitCode: number) => void,
 ): HeadlessSession {
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   return {
@@ -514,7 +515,7 @@ export async function spawnHeadless(
     appLog('core:headless', 'info', `Process spawned`, { meta: { agentId, pid: proc.pid } });
   }
 
-  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath);
+  const session = createSessionRecord(agentId, proc, outputKind, transcriptPath, onExit);
   sessions.set(agentId, session);
 
   const logStream = fs.createWriteStream(transcriptPath, { flags: 'w' });
