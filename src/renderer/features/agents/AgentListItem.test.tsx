@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentListItem } from './AgentListItem';
 import { useAgentStore } from '../../stores/agentStore';
@@ -270,15 +270,18 @@ describe('AgentListItem fine-grained selectors', () => {
   });
 
   it('re-renders when its own agent icon changes', () => {
-    const agent = { ...baseAgent, status: 'sleeping' as const };
-    resetStores({ status: 'sleeping' });
+    // agent.icon must be truthy for the img to render
+    const agent = { ...baseAgent, status: 'sleeping' as const, icon: 'custom-icon.png' };
+    resetStores({ status: 'sleeping', icon: 'custom-icon.png' });
     const { rerender } = render(
       <AgentListItem agent={agent} isActive={false} isThinking={false} onSelect={vi.fn()} />,
     );
 
-    // Changing this agent's icon should be reflected
-    useAgentStore.setState({
-      agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+    // Changing this agent's icon data URL should be reflected
+    act(() => {
+      useAgentStore.setState({
+        agentIcons: { 'agent-1': 'data:image/png;base64,abc' },
+      });
     });
 
     rerender(
