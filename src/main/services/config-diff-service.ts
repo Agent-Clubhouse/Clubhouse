@@ -27,11 +27,11 @@ import { appLog } from './log-service';
  * Compute config diffs between an agent's current worktree state
  * and the project-level defaults (what would be materialized on next wake).
  */
-export function computeConfigDiff(params: {
+export async function computeConfigDiff(params: {
   projectPath: string;
   agentId: string;
   provider: OrchestratorProvider;
-}): ConfigDiffResult {
+}): Promise<ConfigDiffResult> {
   const { projectPath, agentId, provider } = params;
   const agent = getDurableConfig(projectPath, agentId);
   if (!agent) {
@@ -48,7 +48,7 @@ export function computeConfigDiff(params: {
     return { agentId, agentName: agent.name, hasDiffs: false, items: [] };
   }
 
-  const defaults = readProjectAgentDefaults(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
   const scp = resolveSourceControlProvider(projectPath);
   const ctx = buildWildcardContext(agent, projectPath, scp);
   const conv = provider.conventions;
@@ -59,16 +59,16 @@ export function computeConfigDiff(params: {
   diffInstructions(items, defaults.instructions, worktreePath, provider, ctx);
 
   // 2. Permissions
-  diffPermissions(items, defaults.permissions, worktreePath, conv, ctx);
+  await diffPermissions(items, defaults.permissions, worktreePath, conv, ctx);
 
   // 3. MCP
-  diffMcp(items, defaults.mcpJson, worktreePath, conv, ctx);
+  await diffMcp(items, defaults.mcpJson, worktreePath, conv, ctx);
 
   // 4. Skills
-  diffSkills(items, projectPath, worktreePath, conv, ctx);
+  await diffSkills(items, projectPath, worktreePath, conv, ctx);
 
   // 5. Agent templates
-  diffAgentTemplates(items, projectPath, worktreePath, conv, ctx);
+  await diffAgentTemplates(items, projectPath, worktreePath, conv, ctx);
 
   return {
     agentId,
@@ -81,12 +81,12 @@ export function computeConfigDiff(params: {
 /**
  * Propagate selected config changes back to project defaults.
  */
-export function propagateChanges(params: {
+export async function propagateChanges(params: {
   projectPath: string;
   agentId: string;
   selectedItemIds: string[];
   provider: OrchestratorProvider;
-}): { ok: boolean; message: string; propagatedCount: number } {
+}): Promise<{ ok: boolean; message: string; propagatedCount: number }> {
   const { projectPath, agentId, selectedItemIds, provider } = params;
   const agent = getDurableConfig(projectPath, agentId);
   if (!agent) {
@@ -103,10 +103,10 @@ export function propagateChanges(params: {
   const conv = provider.conventions;
 
   // Re-compute the diff to get full item data
-  const diffResult = computeConfigDiff({ projectPath, agentId, provider });
+  const diffResult = await computeConfigDiff({ projectPath, agentId, provider });
   const itemMap = new Map(diffResult.items.map((item) => [item.id, item]));
 
-  const defaults = readProjectAgentDefaults(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
   let propagatedCount = 0;
 
   for (const itemId of selectedItemIds) {
@@ -130,15 +130,15 @@ export function propagateChanges(params: {
           }
           break;
         case 'mcp':
-          propagateMcp(defaults, item, worktreePath, conv, ctx);
+          await propagateMcp(defaults, item, worktreePath, conv, ctx);
           propagatedCount++;
           break;
         case 'skills':
-          propagateSkill(projectPath, item, worktreePath, conv, ctx);
+          await propagateSkill(projectPath, item, worktreePath, conv, ctx);
           propagatedCount++;
           break;
         case 'agent-templates':
-          propagateAgentTemplate(projectPath, item, worktreePath, conv, ctx);
+          await propagateAgentTemplate(projectPath, item, worktreePath, conv, ctx);
           propagatedCount++;
           break;
       }
@@ -149,7 +149,7 @@ export function propagateChanges(params: {
     }
   }
 
-  writeProjectAgentDefaults(projectPath, defaults);
+  await writeProjectAgentDefaults(projectPath, defaults);
 
   return {
     ok: true,
@@ -184,13 +184,13 @@ function diffInstructions(
   }
 }
 
-function diffPermissions(
+async function diffPermissions(
   items: ConfigDiffItem[],
   defaultPermissions: { allow?: string[]; deny?: string[] } | undefined,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   const resolvedAllow = new Set(
     (defaultPermissions?.allow || []).map((r) => replaceWildcards(r, ctx)),
   );
@@ -198,7 +198,7 @@ function diffPermissions(
     (defaultPermissions?.deny || []).map((r) => replaceWildcards(r, ctx)),
   );
 
-  const agentPerms = readPermissions(worktreePath, conv);
+  const agentPerms = await readPermissions(worktreePath, conv);
   const agentAllow = new Set(agentPerms.allow || []);
   const agentDeny = new Set(agentPerms.deny || []);
 
@@ -259,13 +259,13 @@ function diffPermissions(
   }
 }
 
-function diffMcp(
+async function diffMcp(
   items: ConfigDiffItem[],
   defaultMcpJson: string | undefined,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   let defaultServers: Record<string, unknown> = {};
   if (defaultMcpJson) {
     try {
@@ -279,7 +279,7 @@ function diffMcp(
 
   let agentServers: Record<string, unknown> = {};
   try {
-    const rawJson = readMcpRawJson(worktreePath, conv);
+    const rawJson = await readMcpRawJson(worktreePath, conv);
     const parsed = JSON.parse(rawJson);
     agentServers = parsed.mcpServers || {};
   } catch (err) {
@@ -334,15 +334,15 @@ function diffMcp(
   }
 }
 
-function diffSkills(
+async function diffSkills(
   items: ConfigDiffItem[],
   projectPath: string,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
-  const sourceSkills = listSourceSkills(projectPath);
-  const agentSkills = listSkills(worktreePath, conv);
+): Promise<void> {
+  const sourceSkills = await listSourceSkills(projectPath);
+  const agentSkills = await listSkills(worktreePath, conv);
 
   const sourceNames = new Set(sourceSkills.map((s) => s.name));
   const agentNames = new Set(agentSkills.map((s) => s.name));
@@ -355,7 +355,7 @@ function diffSkills(
         category: 'skills',
         action: 'added',
         label: `Skill: ${name}`,
-        agentValue: readSkillContent(worktreePath, name, conv),
+        agentValue: await readSkillContent(worktreePath, name, conv),
       });
     }
   }
@@ -363,7 +363,7 @@ function diffSkills(
   // Removed from agent
   for (const name of sourceNames) {
     if (!agentNames.has(name)) {
-      const sourceContent = readSourceSkillContent(projectPath, name);
+      const sourceContent = await readSourceSkillContent(projectPath, name);
       items.push({
         id: `skills:removed:${name}`,
         category: 'skills',
@@ -377,8 +377,8 @@ function diffSkills(
   // Modified
   for (const name of agentNames) {
     if (sourceNames.has(name)) {
-      const agentContent = readSkillContent(worktreePath, name, conv);
-      const sourceContent = readSourceSkillContent(projectPath, name);
+      const agentContent = await readSkillContent(worktreePath, name, conv);
+      const sourceContent = await readSourceSkillContent(projectPath, name);
       const resolvedSource = replaceWildcards(sourceContent, ctx);
       if (normalizeWhitespace(agentContent) !== normalizeWhitespace(resolvedSource)) {
         items.push({
@@ -394,15 +394,15 @@ function diffSkills(
   }
 }
 
-function diffAgentTemplates(
+async function diffAgentTemplates(
   items: ConfigDiffItem[],
   projectPath: string,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
-  const sourceTemplates = listSourceAgentTemplates(projectPath);
-  const agentTemplates = listAgentTemplates(worktreePath, conv);
+): Promise<void> {
+  const sourceTemplates = await listSourceAgentTemplates(projectPath);
+  const agentTemplates = await listAgentTemplates(worktreePath, conv);
 
   const sourceNames = new Set(sourceTemplates.map((t) => t.name));
   const agentNames = new Set(agentTemplates.map((t) => t.name));
@@ -415,7 +415,7 @@ function diffAgentTemplates(
         category: 'agent-templates',
         action: 'added',
         label: `Agent template: ${name}`,
-        agentValue: readAgentTemplateContent(worktreePath, name, conv),
+        agentValue: await readAgentTemplateContent(worktreePath, name, conv),
       });
     }
   }
@@ -423,7 +423,7 @@ function diffAgentTemplates(
   // Removed from agent
   for (const name of sourceNames) {
     if (!agentNames.has(name)) {
-      const sourceContent = readSourceAgentTemplateContent(projectPath, name);
+      const sourceContent = await readSourceAgentTemplateContent(projectPath, name);
       items.push({
         id: `agent-templates:removed:${name}`,
         category: 'agent-templates',
@@ -437,8 +437,8 @@ function diffAgentTemplates(
   // Modified
   for (const name of agentNames) {
     if (sourceNames.has(name)) {
-      const agentContent = readAgentTemplateContent(worktreePath, name, conv);
-      const sourceContent = readSourceAgentTemplateContent(projectPath, name);
+      const agentContent = await readAgentTemplateContent(worktreePath, name, conv);
+      const sourceContent = await readSourceAgentTemplateContent(projectPath, name);
       const resolvedSource = replaceWildcards(sourceContent, ctx);
       if (normalizeWhitespace(agentContent) !== normalizeWhitespace(resolvedSource)) {
         items.push({
@@ -457,7 +457,7 @@ function diffAgentTemplates(
 // ── Propagation helpers ──────────────────────────────────────────────────
 
 function propagatePermission(
-  defaults: ReturnType<typeof readProjectAgentDefaults>,
+  defaults: Awaited<ReturnType<typeof readProjectAgentDefaults>>,
   kind: 'allow' | 'deny',
   item: ConfigDiffItem,
 ): void {
@@ -475,13 +475,13 @@ function propagatePermission(
   }
 }
 
-function propagateMcp(
-  defaults: ReturnType<typeof readProjectAgentDefaults>,
+async function propagateMcp(
+  defaults: Awaited<ReturnType<typeof readProjectAgentDefaults>>,
   item: ConfigDiffItem,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   let mcpObj: { mcpServers: Record<string, unknown> } = { mcpServers: {} };
   if (defaults.mcpJson) {
     try {
@@ -499,7 +499,7 @@ function propagateMcp(
   } else {
     // added or modified — read current agent value and unreplace
     try {
-      const rawJson = readMcpRawJson(worktreePath, conv);
+      const rawJson = await readMcpRawJson(worktreePath, conv);
       const agentMcp = JSON.parse(rawJson);
       const serverConfig = agentMcp.mcpServers?.[serverName];
       if (serverConfig) {
@@ -516,41 +516,41 @@ function propagateMcp(
   defaults.mcpJson = JSON.stringify(mcpObj, null, 2);
 }
 
-function propagateSkill(
+async function propagateSkill(
   projectPath: string,
   item: ConfigDiffItem,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   const skillName = item.id.split(':').slice(2).join(':');
 
   if (item.action === 'removed') {
-    deleteSourceSkill(projectPath, skillName);
+    await deleteSourceSkill(projectPath, skillName);
   } else {
     // added or modified
-    const agentContent = readSkillContent(worktreePath, skillName, conv);
+    const agentContent = await readSkillContent(worktreePath, skillName, conv);
     const unreplaced = unreplaceWildcards(agentContent, ctx);
-    writeSourceSkillContent(projectPath, skillName, unreplaced);
+    await writeSourceSkillContent(projectPath, skillName, unreplaced);
   }
 }
 
-function propagateAgentTemplate(
+async function propagateAgentTemplate(
   projectPath: string,
   item: ConfigDiffItem,
   worktreePath: string,
   conv: OrchestratorProvider['conventions'],
   ctx: ReturnType<typeof buildWildcardContext>,
-): void {
+): Promise<void> {
   const templateName = item.id.split(':').slice(2).join(':');
 
   if (item.action === 'removed') {
-    deleteSourceAgentTemplate(projectPath, templateName);
+    await deleteSourceAgentTemplate(projectPath, templateName);
   } else {
     // added or modified
-    const agentContent = readAgentTemplateContent(worktreePath, templateName, conv);
+    const agentContent = await readAgentTemplateContent(worktreePath, templateName, conv);
     const unreplaced = unreplaceWildcards(agentContent, ctx);
-    writeSourceAgentTemplateContent(projectPath, templateName, unreplaced);
+    await writeSourceAgentTemplateContent(projectPath, templateName, unreplaced);
   }
 }
 

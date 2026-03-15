@@ -141,21 +141,21 @@ export interface ProjectPluginInjections {
  * Returns all injections a plugin has made into a given project.
  * Scans skills, agent templates, and project agent defaults.
  */
-export function listProjectPluginInjections(pluginId: string, projectPath: string): ProjectPluginInjections {
+export async function listProjectPluginInjections(pluginId: string, projectPath: string): Promise<ProjectPluginInjections> {
   const prefix = `plugin-${pluginId}-`;
   const tag = `/* plugin:${pluginId} */`;
 
-  const allSkills = agentSettings.listSourceSkills(projectPath);
+  const allSkills = await agentSettings.listSourceSkills(projectPath);
   const skills = allSkills
     .filter((s) => s.name.startsWith(prefix))
     .map((s) => s.name.slice(prefix.length));
 
-  const allTemplates = agentSettings.listSourceAgentTemplates(projectPath);
+  const allTemplates = await agentSettings.listSourceAgentTemplates(projectPath);
   const agentTemplates = allTemplates
     .filter((t) => t.name.startsWith(prefix))
     .map((t) => t.name.slice(prefix.length));
 
-  const defaults = agentSettings.readProjectAgentDefaults(projectPath);
+  const defaults = await agentSettings.readProjectAgentDefaults(projectPath);
 
   const hasInstructions = !!(defaults.instructions &&
     defaults.instructions.includes(`<!-- plugin:${pluginId}:start -->`));
@@ -192,27 +192,27 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
 
   // 1. Delete injected source skills
   try {
-    const skills = agentSettings.listSourceSkills(projectPath);
+    const skills = await agentSettings.listSourceSkills(projectPath);
     for (const skill of skills) {
       if (skill.name.startsWith(prefix)) {
-        agentSettings.deleteSourceSkill(projectPath, skill.name);
+        await agentSettings.deleteSourceSkill(projectPath, skill.name);
       }
     }
   } catch { /* Best-effort */ }
 
   // 2. Delete injected source agent templates
   try {
-    const templates = agentSettings.listSourceAgentTemplates(projectPath);
+    const templates = await agentSettings.listSourceAgentTemplates(projectPath);
     for (const template of templates) {
       if (template.name.startsWith(prefix)) {
-        agentSettings.deleteSourceAgentTemplate(projectPath, template.name);
+        await agentSettings.deleteSourceAgentTemplate(projectPath, template.name);
       }
     }
   } catch { /* Best-effort */ }
 
   // 3. Strip instructions / permissions / MCP servers from project agent defaults
   try {
-    const defaults = agentSettings.readProjectAgentDefaults(projectPath);
+    const defaults = await agentSettings.readProjectAgentDefaults(projectPath);
     let dirty = false;
     const updated = { ...defaults };
 
@@ -256,7 +256,7 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
     }
 
     if (dirty) {
-      agentSettings.writeProjectAgentDefaults(projectPath, updated);
+      await agentSettings.writeProjectAgentDefaults(projectPath, updated);
     }
   } catch { /* Best-effort */ }
 
@@ -276,7 +276,7 @@ export async function cleanupProjectPluginInjections(pluginId: string, projectPa
  * - HTML comment markers in project agent default instructions
  * - Permission rule comments tagged with the plugin's comment tag
  */
-export function listOrphanedPluginIds(projectPath: string, knownPluginIds: string[]): string[] {
+export async function listOrphanedPluginIds(projectPath: string, knownPluginIds: string[]): Promise<string[]> {
   const orphans = new Set<string>();
   const known = new Set(knownPluginIds);
 
@@ -296,7 +296,7 @@ export function listOrphanedPluginIds(projectPath: string, knownPluginIds: strin
 
   // Check instruction markers
   try {
-    const defaults = agentSettings.readProjectAgentDefaults(projectPath);
+    const defaults = await agentSettings.readProjectAgentDefaults(projectPath);
     if (defaults.instructions) {
       const matches = defaults.instructions.matchAll(/<!-- plugin:([^:]+):start -->/g);
       for (const match of matches) {

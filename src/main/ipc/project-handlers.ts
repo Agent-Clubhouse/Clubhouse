@@ -141,9 +141,9 @@ export function registerProjectHandlers(): void {
     }
   }));
 
-  ipcMain.handle(IPC.PROJECT.READ_LAUNCH_WRAPPER, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_LAUNCH_WRAPPER, async (_event, projectPath: string) => {
     try {
-      return readLaunchWrapper(projectPath);
+      return await readLaunchWrapper(projectPath);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to read launch wrapper', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -152,12 +152,12 @@ export function registerProjectHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, (_event, projectPath: string, wrapper: unknown) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_LAUNCH_WRAPPER, async (_event, projectPath: string, wrapper: unknown) => {
     try {
       if (wrapper && (typeof wrapper !== 'object' || !('binary' in wrapper) || !('orchestratorMap' in wrapper))) {
         throw new Error('Invalid launch wrapper config: must have binary and orchestratorMap');
       }
-      writeLaunchWrapper(projectPath, (wrapper as any) || undefined);
+      await writeLaunchWrapper(projectPath, (wrapper as any) || undefined);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write launch wrapper', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -166,9 +166,9 @@ export function registerProjectHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.PROJECT.READ_MCP_CATALOG, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_MCP_CATALOG, async (_event, projectPath: string) => {
     try {
-      return readMcpCatalog(projectPath);
+      return await readMcpCatalog(projectPath);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to read MCP catalog', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -177,10 +177,10 @@ export function registerProjectHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CATALOG, (_event, projectPath: string, catalog: unknown[]) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_MCP_CATALOG, async (_event, projectPath: string, catalog: unknown[]) => {
     try {
       if (!Array.isArray(catalog)) throw new Error('MCP catalog must be an array');
-      writeMcpCatalog(projectPath, catalog as any[]);
+      await writeMcpCatalog(projectPath, catalog as any[]);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write MCP catalog', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -189,9 +189,9 @@ export function registerProjectHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.PROJECT.READ_DEFAULT_MCPS, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.PROJECT.READ_DEFAULT_MCPS, async (_event, projectPath: string) => {
     try {
-      return readDefaultMcps(projectPath);
+      return await readDefaultMcps(projectPath);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to read default MCPs', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
@@ -200,10 +200,10 @@ export function registerProjectHandlers(): void {
     }
   });
 
-  ipcMain.handle(IPC.PROJECT.WRITE_DEFAULT_MCPS, (_event, projectPath: string, mcpIds: unknown) => {
+  ipcMain.handle(IPC.PROJECT.WRITE_DEFAULT_MCPS, async (_event, projectPath: string, mcpIds: unknown) => {
     try {
       if (!Array.isArray(mcpIds)) throw new Error('Default MCPs must be an array');
-      writeDefaultMcps(projectPath, mcpIds as string[]);
+      await writeDefaultMcps(projectPath, mcpIds as string[]);
     } catch (err) {
       appLog('core:project', 'error', 'Failed to write default MCPs', {
         meta: { projectPath, error: err instanceof Error ? err.message : String(err) },

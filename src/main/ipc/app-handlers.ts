@@ -219,7 +219,7 @@ export function registerAppHandlers(): void {
     return clubhouseModeSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
+  ipcMain.handle(IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS, async (_event, settings: ClubhouseModeSettings, projectPath?: string) => {
     const previousEnabled = projectPath
       ? clubhouseModeSettings.isClubhouseModeEnabled(projectPath)
       : clubhouseModeSettings.getSettings().enabled;
@@ -232,7 +232,7 @@ export function registerAppHandlers(): void {
 
     // On first enable: create default templates and enable git excludes
     if (!previousEnabled && nowEnabled && projectPath) {
-      ensureDefaultTemplates(projectPath);
+      await ensureDefaultTemplates(projectPath);
       try {
         const provider = resolveOrchestrator(projectPath);
         enableExclusions(projectPath, provider);

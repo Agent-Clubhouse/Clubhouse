@@ -23,7 +23,7 @@ function getConventions(projectPath?: string): SettingsConventions | undefined {
 }
 
 export function registerAgentSettingsHandlers(): void {
-  ipcMain.handle(IPC.AGENT.READ_INSTRUCTIONS, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_INSTRUCTIONS, async (_event, worktreePath: string, projectPath?: string) => {
     if (projectPath) {
       const provider = resolveOrchestrator(projectPath);
       return provider.readInstructions(worktreePath);
@@ -31,105 +31,105 @@ export function registerAgentSettingsHandlers(): void {
     return agentSettings.readClaudeMd(worktreePath);
   });
 
-  ipcMain.handle(IPC.AGENT.SAVE_INSTRUCTIONS, (_event, worktreePath: string, content: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.SAVE_INSTRUCTIONS, async (_event, worktreePath: string, content: string, projectPath?: string) => {
     if (projectPath) {
       const provider = resolveOrchestrator(projectPath);
       provider.writeInstructions(worktreePath, content);
     } else {
-      agentSettings.writeClaudeMd(worktreePath, content);
+      await agentSettings.writeClaudeMd(worktreePath, content);
     }
   });
 
-  ipcMain.handle(IPC.AGENT.READ_MCP_CONFIG, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_MCP_CONFIG, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.readMcpConfig(worktreePath, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.LIST_SKILLS, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_SKILLS, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.listSkills(worktreePath, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATES, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATES, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.listAgentTemplates(worktreePath, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_SKILLS, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_SKILLS, async (_event, projectPath: string) => {
     return agentSettings.listSourceSkills(projectPath);
   });
 
-  ipcMain.handle(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_SOURCE_AGENT_TEMPLATES, async (_event, projectPath: string) => {
     return agentSettings.listSourceAgentTemplates(projectPath);
   });
 
-  ipcMain.handle(IPC.AGENT.CREATE_SKILL, (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.CREATE_SKILL, async (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
     return agentSettings.createSkillDir(basePath, name, isSource, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, async (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
     return agentSettings.createAgentTemplateDir(basePath, name, isSource, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.READ_PERMISSIONS, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_PERMISSIONS, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.readPermissions(worktreePath, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, (_event, worktreePath: string, permissions: { allow?: string[]; deny?: string[] }, projectPath?: string) => {
-    agentSettings.writePermissions(worktreePath, permissions, getConventions(projectPath));
+  ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, async (_event, worktreePath: string, permissions: { allow?: string[]; deny?: string[] }, projectPath?: string) => {
+    await agentSettings.writePermissions(worktreePath, permissions, getConventions(projectPath));
   });
 
   // --- Skill content CRUD ---
 
-  ipcMain.handle(IPC.AGENT.READ_SKILL_CONTENT, (_event, worktreePath: string, skillName: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_SKILL_CONTENT, async (_event, worktreePath: string, skillName: string, projectPath?: string) => {
     return agentSettings.readSkillContent(worktreePath, skillName, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_SKILL_CONTENT, (_event, worktreePath: string, skillName: string, content: string, projectPath?: string) => {
-    agentSettings.writeSkillContent(worktreePath, skillName, content, getConventions(projectPath));
+  ipcMain.handle(IPC.AGENT.WRITE_SKILL_CONTENT, async (_event, worktreePath: string, skillName: string, content: string, projectPath?: string) => {
+    await agentSettings.writeSkillContent(worktreePath, skillName, content, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_SKILL, (_event, worktreePath: string, skillName: string, projectPath?: string) => {
-    agentSettings.deleteSkill(worktreePath, skillName, getConventions(projectPath));
+  ipcMain.handle(IPC.AGENT.DELETE_SKILL, async (_event, worktreePath: string, skillName: string, projectPath?: string) => {
+    await agentSettings.deleteSkill(worktreePath, skillName, getConventions(projectPath));
   });
 
   // --- Agent template content CRUD ---
 
-  ipcMain.handle(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, (_event, worktreePath: string, agentName: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, async (_event, worktreePath: string, agentName: string, projectPath?: string) => {
     return agentSettings.readAgentTemplateContent(worktreePath, agentName, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, (_event, worktreePath: string, agentName: string, content: string, projectPath?: string) => {
-    agentSettings.writeAgentTemplateContent(worktreePath, agentName, content, getConventions(projectPath));
+  ipcMain.handle(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, async (_event, worktreePath: string, agentName: string, content: string, projectPath?: string) => {
+    await agentSettings.writeAgentTemplateContent(worktreePath, agentName, content, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_AGENT_TEMPLATE, (_event, worktreePath: string, agentName: string, projectPath?: string) => {
-    agentSettings.deleteAgentTemplate(worktreePath, agentName, getConventions(projectPath));
+  ipcMain.handle(IPC.AGENT.DELETE_AGENT_TEMPLATE, async (_event, worktreePath: string, agentName: string, projectPath?: string) => {
+    await agentSettings.deleteAgentTemplate(worktreePath, agentName, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.listAgentTemplateFiles(worktreePath, getConventions(projectPath));
   });
 
   // --- MCP raw JSON ---
 
-  ipcMain.handle(IPC.AGENT.READ_MCP_RAW_JSON, (_event, worktreePath: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.READ_MCP_RAW_JSON, async (_event, worktreePath: string, projectPath?: string) => {
     return agentSettings.readMcpRawJson(worktreePath, getConventions(projectPath));
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, (_event, worktreePath: string, content: string, projectPath?: string) => {
+  ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, async (_event, worktreePath: string, content: string, projectPath?: string) => {
     return agentSettings.writeMcpRawJson(worktreePath, content, getConventions(projectPath));
   });
 
   // --- Project-level agent defaults ---
 
-  ipcMain.handle(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.AGENT.READ_PROJECT_AGENT_DEFAULTS, async (_event, projectPath: string) => {
     return agentSettings.readProjectAgentDefaults(projectPath);
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, (_event, projectPath: string, defaults: any) => {
-    agentSettings.writeProjectAgentDefaults(projectPath, defaults);
+  ipcMain.handle(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, async (_event, projectPath: string, defaults: any) => {
+    await agentSettings.writeProjectAgentDefaults(projectPath, defaults);
   });
 
-  ipcMain.handle(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, (_event, projectPath: string) => {
-    resetProjectAgentDefaults(projectPath);
+  ipcMain.handle(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, async (_event, projectPath: string) => {
+    await resetProjectAgentDefaults(projectPath);
   });
 
   // --- Orchestrator conventions ---
@@ -146,40 +146,40 @@ export function registerAgentSettingsHandlers(): void {
 
   // --- Source skill/template content CRUD ---
 
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, (_event, projectPath: string, skillName: string) => {
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_SKILL_CONTENT, async (_event, projectPath: string, skillName: string) => {
     return agentSettings.readSourceSkillContent(projectPath, skillName);
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, (_event, projectPath: string, skillName: string, content: string) => {
-    agentSettings.writeSourceSkillContent(projectPath, skillName, content);
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_SKILL_CONTENT, async (_event, projectPath: string, skillName: string, content: string) => {
+    await agentSettings.writeSourceSkillContent(projectPath, skillName, content);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_SKILL, (_event, projectPath: string, skillName: string) => {
-    agentSettings.deleteSourceSkill(projectPath, skillName);
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_SKILL, async (_event, projectPath: string, skillName: string) => {
+    await agentSettings.deleteSourceSkill(projectPath, skillName);
   });
 
-  ipcMain.handle(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, (_event, projectPath: string, agentName: string) => {
+  ipcMain.handle(IPC.AGENT.READ_SOURCE_AGENT_TEMPLATE_CONTENT, async (_event, projectPath: string, agentName: string) => {
     return agentSettings.readSourceAgentTemplateContent(projectPath, agentName);
   });
 
-  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, (_event, projectPath: string, agentName: string, content: string) => {
-    agentSettings.writeSourceAgentTemplateContent(projectPath, agentName, content);
+  ipcMain.handle(IPC.AGENT.WRITE_SOURCE_AGENT_TEMPLATE_CONTENT, async (_event, projectPath: string, agentName: string, content: string) => {
+    await agentSettings.writeSourceAgentTemplateContent(projectPath, agentName, content);
   });
 
-  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, (_event, projectPath: string, agentName: string) => {
-    agentSettings.deleteSourceAgentTemplate(projectPath, agentName);
+  ipcMain.handle(IPC.AGENT.DELETE_SOURCE_AGENT_TEMPLATE, async (_event, projectPath: string, agentName: string) => {
+    await agentSettings.deleteSourceAgentTemplate(projectPath, agentName);
   });
 
   // --- Materialization ---
 
-  ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return;
     const provider = resolveOrchestrator(projectPath, agent.orchestrator);
-    materializeAgent({ projectPath, agent, provider });
+    await materializeAgent({ projectPath, agent, provider });
   });
 
-  ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return null;
     const provider = resolveOrchestrator(projectPath, agent.orchestrator);
@@ -188,14 +188,14 @@ export function registerAgentSettingsHandlers(): void {
 
   // --- Config diff detection ---
 
-  ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, (_event, projectPath: string, agentId: string) => {
+  ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return { agentId, agentName: '', hasDiffs: false, items: [] };
     const provider = resolveOrchestrator(projectPath, agent.orchestrator);
     return computeConfigDiff({ projectPath, agentId, provider });
   });
 
-  ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, (_event, projectPath: string, agentId: string, selectedItemIds: string[]) => {
+  ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, async (_event, projectPath: string, agentId: string, selectedItemIds: string[]) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found', propagatedCount: 0 };
     const provider = resolveOrchestrator(projectPath, agent.orchestrator);

@@ -370,7 +370,7 @@ export async function createDurable(
   }
 
   // Inherit freeAgentMode from project defaults if not explicitly set
-  const projectDefaults = readProjectAgentDefaults(projectPath);
+  const projectDefaults = await readProjectAgentDefaults(projectPath);
   const effectiveFreeAgent = freeAgentMode ?? (projectDefaults.freeAgentMode || undefined);
 
   const config: DurableAgentConfig = {
@@ -394,7 +394,7 @@ export async function createDurable(
   if (worktreePath) {
     try {
       const provider = resolveOrchestrator(projectPath, orchestrator);
-      applyAgentDefaults(
+      await applyAgentDefaults(
         worktreePath,
         projectPath,
         (wt, content) => provider.writeInstructions(wt, content),

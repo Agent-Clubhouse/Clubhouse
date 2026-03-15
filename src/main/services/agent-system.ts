@@ -133,10 +133,10 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   // Resolve profile env early so it can be passed to checkAvailability.
   // This ensures auth checks (e.g. CLAUDE_CONFIG_DIR) use the correct
   // config directory when a profile is active.
-  const profileEnv = resolveProfileEnv(params.projectPath, provider.id);
+  const profileEnv = await resolveProfileEnv(params.projectPath, provider.id);
 
   // Read project-level command prefix for shell environment setup
-  const projectDefaults = readProjectAgentDefaults(params.projectPath);
+  const projectDefaults = await readProjectAgentDefaults(params.projectPath);
   const commandPrefix = projectDefaults?.commandPrefix || undefined;
 
   // Pre-flight: verify the orchestrator CLI is available before spawning.
@@ -162,7 +162,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       try {
         const config = getDurableConfig(params.projectPath, params.agentId);
         if (config && !config.clubhouseModeOverride && config.worktreePath) {
-          materializeAgent({ projectPath: params.projectPath, agent: config, provider });
+          await materializeAgent({ projectPath: params.projectPath, agent: config, provider });
         }
       } catch (err) {
         appLog('core:agent', 'warn', 'Clubhouse mode materialization failed, continuing spawn', {
@@ -175,14 +175,14 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       || (params.kind === 'quick' ? provider.getDefaultPermissions('quick') : undefined);
 
     // Resolve launch wrapper config (if any)
-    const wrapperConfig = readLaunchWrapper(params.projectPath);
+    const wrapperConfig = await readLaunchWrapper(params.projectPath);
     let resolvedMcpIds: string[] = [];
     if (wrapperConfig) {
       if (params.kind === 'durable') {
         const config = getDurableConfig(params.projectPath, params.agentId);
-        resolvedMcpIds = config?.mcpIds || readDefaultMcps(params.projectPath);
+        resolvedMcpIds = config?.mcpIds || await readDefaultMcps(params.projectPath);
       } else {
-        resolvedMcpIds = readDefaultMcps(params.projectPath);
+        resolvedMcpIds = await readDefaultMcps(params.projectPath);
       }
     }
 
@@ -384,7 +384,7 @@ export async function checkAvailability(
   if (!provider) {
     return { available: false, error: `Unknown orchestrator: ${id}` };
   }
-  const profileEnv = projectPath ? resolveProfileEnv(projectPath, id) : undefined;
+  const profileEnv = projectPath ? await resolveProfileEnv(projectPath, id) : undefined;
   return provider.checkAvailability(profileEnv);
 }
 
@@ -393,8 +393,8 @@ export async function checkAvailability(
  * Uses project-level profileId, then looks up the orchestrator-specific entry.
  * If the orchestrator is not configured in the profile, logs a warning and returns undefined.
  */
-export function resolveProfileEnv(projectPath: string, orchestratorId: string): Record<string, string> | undefined {
-  const defaults = readProjectAgentDefaults(projectPath);
+export async function resolveProfileEnv(projectPath: string, orchestratorId: string): Promise<Record<string, string> | undefined> {
+  const defaults = await readProjectAgentDefaults(projectPath);
   const profileId = defaults?.profileId;
   if (!profileId) return undefined;
 
@@ -440,7 +440,7 @@ export async function listSessions(
   let providerSessions: Array<{ sessionId: string; startedAt: string; lastActiveAt: string }> = [];
   if (isSessionCapable(provider)) {
     try {
-      const profileEnv = resolveProfileEnv(projectPath, provider.id);
+      const profileEnv = await resolveProfileEnv(projectPath, provider.id);
       providerSessions = await provider.listSessions(cwd, profileEnv);
     } catch (err) {
       appLog('core:agent', 'warn', 'Failed to list provider sessions', {
