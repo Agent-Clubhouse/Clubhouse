@@ -52,6 +52,18 @@ export function AgentList() {
   const dropdownBtnRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
 
+  // Only tick when at least one project agent has recent activity, so we
+  // avoid unconditional 2-second re-renders when the app is idle.
+  const hasRecentActivity = useMemo(() => {
+    const now = Date.now();
+    return Object.keys(agentActivity).some((id) => {
+      const last = agentActivity[id];
+      // Use 5 s window (> the 3 s isThinking threshold) to keep ticking
+      // until all agents have fully transitioned out of "thinking" state.
+      return last !== undefined && now - last < 5000;
+    });
+  }, [agentActivity]);
+
   // Drag-to-reorder state for durable agents
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -110,11 +122,12 @@ export function AgentList() {
     };
   }, [recordActivity]);
 
-  // Tick for activity status refresh
+  // Tick for activity status refresh — only while agents have recent activity
   useEffect(() => {
+    if (!hasRecentActivity) return;
     const interval = setInterval(() => setTick((t) => t + 1), 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasRecentActivity]);
 
   const projectAgents = Object.values(agents).filter(
     (a) => a.projectId === activeProjectId

@@ -282,3 +282,69 @@ describe('AgentList onData throttle', () => {
     expect(recordActivitySpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AgentList activity tick optimization', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    resetStores();
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not set up a tick interval when no agents have recent activity', () => {
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+
+    // agentActivity is empty — no recent activity
+    useAgentStore.setState({ agentActivity: {} });
+
+    render(<AgentList />);
+
+    // setInterval may be called by other effects, but not the 2-second tick
+    const tickIntervals = setIntervalSpy.mock.calls.filter(
+      ([, ms]) => ms === 2000
+    );
+    expect(tickIntervals).toHaveLength(0);
+
+    setIntervalSpy.mockRestore();
+  });
+
+  it('sets up a tick interval when agents have recent activity', () => {
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+
+    // Simulate recent activity on agent-1
+    useAgentStore.setState({
+      agentActivity: { 'agent-1': Date.now() },
+    });
+
+    render(<AgentList />);
+
+    const tickIntervals = setIntervalSpy.mock.calls.filter(
+      ([, ms]) => ms === 2000
+    );
+    expect(tickIntervals).toHaveLength(1);
+
+    setIntervalSpy.mockRestore();
+  });
+
+  it('does not set up a tick interval when all activity is stale', () => {
+    const setIntervalSpy = vi.spyOn(global, 'setInterval');
+
+    // Activity from 10 seconds ago — well past the 5s threshold
+    useAgentStore.setState({
+      agentActivity: { 'agent-1': Date.now() - 10000 },
+    });
+
+    render(<AgentList />);
+
+    const tickIntervals = setIntervalSpy.mock.calls.filter(
+      ([, ms]) => ms === 2000
+    );
+    expect(tickIntervals).toHaveLength(0);
+
+    setIntervalSpy.mockRestore();
+  });
+});
