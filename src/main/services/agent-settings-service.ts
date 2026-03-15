@@ -4,7 +4,17 @@ import * as os from 'os';
 import { McpServerEntry, SkillEntry, AgentTemplateEntry, PermissionsConfig, ProjectAgentDefaults, LaunchWrapperConfig, McpCatalogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 
+const fsp = fs.promises;
 const LOG_NS = 'core:agent-settings';
+
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await fsp.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Orchestrator convention paths used by settings functions.
@@ -39,24 +49,24 @@ interface ProjectSettings {
   defaultMcps?: string[];
 }
 
-export function readClaudeMd(worktreePath: string): string {
+export async function readClaudeMd(worktreePath: string): Promise<string> {
   const filePath = path.join(worktreePath, 'CLAUDE.md');
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read CLAUDE.md at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
   }
 }
 
-export function writeClaudeMd(worktreePath: string, content: string): void {
+export async function writeClaudeMd(worktreePath: string, content: string): Promise<void> {
   const filePath = path.join(worktreePath, 'CLAUDE.md');
-  fs.writeFileSync(filePath, content, 'utf-8');
+  await fsp.writeFile(filePath, content, 'utf-8');
 }
 
-function parseMcpServers(filePath: string, scope: 'project' | 'global'): McpServerEntry[] {
+async function parseMcpServers(filePath: string, scope: 'project' | 'global'): Promise<McpServerEntry[]> {
   try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = await fsp.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
     const servers = parsed.mcpServers || {};
     return Object.entries(servers).map(([name, config]: [string, Record<string, unknown>]) => ({
@@ -72,10 +82,12 @@ function parseMcpServers(filePath: string, scope: 'project' | 'global'): McpServ
   }
 }
 
-export function readMcpConfig(worktreePath: string, conv?: SettingsConventions): McpServerEntry[] {
+export async function readMcpConfig(worktreePath: string, conv?: SettingsConventions): Promise<McpServerEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const projectServers = parseMcpServers(path.join(worktreePath, c.mcpConfigFile), 'project');
-  const globalServers = parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global');
+  const [projectServers, globalServers] = await Promise.all([
+    parseMcpServers(path.join(worktreePath, c.mcpConfigFile), 'project'),
+    parseMcpServers(path.join(os.homedir(), '.claude.json'), 'global'),
+  ]);
 
   // Dedupe: project-scoped servers take priority over global ones with the same name
   const seen = new Set(projectServers.map((s) => s.name));
@@ -84,46 +96,44 @@ export function readMcpConfig(worktreePath: string, conv?: SettingsConventions):
   return [...projectServers, ...uniqueGlobal];
 }
 
-export function listSkills(worktreePath: string, conv?: SettingsConventions): SkillEntry[] {
+export async function listSkills(worktreePath: string, conv?: SettingsConventions): Promise<SkillEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const skillsDir = path.join(worktreePath, c.configDir, c.skillsDir);
   try {
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => {
-        const skillPath = path.join(skillsDir, e.name);
-        const hasReadme = fs.existsSync(path.join(skillPath, 'README.md'));
-        return { name: e.name, path: skillPath, hasReadme };
-      });
+    const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    return Promise.all(dirs.map(async (e) => {
+      const skillPath = path.join(skillsDir, e.name);
+      const hasReadme = await pathExists(path.join(skillPath, 'README.md'));
+      return { name: e.name, path: skillPath, hasReadme };
+    }));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to list skills from ${skillsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
 
-export function listAgentTemplates(worktreePath: string, conv?: SettingsConventions): AgentTemplateEntry[] {
+export async function listAgentTemplates(worktreePath: string, conv?: SettingsConventions): Promise<AgentTemplateEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const agentsDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
   try {
-    const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => {
-        const agentPath = path.join(agentsDir, e.name);
-        const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
-        return { name: e.name, path: agentPath, hasReadme };
-      });
+    const entries = await fsp.readdir(agentsDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    return Promise.all(dirs.map(async (e) => {
+      const agentPath = path.join(agentsDir, e.name);
+      const hasReadme = await pathExists(path.join(agentPath, 'README.md'));
+      return { name: e.name, path: agentPath, hasReadme };
+    }));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to list agent templates from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
 
-function readSettings(projectPath: string): ProjectSettings {
+async function readSettings(projectPath: string): Promise<ProjectSettings> {
   const settingsFile = path.join(projectPath, '.clubhouse', 'settings.json');
   try {
-    const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    const raw = JSON.parse(await fsp.readFile(settingsFile, 'utf-8'));
     if (!raw.defaults) raw.defaults = {};
     if (!raw.quickOverrides) raw.quickOverrides = {};
     return raw;
@@ -133,44 +143,42 @@ function readSettings(projectPath: string): ProjectSettings {
   }
 }
 
-function writeSettings(projectPath: string, settings: ProjectSettings): void {
+async function writeSettings(projectPath: string, settings: ProjectSettings): Promise<void> {
   const dir = path.join(projectPath, '.clubhouse');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
 }
 
-export function listSourceSkills(projectPath: string): SkillEntry[] {
-  const settings = readSettings(projectPath);
+export async function listSourceSkills(projectPath: string): Promise<SkillEntry[]> {
+  const settings = await readSettings(projectPath);
   const skillsSubdir = settings.defaultSkillsPath || 'skills';
   const skillsDir = path.join(projectPath, '.clubhouse', skillsSubdir);
   try {
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => {
-        const skillPath = path.join(skillsDir, e.name);
-        const hasReadme = fs.existsSync(path.join(skillPath, 'README.md'));
-        return { name: e.name, path: skillPath, hasReadme };
-      });
+    const entries = await fsp.readdir(skillsDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    return Promise.all(dirs.map(async (e) => {
+      const skillPath = path.join(skillsDir, e.name);
+      const hasReadme = await pathExists(path.join(skillPath, 'README.md'));
+      return { name: e.name, path: skillPath, hasReadme };
+    }));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to list source skills from ${skillsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
   }
 }
 
-export function listSourceAgentTemplates(projectPath: string): AgentTemplateEntry[] {
-  const settings = readSettings(projectPath);
+export async function listSourceAgentTemplates(projectPath: string): Promise<AgentTemplateEntry[]> {
+  const settings = await readSettings(projectPath);
   const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
   const agentsDir = path.join(projectPath, '.clubhouse', agentsSubdir);
   try {
-    const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => {
-        const agentPath = path.join(agentsDir, e.name);
-        const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
-        return { name: e.name, path: agentPath, hasReadme };
-      });
+    const entries = await fsp.readdir(agentsDir, { withFileTypes: true });
+    const dirs = entries.filter((e) => e.isDirectory());
+    return Promise.all(dirs.map(async (e) => {
+      const agentPath = path.join(agentsDir, e.name);
+      const hasReadme = await pathExists(path.join(agentPath, 'README.md'));
+      return { name: e.name, path: agentPath, hasReadme };
+    }));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to list source agent templates from ${agentsDir}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return [];
@@ -180,12 +188,12 @@ export function listSourceAgentTemplates(projectPath: string): AgentTemplateEntr
 /**
  * Read the content of a source skill's SKILL.md file (project-level .clubhouse/skills/).
  */
-export function readSourceSkillContent(projectPath: string, skillName: string): string {
-  const settings = readSettings(projectPath);
+export async function readSourceSkillContent(projectPath: string, skillName: string): Promise<string> {
+  const settings = await readSettings(projectPath);
   const skillsSubdir = settings.defaultSkillsPath || 'skills';
   const filePath = path.join(projectPath, '.clubhouse', skillsSubdir, skillName, 'SKILL.md');
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read source skill content at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
@@ -195,35 +203,33 @@ export function readSourceSkillContent(projectPath: string, skillName: string): 
 /**
  * Write the content of a source skill's SKILL.md file.
  */
-export function writeSourceSkillContent(projectPath: string, skillName: string, content: string): void {
-  const settings = readSettings(projectPath);
+export async function writeSourceSkillContent(projectPath: string, skillName: string, content: string): Promise<void> {
+  const settings = await readSettings(projectPath);
   const skillsSubdir = settings.defaultSkillsPath || 'skills';
   const dir = path.join(projectPath, '.clubhouse', skillsSubdir, skillName);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, 'SKILL.md'), content, 'utf-8');
 }
 
 /**
  * Delete a source skill directory.
  */
-export function deleteSourceSkill(projectPath: string, skillName: string): void {
-  const settings = readSettings(projectPath);
+export async function deleteSourceSkill(projectPath: string, skillName: string): Promise<void> {
+  const settings = await readSettings(projectPath);
   const skillsSubdir = settings.defaultSkillsPath || 'skills';
   const dir = path.join(projectPath, '.clubhouse', skillsSubdir, skillName);
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  await fsp.rm(dir, { recursive: true, force: true });
 }
 
 /**
  * Read the content of a source agent template's README.md file (project-level .clubhouse/agent-templates/).
  */
-export function readSourceAgentTemplateContent(projectPath: string, agentName: string): string {
-  const settings = readSettings(projectPath);
+export async function readSourceAgentTemplateContent(projectPath: string, agentName: string): Promise<string> {
+  const settings = await readSettings(projectPath);
   const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
   const filePath = path.join(projectPath, '.clubhouse', agentsSubdir, agentName, 'README.md');
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read source agent template at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
@@ -233,24 +239,22 @@ export function readSourceAgentTemplateContent(projectPath: string, agentName: s
 /**
  * Write the content of a source agent template's README.md file.
  */
-export function writeSourceAgentTemplateContent(projectPath: string, agentName: string, content: string): void {
-  const settings = readSettings(projectPath);
+export async function writeSourceAgentTemplateContent(projectPath: string, agentName: string, content: string): Promise<void> {
+  const settings = await readSettings(projectPath);
   const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
   const dir = path.join(projectPath, '.clubhouse', agentsSubdir, agentName);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'README.md'), content, 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, 'README.md'), content, 'utf-8');
 }
 
 /**
  * Delete a source agent template directory.
  */
-export function deleteSourceAgentTemplate(projectPath: string, agentName: string): void {
-  const settings = readSettings(projectPath);
+export async function deleteSourceAgentTemplate(projectPath: string, agentName: string): Promise<void> {
+  const settings = await readSettings(projectPath);
   const agentsSubdir = settings.defaultAgentsPath || 'agent-templates';
   const dir = path.join(projectPath, '.clubhouse', agentsSubdir, agentName);
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  await fsp.rm(dir, { recursive: true, force: true });
 }
 
 function makeTemplateReadme(kind: 'skill' | 'agent', name: string): string {
@@ -258,15 +262,15 @@ function makeTemplateReadme(kind: 'skill' | 'agent', name: string): string {
   return `---\n# ${label}: ${name}\n---\n\n# ${name}\n\nDescribe what this ${kind} does.\n`;
 }
 
-export function createSkillDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): string {
+export async function createSkillDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = isSource
     ? path.join(basePath, name)
     : path.join(basePath, c.configDir, c.skillsDir, name);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   const readmePath = path.join(dir, 'README.md');
-  if (!fs.existsSync(readmePath)) {
-    fs.writeFileSync(readmePath, makeTemplateReadme('skill', name), 'utf-8');
+  if (!(await pathExists(readmePath))) {
+    await fsp.writeFile(readmePath, makeTemplateReadme('skill', name), 'utf-8');
   }
 
   // Auto-set defaultSkillsPath if this is the first source skill
@@ -274,11 +278,11 @@ export function createSkillDir(basePath: string, name: string, isSource: boolean
     const projectPath = path.resolve(basePath, '..', '..');
     // Only if basePath is under .clubhouse/
     if (basePath.includes(path.join('.clubhouse', ''))) {
-      const settings = readSettings(projectPath);
+      const settings = await readSettings(projectPath);
       if (!settings.defaultSkillsPath) {
         const relative = path.relative(path.join(projectPath, '.clubhouse'), basePath);
         settings.defaultSkillsPath = relative;
-        writeSettings(projectPath, settings);
+        await writeSettings(projectPath, settings);
       }
     }
   }
@@ -286,26 +290,26 @@ export function createSkillDir(basePath: string, name: string, isSource: boolean
   return readmePath;
 }
 
-export function createAgentTemplateDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): string {
+export async function createAgentTemplateDir(basePath: string, name: string, isSource: boolean, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = isSource
     ? path.join(basePath, name)
     : path.join(basePath, c.configDir, c.agentTemplatesDir, name);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   const readmePath = path.join(dir, 'README.md');
-  if (!fs.existsSync(readmePath)) {
-    fs.writeFileSync(readmePath, makeTemplateReadme('agent', name), 'utf-8');
+  if (!(await pathExists(readmePath))) {
+    await fsp.writeFile(readmePath, makeTemplateReadme('agent', name), 'utf-8');
   }
 
   // Auto-set defaultAgentsPath if this is the first source agent template
   if (isSource) {
     const projectPath = path.resolve(basePath, '..', '..');
     if (basePath.includes(path.join('.clubhouse', ''))) {
-      const settings = readSettings(projectPath);
+      const settings = await readSettings(projectPath);
       if (!settings.defaultAgentsPath) {
         const relative = path.relative(path.join(projectPath, '.clubhouse'), basePath);
         settings.defaultAgentsPath = relative;
-        writeSettings(projectPath, settings);
+        await writeSettings(projectPath, settings);
       }
     }
   }
@@ -317,13 +321,13 @@ export function createAgentTemplateDir(basePath: string, name: string, isSource:
  * Read permissions from .claude/settings.local.json in the given worktree.
  * Returns { allow?: string[], deny?: string[] }.
  */
-export function readPermissions(worktreePath: string, conv?: SettingsConventions): PermissionsConfig {
+export async function readPermissions(worktreePath: string, conv?: SettingsConventions): Promise<PermissionsConfig> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON settings files (e.g. TOML) are not supported — return empty
   if (c.settingsFormat && c.settingsFormat !== 'json') return {};
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
   try {
-    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    const raw = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
     const perms = raw.permissions;
     if (!perms || typeof perms !== 'object') return {};
     return {
@@ -340,11 +344,11 @@ export function readPermissions(worktreePath: string, conv?: SettingsConventions
  * Read the content of a skill's SKILL.md file.
  * Uses conventions to resolve the correct config directory.
  */
-export function readSkillContent(worktreePath: string, skillName: string, conv?: SettingsConventions): string {
+export async function readSkillContent(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const filePath = path.join(worktreePath, c.configDir, c.skillsDir, skillName, 'SKILL.md');
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read skill content at ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '';
@@ -354,37 +358,35 @@ export function readSkillContent(worktreePath: string, skillName: string, conv?:
 /**
  * Write the content of a skill's SKILL.md file, creating the directory if needed.
  */
-export function writeSkillContent(worktreePath: string, skillName: string, content: string, conv?: SettingsConventions): void {
+export async function writeSkillContent(worktreePath: string, skillName: string, content: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'SKILL.md'), content, 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, 'SKILL.md'), content, 'utf-8');
 }
 
 /**
  * Delete a skill directory and all its contents.
  */
-export function deleteSkill(worktreePath: string, skillName: string, conv?: SettingsConventions): void {
+export async function deleteSkill(worktreePath: string, skillName: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = path.join(worktreePath, c.configDir, c.skillsDir, skillName);
-  if (fs.existsSync(dir)) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  await fsp.rm(dir, { recursive: true, force: true });
 }
 
 /**
  * Read the content of an agent template markdown file.
  */
-export function readAgentTemplateContent(worktreePath: string, agentName: string, conv?: SettingsConventions): string {
+export async function readAgentTemplateContent(worktreePath: string, agentName: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const filePath = path.join(worktreePath, c.configDir, c.agentTemplatesDir, agentName + '.md');
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch {
     // Fallback: check if it's a directory-based template
     const dirPath = path.join(worktreePath, c.configDir, c.agentTemplatesDir, agentName, 'README.md');
     try {
-      return fs.readFileSync(dirPath, 'utf-8');
+      return await fsp.readFile(dirPath, 'utf-8');
     } catch (err) {
       appLog(LOG_NS, 'warn', `Failed to read agent template "${agentName}" (tried .md and directory forms)`, { meta: { error: err instanceof Error ? err.message : String(err) } });
       return '';
@@ -395,37 +397,35 @@ export function readAgentTemplateContent(worktreePath: string, agentName: string
 /**
  * Write the content of an agent template markdown file, creating directory if needed.
  */
-export function writeAgentTemplateContent(worktreePath: string, agentName: string, content: string, conv?: SettingsConventions): void {
+export async function writeAgentTemplateContent(worktreePath: string, agentName: string, content: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const dir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, agentName + '.md'), content, 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(path.join(dir, agentName + '.md'), content, 'utf-8');
 }
 
 /**
  * Delete an agent template (both .md file and directory forms).
  */
-export function deleteAgentTemplate(worktreePath: string, agentName: string, conv?: SettingsConventions): void {
+export async function deleteAgentTemplate(worktreePath: string, agentName: string, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const baseDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
   const filePath = path.join(baseDir, agentName + '.md');
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
+  if (await pathExists(filePath)) {
+    await fsp.unlink(filePath);
   }
   const dirPath = path.join(baseDir, agentName);
-  if (fs.existsSync(dirPath)) {
-    fs.rmSync(dirPath, { recursive: true, force: true });
-  }
+  await fsp.rm(dirPath, { recursive: true, force: true });
 }
 
 /**
  * List agent template .md files and directories under the agent templates dir.
  */
-export function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConventions): AgentTemplateEntry[] {
+export async function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConventions): Promise<AgentTemplateEntry[]> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   const agentsDir = path.join(worktreePath, c.configDir, c.agentTemplatesDir);
   try {
-    const entries = fs.readdirSync(agentsDir, { withFileTypes: true });
+    const entries = await fsp.readdir(agentsDir, { withFileTypes: true });
     const results: AgentTemplateEntry[] = [];
     // Collect .md files (flat agent definitions)
     for (const e of entries) {
@@ -438,7 +438,7 @@ export function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConv
     for (const e of entries) {
       if (e.isDirectory()) {
         const agentPath = path.join(agentsDir, e.name);
-        const hasReadme = fs.existsSync(path.join(agentPath, 'README.md'));
+        const hasReadme = await pathExists(path.join(agentPath, 'README.md'));
         // Skip if already listed as .md file
         if (!results.find((r) => r.name === e.name)) {
           results.push({ name: e.name, path: agentPath, hasReadme });
@@ -456,13 +456,13 @@ export function listAgentTemplateFiles(worktreePath: string, conv?: SettingsConv
  * Read the raw MCP config file content as a string.
  * Uses conventions to resolve the correct MCP config file path.
  */
-export function readMcpRawJson(worktreePath: string, conv?: SettingsConventions): string {
+export async function readMcpRawJson(worktreePath: string, conv?: SettingsConventions): Promise<string> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON config files (e.g. TOML) cannot be read as JSON — return empty default
   if (c.settingsFormat && c.settingsFormat !== 'json') return '{\n  "mcpServers": {}\n}';
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   try {
-    return fs.readFileSync(filePath, 'utf-8');
+    return await fsp.readFile(filePath, 'utf-8');
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read MCP config from ${filePath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return '{\n  "mcpServers": {}\n}';
@@ -473,7 +473,7 @@ export function readMcpRawJson(worktreePath: string, conv?: SettingsConventions)
  * Write raw JSON string to MCP config file. Validates JSON before writing.
  * Returns { ok: true } on success, or { ok: false, error: string } on parse failure.
  */
-export function writeMcpRawJson(worktreePath: string, content: string, conv?: SettingsConventions): { ok: boolean; error?: string } {
+export async function writeMcpRawJson(worktreePath: string, content: string, conv?: SettingsConventions): Promise<{ ok: boolean; error?: string }> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON config files (e.g. TOML) — refuse to write JSON content
   if (c.settingsFormat && c.settingsFormat !== 'json') {
@@ -487,8 +487,8 @@ export function writeMcpRawJson(worktreePath: string, content: string, conv?: Se
   const filePath = path.join(worktreePath, c.mcpConfigFile);
   // Ensure parent directory exists (e.g. .github/ for copilot)
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(filePath, content, 'utf-8');
+  await fsp.mkdir(dir, { recursive: true });
+  await fsp.writeFile(filePath, content, 'utf-8');
   return { ok: true };
 }
 
@@ -496,19 +496,17 @@ export function writeMcpRawJson(worktreePath: string, content: string, conv?: Se
  * Write permissions to .claude/settings.local.json in the given worktree.
  * Merges with existing file content (preserves hooks and other settings).
  */
-export function writePermissions(worktreePath: string, permissions: PermissionsConfig, conv?: SettingsConventions): void {
+export async function writePermissions(worktreePath: string, permissions: PermissionsConfig, conv?: SettingsConventions): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
   // Non-JSON settings files (e.g. TOML) are not supported — skip write
   if (c.settingsFormat && c.settingsFormat !== 'json') return;
   const settingsPath = path.join(worktreePath, c.configDir, c.localSettingsFile);
   const settingsDir = path.dirname(settingsPath);
-  if (!fs.existsSync(settingsDir)) {
-    fs.mkdirSync(settingsDir, { recursive: true });
-  }
+  await fsp.mkdir(settingsDir, { recursive: true });
 
   let existing: Record<string, unknown> = {};
   try {
-    existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    existing = JSON.parse(await fsp.readFile(settingsPath, 'utf-8'));
   } catch (err) {
     appLog(LOG_NS, 'warn', `Failed to read existing settings at ${settingsPath}, starting fresh`, { meta: { error: err instanceof Error ? err.message : String(err) } });
   }
@@ -529,24 +527,24 @@ export function writePermissions(worktreePath: string, permissions: PermissionsC
     delete merged.permissions;
   }
 
-  fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
+  await fsp.writeFile(settingsPath, JSON.stringify(merged, null, 2), 'utf-8');
 }
 
 /**
  * Read project-level agent defaults from .clubhouse/settings.json.
  */
-export function readProjectAgentDefaults(projectPath: string): ProjectAgentDefaults {
-  const settings = readSettings(projectPath);
+export async function readProjectAgentDefaults(projectPath: string): Promise<ProjectAgentDefaults> {
+  const settings = await readSettings(projectPath);
   return settings.agentDefaults || {};
 }
 
 /**
  * Write project-level agent defaults to .clubhouse/settings.json.
  */
-export function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): void {
-  const settings = readSettings(projectPath);
+export async function writeProjectAgentDefaults(projectPath: string, defaults: ProjectAgentDefaults): Promise<void> {
+  const settings = await readSettings(projectPath);
   settings.agentDefaults = defaults;
-  writeSettings(projectPath, settings);
+  await writeSettings(projectPath, settings);
 }
 
 /**
@@ -559,26 +557,26 @@ export function writeProjectAgentDefaults(projectPath: string, defaults: Project
  * @param writeInstructions - Orchestrator-specific instructions writer
  * @param conv          - Orchestrator conventions for path resolution
  */
-export function applyAgentDefaults(
+export async function applyAgentDefaults(
   worktreePath: string,
   projectPath: string,
   writeInstructions?: (worktreePath: string, content: string) => void,
   conv?: SettingsConventions,
-): void {
+): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
-  const defaults = readProjectAgentDefaults(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
   if (!defaults) return;
 
   if (defaults.instructions) {
     if (writeInstructions) {
       writeInstructions(worktreePath, defaults.instructions);
     } else {
-      writeClaudeMd(worktreePath, defaults.instructions);
+      await writeClaudeMd(worktreePath, defaults.instructions);
     }
   }
 
   if (defaults.permissions) {
-    writePermissions(worktreePath, defaults.permissions, conv);
+    await writePermissions(worktreePath, defaults.permissions, conv);
   }
 
   if (defaults.mcpJson && (!c.settingsFormat || c.settingsFormat === 'json')) {
@@ -586,8 +584,8 @@ export function applyAgentDefaults(
       JSON.parse(defaults.mcpJson); // Validate before writing
       const mcpPath = path.join(worktreePath, c.mcpConfigFile);
       const dir = path.dirname(mcpPath);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(mcpPath, defaults.mcpJson, 'utf-8');
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.writeFile(mcpPath, defaults.mcpJson, 'utf-8');
     } catch (err) {
       appLog(LOG_NS, 'warn', 'Skipped invalid MCP JSON in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
@@ -598,8 +596,8 @@ export function applyAgentDefaults(
  * Read the launch wrapper config from .clubhouse/settings.json.
  * Returns undefined when no wrapper is configured.
  */
-export function readLaunchWrapper(projectPath: string): LaunchWrapperConfig | undefined {
-  const settings = readSettings(projectPath);
+export async function readLaunchWrapper(projectPath: string): Promise<LaunchWrapperConfig | undefined> {
+  const settings = await readSettings(projectPath);
   return settings.launchWrapper;
 }
 
@@ -607,8 +605,8 @@ export function readLaunchWrapper(projectPath: string): LaunchWrapperConfig | un
  * Read the MCP catalog from .clubhouse/settings.json.
  * Returns an empty array when no catalog is configured.
  */
-export function readMcpCatalog(projectPath: string): McpCatalogEntry[] {
-  const settings = readSettings(projectPath);
+export async function readMcpCatalog(projectPath: string): Promise<McpCatalogEntry[]> {
+  const settings = await readSettings(projectPath);
   return settings.mcpCatalog || [];
 }
 
@@ -616,8 +614,8 @@ export function readMcpCatalog(projectPath: string): McpCatalogEntry[] {
  * Read the project default MCP IDs from .clubhouse/settings.json.
  * Returns an empty array when no defaults are configured.
  */
-export function readDefaultMcps(projectPath: string): string[] {
-  const settings = readSettings(projectPath);
+export async function readDefaultMcps(projectPath: string): Promise<string[]> {
+  const settings = await readSettings(projectPath);
   return settings.defaultMcps || [];
 }
 
@@ -625,30 +623,30 @@ export function readDefaultMcps(projectPath: string): string[] {
  * Write the launch wrapper config to .clubhouse/settings.json.
  * Pass undefined to remove the wrapper.
  */
-export function writeLaunchWrapper(projectPath: string, wrapper: LaunchWrapperConfig | undefined): void {
-  const settings = readSettings(projectPath);
+export async function writeLaunchWrapper(projectPath: string, wrapper: LaunchWrapperConfig | undefined): Promise<void> {
+  const settings = await readSettings(projectPath);
   if (wrapper) {
     settings.launchWrapper = wrapper;
   } else {
     delete settings.launchWrapper;
   }
-  writeSettings(projectPath, settings);
+  await writeSettings(projectPath, settings);
 }
 
 /**
  * Write the MCP catalog to .clubhouse/settings.json.
  */
-export function writeMcpCatalog(projectPath: string, catalog: McpCatalogEntry[]): void {
-  const settings = readSettings(projectPath);
+export async function writeMcpCatalog(projectPath: string, catalog: McpCatalogEntry[]): Promise<void> {
+  const settings = await readSettings(projectPath);
   settings.mcpCatalog = catalog;
-  writeSettings(projectPath, settings);
+  await writeSettings(projectPath, settings);
 }
 
 /**
  * Write project default MCP IDs to .clubhouse/settings.json.
  */
-export function writeDefaultMcps(projectPath: string, mcpIds: string[]): void {
-  const settings = readSettings(projectPath);
+export async function writeDefaultMcps(projectPath: string, mcpIds: string[]): Promise<void> {
+  const settings = await readSettings(projectPath);
   settings.defaultMcps = mcpIds;
-  writeSettings(projectPath, settings);
+  await writeSettings(projectPath, settings);
 }
