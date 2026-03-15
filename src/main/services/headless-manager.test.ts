@@ -566,6 +566,35 @@ describe('headless-manager', () => {
       const transcript = await readTranscript('test-agent');
       expect(transcript).toBe(''); // empty array mapped to empty string
     });
+
+    it('uses pre-cached serialized lines instead of re-serializing (#637)', async () => {
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      const events = [
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
+        { type: 'result', result: 'Done' },
+      ];
+      for (const event of events) {
+        mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
+      }
+
+      // Spy on JSON.stringify to verify it is NOT called during readTranscript
+      const stringifySpy = vi.spyOn(JSON, 'stringify');
+      stringifySpy.mockClear();
+
+      const transcript = await readTranscript('test-agent');
+
+      // readTranscript should not call JSON.stringify (it uses pre-cached lines)
+      expect(stringifySpy).not.toHaveBeenCalled();
+
+      // Verify content is still correct
+      const lines = transcript!.split('\n').filter(l => l.trim());
+      expect(lines.length).toBe(2);
+      expect(lines[0]).toContain('"type":"assistant"');
+      expect(lines[1]).toContain('"type":"result"');
+
+      stringifySpy.mockRestore();
+    });
   });
 
   // ============================================================
