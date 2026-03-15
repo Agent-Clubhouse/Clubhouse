@@ -9,11 +9,12 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('child_process', () => ({
-  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
-    cb(new Error('not found'), '', '');
-    return {};
-  }),
+  execFile: vi.fn(),
   execSync: vi.fn(() => { throw new Error('not found'); }),
+}));
+
+vi.mock('util', () => ({
+  promisify: vi.fn((fn: any) => vi.fn(async (...args: any[]) => fn(...args))),
 }));
 
 vi.mock('../util/shell', () => ({
@@ -144,14 +145,12 @@ describe('BaseProvider', () => {
       expect(result.error).toMatch(/Could not find/);
     });
 
-    it('uses displayName in generic error message', async () => {
+    it('includes binary name context in error when binary not found', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
-      // Force a non-Error throw via execSync
-      const { execSync } = await import('child_process');
-      vi.mocked(execSync).mockImplementation(() => { throw 42; });
       const result = await provider.checkAvailability();
       expect(result.available).toBe(false);
-      expect(result.error).toContain('Test Provider');
+      // Error from findBinaryInPath includes binary name
+      expect(result.error).toContain('test-cli');
     });
   });
 
@@ -262,12 +261,17 @@ describe('BaseProvider', () => {
   describe('getModelOptions (with modelFetchConfig)', () => {
     let fetchProvider: TestProviderWithModelFetch;
 
-    beforeEach(() => {
+    beforeEach(async () => {
       fetchProvider = new TestProviderWithModelFetch();
+      // With promisify mocked, execFile is called directly (no callback).
+      // Default: throw so getModelOptions falls back to static list.
+      const { execFile } = await import('child_process');
+      vi.mocked(execFile).mockImplementation(() => {
+        throw new Error('not found');
+      });
     });
 
     it('falls back to static list when binary help fails', async () => {
-      // execFile mock throws by default
       const options = await fetchProvider.getModelOptions();
       expect(options).toEqual([
         { id: 'default', label: 'Default' },
@@ -278,16 +282,7 @@ describe('BaseProvider', () => {
 
     it('parses dynamic models when binary succeeds', async () => {
       const { execFile } = await import('child_process');
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: any, args: any, _opts: any, cb: any) => {
-          if (args?.[0] === '--list-models') {
-            cb(null, 'fast-model\nslow-model\n', '');
-          } else {
-            cb(new Error('not found'), '', '');
-          }
-          return {} as any;
-        }
-      );
+      vi.mocked(execFile).mockReturnValue({ stdout: 'fast-model\nslow-model\n', stderr: '' } as any);
 
       const options = await fetchProvider.getModelOptions();
       expect(options).toEqual([
@@ -299,16 +294,7 @@ describe('BaseProvider', () => {
 
     it('falls back when parser returns null', async () => {
       const { execFile } = await import('child_process');
-      vi.mocked(execFile).mockImplementation(
-        (_cmd: any, args: any, _opts: any, cb: any) => {
-          if (args?.[0] === '--list-models') {
-            cb(null, '', '');  // Empty output → parser returns null
-          } else {
-            cb(new Error('not found'), '', '');
-          }
-          return {} as any;
-        }
-      );
+      vi.mocked(execFile).mockReturnValue({ stdout: '', stderr: '' } as any);
 
       const options = await fetchProvider.getModelOptions();
       expect(options).toEqual([
