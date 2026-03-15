@@ -47,7 +47,7 @@ type FeedItem =
   | { kind: 'plan'; plan: PlanUpdate }
   | { kind: 'error'; error: ErrorEvent };
 
-interface ViewState {
+export interface ViewState {
   feedItems: FeedItem[];
   /** Tool ID → index in feedItems, for fast updates */
   toolIndexMap: Map<string, number>;
@@ -60,7 +60,7 @@ interface ViewState {
   endReason?: string;
 }
 
-const initialState: ViewState = {
+export const initialState: ViewState = {
   feedItems: [],
   toolIndexMap: new Map(),
   commandIndexMap: new Map(),
@@ -240,22 +240,32 @@ function EndIcon({ reason }: { reason: string }) {
 
 // ── Event processing (pure function) ──────────────────────────────────
 
-function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
-  const feedItems = [...prev.feedItems];
-  const toolIndexMap = new Map(prev.toolIndexMap);
-  const commandIndexMap = new Map(prev.commandIndexMap);
+export function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
+  // Lazy-copy: only clone a data structure when this event actually mutates it.
+  // This avoids copying up to 500 feedItems + two Maps on every event.
+  let feedItems = prev.feedItems;
+  let toolIndexMap = prev.toolIndexMap;
+  let commandIndexMap = prev.commandIndexMap;
   let pendingPermissions = prev.pendingPermissions;
   let plan = prev.plan;
   let usage = prev.usage;
   let isComplete = prev.isComplete;
   let endReason = prev.endReason;
 
+  let feedCloned = false;
+  function cloneFeed() {
+    if (!feedCloned) {
+      feedItems = [...feedItems];
+      feedCloned = true;
+    }
+  }
+
   switch (event.type) {
     case 'text_delta': {
       const data = event.data as TextDelta;
       const last = feedItems[feedItems.length - 1];
+      cloneFeed();
       if (last && last.kind === 'text' && last.isStreaming) {
-        // Append to existing streaming text block
         feedItems[feedItems.length - 1] = { ...last, text: last.text + data.text };
       } else {
         feedItems.push({ kind: 'text', text: data.text, isStreaming: true });
@@ -266,6 +276,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
     case 'text_done': {
       const data = event.data as TextDone;
       const last = feedItems[feedItems.length - 1];
+      cloneFeed();
       if (last && last.kind === 'text') {
         feedItems[feedItems.length - 1] = { kind: 'text', text: data.text, isStreaming: false };
       } else {
@@ -276,8 +287,10 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
 
     case 'tool_start': {
       const data = event.data as ToolStart;
+      cloneFeed();
       const idx = feedItems.length;
       feedItems.push({ kind: 'tool', tool: data, output: '', status: 'running' });
+      toolIndexMap = new Map(prev.toolIndexMap);
       toolIndexMap.set(data.id, idx);
       break;
     }
@@ -286,6 +299,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
       const data = event.data as ToolOutput;
       const idx = toolIndexMap.get(data.id);
       if (idx != null && feedItems[idx]?.kind === 'tool') {
+        cloneFeed();
         const item = feedItems[idx] as Extract<FeedItem, { kind: 'tool' }>;
         feedItems[idx] = { ...item, output: item.output + data.output };
       }
@@ -296,6 +310,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
       const data = event.data as ToolEnd;
       const idx = toolIndexMap.get(data.id);
       if (idx != null && feedItems[idx]?.kind === 'tool') {
+        cloneFeed();
         const item = feedItems[idx] as Extract<FeedItem, { kind: 'tool' }>;
         feedItems[idx] = {
           ...item,
@@ -308,18 +323,21 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
 
     case 'file_diff': {
       const data = event.data as FileDiff;
+      cloneFeed();
       feedItems.push({ kind: 'diff', diff: data });
       break;
     }
 
     case 'command_output': {
       const data = event.data as CommandOutput;
+      cloneFeed();
       const existingIdx = commandIndexMap.get(data.id);
       if (existingIdx != null) {
         feedItems[existingIdx] = { kind: 'command', command: data };
       } else {
         const idx = feedItems.length;
         feedItems.push({ kind: 'command', command: data });
+        commandIndexMap = new Map(prev.commandIndexMap);
         commandIndexMap.set(data.id, idx);
       }
       break;
@@ -327,6 +345,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
 
     case 'permission_request': {
       const data = event.data as PermissionRequest;
+      cloneFeed();
       pendingPermissions = new Map(pendingPermissions);
       pendingPermissions.set(data.id, data);
       feedItems.push({ kind: 'permission', request: data });
@@ -342,6 +361,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
     case 'thinking': {
       const data = event.data as Thinking;
       const last = feedItems[feedItems.length - 1];
+      cloneFeed();
       if (last && last.kind === 'thinking' && last.isStreaming) {
         feedItems[feedItems.length - 1] = {
           kind: 'thinking',
@@ -356,6 +376,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
 
     case 'error': {
       const data = event.data as ErrorEvent;
+      cloneFeed();
       feedItems.push({ kind: 'error', error: data });
       break;
     }
@@ -363,7 +384,6 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
     case 'usage': {
       const data = event.data as UsageEvent;
       if (usage) {
-        // Accumulate across turns
         usage = {
           inputTokens: usage.inputTokens + data.inputTokens,
           outputTokens: usage.outputTokens + data.outputTokens,
@@ -382,6 +402,7 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
       isComplete = true;
       endReason = data.reason;
       if (data.summary) {
+        cloneFeed();
         feedItems.push({ kind: 'text', text: data.summary, isStreaming: false });
       }
       break;
@@ -389,7 +410,23 @@ function processEvent(prev: ViewState, event: StructuredEvent): ViewState {
   }
 
   // Cap feed items
-  const capped = feedItems.length > MAX_EVENTS ? feedItems.slice(feedItems.length - MAX_EVENTS) : feedItems;
+  if (feedItems.length > MAX_EVENTS) {
+    feedItems = feedItems.slice(feedItems.length - MAX_EVENTS);
+  }
 
-  return { feedItems: capped, toolIndexMap, commandIndexMap, pendingPermissions, plan, usage, isComplete, endReason };
+  // Skip state update if nothing changed
+  if (
+    feedItems === prev.feedItems &&
+    toolIndexMap === prev.toolIndexMap &&
+    commandIndexMap === prev.commandIndexMap &&
+    pendingPermissions === prev.pendingPermissions &&
+    plan === prev.plan &&
+    usage === prev.usage &&
+    isComplete === prev.isComplete &&
+    endReason === prev.endReason
+  ) {
+    return prev;
+  }
+
+  return { feedItems, toolIndexMap, commandIndexMap, pendingPermissions, plan, usage, isComplete, endReason };
 }
