@@ -229,9 +229,9 @@ export function buildWildcardContext(
  * Resolve the effective source control provider for a project.
  * Priority: project-level agentDefaults → app-level clubhouse mode settings → 'github'.
  */
-export function resolveSourceControlProvider(projectPath: string): SourceControlProvider {
+export async function resolveSourceControlProvider(projectPath: string): Promise<SourceControlProvider> {
   // 1. Project-level
-  const defaults = readProjectAgentDefaults(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
   if (defaults.sourceControlProvider) return defaults.sourceControlProvider;
 
   // 2. App-level clubhouse mode settings
@@ -248,24 +248,24 @@ export function resolveSourceControlProvider(projectPath: string): SourceControl
  * Materialize project defaults into an agent's worktree with wildcard replacement.
  * Called on agent wake when clubhouse mode is enabled.
  */
-export function materializeAgent(params: {
+export async function materializeAgent(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
-}): void {
+}): Promise<void> {
   const { projectPath, agent, provider } = params;
   const worktreePath = agent.worktreePath;
   if (!worktreePath) return;
 
-  const defaults = readProjectAgentDefaults(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
   if (!defaults.instructions && !defaults.permissions && !defaults.mcpJson) {
     // Also check source skills/templates
-    const sourceSkills = listSourceSkills(projectPath);
-    const sourceTemplates = listSourceAgentTemplates(projectPath);
+    const sourceSkills = await listSourceSkills(projectPath);
+    const sourceTemplates = await listSourceAgentTemplates(projectPath);
     if (sourceSkills.length === 0 && sourceTemplates.length === 0) return;
   }
 
-  const scp = resolveSourceControlProvider(projectPath);
+  const scp = await resolveSourceControlProvider(projectPath);
   const commands = {
     buildCommand: defaults.buildCommand,
     testCommand: defaults.testCommand,
@@ -286,7 +286,7 @@ export function materializeAgent(params: {
       allow: defaults.permissions.allow?.map((r) => replaceWildcards(r, ctx)),
       deny: defaults.permissions.deny?.map((r) => replaceWildcards(r, ctx)),
     };
-    writePermissions(worktreePath, resolvedPerms, conv);
+    await writePermissions(worktreePath, resolvedPerms, conv);
   }
 
   // 3. MCP JSON — skip for non-JSON settings formats (e.g. TOML)
@@ -306,10 +306,10 @@ export function materializeAgent(params: {
   }
 
   // 4. Source skills → copy to worktree with wildcard replacement
-  copySourceDir(projectPath, worktreePath, 'skills', conv, ctx);
+  await copySourceDir(projectPath, worktreePath, 'skills', conv, ctx);
 
   // 5. Source agent templates → copy to worktree with wildcard replacement
-  copySourceDir(projectPath, worktreePath, 'agentTemplates', conv, ctx);
+  await copySourceDir(projectPath, worktreePath, 'agentTemplates', conv, ctx);
 
   appLog('core:materialization', 'info', `Materialized settings for agent ${agent.name}`, {
     meta: { agentName: agent.name, projectPath },
@@ -319,14 +319,14 @@ export function materializeAgent(params: {
 /**
  * Preview materialization results without writing files.
  */
-export function previewMaterialization(params: {
+export async function previewMaterialization(params: {
   projectPath: string;
   agent: DurableAgentConfig;
   provider: OrchestratorProvider;
-}): MaterializationPreview {
+}): Promise<MaterializationPreview> {
   const { projectPath, agent, provider } = params;
-  const defaults = readProjectAgentDefaults(projectPath);
-  const scp = resolveSourceControlProvider(projectPath);
+  const defaults = await readProjectAgentDefaults(projectPath);
+  const scp = await resolveSourceControlProvider(projectPath);
   const commands = {
     buildCommand: defaults.buildCommand,
     testCommand: defaults.testCommand,
@@ -357,8 +357,8 @@ export function previewMaterialization(params: {
     }
   }
 
-  const sourceSkills = listSourceSkills(projectPath);
-  const sourceTemplates = listSourceAgentTemplates(projectPath);
+  const sourceSkills = await listSourceSkills(projectPath);
+  const sourceTemplates = await listSourceAgentTemplates(projectPath);
 
   return {
     instructions,
@@ -375,16 +375,16 @@ export function previewMaterialization(params: {
  * Copy source skills or agent templates from .clubhouse to worktree,
  * applying wildcard replacement to file contents.
  */
-function copySourceDir(
+async function copySourceDir(
   projectPath: string,
   worktreePath: string,
   kind: 'skills' | 'agentTemplates',
   conv: SettingsConventions,
   ctx: WildcardContext,
-): void {
+): Promise<void> {
   const sources = kind === 'skills'
-    ? listSourceSkills(projectPath)
-    : listSourceAgentTemplates(projectPath);
+    ? await listSourceSkills(projectPath)
+    : await listSourceAgentTemplates(projectPath);
 
   if (sources.length === 0) return;
 
@@ -492,12 +492,12 @@ When given a mission:
  * Create default template content when clubhouse mode is first enabled
  * and no agentDefaults exist yet.
  */
-export function ensureDefaultTemplates(projectPath: string): void {
-  const existing = readProjectAgentDefaults(projectPath);
+export async function ensureDefaultTemplates(projectPath: string): Promise<void> {
+  const existing = await readProjectAgentDefaults(projectPath);
   const hasDefaults = !!(existing.instructions || existing.permissions || existing.mcpJson);
 
   if (!hasDefaults) {
-    writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
+    await writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
   }
 
   // Always ensure default skills exist (even when defaults already exist)
@@ -509,8 +509,8 @@ export function ensureDefaultTemplates(projectPath: string): void {
  * existing customizations. Also resets all default skills to their built-in
  * content (overwriting stale customizations).
  */
-export function resetProjectAgentDefaults(projectPath: string): void {
-  writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
+export async function resetProjectAgentDefaults(projectPath: string): Promise<void> {
+  await writeProjectAgentDefaults(projectPath, getDefaultAgentTemplates());
   resetDefaultSkills(projectPath);
 }
 

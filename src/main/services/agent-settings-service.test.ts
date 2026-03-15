@@ -2,13 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
 vi.mock('fs', () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  readdirSync: vi.fn(() => []),
-  rmSync: vi.fn(),
-  unlinkSync: vi.fn(),
+  promises: {
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    mkdir: vi.fn(),
+    readdir: vi.fn(async () => []),
+    rm: vi.fn(),
+    unlink: vi.fn(),
+    access: vi.fn(),
+  },
 }));
 
 vi.mock('./log-service', () => ({
@@ -27,6 +29,7 @@ import {
   SettingsConventions,
 } from './agent-settings-service';
 
+const fsp = fs.promises;
 const WORKTREE = '/test/worktree';
 
 describe('readClaudeMd', () => {
@@ -34,36 +37,34 @@ describe('readClaudeMd', () => {
     vi.clearAllMocks();
   });
 
-  it('reads from CLAUDE.md at project root', () => {
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('reads from CLAUDE.md at project root', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p) === path.join(WORKTREE, 'CLAUDE.md')) return '# Project content';
       throw new Error('not found');
     });
 
-    const result = readClaudeMd(WORKTREE);
+    const result = await readClaudeMd(WORKTREE);
     expect(result).toBe('# Project content');
-    expect(vi.mocked(fs.readFileSync)).toHaveBeenCalledWith(
+    expect(vi.mocked(fsp.readFile)).toHaveBeenCalledWith(
       path.join(WORKTREE, 'CLAUDE.md'),
       'utf-8',
     );
   });
 
-  it('does not read from .claude/CLAUDE.local.md', () => {
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('does not read from .claude/CLAUDE.local.md', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).includes('CLAUDE.local.md')) return '# Local content';
       throw new Error('not found');
     });
 
-    const result = readClaudeMd(WORKTREE);
+    const result = await readClaudeMd(WORKTREE);
     expect(result).toBe('');
   });
 
-  it('returns empty string when file does not exist', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => {
-      throw new Error('not found');
-    });
+  it('returns empty string when file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('not found'));
 
-    const result = readClaudeMd(WORKTREE);
+    const result = await readClaudeMd(WORKTREE);
     expect(result).toBe('');
   });
 });
@@ -73,18 +74,18 @@ describe('writeClaudeMd', () => {
     vi.clearAllMocks();
   });
 
-  it('writes to CLAUDE.md at project root', () => {
-    writeClaudeMd(WORKTREE, '# New content');
-    expect(vi.mocked(fs.writeFileSync)).toHaveBeenCalledWith(
+  it('writes to CLAUDE.md at project root', async () => {
+    await writeClaudeMd(WORKTREE, '# New content');
+    expect(vi.mocked(fsp.writeFile)).toHaveBeenCalledWith(
       path.join(WORKTREE, 'CLAUDE.md'),
       '# New content',
       'utf-8',
     );
   });
 
-  it('does not create .claude directory', () => {
-    writeClaudeMd(WORKTREE, '# Content');
-    expect(vi.mocked(fs.mkdirSync)).not.toHaveBeenCalled();
+  it('does not create .claude directory', async () => {
+    await writeClaudeMd(WORKTREE, '# Content');
+    expect(vi.mocked(fsp.mkdir)).not.toHaveBeenCalled();
   });
 });
 
@@ -93,8 +94,8 @@ describe('readPermissions', () => {
     vi.clearAllMocks();
   });
 
-  it('reads allow and deny from settings.local.json', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('reads allow and deny from settings.local.json', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       permissions: {
         allow: ['Bash(git:*)', 'Read'],
         deny: ['WebFetch'],
@@ -102,33 +103,33 @@ describe('readPermissions', () => {
       hooks: { PreToolUse: [] },
     }));
 
-    const result = readPermissions(WORKTREE);
+    const result = await readPermissions(WORKTREE);
     expect(result.allow).toEqual(['Bash(git:*)', 'Read']);
     expect(result.deny).toEqual(['WebFetch']);
   });
 
-  it('returns empty object when file does not exist', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+  it('returns empty object when file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-    const result = readPermissions(WORKTREE);
+    const result = await readPermissions(WORKTREE);
     expect(result).toEqual({});
   });
 
-  it('returns empty object when permissions key is missing', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('returns empty object when permissions key is missing', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       hooks: { PreToolUse: [] },
     }));
 
-    const result = readPermissions(WORKTREE);
+    const result = await readPermissions(WORKTREE);
     expect(result).toEqual({});
   });
 
-  it('handles missing allow or deny arrays', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('handles missing allow or deny arrays', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       permissions: { allow: ['Read'] },
     }));
 
-    const result = readPermissions(WORKTREE);
+    const result = await readPermissions(WORKTREE);
     expect(result.allow).toEqual(['Read']);
     expect(result.deny).toBeUndefined();
   });
@@ -139,75 +140,69 @@ describe('writePermissions', () => {
     vi.clearAllMocks();
   });
 
-  it('writes permissions to settings.local.json', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+  it('writes permissions to settings.local.json', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
 
-    writePermissions(WORKTREE, { allow: ['Read', 'Write'], deny: ['WebFetch'] });
+    await writePermissions(WORKTREE, { allow: ['Read', 'Write'], deny: ['WebFetch'] });
 
-    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.permissions.allow).toEqual(['Read', 'Write']);
     expect(written.permissions.deny).toEqual(['WebFetch']);
   });
 
-  it('preserves existing hooks when writing permissions', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('preserves existing hooks when writing permissions', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo test' }] }] },
     }));
 
-    writePermissions(WORKTREE, { allow: ['Bash(git:*)'] });
+    await writePermissions(WORKTREE, { allow: ['Bash(git:*)'] });
 
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.permissions.allow).toEqual(['Bash(git:*)']);
     expect(written.hooks.PreToolUse).toHaveLength(1);
   });
 
-  it('removes permissions key when both arrays are empty', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('removes permissions key when both arrays are empty', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       permissions: { allow: ['Read'] },
       hooks: {},
     }));
 
-    writePermissions(WORKTREE, { allow: [], deny: [] });
+    await writePermissions(WORKTREE, { allow: [], deny: [] });
 
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.permissions).toBeUndefined();
     expect(written.hooks).toBeDefined();
   });
 
-  it('creates settings parent directory if it does not exist', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+  it('creates settings parent directory if it does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-    writePermissions(WORKTREE, { allow: ['Read'] });
+    await writePermissions(WORKTREE, { allow: ['Read'] });
 
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.dirname(path.join(WORKTREE, '.claude', 'settings.local.json')),
       { recursive: true },
     );
   });
 
-  it('handles only allow without deny', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+  it('handles only allow without deny', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
 
-    writePermissions(WORKTREE, { allow: ['Bash(git:*)'] });
+    await writePermissions(WORKTREE, { allow: ['Bash(git:*)'] });
 
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.permissions.allow).toEqual(['Bash(git:*)']);
     expect(written.permissions.deny).toBeUndefined();
   });
 
-  it('handles only deny without allow', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({}));
+  it('handles only deny without allow', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({}));
 
-    writePermissions(WORKTREE, { deny: ['WebFetch'] });
+    await writePermissions(WORKTREE, { deny: ['WebFetch'] });
 
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.permissions.deny).toEqual(['WebFetch']);
     expect(written.permissions.allow).toBeUndefined();
   });
@@ -218,33 +213,32 @@ describe('writePermissions', () => {
 describe('readSkillContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('reads SKILL.md from the skill directory', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('# My Skill');
-    const result = readSkillContent(WORKTREE, 'my-skill');
+  it('reads SKILL.md from the skill directory', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('# My Skill');
+    const result = await readSkillContent(WORKTREE, 'my-skill');
     expect(result).toBe('# My Skill');
-    expect(fs.readFileSync).toHaveBeenCalledWith(
+    expect(fsp.readFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'skills', 'my-skill', 'SKILL.md'),
       'utf-8',
     );
   });
 
-  it('returns empty string when file does not exist', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    expect(readSkillContent(WORKTREE, 'missing')).toBe('');
+  it('returns empty string when file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    expect(await readSkillContent(WORKTREE, 'missing')).toBe('');
   });
 });
 
 describe('writeSkillContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('creates directory and writes SKILL.md', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    writeSkillContent(WORKTREE, 'new-skill', '# Content');
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+  it('creates directory and writes SKILL.md', async () => {
+    await writeSkillContent(WORKTREE, 'new-skill', '# Content');
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'skills', 'new-skill'),
       { recursive: true },
     );
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'skills', 'new-skill', 'SKILL.md'),
       '# Content',
       'utf-8',
@@ -255,19 +249,12 @@ describe('writeSkillContent', () => {
 describe('deleteSkill', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('removes the skill directory recursively', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    deleteSkill(WORKTREE, 'old-skill');
-    expect(fs.rmSync).toHaveBeenCalledWith(
+  it('removes the skill directory recursively', async () => {
+    await deleteSkill(WORKTREE, 'old-skill');
+    expect(fsp.rm).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'skills', 'old-skill'),
       { recursive: true, force: true },
     );
-  });
-
-  it('does nothing when directory does not exist', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    deleteSkill(WORKTREE, 'missing');
-    expect(fs.rmSync).not.toHaveBeenCalled();
   });
 });
 
@@ -276,39 +263,38 @@ describe('deleteSkill', () => {
 describe('readAgentTemplateContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('reads .md file first', () => {
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('reads .md file first', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('my-agent.md')) return '# Agent';
       throw new Error('ENOENT');
     });
-    expect(readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Agent');
+    expect(await readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Agent');
   });
 
-  it('falls back to directory README.md', () => {
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('falls back to directory README.md', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('README.md')) return '# Directory Agent';
       throw new Error('ENOENT');
     });
-    expect(readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Directory Agent');
+    expect(await readAgentTemplateContent(WORKTREE, 'my-agent')).toBe('# Directory Agent');
   });
 
-  it('returns empty when neither exists', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    expect(readAgentTemplateContent(WORKTREE, 'missing')).toBe('');
+  it('returns empty when neither exists', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    expect(await readAgentTemplateContent(WORKTREE, 'missing')).toBe('');
   });
 });
 
 describe('writeAgentTemplateContent', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('creates directory and writes .md file', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    writeAgentTemplateContent(WORKTREE, 'new-agent', '# Agent');
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+  it('creates directory and writes .md file', async () => {
+    await writeAgentTemplateContent(WORKTREE, 'new-agent', '# Agent');
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'agents'),
       { recursive: true },
     );
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'agents', 'new-agent.md'),
       '# Agent',
       'utf-8',
@@ -319,13 +305,13 @@ describe('writeAgentTemplateContent', () => {
 describe('deleteAgentTemplate', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('removes both .md file and directory forms', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    deleteAgentTemplate(WORKTREE, 'old-agent');
-    expect(fs.unlinkSync).toHaveBeenCalledWith(
+  it('removes both .md file and directory forms', async () => {
+    vi.mocked(fsp.access).mockResolvedValue(undefined);
+    await deleteAgentTemplate(WORKTREE, 'old-agent');
+    expect(fsp.unlink).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'agents', 'old-agent.md'),
     );
-    expect(fs.rmSync).toHaveBeenCalledWith(
+    expect(fsp.rm).toHaveBeenCalledWith(
       path.join(WORKTREE, '.claude', 'agents', 'old-agent'),
       { recursive: true, force: true },
     );
@@ -335,22 +321,22 @@ describe('deleteAgentTemplate', () => {
 describe('listAgentTemplateFiles', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('lists .md files and directories', () => {
-    vi.mocked(fs.readdirSync).mockReturnValue([
+  it('lists .md files and directories', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
       { name: 'builder', isFile: () => false, isDirectory: () => true },
     ] as any);
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = listAgentTemplateFiles(WORKTREE);
+    const result = await listAgentTemplateFiles(WORKTREE);
     expect(result).toHaveLength(2);
     expect(result[0].name).toBe('reviewer');
     expect(result[1].name).toBe('builder');
   });
 
-  it('returns empty array when directory does not exist', () => {
-    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    expect(listAgentTemplateFiles(WORKTREE)).toEqual([]);
+  it('returns empty array when directory does not exist', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(new Error('ENOENT'));
+    expect(await listAgentTemplateFiles(WORKTREE)).toEqual([]);
   });
 });
 
@@ -359,14 +345,14 @@ describe('listAgentTemplateFiles', () => {
 describe('readMcpRawJson', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('reads .mcp.json content', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('{"mcpServers": {"test": {}}}');
-    expect(readMcpRawJson(WORKTREE)).toBe('{"mcpServers": {"test": {}}}');
+  it('reads .mcp.json content', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('{"mcpServers": {"test": {}}}');
+    expect(await readMcpRawJson(WORKTREE)).toBe('{"mcpServers": {"test": {}}}');
   });
 
-  it('returns default JSON when file does not exist', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = readMcpRawJson(WORKTREE);
+  it('returns default JSON when file does not exist', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    const result = await readMcpRawJson(WORKTREE);
     expect(JSON.parse(result)).toEqual({ mcpServers: {} });
   });
 });
@@ -374,22 +360,22 @@ describe('readMcpRawJson', () => {
 describe('writeMcpRawJson', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('writes valid JSON to .mcp.json', () => {
+  it('writes valid JSON to .mcp.json', async () => {
     const content = '{"mcpServers": {"test": {"command": "npx"}}}';
-    const result = writeMcpRawJson(WORKTREE, content);
+    const result = await writeMcpRawJson(WORKTREE, content);
     expect(result.ok).toBe(true);
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.mcp.json'),
       content,
       'utf-8',
     );
   });
 
-  it('rejects invalid JSON without writing', () => {
-    const result = writeMcpRawJson(WORKTREE, '{invalid');
+  it('rejects invalid JSON without writing', async () => {
+    const result = await writeMcpRawJson(WORKTREE, '{invalid');
     expect(result.ok).toBe(false);
     expect(result.error).toBeDefined();
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -400,8 +386,8 @@ const PROJECT = '/test/project';
 describe('readProjectAgentDefaults', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('reads agentDefaults from settings.json', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('reads agentDefaults from settings.json', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
       agentDefaults: {
@@ -410,42 +396,41 @@ describe('readProjectAgentDefaults', () => {
       },
     }));
 
-    const result = readProjectAgentDefaults(PROJECT);
+    const result = await readProjectAgentDefaults(PROJECT);
     expect(result.instructions).toBe('# Hello');
     expect(result.freeAgentMode).toBe(true);
   });
 
-  it('returns empty object when no defaults set', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('returns empty object when no defaults set', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
     }));
 
-    expect(readProjectAgentDefaults(PROJECT)).toEqual({});
+    expect(await readProjectAgentDefaults(PROJECT)).toEqual({});
   });
 
-  it('returns empty object when settings file missing', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    expect(readProjectAgentDefaults(PROJECT)).toEqual({});
+  it('returns empty object when settings file missing', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    expect(await readProjectAgentDefaults(PROJECT)).toEqual({});
   });
 });
 
 describe('writeProjectAgentDefaults', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('writes agentDefaults to settings.json', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('writes agentDefaults to settings.json', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
     }));
 
-    writeProjectAgentDefaults(PROJECT, {
+    await writeProjectAgentDefaults(PROJECT, {
       instructions: '# Template',
       permissions: { allow: ['Read'] },
     });
 
-    const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+    const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
     expect(written.agentDefaults.instructions).toBe('# Template');
     expect(written.agentDefaults.permissions.allow).toEqual(['Read']);
   });
@@ -454,25 +439,23 @@ describe('writeProjectAgentDefaults', () => {
 describe('applyAgentDefaults', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('writes instructions to CLAUDE.md', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('writes instructions to CLAUDE.md', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
       agentDefaults: { instructions: '# Agent Template' },
     }));
 
-    applyAgentDefaults(WORKTREE, PROJECT);
+    await applyAgentDefaults(WORKTREE, PROJECT);
 
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
     const claudeMdCall = writeCalls.find((c) => String(c[0]).endsWith('CLAUDE.md'));
     expect(claudeMdCall).toBeDefined();
     expect(claudeMdCall![1]).toBe('# Agent Template');
   });
 
-  it('writes permissions to settings.local.json', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('writes permissions to settings.local.json', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).includes('settings.json') && !String(p).includes('settings.local')) {
         return JSON.stringify({
           defaults: {},
@@ -483,9 +466,9 @@ describe('applyAgentDefaults', () => {
       return '{}';
     });
 
-    applyAgentDefaults(WORKTREE, PROJECT);
+    await applyAgentDefaults(WORKTREE, PROJECT);
 
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
     const permCall = writeCalls.find((c) => String(c[0]).includes('settings.local.json'));
     expect(permCall).toBeDefined();
     const written = JSON.parse(permCall![1] as string);
@@ -493,30 +476,29 @@ describe('applyAgentDefaults', () => {
     expect(written.permissions.deny).toEqual(['WebFetch']);
   });
 
-  it('writes mcp.json when default is set', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
+  it('writes mcp.json when default is set', async () => {
     const mcpContent = '{"mcpServers": {"test": {"command": "npx"}}}';
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
       agentDefaults: { mcpJson: mcpContent },
     }));
 
-    applyAgentDefaults(WORKTREE, PROJECT);
+    await applyAgentDefaults(WORKTREE, PROJECT);
 
-    const writeCalls = vi.mocked(fs.writeFileSync).mock.calls;
+    const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
     const mcpCall = writeCalls.find((c) => String(c[0]).endsWith('.mcp.json'));
     expect(mcpCall).toBeDefined();
     expect(mcpCall![1]).toBe(mcpContent);
   });
 
-  it('does nothing when no defaults are set', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+  it('does nothing when no defaults are set', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-    applyAgentDefaults(WORKTREE, PROJECT);
+    await applyAgentDefaults(WORKTREE, PROJECT);
 
-    // Only the readFileSync call, no writes
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    // Only the readFile call, no writes
+    expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -538,183 +520,176 @@ const COPILOT_CONVENTIONS: SettingsConventions = {
 describe('orchestrator convention routing', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('listSkills uses convention configDir/skillsDir', () => {
-    vi.mocked(fs.readdirSync).mockReturnValue([
+  it('listSkills uses convention configDir/skillsDir', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'my-skill', isDirectory: () => true, isFile: () => false },
     ] as any);
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = listSkills(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fs.readdirSync).toHaveBeenCalledWith(
+    const result = await listSkills(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fsp.readdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills'),
       { withFileTypes: true },
     );
     expect(result[0].path).toContain('.github');
   });
 
-  it('listAgentTemplates uses convention configDir/agentTemplatesDir', () => {
-    vi.mocked(fs.readdirSync).mockReturnValue([
+  it('listAgentTemplates uses convention configDir/agentTemplatesDir', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'builder', isDirectory: () => true, isFile: () => false },
     ] as any);
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
 
-    const result = listAgentTemplates(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fs.readdirSync).toHaveBeenCalledWith(
+    const result = await listAgentTemplates(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fsp.readdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents'),
       { withFileTypes: true },
     );
     expect(result[0].path).toContain('.github');
   });
 
-  it('readSkillContent uses convention paths', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('# Skill');
-    readSkillContent(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
-    expect(fs.readFileSync).toHaveBeenCalledWith(
+  it('readSkillContent uses convention paths', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('# Skill');
+    await readSkillContent(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
+    expect(fsp.readFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills', 'test-skill', 'SKILL.md'),
       'utf-8',
     );
   });
 
-  it('writeSkillContent uses convention paths', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    writeSkillContent(WORKTREE, 'test-skill', '# Content', COPILOT_CONVENTIONS);
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+  it('writeSkillContent uses convention paths', async () => {
+    await writeSkillContent(WORKTREE, 'test-skill', '# Content', COPILOT_CONVENTIONS);
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills', 'test-skill'),
       { recursive: true },
     );
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills', 'test-skill', 'SKILL.md'),
       '# Content',
       'utf-8',
     );
   });
 
-  it('deleteSkill uses convention paths', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    deleteSkill(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
-    expect(fs.rmSync).toHaveBeenCalledWith(
+  it('deleteSkill uses convention paths', async () => {
+    await deleteSkill(WORKTREE, 'test-skill', COPILOT_CONVENTIONS);
+    expect(fsp.rm).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'skills', 'test-skill'),
       { recursive: true, force: true },
     );
   });
 
-  it('readAgentTemplateContent uses convention paths', () => {
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('readAgentTemplateContent uses convention paths', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('my-agent.md')) return '# Agent';
       throw new Error('ENOENT');
     });
-    readAgentTemplateContent(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
-    expect(fs.readFileSync).toHaveBeenCalledWith(
+    await readAgentTemplateContent(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
+    expect(fsp.readFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
       'utf-8',
     );
   });
 
-  it('writeAgentTemplateContent uses convention paths', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    writeAgentTemplateContent(WORKTREE, 'my-agent', '# Agent', COPILOT_CONVENTIONS);
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+  it('writeAgentTemplateContent uses convention paths', async () => {
+    await writeAgentTemplateContent(WORKTREE, 'my-agent', '# Agent', COPILOT_CONVENTIONS);
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents'),
       { recursive: true },
     );
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
       '# Agent',
       'utf-8',
     );
   });
 
-  it('deleteAgentTemplate uses convention paths', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    deleteAgentTemplate(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
-    expect(fs.unlinkSync).toHaveBeenCalledWith(
+  it('deleteAgentTemplate uses convention paths', async () => {
+    vi.mocked(fsp.access).mockResolvedValue(undefined);
+    await deleteAgentTemplate(WORKTREE, 'my-agent', COPILOT_CONVENTIONS);
+    expect(fsp.unlink).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents', 'my-agent.md'),
     );
-    expect(fs.rmSync).toHaveBeenCalledWith(
+    expect(fsp.rm).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents', 'my-agent'),
       { recursive: true, force: true },
     );
   });
 
-  it('listAgentTemplateFiles uses convention paths', () => {
-    vi.mocked(fs.readdirSync).mockReturnValue([
+  it('listAgentTemplateFiles uses convention paths', async () => {
+    vi.mocked(fsp.readdir).mockResolvedValue([
       { name: 'reviewer.md', isFile: () => true, isDirectory: () => false },
     ] as any);
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
 
-    listAgentTemplateFiles(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fs.readdirSync).toHaveBeenCalledWith(
+    await listAgentTemplateFiles(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fsp.readdir).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'agents'),
       { withFileTypes: true },
     );
   });
 
-  it('readMcpRawJson uses convention mcpConfigFile', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('{"mcpServers": {}}');
-    readMcpRawJson(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fs.readFileSync).toHaveBeenCalledWith(
+  it('readMcpRawJson uses convention mcpConfigFile', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('{"mcpServers": {}}');
+    await readMcpRawJson(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fsp.readFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'mcp.json'),
       'utf-8',
     );
   });
 
-  it('writeMcpRawJson uses convention mcpConfigFile', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
+  it('writeMcpRawJson uses convention mcpConfigFile', async () => {
     const content = '{"mcpServers": {}}';
-    writeMcpRawJson(WORKTREE, content, COPILOT_CONVENTIONS);
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+    await writeMcpRawJson(WORKTREE, content, COPILOT_CONVENTIONS);
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'mcp.json'),
       content,
       'utf-8',
     );
   });
 
-  it('readMcpConfig uses convention mcpConfigFile for project servers', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('{"mcpServers": {"test": {"command": "npx"}}}');
-    readMcpConfig(WORKTREE, COPILOT_CONVENTIONS);
-    // First readFileSync call should use convention path
-    expect(vi.mocked(fs.readFileSync).mock.calls[0][0]).toBe(
+  it('readMcpConfig uses convention mcpConfigFile for project servers', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('{"mcpServers": {"test": {"command": "npx"}}}');
+    await readMcpConfig(WORKTREE, COPILOT_CONVENTIONS);
+    // First readFile call should use convention path
+    expect(vi.mocked(fsp.readFile).mock.calls[0][0]).toBe(
       path.join(WORKTREE, '.github', 'mcp.json'),
     );
   });
 
-  it('readPermissions uses convention configDir/localSettingsFile', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('readPermissions uses convention configDir/localSettingsFile', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       permissions: { allow: ['Read'] },
     }));
-    readPermissions(WORKTREE, COPILOT_CONVENTIONS);
-    expect(fs.readFileSync).toHaveBeenCalledWith(
+    await readPermissions(WORKTREE, COPILOT_CONVENTIONS);
+    expect(fsp.readFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
       'utf-8',
     );
   });
 
-  it('writePermissions uses convention configDir/localSettingsFile', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue('{}');
-    writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
+  it('writePermissions uses convention configDir/localSettingsFile', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('{}');
+    await writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
+    expect(fsp.writeFile).toHaveBeenCalledWith(
       path.join(WORKTREE, '.github', 'hooks', 'hooks.json'),
       expect.any(String),
       'utf-8',
     );
   });
 
-  it('writePermissions creates parent directory of settings file if missing', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
+  it('writePermissions creates parent directory of settings file if missing', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    await writePermissions(WORKTREE, { allow: ['Read'] }, COPILOT_CONVENTIONS);
     // Should create the parent dir of hooks/hooks.json, which is .github/hooks
-    expect(fs.mkdirSync).toHaveBeenCalledWith(
+    expect(fsp.mkdir).toHaveBeenCalledWith(
       path.dirname(path.join(WORKTREE, '.github', 'hooks', 'hooks.json')),
       { recursive: true },
     );
   });
 
-  it('applyAgentDefaults uses convention for MCP and permissions', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
+  it('applyAgentDefaults uses convention for MCP and permissions', async () => {
     const mcpContent = '{"mcpServers": {"test": {}}}';
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.includes('settings.json') && !s.includes('settings.local') && !s.includes('hooks')) {
         return JSON.stringify({
@@ -730,17 +705,17 @@ describe('orchestrator convention routing', () => {
     });
 
     const writeInstructions = vi.fn();
-    applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, COPILOT_CONVENTIONS);
+    await applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, COPILOT_CONVENTIONS);
 
     // MCP should be written to convention path
-    const mcpWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+    const mcpWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
       (c) => String(c[0]).includes('mcp.json'),
     );
     expect(mcpWriteCall).toBeDefined();
     expect(String(mcpWriteCall![0])).toBe(path.join(WORKTREE, '.github', 'mcp.json'));
 
     // Permissions should use convention path
-    const permWriteCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+    const permWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
       (c) => String(c[0]).includes('hooks.json'),
     );
     expect(permWriteCall).toBeDefined();
@@ -763,34 +738,33 @@ const CODEX_CONVENTIONS: SettingsConventions = {
 describe('TOML settingsFormat guard', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('readPermissions returns empty for TOML conventions without reading file', () => {
-    const result = readPermissions(WORKTREE, CODEX_CONVENTIONS);
+  it('readPermissions returns empty for TOML conventions without reading file', async () => {
+    const result = await readPermissions(WORKTREE, CODEX_CONVENTIONS);
     expect(result).toEqual({});
-    expect(fs.readFileSync).not.toHaveBeenCalled();
+    expect(fsp.readFile).not.toHaveBeenCalled();
   });
 
-  it('writePermissions is a no-op for TOML conventions', () => {
-    writePermissions(WORKTREE, { allow: ['Read', 'Write'], deny: ['WebFetch'] }, CODEX_CONVENTIONS);
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
-    expect(fs.mkdirSync).not.toHaveBeenCalled();
+  it('writePermissions is a no-op for TOML conventions', async () => {
+    await writePermissions(WORKTREE, { allow: ['Read', 'Write'], deny: ['WebFetch'] }, CODEX_CONVENTIONS);
+    expect(fsp.writeFile).not.toHaveBeenCalled();
+    expect(fsp.mkdir).not.toHaveBeenCalled();
   });
 
-  it('readMcpRawJson returns empty default for TOML conventions without reading file', () => {
-    const result = readMcpRawJson(WORKTREE, CODEX_CONVENTIONS);
+  it('readMcpRawJson returns empty default for TOML conventions without reading file', async () => {
+    const result = await readMcpRawJson(WORKTREE, CODEX_CONVENTIONS);
     expect(JSON.parse(result)).toEqual({ mcpServers: {} });
-    expect(fs.readFileSync).not.toHaveBeenCalled();
+    expect(fsp.readFile).not.toHaveBeenCalled();
   });
 
-  it('writeMcpRawJson returns error for TOML conventions without writing file', () => {
-    const result = writeMcpRawJson(WORKTREE, '{"mcpServers": {}}', CODEX_CONVENTIONS);
+  it('writeMcpRawJson returns error for TOML conventions without writing file', async () => {
+    const result = await writeMcpRawJson(WORKTREE, '{"mcpServers": {}}', CODEX_CONVENTIONS);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/not supported/i);
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 
-  it('applyAgentDefaults skips permissions and MCP JSON for TOML conventions', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockImplementation((p: any) => {
+  it('applyAgentDefaults skips permissions and MCP JSON for TOML conventions', async () => {
+    vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.includes('settings.json') && !s.includes('config.toml')) {
         return JSON.stringify({
@@ -807,13 +781,13 @@ describe('TOML settingsFormat guard', () => {
     });
 
     const writeInstructions = vi.fn();
-    applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, CODEX_CONVENTIONS);
+    await applyAgentDefaults(WORKTREE, PROJECT, writeInstructions, CODEX_CONVENTIONS);
 
     // Instructions should still be written via the custom writer
     expect(writeInstructions).toHaveBeenCalledWith(WORKTREE, '# Codex Agent');
 
     // No files should be written (permissions and MCP JSON both skipped)
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
+    expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 });
 
@@ -826,9 +800,9 @@ describe('error logging in catch blocks', () => {
     vi.clearAllMocks();
   });
 
-  it('readClaudeMd logs warning on read failure', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = readClaudeMd(WORKTREE);
+  it('readClaudeMd logs warning on read failure', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    const result = await readClaudeMd(WORKTREE);
     expect(result).toBe('');
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -837,9 +811,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readMcpConfig logs warning on corrupt JSON', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
-    const result = readMcpConfig(WORKTREE);
+  it('readMcpConfig logs warning on corrupt JSON', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('not valid json');
+    const result = await readMcpConfig(WORKTREE);
     expect(result).toEqual([]);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -848,9 +822,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('listSkills logs warning on directory read failure', () => {
-    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
-    const result = listSkills(WORKTREE);
+  it('listSkills logs warning on directory read failure', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
+    const result = await listSkills(WORKTREE);
     expect(result).toEqual([]);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -859,9 +833,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('listAgentTemplates logs warning on directory read failure', () => {
-    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
-    const result = listAgentTemplates(WORKTREE);
+  it('listAgentTemplates logs warning on directory read failure', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
+    const result = await listAgentTemplates(WORKTREE);
     expect(result).toEqual([]);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -870,9 +844,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readPermissions logs warning on parse failure', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('corrupt json');
-    const result = readPermissions(WORKTREE);
+  it('readPermissions logs warning on parse failure', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('corrupt json');
+    const result = await readPermissions(WORKTREE);
     expect(result).toEqual({});
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -881,9 +855,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readSkillContent logs warning on read failure', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = readSkillContent(WORKTREE, 'test-skill');
+  it('readSkillContent logs warning on read failure', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    const result = await readSkillContent(WORKTREE, 'test-skill');
     expect(result).toBe('');
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -892,9 +866,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readAgentTemplateContent logs warning when both forms fail', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = readAgentTemplateContent(WORKTREE, 'missing');
+  it('readAgentTemplateContent logs warning when both forms fail', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    const result = await readAgentTemplateContent(WORKTREE, 'missing');
     expect(result).toBe('');
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -903,9 +877,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('readMcpRawJson logs warning on read failure', () => {
-    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-    const result = readMcpRawJson(WORKTREE);
+  it('readMcpRawJson logs warning on read failure', async () => {
+    vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+    const result = await readMcpRawJson(WORKTREE);
     expect(JSON.parse(result)).toEqual({ mcpServers: {} });
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -914,9 +888,9 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('listAgentTemplateFiles logs warning on directory read failure', () => {
-    vi.mocked(fs.readdirSync).mockImplementation(() => { throw new Error('EACCES'); });
-    const result = listAgentTemplateFiles(WORKTREE);
+  it('listAgentTemplateFiles logs warning on directory read failure', async () => {
+    vi.mocked(fsp.readdir).mockRejectedValue(new Error('EACCES'));
+    const result = await listAgentTemplateFiles(WORKTREE);
     expect(result).toEqual([]);
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -925,15 +899,14 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('applyAgentDefaults logs warning on invalid MCP JSON', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+  it('applyAgentDefaults logs warning on invalid MCP JSON', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({
       defaults: {},
       quickOverrides: {},
       agentDefaults: { mcpJson: 'not valid json' },
     }));
 
-    applyAgentDefaults(WORKTREE, PROJECT);
+    await applyAgentDefaults(WORKTREE, PROJECT);
 
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -942,11 +915,10 @@ describe('error logging in catch blocks', () => {
     );
   });
 
-  it('writePermissions logs warning when existing settings are corrupt', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(fs.readFileSync).mockReturnValue('not json');
+  it('writePermissions logs warning when existing settings are corrupt', async () => {
+    vi.mocked(fsp.readFile).mockResolvedValue('not json');
 
-    writePermissions(WORKTREE, { allow: ['Read'] });
+    await writePermissions(WORKTREE, { allow: ['Read'] });
 
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
@@ -954,6 +926,6 @@ describe('error logging in catch blocks', () => {
       expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
     );
     // Should still write permissions despite corrupt existing file
-    expect(fs.writeFileSync).toHaveBeenCalled();
+    expect(fsp.writeFile).toHaveBeenCalled();
   });
 });

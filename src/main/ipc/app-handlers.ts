@@ -232,7 +232,7 @@ export function registerAppHandlers(): void {
 
     // On first enable: create default templates and enable git excludes
     if (!previousEnabled && nowEnabled && projectPath) {
-      ensureDefaultTemplates(projectPath);
+      await ensureDefaultTemplates(projectPath);
       try {
         const provider = await resolveOrchestrator(projectPath);
         enableExclusions(projectPath, provider);

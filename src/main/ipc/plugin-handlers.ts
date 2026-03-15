@@ -172,7 +172,7 @@ export function registerPluginHandlers(): void {
     pluginManifestRegistry.unregisterManifest(pluginId);
   }));
 
-  ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, withValidatedArgs([stringArg(), stringArg()], (_event, pluginId: string, projectPath: string) => {
+  ipcMain.handle(IPC.PLUGIN.LIST_PROJECT_INJECTIONS, withValidatedArgs([stringArg(), stringArg()], async (_event, pluginId: string, projectPath: string) => {
     return pluginDiscovery.listProjectPluginInjections(pluginId, projectPath);
   }));
 
@@ -180,7 +180,7 @@ export function registerPluginHandlers(): void {
     await pluginDiscovery.cleanupProjectPluginInjections(pluginId, projectPath);
   }));
 
-  ipcMain.handle(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, withValidatedArgs([stringArg(), arrayArg(stringArg())], (_event, projectPath: string, knownPluginIds: string[]) => {
+  ipcMain.handle(IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS, withValidatedArgs([stringArg(), arrayArg(stringArg())], async (_event, projectPath: string, knownPluginIds: string[]) => {
     return pluginDiscovery.listOrphanedPluginIds(projectPath, knownPluginIds);
   }));
 
