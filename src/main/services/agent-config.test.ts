@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as path from 'path';
 
 // Mock child_process (include execFile used by orchestrator providers)
-// exec is used by async createDurable (via execGitAsync); execSync by other functions
+// exec is used by all async git operations via execGitAsync
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
   exec: vi.fn((_cmd: string, _opts: any, cb: (...args: unknown[]) => void) => {
@@ -51,7 +51,7 @@ vi.mock('./fs-utils', () => ({
 }));
 
 import * as fsp from 'fs/promises';
-import { exec, execSync } from 'child_process';
+import { exec } from 'child_process';
 import { pathExists } from './fs-utils';
 import {
   listDurable,
@@ -395,10 +395,8 @@ describe('createDurable', () => {
 
   it('uses async exec (non-blocking) for git operations', async () => {
     await createDurable(PROJECT_PATH, 'async-test', 'indigo');
-    // Verify async exec was used (not execSync) for git operations
+    // Verify async exec was used for git operations
     expect(vi.mocked(exec)).toHaveBeenCalled();
-    // execSync should NOT be called by createDurable for worktree operations
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
   });
 });
 
@@ -422,7 +420,7 @@ describe('deleteDurable', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => { writtenAgents = String(data); });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockReturnValue('');
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => { cb(null, '', ''); return {} as any; });
 
     await deleteDurable(PROJECT_PATH, 'durable_del');
     await flushAgentConfig(PROJECT_PATH);
@@ -431,7 +429,7 @@ describe('deleteDurable', () => {
     expect(result[0].id).toBe('durable_keep');
   });
 
-  it('calls git worktree remove + branch -D', async () => {
+  it('calls git worktree remove + branch -D via async exec', async () => {
     const agents = [{ id: 'durable_git', name: 'git', color: 'indigo', branch: 'git/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
@@ -442,10 +440,10 @@ describe('deleteDurable', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockReturnValue('');
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => { cb(null, '', ''); return {} as any; });
 
     await deleteDurable(PROJECT_PATH, 'durable_git');
-    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes('git worktree remove'))).toBe(true);
     expect(calls.some((c) => c.includes('git branch -D'))).toBe(true);
   });
@@ -461,7 +459,7 @@ describe('deleteDurable', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockImplementation(() => { throw new Error('git fail'); });
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => { cb(new Error('git fail'), '', ''); return {} as any; });
 
     await expect(deleteDurable(PROJECT_PATH, 'durable_fail')).resolves.not.toThrow();
   });
@@ -479,7 +477,7 @@ describe('deleteDurable', () => {
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.rm).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockReturnValue('');
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => { cb(null, '', ''); return {} as any; });
 
     await deleteDurable(PROJECT_PATH, 'durable_rm');
     expect(vi.mocked(fsp.rm)).toHaveBeenCalledWith('/test/wt', { recursive: true, force: true });
@@ -495,7 +493,8 @@ describe('deleteDurable', () => {
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
 
     await expect(deleteDurable(PROJECT_PATH, 'nonexistent')).resolves.not.toThrow();
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    // exec should not be called (no git operations for unknown agent)
+    expect(vi.mocked(exec)).not.toHaveBeenCalled();
   });
 
   it('handles non-worktree agent (just unregisters)', async () => {
@@ -514,7 +513,7 @@ describe('deleteDurable', () => {
     const result = JSON.parse(writtenAgents);
     expect(result.length).toBe(0);
     // No git commands for non-worktree agents
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    expect(vi.mocked(exec)).not.toHaveBeenCalled();
   });
 });
 
@@ -739,7 +738,7 @@ describe('getWorktreeStatus', () => {
 });
 
 describe('deleteCommitAndPush', () => {
-  it('stages, commits, pushes, deletes', async () => {
+  it('stages, commits, pushes, deletes via async exec', async () => {
     const agents = [{ id: 'durable_dcp', name: 'dcp', color: 'indigo', branch: 'dcp/standby', worktreePath: '/test/wt', createdAt: '2024-01-01' }];
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
@@ -750,14 +749,15 @@ describe('deleteCommitAndPush', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockImplementation((cmd: any) => {
-      if (String(cmd).includes('git remote')) return 'origin\n';
-      return '';
+    vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
+      if (String(cmd).includes('git remote')) cb(null, 'origin\n', '');
+      else cb(null, '', '');
+      return {} as any;
     });
 
     const result = await deleteCommitAndPush(PROJECT_PATH, 'durable_dcp');
     expect(result.ok).toBe(true);
-    const calls = vi.mocked(execSync).mock.calls.map((c) => String(c[0]));
+    const calls = vi.mocked(exec).mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes('git add -A'))).toBe(true);
     expect(calls.some((c) => c.includes('git commit'))).toBe(true);
     expect(calls.some((c) => c.includes('git push'))).toBe(true);
@@ -788,7 +788,7 @@ describe('deleteUnregister', () => {
     expect(remaining.length).toBe(0);
     // No rm or git commands
     expect(vi.mocked(fsp.rm)).not.toHaveBeenCalled();
-    expect(vi.mocked(execSync)).not.toHaveBeenCalled();
+    expect(vi.mocked(exec)).not.toHaveBeenCalled();
   });
 });
 
@@ -804,7 +804,7 @@ describe('deleteForce', () => {
     vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify(agents));
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
-    vi.mocked(execSync).mockReturnValue('');
+    vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => { cb(null, '', ''); return {} as any; });
 
     const result = await deleteForce(PROJECT_PATH, 'durable_force');
     expect(result.ok).toBe(true);
