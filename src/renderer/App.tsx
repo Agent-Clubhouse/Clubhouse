@@ -1,10 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { ProjectRail } from './panels/ProjectRail';
-import { ExplorerRail } from './panels/ExplorerRail';
-import { AccessoryPanel } from './panels/AccessoryPanel';
-import { MainContentView } from './panels/MainContentView';
-import { ResizeDivider } from './components/ResizeDivider';
-import { usePanelStore } from './stores/panelStore';
+import { TitleBar } from './components/TitleBar';
+import { RailSection } from './components/RailSection';
+import { ProjectPanelLayout } from './components/ProjectPanelLayout';
 import { Dashboard } from './features/projects/Dashboard';
 import { GitBanner } from './features/projects/GitBanner';
 import { useProjectStore } from './stores/projectStore';
@@ -30,25 +27,10 @@ import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './stores/toastStore';
 
 export function App() {
-  // ── Layout state (only selectors needed for rendering) ──────────────────
+  // ── Routing state (minimal selectors for view switching) ────────────────
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
-  const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
-  const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
-  const isFullWidth = activePluginEntry?.manifest.contributes?.tab?.layout === 'full';
-
-  const explorerWidth = usePanelStore((s) => s.explorerWidth);
-  const explorerCollapsed = usePanelStore((s) => s.explorerCollapsed);
-  const accessoryWidth = usePanelStore((s) => s.accessoryWidth);
-  const accessoryCollapsed = usePanelStore((s) => s.accessoryCollapsed);
-  const resizeExplorer = usePanelStore((s) => s.resizeExplorer);
-  const resizeAccessory = usePanelStore((s) => s.resizeAccessory);
-  const toggleExplorerCollapse = usePanelStore((s) => s.toggleExplorerCollapse);
-  const toggleAccessoryCollapse = usePanelStore((s) => s.toggleAccessoryCollapse);
-  const railPinned = usePanelStore((s) => s.railPinned);
-  const resizeRail = usePanelStore((s) => s.resizeRail);
-  const toggleRailPin = usePanelStore((s) => s.toggleRailPin);
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
@@ -60,7 +42,7 @@ export function App() {
     };
   }, []);
 
-  // ── Reactive effects (depend on state already subscribed for rendering) ─
+  // ── Reactive effects (depend on state already subscribed for routing) ───
 
   // Load durable agents for all projects so the dashboard shows them
   useEffect(() => {
@@ -123,59 +105,21 @@ export function App() {
     }
   }, [activeProjectId, projects]);
 
-  // ── Derived layout state ────────────────────────────────────────────────
+  // ── Derived routing state ──────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
   const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-
-  const CORE_LABELS: Record<string, string> = {
-    agents: 'Agents',
-    settings: 'Settings',
-    help: 'Help',
-  };
-  const tabLabel = (() => {
-    if (!activePluginEntry) return CORE_LABELS[explorerTab] || explorerTab;
-    if (explorerTab.startsWith('plugin:app:')) {
-      return activePluginEntry.manifest.contributes?.railItem?.label || activePluginEntry.manifest.name || activePluginId;
-    }
-    return activePluginEntry.manifest.contributes?.tab?.label || activePluginEntry.manifest.name || activePluginId;
-  })();
-
-  const titleText = isHome
-    ? 'Home'
-    : activeProject
-      ? `${tabLabel} (${activeProject.displayName || activeProject.name})`
-      : tabLabel;
-
-  const isWin = window.clubhouse.platform === 'win32';
-  const titleBarClass = `h-[38px] flex-shrink-0 drag-region bg-ctp-mantle border-b border-surface-0 flex items-center justify-center${isWin ? ' win-overlay-padding' : ''}`;
-
-  const railGridColumns = railPinned
-    ? 'var(--rail-width, 68px) auto 1fr'
-    : 'var(--rail-width, 68px) 1fr';
 
   if (isHome) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className={titleBarClass}>
-          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
-        </div>
+        <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: railGridColumns }}>
-          <ProjectRail />
-          {railPinned && (
-            <ResizeDivider
-              onResize={resizeRail}
-              onToggleCollapse={toggleRailPin}
-              collapsed={false}
-              collapseDirection="left"
-            />
-          )}
+        <RailSection>
           <Dashboard />
-        </div>
+        </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
@@ -190,24 +134,13 @@ export function App() {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className={titleBarClass}>
-          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
-        </div>
+        <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: railGridColumns }}>
-          <ProjectRail />
-          {railPinned && (
-            <ResizeDivider
-              onResize={resizeRail}
-              onToggleCollapse={toggleRailPin}
-              collapsed={false}
-              collapseDirection="left"
-            />
-          )}
+        <RailSection>
           <PluginContentView pluginId={appPluginId} mode="app" />
-        </div>
+        </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
@@ -221,24 +154,13 @@ export function App() {
   if (isHelp) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
-        <div className={titleBarClass}>
-          <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
-        </div>
+        <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
         <PluginUpdateBanner />
-        <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: railGridColumns }}>
-          <ProjectRail />
-          {railPinned && (
-            <ResizeDivider
-              onResize={resizeRail}
-              onToggleCollapse={toggleRailPin}
-              collapsed={false}
-              collapseDirection="left"
-            />
-          )}
+        <RailSection>
           <HelpView />
-        </div>
+        </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
         <WhatsNewDialog />
@@ -251,59 +173,14 @@ export function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
-      {/* Title bar */}
-      <div className={titleBarClass}>
-        <span className="text-xs text-ctp-subtext0 select-none" data-testid="title-bar">{titleText}</span>
-      </div>
-      {/* Permission violation banner */}
+      <TitleBar />
       <PermissionViolationBanner />
-      {/* Update banner */}
       <UpdateBanner />
-      {/* Plugin update banner */}
       <PluginUpdateBanner />
-      {/* Git banner */}
       <GitBanner />
-      {/* Main content grid */}
-      <div className="flex-1 min-h-0 grid grid-rows-[1fr]" style={{ gridTemplateColumns: railGridColumns }}>
-        <ProjectRail />
-        {railPinned && (
-          <ResizeDivider
-            onResize={resizeRail}
-            onToggleCollapse={toggleRailPin}
-            collapsed={false}
-            collapseDirection="left"
-          />
-        )}
-        <div className="flex flex-row min-h-0 min-w-0">
-          {!explorerCollapsed && (
-            <div style={{ width: explorerWidth }} className="flex-shrink-0 min-h-0">
-              <ExplorerRail />
-            </div>
-          )}
-          <ResizeDivider
-            onResize={resizeExplorer}
-            onToggleCollapse={toggleExplorerCollapse}
-            collapsed={explorerCollapsed}
-            collapseDirection="left"
-          />
-          {!isFullWidth && !accessoryCollapsed && (
-            <div style={{ width: accessoryWidth }} className="flex-shrink-0 min-h-0">
-              <AccessoryPanel />
-            </div>
-          )}
-          {!isFullWidth && (
-            <ResizeDivider
-              onResize={resizeAccessory}
-              onToggleCollapse={toggleAccessoryCollapse}
-              collapsed={accessoryCollapsed}
-              collapseDirection="left"
-            />
-          )}
-          <div className="flex-1 min-w-0 min-h-0">
-            <MainContentView />
-          </div>
-        </div>
-      </div>
+      <RailSection>
+        <ProjectPanelLayout />
+      </RailSection>
       <CommandPalette />
       <QuickAgentDialog />
       <WhatsNewDialog />
