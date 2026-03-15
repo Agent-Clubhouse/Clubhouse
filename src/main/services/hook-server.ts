@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { IPC } from '../../shared/ipc-channels';
-import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-system';
+import { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, resolveOrchestrator } from './agent-registry';
 import { isHookCapable } from '../orchestrators';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';

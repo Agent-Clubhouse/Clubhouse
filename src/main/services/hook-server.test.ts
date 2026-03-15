@@ -21,13 +21,13 @@ vi.mock('electron', () => {
   };
 });
 
-// Mock agent-system functions
+// Mock agent-registry functions (hook-server imports from agent-registry, not agent-system)
 const mockGetAgentProjectPath = vi.fn<(id: string) => string | undefined>();
 const mockGetAgentOrchestrator = vi.fn<(id: string) => string | undefined>();
 const mockGetAgentNonce = vi.fn<(id: string) => string | undefined>();
 const mockResolveOrchestrator = vi.fn();
 
-vi.mock('./agent-system', () => ({
+vi.mock('./agent-registry', () => ({
   getAgentProjectPath: (id: string) => mockGetAgentProjectPath(id),
   getAgentOrchestrator: (id: string) => mockGetAgentOrchestrator(id),
   getAgentNonce: (id: string) => mockGetAgentNonce(id),
