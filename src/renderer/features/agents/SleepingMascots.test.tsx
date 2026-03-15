@@ -21,7 +21,7 @@ describe('SleepingMascots', () => {
     it('renders CopilotSleeping for copilot-cli orchestrator', () => {
       const { container } = render(<SleepingMascot orchestrator="copilot-cli" />);
       // Copilot mascot uses distinctive blue goggle frame color
-      const goggle = container.querySelector('rect[fill="#5AB0E0"]');
+      const goggle = container.querySelector('rect[fill="#5AB8E8"]');
       expect(goggle).not.toBeNull();
     });
 
@@ -105,28 +105,29 @@ describe('SleepingMascots', () => {
       expect(svg!.getAttribute('height')).toBe('200');
     });
 
-    it('contains goggle frames in Copilot blue', () => {
+    it('contains goggle frames on forehead', () => {
       const { container } = render(<CopilotSleeping />);
-      const goggles = container.querySelectorAll('rect[fill="#5AB0E0"]');
-      // 2 goggle frames + bridge + 2 sleeping eyelids = 5
+      const goggles = container.querySelectorAll('rect[fill="#5AB8E8"]');
+      // 2 goggle frames + bridge = 3
       expect(goggles.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('contains ear bumps', () => {
+    it('contains ear covers', () => {
       const { container } = render(<CopilotSleeping />);
-      const leftEar = container.querySelector('ellipse[cx="12"]');
-      const rightEar = container.querySelector('ellipse[cx="88"]');
-      expect(leftEar).not.toBeNull();
-      expect(rightEar).not.toBeNull();
+      const leftCover = container.querySelector('rect[x="6"]');
+      const rightCover = container.querySelector('rect[x="82"]');
+      expect(leftCover).not.toBeNull();
+      expect(rightCover).not.toBeNull();
     });
 
-    it('contains face plate with ventilation slits', () => {
+    it('contains open face visor with eyes', () => {
       const { container } = render(<CopilotSleeping />);
-      const faceplate = container.querySelector('rect[fill="#0e1838"]');
-      expect(faceplate).not.toBeNull();
-      // 3 ventilation slits
-      const vents = container.querySelectorAll('rect[fill="#1a2a5a"]');
-      expect(vents.length).toBe(3);
+      // Visor panel
+      const visor = container.querySelector('rect[fill="url(#copilotVisorGrad)"]');
+      expect(visor).not.toBeNull();
+      // Eyes visible through visor
+      const eyes = container.querySelectorAll('ellipse[fill="#0a1830"]');
+      expect(eyes.length).toBe(2);
     });
 
     it('contains animated Zzz text elements', () => {
