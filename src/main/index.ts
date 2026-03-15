@@ -213,7 +213,7 @@ app.on('before-quit', () => {
   flushPendingBroadcasts();
 
   // Flush any pending agent config writes to disk
-  flushAllAgentConfigs();
+  void flushAllAgentConfigs();
 
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();

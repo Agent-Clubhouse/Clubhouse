@@ -1,4 +1,4 @@
-import { exec, execSync } from 'child_process';
+import { exec, execFile, execSync } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
@@ -12,6 +12,15 @@ import { pathExists } from './fs-utils';
 function execGitAsync(cmd: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     exec(cmd, { cwd, encoding: 'utf-8' }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+}
+
+function execGitFileAsync(args: string[], cwd: string, maxBuffer?: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer }, (error, stdout) => {
       if (error) reject(error);
       else resolve(stdout);
     });
@@ -72,6 +81,7 @@ interface CacheEntry {
   agents: DurableAgentConfig[];
   dirty: boolean;
   flushTimer: ReturnType<typeof setTimeout> | null;
+  pendingFlush: Promise<void> | null;
 }
 
 const configCache = new Map<string, CacheEntry>();
@@ -103,10 +113,31 @@ async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void>
     clearTimeout(entry.flushTimer);
     entry.flushTimer = null;
   }
-  if (entry.dirty) {
-    await writeAgentsToDisk(projectPath, entry.agents);
-    entry.dirty = false;
+  if (entry.pendingFlush) {
+    await entry.pendingFlush;
   }
+  if (!entry.dirty) {
+    return;
+  }
+
+  const flushPromise = writeAgentsToDisk(projectPath, entry.agents)
+    .then(() => {
+      entry.dirty = false;
+    })
+    .catch((err) => {
+      appLog('core:agent-config', 'error', 'Failed to write agents.json', {
+        meta: { projectPath, error: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    })
+    .finally(() => {
+      if (entry.pendingFlush === flushPromise) {
+        entry.pendingFlush = null;
+      }
+    });
+
+  entry.pendingFlush = flushPromise;
+  await flushPromise;
 }
 
 function scheduleFlush(projectPath: string, entry: CacheEntry): void {
@@ -114,14 +145,14 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
     clearTimeout(entry.flushTimer);
   }
   entry.flushTimer = setTimeout(() => {
-    flushEntry(projectPath, entry);
+    void flushEntry(projectPath, entry);
   }, FLUSH_DELAY_MS);
 }
 
 async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null };
+    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   }
   return entry.agents;
@@ -130,12 +161,12 @@ async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
 async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents, dirty: true, flushTimer: null };
+    entry = { agents, dirty: true, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   } else {
     entry.agents = agents;
-    entry.dirty = true;
   }
+  entry.dirty = true;
   scheduleFlush(projectPath, entry);
 }
 
@@ -149,9 +180,7 @@ export async function flushAgentConfig(projectPath: string): Promise<void> {
 
 /** Flush all pending writes across all project paths */
 export async function flushAllAgentConfigs(): Promise<void> {
-  for (const [projectPath, entry] of configCache) {
-    await flushEntry(projectPath, entry);
-  }
+  await Promise.all([...configCache.entries()].map(([projectPath, entry]) => flushEntry(projectPath, entry)));
 }
 
 /** Clear the in-memory cache (cancels pending timers without flushing). Useful for tests. */
@@ -475,10 +504,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
   const hasGit = await pathExists(path.join(projectPath, '.git'));
   if (hasGit) {
     try {
-      execSync(`git worktree remove "${agent.worktreePath}" --force`, {
-        cwd: projectPath,
-        encoding: 'utf-8',
-      });
+      await execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath);
     } catch (err) {
       appLog('core:agent-config', 'warn', 'Git worktree removal failed, will clean up manually', {
         meta: {
@@ -491,10 +517,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
     // Optionally delete branch
     if (agent.branch) {
       try {
-        execSync(`git branch -D "${agent.branch}"`, {
-          cwd: projectPath,
-          encoding: 'utf-8',
-        });
+        await execGitFileAsync(['branch', '-D', agent.branch], projectPath);
       } catch (err) {
         appLog('core:agent-config', 'warn', 'Git branch deletion failed', {
           meta: { agentId, branch: agent.branch, error: err instanceof Error ? err.message : String(err) },
@@ -516,7 +539,7 @@ async function detectBaseBranch(projectPath: string): Promise<string> {
   // Try main, then master, then fallback to HEAD
   for (const candidate of ['main', 'master']) {
     try {
-      await execGitAsync(`git rev-parse --verify ${candidate}`, projectPath);
+      await execGitFileAsync(['rev-parse', '--verify', candidate], projectPath);
       return candidate;
     } catch {
       // not found
@@ -568,9 +591,9 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
 
   // Run git status, base branch detection, and remote check in parallel
   const [statusResult, base, remoteResult] = await Promise.all([
-    execGitAsync('git status --porcelain', wt).catch(() => ''),
+    execGitFileAsync(['status', '--porcelain'], wt).catch(() => ''),
     detectBaseBranch(projectPath),
-    execGitAsync('git remote', wt).catch(() => ''),
+    execGitFileAsync(['remote'], wt).catch(() => ''),
   ]);
 
   // Parse uncommitted files (use trimEnd to preserve leading status chars like " M")
@@ -581,8 +604,8 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   // Get unpushed commits (depends on base branch result)
   let unpushedCommits: GitLogEntry[] = [];
   try {
-    const logOut = await execGitAsync(
-      `git log ${base}..HEAD --format="%H|%h|%s|%an|%ai"`,
+    const logOut = await execGitFileAsync(
+      ['log', `${base}..HEAD`, '--format=%H|%h|%s|%an|%ai'],
       wt,
     );
     unpushedCommits = logOut.trim().split('\n').filter(Boolean)
