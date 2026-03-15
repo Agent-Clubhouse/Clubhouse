@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+type StoreSubscriber = (...args: unknown[]) => void;
+
 // ─── Mock window.clubhouse ──────────────────────────────────────────────────
 
 const mockRemovers = {
@@ -55,9 +57,30 @@ vi.stubGlobal('window', {
 
 // ─── Mock stores ────────────────────────────────────────────────────────────
 
-const agentSubscribers: (() => void)[] = [];
-const projectSubscribers: (() => void)[] = [];
-const uiSubscribers: (() => void)[] = [];
+const agentSubscribers: StoreSubscriber[] = [];
+const projectSubscribers: StoreSubscriber[] = [];
+const uiSubscribers: StoreSubscriber[] = [];
+const mockPlaySound = vi.fn();
+
+function createAgentState(overrides: Record<string, unknown> = {}) {
+  return {
+    agents: {},
+    activeAgentId: null,
+    agentDetailedStatus: {},
+    agentIcons: {},
+    ...overrides,
+  };
+}
+
+function createAgent(id: string, projectId: string) {
+  return {
+    id,
+    name: `Agent ${id}`,
+    projectId,
+    status: 'running',
+    kind: 'durable',
+  };
+}
 
 vi.mock('./stores/agentStore', () => ({
   useAgentStore: Object.assign(
@@ -75,9 +98,10 @@ vi.mock('./stores/agentStore', () => ({
         setActiveAgent: vi.fn(),
         restoreProjectAgent: vi.fn(),
         openConfigChangesDialog: vi.fn(),
+        setSessionNamePrompt: vi.fn(),
       })),
       setState: vi.fn(),
-      subscribe: vi.fn((cb: () => void) => {
+      subscribe: vi.fn((cb: StoreSubscriber) => {
         agentSubscribers.push(cb);
         return vi.fn();
       }),
@@ -95,7 +119,7 @@ vi.mock('./stores/projectStore', () => ({
         projects: [],
         setActiveProject: vi.fn(),
       })),
-      subscribe: vi.fn((cb: () => void) => {
+      subscribe: vi.fn((cb: StoreSubscriber) => {
         projectSubscribers.push(cb);
         return vi.fn();
       }),
@@ -114,7 +138,7 @@ vi.mock('./stores/uiStore', () => ({
         setSettingsSubPage: vi.fn(),
         setExplorerTab: vi.fn(),
       })),
-      subscribe: vi.fn((cb: () => void) => {
+      subscribe: vi.fn((cb: StoreSubscriber) => {
         uiSubscribers.push(cb);
         return vi.fn();
       }),
@@ -196,6 +220,17 @@ vi.mock('./plugins/builtin/hub/hub-sync', () => ({
   applyHubMutation: vi.fn(),
 }));
 
+vi.mock('./stores/soundStore', () => ({
+  useSoundStore: Object.assign(
+    vi.fn(),
+    {
+      getState: vi.fn(() => ({
+        playSound: mockPlaySound,
+      })),
+    },
+  ),
+}));
+
 import { initAppEventBridge } from './app-event-bridge';
 import { useAgentStore } from './stores/agentStore';
 import { useProjectStore } from './stores/projectStore';
@@ -207,6 +242,8 @@ describe('initAppEventBridge', () => {
   let cleanup: () => void;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    mockPlaySound.mockResolvedValue(undefined);
     agentSubscribers.length = 0;
     projectSubscribers.length = 0;
     uiSubscribers.length = 0;
@@ -267,5 +304,41 @@ describe('initAppEventBridge', () => {
     });
 
     expect(useAgentStore.getState).toHaveBeenCalled();
+  });
+
+  it('plays agent-focus when the active agent changes', () => {
+    const agents = {
+      a1: createAgent('a1', 'proj-1'),
+      a2: createAgent('a2', 'proj-2'),
+    };
+    const prevState = createAgentState({ activeAgentId: 'a1', agents });
+    const nextState = createAgentState({ activeAgentId: 'a2', agents });
+
+    for (const subscriber of agentSubscribers) {
+      subscriber(nextState, prevState);
+    }
+
+    expect(mockPlaySound).toHaveBeenCalledWith('agent-focus', 'proj-2');
+  });
+
+  it('does not play agent-focus when the active agent is unchanged or cleared', () => {
+    const agents = {
+      a1: createAgent('a1', 'proj-1'),
+    };
+    const activeState = createAgentState({ activeAgentId: 'a1', agents });
+    const clearedState = createAgentState({ agents });
+
+    for (const subscriber of agentSubscribers) {
+      subscriber(activeState, createAgentState());
+    }
+
+    mockPlaySound.mockClear();
+
+    for (const subscriber of agentSubscribers) {
+      subscriber(activeState, activeState);
+      subscriber(clearedState, activeState);
+    }
+
+    expect(mockPlaySound).not.toHaveBeenCalled();
   });
 });

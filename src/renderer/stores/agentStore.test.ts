@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+const mockPlaySound = vi.fn();
+
 // Mock window.clubhouse
 vi.stubGlobal('window', {
   clubhouse: {
@@ -31,6 +33,17 @@ vi.stubGlobal('window', {
     },
   },
 });
+
+vi.mock('./soundStore', () => ({
+  useSoundStore: Object.assign(
+    vi.fn(),
+    {
+      getState: vi.fn(() => ({
+        playSound: mockPlaySound,
+      })),
+    },
+  ),
+}));
 
 import { useAgentStore } from './agentStore';
 import { Agent, AgentHookEvent } from '../../shared/types';
@@ -700,6 +713,15 @@ describe('agentStore', () => {
   });
 
   describe('per-project active agent persistence', () => {
+    it('setActiveAgent does not trigger sound playback directly', async () => {
+      seedAgent({ id: 'a1', projectId: 'proj_1' });
+
+      getState().setActiveAgent('a1', 'proj_1');
+      await vi.dynamicImportSettled();
+
+      expect(mockPlaySound).not.toHaveBeenCalled();
+    });
+
     it('setActiveAgent with projectId saves to projectActiveAgent', () => {
       seedAgent({ id: 'a1', projectId: 'proj_1' });
       getState().setActiveAgent('a1', 'proj_1');

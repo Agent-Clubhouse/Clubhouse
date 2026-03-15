@@ -397,6 +397,21 @@ function initAgentStatusEmitter(): () => void {
   return unsub;
 }
 
+// ─── Active Agent Sound Effects ───────────────────────────────────────────────
+
+function initActiveAgentSound(): () => void {
+  let prevActiveAgentId = useAgentStore.getState().activeAgentId;
+  const unsub = useAgentStore.subscribe((state) => {
+    const nextActiveAgentId = state.activeAgentId;
+    if (nextActiveAgentId && nextActiveAgentId !== prevActiveAgentId) {
+      const agent = state.agents[nextActiveAgentId];
+      useSoundStore.getState().playSound('agent-focus', agent?.projectId);
+    }
+    prevActiveAgentId = nextActiveAgentId;
+  });
+  return unsub;
+}
+
 // ─── Notification Clearing ──────────────────────────────────────────────────
 
 function initNotificationClearing(): () => void {
@@ -495,6 +510,7 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initAnnexSpawnListener());
   cleanups.push(initAgentStateBroadcast());
   cleanups.push(initAgentStatusEmitter());
+  cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
   cleanups.push(initStaleStatusCleanup());
   cleanups.push(initKeyboardShortcuts());
