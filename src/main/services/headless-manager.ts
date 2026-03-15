@@ -46,6 +46,8 @@ interface HeadlessSession {
   outputKind: HeadlessOutputKind;
   parser: JsonlParser | null;
   transcript: StreamJsonEvent[];
+  /** Pre-serialized JSON string for each event, parallel to `transcript`. */
+  transcriptLines: string[];
   /** Byte size of each serialized event, parallel to `transcript`. */
   transcriptEventSizes: number[];
   /** Total in-memory transcript size in bytes. */
@@ -126,6 +128,7 @@ function evictOldEvents(session: HeadlessSession): void {
     // captures local references to these arrays, so replacing them would
     // cause new events to be pushed to a stale reference.
     session.transcript.splice(0, removeCount);
+    session.transcriptLines.splice(0, removeCount);
     session.transcriptEventSizes.splice(0, removeCount);
     session.transcriptBytes -= removeBytes;
 
@@ -245,6 +248,7 @@ export function spawnHeadless(
 
   const parser = outputKind === 'stream-json' ? new JsonlParser() : null;
   const transcript: StreamJsonEvent[] = [];
+  const transcriptLines: string[] = [];
   const transcriptEventSizes: number[] = [];
   let stdoutBytes = 0;
   const stderrChunks: string[] = [];
@@ -257,6 +261,7 @@ export function spawnHeadless(
     outputKind,
     parser,
     transcript,
+    transcriptLines,
     transcriptEventSizes,
     transcriptBytes: 0,
     transcriptEvicted: false,
@@ -278,6 +283,7 @@ export function spawnHeadless(
       const eventBytes = Buffer.byteLength(serialized, 'utf-8');
 
       transcript.push(event);
+      transcriptLines.push(serialized);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
       session.totalTranscriptEvents++;
@@ -381,6 +387,7 @@ export function spawnHeadless(
       const serialized = JSON.stringify(resultEvent);
       const eventBytes = Buffer.byteLength(serialized, 'utf-8');
       transcript.push(resultEvent);
+      transcriptLines.push(serialized);
       transcriptEventSizes.push(eventBytes);
       session.transcriptBytes += eventBytes;
       session.totalTranscriptEvents++;
@@ -477,7 +484,7 @@ export async function readTranscript(agentId: string): Promise<string | null> {
         // Fall through to partial in-memory transcript
       }
     }
-    return session.transcript.map((e) => JSON.stringify(e)).join('\n');
+    return session.transcriptLines.join('\n');
   }
 
   // Fall back to disk for completed sessions
