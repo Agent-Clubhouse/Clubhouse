@@ -8,6 +8,11 @@ export const app = {
   getName: () => 'clubhouse-test',
   getVersion: () => '0.0.0-test',
   on: () => {},
+  setBadgeCount: () => {},
+  dock: {
+    setBadge: () => {},
+    bounce: () => -1,
+  },
 };
 
 export const BrowserWindow = {
@@ -38,4 +43,25 @@ export const dialog = {
   showSaveDialog: async () => ({ canceled: true, filePath: undefined as string | undefined }),
 };
 
-export default { app, BrowserWindow, Notification, ipcMain, dialog };
+export const shell = {
+  openExternal: async () => {},
+  openPath: async () => ({ error: '' }),
+  showItemInFolder: () => {},
+};
+
+export const nativeImage = {
+  createFromPath: () => ({
+    isEmpty: () => true,
+    toDataURL: () => '',
+    toPNG: () => Buffer.alloc(0),
+    getSize: () => ({ width: 0, height: 0 }),
+  }),
+  createEmpty: () => ({
+    isEmpty: () => true,
+    toDataURL: () => '',
+    toPNG: () => Buffer.alloc(0),
+    getSize: () => ({ width: 0, height: 0 }),
+  }),
+};
+
+export default { app, BrowserWindow, Notification, ipcMain, dialog, shell, nativeImage };

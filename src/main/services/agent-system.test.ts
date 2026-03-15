@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { OrchestratorConventions } from '../orchestrators';
 
 // Mock config-pipeline
 const mockSnapshotFile = vi.fn();
@@ -98,9 +99,30 @@ vi.mock('fs/promises', () => ({
 }));
 
 // Mock the orchestrator registry
+const mockClaudeConventions: OrchestratorConventions = {
+  configDir: '.claude',
+  localInstructionsFile: 'CLAUDE.md',
+  legacyInstructionsFile: 'CLAUDE.md',
+  mcpConfigFile: '.mcp.json',
+  skillsDir: 'skills',
+  agentTemplatesDir: 'agents',
+  localSettingsFile: 'settings.local.json',
+};
+
+const mockOpenCodeConventions: OrchestratorConventions = {
+  configDir: '.opencode',
+  localInstructionsFile: 'instructions.md',
+  legacyInstructionsFile: 'instructions.md',
+  mcpConfigFile: 'opencode.json',
+  skillsDir: 'skills',
+  agentTemplatesDir: 'agents',
+  localSettingsFile: 'opencode.json',
+};
+
 const mockProvider = {
   id: 'claude-code',
   displayName: 'Claude Code',
+  shortName: 'CC',
   checkAvailability: vi.fn(() => Promise.resolve({ available: true })),
   buildSpawnCommand: vi.fn(() => Promise.resolve({ binary: '/usr/local/bin/claude', args: ['--model', 'opus'] })),
   getExitCommand: vi.fn(() => '/exit\r'),
@@ -108,10 +130,11 @@ const mockProvider = {
   parseHookEvent: vi.fn(),
   readInstructions: vi.fn(() => ''),
   writeInstructions: vi.fn(),
-  conventions: {} as any,
+  conventions: mockClaudeConventions,
   getModelOptions: vi.fn(() => []),
   getDefaultPermissions: vi.fn((kind: string) => kind === 'quick' ? ['Read', 'Write'] : []),
   toolVerb: vi.fn(),
+  getProfileEnvKeys: vi.fn(() => ['CLAUDE_CONFIG_DIR']),
   getCapabilities: vi.fn(() => ({
     headless: true, structuredOutput: true, hooks: true,
     sessionResume: true, permissions: true, structuredMode: false,
@@ -122,7 +145,10 @@ const mockAltProvider = {
   ...mockProvider,
   id: 'opencode',
   displayName: 'OpenCode',
+  shortName: 'OC',
   getExitCommand: vi.fn(() => '/quit\r'),
+  conventions: mockOpenCodeConventions,
+  getProfileEnvKeys: vi.fn(() => ['OPENCODE_CONFIG_DIR']),
 };
 
 vi.mock('../orchestrators', () => ({
@@ -600,16 +626,28 @@ describe('agent-system', () => {
   });
 
   describe('getAvailableOrchestrators', () => {
-    it('returns all registered providers with capabilities', () => {
+    it('returns all registered providers with capabilities and runtime metadata', () => {
       const result = getAvailableOrchestrators();
       expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('claude-code');
-      expect(result[0].displayName).toBe('Claude Code');
-      expect(result[0].capabilities).toBeDefined();
-      expect(result[0].capabilities.headless).toBe(true);
-      expect(result[1].id).toBe('opencode');
-      expect(result[1].displayName).toBe('OpenCode');
-      expect(result[1].capabilities).toBeDefined();
+      expect(result[0]).toMatchObject({
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        shortName: 'CC',
+        capabilities: expect.objectContaining({ headless: true }),
+        conventions: mockClaudeConventions,
+      });
+      expect(result[1]).toMatchObject({
+        id: 'opencode',
+        displayName: 'OpenCode',
+        shortName: 'OC',
+        capabilities: expect.any(Object),
+        conventions: mockOpenCodeConventions,
+      });
+    });
+
+    it('uses provider fixtures with the expected profile env keys', () => {
+      expect(mockProvider.getProfileEnvKeys()).toEqual(['CLAUDE_CONFIG_DIR']);
+      expect(mockAltProvider.getProfileEnvKeys()).toEqual(['OPENCODE_CONFIG_DIR']);
     });
   });
 
