@@ -1435,6 +1435,22 @@ describe('headless-manager', () => {
       // Session should still exist — process hasn't exited
       expect(isHeadless('test-agent')).toBe(true);
     });
+
+    it('sweep invokes onExit callback so registry is cleaned up (#566)', async () => {
+      const onExit = vi.fn();
+      await spawnHeadless('test-agent', '/project', '/usr/bin/claude', ['-p', 'test'], undefined, 'stream-json', onExit);
+      expect(isHeadless('test-agent')).toBe(true);
+
+      // Simulate process exiting without firing close event
+      (mockProcess as any).exitCode = 1;
+
+      startStaleSweep();
+      vi.advanceTimersByTime(30_000);
+
+      // Session should be cleaned up and onExit should have been called
+      expect(isHeadless('test-agent')).toBe(false);
+      expect(onExit).toHaveBeenCalledWith('test-agent', 1);
+    });
   });
 
   // ============================================================
