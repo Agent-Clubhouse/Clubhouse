@@ -587,7 +587,7 @@ async function writeSkillFile(skillsDir: string, name: string, content: string, 
  * Enable git exclude entries for clubhouse-mode-managed files.
  * Uses .git/info/exclude so entries are shared across worktrees instantly.
  */
-export function enableExclusions(projectPath: string, provider: OrchestratorProvider): void {
+export async function enableExclusions(projectPath: string, provider: OrchestratorProvider): Promise<void> {
   const conv = provider.conventions;
   const patterns = [
     conv.legacyInstructionsFile,                                    // e.g. CLAUDE.md
@@ -596,12 +596,12 @@ export function enableExclusions(projectPath: string, provider: OrchestratorProv
     `${conv.configDir}/${conv.skillsDir}/`,                         // e.g. .claude/skills/
     `${conv.configDir}/${conv.agentTemplatesDir}/`,                 // e.g. .claude/agents/
   ];
-  gitExcludeManager.addExclusions(projectPath, EXCLUDE_TAG, patterns);
+  await gitExcludeManager.addExclusions(projectPath, EXCLUDE_TAG, patterns);
 }
 
 /**
  * Remove clubhouse-mode git exclude entries.
  */
-export function disableExclusions(projectPath: string): void {
-  gitExcludeManager.removeExclusions(projectPath, EXCLUDE_TAG);
+export async function disableExclusions(projectPath: string): Promise<void> {
+  await gitExcludeManager.removeExclusions(projectPath, EXCLUDE_TAG);
 }
