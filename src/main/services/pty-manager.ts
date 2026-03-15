@@ -16,6 +16,8 @@ interface ManagedSession {
   outputChunks: string[];
   outputHead: number;
   outputSize: number;
+  bufferCache: string;
+  bufferCacheDirty: boolean;
   pendingCommand?: string;
   eofTimer?: ReturnType<typeof setTimeout>;
   termTimer?: ReturnType<typeof setTimeout>;
@@ -145,9 +147,25 @@ export function stopStaleSweep(): void {
 /** Compact threshold: reclaim array memory once the dead-head region grows large. */
 const COMPACT_THRESHOLD = 1000;
 
+function createSession(process: pty.IPty, agentId: string, pendingCommand?: string): ManagedSession {
+  return {
+    process,
+    agentId,
+    lastActivity: Date.now(),
+    killing: false,
+    outputChunks: [],
+    outputHead: 0,
+    outputSize: 0,
+    bufferCache: '',
+    bufferCacheDirty: false,
+    pendingCommand,
+  };
+}
+
 function appendToBuffer(session: ManagedSession, data: string): void {
   session.outputChunks.push(data);
   session.outputSize += data.length;
+  session.bufferCacheDirty = true;
   // Evict oldest chunks using a head pointer — O(1) per eviction step.
   while (session.outputSize > MAX_BUFFER_SIZE && session.outputHead < session.outputChunks.length - 1) {
     session.outputSize -= session.outputChunks[session.outputHead]!.length;
@@ -160,9 +178,18 @@ function appendToBuffer(session: ManagedSession, data: string): void {
   }
 }
 
+function getSessionBuffer(session: ManagedSession): string {
+  if (session.bufferCacheDirty) {
+    session.bufferCache = session.outputChunks.slice(session.outputHead).join('');
+    session.bufferCacheDirty = false;
+  }
+
+  return session.bufferCache;
+}
+
 export function getBuffer(agentId: string): string {
   const session = sessions.get(agentId);
-  return session ? session.outputChunks.slice(session.outputHead).join('') : '';
+  return session ? getSessionBuffer(session) : '';
 }
 
 /** Check whether an agent has an active PTY session. */
@@ -238,16 +265,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     throw err;
   }
 
-  const session: ManagedSession = {
-    process: proc,
-    agentId,
-    lastActivity: Date.now(),
-    killing: false,
-    outputChunks: [],
-    outputHead: 0,
-    outputSize: 0,
-    pendingCommand,
-  };
+  const session = createSession(proc, agentId, pendingCommand);
   sessions.set(agentId, session);
 
   proc.onData((data: string) => {
@@ -270,7 +288,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     const current = sessions.get(agentId);
     if (!current || current.process !== proc) return;
 
-    const fullBuffer = current.outputChunks.slice(current.outputHead).join('');
+    const fullBuffer = getSessionBuffer(current);
     const ptyBuffer = fullBuffer.slice(-500);
     appLog('core:pty', exitCode !== 0 && !current.killing ? 'error' : 'info', `PTY exited`, {
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
@@ -313,15 +331,7 @@ export function spawnShell(id: string, projectPath: string): void {
     throw err;
   }
 
-  const session: ManagedSession = {
-    process: proc,
-    agentId: id,
-    lastActivity: Date.now(),
-    killing: false,
-    outputChunks: [],
-    outputHead: 0,
-    outputSize: 0,
-  };
+  const session = createSession(proc, id);
   sessions.set(id, session);
 
   proc.onData((data: string) => {

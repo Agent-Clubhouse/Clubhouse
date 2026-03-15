@@ -118,6 +118,28 @@ describe('pty-manager', () => {
       expect(getBuffer('agent_concat')).toBe('hello world');
     });
 
+    it('reuses the joined buffer until new data arrives', () => {
+      spawnAndActivate('agent_cache');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('hello ');
+      onDataCb('world');
+
+      const joinSpy = vi.spyOn(Array.prototype, 'join');
+      try {
+        expect(getBuffer('agent_cache')).toBe('hello world');
+        expect(getBuffer('agent_cache')).toBe('hello world');
+        expect(joinSpy).toHaveBeenCalledTimes(1);
+
+        onDataCb('!');
+
+        expect(getBuffer('agent_cache')).toBe('hello world!');
+        expect(getBuffer('agent_cache')).toBe('hello world!');
+        expect(joinSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        joinSpy.mockRestore();
+      }
+    });
+
     it('evicts oldest chunks when >512KB', () => {
       spawnAndActivate('agent_evict');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
@@ -130,6 +152,23 @@ describe('pty-manager', () => {
       const buf = getBuffer('agent_evict');
       expect(buf.length).toBeLessThanOrEqual(600 * 1024); // some tolerance
       expect(buf.length).toBeGreaterThan(0);
+    });
+
+    it('drops evicted chunks from a previously cached buffer', () => {
+      spawnAndActivate('agent_cached_evict');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      const chunkSize = 128 * 1024;
+      const chunks = ['a', 'b', 'c', 'd', 'e'].map((char) => char.repeat(chunkSize));
+
+      for (const chunk of chunks.slice(0, 4)) {
+        onDataCb(chunk);
+      }
+
+      expect(getBuffer('agent_cached_evict')).toBe(chunks.slice(0, 4).join(''));
+
+      onDataCb(chunks[4]);
+
+      expect(getBuffer('agent_cached_evict')).toBe(chunks.slice(1).join(''));
     });
 
     it('keeps last chunk even if it alone exceeds limit', () => {
