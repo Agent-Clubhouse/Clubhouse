@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { Readable } from 'stream';
 
 // --- Mocks ---
 
@@ -20,6 +21,7 @@ const mockWriteStream = {
   write: vi.fn(),
   end: vi.fn(),
 };
+const mockCreateReadStream = vi.hoisted(() => vi.fn());
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   return {
@@ -29,6 +31,7 @@ vi.mock('fs', async () => {
     readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
     writeFileSync: vi.fn(),
     createWriteStream: vi.fn(() => mockWriteStream),
+    createReadStream: mockCreateReadStream,
   };
 });
 
@@ -950,9 +953,10 @@ describe('headless-manager', () => {
   describe('getTranscriptInfo', () => {
     beforeEach(() => {
       mockFsPromises.stat.mockReset();
-      mockFsPromises.readFile.mockReset();
       mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
-      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+      mockCreateReadStream.mockImplementation(() =>
+        new Readable({ read() { this.destroy(new Error('ENOENT')); } }),
+      );
     });
 
     it('returns null for unknown agent with no transcript on disk', async () => {
@@ -977,7 +981,7 @@ describe('headless-manager', () => {
     it('returns disk info for completed session', async () => {
       const diskData = '{"type":"result","result":"ok"}\n{"type":"assistant","message":{}}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
 
       const info = await getTranscriptInfo('completed-agent');
       expect(info).not.toBeNull();
@@ -997,7 +1001,7 @@ describe('headless-manager', () => {
 
       const diskData = '{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n{"type":"result"}\n';
       mockFsPromises.stat.mockResolvedValue({ size: diskData.length });
-      mockFsPromises.readFile.mockResolvedValue(diskData);
+      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
 
       const info = await getTranscriptInfo('test-agent');
       expect(info).not.toBeNull();
@@ -1010,10 +1014,9 @@ describe('headless-manager', () => {
   // ============================================================
   describe('readTranscriptPage', () => {
     beforeEach(() => {
-      mockFsPromises.stat.mockReset();
-      mockFsPromises.readFile.mockReset();
-      mockFsPromises.stat.mockRejectedValue(new Error('ENOENT'));
-      mockFsPromises.readFile.mockRejectedValue(new Error('ENOENT'));
+      mockCreateReadStream.mockImplementation(() =>
+        new Readable({ read() { this.destroy(new Error('ENOENT')); } }),
+      );
     });
 
     it('returns null for unknown agent with no transcript on disk', async () => {
@@ -1050,11 +1053,11 @@ describe('headless-manager', () => {
     });
 
     it('reads page from disk for completed session', async () => {
-      const events = Array.from({ length: 5 }, (_, i) =>
+      const diskData = Array.from({ length: 5 }, (_, i) =>
         JSON.stringify({ type: 'result', result: `disk-${i}` })
       ).join('\n') + '\n';
 
-      mockFsPromises.readFile.mockResolvedValue(events);
+      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
 
       const page = await readTranscriptPage('completed-agent', 2, 2);
       expect(page).not.toBeNull();
@@ -1091,13 +1094,52 @@ describe('headless-manager', () => {
       const diskEvents = Array.from({ length: 5 }, (_, i) =>
         JSON.stringify({ type: 'result', result: `disk-${i}` })
       ).join('\n') + '\n';
-      mockFsPromises.readFile.mockResolvedValue(diskEvents);
+      mockCreateReadStream.mockReturnValue(Readable.from([diskEvents]));
 
       const page = await readTranscriptPage('test-agent', 0, 3);
       expect(page).not.toBeNull();
       expect(page!.totalEvents).toBe(5);
       expect(page!.events).toHaveLength(3);
       expect(page!.events[0].result).toBe('disk-0');
+    });
+
+    it('only parses lines within the requested page window', async () => {
+      // Build a transcript where we can verify selective parsing by checking
+      // that only the requested page events are returned, while totalEvents
+      // reflects the full line count (proving lines outside the window were
+      // counted but not necessarily parsed).
+      const diskData = Array.from({ length: 100 }, (_, i) =>
+        JSON.stringify({ type: 'result', result: `event-${i}` })
+      ).join('\n') + '\n';
+
+      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
+
+      const page = await readTranscriptPage('completed-agent', 50, 5);
+      expect(page).not.toBeNull();
+      expect(page!.totalEvents).toBe(100);
+      expect(page!.events).toHaveLength(5);
+      expect(page!.events[0].result).toBe('event-50');
+      expect(page!.events[4].result).toBe('event-54');
+    });
+
+    it('skips malformed JSON lines gracefully', async () => {
+      const diskData = [
+        '{"type":"result","result":"good-0"}',
+        'NOT VALID JSON',
+        '{"type":"result","result":"good-1"}',
+        '{"type":"result","result":"good-2"}',
+      ].join('\n') + '\n';
+
+      mockCreateReadStream.mockReturnValue(Readable.from([diskData]));
+
+      const page = await readTranscriptPage('completed-agent', 0, 10);
+      expect(page).not.toBeNull();
+      // totalEvents counts all non-empty lines (including malformed)
+      expect(page!.totalEvents).toBe(4);
+      // But events only contains successfully parsed lines
+      expect(page!.events).toHaveLength(3);
+      expect(page!.events[0].result).toBe('good-0');
+      expect(page!.events[2].result).toBe('good-2');
     });
   });
 
