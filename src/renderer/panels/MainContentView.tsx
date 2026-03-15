@@ -24,6 +24,7 @@ import { AnnexSettingsView } from '../features/settings/AnnexSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
+import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -141,6 +142,7 @@ export function MainContentView() {
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
+    if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;
   }

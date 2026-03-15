@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useProjectStore } from '../stores/projectStore';
@@ -8,10 +9,20 @@ import { PluginErrorBoundary } from './PluginContentView';
 import { AgentList } from '../features/agents/AgentList';
 import { SettingsSubPage } from '../../shared/types';
 
+/** Returns true when the app version contains a prerelease tag (e.g. -beta, -rc). */
+function isBetaBuild(version: string): boolean {
+  return /-(beta|rc|alpha|dev|canary)/.test(version);
+}
+
 function SettingsCategoryNav() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const [showExperimental, setShowExperimental] = useState(false);
+
+  useEffect(() => {
+    window.clubhouse.app.getVersion().then((v) => setShowExperimental(isBetaBuild(v)));
+  }, []);
 
   const navButton = (label: string, page: SettingsSubPage) => (
     <button
@@ -49,6 +60,7 @@ function SettingsCategoryNav() {
             {navButton('Annex', 'annex')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
+            {showExperimental && navButton('Experimental', 'experimental')}
             {navButton('Getting Started', 'getting-started')}
             {navButton("What's New", 'whats-new')}
           </>

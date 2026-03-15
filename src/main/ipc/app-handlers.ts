@@ -14,10 +14,11 @@ import * as soundService from '../services/sound-service';
 import * as sessionSettings from '../services/session-settings';
 import * as logService from '../services/log-service';
 import * as logSettings from '../services/log-settings';
-import { ClipboardSettings, ClubhouseModeSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
+import { ClipboardSettings, ClubhouseModeSettings, ExperimentalSettings, SoundEvent, SoundSettings, UpdateSettings } from '../../shared/types';
 import { ensureDefaultTemplates, enableExclusions, disableExclusions } from '../services/materialization-service';
 import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
+import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
 
 export function registerAppHandlers(): void {
@@ -311,6 +312,24 @@ export function registerAppHandlers(): void {
       if (previousEnabled && !nowEnabled && projectPath) {
         await disableExclusions(projectPath);
       }
+    },
+  ));
+
+  // --- App Restart ---
+  ipcMain.handle(IPC.APP.RESTART, () => {
+    app.relaunch();
+    app.exit(0);
+  });
+
+  // --- Experimental Settings ---
+  ipcMain.handle(IPC.APP.GET_EXPERIMENTAL_SETTINGS, () => {
+    return experimentalSettings.getSettings();
+  });
+
+  ipcMain.handle(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, withValidatedArgs(
+    [objectArg<ExperimentalSettings>()],
+    async (_event, settings) => {
+      await experimentalSettings.saveSettings(settings);
     },
   ));
 }

@@ -388,7 +388,14 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex';
+export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'experimental';
+
+// --- Experimental settings ---
+
+export interface ExperimentalSettings {
+  /** Record of feature flags: key is the feature id, value is enabled/disabled */
+  [key: string]: boolean;
+}
 
 // --- Annex (LAN monitoring) types ---
 
