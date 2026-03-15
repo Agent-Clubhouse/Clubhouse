@@ -169,6 +169,32 @@ export function AgentList() {
     agents,
     activeProjectId
   );
+
+  // Pre-compute child lookup maps so render loop avoids per-item .filter() allocations
+  const childQuickByParent = useMemo(() => {
+    const map = new Map<string, Agent[]>();
+    for (const agent of quickAgents) {
+      if (agent.parentAgentId) {
+        const list = map.get(agent.parentAgentId);
+        if (list) list.push(agent);
+        else map.set(agent.parentAgentId, [agent]);
+      }
+    }
+    return map;
+  }, [quickAgents]);
+
+  const childCompletedByParent = useMemo(() => {
+    const map = new Map<string, CompletedQuickAgent[]>();
+    for (const completed of completedAgents) {
+      if (completed.parentAgentId) {
+        const list = map.get(completed.parentAgentId);
+        if (list) list.push(completed);
+        else map.set(completed.parentAgentId, [completed]);
+      }
+    }
+    return map;
+  }, [completedAgents]);
+
   const orphanCompleted = useMemo(
     () => completedAgents.filter((r) => !r.parentAgentId),
     [completedAgents]
@@ -468,8 +494,8 @@ export function AgentList() {
               All
             </div>
             {durableAgents.map((durable, i) => {
-              const childQuick = quickAgents.filter((a) => a.parentAgentId === durable.id);
-              const childCompleted = completedAgents.filter((r) => r.parentAgentId === durable.id);
+              const childQuick = childQuickByParent.get(durable.id) ?? [];
+              const childCompleted = childCompletedByParent.get(durable.id) ?? [];
               const isMissionTarget = showMissionInput && quickTargetParentId === durable.id;
 
               return (

@@ -278,6 +278,96 @@ describe('useProjectAgentBuckets', () => {
   });
 });
 
+describe('AgentList child agent grouping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+    window.clubhouse.pty.onData = vi.fn().mockReturnValue(() => {});
+  });
+
+  it('renders child quick agents nested under their parent durable', () => {
+    const durable: Agent = {
+      ...defaultAgent,
+      id: 'durable-1',
+      name: 'parent-durable',
+      kind: 'durable',
+    };
+    const childQuick: Agent = {
+      ...defaultAgent,
+      id: 'quick-child-1',
+      name: 'child-quick',
+      kind: 'quick',
+      mission: 'fix bug',
+      parentAgentId: 'durable-1',
+    };
+    const orphanQuick: Agent = {
+      ...defaultAgent,
+      id: 'quick-orphan-1',
+      name: 'orphan-quick',
+      kind: 'quick',
+      mission: 'explore',
+    };
+
+    useAgentStore.setState({
+      agents: {
+        [durable.id]: durable,
+        [childQuick.id]: childQuick,
+        [orphanQuick.id]: orphanQuick,
+      },
+      activeAgentId: durable.id,
+      agentActivity: {},
+    });
+
+    render(<AgentList />);
+
+    // All three agents should render
+    expect(screen.getByTestId('agent-item-durable-1')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-item-quick-child-1')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-item-quick-orphan-1')).toBeInTheDocument();
+  });
+
+  it('renders child completed ghosts under their parent durable', () => {
+    const durable: Agent = {
+      ...defaultAgent,
+      id: 'durable-1',
+      name: 'parent-durable',
+      kind: 'durable',
+    };
+
+    useAgentStore.setState({
+      agents: { [durable.id]: durable },
+      activeAgentId: durable.id,
+      agentActivity: {},
+    });
+
+    const childCompleted: CompletedQuickAgent = {
+      id: 'completed-child-1',
+      projectId: 'proj-1',
+      name: 'done-child',
+      mission: 'done task',
+      summary: null,
+      filesModified: [],
+      exitCode: 0,
+      completedAt: Date.now(),
+      parentAgentId: 'durable-1',
+    };
+
+    useQuickAgentStore.setState({
+      completedAgents: { 'proj-1': [childCompleted] },
+      selectedCompletedId: null,
+    });
+
+    render(<AgentList />);
+
+    // Parent durable should render
+    expect(screen.getByTestId('agent-item-durable-1')).toBeInTheDocument();
+    // Child completed ghost should render (nested under parent)
+    expect(screen.getByTestId('quick-agent-ghost')).toBeInTheDocument();
+    // Completed footer should show 0 orphan completed (the child belongs to a parent)
+    expect(screen.getByText('Completed (0)')).toBeInTheDocument();
+  });
+});
+
 describe('AgentList onData throttle', () => {
   let onDataCallback: (agentId: string) => void;
   let recordActivitySpy: ReturnType<typeof vi.fn>;
