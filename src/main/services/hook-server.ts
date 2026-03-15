@@ -24,133 +24,179 @@ export function waitReady(): Promise<number> {
   return Promise.reject(new Error('Hook server not started'));
 }
 
-export function start(): Promise<number> {
-  readyPromise = new Promise((resolve, reject) => {
-    server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
-      if (req.method !== 'POST' || !req.url?.startsWith('/hook/')) {
-        res.writeHead(404);
+/** Parse URL path into agentId and optional event hint */
+function parseRoute(url: string): { agentId: string; eventHint?: string } | null {
+  if (!url.startsWith('/hook/')) return null;
+  const urlPath = url.slice('/hook/'.length);
+  const slashIdx = urlPath.indexOf('/');
+  const agentId = slashIdx === -1 ? urlPath : urlPath.slice(0, slashIdx);
+  const eventHint = slashIdx === -1 ? undefined : urlPath.slice(slashIdx + 1);
+  return agentId ? { agentId, eventHint } : null;
+}
+
+/** Read request body with size limit enforcement. Returns null if limit exceeded. */
+function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
+  return new Promise((resolve) => {
+    let body = '';
+    let bodySize = 0;
+    let limitExceeded = false;
+    req.on('data', (chunk: Buffer) => {
+      if (limitExceeded) return;
+      bodySize += chunk.length;
+      if (bodySize > MAX_BODY_SIZE) {
+        limitExceeded = true;
+        res.writeHead(413);
         res.end();
+        req.destroy();
+        resolve(null);
         return;
       }
+      body += chunk;
+    });
+    req.on('end', () => {
+      if (!limitExceeded) resolve(body);
+    });
+  });
+}
 
-      // URL: /hook/{agentId} or /hook/{agentId}/{eventHint}
-      const urlPath = req.url.slice('/hook/'.length);
-      const slashIdx = urlPath.indexOf('/');
-      const agentId = slashIdx === -1 ? urlPath : urlPath.slice(0, slashIdx);
-      const eventHint = slashIdx === -1 ? undefined : urlPath.slice(slashIdx + 1);
-      if (!agentId) {
-        res.writeHead(400);
-        res.end();
-        return;
-      }
+/** Validate nonce header against expected value for the agent */
+function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
+  const expectedNonce = getAgentNonce(agentId);
+  const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
+  if (expectedNonce && receivedNonce !== expectedNonce) {
+    appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
+      meta: { agentId },
+    });
+    return false;
+  }
+  return true;
+}
 
-      let body = '';
-      let bodySize = 0;
-      let limitExceeded = false;
-      req.on('data', (chunk: Buffer) => {
-        if (limitExceeded) return;
-        bodySize += chunk.length;
-        if (bodySize > MAX_BODY_SIZE) {
-          limitExceeded = true;
-          res.writeHead(413);
-          res.end();
-          req.destroy();
-          return;
-        }
-        body += chunk;
-      });
-      req.on('end', async () => {
-        if (limitExceeded) return;
-        try {
-          const raw = JSON.parse(body);
-          // Inject event type hint from URL when not present in payload
-          // (GHCP doesn't include hook_event_name in stdin, unlike Claude Code)
-          if (eventHint && !raw.hook_event_name) {
-            raw.hook_event_name = eventHint;
-          }
-          const projectPath = getAgentProjectPath(agentId);
-          const orchestrator = getAgentOrchestrator(agentId);
+/** Build hook event object from normalized event with resolved tool verb */
+function buildHookEvent(
+  provider: { toolVerb(name: string): string | undefined },
+  normalized: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string },
+) {
+  const toolVerb = normalized.toolName
+    ? (provider.toolVerb(normalized.toolName) || `Using ${normalized.toolName}`)
+    : undefined;
 
-          if (projectPath) {
-            // Validate nonce to reject events from external CLI instances
-            const expectedNonce = getAgentNonce(agentId);
-            const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
-            if (expectedNonce && receivedNonce !== expectedNonce) {
-              appLog('core:hook-server', 'warn', 'Rejected hook event with invalid nonce', {
-                meta: { agentId },
-              });
-              res.writeHead(200);
-              res.end();
-              return;
-            }
+  return {
+    kind: normalized.kind,
+    toolName: normalized.toolName,
+    toolInput: normalized.toolInput,
+    message: normalized.message,
+    toolVerb,
+    timestamp: Date.now(),
+  };
+}
 
-            const provider = await resolveOrchestrator(projectPath, orchestrator);
-            if (!isHookCapable(provider)) {
-              res.writeHead(200);
-              res.end();
-              return;
-            }
-            const normalized = provider.parseHookEvent(raw);
+/**
+ * Handle permission request lifecycle — holds the HTTP response open
+ * until the Annex client sends a decision (allow/deny) or the request times out.
+ */
+function handlePermissionRequest(
+  agentId: string,
+  normalized: { toolName?: string; toolInput?: Record<string, unknown>; message?: string },
+  res: http.ServerResponse,
+): void {
+  const toolName = normalized.toolName || 'unknown';
+  const { decision } = permissionQueue.createPermission(
+    agentId,
+    toolName,
+    normalized.toolInput,
+    normalized.message,
+    120_000, // 120 second timeout
+  );
 
-            if (normalized) {
-              const toolVerb = normalized.toolName
-                ? (provider.toolVerb(normalized.toolName) || `Using ${normalized.toolName}`)
-                : undefined;
+  decision.then((result) => {
+    const permissionDecision = result === 'timeout' ? 'ask' : result;
+    const responseBody = JSON.stringify({
+      hookSpecificOutput: { permissionDecision },
+    });
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(responseBody),
+    });
+    res.end(responseBody);
+  }).catch((err) => {
+    appLog('core:hook-server', 'error', 'Failed to send permission response', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
+    try { if (!res.writableEnded) res.end(); } catch { /* response already closed */ }
+  });
+}
 
-              const hookEvent = {
-                kind: normalized.kind,
-                toolName: normalized.toolName,
-                toolInput: normalized.toolInput,
-                message: normalized.message,
-                toolVerb,
-                timestamp: Date.now(),
-              };
-              broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
-              annexEventBus.emitHookEvent(agentId, hookEvent as any);
+/** Main request handler for the hook server */
+async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  if (req.method !== 'POST' || !req.url?.startsWith('/hook/')) {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
 
-              // For permission requests, hold the response and wait for a decision
-              // from the Annex client. The hook script (curl) blocks until we respond.
-              if (normalized.kind === 'permission_request') {
-                const toolName = normalized.toolName || 'unknown';
-                const { requestId: _requestId, decision } = permissionQueue.createPermission(
-                  agentId,
-                  toolName,
-                  normalized.toolInput,
-                  normalized.message,
-                  120_000, // 120 second timeout
-                );
+  const route = parseRoute(req.url);
+  if (!route) {
+    res.writeHead(400);
+    res.end();
+    return;
+  }
 
-                decision.then((result) => {
-                  const permissionDecision = result === 'timeout' ? 'ask' : result;
-                  const responseBody = JSON.stringify({
-                    hookSpecificOutput: { permissionDecision },
-                  });
-                  res.writeHead(200, {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(responseBody),
-                  });
-                  res.end(responseBody);
-                }).catch((err) => {
-                  appLog('core:hook-server', 'error', 'Failed to send permission response', {
-                    meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-                  });
-                  try { if (!res.writableEnded) res.end(); } catch { /* response already closed */ }
-                });
-                return; // Don't respond yet — the promise will handle it
-              }
-            }
-          }
-        } catch (err) {
-          appLog('core:hook-server', 'error', 'Failed to parse hook event', {
-            meta: { agentId, error: err instanceof Error ? err.message : String(err) },
-          });
-        }
+  const body = await readBody(req, res);
+  if (body === null) return; // size limit exceeded, response already sent
 
-        // For non-permission events, respond immediately
+  const { agentId, eventHint } = route;
+
+  try {
+    const raw = JSON.parse(body);
+    // Inject event type hint from URL when not present in payload
+    // (GHCP doesn't include hook_event_name in stdin, unlike Claude Code)
+    if (eventHint && !raw.hook_event_name) {
+      raw.hook_event_name = eventHint;
+    }
+    const projectPath = getAgentProjectPath(agentId);
+    const orchestrator = getAgentOrchestrator(agentId);
+
+    if (projectPath) {
+      if (!validateNonce(agentId, req)) {
         res.writeHead(200);
         res.end();
-      });
+        return;
+      }
+
+      const provider = await resolveOrchestrator(projectPath, orchestrator);
+      if (!isHookCapable(provider)) {
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+      const normalized = provider.parseHookEvent(raw);
+
+      if (normalized) {
+        const hookEvent = buildHookEvent(provider, normalized);
+        broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, hookEvent);
+        annexEventBus.emitHookEvent(agentId, hookEvent as any);
+
+        if (normalized.kind === 'permission_request') {
+          handlePermissionRequest(agentId, normalized, res);
+          return; // Don't respond yet — the promise will handle it
+        }
+      }
+    }
+  } catch (err) {
+    appLog('core:hook-server', 'error', 'Failed to parse hook event', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
     });
+  }
+
+  // For non-permission events, respond immediately
+  res.writeHead(200);
+  res.end();
+}
+
+export function start(): Promise<number> {
+  readyPromise = new Promise((resolve, reject) => {
+    server = http.createServer(handleRequest);
 
     server.listen(0, '127.0.0.1', () => {
       const addr = server?.address();
