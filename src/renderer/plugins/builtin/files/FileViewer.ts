@@ -87,6 +87,41 @@ function OpenInFinderButton({ api, relativePath }: { api: PluginAPI; relativePat
   }, 'Open in Finder');
 }
 
+// ── Editor Status Bar ─────────────────────────────────────────────────
+
+function displayLanguage(lang: string): string {
+  // Full display names for all Monaco language IDs used in EXT_TO_LANG
+  const names: Record<string, string> = {
+    typescript: 'TypeScript', javascript: 'JavaScript', python: 'Python',
+    markdown: 'Markdown', html: 'HTML', css: 'CSS', scss: 'SCSS',
+    json: 'JSON', yaml: 'YAML', xml: 'XML', rust: 'Rust', go: 'Go',
+    java: 'Java', kotlin: 'Kotlin', swift: 'Swift', csharp: 'C#',
+    cpp: 'C++', shell: 'Shell', sql: 'SQL', ruby: 'Ruby', php: 'PHP',
+    lua: 'Lua', dart: 'Dart', dockerfile: 'Dockerfile', graphql: 'GraphQL',
+    ini: 'INI', plaintext: 'Plain Text',
+  };
+  // Fallback: capitalize first letter (all expected IDs are single lowercase words)
+  return names[lang] ?? lang.charAt(0).toUpperCase() + lang.slice(1);
+}
+
+interface EditorStatusBarProps {
+  line: number;
+  column: number;
+  language: string;
+}
+
+function EditorStatusBar({ line, column, language }: EditorStatusBarProps) {
+  return React.createElement('div', {
+    className: 'flex items-center justify-between px-3 py-0.5 border-t border-ctp-surface0 bg-ctp-mantle flex-shrink-0 text-[10px] text-ctp-subtext0 select-none',
+  },
+    React.createElement('span', null, `Ln ${line}, Col ${column}`),
+    React.createElement('div', { className: 'flex items-center gap-3' },
+      React.createElement('span', null, displayLanguage(language)),
+      React.createElement('span', null, 'UTF-8'),
+    ),
+  );
+}
+
 // ── FileViewer (MainPanel) ────────────────────────────────────────────
 
 export function FileViewer({ api }: { api: PluginAPI }) {
@@ -96,6 +131,8 @@ export function FileViewer({ api }: { api: PluginAPI }) {
   const [loading, setLoading] = useState(false);
   const [unsavedDialog, setUnsavedDialog] = useState<{ tabId: string; pendingAction: () => void } | null>(null);
   const [scrollToLine, setScrollToLine] = useState<number | null>(null);
+  const [cursorLine, setCursorLine] = useState(1);
+  const [cursorColumn, setCursorColumn] = useState(1);
 
   // Cache of loaded file data per path to avoid reloading on tab switch
   const fileCache = useRef<Map<string, LoadedFile>>(new Map());
@@ -303,6 +340,13 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     fileState.setTabScrollState(activeTab.id, scrollState);
   }, [activeTab?.id]);
 
+  // ── Cursor change handler (status bar) ────────────────────────────
+
+  const handleCursorChange = useCallback((line: number, column: number) => {
+    setCursorLine(line);
+    setCursorColumn(column);
+  }, []);
+
   // ── Reveal in tree ────────────────────────────────────────────────
 
   const handleRevealInTree = useCallback((filePath: string) => {
@@ -424,6 +468,10 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   let body: React.ReactElement;
 
+  // True when the Monaco editor is the active view (drives status bar visibility)
+  const isEditorVisible = loadedFile.fileType === 'text' ||
+    ((loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg') && previewMode === 'source');
+
   switch (loadedFile.fileType) {
     case 'binary':
       body = React.createElement('div', {
@@ -478,6 +526,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
+            onCursorChange: handleCursorChange,
           }),
         );
       }
@@ -500,6 +549,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
             initialScrollState: activeTab.scrollState,
             onScrollStateChange: handleScrollStateChange,
             scrollToLine,
+            onCursorChange: handleCursorChange,
           }),
         );
       }
@@ -517,6 +567,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
           initialScrollState: activeTab.scrollState,
           onScrollStateChange: handleScrollStateChange,
           scrollToLine,
+          onCursorChange: handleCursorChange,
         }),
       );
       break;
@@ -532,6 +583,9 @@ export function FileViewer({ api }: { api: PluginAPI }) {
     React.createElement(TabBar, { api, onCloseTab: handleCloseTab, onRevealInTree: handleRevealInTree }),
     header,
     body,
+    isEditorVisible
+      ? React.createElement(EditorStatusBar, { line: cursorLine, column: cursorColumn, language: lang })
+      : null,
     // Unsaved changes dialog
     unsavedDialog
       ? React.createElement(UnsavedDialog, {

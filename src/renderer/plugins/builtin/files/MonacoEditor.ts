@@ -114,11 +114,13 @@ interface MonacoEditorProps {
   onScrollStateChange?: (state: ScrollState) => void;
   /** When set, scroll to this line and briefly highlight it */
   scrollToLine?: number | null;
+  /** Called when the cursor position changes (line, column) */
+  onCursorChange?: (line: number, column: number) => void;
 }
 
 export function MonacoEditor({
   value, language, onSave, onDirtyChange, filePath,
-  initialScrollState, onScrollStateChange, scrollToLine,
+  initialScrollState, onScrollStateChange, scrollToLine, onCursorChange,
 }: MonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
@@ -126,7 +128,9 @@ export function MonacoEditor({
   const onSaveRef = useRef(onSave);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const onScrollStateChangeRef = useRef(onScrollStateChange);
+  const onCursorChangeRef = useRef(onCursorChange);
   const filePathRef = useRef(filePath);
+  const wordWrapRef = useRef<'off' | 'on'>('off');
   const themeId = useThemeStore((s) => s.themeId);
   const [loading, setLoading] = useState(true);
   const contentChangeDisposableRef = useRef<any>(null);
@@ -135,6 +139,7 @@ export function MonacoEditor({
   onSaveRef.current = onSave;
   onDirtyChangeRef.current = onDirtyChange;
   onScrollStateChangeRef.current = onScrollStateChange;
+  onCursorChangeRef.current = onCursorChange;
 
   const checkDirty = useCallback(() => {
     const dirty = isModelDirty(filePathRef.current);
@@ -174,12 +179,29 @@ export function MonacoEditor({
         fontSize: 13,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         bracketPairColorization: { enabled: true },
-        minimap: { enabled: false },
+        minimap: {
+          enabled: true,
+          renderCharacters: true,
+          maxColumn: 80,
+          scale: 1,
+          showSlider: 'mouseover',
+        },
         wordWrap: 'off',
         automaticLayout: true,
         scrollBeyondLastLine: false,
         padding: { top: 8 },
         fixedOverflowWidgets: true,
+        folding: true,
+        showFoldingControls: 'mouseover',
+        guides: {
+          indentation: true,
+          highlightActiveIndentation: true,
+          bracketPairs: 'active',
+        },
+        renderWhitespace: 'selection',
+        stickyScroll: { enabled: true, maxLineCount: 5 },
+        cursorSmoothCaretAnimation: 'on',
+        cursorBlinking: 'smooth',
         find: {
           addExtraSpaceOnTop: false,
           seedSearchStringFromSelection: 'selection',
@@ -233,14 +255,24 @@ export function MonacoEditor({
         editor.trigger('keyboard', 'editor.action.selectHighlights', null);
       });
 
+      // Alt+Z — Toggle word wrap
+      editor.addCommand(m.KeyMod.Alt | m.KeyCode.KeyZ, () => {
+        wordWrapRef.current = wordWrapRef.current === 'off' ? 'on' : 'off';
+        editor.updateOptions({ wordWrap: wordWrapRef.current });
+      });
+
       // Track dirty state
       contentChangeDisposableRef.current = editor.onDidChangeModelContent(() => {
         checkDirty();
       });
 
-      // Track cursor/scroll for state preservation
+      // Track cursor/scroll for state preservation and status bar
       cursorChangeDisposableRef.current = editor.onDidChangeCursorPosition(() => {
         saveScrollState();
+        const pos = editor.getPosition();
+        if (pos && onCursorChangeRef.current) {
+          onCursorChangeRef.current(pos.lineNumber, pos.column);
+        }
       });
 
       // Restore scroll state if provided
