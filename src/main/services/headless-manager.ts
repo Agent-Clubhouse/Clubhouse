@@ -27,9 +27,17 @@ function winQuoteHeadlessArg(arg: string): string {
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
 
+/** Maximum in-memory stderr buffer in bytes before old chunks are evicted. */
+let maxStderrBytes = 64 * 1024; // 64 KB
+
 /** Change the in-memory transcript cap. Primarily for testing. */
 export function setMaxTranscriptBytes(bytes: number): void {
   maxTranscriptBytes = bytes;
+}
+
+/** Change the in-memory stderr cap. Primarily for testing. */
+export function setMaxStderrBytes(bytes: number): void {
+  maxStderrBytes = bytes;
 }
 
 interface HeadlessSession {
@@ -131,6 +139,36 @@ function evictOldEvents(session: HeadlessSession): void {
   }
 }
 
+/**
+ * Evict oldest stderr chunks from the in-memory buffer to stay under the cap.
+ * stderr is only retained for exit diagnostics, so keeping a recent window is sufficient.
+ */
+function evictOldStderrChunks(
+  stderrChunks: string[],
+  stderrChunkSizes: number[],
+  stderrBytes: number,
+): number {
+  const target = Math.floor(maxStderrBytes * 0.75);
+  let removeBytes = 0;
+  let removeCount = 0;
+
+  while (
+    removeCount < stderrChunkSizes.length &&
+    (stderrBytes - removeBytes) > target
+  ) {
+    removeBytes += stderrChunkSizes[removeCount];
+    removeCount++;
+  }
+
+  if (removeCount > 0) {
+    stderrChunks.splice(0, removeCount);
+    stderrChunkSizes.splice(0, removeCount);
+    return stderrBytes - removeBytes;
+  }
+
+  return stderrBytes;
+}
+
 export function isHeadless(agentId: string): boolean {
   return sessions.has(agentId);
 }
@@ -206,6 +244,8 @@ export function spawnHeadless(
   const transcriptEventSizes: number[] = [];
   let stdoutBytes = 0;
   const stderrChunks: string[] = [];
+  const stderrChunkSizes: number[] = [];
+  let stderrBytes = 0;
 
   const session: HeadlessSession = {
     process: proc,
@@ -288,7 +328,17 @@ export function spawnHeadless(
 
   proc.stderr?.on('data', (chunk: Buffer) => {
     const msg = chunk.toString().trim();
+    if (!msg) return;
+
+    const msgBytes = Buffer.byteLength(msg, 'utf-8');
     stderrChunks.push(msg);
+    stderrChunkSizes.push(msgBytes);
+    stderrBytes += msgBytes;
+
+    if (stderrBytes > maxStderrBytes) {
+      stderrBytes = evictOldStderrChunks(stderrChunks, stderrChunkSizes, stderrBytes);
+    }
+
     appLog('core:headless', 'warn', `stderr`, { meta: { agentId, message: msg } });
 
     // Forward stderr to renderer + annex so headless view can show errors
