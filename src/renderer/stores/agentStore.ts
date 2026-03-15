@@ -8,6 +8,9 @@ import { useProjectStore } from './projectStore';
 
 /** Detailed statuses older than this are considered stale and cleared */
 const STALE_THRESHOLD_MS = 30_000;
+/** Keep a small backstop of completed quick agents in-memory before pruning */
+const COMPLETED_QUICK_AGENT_RETENTION_MS = 60_000;
+const MAX_COMPLETED_QUICK_AGENTS = 20;
 
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
@@ -20,6 +23,7 @@ interface AgentState {
   configChangesProjectPath: string | null;
   agentActivity: Record<string, number>; // agentId -> last data timestamp
   agentSpawnedAt: Record<string, number>; // agentId -> spawn timestamp
+  agentTerminalAt: Record<string, number>; // agentId -> terminal timestamp
   agentDetailedStatus: Record<string, AgentDetailedStatus>;
   /** Track agents that were user-cancelled (not naturally completed) */
   cancelledAgentIds: Record<string, true>;
@@ -61,6 +65,99 @@ interface AgentState {
   setSessionNamePrompt: (agentId: string | null) => void;
 }
 
+function omitRecordKeys<T>(record: Record<string, T>, ids: Set<string>): Record<string, T> {
+  if (ids.size === 0) return record;
+
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (ids.has(key)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+  return changed ? next : record;
+}
+
+function omitRecordKey<T>(record: Record<string, T>, id: string): Record<string, T> {
+  if (!(id in record)) return record;
+  const { [id]: _removed, ...rest } = record;
+  return rest;
+}
+
+function protectedAgentIds(state: Pick<AgentState,
+  'activeAgentId' |
+  'agentSettingsOpenFor' |
+  'deleteDialogAgent' |
+  'configChangesDialogAgent' |
+  'sessionNamePromptFor'
+>): Set<string> {
+  const ids = [
+    state.activeAgentId,
+    state.agentSettingsOpenFor,
+    state.deleteDialogAgent,
+    state.configChangesDialogAgent,
+    state.sessionNamePromptFor,
+  ].filter((id): id is string => Boolean(id));
+
+  return new Set(ids);
+}
+
+function removeAgentsFromState(state: AgentState, idsToRemove: Iterable<string>): Partial<AgentState> | AgentState {
+  const ids = new Set(idsToRemove);
+  if (ids.size === 0) return state;
+
+  const agents = omitRecordKeys(state.agents, ids);
+  const agentActivity = omitRecordKeys(state.agentActivity, ids);
+  const agentSpawnedAt = omitRecordKeys(state.agentSpawnedAt, ids);
+  const agentTerminalAt = omitRecordKeys(state.agentTerminalAt, ids);
+  const agentDetailedStatus = omitRecordKeys(state.agentDetailedStatus, ids);
+  const cancelledAgentIds = omitRecordKeys(state.cancelledAgentIds, ids);
+  const agentIcons = omitRecordKeys(state.agentIcons, ids);
+
+  let projectActiveAgent = state.projectActiveAgent;
+  for (const agentId of Object.values(state.projectActiveAgent)) {
+    if (agentId && ids.has(agentId)) {
+      projectActiveAgent = Object.fromEntries(
+        Object.entries(state.projectActiveAgent).filter(([, currentId]) => !currentId || !ids.has(currentId)),
+      );
+      break;
+    }
+  }
+
+  const activeAgentId = state.activeAgentId && ids.has(state.activeAgentId) ? null : state.activeAgentId;
+  const agentSettingsOpenFor = state.agentSettingsOpenFor && ids.has(state.agentSettingsOpenFor)
+    ? null
+    : state.agentSettingsOpenFor;
+  const deleteDialogAgent = state.deleteDialogAgent && ids.has(state.deleteDialogAgent)
+    ? null
+    : state.deleteDialogAgent;
+  const clearConfigDialog = state.configChangesDialogAgent && ids.has(state.configChangesDialogAgent);
+  const configChangesDialogAgent = clearConfigDialog ? null : state.configChangesDialogAgent;
+  const configChangesProjectPath = clearConfigDialog ? null : state.configChangesProjectPath;
+  const sessionNamePromptFor = state.sessionNamePromptFor && ids.has(state.sessionNamePromptFor)
+    ? null
+    : state.sessionNamePromptFor;
+
+  return {
+    agents,
+    activeAgentId,
+    agentSettingsOpenFor,
+    deleteDialogAgent,
+    configChangesDialogAgent,
+    configChangesProjectPath,
+    agentActivity,
+    agentSpawnedAt,
+    agentTerminalAt,
+    agentDetailedStatus,
+    cancelledAgentIds,
+    projectActiveAgent,
+    agentIcons,
+    sessionNamePromptFor,
+  };
+}
+
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: {},
   activeAgentId: null,
@@ -70,6 +167,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   configChangesProjectPath: null,
   agentActivity: {},
   agentSpawnedAt: {},
+  agentTerminalAt: {},
   agentDetailedStatus: {},
   cancelledAgentIds: {},
   projectActiveAgent: {},
@@ -478,27 +576,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const newStatus: AgentStatus = 'sleeping';
     set((s) => {
       const { [id]: _, ...restStatus } = s.agentDetailedStatus;
+      const agentTerminalAt = agent.kind === 'quick' && !(id in s.agentTerminalAt)
+        ? { ...s.agentTerminalAt, [id]: Date.now() }
+        : s.agentTerminalAt;
+
       return {
         agents: { ...s.agents, [id]: { ...s.agents[id], status: newStatus } },
         agentDetailedStatus: restStatus,
+        agentTerminalAt,
       };
     });
   },
 
   removeAgent: (id) => {
-    set((s) => {
-      const { [id]: _, ...rest } = s.agents;
-      const { [id]: _ds, ...restStatus } = s.agentDetailedStatus;
-      const activeAgentId = s.activeAgentId === id ? null : s.activeAgentId;
-      // Clear projectActiveAgent entry if this agent was the active one for its project
-      const removedAgent = s.agents[id];
-      let projectActiveAgent = s.projectActiveAgent;
-      if (removedAgent && s.projectActiveAgent[removedAgent.projectId] === id) {
-        const { [removedAgent.projectId]: _pa, ...restPA } = s.projectActiveAgent;
-        projectActiveAgent = restPA;
-      }
-      return { agents: rest, activeAgentId, agentDetailedStatus: restStatus, projectActiveAgent };
-    });
+    set((s) => removeAgentsFromState(s, [id]));
   },
 
   deleteDurableAgent: async (id, projectPath) => {
@@ -546,6 +637,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       // Clear detailed status when agent stops
       const { [id]: _, ...restStatus } = s.agentDetailedStatus;
+      let agentTerminalAt = s.agentTerminalAt;
+
+      if (finalStatus === 'running' || agent.kind !== 'quick') {
+        agentTerminalAt = omitRecordKey(agentTerminalAt, id);
+      } else if (finalStatus === 'sleeping' && !(id in agentTerminalAt)) {
+        agentTerminalAt = { ...agentTerminalAt, [id]: Date.now() };
+      } else if (finalStatus !== 'sleeping') {
+        agentTerminalAt = omitRecordKey(agentTerminalAt, id);
+      }
 
       return {
         agents: {
@@ -557,6 +657,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             errorMessage: finalStatus === 'error' ? resolvedErrorMessage : undefined,
           },
         },
+        agentTerminalAt,
         agentDetailedStatus: finalStatus !== 'running' ? restStatus : s.agentDetailedStatus,
       };
     });
@@ -580,6 +681,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             [agentId]: { ...a, status: 'running', exitCode: undefined, errorMessage: undefined },
           },
           agentSpawnedAt: { ...s.agentSpawnedAt, [agentId]: Date.now() },
+          agentTerminalAt: omitRecordKey(s.agentTerminalAt, agentId),
         };
       });
     }
@@ -641,29 +743,64 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
   },
 
-  /** Clear detailed statuses that haven't been updated in STALE_THRESHOLD_MS */
+  /** Periodic cleanup for stale detailed statuses and lingering completed quick agents */
   clearStaleStatuses: () => {
     set((state) => {
       const now = Date.now();
+      let workingState = state;
       const statuses = state.agentDetailedStatus;
-      const agents = state.agents;
       let changed = false;
-      const updated = { ...statuses };
+      let updated = statuses;
 
       for (const [agentId, status] of Object.entries(statuses)) {
-        const agent = agents[agentId];
+        const agent = state.agents[agentId];
         if (!agent || agent.status !== 'running') continue;
 
         const age = now - status.timestamp;
         // Permission states shouldn't auto-clear — agent is waiting for user
         if (status.state === 'needs_permission') continue;
         if (age > STALE_THRESHOLD_MS) {
+          if (updated === statuses) {
+            updated = { ...statuses };
+          }
           delete updated[agentId];
           changed = true;
         }
       }
 
-      return changed ? { agentDetailedStatus: updated } : state;
+      if (changed) {
+        workingState = { ...state, agentDetailedStatus: updated };
+      }
+
+      const protectedIdsSet = protectedAgentIds(workingState);
+      const completedQuickAgents = Object.values(workingState.agents)
+        .filter((agent) => (
+          agent.kind === 'quick' &&
+          agent.status === 'sleeping' &&
+          !protectedIdsSet.has(agent.id)
+        ))
+        .map((agent) => ({
+          id: agent.id,
+          terminalAt: workingState.agentTerminalAt[agent.id] ?? workingState.agentSpawnedAt[agent.id] ?? 0,
+        }))
+        .sort((left, right) => right.terminalAt - left.terminalAt);
+
+      const quickIdsToRemove = new Set<string>();
+      for (const agent of completedQuickAgents) {
+        if (agent.terminalAt > 0 && now - agent.terminalAt > COMPLETED_QUICK_AGENT_RETENTION_MS) {
+          quickIdsToRemove.add(agent.id);
+        }
+      }
+
+      for (const agent of completedQuickAgents.slice(MAX_COMPLETED_QUICK_AGENTS)) {
+        quickIdsToRemove.add(agent.id);
+      }
+
+      if (quickIdsToRemove.size === 0) {
+        return changed ? { agentDetailedStatus: updated } : state;
+      }
+
+      return removeAgentsFromState(workingState, quickIdsToRemove);
     });
   },
 

@@ -64,11 +64,16 @@ describe('agentStore', () => {
       activeAgentId: null,
       agentSettingsOpenFor: null,
       deleteDialogAgent: null,
+      configChangesDialogAgent: null,
+      configChangesProjectPath: null,
       agentActivity: {},
       agentSpawnedAt: {},
+      agentTerminalAt: {},
       agentDetailedStatus: {},
+      cancelledAgentIds: {},
       projectActiveAgent: {},
       agentIcons: {},
+      sessionNamePromptFor: null,
     });
   });
 
@@ -214,6 +219,17 @@ describe('agentStore', () => {
       expect(getState().agents['q_early'].status).toBe('sleeping');
     });
 
+    it('records terminal time for quick agents when they stop', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'q_done', kind: 'quick', status: 'running' });
+      getState().updateAgentStatus('q_done', 'sleeping');
+
+      expect(getState().agentTerminalAt['q_done']).toBe(now);
+    });
+
     it('clears detailedStatus when agent stops', () => {
       seedAgent({ id: 'a_stop', status: 'running' });
       useAgentStore.setState((s) => ({
@@ -246,6 +262,18 @@ describe('agentStore', () => {
       // Should also process the hook event
       expect(getState().agentDetailedStatus['a_wake']).toBeDefined();
       expect(getState().agentDetailedStatus['a_wake'].state).toBe('working');
+    });
+
+    it('clears quick-agent terminal time when a sleeping agent wakes', () => {
+      seedAgent({ id: 'q_wake', kind: 'quick', status: 'sleeping' });
+      useAgentStore.setState((s) => ({
+        agentTerminalAt: { ...s.agentTerminalAt, q_wake: 123 },
+      }));
+
+      getState().handleHookEvent('q_wake', { kind: 'post_tool', timestamp: 100 });
+
+      expect(getState().agents['q_wake'].status).toBe('running');
+      expect(getState().agentTerminalAt['q_wake']).toBeUndefined();
     });
 
     it('transitions error agent to running on hook event', () => {
@@ -384,6 +412,67 @@ describe('agentStore', () => {
       getState().clearStaleStatuses();
       expect(getState().agentDetailedStatus['a_perm_stale']).toBeDefined();
     });
+
+    it('prunes completed quick agents older than the retention window', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'q_old', kind: 'quick', status: 'sleeping' });
+      seedAgent({ id: 'q_recent', kind: 'quick', status: 'sleeping' });
+      useAgentStore.setState((s) => ({
+        agentTerminalAt: {
+          ...s.agentTerminalAt,
+          q_old: now - 61_000,
+          q_recent: now - 5_000,
+        },
+      }));
+
+      getState().clearStaleStatuses();
+
+      expect(getState().agents['q_old']).toBeUndefined();
+      expect(getState().agents['q_recent']).toBeDefined();
+    });
+
+    it('retains only the newest completed quick agents when the cap is exceeded', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      for (let index = 0; index < 22; index += 1) {
+        seedAgent({ id: `q_${index}`, kind: 'quick', status: 'sleeping' });
+      }
+      useAgentStore.setState((s) => ({
+        agentTerminalAt: Object.fromEntries(
+          Array.from({ length: 22 }, (_, index) => [`q_${index}`, now - index * 1_000]),
+        ),
+        agentSpawnedAt: s.agentSpawnedAt,
+      }));
+
+      getState().clearStaleStatuses();
+
+      expect(Object.keys(getState().agents)).toHaveLength(20);
+      expect(getState().agents.q_0).toBeDefined();
+      expect(getState().agents.q_19).toBeDefined();
+      expect(getState().agents.q_20).toBeUndefined();
+      expect(getState().agents.q_21).toBeUndefined();
+    });
+
+    it('does not prune a protected completed quick agent', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'q_active', kind: 'quick', status: 'sleeping' });
+      useAgentStore.setState((s) => ({
+        activeAgentId: 'q_active',
+        agentTerminalAt: { ...s.agentTerminalAt, q_active: now - 61_000 },
+      }));
+
+      getState().clearStaleStatuses();
+
+      expect(getState().agents['q_active']).toBeDefined();
+    });
   });
 
   describe('toolVerb (tested via handleHookEvent)', () => {
@@ -489,6 +578,47 @@ describe('agentStore', () => {
       useAgentStore.setState({ activeAgentId: 'a_keep_active' });
       getState().removeAgent('a_other');
       expect(getState().activeAgentId).toBe('a_keep_active');
+    });
+
+    it('clears per-agent metadata when an agent is removed', () => {
+      seedAgent({ id: 'a_cleanup', projectId: 'proj_1' });
+      useAgentStore.setState({
+        activeAgentId: 'a_cleanup',
+        agentSettingsOpenFor: 'a_cleanup',
+        deleteDialogAgent: 'a_cleanup',
+        configChangesDialogAgent: 'a_cleanup',
+        configChangesProjectPath: '/project',
+        sessionNamePromptFor: 'a_cleanup',
+        agentActivity: { a_cleanup: 10, keep: 20 },
+        agentSpawnedAt: { a_cleanup: 11, keep: 21 },
+        agentTerminalAt: { a_cleanup: 12, keep: 22 },
+        agentDetailedStatus: {
+          a_cleanup: { state: 'idle', message: 'Idle', timestamp: 1 },
+          keep: { state: 'working', message: 'Reading', timestamp: 2 },
+        },
+        cancelledAgentIds: { a_cleanup: true, keep: true },
+        agentIcons: { a_cleanup: 'icon-cleanup', keep: 'icon-keep' },
+        projectActiveAgent: { proj_1: 'a_cleanup', proj_2: 'keep' },
+      });
+
+      getState().removeAgent('a_cleanup');
+
+      expect(getState().agentActivity['a_cleanup']).toBeUndefined();
+      expect(getState().agentSpawnedAt['a_cleanup']).toBeUndefined();
+      expect(getState().agentTerminalAt['a_cleanup']).toBeUndefined();
+      expect(getState().agentDetailedStatus['a_cleanup']).toBeUndefined();
+      expect(getState().cancelledAgentIds['a_cleanup']).toBeUndefined();
+      expect(getState().agentIcons['a_cleanup']).toBeUndefined();
+      expect(getState().activeAgentId).toBeNull();
+      expect(getState().agentSettingsOpenFor).toBeNull();
+      expect(getState().deleteDialogAgent).toBeNull();
+      expect(getState().configChangesDialogAgent).toBeNull();
+      expect(getState().configChangesProjectPath).toBeNull();
+      expect(getState().sessionNamePromptFor).toBeNull();
+      expect(getState().projectActiveAgent.proj_1).toBeUndefined();
+      expect(getState().projectActiveAgent.proj_2).toBe('keep');
+      expect(getState().agentActivity.keep).toBe(20);
+      expect(getState().agentIcons.keep).toBe('icon-keep');
     });
   });
 
