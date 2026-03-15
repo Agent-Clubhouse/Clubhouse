@@ -22,6 +22,15 @@ vi.mock('fs', () => ({
   rmSync: vi.fn(),
   readdirSync: vi.fn(() => []),
   unlinkSync: vi.fn(),
+  promises: {
+    readFile: vi.fn(async () => '{}'),
+    writeFile: vi.fn(async () => undefined),
+    mkdir: vi.fn(async () => undefined),
+    readdir: vi.fn(async () => []),
+    rm: vi.fn(async () => undefined),
+    unlink: vi.fn(async () => undefined),
+    access: vi.fn(async () => undefined),
+  },
 }));
 
 import * as fs from 'fs';

@@ -49,7 +49,7 @@ export async function computeConfigDiff(params: {
   }
 
   const defaults = await readProjectAgentDefaults(projectPath);
-  const scp = resolveSourceControlProvider(projectPath);
+  const scp = await resolveSourceControlProvider(projectPath);
   const ctx = buildWildcardContext(agent, projectPath, scp);
   const conv = provider.conventions;
 
@@ -98,7 +98,7 @@ export async function propagateChanges(params: {
     return { ok: false, message: 'Agent has no worktree', propagatedCount: 0 };
   }
 
-  const scp = resolveSourceControlProvider(projectPath);
+  const scp = await resolveSourceControlProvider(projectPath);
   const ctx = buildWildcardContext(agent, projectPath, scp);
   const conv = provider.conventions;
 

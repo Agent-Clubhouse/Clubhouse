@@ -12,6 +12,15 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
   readdirSync: vi.fn(() => []),
   rmSync: vi.fn(),
+  promises: {
+    readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+    writeFile: vi.fn(async () => undefined),
+    mkdir: vi.fn(async () => undefined),
+    readdir: vi.fn(async () => []),
+    rm: vi.fn(async () => undefined),
+    unlink: vi.fn(async () => undefined),
+    access: vi.fn(async () => { throw new Error('ENOENT'); }),
+  },
 }));
 
 vi.mock('./log-service', () => ({
@@ -95,6 +104,22 @@ function mockFileSystem(files: Record<string, string>): void {
     }
     return false;
   });
+  // Async mirrors for agent-settings-service (uses fs.promises)
+  vi.mocked(fs.promises.readFile).mockImplementation(async (p: any) => {
+    const filePath = String(p);
+    for (const [pattern, content] of sortedEntries) {
+      if (filePath.includes(pattern)) return content;
+    }
+    throw new Error('ENOENT');
+  });
+  vi.mocked(fs.promises.access).mockImplementation(async (p: any) => {
+    const filePath = String(p);
+    for (const [pattern] of sortedEntries) {
+      if (filePath.includes(pattern)) return undefined;
+    }
+    throw new Error('ENOENT');
+  });
+  vi.mocked(fs.promises.readdir).mockResolvedValue([]);
 }
 
 function agentsJsonWith(agent: DurableAgentConfig): string {
@@ -114,7 +139,7 @@ describe('config-diff-service', () => {
   });
 
   describe('computeConfigDiff', () => {
-    it('returns empty diff when agent matches defaults', () => {
+    it('returns empty diff when agent matches defaults', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -129,13 +154,13 @@ describe('config-diff-service', () => {
         'Agent bold-falcon at .clubhouse/agents/bold-falcon/',
       );
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(false);
       expect(result.items).toHaveLength(0);
     });
 
-    it('detects added permission rules (allow)', () => {
+    it('detects added permission rules (allow)', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -147,7 +172,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const addedAllow = result.items.filter(
@@ -157,7 +182,7 @@ describe('config-diff-service', () => {
       expect(addedAllow[0].label).toBe('Bash(npm test:*)');
     });
 
-    it('detects removed permission rules (allow)', () => {
+    it('detects removed permission rules (allow)', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -169,7 +194,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const removed = result.items.filter(
@@ -179,7 +204,7 @@ describe('config-diff-service', () => {
       expect(removed[0].label).toContain('Edit');
     });
 
-    it('detects added and removed deny rules', () => {
+    it('detects added and removed deny rules', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -191,7 +216,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const addedDeny = result.items.filter(
@@ -204,7 +229,7 @@ describe('config-diff-service', () => {
       expect(removedDeny).toHaveLength(1);
     });
 
-    it('detects modified instructions', () => {
+    it('detects modified instructions', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -215,7 +240,7 @@ describe('config-diff-service', () => {
         'Modified instructions for bold-falcon with extra content',
       );
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const instrItem = result.items.find((i) => i.category === 'instructions');
@@ -225,7 +250,7 @@ describe('config-diff-service', () => {
       expect(instrItem!.defaultValue).toContain('Original');
     });
 
-    it('detects added MCP servers', () => {
+    it('detects added MCP servers', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -240,7 +265,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const added = result.items.filter((i) => i.category === 'mcp' && i.action === 'added');
@@ -248,7 +273,7 @@ describe('config-diff-service', () => {
       expect(added[0].label).toContain('newServer');
     });
 
-    it('detects removed MCP servers', () => {
+    it('detects removed MCP servers', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -260,7 +285,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const removed = result.items.filter((i) => i.category === 'mcp' && i.action === 'removed');
@@ -268,7 +293,7 @@ describe('config-diff-service', () => {
       expect(removed[0].label).toContain('server2');
     });
 
-    it('detects modified MCP servers', () => {
+    it('detects modified MCP servers', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -280,14 +305,14 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(true);
       const modified = result.items.filter((i) => i.category === 'mcp' && i.action === 'modified');
       expect(modified).toHaveLength(1);
     });
 
-    it('skips diff when clubhouseModeOverride is true', () => {
+    it('skips diff when clubhouseModeOverride is true', async () => {
       const overrideAgent = { ...testAgent, clubhouseModeOverride: true };
       mockFileSystem({
         'agents.json': agentsJsonWith(overrideAgent),
@@ -295,25 +320,25 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('Completely different');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(false);
       expect(result.items).toHaveLength(0);
     });
 
-    it('returns empty result when no project defaults exist', () => {
+    it('returns empty result when no project defaults exist', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': JSON.stringify({ defaults: {}, quickOverrides: {} }),
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       expect(result.hasDiffs).toBe(false);
     });
 
-    it('detects added skills', () => {
+    it('detects added skills', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': JSON.stringify({ defaults: {}, quickOverrides: {} }),
@@ -326,6 +351,13 @@ describe('config-diff-service', () => {
         return filePath.includes('agents.json') || filePath.includes('README.md');
       });
 
+      // Override fs.promises.access to match existsSync overrides
+      vi.mocked(fs.promises.access).mockImplementation(async (p: any) => {
+        const filePath = String(p);
+        if (filePath.includes('agents.json') || filePath.includes('README.md')) return undefined;
+        throw new Error('ENOENT');
+      });
+
       // Agent has a skill in its worktree, project has none
       vi.mocked(fs.readdirSync).mockImplementation((p: unknown) => {
         const dirPath = String(p);
@@ -335,7 +367,16 @@ describe('config-diff-service', () => {
         return [];
       });
 
-      const result = computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
+      // Also mock async readdir for agent-settings-service
+      vi.mocked(fs.promises.readdir).mockImplementation(async (p: any) => {
+        const dirPath = String(p);
+        if (dirPath.includes('bold-falcon') && dirPath.includes('skills')) {
+          return [{ name: 'custom-skill', isDirectory: () => true, isFile: () => false }] as any;
+        }
+        return [];
+      });
+
+      const result = await computeConfigDiff({ projectPath: '/project', agentId: 'test_001', provider: mockProvider });
 
       const addedSkills = result.items.filter((i) => i.category === 'skills' && i.action === 'added');
       expect(addedSkills).toHaveLength(1);
@@ -344,7 +385,7 @@ describe('config-diff-service', () => {
   });
 
   describe('propagateChanges', () => {
-    it('correctly merges permission additions', () => {
+    it('correctly merges permission additions', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -356,7 +397,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = propagateChanges({
+      const result = await propagateChanges({
         projectPath: '/project',
         agentId: 'test_001',
         selectedItemIds: ['permissions-allow:added:Bash(npm test:*)'],
@@ -366,8 +407,8 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      // Verify writeFileSync was called with updated settings
-      const writeCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      // Verify fs.promises.writeFile was called with updated settings
+      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();
@@ -375,7 +416,7 @@ describe('config-diff-service', () => {
       expect(written.agentDefaults.permissions.allow).toContain('Bash(npm test:*)');
     });
 
-    it('correctly merges permission removals', () => {
+    it('correctly merges permission removals', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -387,7 +428,7 @@ describe('config-diff-service', () => {
       });
       vi.mocked(mockProvider.readInstructions).mockReturnValue('');
 
-      const result = propagateChanges({
+      const result = await propagateChanges({
         projectPath: '/project',
         agentId: 'test_001',
         selectedItemIds: ['permissions-allow:removed:Edit(.clubhouse/agents/bold-falcon/**)'],
@@ -397,7 +438,7 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      const writeCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();
@@ -405,7 +446,7 @@ describe('config-diff-service', () => {
       expect(written.agentDefaults.permissions.allow).not.toContain('Edit(@@Path**)');
     });
 
-    it('correctly updates instructions with unreplace', () => {
+    it('correctly updates instructions with unreplace', async () => {
       mockFileSystem({
         'agents.json': agentsJsonWith(testAgent),
         'settings.json': settingsJsonWith({
@@ -416,7 +457,7 @@ describe('config-diff-service', () => {
         'Updated bold-falcon instructions at .clubhouse/agents/bold-falcon/',
       );
 
-      const result = propagateChanges({
+      const result = await propagateChanges({
         projectPath: '/project',
         agentId: 'test_001',
         selectedItemIds: ['instructions:modified'],
@@ -426,7 +467,7 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      const writeCall = vi.mocked(fs.writeFileSync).mock.calls.find(
+      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();
@@ -437,12 +478,12 @@ describe('config-diff-service', () => {
       expect(written.agentDefaults.instructions).not.toContain('bold-falcon');
     });
 
-    it('returns error when agent not found', () => {
+    it('returns error when agent not found', async () => {
       mockFileSystem({
         'agents.json': JSON.stringify([]),
       });
 
-      const result = propagateChanges({
+      const result = await propagateChanges({
         projectPath: '/project',
         agentId: 'nonexistent',
         selectedItemIds: [],
