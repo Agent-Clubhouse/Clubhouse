@@ -565,7 +565,7 @@ describe('headless-manager', () => {
     });
 
     it('uses pre-cached serialized lines instead of re-serializing (#637)', async () => {
-      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+      await spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const events = [
         { type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } },
