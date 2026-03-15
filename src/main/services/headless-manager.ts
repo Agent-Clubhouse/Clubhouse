@@ -53,6 +53,8 @@ interface HeadlessSession {
   textBuffer?: string;
   /** Timer for force-kill escalation in kill(). */
   killTimer?: ReturnType<typeof setTimeout>;
+  /** Stored so stale sweeper can invoke it when exit events are missed. */
+  onExitCallback?: (agentId: string, exitCode: number) => void;
 }
 
 const sessions = new Map<string, HeadlessSession>();
@@ -74,8 +76,12 @@ const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
     appLog('core:headless', 'warn', 'Stale headless session detected, cleaning up', {
       meta: { agentId, exitCode: session.process.exitCode },
     });
+    const exitCode = session.process.exitCode ?? 1;
+    const { onExitCallback } = session;
     cleanupHeadlessSession(agentId);
-    broadcastAgentExit(agentId, session.process.exitCode ?? 1);
+    broadcastAgentExit(agentId, exitCode);
+    // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
+    onExitCallback?.(agentId, exitCode);
   },
 });
 
@@ -256,6 +262,7 @@ export async function spawnHeadless(
     totalTranscriptBytesWritten: 0,
     transcriptPath,
     startedAt: Date.now(),
+    onExitCallback: onExit,
   };
   sessions.set(agentId, session);
 

@@ -23,6 +23,8 @@ interface ManagedSession {
   eofTimer?: ReturnType<typeof setTimeout>;
   termTimer?: ReturnType<typeof setTimeout>;
   killTimer?: ReturnType<typeof setTimeout>;
+  /** Stored so stale sweeper and kill-timeout paths can invoke it. */
+  onExitCallback?: (agentId: string, exitCode: number, buffer?: string) => void;
 }
 
 const MAX_BUFFER_SIZE = 512 * 1024; // 512KB per agent
@@ -120,8 +122,11 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
     appLog('core:pty', 'warn', 'Stale PTY session detected, cleaning up', {
       meta: { agentId, pid: session.process.pid },
     });
+    const { onExitCallback } = session;
     cleanupSession(agentId);
     broadcastAgentExit(agentId, 1, '');
+    // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
+    onExitCallback?.(agentId, 1, '');
   },
 });
 
@@ -255,6 +260,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
   }
 
   const session = createSession(proc, agentId, pendingCommand);
+  session.onExitCallback = onExit;
   sessions.set(agentId, session);
 
   proc.onData((data: string) => {
@@ -408,9 +414,14 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
       try { proc.kill(); } catch { /* dead */ }
+      const { onExitCallback } = current;
+      cleanupSession(agentId);
       broadcastAgentExit(agentId, 1, '');
+      // Invoke onExit so the agent registry is cleaned up (prevents memory leak)
+      onExitCallback?.(agentId, 1, '');
+    } else {
+      cleanupSession(agentId);
     }
-    cleanupSession(agentId);
   }, 9000);
 }
 
