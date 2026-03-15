@@ -1,18 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as path from 'path';
 
-vi.mock('fs', () => ({
-  readFileSync: vi.fn(() => { throw new Error('ENOENT'); }),
-  writeFileSync: vi.fn(),
-  existsSync: vi.fn(() => false),
-  unlinkSync: vi.fn(),
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(() => Promise.reject(new Error('ENOENT'))),
+  writeFile: vi.fn(() => Promise.resolve(undefined)),
+  unlink: vi.fn(() => Promise.resolve(undefined)),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(() => Promise.resolve(false)),
 }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { pathExists } from './fs-utils';
 import {
   snapshotFile,
   restoreForAgent,
@@ -33,59 +37,59 @@ describe('config-pipeline', () => {
   });
 
   describe('snapshotFile', () => {
-    it('reads and stores original content on first reference', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+    it('reads and stores original content on first reference', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.resolve('/project/.claude/settings.local.json'),
         'utf-8',
       );
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(true);
     });
 
-    it('stores null when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    it('stores null when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(true);
     });
 
-    it('does not re-read on second call for same path', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('original');
+    it('does not re-read on second call for same path', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('original');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
-      snapshotFile('agent-2', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-2', '/project/.claude/settings.local.json');
 
-      expect(fs.readFileSync).toHaveBeenCalledTimes(1);
+      expect(fsp.readFile).toHaveBeenCalledTimes(1);
     });
 
-    it('increments refCount for subsequent agents', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('original');
+    it('increments refCount for subsequent agents', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('original');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
-      snapshotFile('agent-2', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-2', '/project/.claude/settings.local.json');
 
       // After restoring agent-1, file should still be tracked (agent-2 still alive)
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(true);
 
       // After restoring agent-2, file should be restored and no longer tracked
-      // Mock readFileSync for smart restore to read current file
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
-      restoreForAgent('agent-2');
+      // Mock readFile for smart restore to read current file
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ hooks: {} }));
+      await restoreForAgent('agent-2');
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(false);
     });
   });
 
   describe('restoreForAgent', () => {
-    it('strips Clubhouse hooks from current file when restoring (file existed before)', () => {
+    it('strips Clubhouse hooks from current file when restoring (file existed before)', async () => {
       // Original file had user content
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       // Current file now has permissions + clubhouse hooks
       const currentContent = JSON.stringify({
@@ -96,21 +100,21 @@ describe('config-pipeline', () => {
           ],
         },
       });
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentContent);
 
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
       // Should write back with hooks stripped but permissions preserved
-      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.permissions).toEqual({ allow: ['Read'] });
       expect(written.hooks).toBeUndefined();
     });
 
-    it('preserves user hooks while stripping Clubhouse hooks', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{}');
+    it('preserves user hooks while stripping Clubhouse hooks', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{}');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       const currentContent = JSON.stringify({
         hooks: {
@@ -120,21 +124,21 @@ describe('config-pipeline', () => {
           ],
         },
       });
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentContent);
 
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.hooks.PreToolUse).toHaveLength(1);
       expect(written.hooks.PreToolUse[0].hooks[0].command).toBe('echo "user hook"');
     });
 
-    it('deletes file when original was null and only clubhouse hooks remain', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    it('deletes file when original was null and only clubhouse hooks remain', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(pathExists).mockResolvedValue(true);
       // Current file has only Clubhouse hooks
       const currentContent = JSON.stringify({
         hooks: {
@@ -143,21 +147,21 @@ describe('config-pipeline', () => {
           ],
         },
       });
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentContent);
 
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
-      expect(fs.unlinkSync).toHaveBeenCalledWith(
+      expect(fsp.unlink).toHaveBeenCalledWith(
         path.resolve('/project/.claude/settings.local.json'),
       );
     });
 
-    it('preserves file when original was null but permissions were added', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    it('preserves file when original was null but permissions were added', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
-      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(pathExists).mockResolvedValue(true);
       // Current file has permissions AND Clubhouse hooks
       const currentContent = JSON.stringify({
         permissions: { allow: ['Bash(git:*)'], deny: ['WebFetch'] },
@@ -167,92 +171,92 @@ describe('config-pipeline', () => {
           ],
         },
       });
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(currentContent);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentContent);
 
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
       // Should write back with hooks stripped but permissions preserved
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
-      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
-      const written = JSON.parse(vi.mocked(fs.writeFileSync).mock.calls[0][1] as string);
+      expect(fsp.unlink).not.toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(vi.mocked(fsp.writeFile).mock.calls[0][1] as string);
       expect(written.permissions).toEqual({ allow: ['Bash(git:*)'], deny: ['WebFetch'] });
       expect(written.hooks).toBeUndefined();
     });
 
-    it('does not delete file when original was null and file already gone', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+    it('does not delete file when original was null and file already gone', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      vi.mocked(pathExists).mockResolvedValue(false);
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
-      restoreForAgent('agent-1');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await restoreForAgent('agent-1');
 
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
-    it('does nothing for unknown agentId', () => {
-      restoreForAgent('nonexistent');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+    it('does nothing for unknown agentId', async () => {
+      await restoreForAgent('nonexistent');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
-    it('decrements refCount without restoring when other agents remain', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('original');
+    it('decrements refCount without restoring when other agents remain', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('original');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
-      snapshotFile('agent-2', '/project/.claude/settings.local.json');
-      restoreForAgent('agent-1');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-2', '/project/.claude/settings.local.json');
+      await restoreForAgent('agent-1');
 
       // Should NOT have written/deleted yet
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
-      expect(fs.unlinkSync).not.toHaveBeenCalled();
+      expect(fsp.writeFile).not.toHaveBeenCalled();
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
-    it('calling restoreForAgent twice for same agent does not double-restore', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+    it('calling restoreForAgent twice for same agent does not double-restore', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       // First restore reads current file
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
-      restoreForAgent('agent-1');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ hooks: {} }));
+      await restoreForAgent('agent-1');
 
       // Second call with same agentId should be a no-op
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
-      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
     });
 
-    it('concurrent agent cleanup does not restore the same file twice', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+    it('concurrent agent cleanup does not restore the same file twice', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
 
       // Two agents reference the same file
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
-      snapshotFile('agent-2', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-2', '/project/.claude/settings.local.json');
 
       // Restore agent-1 (decrements refCount to 1, no restore yet)
-      restoreForAgent('agent-1');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      await restoreForAgent('agent-1');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
 
       // Restore agent-2 (decrements refCount to 0, triggers restore)
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({ hooks: {} }));
-      restoreForAgent('agent-2');
-      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({ hooks: {} }));
+      await restoreForAgent('agent-2');
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
 
       // Snapshot should be gone — a third call should not restore again
       expect(hasSnapshot('/project/.claude/settings.local.json')).toBe(false);
     });
 
-    it('falls back to original snapshot when current file is corrupt', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('{"user": true}');
+    it('falls back to original snapshot when current file is corrupt', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('{"user": true}');
 
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       // Current file is corrupt JSON
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('not valid json{{{');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('not valid json{{{');
 
-      restoreForAgent('agent-1');
+      await restoreForAgent('agent-1');
 
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.resolve('/project/.claude/settings.local.json'),
         '{"user": true}',
         'utf-8',
@@ -261,38 +265,38 @@ describe('config-pipeline', () => {
   });
 
   describe('restoreAll', () => {
-    it('restores all snapshots at once', () => {
-      vi.mocked(fs.readFileSync)
-        .mockReturnValueOnce('content-a')
-        .mockReturnValueOnce('content-b');
+    it('restores all snapshots at once', async () => {
+      vi.mocked(fsp.readFile)
+        .mockResolvedValueOnce('content-a')
+        .mockResolvedValueOnce('content-b');
 
-      snapshotFile('agent-1', '/project-a/.claude/settings.local.json');
-      snapshotFile('agent-2', '/project-b/.github/hooks/hooks.json');
+      await snapshotFile('agent-1', '/project-a/.claude/settings.local.json');
+      await snapshotFile('agent-2', '/project-b/.github/hooks/hooks.json');
 
       // Mock reads for smart restore
-      vi.mocked(fs.readFileSync)
-        .mockReturnValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }))
-        .mockReturnValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }));
+      vi.mocked(fsp.readFile)
+        .mockResolvedValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }))
+        .mockResolvedValueOnce(JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: CLUBHOUSE_HOOK_CMD }] }] } }));
 
-      restoreAll();
+      await restoreAll();
 
-      expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
+      expect(fsp.writeFile).toHaveBeenCalledTimes(2);
       expect(hasSnapshot('/project-a/.claude/settings.local.json')).toBe(false);
       expect(hasSnapshot('/project-b/.github/hooks/hooks.json')).toBe(false);
     });
 
-    it('clears all tracking state', () => {
-      vi.mocked(fs.readFileSync).mockReturnValueOnce('original');
-      snapshotFile('agent-1', '/project/.claude/settings.local.json');
+    it('clears all tracking state', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValueOnce('original');
+      await snapshotFile('agent-1', '/project/.claude/settings.local.json');
 
       // Mock read for smart restore
-      vi.mocked(fs.readFileSync).mockReturnValueOnce(JSON.stringify({}));
-      restoreAll();
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(JSON.stringify({}));
+      await restoreAll();
 
       // Calling restoreForAgent should be a no-op now
-      vi.mocked(fs.writeFileSync).mockClear();
-      restoreForAgent('agent-1');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      vi.mocked(fsp.writeFile).mockClear();
+      await restoreForAgent('agent-1');
+      expect(fsp.writeFile).not.toHaveBeenCalled();
     });
   });
 

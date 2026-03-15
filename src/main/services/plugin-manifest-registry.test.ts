@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('fs', () => ({
-  readFileSync: vi.fn(),
-}));
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    readFileSync: vi.fn(),
+  };
+});
 
 vi.mock('./plugin-discovery', () => ({
-  discoverCommunityPlugins: vi.fn(() => []),
+  discoverCommunityPlugins: vi.fn(async () => []),
 }));
 
 vi.mock('./plugin-storage', () => ({
@@ -184,17 +188,17 @@ describe('plugin-manifest-registry', () => {
     });
   });
 
-  it('loads trusted builtin manifests at initialization', () => {
-    initializeTrustedManifests();
+  it('loads trusted builtin manifests at initialization', async () => {
+    await initializeTrustedManifests();
 
     expect(getManifest('hub')).toBeDefined();
     expect(getManifest('terminal')).toBeDefined();
     expect(getManifest('files')).toBeDefined();
   });
 
-  it('loads validated community manifests from disk when external plugins are enabled', () => {
+  it('loads validated community manifests from disk when external plugins are enabled', async () => {
     vi.mocked(fs.readFileSync).mockReturnValue('true');
-    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockReturnValue([
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([
       {
         manifest: makeManifest({ id: 'community-plugin', allowedCommands: ['git', 'node'] }),
         pluginPath: '/plugins/community-plugin',
@@ -207,7 +211,7 @@ describe('plugin-manifest-registry', () => {
       } as any,
     ]);
 
-    initializeTrustedManifests();
+    await initializeTrustedManifests();
 
     expect(getAllowedCommands('community-plugin')).toEqual(['git', 'node']);
     expect(getManifest('broken-plugin')).toBeUndefined();
@@ -221,10 +225,10 @@ describe('plugin-manifest-registry', () => {
     );
   });
 
-  it('does not load any manifests in safe mode', () => {
+  it('does not load any manifests in safe mode', async () => {
     process.env.CLUBHOUSE_SAFE_MODE = '1';
     vi.mocked(fs.readFileSync).mockReturnValue('true');
-    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockReturnValue([
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([
       {
         manifest: makeManifest({ id: 'community-plugin' }),
         pluginPath: '/plugins/community-plugin',
@@ -232,42 +236,42 @@ describe('plugin-manifest-registry', () => {
       },
     ]);
 
-    initializeTrustedManifests();
+    await initializeTrustedManifests();
 
     expect(getManifest('hub')).toBeUndefined();
     expect(getManifest('community-plugin')).toBeUndefined();
   });
 
-  it('refreshes a community manifest from disk instead of keeping stale renderer state', () => {
+  it('refreshes a community manifest from disk instead of keeping stale renderer state', async () => {
     vi.mocked(fs.readFileSync).mockReturnValue('true');
-    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockReturnValue([
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([
       {
         manifest: makeManifest({ id: 'community-plugin', allowedCommands: ['git'] }),
         pluginPath: '/plugins/community-plugin',
         fromMarketplace: false,
       },
     ]);
-    initializeTrustedManifests();
+    await initializeTrustedManifests();
 
     registerTrustedManifest('community-plugin', makeManifest({ id: 'community-plugin', allowedCommands: ['rm', 'bash'] }));
-    refreshManifest('community-plugin');
+    await refreshManifest('community-plugin');
 
     expect(getAllowedCommands('community-plugin')).toEqual(['git']);
   });
 
-  it('removes a community manifest when refresh cannot find a trusted source', () => {
+  it('removes a community manifest when refresh cannot find a trusted source', async () => {
     vi.mocked(fs.readFileSync).mockReturnValue('true');
-    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockReturnValue([
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([
       {
         manifest: makeManifest({ id: 'community-plugin', allowedCommands: ['git'] }),
         pluginPath: '/plugins/community-plugin',
         fromMarketplace: false,
       },
     ]);
-    initializeTrustedManifests();
+    await initializeTrustedManifests();
 
-    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockReturnValue([]);
-    refreshManifest('community-plugin');
+    vi.mocked(pluginDiscovery.discoverCommunityPlugins).mockResolvedValue([]);
+    await refreshManifest('community-plugin');
 
     expect(getManifest('community-plugin')).toBeUndefined();
   });

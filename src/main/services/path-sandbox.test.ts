@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
 }));
 
 vi.mock('./project-store', () => ({
-  list: vi.fn(() => []),
+  list: vi.fn(async () => []),
 }));
 
 vi.mock('./log-service', () => ({
@@ -26,10 +26,10 @@ import { appLog } from './log-service';
 
 describe('path-sandbox', () => {
   beforeEach(() => {
-    vi.mocked(projectStore.list).mockReturnValue([
+    vi.mocked(projectStore.list).mockResolvedValue([
       { id: 'proj_1', name: 'my-app', path: '/Users/testuser/projects/my-app' },
       { id: 'proj_2', name: 'other', path: '/Users/testuser/projects/other' },
-    ]);
+    ] as any);
     vi.mocked(app.getPath).mockReturnValue('/Users/testuser');
   });
 
@@ -86,61 +86,61 @@ describe('path-sandbox', () => {
   });
 
   describe('getAllowedRoots', () => {
-    it('includes all project paths', () => {
-      const roots = getAllowedRoots();
+    it('includes all project paths', async () => {
+      const roots = await getAllowedRoots();
       expect(roots).toContain(path.resolve('/Users/testuser/projects/my-app'));
       expect(roots).toContain(path.resolve('/Users/testuser/projects/other'));
     });
 
-    it('includes app data directory (dev mode)', () => {
-      const roots = getAllowedRoots();
+    it('includes app data directory (dev mode)', async () => {
+      const roots = await getAllowedRoots();
       expect(roots).toContain(path.resolve('/Users/testuser/.clubhouse-dev'));
     });
 
-    it('includes app data directory (packaged mode)', () => {
+    it('includes app data directory (packaged mode)', async () => {
       Object.defineProperty(app, 'isPackaged', { value: true, configurable: true });
       try {
-        const roots = getAllowedRoots();
+        const roots = await getAllowedRoots();
         expect(roots).toContain(path.resolve('/Users/testuser/.clubhouse'));
       } finally {
         Object.defineProperty(app, 'isPackaged', { value: false, configurable: true });
       }
     });
 
-    it('returns only app data dir when no projects exist', () => {
-      vi.mocked(projectStore.list).mockReturnValue([]);
-      const roots = getAllowedRoots();
+    it('returns only app data dir when no projects exist', async () => {
+      vi.mocked(projectStore.list).mockResolvedValue([]);
+      const roots = await getAllowedRoots();
       expect(roots).toHaveLength(1);
       expect(roots[0]).toBe(path.resolve('/Users/testuser/.clubhouse-dev'));
     });
   });
 
   describe('assertAllowedPath', () => {
-    it('does not throw for paths within a project directory', () => {
-      expect(() => assertAllowedPath('/Users/testuser/projects/my-app/src/file.ts')).not.toThrow();
+    it('does not throw for paths within a project directory', async () => {
+      await expect(assertAllowedPath('/Users/testuser/projects/my-app/src/file.ts')).resolves.toBeUndefined();
     });
 
-    it('does not throw for paths within the app data directory', () => {
-      expect(() => assertAllowedPath('/Users/testuser/.clubhouse-dev/projects.json')).not.toThrow();
+    it('does not throw for paths within the app data directory', async () => {
+      await expect(assertAllowedPath('/Users/testuser/.clubhouse-dev/projects.json')).resolves.toBeUndefined();
     });
 
-    it('throws for paths outside allowed directories', () => {
-      expect(() => assertAllowedPath('/etc/passwd')).toThrow('Access denied');
+    it('throws for paths outside allowed directories', async () => {
+      await expect(assertAllowedPath('/etc/passwd')).rejects.toThrow('Access denied');
     });
 
-    it('throws for home directory sensitive files', () => {
-      expect(() => assertAllowedPath('/Users/testuser/.ssh/id_rsa')).toThrow('Access denied');
+    it('throws for home directory sensitive files', async () => {
+      await expect(assertAllowedPath('/Users/testuser/.ssh/id_rsa')).rejects.toThrow('Access denied');
     });
 
-    it('throws for path traversal attempts', () => {
-      expect(() =>
+    it('throws for path traversal attempts', async () => {
+      await expect(
         assertAllowedPath('/Users/testuser/projects/my-app/../../.ssh/id_rsa'),
-      ).toThrow('Access denied');
+      ).rejects.toThrow('Access denied');
     });
 
-    it('logs blocked attempts', () => {
+    it('logs blocked attempts', async () => {
       try {
-        assertAllowedPath('/etc/passwd');
+        await assertAllowedPath('/etc/passwd');
       } catch {
         // expected
       }
@@ -154,8 +154,8 @@ describe('path-sandbox', () => {
       );
     });
 
-    it('includes resolved path in error message', () => {
-      expect(() => assertAllowedPath('/Users/testuser/projects/my-app/../../.ssh/id_rsa')).toThrow(
+    it('includes resolved path in error message', async () => {
+      await expect(assertAllowedPath('/Users/testuser/projects/my-app/../../.ssh/id_rsa')).rejects.toThrow(
         path.resolve('/Users/testuser/.ssh/id_rsa'),
       );
     });

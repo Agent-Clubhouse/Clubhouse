@@ -121,6 +121,17 @@ const mockProvider: OrchestratorProvider = {
   toolVerb: vi.fn(() => undefined),
 };
 
+/**
+ * Helper to mock fsp.readFile to return settings JSON for settings.json paths.
+ */
+function mockSettingsFile(settingsJson: string): void {
+  vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+    const filePath = String(p);
+    if (filePath.includes('settings.json')) return settingsJson;
+    throw new Error('ENOENT');
+  });
+}
+
 describe('materialization-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -199,7 +210,7 @@ describe('materialization-service', () => {
 
   describe('resolveSourceControlProvider', () => {
     it('returns project-level setting when set', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { sourceControlProvider: 'azure-devops' },
@@ -209,7 +220,7 @@ describe('materialization-service', () => {
     });
 
     it('falls back to app-level clubhouse mode setting', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {},
@@ -223,7 +234,7 @@ describe('materialization-service', () => {
     });
 
     it('defaults to github when nothing is configured', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
       }));
@@ -235,7 +246,7 @@ describe('materialization-service', () => {
 
   describe('materializeAgent', () => {
     it('writes instructions with wildcards replaced', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {
@@ -252,7 +263,7 @@ describe('materialization-service', () => {
     });
 
     it('writes permissions with wildcards replaced', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {
@@ -273,7 +284,7 @@ describe('materialization-service', () => {
     });
 
     it('writes MCP JSON with wildcards replaced', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {
@@ -292,7 +303,7 @@ describe('materialization-service', () => {
     });
 
     it('no-ops when no defaults exist and no source dirs', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
       }));
@@ -304,7 +315,7 @@ describe('materialization-service', () => {
 
     it('skips agent without worktreePath', async () => {
       const agent = { ...testAgent, worktreePath: undefined };
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'test' },
@@ -328,7 +339,7 @@ describe('materialization-service', () => {
         writeInstructions: vi.fn(),
       };
 
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {
@@ -347,19 +358,12 @@ describe('materialization-service', () => {
       const fspWrites = vi.mocked(fsp.writeFile).mock.calls;
       const tomlFspWrites = fspWrites.filter((c) => String(c[0]).includes('config.toml'));
       expect(tomlFspWrites).toHaveLength(0);
-
-      // No settings.local.json or config.toml permissions writes (via sync fs)
-      const fileWrites = vi.mocked(fs.writeFileSync).mock.calls;
-      const permWrites = fileWrites.filter((c) =>
-        String(c[0]).includes('settings.local.json') || String(c[0]).includes('config.toml'),
-      );
-      expect(permWrites).toHaveLength(0);
     });
   });
 
   describe('previewMaterialization', () => {
     it('returns resolved values without writing files', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: {
@@ -383,7 +387,7 @@ describe('materialization-service', () => {
     });
 
     it('returns empty values when no defaults', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
       }));
@@ -402,15 +406,7 @@ describe('materialization-service', () => {
 
   describe('ensureDefaultTemplates', () => {
     it('writes default instructions and permissions when no defaults exist', async () => {
-      let callCount = 0;
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        callCount++;
-        if (callCount <= 1) {
-          return JSON.stringify({ defaults: {}, quickOverrides: {} });
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
 
       await ensureDefaultTemplates('/project');
 
@@ -425,15 +421,7 @@ describe('materialization-service', () => {
     });
 
     it('includes generic build tool permissions in defaults', async () => {
-      let callCount = 0;
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        callCount++;
-        if (callCount <= 1) {
-          return JSON.stringify({ defaults: {}, quickOverrides: {} });
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
 
       await ensureDefaultTemplates('/project');
 
@@ -454,15 +442,7 @@ describe('materialization-service', () => {
     });
 
     it('includes az repos and az devops permissions in defaults', async () => {
-      let callCount = 0;
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        callCount++;
-        if (callCount <= 1) {
-          return JSON.stringify({ defaults: {}, quickOverrides: {} });
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
 
       await ensureDefaultTemplates('/project');
 
@@ -476,15 +456,7 @@ describe('materialization-service', () => {
     });
 
     it('creates all default skills when no defaults exist', async () => {
-      let callCount = 0;
-      vi.mocked(fs.readFileSync).mockImplementation(() => {
-        callCount++;
-        if (callCount <= 1) {
-          return JSON.stringify({ defaults: {}, quickOverrides: {} });
-        }
-        throw new Error('ENOENT');
-      });
-      vi.mocked(fs.existsSync).mockReturnValue(false);
+      mockSettingsFile(JSON.stringify({ defaults: {}, quickOverrides: {} }));
 
       await ensureDefaultTemplates('/project');
 
@@ -505,12 +477,11 @@ describe('materialization-service', () => {
     });
 
     it('still creates skills even when defaults already exist', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'existing' },
       }));
-      vi.mocked(fs.existsSync).mockReturnValue(false);
 
       await ensureDefaultTemplates('/project');
 
@@ -522,12 +493,11 @@ describe('materialization-service', () => {
     });
 
     it('no-ops when defaults already exist and skill files already exist', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'existing' },
       }));
-      vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(pathExists).mockResolvedValue(true);
 
       await ensureDefaultTemplates('/project');
@@ -558,12 +528,11 @@ describe('materialization-service', () => {
   describe('resetProjectAgentDefaults', () => {
     it('overwrites existing defaults with built-in templates', async () => {
       // Existing customized defaults
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'custom instructions' },
       }));
-      vi.mocked(fs.existsSync).mockReturnValue(false);
 
       await resetProjectAgentDefaults('/project');
 
@@ -577,12 +546,11 @@ describe('materialization-service', () => {
     });
 
     it('also ensures default skills exist', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'custom' },
       }));
-      vi.mocked(fs.existsSync).mockReturnValue(false);
 
       await resetProjectAgentDefaults('/project');
 
@@ -594,13 +562,12 @@ describe('materialization-service', () => {
     });
 
     it('overwrites existing skill files with built-in defaults', async () => {
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({
+      mockSettingsFile(JSON.stringify({
         defaults: {},
         quickOverrides: {},
         agentDefaults: { instructions: 'custom' },
       }));
       // All files already exist
-      vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(pathExists).mockResolvedValue(true);
 
       await resetProjectAgentDefaults('/project');
@@ -615,8 +582,7 @@ describe('materialization-service', () => {
 
   describe('ensureDefaultSkills', () => {
     it('creates all seven skills when none exist', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(false);
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
 
       await ensureDefaultSkills('/project');
 
@@ -657,7 +623,7 @@ describe('materialization-service', () => {
 
     it('skips existing skills', async () => {
       vi.mocked(pathExists).mockResolvedValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
 
       await ensureDefaultSkills('/project');
 
@@ -671,7 +637,7 @@ describe('materialization-service', () => {
   describe('resetDefaultSkills', () => {
     it('overwrites all skill files even when they already exist', async () => {
       vi.mocked(pathExists).mockResolvedValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
 
       await resetDefaultSkills('/project');
 
@@ -683,7 +649,7 @@ describe('materialization-service', () => {
 
     it('writes latest built-in content when overwriting', async () => {
       vi.mocked(pathExists).mockResolvedValue(true);
-      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify({ defaultSkillsPath: 'skills' }));
 
       await resetDefaultSkills('/project');
 

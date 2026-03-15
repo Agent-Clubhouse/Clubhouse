@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
@@ -58,7 +57,15 @@ vi.mock('fs', async () => {
   };
 });
 
+vi.mock('fs/promises', () => ({
+  access: vi.fn(() => Promise.reject(new Error('ENOENT'))),
+  readFile: vi.fn(() => Promise.resolve(Buffer.from('fake-image-data'))),
+  readdir: vi.fn(() => Promise.resolve([])),
+  rm: vi.fn(() => Promise.resolve(undefined)),
+}));
+
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import * as fsp from 'fs/promises';
 import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
@@ -75,6 +82,11 @@ describe('project-handlers', () => {
       handlers.set(channel, handler);
     });
     registerProjectHandlers();
+    // Reset fsp mocks to default behavior
+    vi.mocked(fsp.access).mockRejectedValue(new Error('ENOENT'));
+    vi.mocked(fsp.readFile).mockResolvedValue(Buffer.from('fake-image-data'));
+    vi.mocked(fsp.readdir).mockResolvedValue([]);
+    vi.mocked(fsp.rm).mockResolvedValue(undefined);
   });
 
   // --- Registration ---
@@ -196,22 +208,22 @@ describe('project-handlers', () => {
   // --- CHECK_GIT ---
 
   it('CHECK_GIT returns true when .git directory exists', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
 
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/my-project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/my-project', '.git'));
+    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/my-project', '.git'));
     expect(result).toBe(true);
   });
 
   it('CHECK_GIT returns false when .git directory does not exist', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+    vi.mocked(fsp.access).mockRejectedValueOnce(new Error('ENOENT'));
 
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/no-git-project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/no-git-project', '.git'));
+    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/no-git-project', '.git'));
     expect(result).toBe(false);
   });
 
@@ -363,12 +375,12 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/photo.png'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('png-data'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('png-data'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
 
-    expect(fs.readFileSync).toHaveBeenCalledWith('/Users/me/photo.png');
+    expect(fsp.readFile).toHaveBeenCalledWith('/Users/me/photo.png');
     const expected = `data:image/png;base64,${Buffer.from('png-data').toString('base64')}`;
     expect(result).toBe(expected);
   });
@@ -378,7 +390,7 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/photo.jpg'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('jpg-data'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('jpg-data'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
@@ -391,7 +403,7 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/anim.gif'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('gif-data'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('gif-data'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
@@ -404,7 +416,7 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/image.webp'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('webp-data'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('webp-data'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
@@ -417,7 +429,7 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/logo.svg'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('<svg></svg>'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('<svg></svg>'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
@@ -430,7 +442,7 @@ describe('project-handlers', () => {
       canceled: false,
       filePaths: ['/Users/me/image.bmp'],
     });
-    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from('bmp-data'));
+    vi.mocked(fsp.readFile).mockResolvedValueOnce(Buffer.from('bmp-data'));
 
     const handler = handlers.get(IPC.PROJECT.PICK_IMAGE)!;
     const result = await handler({});
@@ -474,27 +486,29 @@ describe('project-handlers', () => {
   // --- LIST_CLUBHOUSE_FILES ---
 
   it('LIST_CLUBHOUSE_FILES returns empty array when .clubhouse does not exist', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+    vi.mocked(fsp.access).mockRejectedValueOnce(new Error('ENOENT'));
 
     const handler = handlers.get(IPC.PROJECT.LIST_CLUBHOUSE_FILES)!;
     const result = await handler({}, '/tmp/project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
+    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
     expect(result).toEqual([]);
   });
 
   it('LIST_CLUBHOUSE_FILES walks directory tree and returns files and dirs', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+    // First call: fsp.access for .clubhouse dir (succeeds)
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
 
     // First call: root .clubhouse dir
-    vi.mocked(fs.readdirSync).mockReturnValueOnce([
-      { name: 'settings.json', isDirectory: () => false, isFile: () => true },
-      { name: 'agents', isDirectory: () => true, isFile: () => false },
-    ] as any);
-    // Second call: agents/ subdirectory
-    vi.mocked(fs.readdirSync).mockReturnValueOnce([
-      { name: 'agent1.json', isDirectory: () => false, isFile: () => true },
-    ] as any);
+    vi.mocked(fsp.readdir)
+      .mockResolvedValueOnce([
+        { name: 'settings.json', isDirectory: () => false, isFile: () => true },
+        { name: 'agents', isDirectory: () => true, isFile: () => false },
+      ] as any)
+      // Second call: agents/ subdirectory
+      .mockResolvedValueOnce([
+        { name: 'agent1.json', isDirectory: () => false, isFile: () => true },
+      ] as any);
 
     const handler = handlers.get(IPC.PROJECT.LIST_CLUBHOUSE_FILES)!;
     const result = await handler({}, '/tmp/project');
@@ -506,11 +520,9 @@ describe('project-handlers', () => {
     ]);
   });
 
-  it('LIST_CLUBHOUSE_FILES returns empty array on readdirSync error', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
-    vi.mocked(fs.readdirSync).mockImplementationOnce(() => {
-      throw new Error('EACCES: permission denied');
-    });
+  it('LIST_CLUBHOUSE_FILES returns empty array on readdir error', async () => {
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
+    vi.mocked(fsp.readdir).mockRejectedValueOnce(new Error('EACCES: permission denied'));
 
     const handler = handlers.get(IPC.PROJECT.LIST_CLUBHOUSE_FILES)!;
     const result = await handler({}, '/tmp/project');
@@ -521,17 +533,17 @@ describe('project-handlers', () => {
   // --- RESET_PROJECT ---
 
   it('RESET_PROJECT returns true when .clubhouse does not exist', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(false);
+    vi.mocked(fsp.access).mockRejectedValueOnce(new Error('ENOENT'));
 
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
     const result = await handler({}, '/tmp/project');
 
-    expect(fs.existsSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
+    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'));
     expect(result).toBe(true);
   });
 
   it('RESET_PROJECT removes .clubhouse directory and returns true', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
 
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
     const result = await handler({}, '/tmp/project');
@@ -542,18 +554,16 @@ describe('project-handlers', () => {
       'Resetting project .clubhouse directory',
       { meta: { projectPath: '/tmp/project' } },
     );
-    expect(fs.rmSync).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'), {
+    expect(fsp.rm).toHaveBeenCalledWith(path.join('/tmp/project', '.clubhouse'), {
       recursive: true,
       force: true,
     });
     expect(result).toBe(true);
   });
 
-  it('RESET_PROJECT returns false and logs error when rmSync fails', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
-    vi.mocked(fs.rmSync).mockImplementationOnce(() => {
-      throw new Error('EPERM: operation not permitted');
-    });
+  it('RESET_PROJECT returns false and logs error when rm fails', async () => {
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
+    vi.mocked(fsp.rm).mockRejectedValueOnce(new Error('EPERM: operation not permitted'));
 
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
     const result = await handler({}, '/tmp/project');
@@ -573,10 +583,8 @@ describe('project-handlers', () => {
   });
 
   it('RESET_PROJECT logs non-Error thrown values as strings', async () => {
-    vi.mocked(fs.existsSync).mockReturnValueOnce(true);
-    vi.mocked(fs.rmSync).mockImplementationOnce(() => {
-      throw 'string-error';
-    });
+    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
+    vi.mocked(fsp.rm).mockRejectedValueOnce('string-error');
 
     const handler = handlers.get(IPC.PROJECT.RESET_PROJECT)!;
     const result = await handler({}, '/tmp/project');
