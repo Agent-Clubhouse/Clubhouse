@@ -10,6 +10,7 @@ import { getShellEnvironment, cleanSpawnEnv } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import { broadcastAgentExit } from './agent-exit-broadcast';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
 
@@ -85,8 +86,7 @@ const staleSweeper = new StaleSweeper<HeadlessSession>(sessions, {
       meta: { agentId, exitCode: session.process.exitCode },
     });
     cleanupHeadlessSession(agentId);
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, session.process.exitCode ?? 1);
-    annexEventBus.emitPtyExit(agentId, session.process.exitCode ?? 1);
+    broadcastAgentExit(agentId, session.process.exitCode ?? 1);
   },
 });
 
@@ -417,8 +417,7 @@ export async function spawnHeadless(
 
       onExit?.(agentId, code ?? 0);
 
-      broadcastToAllWindows(IPC.PTY.EXIT, agentId, code ?? 0);
-      annexEventBus.emitPtyExit(agentId, code ?? 0);
+      broadcastAgentExit(agentId, code ?? 0);
     } else {
       appLog('core:headless', 'info', `Old process exited after session replacement — skipping cleanup`, {
         meta: { agentId, exitCode: code },
@@ -440,8 +439,7 @@ export async function spawnHeadless(
 
       onExit?.(agentId, 1);
 
-      broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1);
-      annexEventBus.emitPtyExit(agentId, 1);
+      broadcastAgentExit(agentId, 1);
     }
   });
 }

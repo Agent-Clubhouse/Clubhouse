@@ -6,6 +6,7 @@ import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/she
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 
 interface ManagedSession {
@@ -131,8 +132,7 @@ const staleSweeper = new StaleSweeper<ManagedSession>(sessions, {
       meta: { agentId, pid: session.process.pid },
     });
     cleanupSession(agentId);
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
-    annexEventBus.emitPtyExit(agentId, 1);
+    broadcastAgentExit(agentId, 1, '');
   },
 });
 
@@ -297,8 +297,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
     cleanupSession(agentId);
     onExit?.(agentId, exitCode, fullBuffer);
     // Include last PTY output so the renderer can show diagnostics on early exit
-    broadcastToAllWindows(IPC.PTY.EXIT, agentId, exitCode, ptyBuffer);
-    annexEventBus.emitPtyExit(agentId, exitCode);
+    broadcastAgentExit(agentId, exitCode, ptyBuffer);
   });
 }
 
@@ -420,8 +419,7 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
     const current = sessions.get(agentId);
     if (current && current.process === proc) {
       try { proc.kill(); } catch { /* dead */ }
-      broadcastToAllWindows(IPC.PTY.EXIT, agentId, 1, '');
-      annexEventBus.emitPtyExit(agentId, 1);
+      broadcastAgentExit(agentId, 1, '');
     }
     cleanupSession(agentId);
   }, 9000);
