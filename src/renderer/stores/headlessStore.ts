@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { optimisticUpdate } from './optimistic-update';
+import type { SpawnMode } from '../../shared/types';
 
-export type SpawnMode = 'headless' | 'interactive' | 'structured';
+export type { SpawnMode };
 
 interface HeadlessState {
   defaultMode: SpawnMode;

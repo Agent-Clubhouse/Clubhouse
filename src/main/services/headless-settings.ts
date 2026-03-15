@@ -1,6 +1,7 @@
 import { createSettingsStore } from './settings-store';
+import type { SpawnMode } from '../../shared/types';
 
-export type SpawnMode = 'headless' | 'interactive' | 'structured';
+export type { SpawnMode };
 
 export interface HeadlessSettings {
   /** @deprecated Use `defaultMode` instead. Kept for migration from older settings. */

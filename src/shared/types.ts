@@ -8,6 +8,8 @@ export type OrchestratorId = 'claude-code' | (string & {});
 
 export type AgentExecutionMode = 'pty' | 'headless' | 'structured';
 
+export type SpawnMode = 'headless' | 'interactive' | 'structured';
+
 export interface ProviderCapabilities {
   headless: boolean;
   structuredOutput: boolean;
