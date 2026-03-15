@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
-import { getShellEnvironment, getDefaultShell, cleanSpawnEnv } from '../util/shell';
+import { getShellEnvironment, getDefaultShell, cleanSpawnEnv, winQuoteArg } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
@@ -85,17 +85,6 @@ export function validateSpawnCwd(cwd: string): string {
   return realCwd;
 }
 
-/**
- * Quote a single argument for use in a Windows cmd.exe command line.
- * Wraps in double quotes and escapes embedded double quotes by doubling them.
- */
-function winQuoteArg(arg: string): string {
-  if (arg.length === 0) return '""';
-  // If no special characters, return as-is
-  if (!/[\s"&|<>^%!()]/.test(arg)) return arg;
-  // Escape embedded double quotes and wrap
-  return '"' + arg.replace(/"/g, '""') + '"';
-}
 const sessions = new Map<string, ManagedSession>();
 
 /**

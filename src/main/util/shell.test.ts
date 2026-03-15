@@ -5,7 +5,7 @@ vi.mock('child_process', () => ({
   execFile: vi.fn(),
 }));
 
-import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv } from './shell';
+import { getShellEnvironment, getDefaultShell, invalidateShellEnvironmentCache, preWarmShellEnvironment, cleanSpawnEnv, winQuoteArg } from './shell';
 import { execSync, execFile } from 'child_process';
 
 // The module caches the shell env, so we need to reset between tests
@@ -128,6 +128,38 @@ describe('cleanSpawnEnv', () => {
     const result = cleanSpawnEnv(env);
     expect(result).toBe(env);
     expect(result.PATH).toBe('/usr/bin');
+  });
+});
+
+describe('winQuoteArg', () => {
+  it('returns empty quoted string for empty input', () => {
+    expect(winQuoteArg('')).toBe('""');
+  });
+
+  it('wraps a simple argument in double quotes', () => {
+    expect(winQuoteArg('hello')).toBe('"hello"');
+  });
+
+  it('wraps an argument with spaces in double quotes', () => {
+    expect(winQuoteArg('hello world')).toBe('"hello world"');
+  });
+
+  it('escapes embedded double quotes by doubling them', () => {
+    expect(winQuoteArg('say "hi"')).toBe('"say ""hi"""');
+  });
+
+  it('handles argument with only a double quote', () => {
+    expect(winQuoteArg('"')).toBe('""""');
+  });
+
+  it('handles special shell characters', () => {
+    expect(winQuoteArg('a&b|c')).toBe('"a&b|c"');
+  });
+
+  it('handles a long mission-text-like argument', () => {
+    const longArg = 'Fix the bug in src/main/services/foo.ts where the "parser" fails';
+    const result = winQuoteArg(longArg);
+    expect(result).toBe('"Fix the bug in src/main/services/foo.ts where the ""parser"" fails"');
   });
 });
 

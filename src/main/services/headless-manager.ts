@@ -6,23 +6,12 @@ import { createInterface } from 'readline';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
-import { getShellEnvironment, cleanSpawnEnv } from '../util/shell';
+import { getShellEnvironment, cleanSpawnEnv, winQuoteArg } from '../util/shell';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import { HeadlessOutputKind } from '../orchestrators/types';
 import { StaleSweeper } from './stale-sweeper';
-
-/**
- * Quote a single argument for a Windows cmd.exe /s /c command line.
- * Always wraps in double quotes to safely handle spaces, special chars,
- * and long argument values (e.g. mission text, system prompts).
- * Embedded double quotes are escaped by doubling them ("").
- */
-function winQuoteHeadlessArg(arg: string): string {
-  if (arg.length === 0) return '""';
-  return '"' + arg.replace(/"/g, '""') + '"';
-}
 
 /** Maximum in-memory transcript size in bytes before old events are evicted to reclaim memory. */
 let maxTranscriptBytes = 10 * 1024 * 1024; // 10 MB
@@ -208,7 +197,7 @@ export async function spawnHeadless(
   // arguments which can mangle mission text and long system prompts.
   let proc: ChildProcess;
   if (isWin) {
-    const cmdLine = [binary, ...args].map(a => winQuoteHeadlessArg(a)).join(' ');
+    const cmdLine = [binary, ...args].map(a => winQuoteArg(a)).join(' ');
     const fullCmd = commandPrefix ? `${commandPrefix} & ${cmdLine}` : cmdLine;
     proc = cpSpawn('cmd.exe', ['/d', '/s', '/c', `"${fullCmd}"`], {
       cwd,
