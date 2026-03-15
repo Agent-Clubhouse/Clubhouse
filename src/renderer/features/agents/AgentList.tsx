@@ -10,9 +10,45 @@ import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
-import type { CompletedQuickAgent } from '../../../shared/types';
+import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
+const EMPTY_AGENTS: Agent[] = [];
+
+type ProjectAgentBuckets = {
+  projectAgents: Agent[];
+  durableAgents: Agent[];
+  quickAgents: Agent[];
+  orphanQuickAgents: Agent[];
+};
+
+export function useProjectAgentBuckets(
+  agents: Record<string, Agent>,
+  activeProjectId: string | null
+): ProjectAgentBuckets {
+  return useMemo(() => {
+    if (!activeProjectId) {
+      return {
+        projectAgents: EMPTY_AGENTS,
+        durableAgents: EMPTY_AGENTS,
+        quickAgents: EMPTY_AGENTS,
+        orphanQuickAgents: EMPTY_AGENTS,
+      };
+    }
+
+    const projectAgents = Object.values(agents).filter((agent) => agent.projectId === activeProjectId);
+    const durableAgents = projectAgents.filter((agent) => agent.kind === 'durable');
+    const quickAgents = projectAgents.filter((agent) => agent.kind === 'quick');
+    const orphanQuickAgents = quickAgents.filter((agent) => !agent.parentAgentId);
+
+    return {
+      projectAgents,
+      durableAgents,
+      quickAgents,
+      orphanQuickAgents,
+    };
+  }, [agents, activeProjectId]);
+}
 
 export function AgentList() {
   const agents = useAgentStore((s) => s.agents);
@@ -129,13 +165,10 @@ export function AgentList() {
     return () => clearInterval(interval);
   }, [hasRecentActivity]);
 
-  const projectAgents = Object.values(agents).filter(
-    (a) => a.projectId === activeProjectId
+  const { durableAgents, quickAgents, orphanQuickAgents } = useProjectAgentBuckets(
+    agents,
+    activeProjectId
   );
-
-  const durableAgents = projectAgents.filter((a) => a.kind === 'durable');
-  const quickAgents = projectAgents.filter((a) => a.kind === 'quick');
-  const orphanQuickAgents = quickAgents.filter((a) => !a.parentAgentId);
   const orphanCompleted = useMemo(
     () => completedAgents.filter((r) => !r.parentAgentId),
     [completedAgents]
