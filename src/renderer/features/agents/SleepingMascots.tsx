@@ -100,58 +100,82 @@ export function CopilotSleeping() {
   return (
     <svg width="200" height="200" viewBox="0 0 100 100" className="drop-shadow-lg">
       <defs>
-        <linearGradient id="copilotHelmetGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#7B8CE0" />
-          <stop offset="65%" stopColor="#8B7BE0" />
-          <stop offset="100%" stopColor="#C070D0" />
+        <linearGradient id="copilotHelmetGrad" x1="0" y1="0" x2="0.5" y2="1">
+          <stop offset="0%" stopColor="#26D9C4" />
+          <stop offset="50%" stopColor="#1ABFAE" />
+          <stop offset="100%" stopColor="#0FA898" />
+        </linearGradient>
+        <linearGradient id="copilotVisorGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#B8C8D8" />
+          <stop offset="100%" stopColor="#98A8B8" />
         </linearGradient>
       </defs>
 
       {/* Ground shadow */}
       <ellipse cx="50" cy="88" rx="28" ry="3" fill="#181825" opacity="0.3" />
 
-      {/* Helmet dome — rounded */}
-      <rect x="16" y="16" width="68" height="60" rx="28" fill="url(#copilotHelmetGrad)" />
+      {/* Helmet dome — teal rounded spaceman helmet */}
+      <ellipse cx="50" cy="38" rx="36" ry="30" fill="url(#copilotHelmetGrad)" />
 
-      {/* Helmet highlight */}
-      <rect x="24" y="18" width="36" height="12" rx="6" fill="#9BA8F0" opacity="0.25" />
+      {/* Helmet highlight — specular reflection */}
+      <ellipse cx="40" cy="20" rx="18" ry="8" fill="#4EEEDE" opacity="0.25" />
 
-      {/* Pink accent — subtle overlay on right side */}
-      <rect x="58" y="20" width="22" height="30" rx="14" fill="#D060D8" opacity="0.2" />
+      {/* Ear covers — communication headset style */}
+      <rect x="6" y="34" width="12" height="18" rx="5" fill="#1ABFAE" stroke="#16A89A" strokeWidth="1" />
+      <rect x="82" y="34" width="12" height="18" rx="5" fill="#1ABFAE" stroke="#16A89A" strokeWidth="1" />
+      {/* Ear cover inner detail — speaker grille */}
+      <rect x="9" y="38" width="6" height="10" rx="3" fill="#128F82" />
+      <rect x="85" y="38" width="6" height="10" rx="3" fill="#128F82" />
+      {/* Ear cover accent lines */}
+      <line x1="11" y1="40" x2="13" y2="40" stroke="#0E7A6E" strokeWidth="0.8" />
+      <line x1="11" y1="43" x2="13" y2="43" stroke="#0E7A6E" strokeWidth="0.8" />
+      <line x1="11" y1="46" x2="13" y2="46" stroke="#0E7A6E" strokeWidth="0.8" />
+      <line x1="87" y1="40" x2="89" y2="40" stroke="#0E7A6E" strokeWidth="0.8" />
+      <line x1="87" y1="43" x2="89" y2="43" stroke="#0E7A6E" strokeWidth="0.8" />
+      <line x1="87" y1="46" x2="89" y2="46" stroke="#0E7A6E" strokeWidth="0.8" />
 
-      {/* Ear bumps */}
-      <ellipse cx="12" cy="46" rx="8" ry="10" fill="#7B8CE0" />
-      <ellipse cx="88" cy="46" rx="8" ry="10" fill="#B868D0" />
-      {/* Ear bump inner detail */}
-      <ellipse cx="12" cy="46" rx="4.5" ry="6" fill="#5A68B8" />
-      <ellipse cx="88" cy="46" rx="4.5" ry="6" fill="#9048B0" />
+      {/* Pendant drops below ear covers */}
+      <circle cx="12" cy="56" r="2.5" fill="#26D9C4" />
+      <line x1="12" y1="52" x2="12" y2="54" stroke="#1ABFAE" strokeWidth="1.2" />
+      <circle cx="88" cy="56" r="2.5" fill="#26D9C4" />
+      <line x1="88" y1="52" x2="88" y2="54" stroke="#1ABFAE" strokeWidth="1.2" />
 
-      {/* Goggle frames */}
-      <rect x="22" y="28" width="21" height="18" rx="7" fill="#5AB0E0" stroke="#4AA0D0" strokeWidth="1.5" />
-      <rect x="57" y="28" width="21" height="18" rx="7" fill="#5AB0E0" stroke="#4AA0D0" strokeWidth="1.5" />
+      {/* Goggles on forehead — pushed up */}
+      <rect x="22" y="16" width="22" height="16" rx="7" fill="#5AB8E8" stroke="#4AA8D8" strokeWidth="1.5" />
+      <rect x="56" y="16" width="22" height="16" rx="7" fill="#5AB8E8" stroke="#4AA8D8" strokeWidth="1.5" />
       {/* Goggle bridge */}
-      <rect x="43" y="34" width="14" height="6" rx="3" fill="#5AB0E0" />
+      <rect x="44" y="21" width="12" height="6" rx="3" fill="#5AB8E8" />
 
-      {/* Goggle lenses — dark (sleeping) */}
-      <rect x="25" y="31" width="15" height="12" rx="5" fill="#0a1030" />
-      <rect x="60" y="31" width="15" height="12" rx="5" fill="#0a1030" />
+      {/* Goggle lenses — reflective blue */}
+      <rect x="25" y="19" width="16" height="10" rx="5" fill="#2060A0" />
+      <rect x="59" y="19" width="16" height="10" rx="5" fill="#2060A0" />
+      {/* Goggle lens reflection */}
+      <rect x="27" y="20" width="6" height="4" rx="2" fill="#4090D0" opacity="0.4" />
+      <rect x="61" y="20" width="6" height="4" rx="2" fill="#4090D0" opacity="0.4" />
 
-      {/* Sleeping eyelids — cover top of lens for half-closed look */}
-      <rect x="25" y="31" width="15" height="8" rx="5" fill="#5AB0E0" />
-      <rect x="60" y="31" width="15" height="8" rx="5" fill="#5AB0E0" />
+      {/* Open face visor — lighter panel where eyes are visible */}
+      <rect x="22" y="38" width="56" height="30" rx="10" fill="url(#copilotVisorGrad)" />
 
-      {/* Face plate — lower visor */}
-      <rect x="24" y="52" width="52" height="24" rx="8" fill="#0e1838" />
+      {/* Visor inner shadow */}
+      <rect x="24" y="40" width="52" height="26" rx="8" fill="#8898A8" opacity="0.3" />
 
-      {/* Face plate top edge */}
-      <rect x="28" y="52" width="44" height="1.5" rx="0.75" fill="#4A80C8" opacity="0.3" />
+      {/* Visor top edge highlight */}
+      <rect x="28" y="38" width="44" height="1.5" rx="0.75" fill="#D0DDE8" opacity="0.5" />
 
-      {/* Ventilation slits (dimmed for sleeping) */}
-      <rect x="38" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
-      <rect x="48.5" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
-      <rect x="59" y="58" width="3" height="12" rx="1.5" fill="#1a2a5a" />
+      {/* Eyes visible through visor — sleeping, half-closed */}
+      <ellipse cx="38" cy="52" rx="7" ry="5" fill="#0a1830" />
+      <ellipse cx="62" cy="52" rx="7" ry="5" fill="#0a1830" />
+      {/* Sleeping eyelids — cover top portion */}
+      <ellipse cx="38" cy="50" rx="7.5" ry="4" fill="#A0B0C0" />
+      <ellipse cx="62" cy="50" rx="7.5" ry="4" fill="#A0B0C0" />
+      {/* Dim pupil glow barely peeking */}
+      <ellipse cx="38" cy="54" rx="3" ry="1.5" fill="#1a3a5a" opacity="0.5" />
+      <ellipse cx="62" cy="54" rx="3" ry="1.5" fill="#1a3a5a" opacity="0.5" />
 
-      <SleepingZzz x={78} y={12} />
+      {/* Chin guard — bottom of visor */}
+      <rect x="30" y="62" width="40" height="6" rx="3" fill="#0FA898" opacity="0.4" />
+
+      <SleepingZzz x={78} y={8} />
     </svg>
   );
 }
