@@ -19,9 +19,12 @@ import type { LaunchWrapperConfig } from '../../shared/types';
 
 const DEFAULT_ORCHESTRATOR: OrchestratorId = 'claude-code';
 
+type AgentRuntime = 'pty' | 'headless' | 'structured';
+
 interface AgentRegistration {
   projectPath: string;
   orchestrator: OrchestratorId;
+  runtime: AgentRuntime;
   nonce?: string;
 }
 
@@ -40,6 +43,12 @@ class AgentRegistry {
     const registration = this.registrations.get(agentId);
     if (!registration) return;
     registration.nonce = nonce;
+  }
+
+  setRuntime(agentId: string, runtime: AgentRuntime): void {
+    const registration = this.registrations.get(agentId);
+    if (!registration) return;
+    registration.runtime = runtime;
   }
 
   untrack(agentId: string): void {
@@ -154,6 +163,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   agentRegistry.register(params.agentId, {
     projectPath: params.projectPath,
     orchestrator: provider.id as OrchestratorId,
+    runtime: 'pty',
   });
 
   try {
@@ -190,6 +200,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     // TODO: Apply launch wrapper transform to structured path once adapter architecture supports external binary override
     const spawnMode = headlessSettings.getSpawnMode(params.projectPath);
     if (spawnMode === 'structured' && params.kind === 'quick' && isStructuredCapable(provider)) {
+      agentRegistry.setRuntime(params.agentId, 'structured');
       const adapter = provider.createStructuredAdapter();
       await structuredManager.startStructuredSession(params.agentId, adapter, {
         mission: params.mission || '',
@@ -220,6 +231,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
       });
 
       if (headlessResult) {
+        agentRegistry.setRuntime(params.agentId, 'headless');
         // Apply launch wrapper transform if configured
         let { binary: headlessBin, args: headlessArgs } = headlessResult;
         if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
@@ -359,18 +371,19 @@ async function spawnPtyAgent(
 export async function killAgent(agentId: string, projectPath: string, orchestrator?: OrchestratorId): Promise<void> {
   appLog('core:agent', 'info', 'Killing agent', { meta: { agentId } });
   try {
-    if (structuredManager.isStructuredSession(agentId)) {
+    const tracked = agentRegistry.get(agentId);
+
+    if (tracked?.runtime === 'structured' || (!tracked && structuredManager.isStructuredSession(agentId))) {
       untrackAgent(agentId);
       await structuredManager.cancelSession(agentId);
       return;
     }
-    if (headlessManager.isHeadless(agentId)) {
+    if (tracked?.runtime === 'headless' || (!tracked && headlessManager.isHeadless(agentId))) {
       untrackAgent(agentId);
       headlessManager.kill(agentId);
       return;
     }
-    const tracked = agentRegistry.get(agentId)?.orchestrator;
-    const provider = await resolveOrchestrator(projectPath, tracked || orchestrator);
+    const provider = await resolveOrchestrator(projectPath, tracked?.orchestrator || orchestrator);
     const exitCmd = provider.getExitCommand();
     ptyManager.gracefulKill(agentId, exitCmd);
   } catch (err) {

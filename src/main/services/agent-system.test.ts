@@ -568,6 +568,63 @@ describe('agent-system', () => {
       expect(mockPtyGracefulKill).toHaveBeenCalledWith('agent-1', '/quit\r');
     });
 
+    it('uses tracked headless runtime even if the manager lookup is stale', async () => {
+      mockGetSpawnMode.mockReturnValue('headless');
+      mockProvider.buildHeadlessCommand = vi.fn(() =>
+        Promise.resolve({
+          binary: '/usr/bin/claude',
+          args: ['--headless'],
+          env: {},
+          outputKind: 'stream-json' as const,
+        }),
+      );
+
+      await spawnAgent({
+        agentId: 'test-headless',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      mockIsHeadless.mockReturnValue(false);
+
+      await killAgent('test-headless', '/project');
+
+      expect(mockHeadlessKill).toHaveBeenCalledWith('test-headless');
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+
+      delete (mockProvider as any).buildHeadlessCommand;
+    });
+
+    it('uses tracked structured runtime even if the manager lookup is stale', async () => {
+      mockGetSpawnMode.mockReturnValue('structured');
+      const mockAdapter = { start: vi.fn(), sendMessage: vi.fn(), respondToPermission: vi.fn(), cancel: vi.fn(), dispose: vi.fn() };
+      mockProvider.createStructuredAdapter = vi.fn(() => mockAdapter);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: true, hooks: true,
+        sessionResume: true, permissions: true, structuredMode: true,
+      });
+
+      await spawnAgent({
+        agentId: 'test-structured',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        mission: 'test',
+      });
+
+      mockIsStructuredSession.mockReturnValue(false);
+
+      await killAgent('test-structured', '/project');
+
+      expect(mockCancelSession).toHaveBeenCalledWith('test-structured');
+      expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+      expect(mockHeadlessKill).not.toHaveBeenCalled();
+
+      delete (mockProvider as any).createStructuredAdapter;
+    });
+
     it('does not reject when gracefulKill throws (process already dead)', async () => {
       mockPtyGracefulKill.mockImplementationOnce(() => { throw new Error('process already dead'); });
       await expect(killAgent('agent-1', '/project')).resolves.toBeUndefined();
