@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // Mock window.clubhouse
 vi.stubGlobal('window', {
@@ -75,6 +75,11 @@ describe('agentStore', () => {
       agentIcons: {},
       sessionNamePromptFor: null,
     });
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   describe('updateAgentStatus', () => {
@@ -472,6 +477,78 @@ describe('agentStore', () => {
       getState().clearStaleStatuses();
 
       expect(getState().agents['q_active']).toBeDefined();
+    });
+  });
+
+  describe('recordActivity', () => {
+    it('coalesces rapid activity updates for the same agent', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_activity' });
+
+      getState().recordActivity('a_activity');
+      const firstActivity = getState().agentActivity;
+      expect(firstActivity['a_activity']).toBe(now);
+
+      vi.advanceTimersByTime(50);
+      getState().recordActivity('a_activity');
+
+      expect(getState().agentActivity).toBe(firstActivity);
+      expect(getState().agentActivity['a_activity']).toBe(now);
+
+      vi.advanceTimersByTime(49);
+      expect(getState().agentActivity).toBe(firstActivity);
+
+      vi.advanceTimersByTime(1);
+      expect(getState().agentActivity).not.toBe(firstActivity);
+      expect(getState().agentActivity['a_activity']).toBe(now + 100);
+    });
+
+    it('tracks activity independently per agent while throttling bursts', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_one' });
+      seedAgent({ id: 'a_two' });
+
+      getState().recordActivity('a_one');
+
+      vi.advanceTimersByTime(50);
+      getState().recordActivity('a_one');
+      getState().recordActivity('a_two');
+
+      expect(getState().agentActivity).toEqual({
+        a_one: now,
+        a_two: now + 50,
+      });
+
+      vi.advanceTimersByTime(50);
+      expect(getState().agentActivity).toEqual({
+        a_one: now + 100,
+        a_two: now + 50,
+      });
+    });
+
+    it('cancels pending trailing updates when an agent is removed', () => {
+      vi.useFakeTimers();
+      const now = Date.now();
+      vi.setSystemTime(now);
+
+      seedAgent({ id: 'a_removed' });
+
+      getState().recordActivity('a_removed');
+
+      vi.advanceTimersByTime(50);
+      getState().recordActivity('a_removed');
+
+      getState().removeAgent('a_removed');
+      vi.advanceTimersByTime(50);
+
+      expect(getState().agents['a_removed']).toBeUndefined();
+      expect(getState().agentActivity['a_removed']).toBeUndefined();
     });
   });
 

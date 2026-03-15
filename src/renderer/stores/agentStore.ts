@@ -11,6 +11,7 @@ const STALE_THRESHOLD_MS = 30_000;
 /** Keep a small backstop of completed quick agents in-memory before pruning */
 const COMPLETED_QUICK_AGENT_RETENTION_MS = 60_000;
 const MAX_COMPLETED_QUICK_AGENTS = 20;
+const ACTIVITY_UPDATE_THROTTLE_MS = 100;
 
 export type DeleteMode = 'commit-push' | 'cleanup-branch' | 'save-patch' | 'force' | 'unregister';
 
@@ -158,7 +159,34 @@ function removeAgentsFromState(state: AgentState, idsToRemove: Iterable<string>)
   };
 }
 
-export const useAgentStore = create<AgentState>((set, get) => ({
+export const useAgentStore = create<AgentState>((set, get) => {
+  const pendingActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  const clearPendingActivityTimer = (id: string) => {
+    const timer = pendingActivityTimers.get(id);
+    if (!timer) return;
+    clearTimeout(timer);
+    pendingActivityTimers.delete(id);
+  };
+
+  const clearPendingActivityTimers = (ids: Iterable<string>) => {
+    for (const id of ids) {
+      clearPendingActivityTimer(id);
+    }
+  };
+
+  const commitActivity = (id: string, timestamp: number) => {
+    set((s) => {
+      if (!s.agents[id]) return s;
+      const previous = s.agentActivity[id];
+      if (previous !== undefined && timestamp <= previous) return s;
+      return {
+        agentActivity: { ...s.agentActivity, [id]: timestamp },
+      };
+    });
+  };
+
+  return ({
   agents: {},
   activeAgentId: null,
   agentSettingsOpenFor: null,
@@ -589,6 +617,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   removeAgent: (id) => {
+    clearPendingActivityTimer(id);
     set((s) => removeAgentsFromState(s, [id]));
   },
 
@@ -745,6 +774,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   /** Periodic cleanup for stale detailed statuses and lingering completed quick agents */
   clearStaleStatuses: () => {
+    const prunedQuickIds = new Set<string>();
     set((state) => {
       const now = Date.now();
       let workingState = state;
@@ -800,14 +830,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         return changed ? { agentDetailedStatus: updated } : state;
       }
 
+      for (const agentId of quickIdsToRemove) {
+        prunedQuickIds.add(agentId);
+      }
+
       return removeAgentsFromState(workingState, quickIdsToRemove);
     });
+    clearPendingActivityTimers(prunedQuickIds);
   },
 
   recordActivity: (id) => {
-    set((s) => ({
-      agentActivity: { ...s.agentActivity, [id]: Date.now() },
-    }));
+    const state = get();
+    if (!state.agents[id]) {
+      clearPendingActivityTimer(id);
+      return;
+    }
+
+    const now = Date.now();
+    const last = state.agentActivity[id] ?? 0;
+    const elapsed = now - last;
+
+    if (elapsed >= ACTIVITY_UPDATE_THROTTLE_MS) {
+      clearPendingActivityTimer(id);
+      commitActivity(id, now);
+      return;
+    }
+
+    if (pendingActivityTimers.has(id)) {
+      return;
+    }
+
+    const delay = ACTIVITY_UPDATE_THROTTLE_MS - elapsed;
+    const timer = setTimeout(() => {
+      pendingActivityTimers.delete(id);
+      commitActivity(id, Date.now());
+    }, delay);
+    pendingActivityTimers.set(id, timer);
   },
 
   reorderAgents: async (projectPath, orderedIds) => {
@@ -862,7 +920,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }));
     return tempId;
   },
-}));
+  });
+});
 
 /** Check if an agent was user-cancelled (consumes the flag) */
 export function consumeCancelled(agentId: string): boolean {
