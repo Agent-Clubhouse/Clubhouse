@@ -396,6 +396,11 @@ describe('ClaudeCodeProvider', () => {
 
   describe('writeInstructions', () => {
     it('writes CLAUDE.md at project root', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return isClaudePath(s) || s === '/project';
+      });
+
       provider.writeInstructions('/project', 'new instructions');
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(

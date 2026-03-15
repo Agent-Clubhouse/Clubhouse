@@ -1,5 +1,7 @@
 export type { OrchestratorId, OrchestratorProvider, OrchestratorConventions, ProviderCapabilities, SpawnOpts, HeadlessOpts, NormalizedHookEvent, AgentExecutionMode, StructuredAdapter, StructuredSessionOpts, HookCapable, HeadlessCapable, SessionCapable, StructuredCapable } from './types';
 export { isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from './types';
+export { BaseProvider } from './base-provider';
+export type { ModelFetchConfig } from './base-provider';
 export { ClaudeCodeProvider } from './claude-code-provider';
 export { CopilotCliProvider } from './copilot-cli-provider';
 export { CodexCliProvider } from './codex-cli-provider';

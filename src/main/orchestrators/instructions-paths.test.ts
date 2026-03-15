@@ -60,6 +60,11 @@ describe('Instructions path resolution', () => {
     });
 
     it('writes CLAUDE.md at project root', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+      });
+
       provider.writeInstructions('/project', 'new instructions');
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
@@ -70,6 +75,11 @@ describe('Instructions path resolution', () => {
     });
 
     it('does not write to .claude/CLAUDE.local.md', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+      });
+
       provider.writeInstructions('/project', 'test');
 
       const writePath = vi.mocked(fs.writeFileSync).mock.calls[0][0] as string;
@@ -78,6 +88,11 @@ describe('Instructions path resolution', () => {
     });
 
     it('round-trip: write then read returns same content', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+      });
+
       const content = 'My custom instructions\nWith multiple lines';
       provider.writeInstructions('/project', content);
 
@@ -143,6 +158,11 @@ describe('Instructions path resolution', () => {
     });
 
     it('writes to AGENTS.md at project root', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+      });
+
       provider.writeInstructions('/project', 'new codex instructions');
 
       expect(fs.writeFileSync).toHaveBeenCalledWith(
@@ -158,6 +178,11 @@ describe('Instructions path resolution', () => {
     });
 
     it('round-trip: write then read returns same content', () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        return s.endsWith('/claude') || s.endsWith('/copilot') || s.endsWith('/codex') || s.endsWith('/opencode') || s === '/project';
+      });
+
       const content = 'Codex-specific instructions\nWith multiple lines';
       provider.writeInstructions('/project', content);
 

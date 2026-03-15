@@ -1,10 +1,6 @@
-import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import {
-  OrchestratorProvider,
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
@@ -17,12 +13,10 @@ import {
   HeadlessCapable,
   StructuredCapable,
 } from './types';
+import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
-import { findBinaryInPath, homePath, humanizeModelId } from './shared';
-import { getShellEnvironment } from '../util/shell';
+import { homePath, humanizeModelId } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
-
-const execFileAsync = promisify(execFile);
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -64,26 +58,57 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   sessionEnd: 'stop',
 };
 
-function findCopilotBinary(): string {
-  const paths = [
-    homePath('.local', 'bin', 'copilot'),
-  ];
-  if (process.platform === 'win32') {
-    paths.push(
-      homePath('AppData', 'Roaming', 'npm', 'copilot.cmd'),
-      homePath('AppData', 'Roaming', 'npm', 'copilot'),
-    );
-  } else {
-    paths.push('/usr/local/bin/copilot', '/opt/homebrew/bin/copilot');
-  }
-  return findBinaryInPath(['copilot'], paths);
-}
-
-export class CopilotCliProvider implements OrchestratorProvider, HookCapable, HeadlessCapable, StructuredCapable {
+export class CopilotCliProvider extends BaseProvider implements HookCapable, HeadlessCapable, StructuredCapable {
   readonly id = 'copilot-cli' as const;
   readonly displayName = 'GitHub Copilot CLI';
   readonly shortName = 'GHCP';
   readonly badge = 'Beta';
+
+  readonly conventions: OrchestratorConventions = {
+    configDir: '.github',
+    localInstructionsFile: 'copilot-instructions.md',
+    legacyInstructionsFile: 'copilot-instructions.md',
+    mcpConfigFile: '.github/mcp.json',
+    skillsDir: 'skills',
+    agentTemplatesDir: 'agents',
+    localSettingsFile: 'hooks/hooks.json',
+  };
+
+  // ── BaseProvider configuration ──────────────────────────────────────────
+
+  protected readonly binaryNames = ['copilot'];
+
+  protected getExtraBinaryPaths(): string[] {
+    const paths = [
+      homePath('.local', 'bin', 'copilot'),
+    ];
+    if (process.platform === 'win32') {
+      paths.push(
+        homePath('AppData', 'Roaming', 'npm', 'copilot.cmd'),
+        homePath('AppData', 'Roaming', 'npm', 'copilot'),
+      );
+    } else {
+      paths.push('/usr/local/bin/copilot', '/opt/homebrew/bin/copilot');
+    }
+    return paths;
+  }
+
+  protected getInstructionsPath(worktreePath: string): string {
+    return path.join(worktreePath, '.github', 'copilot-instructions.md');
+  }
+
+  protected readonly toolVerbs = TOOL_VERBS;
+  protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
+  protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
+  protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
+  protected readonly configEnvKeys = ['GH_HOST', 'GH_TOKEN'];
+
+  protected readonly modelFetchConfig = {
+    args: ['--help'],
+    parser: parseModelChoicesFromHelp,
+  };
+
+  // ── Core interface ──────────────────────────────────────────────────────
 
   getCapabilities(): ProviderCapabilities {
     return {
@@ -97,38 +122,8 @@ export class CopilotCliProvider implements OrchestratorProvider, HookCapable, He
     };
   }
 
-  createStructuredAdapter(): StructuredAdapter {
-    return new AcpAdapter({
-      binary: findCopilotBinary(),
-      args: ['--acp', '--stdio'],
-      toolVerbs: TOOL_VERBS,
-    });
-  }
-
-  readonly conventions: OrchestratorConventions = {
-    configDir: '.github',
-    localInstructionsFile: 'copilot-instructions.md',
-    legacyInstructionsFile: 'copilot-instructions.md',
-    mcpConfigFile: '.github/mcp.json',
-    skillsDir: 'skills',
-    agentTemplatesDir: 'agents',
-    localSettingsFile: 'hooks/hooks.json',
-  };
-
-  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
-    try {
-      findCopilotBinary();
-      return { available: true };
-    } catch (err: unknown) {
-      return {
-        available: false,
-        error: err instanceof Error ? err.message : 'Could not find Copilot CLI',
-      };
-    }
-  }
-
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
-    const binary = findCopilotBinary();
+    const binary = this.findBinary();
     const args: string[] = [];
 
     // Session resume: --resume <id> for specific session, --continue for most recent.
@@ -166,9 +161,17 @@ export class CopilotCliProvider implements OrchestratorProvider, HookCapable, He
     return { binary, args };
   }
 
-  getExitCommand(): string {
-    return '/exit\r';
+  // ── StructuredCapable ───────────────────────────────────────────────────
+
+  createStructuredAdapter(): StructuredAdapter {
+    return new AcpAdapter({
+      binary: this.findBinary(),
+      args: ['--acp', '--stdio'],
+      toolVerbs: TOOL_VERBS,
+    });
   }
+
+  // ── HookCapable ─────────────────────────────────────────────────────────
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const makeCurl = (event: string) =>
@@ -227,28 +230,12 @@ export class CopilotCliProvider implements OrchestratorProvider, HookCapable, He
     };
   }
 
-  readInstructions(worktreePath: string): string {
-    const instructionsPath = path.join(worktreePath, '.github', 'copilot-instructions.md');
-    try {
-      return fs.readFileSync(instructionsPath, 'utf-8');
-    } catch {
-      return '';
-    }
-  }
-
-  writeInstructions(worktreePath: string, content: string): void {
-    const githubDir = path.join(worktreePath, '.github');
-    if (!fs.existsSync(githubDir)) {
-      fs.mkdirSync(githubDir, { recursive: true });
-    }
-    const filePath = path.join(githubDir, 'copilot-instructions.md');
-    fs.writeFileSync(filePath, content, 'utf-8');
-  }
+  // ── HeadlessCapable ─────────────────────────────────────────────────────
 
   async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
     if (!opts.mission) return null;
 
-    const binary = findCopilotBinary();
+    const binary = this.findBinary();
     const parts: string[] = [];
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
@@ -260,28 +247,4 @@ export class CopilotCliProvider implements OrchestratorProvider, HookCapable, He
 
     return { binary, args, outputKind: 'text' };
   }
-
-  getProfileEnvKeys(): string[] {
-    return ['GH_HOST', 'GH_TOKEN'];
-  }
-
-  async getModelOptions() {
-    try {
-      const binary = findCopilotBinary();
-      const { stdout } = await execFileAsync(binary, ['--help'], {
-        timeout: 5000,
-        shell: process.platform === 'win32',
-        env: getShellEnvironment(),
-      });
-      const parsed = parseModelChoicesFromHelp(stdout);
-      if (parsed) return parsed;
-    } catch {
-      // Fall back to static list
-    }
-    return FALLBACK_MODEL_OPTIONS;
-  }
-  getDefaultPermissions(kind: 'durable' | 'quick') {
-    return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
-  }
-  toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
 }
