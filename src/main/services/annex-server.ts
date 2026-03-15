@@ -246,7 +246,7 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 // Agent mapping (Issue 1 — defaults + runtime status)
 // ---------------------------------------------------------------------------
 
-function mapDurableAgent(d: ReturnType<typeof agentConfig.listDurable>[number]) {
+function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number]) {
   const agentId = d.id;
   const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
   const status = isRunning ? 'running' : 'sleeping';
@@ -271,13 +271,13 @@ function mapDurableAgent(d: ReturnType<typeof agentConfig.listDurable>[number]) 
 // Snapshot (Issues 1, 3, 6, 8)
 // ---------------------------------------------------------------------------
 
-function buildSnapshot(): object {
-  const projects = projectStore.list();
+async function buildSnapshot(): Promise<object> {
+  const projects = await projectStore.list();
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
 
   for (const proj of projects) {
-    const durables = agentConfig.listDurable(proj.path);
+    const durables = await agentConfig.listDurable(proj.path);
     agents[proj.id] = durables.map(mapDurableAgent);
     quickAgents[proj.id] = [];
   }
@@ -329,16 +329,16 @@ function broadcastAndBuffer(type: string, payload: unknown): void {
 // Icon endpoints (Issue 2)
 // ---------------------------------------------------------------------------
 
-function handleIconRequest(res: http.ServerResponse, url: string): boolean {
+async function handleIconRequest(res: http.ServerResponse, url: string): Promise<boolean> {
   // GET /api/v1/icons/agent/:agentId
   const agentIconMatch = url.match(/^\/api\/v1\/icons\/agent\/([^/]+)$/);
   if (agentIconMatch) {
     const agentId = decodeURIComponent(agentIconMatch[1]);
     // Find the agent's icon filename across all projects
-    const projects = projectStore.list();
+    const projects = await projectStore.list();
     let iconFilename: string | undefined;
     for (const proj of projects) {
-      const durables = agentConfig.listDurable(proj.path);
+      const durables = await agentConfig.listDurable(proj.path);
       const agent = durables.find((d) => d.id === agentId);
       if (agent?.icon) {
         iconFilename = agent.icon;
@@ -349,7 +349,7 @@ function handleIconRequest(res: http.ServerResponse, url: string): boolean {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = agentConfig.readAgentIconData(iconFilename);
+    const dataUrl = await agentConfig.readAgentIconData(iconFilename);
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
@@ -375,12 +375,13 @@ function handleIconRequest(res: http.ServerResponse, url: string): boolean {
   const projectIconMatch = url.match(/^\/api\/v1\/icons\/project\/([^/]+)$/);
   if (projectIconMatch) {
     const projectId = decodeURIComponent(projectIconMatch[1]);
-    const project = projectStore.list().find((p) => p.id === projectId);
+    const projects = await projectStore.list();
+    const project = projects.find((p) => p.id === projectId);
     if (!project?.icon) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
     }
-    const dataUrl = projectStore.readIconData(project.icon);
+    const dataUrl = await projectStore.readIconData(project.icon);
     if (!dataUrl) {
       sendJson(res, 404, { error: 'icon_not_found' });
       return true;
@@ -408,13 +409,14 @@ function handleIconRequest(res: http.ServerResponse, url: string): boolean {
 // Quick agent helpers (Issue 6)
 // ---------------------------------------------------------------------------
 
-function findProjectById(projectId: string) {
-  return projectStore.list().find((p) => p.id === projectId);
+async function findProjectById(projectId: string) {
+  const projects = await projectStore.list();
+  return projects.find((p) => p.id === projectId);
 }
 
-function findAgentAcrossProjects(agentId: string): { config: ReturnType<typeof agentConfig.listDurable>[number]; project: ReturnType<typeof projectStore.list>[number] } | null {
-  for (const proj of projectStore.list()) {
-    const durables = agentConfig.listDurable(proj.path);
+async function findAgentAcrossProjects(agentId: string): Promise<{ config: Awaited<ReturnType<typeof agentConfig.listDurable>>[number]; project: Awaited<ReturnType<typeof projectStore.list>>[number] } | null> {
+  for (const proj of await projectStore.list()) {
+    const durables = await agentConfig.listDurable(proj.path);
     const agent = durables.find((d) => d.id === agentId);
     if (agent) return { config: agent, project: proj };
   }
@@ -433,7 +435,7 @@ async function handleSpawnQuickAgent(
     return;
   }
 
-  const project = findProjectById(projectId);
+  const project = await findProjectById(projectId);
   if (!project) {
     sendJson(res, 404, { error: 'project_not_found' });
     return;
@@ -447,7 +449,7 @@ async function handleSpawnQuickAgent(
   let systemPrompt: string | undefined;
 
   if (parentAgentId) {
-    const parentInfo = findAgentAcrossProjects(parentAgentId);
+    const parentInfo = await findAgentAcrossProjects(parentAgentId);
     if (!parentInfo) {
       sendJson(res, 404, { error: 'agent_not_found' });
       return;
@@ -563,7 +565,7 @@ async function handleWakeAgent(
     return;
   }
 
-  const agentInfo = findAgentAcrossProjects(agentId);
+  const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
     sendJson(res, 404, { error: 'agent_not_found' });
     return;
@@ -718,7 +720,7 @@ async function handleStructuredPermissionResponse(
 // HTTP request handler
 // ---------------------------------------------------------------------------
 
-function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = req.url || '/';
   const method = req.method || 'GET';
 
@@ -771,11 +773,16 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   // GET /api/v1/status
   if (method === 'GET' && url === '/api/v1/status') {
     const settings = annexSettings.getSettings();
-    const projects = projectStore.list();
+    const projects = await projectStore.list();
+    let agentCount = 0;
+    for (const p of projects) {
+      const durables = await agentConfig.listDurable(p.path);
+      agentCount += durables.length;
+    }
     sendJson(res, 200, {
       version: '1',
       deviceName: settings.deviceName,
-      agentCount: projects.reduce((sum, p) => sum + agentConfig.listDurable(p.path).length, 0),
+      agentCount,
       orchestratorCount: getAvailableOrchestrators().length,
     });
     return;
@@ -783,7 +790,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   // GET /api/v1/projects
   if (method === 'GET' && url === '/api/v1/projects') {
-    sendJson(res, 200, projectStore.list());
+    sendJson(res, 200, await projectStore.list());
     return;
   }
 
@@ -791,12 +798,12 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const agentsMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents$/);
   if (method === 'GET' && agentsMatch) {
     const projectId = decodeURIComponent(agentsMatch[1]);
-    const project = findProjectById(projectId);
+    const project = await findProjectById(projectId);
     if (!project) {
       sendJson(res, 404, { error: 'project_not_found' });
       return;
     }
-    const durables = agentConfig.listDurable(project.path);
+    const durables = await agentConfig.listDurable(project.path);
     sendJson(res, 200, durables.map(mapDurableAgent));
     return;
   }
@@ -815,7 +822,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   }
 
   // --- Icon endpoints (Issue 2) ---
-  if (method === 'GET' && handleIconRequest(res, url)) {
+  if (method === 'GET' && await handleIconRequest(res, url)) {
     return;
   }
 
@@ -833,7 +840,7 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
   const quickAgentMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickAgentMatch) {
     const parentAgentId = decodeURIComponent(quickAgentMatch[1]);
-    const parentInfo = findAgentAcrossProjects(parentAgentId);
+    const parentInfo = await findAgentAcrossProjects(parentAgentId);
     if (!parentInfo) {
       sendJson(res, 404, { error: 'agent_not_found' });
       return;
@@ -947,9 +954,9 @@ export function start(): void {
     });
   });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', async (ws) => {
     // Send snapshot on connect
-    ws.send(JSON.stringify({ type: 'snapshot', payload: buildSnapshot() }));
+    ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
 
     // Listen for client messages (replay requests)
     ws.on('message', (data) => {

@@ -7,10 +7,10 @@ import { appLog } from './log-service';
  * Returns the list of allowed root directories for IPC file operations.
  * Includes all registered project paths and the app data directory.
  */
-export function getAllowedRoots(): string[] {
+export async function getAllowedRoots(): Promise<string[]> {
   const roots: string[] = [];
 
-  for (const project of projectStore.list()) {
+  for (const project of await projectStore.list()) {
     roots.push(path.resolve(project.path));
   }
 
@@ -39,8 +39,8 @@ export function isPathAllowed(targetPath: string, allowedRoots: string[]): boole
  * Assert that a filesystem path is within a registered project directory
  * or the app data directory. Throws if the path is outside allowed boundaries.
  */
-export function assertAllowedPath(targetPath: string): void {
-  const roots = getAllowedRoots();
+export async function assertAllowedPath(targetPath: string): Promise<void> {
+  const roots = await getAllowedRoots();
   if (!isPathAllowed(targetPath, roots)) {
     const resolved = path.resolve(targetPath);
     appLog('core:file', 'error', 'Path access denied: outside allowed directories', {

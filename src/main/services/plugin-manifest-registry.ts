@@ -86,14 +86,14 @@ function validateTrustedManifest(rawManifest: unknown): {
   };
 }
 
-function loadTrustedCommunityManifest(pluginId: string): PluginManifest | undefined {
-  const discovered = discoverCommunityPlugins().find(({ manifest }) => manifest.id === pluginId);
+async function loadTrustedCommunityManifest(pluginId: string): Promise<PluginManifest | undefined> {
+  const discovered = (await discoverCommunityPlugins()).find(({ manifest }) => manifest.id === pluginId);
   if (!discovered) return undefined;
 
   return validateTrustedManifest(discovered.manifest).manifest;
 }
 
-export function initializeTrustedManifests(): void {
+export async function initializeTrustedManifests(): Promise<void> {
   clear();
   manifestsEnabled = process.env.CLUBHOUSE_SAFE_MODE !== '1';
   communityManifestsEnabled = false;
@@ -107,7 +107,7 @@ export function initializeTrustedManifests(): void {
   communityManifestsEnabled = readExternalPluginsEnabled();
   if (!communityManifestsEnabled) return;
 
-  for (const { manifest: rawManifest, pluginPath } of discoverCommunityPlugins()) {
+  for (const { manifest: rawManifest, pluginPath } of await discoverCommunityPlugins()) {
     const { manifest, errors } = validateTrustedManifest(rawManifest);
     if (manifest) {
       trustedManifests.set(manifest.id, manifest);
@@ -120,7 +120,7 @@ export function initializeTrustedManifests(): void {
   }
 }
 
-export function refreshManifest(pluginId: string): void {
+export async function refreshManifest(pluginId: string): Promise<void> {
   if (!manifestsEnabled) {
     trustedManifests.delete(pluginId);
     return;
@@ -137,7 +137,7 @@ export function refreshManifest(pluginId: string): void {
     return;
   }
 
-  const trustedCommunityManifest = loadTrustedCommunityManifest(pluginId);
+  const trustedCommunityManifest = await loadTrustedCommunityManifest(pluginId);
   if (!trustedCommunityManifest) {
     trustedManifests.delete(pluginId);
     return;

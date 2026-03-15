@@ -160,7 +160,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     // Clubhouse Mode: materialize project defaults into worktree before spawn
     if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
       try {
-        const config = getDurableConfig(params.projectPath, params.agentId);
+        const config = await getDurableConfig(params.projectPath, params.agentId);
         if (config && !config.clubhouseModeOverride && config.worktreePath) {
           await materializeAgent({ projectPath: params.projectPath, agent: config, provider });
         }
@@ -179,7 +179,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
     let resolvedMcpIds: string[] = [];
     if (wrapperConfig) {
       if (params.kind === 'durable') {
-        const config = getDurableConfig(params.projectPath, params.agentId);
+        const config = await getDurableConfig(params.projectPath, params.agentId);
         resolvedMcpIds = config?.mcpIds || await readDefaultMcps(params.projectPath);
       } else {
         resolvedMcpIds = await readDefaultMcps(params.projectPath);
@@ -422,18 +422,18 @@ export async function listSessions(
   orchestratorId?: OrchestratorId,
 ): Promise<Array<{ sessionId: string; startedAt: string; lastActiveAt: string; friendlyName?: string }>> {
   const { getDurableConfig, getSessionHistory } = await import('./agent-config');
-  const config = getDurableConfig(projectPath, agentId);
+  const config = await getDurableConfig(projectPath, agentId);
   if (!config) return [];
 
   const provider = await resolveOrchestrator(projectPath, orchestratorId || config.orchestrator);
   const cwd = config.worktreePath || projectPath;
 
   // Get Clubhouse-tracked session history (includes friendly names)
-  const clubhouseHistory = getSessionHistory(projectPath, agentId);
+  const clubhouseHistory = await getSessionHistory(projectPath, agentId);
   const nameMap = new Map(
     clubhouseHistory
-      .filter((s) => s.friendlyName)
-      .map((s) => [s.sessionId, s.friendlyName!])
+      .filter((s: { friendlyName?: string }) => s.friendlyName)
+      .map((s: { sessionId: string; friendlyName?: string }) => [s.sessionId, s.friendlyName!])
   );
 
   // Try to get provider-discovered sessions

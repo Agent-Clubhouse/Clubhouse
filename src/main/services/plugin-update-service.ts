@@ -100,7 +100,7 @@ export async function checkForPluginUpdates(): Promise<PluginUpdateCheckResult> 
   appLog('marketplace:updates', 'info', 'Checking for plugin updates');
 
   try {
-    const customMarketplaces = listCustomMarketplaces();
+    const customMarketplaces = await listCustomMarketplaces();
     const { allPlugins } = await fetchAllRegistries(customMarketplaces);
     const installed = await getInstalledPlugins();
     const updates: PluginUpdateInfo[] = [];
