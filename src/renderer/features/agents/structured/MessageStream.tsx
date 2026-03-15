@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 
 interface Props {
@@ -6,12 +6,49 @@ interface Props {
   isStreaming: boolean;
 }
 
+/** Debounce interval for markdown processing during streaming (ms). */
+const STREAMING_DEBOUNCE_MS = 100;
+
 /**
  * Renders streaming text from text_delta / text_done events with basic markdown.
  * Accumulates deltas in the parent; this component just renders the buffer.
+ *
+ * During streaming, markdown processing is debounced to avoid quadratic cost
+ * from re-running the full regex pipeline on every token delta.
  */
 export function MessageStream({ text, isStreaming }: Props) {
-  const rendered = useMemo(() => renderMarkdownSafe(text), [text]);
+  const [debouncedText, setDebouncedText] = useState(text);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      // Streaming stopped — render final text immediately
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      setDebouncedText(text);
+      return;
+    }
+
+    // During streaming, debounce to limit markdown pipeline invocations
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      setDebouncedText(text);
+      timerRef.current = null;
+    }, STREAMING_DEBOUNCE_MS);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [text, isStreaming]);
+
+  const rendered = useMemo(() => renderMarkdownSafe(debouncedText), [debouncedText]);
 
   if (!text) return null;
 
