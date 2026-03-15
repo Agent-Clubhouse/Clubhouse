@@ -50,7 +50,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
   const isMatch = picomatch(glob);
 
   try {
-    const watcher = fs.watch(baseDir, { recursive: true }, (eventType, filename) => {
+    const watcher = fs.watch(baseDir, { recursive: true }, async (eventType, filename) => {
       if (!filename) return;
 
       const fullPath = path.join(baseDir, filename);
@@ -61,7 +61,14 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
       // Map fs.watch event types to our FileEvent types
       let type: 'created' | 'modified' | 'deleted';
       if (eventType === 'rename') {
-        type = fs.existsSync(fullPath) ? 'created' : 'deleted';
+        try {
+          await fs.promises.access(fullPath);
+          type = 'created';
+        } catch {
+          type = 'deleted';
+        }
+        // Guard: watch may have been stopped while we awaited
+        if (!activeWatches.has(watchId)) return;
       } else {
         type = 'modified';
       }
