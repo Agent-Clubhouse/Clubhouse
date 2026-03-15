@@ -263,6 +263,9 @@ vi.stubGlobal('clubhouse', {
     deleteSoundPack: asyncNoop,
     getSoundData: async () => null,
     onUpdateStatusChanged: () => noop,
+    restart: asyncNoop,
+    getExperimentalSettings: async () => ({}),
+    saveExperimentalSettings: asyncNoop,
   },
   profile: {
     getSettings: async () => ({ profiles: [] }),

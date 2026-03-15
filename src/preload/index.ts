@@ -691,6 +691,12 @@ const api = {
       ipcRenderer.on(IPC.APP.UPDATE_STATUS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.UPDATE_STATUS_CHANGED, listener); };
     },
+    restart: () =>
+      ipcRenderer.invoke(IPC.APP.RESTART),
+    getExperimentalSettings: (): Promise<Record<string, boolean>> =>
+      ipcRenderer.invoke(IPC.APP.GET_EXPERIMENTAL_SETTINGS),
+    saveExperimentalSettings: (settings: Record<string, boolean>) =>
+      ipcRenderer.invoke(IPC.APP.SAVE_EXPERIMENTAL_SETTINGS, settings),
   },
   profile: {
     getSettings: (): Promise<{

@@ -181,6 +181,9 @@ export const IPC = {
     GET_SOUND_DATA: 'app:get-sound-data',
     GET_SESSION_SETTINGS: 'app:get-session-settings',
     SAVE_SESSION_SETTINGS: 'app:save-session-settings',
+    RESTART: 'app:restart',
+    GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
+    SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
