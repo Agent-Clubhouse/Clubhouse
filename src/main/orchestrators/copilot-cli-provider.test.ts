@@ -144,7 +144,7 @@ describe('CopilotCliProvider', () => {
       });
       const result = await provider.checkAvailability();
       expect(result.available).toBe(false);
-      expect(result.error).toBe('Could not find Copilot CLI');
+      expect(result.error).toBe('Could not find GitHub Copilot CLI');
     });
   });
 

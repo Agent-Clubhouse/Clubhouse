@@ -1,9 +1,7 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
-  OrchestratorProvider,
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
@@ -12,7 +10,8 @@ import {
   HeadlessCommandResult,
   HeadlessCapable,
 } from './types';
-import { findBinaryInPath, homePath, humanizeModelId } from './shared';
+import { BaseProvider } from './base-provider';
+import { homePath, humanizeModelId } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
@@ -50,49 +49,11 @@ function parseModelChoicesFromHelp(helpText: string): Array<{ id: string; label:
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'shell(*)', 'apply_patch'];
 
-function findCodexBinary(): string {
-  const paths = [
-    homePath('.local', 'bin', 'codex'),
-    homePath('.npm-global', 'bin', 'codex'),
-  ];
-  if (process.platform === 'win32') {
-    paths.push(
-      homePath('AppData', 'Roaming', 'npm', 'codex.cmd'),
-      homePath('AppData', 'Roaming', 'npm', 'codex'),
-    );
-  } else {
-    paths.push(
-      '/usr/local/bin/codex',
-      '/opt/homebrew/bin/codex',
-      // Node version manager locations — common when codex is installed via npm
-      homePath('.volta', 'bin', 'codex'),
-      homePath('.local', 'share', 'pnpm', 'codex'),
-      homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'codex'),
-      // NVM installs — nvm creates a `current` symlink to the active version
-      homePath('.nvm', 'current', 'bin', 'codex'),
-      // Bun global installs
-      homePath('.bun', 'bin', 'codex'),
-    );
-  }
-  return findBinaryInPath(['codex'], paths);
-}
-
-export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
+export class CodexCliProvider extends BaseProvider implements HeadlessCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
   readonly badge = 'Beta';
-
-  getCapabilities(): ProviderCapabilities {
-    return {
-      headless: true,
-      structuredOutput: false,
-      hooks: false,
-      sessionResume: true,
-      permissions: true,
-      structuredMode: false,
-    };
-  }
 
   readonly conventions: OrchestratorConventions = {
     configDir: '.codex',
@@ -105,14 +66,77 @@ export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
     settingsFormat: 'toml',
   };
 
+  // ── BaseProvider configuration ──────────────────────────────────────────
+
+  protected readonly binaryNames = ['codex'];
+
+  protected getExtraBinaryPaths(): string[] {
+    const paths = [
+      homePath('.local', 'bin', 'codex'),
+      homePath('.npm-global', 'bin', 'codex'),
+    ];
+    if (process.platform === 'win32') {
+      paths.push(
+        homePath('AppData', 'Roaming', 'npm', 'codex.cmd'),
+        homePath('AppData', 'Roaming', 'npm', 'codex'),
+      );
+    } else {
+      paths.push(
+        '/usr/local/bin/codex',
+        '/opt/homebrew/bin/codex',
+        // Node version manager locations — common when codex is installed via npm
+        homePath('.volta', 'bin', 'codex'),
+        homePath('.local', 'share', 'pnpm', 'codex'),
+        homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'codex'),
+        // NVM installs — nvm creates a `current` symlink to the active version
+        homePath('.nvm', 'current', 'bin', 'codex'),
+        // Bun global installs
+        homePath('.bun', 'bin', 'codex'),
+      );
+    }
+    return paths;
+  }
+
+  protected getInstructionsPath(worktreePath: string): string {
+    return path.join(worktreePath, 'AGENTS.md');
+  }
+
+  protected readonly toolVerbs = TOOL_VERBS;
+  protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
+  protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
+  protected readonly fallbackModelOptions = FALLBACK_MODEL_OPTIONS;
+  protected readonly configEnvKeys = ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
+
+  protected readonly modelFetchConfig = {
+    args: ['--help'],
+    parser: parseModelChoicesFromHelp,
+  };
+
+  // ── Core interface ──────────────────────────────────────────────────────
+
+  getCapabilities(): ProviderCapabilities {
+    return {
+      headless: true,
+      structuredOutput: false,
+      hooks: false,
+      sessionResume: true,
+      permissions: true,
+      structuredMode: false,
+    };
+  }
+
+  /**
+   * Override base checkAvailability to also verify the binary executes
+   * (catches broken installs / wrong arch) and to re-source the shell env.
+   */
   async checkAvailability(envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
     let binary: string;
     try {
-      binary = findCodexBinary();
+      binary = this.findBinary();
     } catch (err: unknown) {
       return {
         available: false,
-        error: err instanceof Error ? err.message : 'Could not find Codex CLI',
+        error: err instanceof Error ? err.message : `Could not find ${this.displayName}`,
       };
     }
 
@@ -144,7 +168,7 @@ export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
   }
 
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
-    const binary = findCodexBinary();
+    const binary = this.findBinary();
     const args: string[] = [];
 
     // Session resume: --continue for most recent session
@@ -177,29 +201,12 @@ export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
     return { binary, args, env };
   }
 
-  getExitCommand(): string {
-    return '/exit\r';
-  }
-
-  readInstructions(worktreePath: string): string {
-    // Codex uses AGENTS.md at the project root
-    const instructionsPath = path.join(worktreePath, 'AGENTS.md');
-    try {
-      return fs.readFileSync(instructionsPath, 'utf-8');
-    } catch {
-      return '';
-    }
-  }
-
-  writeInstructions(worktreePath: string, content: string): void {
-    const filePath = path.join(worktreePath, 'AGENTS.md');
-    fs.writeFileSync(filePath, content, 'utf-8');
-  }
+  // ── HeadlessCapable ─────────────────────────────────────────────────────
 
   async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
     if (!opts.mission) return null;
 
-    const binary = findCodexBinary();
+    const binary = this.findBinary();
     const parts: string[] = [];
     if (opts.systemPrompt) parts.push(opts.systemPrompt);
     parts.push(opts.mission);
@@ -218,30 +225,4 @@ export class CodexCliProvider implements OrchestratorProvider, HeadlessCapable {
 
     return { binary, args, env, outputKind: 'text' };
   }
-
-  async getModelOptions() {
-    try {
-      const binary = findCodexBinary();
-      const { stdout } = await execFileAsync(binary, ['--help'], {
-        timeout: 5000,
-        shell: process.platform === 'win32',
-        env: getShellEnvironment(),
-      });
-      const parsed = parseModelChoicesFromHelp(stdout);
-      if (parsed) return parsed;
-    } catch {
-      // Fall back to static list
-    }
-    return FALLBACK_MODEL_OPTIONS;
-  }
-
-  getProfileEnvKeys(): string[] {
-    return ['OPENAI_API_KEY', 'OPENAI_BASE_URL'];
-  }
-
-  getDefaultPermissions(kind: 'durable' | 'quick') {
-    return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
-  }
-
-  toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
 }

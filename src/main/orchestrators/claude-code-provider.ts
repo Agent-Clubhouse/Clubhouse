@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 import {
-  OrchestratorProvider,
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
@@ -16,8 +15,9 @@ import {
   SessionCapable,
   StructuredCapable,
 } from './types';
+import { BaseProvider } from './base-provider';
 import { StreamJsonAdapter } from './adapters/stream-json-adapter';
-import { findBinaryInPath, homePath } from './shared';
+import { homePath } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
 
 const TOOL_VERBS: Record<string, string> = {
@@ -55,34 +55,60 @@ const EVENT_NAME_MAP: Record<string, NormalizedHookEvent['kind']> = {
   PermissionRequest: 'permission_request',
 };
 
-function findClaudeBinary(): string {
-  const paths = [
-    homePath('.local', 'bin', 'claude'),
-    homePath('.claude', 'local', 'claude'),
-    homePath('.npm-global', 'bin', 'claude'),
-  ];
-  if (process.platform === 'win32') {
-    paths.push(
-      homePath('AppData', 'Roaming', 'npm', 'claude.cmd'),
-      homePath('AppData', 'Roaming', 'npm', 'claude'),
-      homePath('.claude', 'local', 'claude.exe'),
-    );
-  } else {
-    paths.push(
-      '/usr/local/bin/claude',
-      '/opt/homebrew/bin/claude',
-      homePath('.volta', 'bin', 'claude'),
-      homePath('.local', 'share', 'pnpm', 'claude'),
-      homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'claude'),
-    );
-  }
-  return findBinaryInPath(['claude'], paths);
-}
-
-export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
+export class ClaudeCodeProvider extends BaseProvider implements HookCapable, HeadlessCapable, SessionCapable, StructuredCapable {
   readonly id = 'claude-code' as const;
   readonly displayName = 'Claude Code';
   readonly shortName = 'CC';
+
+  readonly conventions: OrchestratorConventions = {
+    configDir: '.claude',
+    localInstructionsFile: 'CLAUDE.md',
+    legacyInstructionsFile: 'CLAUDE.md',
+    mcpConfigFile: '.mcp.json',
+    skillsDir: 'skills',
+    agentTemplatesDir: 'agents',
+    localSettingsFile: 'settings.local.json',
+  };
+
+  // ── BaseProvider configuration ──────────────────────────────────────────
+
+  protected readonly binaryNames = ['claude'];
+
+  protected getExtraBinaryPaths(): string[] {
+    const paths = [
+      homePath('.local', 'bin', 'claude'),
+      homePath('.claude', 'local', 'claude'),
+      homePath('.npm-global', 'bin', 'claude'),
+    ];
+    if (process.platform === 'win32') {
+      paths.push(
+        homePath('AppData', 'Roaming', 'npm', 'claude.cmd'),
+        homePath('AppData', 'Roaming', 'npm', 'claude'),
+        homePath('.claude', 'local', 'claude.exe'),
+      );
+    } else {
+      paths.push(
+        '/usr/local/bin/claude',
+        '/opt/homebrew/bin/claude',
+        homePath('.volta', 'bin', 'claude'),
+        homePath('.local', 'share', 'pnpm', 'claude'),
+        homePath('.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'claude'),
+      );
+    }
+    return paths;
+  }
+
+  protected getInstructionsPath(worktreePath: string): string {
+    return path.join(worktreePath, 'CLAUDE.md');
+  }
+
+  protected readonly toolVerbs = TOOL_VERBS;
+  protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
+  protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
+  protected readonly fallbackModelOptions = MODEL_OPTIONS;
+  protected readonly configEnvKeys = ['CLAUDE_CONFIG_DIR'];
+
+  // ── Core interface ──────────────────────────────────────────────────────
 
   getCapabilities(): ProviderCapabilities {
     return {
@@ -96,30 +122,8 @@ export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, He
     };
   }
 
-  readonly conventions: OrchestratorConventions = {
-    configDir: '.claude',
-    localInstructionsFile: 'CLAUDE.md',
-    legacyInstructionsFile: 'CLAUDE.md',
-    mcpConfigFile: '.mcp.json',
-    skillsDir: 'skills',
-    agentTemplatesDir: 'agents',
-    localSettingsFile: 'settings.local.json',
-  };
-
-  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
-    try {
-      findClaudeBinary();
-      return { available: true };
-    } catch (err: unknown) {
-      return {
-        available: false,
-        error: err instanceof Error ? err.message : 'Could not find Claude CLI',
-      };
-    }
-  }
-
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
-    const binary = findClaudeBinary();
+    const binary = this.findBinary();
     const args: string[] = [];
 
     // Session resume: --resume <id> for specific session, --continue for most recent
@@ -156,9 +160,7 @@ export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, He
     return { binary, args };
   }
 
-  getExitCommand(): string {
-    return '/exit\r';
-  }
+  // ── HookCapable ─────────────────────────────────────────────────────────
 
   async writeHooksConfig(cwd: string, hookUrl: string): Promise<void> {
     const curlBase = process.platform === 'win32'
@@ -218,24 +220,12 @@ export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, He
     };
   }
 
-  readInstructions(worktreePath: string): string {
-    const filePath = path.join(worktreePath, 'CLAUDE.md');
-    try {
-      return fs.readFileSync(filePath, 'utf-8');
-    } catch {
-      return '';
-    }
-  }
-
-  writeInstructions(worktreePath: string, content: string): void {
-    const filePath = path.join(worktreePath, 'CLAUDE.md');
-    fs.writeFileSync(filePath, content, 'utf-8');
-  }
+  // ── HeadlessCapable ─────────────────────────────────────────────────────
 
   async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
     if (!opts.mission) return null;
 
-    const binary = findClaudeBinary();
+    const binary = this.findBinary();
     const args: string[] = ['-p', opts.mission];
 
     args.push('--output-format', opts.outputFormat || 'stream-json');
@@ -271,13 +261,17 @@ export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, He
     return { binary, args, outputKind: 'stream-json' };
   }
 
+  // ── StructuredCapable ───────────────────────────────────────────────────
+
   createStructuredAdapter(): StructuredAdapter {
     return new StreamJsonAdapter({
-      binary: findClaudeBinary(),
+      binary: this.findBinary(),
       baseArgs: ['--no-session-persistence'],
       toolVerbs: TOOL_VERBS,
     });
   }
+
+  // ── SessionCapable ──────────────────────────────────────────────────────
 
   /**
    * Resolve the Claude Code project directory for a given working directory.
@@ -447,16 +441,4 @@ export class ClaudeCodeProvider implements OrchestratorProvider, HookCapable, He
 
     return null;
   }
-
-  getProfileEnvKeys(): string[] {
-    return ['CLAUDE_CONFIG_DIR'];
-  }
-
-  async getModelOptions() {
-    return MODEL_OPTIONS;
-  }
-  getDefaultPermissions(kind: 'durable' | 'quick') {
-    return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
-  }
-  toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
 }

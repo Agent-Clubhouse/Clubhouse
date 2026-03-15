@@ -1,9 +1,5 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import {
-  OrchestratorProvider,
   OrchestratorConventions,
   ProviderCapabilities,
   SpawnOpts,
@@ -12,10 +8,8 @@ import {
   HeadlessCommandResult,
   HeadlessCapable,
 } from './types';
-import { findBinaryInPath, homePath, humanizeModelId } from './shared';
-import { getShellEnvironment } from '../util/shell';
-
-const execFileAsync = promisify(execFile);
+import { BaseProvider } from './base-provider';
+import { homePath, humanizeModelId } from './shared';
 
 const TOOL_VERBS: Record<string, string> = {
   bash: 'Running command',
@@ -30,22 +24,6 @@ const TOOL_VERBS: Record<string, string> = {
 const DEFAULT_DURABLE_PERMISSIONS = ['bash(git:*)', 'bash(npm:*)', 'bash(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'read', 'edit', 'glob', 'grep'];
 
-function findOpenCodeBinary(): string {
-  const paths = [
-    homePath('.local', 'bin', 'opencode'),
-    homePath('.bun', 'bin', 'opencode'),
-  ];
-  if (process.platform === 'win32') {
-    paths.push(
-      homePath('AppData', 'Roaming', 'npm', 'opencode.cmd'),
-      homePath('AppData', 'Roaming', 'npm', 'opencode'),
-    );
-  } else {
-    paths.push('/usr/local/bin/opencode', '/opt/homebrew/bin/opencode');
-  }
-  return findBinaryInPath(['opencode'], paths);
-}
-
 /** Parse output of `opencode models` into options */
 function parseOpenCodeModels(stdout: string): Array<{ id: string; label: string }> | null {
   const lines = stdout.trim().split('\n').filter((l) => l.trim() && !l.includes('migration'));
@@ -59,11 +37,59 @@ function parseOpenCodeModels(stdout: string): Array<{ id: string; label: string 
   ];
 }
 
-export class OpenCodeProvider implements OrchestratorProvider, HeadlessCapable {
+export class OpenCodeProvider extends BaseProvider implements HeadlessCapable {
   readonly id = 'opencode' as const;
   readonly displayName = 'OpenCode';
   readonly shortName = 'OC';
   readonly badge = 'Beta';
+
+  readonly conventions: OrchestratorConventions = {
+    configDir: '.opencode',
+    localInstructionsFile: 'instructions.md',
+    legacyInstructionsFile: 'instructions.md',
+    mcpConfigFile: 'opencode.json',
+    skillsDir: 'skills',
+    agentTemplatesDir: 'agents',
+    localSettingsFile: 'opencode.json',
+  };
+
+  // ── BaseProvider configuration ──────────────────────────────────────────
+
+  protected readonly binaryNames = ['opencode'];
+
+  protected getExtraBinaryPaths(): string[] {
+    const paths = [
+      homePath('.local', 'bin', 'opencode'),
+      homePath('.bun', 'bin', 'opencode'),
+    ];
+    if (process.platform === 'win32') {
+      paths.push(
+        homePath('AppData', 'Roaming', 'npm', 'opencode.cmd'),
+        homePath('AppData', 'Roaming', 'npm', 'opencode'),
+      );
+    } else {
+      paths.push('/usr/local/bin/opencode', '/opt/homebrew/bin/opencode');
+    }
+    return paths;
+  }
+
+  protected getInstructionsPath(worktreePath: string): string {
+    return path.join(worktreePath, '.opencode', 'instructions.md');
+  }
+
+  protected readonly toolVerbs = TOOL_VERBS;
+  protected readonly durablePermissions = DEFAULT_DURABLE_PERMISSIONS;
+  protected readonly quickPermissions = DEFAULT_QUICK_PERMISSIONS;
+  protected readonly fallbackModelOptions = [{ id: 'default', label: 'Default' }];
+  protected readonly configEnvKeys = ['OPENCODE_CONFIG_DIR'];
+
+  protected readonly modelFetchConfig = {
+    args: ['models'],
+    parser: parseOpenCodeModels,
+    timeout: 15000,
+  };
+
+  // ── Core interface ──────────────────────────────────────────────────────
 
   getCapabilities(): ProviderCapabilities {
     return {
@@ -76,30 +102,8 @@ export class OpenCodeProvider implements OrchestratorProvider, HeadlessCapable {
     };
   }
 
-  readonly conventions: OrchestratorConventions = {
-    configDir: '.opencode',
-    localInstructionsFile: 'instructions.md',
-    legacyInstructionsFile: 'instructions.md',
-    mcpConfigFile: 'opencode.json',
-    skillsDir: 'skills',
-    agentTemplatesDir: 'agents',
-    localSettingsFile: 'opencode.json',
-  };
-
-  async checkAvailability(_envOverride?: Record<string, string>): Promise<{ available: boolean; error?: string }> {
-    try {
-      findOpenCodeBinary();
-      return { available: true };
-    } catch (err: unknown) {
-      return {
-        available: false,
-        error: err instanceof Error ? err.message : 'Could not find OpenCode CLI',
-      };
-    }
-  }
-
   async buildSpawnCommand(opts: SpawnOpts): Promise<SpawnCommandResult> {
-    const binary = findOpenCodeBinary();
+    const binary = this.findBinary();
     const args: string[] = [];
 
     // Session resume: --session <id> for specific session, --continue for most recent
@@ -118,31 +122,12 @@ export class OpenCodeProvider implements OrchestratorProvider, HeadlessCapable {
     return { binary, args };
   }
 
-  getExitCommand(): string {
-    return '/exit\r';
-  }
-
-  readInstructions(worktreePath: string): string {
-    const instructionsPath = path.join(worktreePath, '.opencode', 'instructions.md');
-    try {
-      return fs.readFileSync(instructionsPath, 'utf-8');
-    } catch {
-      return '';
-    }
-  }
-
-  writeInstructions(worktreePath: string, content: string): void {
-    const dir = path.join(worktreePath, '.opencode');
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(path.join(dir, 'instructions.md'), content, 'utf-8');
-  }
+  // ── HeadlessCapable ─────────────────────────────────────────────────────
 
   async buildHeadlessCommand(opts: HeadlessOpts): Promise<HeadlessCommandResult | null> {
     if (!opts.mission) return null;
 
-    const binary = findOpenCodeBinary();
+    const binary = this.findBinary();
     const args = ['run', opts.mission, '--format', 'json'];
 
     if (opts.model && opts.model !== 'default') {
@@ -151,28 +136,4 @@ export class OpenCodeProvider implements OrchestratorProvider, HeadlessCapable {
 
     return { binary, args, outputKind: 'text' };
   }
-
-  async getModelOptions() {
-    try {
-      const binary = findOpenCodeBinary();
-      const { stdout } = await execFileAsync(binary, ['models'], {
-        timeout: 15000,
-        shell: process.platform === 'win32',
-        env: getShellEnvironment(),
-      });
-      const parsed = parseOpenCodeModels(stdout);
-      if (parsed) return parsed;
-    } catch {
-      // Fall back to default only
-    }
-    return [{ id: 'default', label: 'Default' }];
-  }
-  getProfileEnvKeys(): string[] {
-    return ['OPENCODE_CONFIG_DIR'];
-  }
-
-  getDefaultPermissions(kind: 'durable' | 'quick') {
-    return kind === 'durable' ? [...DEFAULT_DURABLE_PERMISSIONS] : [...DEFAULT_QUICK_PERMISSIONS];
-  }
-  toolVerb(toolName: string) { return TOOL_VERBS[toolName]; }
 }

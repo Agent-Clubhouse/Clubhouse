@@ -105,7 +105,7 @@ describe('OpenCodeProvider', () => {
       });
       const result = await provider.checkAvailability();
       expect(result.available).toBe(false);
-      expect(result.error).toBe('Could not find OpenCode CLI');
+      expect(result.error).toBe('Could not find OpenCode');
     });
   });
 
