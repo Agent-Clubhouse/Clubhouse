@@ -404,14 +404,14 @@ export function kill(agentId: string): void {
   }, 5000);
 }
 
-export function readTranscript(agentId: string): string | null {
+export async function readTranscript(agentId: string): Promise<string | null> {
   // First check in-memory session
   const session = sessions.get(agentId);
   if (session) {
     // When old events have been evicted, disk has the complete transcript
     if (session.transcriptEvicted) {
       try {
-        return fs.readFileSync(session.transcriptPath, 'utf-8');
+        return await fsPromises.readFile(session.transcriptPath, 'utf-8');
       } catch {
         // Fall through to partial in-memory transcript
       }
@@ -422,7 +422,7 @@ export function readTranscript(agentId: string): string | null {
   // Fall back to disk for completed sessions
   const transcriptPath = path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
-    return fs.readFileSync(transcriptPath, 'utf-8');
+    return await fsPromises.readFile(transcriptPath, 'utf-8');
   } catch {
     return null;
   }
