@@ -87,7 +87,6 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockCpSpawn(...args),
 }));
 
-import * as fs from 'fs';
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
 import {
