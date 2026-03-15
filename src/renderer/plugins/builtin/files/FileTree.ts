@@ -1046,7 +1046,7 @@ export function FileTree({ api }: { api: PluginAPI }) {
 
   const handleDragOver = useCallback((e: React.DragEvent, node: FileNode) => {
     if (!dragSourceRef.current) return;
-    if (!node.isDirectory) { e.preventDefault(); return; }
+    if (!node.isDirectory) return; // only directories are valid drop targets
     if (node.path === dragSourceRef.current) return;
     // Prevent dropping a folder into itself or a descendant
     const srcPath = dragSourceRef.current;
