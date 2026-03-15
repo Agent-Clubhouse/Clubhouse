@@ -151,7 +151,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.GET_MODEL_OPTIONS, async (_event, projectPath: string, orchestrator?: string) => {
-    const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+    const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
     return provider.getModelOptions();
   });
 
@@ -164,7 +164,7 @@ export function registerAgentHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.GET_TOOL_VERB, async (_event, toolName: string, projectPath: string, orchestrator?: string) => {
-    const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+    const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
     return provider.toolVerb(toolName) || `Using ${toolName}`;
   });
 
@@ -210,7 +210,7 @@ export function registerAgentHandlers(): void {
     IPC.AGENT.READ_SESSION_TRANSCRIPT,
     async (_event, projectPath: string, agentId: string, sessionId: string, offset: number, limit: number, orchestrator?: string) => {
       try {
-        const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+        const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
         if (!isSessionCapable(provider)) return null;
         const config = agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
@@ -231,7 +231,7 @@ export function registerAgentHandlers(): void {
     IPC.AGENT.GET_SESSION_SUMMARY,
     async (_event, projectPath: string, agentId: string, sessionId: string, orchestrator?: string) => {
       try {
-        const provider = agentSystem.resolveOrchestrator(projectPath, orchestrator);
+        const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
         if (!isSessionCapable(provider)) return null;
         const config = agentConfig.getDurableConfig(projectPath, agentId);
         const cwd = config?.worktreePath || projectPath;
@@ -256,7 +256,7 @@ export function registerAgentHandlers(): void {
       const projectPath = agentSystem.getAgentProjectPath(agentId);
       if (!projectPath) throw new Error(`No project path found for agent ${agentId}`);
 
-      const provider = agentSystem.resolveOrchestrator(projectPath, orchestratorId);
+      const provider = await agentSystem.resolveOrchestrator(projectPath, orchestratorId);
       if (!isStructuredCapable(provider)) {
         throw new Error(`${provider.displayName} does not support structured mode`);
       }

@@ -234,7 +234,7 @@ export function registerAppHandlers(): void {
     if (!previousEnabled && nowEnabled && projectPath) {
       await ensureDefaultTemplates(projectPath);
       try {
-        const provider = resolveOrchestrator(projectPath);
+        const provider = await resolveOrchestrator(projectPath);
         enableExclusions(projectPath, provider);
       } catch {
         // Orchestrator not available

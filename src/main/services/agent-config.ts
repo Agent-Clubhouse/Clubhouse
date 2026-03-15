@@ -393,7 +393,7 @@ export async function createDurable(
   // Apply project-level defaults as snapshots into the new worktree
   if (worktreePath) {
     try {
-      const provider = resolveOrchestrator(projectPath, orchestrator);
+      const provider = await resolveOrchestrator(projectPath, orchestrator);
       await applyAgentDefaults(
         worktreePath,
         projectPath,

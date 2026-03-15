@@ -15,6 +15,7 @@ import * as annexServer from './services/annex-server';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
 import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
+import { initializeRipgrep } from './services/search-service';
 
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
@@ -115,6 +116,10 @@ app.on('ready', () => {
   // Pre-warm the shell environment cache in background so the first agent
   // wake doesn't pay the 500ms–2s login shell penalty.
   preWarmShellEnvironment();
+
+  // Pre-resolve ripgrep binary path in background so the first search
+  // doesn't block the main process with a synchronous `which` call.
+  initializeRipgrep();
 
   registerAllHandlers();
   buildMenu();

@@ -34,7 +34,7 @@ vi.mock('../services/agent-config', () => ({
 vi.mock('../services/agent-system', () => ({
   spawnAgent: vi.fn(async () => {}),
   killAgent: vi.fn(async () => {}),
-  resolveOrchestrator: vi.fn(() => ({
+  resolveOrchestrator: vi.fn(async () => ({
     getModelOptions: vi.fn(() => [{ id: 'default', label: 'Default' }]),
     toolVerb: vi.fn((name: string) => name === 'known' ? 'Editing' : null),
   })),

@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import { searchFiles } from './search-service';
+import { searchFiles, initializeRipgrep, _resetForTesting } from './search-service';
 
 describe('search-service', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    _resetForTesting();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'search-test-'));
 
     // Create test files
@@ -180,5 +181,24 @@ describe('search-service', () => {
     const result = await searchFiles(tmpDir, 'match_token');
     expect(result.totalMatches).toBeLessThanOrEqual(1000);
     expect(result.truncated).toBe(true);
+  });
+
+  it('initializeRipgrep pre-warms the cache so searchFiles does not block', async () => {
+    // Call initializeRipgrep and wait for it to complete by searching
+    initializeRipgrep();
+
+    // Calling initializeRipgrep again should be a no-op (idempotent)
+    initializeRipgrep();
+
+    // searchFiles should work normally after pre-warming
+    const result = await searchFiles(tmpDir, 'hello');
+    expect(result.totalMatches).toBeGreaterThan(0);
+  });
+
+  it('searchFiles works without explicit initializeRipgrep (lazy init)', async () => {
+    // Without calling initializeRipgrep, searchFiles should still work
+    // via lazy initialization in getRipgrepPath
+    const result = await searchFiles(tmpDir, 'hello');
+    expect(result.totalMatches).toBeGreaterThan(0);
   });
 });

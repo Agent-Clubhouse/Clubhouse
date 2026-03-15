@@ -1,4 +1,5 @@
-import { execFile, execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import * as path from 'path';
 const picomatch = require('picomatch') as (
   patterns: string[],
@@ -6,14 +7,16 @@ const picomatch = require('picomatch') as (
 ) => (input: string) => boolean;
 import type { FileSearchOptions, FileSearchResult, FileSearchFileResult, FileSearchMatch } from '../../shared/types';
 
+const execFileAsync = promisify(execFile);
+
 const DEFAULT_MAX_RESULTS = 1_000;
 const DEFAULT_CONTEXT_LINES = 0;
 const MAX_LINE_CONTENT_LENGTH = 500;
 
 /**
- * Try to locate the ripgrep binary. Returns the path or null if not found.
+ * Try to locate the ripgrep binary asynchronously. Returns the path or null if not found.
  */
-function findRipgrep(): string | null {
+async function findRipgrep(): Promise<string | null> {
   const candidates = [
     '/usr/local/bin/rg',
     '/opt/homebrew/bin/rg',
@@ -22,10 +25,11 @@ function findRipgrep(): string | null {
 
   // Also try resolving 'rg' via `which`
   try {
-    const resolved = execFileSync('which', ['rg'], {
+    const { stdout } = await execFileAsync('which', ['rg'], {
       timeout: 3000,
       encoding: 'utf-8',
-    }).trim();
+    });
+    const resolved = stdout.trim();
     if (resolved && !candidates.includes(resolved)) {
       candidates.unshift(resolved);
     }
@@ -35,10 +39,7 @@ function findRipgrep(): string | null {
 
   for (const candidate of candidates) {
     try {
-      execFileSync(candidate, ['--version'], {
-        timeout: 3000,
-        stdio: 'ignore',
-      });
+      await execFileAsync(candidate, ['--version'], { timeout: 3000 });
       return candidate;
     } catch {
       // not found, try next
@@ -48,12 +49,33 @@ function findRipgrep(): string | null {
 }
 
 let _rgPath: string | null | undefined;
+let _rgPathPromise: Promise<string | null> | null = null;
 
-function getRipgrepPath(): string | null {
-  if (_rgPath === undefined) {
-    _rgPath = findRipgrep();
+/**
+ * Kick off async ripgrep discovery. Call during app initialization so the
+ * binary path is resolved before the first search request arrives.
+ */
+export function initializeRipgrep(): void {
+  if (!_rgPathPromise) {
+    _rgPathPromise = findRipgrep().then(p => {
+      _rgPath = p;
+      return p;
+    });
   }
-  return _rgPath;
+}
+
+async function getRipgrepPath(): Promise<string | null> {
+  if (_rgPath !== undefined) return _rgPath;
+  if (!_rgPathPromise) {
+    initializeRipgrep();
+  }
+  return _rgPathPromise!;
+}
+
+/** Reset module state between tests. */
+export function _resetForTesting(): void {
+  _rgPath = undefined;
+  _rgPathPromise = null;
 }
 
 /**
@@ -68,7 +90,7 @@ export async function searchFiles(
     return { results: [], totalMatches: 0, truncated: false };
   }
 
-  const rgPath = getRipgrepPath();
+  const rgPath = await getRipgrepPath();
   if (rgPath) {
     return searchWithRipgrep(rgPath, rootPath, query, options);
   }

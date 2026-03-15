@@ -36,7 +36,7 @@ vi.mock('../services/agent-settings-service', () => ({
 }));
 
 vi.mock('../services/agent-system', () => ({
-  resolveOrchestrator: vi.fn(() => ({
+  resolveOrchestrator: vi.fn(async () => ({
     conventions: { configDir: '.claude', localInstructionsFile: 'CLAUDE.md' },
     readInstructions: vi.fn(() => 'provider instructions'),
     writeInstructions: vi.fn(),
@@ -334,9 +334,7 @@ describe('agent-settings-handlers', () => {
   });
 
   it('GET_CONVENTIONS returns null when resolveOrchestrator throws', async () => {
-    vi.mocked(agentSystem.resolveOrchestrator).mockImplementationOnce(() => {
-      throw new Error('not found');
-    });
+    vi.mocked(agentSystem.resolveOrchestrator).mockRejectedValueOnce(new Error('not found'));
     const handler = handlers.get(IPC.AGENT.GET_CONVENTIONS)!;
     const result = await handler({}, '/project');
     expect(result).toBeNull();

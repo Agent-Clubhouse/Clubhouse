@@ -268,6 +268,94 @@ describe('file-watch-service', () => {
     });
   });
 
+  describe('async rename event classification', () => {
+    it('classifies rename of a new file as created', async () => {
+      vi.useRealTimers();
+
+      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+
+      const sender = makeSender();
+      const glob = path.join(tmpDir, 'src', '**', '*.ts');
+      startWatch('ar1', glob, sender as any);
+
+      // Create a file — fs.watch will emit a 'rename' event
+      fs.writeFileSync(path.join(tmpDir, 'src', 'new-file.ts'), 'export {};');
+
+      // Wait for async access check + debounce
+      await new Promise((r) => setTimeout(r, 500));
+
+      if (sender.send.mock.calls.length > 0) {
+        const allEvents = sender.send.mock.calls.flatMap(
+          (call: unknown[]) => (call[1] as { events: Array<{ type: string; path: string }> }).events,
+        );
+        const createEvents = allEvents.filter((e: { type: string; path: string }) => e.path.includes('new-file.ts'));
+        // The file exists, so rename should be classified as 'created'
+        for (const event of createEvents) {
+          expect(event.type).toBe('created');
+        }
+      }
+
+      stopWatch('ar1');
+    });
+
+    it('classifies rename of a deleted file as deleted', async () => {
+      vi.useRealTimers();
+
+      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+      const filePath = path.join(tmpDir, 'src', 'doomed.ts');
+      fs.writeFileSync(filePath, 'export {};');
+
+      const sender = makeSender();
+      const glob = path.join(tmpDir, 'src', '**', '*.ts');
+      startWatch('ar2', glob, sender as any);
+
+      // Wait for watcher to settle and flush any creation events
+      await new Promise((r) => setTimeout(r, 500));
+      sender.send.mockClear();
+
+      // Delete the file — fs.watch will emit a 'rename' event
+      fs.unlinkSync(filePath);
+
+      // Wait for async access check + debounce
+      await new Promise((r) => setTimeout(r, 500));
+
+      if (sender.send.mock.calls.length > 0) {
+        const allEvents = sender.send.mock.calls.flatMap(
+          (call: unknown[]) => (call[1] as { events: Array<{ type: string; path: string }> }).events,
+        );
+        const deleteEvents = allEvents.filter((e: { type: string; path: string }) => e.path.includes('doomed.ts'));
+        // The file no longer exists, so rename should be classified as 'deleted'
+        for (const event of deleteEvents) {
+          expect(event.type).toBe('deleted');
+        }
+      }
+
+      stopWatch('ar2');
+    });
+
+    it('does not push events if watch was stopped during async check', async () => {
+      vi.useRealTimers();
+
+      fs.mkdirSync(path.join(tmpDir, 'src'), { recursive: true });
+
+      const sender = makeSender();
+      const glob = path.join(tmpDir, 'src', '**', '*.ts');
+      startWatch('ar3', glob, sender as any);
+
+      // Create file to trigger watcher
+      fs.writeFileSync(path.join(tmpDir, 'src', 'ephemeral.ts'), 'export {};');
+
+      // Stop the watch immediately — in-flight async callbacks should bail
+      stopWatch('ar3');
+
+      // Wait for any in-flight async access checks to resolve
+      await new Promise((r) => setTimeout(r, 500));
+
+      // No events should have been sent
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
+
   describe('glob filtering', () => {
     it('should only forward events for files matching the glob pattern', async () => {
       vi.useRealTimers();

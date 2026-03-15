@@ -12,10 +12,11 @@ import { appLog } from '../services/log-service';
  * Resolve orchestrator conventions for a project path.
  * Returns undefined when no projectPath is provided (falls back to Claude Code defaults in service).
  */
-function getConventions(projectPath?: string): SettingsConventions | undefined {
+async function getConventions(projectPath?: string): Promise<SettingsConventions | undefined> {
   if (!projectPath) return undefined;
   try {
-    return resolveOrchestrator(projectPath).conventions;
+    const provider = await resolveOrchestrator(projectPath);
+    return provider.conventions;
   } catch (err) {
     appLog('core:agent-settings', 'warn', `Failed to resolve orchestrator conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
     return undefined;
@@ -25,7 +26,7 @@ function getConventions(projectPath?: string): SettingsConventions | undefined {
 export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.READ_INSTRUCTIONS, async (_event, worktreePath: string, projectPath?: string) => {
     if (projectPath) {
-      const provider = resolveOrchestrator(projectPath);
+      const provider = await resolveOrchestrator(projectPath);
       return provider.readInstructions(worktreePath);
     }
     return agentSettings.readClaudeMd(worktreePath);
@@ -33,7 +34,7 @@ export function registerAgentSettingsHandlers(): void {
 
   ipcMain.handle(IPC.AGENT.SAVE_INSTRUCTIONS, async (_event, worktreePath: string, content: string, projectPath?: string) => {
     if (projectPath) {
-      const provider = resolveOrchestrator(projectPath);
+      const provider = await resolveOrchestrator(projectPath);
       provider.writeInstructions(worktreePath, content);
     } else {
       await agentSettings.writeClaudeMd(worktreePath, content);
@@ -41,15 +42,15 @@ export function registerAgentSettingsHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.READ_MCP_CONFIG, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.readMcpConfig(worktreePath, getConventions(projectPath));
+    return agentSettings.readMcpConfig(worktreePath, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.LIST_SKILLS, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.listSkills(worktreePath, getConventions(projectPath));
+    return agentSettings.listSkills(worktreePath, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATES, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.listAgentTemplates(worktreePath, getConventions(projectPath));
+    return agentSettings.listAgentTemplates(worktreePath, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.LIST_SOURCE_SKILLS, async (_event, projectPath: string) => {
@@ -61,61 +62,61 @@ export function registerAgentSettingsHandlers(): void {
   });
 
   ipcMain.handle(IPC.AGENT.CREATE_SKILL, async (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
-    return agentSettings.createSkillDir(basePath, name, isSource, getConventions(projectPath));
+    return agentSettings.createSkillDir(basePath, name, isSource, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.CREATE_AGENT_TEMPLATE, async (_event, basePath: string, name: string, isSource: boolean, projectPath?: string) => {
-    return agentSettings.createAgentTemplateDir(basePath, name, isSource, getConventions(projectPath));
+    return agentSettings.createAgentTemplateDir(basePath, name, isSource, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.READ_PERMISSIONS, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.readPermissions(worktreePath, getConventions(projectPath));
+    return agentSettings.readPermissions(worktreePath, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.SAVE_PERMISSIONS, async (_event, worktreePath: string, permissions: { allow?: string[]; deny?: string[] }, projectPath?: string) => {
-    await agentSettings.writePermissions(worktreePath, permissions, getConventions(projectPath));
+    await agentSettings.writePermissions(worktreePath, permissions, await getConventions(projectPath));
   });
 
   // --- Skill content CRUD ---
 
   ipcMain.handle(IPC.AGENT.READ_SKILL_CONTENT, async (_event, worktreePath: string, skillName: string, projectPath?: string) => {
-    return agentSettings.readSkillContent(worktreePath, skillName, getConventions(projectPath));
+    return agentSettings.readSkillContent(worktreePath, skillName, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.WRITE_SKILL_CONTENT, async (_event, worktreePath: string, skillName: string, content: string, projectPath?: string) => {
-    await agentSettings.writeSkillContent(worktreePath, skillName, content, getConventions(projectPath));
+    await agentSettings.writeSkillContent(worktreePath, skillName, content, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.DELETE_SKILL, async (_event, worktreePath: string, skillName: string, projectPath?: string) => {
-    await agentSettings.deleteSkill(worktreePath, skillName, getConventions(projectPath));
+    await agentSettings.deleteSkill(worktreePath, skillName, await getConventions(projectPath));
   });
 
   // --- Agent template content CRUD ---
 
   ipcMain.handle(IPC.AGENT.READ_AGENT_TEMPLATE_CONTENT, async (_event, worktreePath: string, agentName: string, projectPath?: string) => {
-    return agentSettings.readAgentTemplateContent(worktreePath, agentName, getConventions(projectPath));
+    return agentSettings.readAgentTemplateContent(worktreePath, agentName, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.WRITE_AGENT_TEMPLATE_CONTENT, async (_event, worktreePath: string, agentName: string, content: string, projectPath?: string) => {
-    await agentSettings.writeAgentTemplateContent(worktreePath, agentName, content, getConventions(projectPath));
+    await agentSettings.writeAgentTemplateContent(worktreePath, agentName, content, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.DELETE_AGENT_TEMPLATE, async (_event, worktreePath: string, agentName: string, projectPath?: string) => {
-    await agentSettings.deleteAgentTemplate(worktreePath, agentName, getConventions(projectPath));
+    await agentSettings.deleteAgentTemplate(worktreePath, agentName, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.LIST_AGENT_TEMPLATE_FILES, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.listAgentTemplateFiles(worktreePath, getConventions(projectPath));
+    return agentSettings.listAgentTemplateFiles(worktreePath, await getConventions(projectPath));
   });
 
   // --- MCP raw JSON ---
 
   ipcMain.handle(IPC.AGENT.READ_MCP_RAW_JSON, async (_event, worktreePath: string, projectPath?: string) => {
-    return agentSettings.readMcpRawJson(worktreePath, getConventions(projectPath));
+    return agentSettings.readMcpRawJson(worktreePath, await getConventions(projectPath));
   });
 
   ipcMain.handle(IPC.AGENT.WRITE_MCP_RAW_JSON, async (_event, worktreePath: string, content: string, projectPath?: string) => {
-    return agentSettings.writeMcpRawJson(worktreePath, content, getConventions(projectPath));
+    return agentSettings.writeMcpRawJson(worktreePath, content, await getConventions(projectPath));
   });
 
   // --- Project-level agent defaults ---
@@ -134,9 +135,9 @@ export function registerAgentSettingsHandlers(): void {
 
   // --- Orchestrator conventions ---
 
-  ipcMain.handle(IPC.AGENT.GET_CONVENTIONS, (_event, projectPath: string) => {
+  ipcMain.handle(IPC.AGENT.GET_CONVENTIONS, async (_event, projectPath: string) => {
     try {
-      const provider = resolveOrchestrator(projectPath);
+      const provider = await resolveOrchestrator(projectPath);
       return provider.conventions;
     } catch (err) {
       appLog('core:agent-settings', 'warn', `Failed to get conventions for ${projectPath}`, { meta: { error: err instanceof Error ? err.message : String(err) } });
@@ -175,14 +176,14 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.MATERIALIZE_AGENT, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return;
-    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     await materializeAgent({ projectPath, agent, provider });
   });
 
   ipcMain.handle(IPC.AGENT.PREVIEW_MATERIALIZATION, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return null;
-    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return previewMaterialization({ projectPath, agent, provider });
   });
 
@@ -191,14 +192,14 @@ export function registerAgentSettingsHandlers(): void {
   ipcMain.handle(IPC.AGENT.COMPUTE_CONFIG_DIFF, async (_event, projectPath: string, agentId: string) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return { agentId, agentName: '', hasDiffs: false, items: [] };
-    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return computeConfigDiff({ projectPath, agentId, provider });
   });
 
   ipcMain.handle(IPC.AGENT.PROPAGATE_CONFIG_CHANGES, async (_event, projectPath: string, agentId: string, selectedItemIds: string[]) => {
     const agent = getDurableConfig(projectPath, agentId);
     if (!agent) return { ok: false, message: 'Agent not found', propagatedCount: 0 };
-    const provider = resolveOrchestrator(projectPath, agent.orchestrator);
+    const provider = await resolveOrchestrator(projectPath, agent.orchestrator);
     return propagateChanges({ projectPath, agentId, selectedItemIds, provider });
   });
 }

@@ -87,7 +87,6 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => mockCpSpawn(...args),
 }));
 
-import * as fs from 'fs';
 import { IPC } from '../../shared/ipc-channels';
 import { appLog } from './log-service';
 import {
@@ -98,6 +97,7 @@ import {
   getTranscriptInfo,
   readTranscriptPage,
   setMaxTranscriptBytes,
+  setMaxStderrBytes,
   startStaleSweep,
   stopStaleSweep,
 } from './headless-manager';
@@ -123,6 +123,7 @@ describe('headless-manager', () => {
     }
     // Reset transcript cap to default
     setMaxTranscriptBytes(10 * 1024 * 1024);
+    setMaxStderrBytes(64 * 1024);
     stopStaleSweep();
     vi.useRealTimers();
   });
@@ -543,26 +544,26 @@ describe('headless-manager', () => {
   // Transcript reading
   // ============================================================
   describe('readTranscript', () => {
-    it('returns null for unknown agent', () => {
-      expect(readTranscript('unknown-agent')).toBeNull();
+    it('returns null for unknown agent', async () => {
+      expect(await readTranscript('unknown-agent')).toBeNull();
     });
 
-    it('returns in-memory transcript for active session', () => {
+    it('returns in-memory transcript for active session', async () => {
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
       const event = { type: 'result', result: 'ok' };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
 
-      const transcript = readTranscript('test-agent');
+      const transcript = await readTranscript('test-agent');
       expect(transcript).not.toBeNull();
       expect(transcript).toContain('"type":"result"');
     });
 
-    it('returns in-memory transcript for text mode active session', () => {
+    it('returns in-memory transcript for text mode active session', async () => {
       spawnHeadless('test-agent', '/project', '/usr/bin/copilot', ['-p', 'test'], {}, 'text');
 
       // In text mode, transcript is empty until close
-      const transcript = readTranscript('test-agent');
+      const transcript = await readTranscript('test-agent');
       expect(transcript).toBe(''); // empty array mapped to empty string
     });
   });
@@ -785,7 +786,7 @@ describe('headless-manager', () => {
   // Transcript memory cap (Issue #319)
   // ============================================================
   describe('transcript memory cap', () => {
-    it('tracks transcriptBytes as events are pushed', () => {
+    it('tracks transcriptBytes as events are pushed', async () => {
       setMaxTranscriptBytes(1024 * 1024); // 1MB — high enough to not trigger eviction
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -794,19 +795,19 @@ describe('headless-manager', () => {
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
 
       // readTranscript returns the in-memory transcript; verify it has content
-      const transcript = readTranscript('test-agent');
+      const transcript = await readTranscript('test-agent');
       expect(transcript).toContain('"type":"assistant"');
 
       // Push a second event and verify both are present
       const event2 = { type: 'result', result: 'Done' };
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event2) + '\n'));
 
-      const transcript2 = readTranscript('test-agent');
+      const transcript2 = await readTranscript('test-agent');
       expect(transcript2).toContain('"type":"assistant"');
       expect(transcript2).toContain('"type":"result"');
     });
 
-    it('evicts old events when transcript exceeds cap', () => {
+    it('evicts old events when transcript exceeds cap', async () => {
       // Set a very small cap to trigger eviction quickly
       setMaxTranscriptBytes(500);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
@@ -818,16 +819,16 @@ describe('headless-manager', () => {
       }
 
       // The in-memory transcript should have fewer than 10 events due to eviction
-      const transcript = readTranscript('test-agent');
+      const transcript = await readTranscript('test-agent');
       // Since transcriptEvicted is true, readTranscript tries disk first.
-      // Mock readFileSync throws ENOENT, so it falls through to partial in-memory.
+      // Mock fsPromises.readFile rejects ENOENT, so it falls through to partial in-memory.
       // Count events in the returned string
       const lines = transcript!.split('\n').filter(l => l.trim());
       expect(lines.length).toBeLessThan(10);
       expect(lines.length).toBeGreaterThan(0);
     });
 
-    it('keeps most recent events after eviction', () => {
+    it('keeps most recent events after eviction', async () => {
       setMaxTranscriptBytes(500);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -837,8 +838,8 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-      // readTranscript falls through to partial in-memory (disk mock throws)
-      const transcript = readTranscript('test-agent');
+      // readTranscript falls through to partial in-memory (disk mock rejects)
+      const transcript = await readTranscript('test-agent');
       // The last event should still be present
       expect(transcript).toContain('event-9');
       // Early events should have been evicted
@@ -869,7 +870,7 @@ describe('headless-manager', () => {
       );
     });
 
-    it('readTranscript falls back to disk when transcript is evicted', () => {
+    it('readTranscript falls back to disk when transcript is evicted', async () => {
       setMaxTranscriptBytes(200);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -879,19 +880,19 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-      // Now make readFileSync return full transcript data
+      // Now make fsPromises.readFile return full transcript data
       const fullTranscript = '{"type":"result","result":"full-disk-data"}\n';
-      (fs.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(fullTranscript);
+      mockFsPromises.readFile.mockResolvedValueOnce(fullTranscript);
 
-      const result = readTranscript('test-agent');
+      const result = await readTranscript('test-agent');
       expect(result).toBe(fullTranscript);
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(mockFsPromises.readFile).toHaveBeenCalledWith(
         expect.stringContaining('test-agent.jsonl'),
         'utf-8'
       );
     });
 
-    it('does not evict when under the cap', () => {
+    it('does not evict when under the cap', async () => {
       setMaxTranscriptBytes(1024 * 1024); // 1MB
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
 
@@ -901,7 +902,7 @@ describe('headless-manager', () => {
         mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
       }
 
-      const transcript = readTranscript('test-agent');
+      const transcript = await readTranscript('test-agent');
       const lines = transcript!.split('\n').filter(l => l.trim());
       expect(lines.length).toBe(5); // All events retained
 
@@ -914,7 +915,7 @@ describe('headless-manager', () => {
       );
     });
 
-    it('setMaxTranscriptBytes changes the cap', () => {
+    it('setMaxTranscriptBytes changes the cap', async () => {
       // Start with a high cap
       setMaxTranscriptBytes(1024 * 1024);
       spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
@@ -926,7 +927,7 @@ describe('headless-manager', () => {
       }
 
       // All 5 should be in memory
-      let transcript = readTranscript('test-agent');
+      let transcript = await readTranscript('test-agent');
       let lines = transcript!.split('\n').filter(l => l.trim());
       expect(lines.length).toBe(5);
 
@@ -939,11 +940,67 @@ describe('headless-manager', () => {
       mockProcess.stdout!.emit('data', Buffer.from(JSON.stringify(event) + '\n'));
 
       // Some old events should be evicted now
-      transcript = readTranscript('test-agent');
+      transcript = await readTranscript('test-agent');
       lines = transcript!.split('\n').filter(l => l.trim());
       expect(lines.length).toBeLessThan(6);
       expect(lines.length).toBeGreaterThan(0);
       expect(transcript).toContain('trigger');
+    });
+  });
+
+  describe('stderr memory cap', () => {
+    it('retains recent stderr output when the buffer exceeds the cap', () => {
+      setMaxStderrBytes(70);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.stderr!.emit('data', Buffer.from(`first-${'x'.repeat(30)}`));
+      mockProcess.stderr!.emit('data', Buffer.from(`second-${'y'.repeat(30)}`));
+      mockProcess.stderr!.emit('data', Buffer.from(`third-${'z'.repeat(30)}`));
+
+      mockProcess.emit('close', 1);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:headless',
+        'info',
+        'Process exited',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            agentId: 'test-agent',
+            stderr: expect.stringContaining('third-'),
+          }),
+        }),
+      );
+
+      expect(appLog).not.toHaveBeenCalledWith(
+        'core:headless',
+        'info',
+        'Process exited',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            stderr: expect.stringContaining('first-'),
+          }),
+        }),
+      );
+    });
+
+    it('setMaxStderrBytes changes the retention cap', () => {
+      setMaxStderrBytes(20);
+      spawnHeadless('test-agent', '/project', '/usr/local/bin/claude', ['-p', 'test']);
+
+      mockProcess.stderr!.emit('data', Buffer.from('alpha-alpha-alpha'));
+      mockProcess.stderr!.emit('data', Buffer.from('beta'));
+      mockProcess.emit('close', 1);
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:headless',
+        'info',
+        'Process exited',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            stderr: 'beta',
+          }),
+        }),
+      );
     });
   });
 

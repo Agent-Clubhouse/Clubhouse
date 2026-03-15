@@ -59,7 +59,7 @@ export function start(): Promise<number> {
         }
         body += chunk;
       });
-      req.on('end', () => {
+      req.on('end', async () => {
         if (limitExceeded) return;
         try {
           const raw = JSON.parse(body);
@@ -84,7 +84,7 @@ export function start(): Promise<number> {
               return;
             }
 
-            const provider = resolveOrchestrator(projectPath, orchestrator);
+            const provider = await resolveOrchestrator(projectPath, orchestrator);
             if (!isHookCapable(provider)) {
               res.writeHead(200);
               res.end();
