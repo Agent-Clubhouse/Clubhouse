@@ -4,13 +4,15 @@ import { BrowserWindow } from 'electron';
 import picomatch from 'picomatch';
 import { IPC } from '../../shared/ipc-channels';
 
+type FileEventType = 'created' | 'modified' | 'deleted';
+
 interface WatchEntry {
   watchId: string;
   glob: string;
   watcher: fs.FSWatcher;
   webContentsId: number;
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  pendingEvents: Array<{ type: 'created' | 'modified' | 'deleted'; path: string }>;
+  pendingEvents: Map<string, FileEventType>;
   sender: Electron.WebContents;
   destroyedListener: (() => void) | null;
 }
@@ -19,6 +21,33 @@ const activeWatches = new Map<string, WatchEntry>();
 
 /** Debounce interval for batching file events (ms). */
 const DEBOUNCE_MS = 200;
+
+/** Maximum pending events before an immediate flush (prevents unbounded growth). */
+const MAX_PENDING_EVENTS = 1000;
+
+/**
+ * Flush pending events for a watch entry, sending them to the renderer.
+ * Clears the debounce timer and the pending events map.
+ */
+function flushPendingEvents(entry: WatchEntry): void {
+  if (entry.debounceTimer) {
+    clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = null;
+  }
+  if (entry.sender.isDestroyed()) {
+    stopWatch(entry.watchId);
+    return;
+  }
+  if (entry.pendingEvents.size > 0) {
+    const events = Array.from(entry.pendingEvents, ([filePath, type]) => ({ type, path: filePath }));
+    entry.pendingEvents.clear();
+    try {
+      entry.sender.send(IPC.FILE.WATCH_EVENT, { watchId: entry.watchId, events });
+    } catch {
+      stopWatch(entry.watchId);
+    }
+  }
+}
 
 /**
  * Start watching a directory for changes matching a glob pattern.
@@ -42,7 +71,7 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
     watcher: null as unknown as fs.FSWatcher,
     webContentsId: sender.id,
     debounceTimer: null,
-    pendingEvents: [],
+    pendingEvents: new Map(),
     sender,
     destroyedListener: null,
   };
@@ -73,26 +102,19 @@ export function startWatch(watchId: string, glob: string, sender: Electron.WebCo
         type = 'modified';
       }
 
-      entry.pendingEvents.push({ type, path: fullPath });
+      entry.pendingEvents.set(fullPath, type);
+
+      // Flush immediately if cap reached (prevents unbounded growth)
+      if (entry.pendingEvents.size >= MAX_PENDING_EVENTS) {
+        flushPendingEvents(entry);
+        return;
+      }
 
       // Debounce — batch events
       if (entry.debounceTimer) {
         clearTimeout(entry.debounceTimer);
       }
-      entry.debounceTimer = setTimeout(() => {
-        if (sender.isDestroyed()) {
-          stopWatch(watchId);
-          return;
-        }
-        const events = entry.pendingEvents.splice(0);
-        if (events.length > 0) {
-          try {
-            sender.send(IPC.FILE.WATCH_EVENT, { watchId, events });
-          } catch {
-            stopWatch(watchId);
-          }
-        }
-      }, DEBOUNCE_MS);
+      entry.debounceTimer = setTimeout(() => flushPendingEvents(entry), DEBOUNCE_MS);
     });
 
     entry.watcher = watcher;
@@ -149,7 +171,7 @@ export function cleanupWatchesForWindow(win: BrowserWindow): void {
 }
 
 /** @internal Exported for tests only. */
-export { activeWatches as _activeWatches };
+export { activeWatches as _activeWatches, MAX_PENDING_EVENTS };
 
 /** Return the number of currently active watches (for testing). */
 export function getActiveWatchCount(): number {

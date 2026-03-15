@@ -17,7 +17,7 @@ vi.mock('../../shared/ipc-channels', () => ({
   },
 }));
 
-import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches } from './file-watch-service';
+import { startWatch, stopWatch, stopAllWatches, cleanupWatchesForWindow, getActiveWatchCount, extractBaseDir, _activeWatches, MAX_PENDING_EVENTS } from './file-watch-service';
 import type { BrowserWindow } from 'electron';
 
 /**
@@ -248,6 +248,65 @@ describe('file-watch-service', () => {
       vi.runAllTimers();
       // No events pending, so send should not be called
       expect(sender.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('event deduplication', () => {
+    it('keeps only the latest event type per file path', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      // Simulate multiple events for the same path
+      entry.pendingEvents.set('/tmp/file.ts', 'created');
+      entry.pendingEvents.set('/tmp/file.ts', 'modified');
+      entry.pendingEvents.set('/tmp/file.ts', 'deleted');
+
+      // Only the latest event should remain
+      expect(entry.pendingEvents.size).toBe(1);
+      expect(entry.pendingEvents.get('/tmp/file.ts')).toBe('deleted');
+    });
+
+    it('tracks separate paths independently', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      entry.pendingEvents.set('/tmp/a.ts', 'created');
+      entry.pendingEvents.set('/tmp/b.ts', 'modified');
+      entry.pendingEvents.set('/tmp/a.ts', 'deleted');
+
+      expect(entry.pendingEvents.size).toBe(2);
+      expect(entry.pendingEvents.get('/tmp/a.ts')).toBe('deleted');
+      expect(entry.pendingEvents.get('/tmp/b.ts')).toBe('modified');
+    });
+  });
+
+  describe('max pending events cap', () => {
+    it('flushes immediately when cap is reached', () => {
+      const sender = makeSender();
+      startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
+
+      const entry = _activeWatches.get('w1')!;
+      // Fill to just below the cap
+      for (let i = 0; i < MAX_PENDING_EVENTS; i++) {
+        entry.pendingEvents.set(`/tmp/file-${i}.ts`, 'modified');
+      }
+
+      // Simulate the debounce firing (which calls flushPendingEvents)
+      vi.runAllTimers();
+
+      // Events should have been flushed
+      expect(sender.send).toHaveBeenCalledTimes(1);
+      const payload = sender.send.mock.calls[0][1] as { watchId: string; events: Array<{ type: string; path: string }> };
+      expect(payload.watchId).toBe('w1');
+      expect(payload.events).toHaveLength(MAX_PENDING_EVENTS);
+      // Map should be cleared after flush
+      expect(entry.pendingEvents.size).toBe(0);
+    });
+
+    it('exports MAX_PENDING_EVENTS constant', () => {
+      expect(MAX_PENDING_EVENTS).toBe(1000);
     });
   });
 
@@ -490,7 +549,7 @@ describe('file-watch lifecycle and cleanup', () => {
 
       const entry = _activeWatches.get('w1')!;
       // Simulate a pending debounce by setting a timer
-      entry.pendingEvents.push({ type: 'modified', path: '/tmp/test.ts' });
+      entry.pendingEvents.set('/tmp/test.ts', 'modified');
       entry.debounceTimer = setTimeout(() => {}, 10000);
 
       const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
@@ -555,7 +614,7 @@ describe('file-watch lifecycle and cleanup', () => {
       startWatch('w1', path.join(tmpDir, '**', '*.ts'), sender as any);
 
       const entry = _activeWatches.get('w1')!;
-      entry.pendingEvents.push({ type: 'created', path: '/tmp/new.ts' });
+      entry.pendingEvents.set('/tmp/new.ts', 'created');
       entry.debounceTimer = setTimeout(() => {}, 10000);
 
       const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
@@ -601,10 +660,8 @@ describe('file-watch lifecycle and cleanup', () => {
 
       const entry = _activeWatches.get('w1')!;
       // Simulate pending events waiting to be flushed
-      entry.pendingEvents.push(
-        { type: 'created', path: '/tmp/a.ts' },
-        { type: 'modified', path: '/tmp/b.ts' },
-      );
+      entry.pendingEvents.set('/tmp/a.ts', 'created');
+      entry.pendingEvents.set('/tmp/b.ts', 'modified');
 
       // Destroy the sender
       sender._emit('destroyed');
@@ -660,8 +717,8 @@ describe('file-watch lifecycle and cleanup', () => {
       const entry2 = _activeWatches.get('w2')!;
       entry1.debounceTimer = setTimeout(() => {}, 10000);
       entry2.debounceTimer = setTimeout(() => {}, 10000);
-      entry1.pendingEvents.push({ type: 'modified', path: '/tmp/a.ts' });
-      entry2.pendingEvents.push({ type: 'modified', path: '/tmp/b.js' });
+      entry1.pendingEvents.set('/tmp/a.ts', 'modified');
+      entry2.pendingEvents.set('/tmp/b.js', 'modified');
 
       const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout');
 
