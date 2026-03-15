@@ -25,7 +25,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-import * as path from 'path';
+import * as fsp from 'fs/promises';
 import {
   agentRegistry,
   getAgentProjectPath,
@@ -36,7 +36,6 @@ import {
   readProjectOrchestrator,
   DEFAULT_ORCHESTRATOR,
 } from './agent-registry';
-import * as fsp from 'fs/promises';
 
 describe('agent-registry', () => {
   beforeEach(() => {
