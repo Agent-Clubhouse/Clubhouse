@@ -200,9 +200,9 @@ describe('FileTree', () => {
     const treeContainer = container.querySelector('[tabindex="0"]')!;
     fireEvent.keyDown(treeContainer, { key: 'ArrowDown' });
 
-    // Focus should move to the first item with the visible focus indicator
+    // Focus should move to the first item with the visible highlight
     await waitFor(() => {
-      const focused = container.querySelector('[class*="ring-ctp-blue"]');
+      const focused = container.querySelector('[class*="bg-surface-1"]');
       expect(focused).not.toBeNull();
     });
   });
@@ -929,7 +929,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const docsNode = container.querySelector('[data-path="/project/docs"]');
-      expect(docsNode?.className).toContain('ring-ctp-blue');
+      expect(docsNode?.className).toContain('bg-surface-1');
     });
   });
 
@@ -954,7 +954,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).toContain('ring-ctp-blue');
+      expect(pkgNode?.className).toContain('bg-surface-1');
     });
   });
 
@@ -975,7 +975,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const srcNode = container.querySelector('[data-path="/project/src"]');
-      expect(srcNode?.className).toContain('ring-ctp-blue');
+      expect(srcNode?.className).toContain('bg-surface-1');
     });
   });
 
@@ -993,7 +993,7 @@ describe('FileTree — keyboard navigation', () => {
 
     await waitFor(() => {
       const pkgNode = container.querySelector('[data-path="/project/package.json"]');
-      expect(pkgNode?.className).toContain('ring-ctp-blue');
+      expect(pkgNode?.className).toContain('bg-surface-1');
     });
   });
 
