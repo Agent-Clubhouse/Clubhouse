@@ -31,7 +31,7 @@ export function registerProcessHandlers(): void {
         },
       })(req.options, `${argName}.options`);
     },
-  })], (_event, req: ProcessExecRequest) => {
+  })], async (_event, req: ProcessExecRequest) => {
     const { pluginId, command, args, projectPath, options } = req;
 
     // Reject requests without a pluginId
@@ -50,8 +50,8 @@ export function registerProcessHandlers(): void {
     }
 
     // Refresh from trusted main-process sources before enforcing policy.
-    // Renderer payloads may request a sync, but disk/static manifests are authoritative.
-    refreshManifest(pluginId);
+    // The main process re-reads manifests from disk; renderer data is never used.
+    await refreshManifest(pluginId);
 
     // Look up allowed commands from the server-side manifest registry
     // — never trust renderer-supplied allowedCommands.

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { PluginManifest } from '../../shared/plugin-types';
-import { validateManifest } from '../../renderer/plugins/manifest-validator';
+import { validateManifest } from '../../shared/manifest-validator';
 import { manifest as filesManifest } from '../../renderer/plugins/builtin/files/manifest';
 import { manifest as hubManifest } from '../../renderer/plugins/builtin/hub/manifest';
 import { manifest as terminalManifest } from '../../renderer/plugins/builtin/terminal/manifest';
@@ -12,44 +12,30 @@ import { getGlobalPluginDataDir } from './plugin-storage';
 /**
  * Server-side (main process) registry for plugin manifests.
  *
- * Security policy must be sourced from trusted main-process data only.
+ * Security policy is sourced exclusively from trusted main-process data.
  * Built-in manifests are loaded from bundled sources and community manifests
- * are read and validated from disk. Renderer IPC can request a refresh by
- * plugin ID, but renderer-provided manifest payloads are never authoritative.
+ * are read and validated from disk at startup. The renderer may request a
+ * refresh by plugin ID via IPC, but never supplies manifest data — the main
+ * process always re-reads from disk.
  *
- * Two registration paths enforce a trust boundary:
+ * Only one registration path exists:
  *
- * 1. `registerTrustedManifest` / `initializeTrustedManifests` / `refreshManifest`
- *    — called by the main process when reading manifests from disk (discovery,
- *    hot-reload).  Preserves all fields including security-sensitive ones like
- *    `allowedCommands`.
+ * `registerTrustedManifest` / `initializeTrustedManifests` / `refreshManifest`
+ * — called by the main process when reading manifests from disk (discovery,
+ * hot-reload).  Preserves all fields including security-sensitive ones like
+ * `allowedCommands`.
  *
- * 2. `registerManifest` — called via IPC from the renderer.  Strips
- *    security-sensitive fields so renderer/plugin code cannot self-escalate
- *    (e.g., inject `allowedCommands` to gain arbitrary command execution).
- *
- * `getAllowedCommands` only returns commands that were set through the
- * trusted path, closing the renderer-forged-policy attack vector.
+ * The renderer has no path to inject or alter security policy.
  */
 
 /** Manifests registered from a trusted source (disk reads in main process). */
 const trustedManifests = new Map<string, PluginManifest>();
-
-/** Manifests registered from the renderer (stripped of sensitive fields). */
-const untrustedManifests = new Map<string, PluginManifest>();
 
 const builtinManifestById = new Map<string, PluginManifest>([
   [hubManifest.id, hubManifest],
   [terminalManifest.id, terminalManifest],
   [filesManifest.id, filesManifest],
 ]);
-
-/**
- * Security-sensitive manifest fields that are stripped from renderer-sourced
- * registrations.  These fields grant capabilities that must only come from
- * the on-disk manifest read by the main process.
- */
-const SENSITIVE_FIELDS: (keyof PluginManifest)[] = ['allowedCommands'];
 
 let manifestsEnabled = true;
 let communityManifestsEnabled = false;
@@ -155,41 +141,26 @@ export function registerTrustedManifest(pluginId: string, manifest: PluginManife
 }
 
 /**
- * Register a manifest from an untrusted source (renderer IPC).
- * Strips security-sensitive fields to prevent self-escalation.
- */
-export function registerManifest(pluginId: string, manifest: PluginManifest): void {
-  const sanitized = { ...manifest };
-  for (const field of SENSITIVE_FIELDS) {
-    delete sanitized[field];
-  }
-  untrustedManifests.set(pluginId, sanitized);
-}
-
-/**
- * Get the manifest for a plugin.  Prefers the trusted manifest if available.
+ * Get the manifest for a plugin from the trusted registry.
  */
 export function getManifest(pluginId: string): PluginManifest | undefined {
-  return trustedManifests.get(pluginId) ?? untrustedManifests.get(pluginId);
+  return trustedManifests.get(pluginId);
 }
 
 /**
  * Get allowed commands for a plugin.
- * ONLY returns commands from trusted (disk-sourced) manifests.
+ * Only returns commands from trusted (disk-sourced) manifests.
  */
 export function getAllowedCommands(pluginId: string): string[] {
   return trustedManifests.get(pluginId)?.allowedCommands ?? [];
 }
 
 export function unregisterManifest(pluginId: string): boolean {
-  const a = trustedManifests.delete(pluginId);
-  const b = untrustedManifests.delete(pluginId);
-  return a || b;
+  return trustedManifests.delete(pluginId);
 }
 
 export function clear(): void {
   trustedManifests.clear();
-  untrustedManifests.clear();
   manifestsEnabled = true;
   communityManifestsEnabled = false;
 }

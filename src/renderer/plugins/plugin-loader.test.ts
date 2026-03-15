@@ -12,7 +12,6 @@ const mockPlugin = {
   storageWrite: vi.fn(),
   storageDelete: vi.fn(),
   storageList: vi.fn(),
-  registerManifest: vi.fn(),
   refreshManifestFromDisk: vi.fn(),
 };
 const mockFile = { read: vi.fn(), write: vi.fn(), delete: vi.fn(), readTree: vi.fn() };
@@ -469,14 +468,16 @@ describe('plugin-loader', () => {
         expect(store.modules['files']).toBe(filesModule);
       });
 
-      it('calls registerManifest for each built-in plugin', async () => {
+      it('does not call registerManifest for built-in plugins (loaded at startup)', async () => {
         setupRealisticBuiltins();
 
         await initializePluginSystem();
 
-        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('hub', hubManifest);
-        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('terminal', terminalManifest);
-        expect(mockPlugin.registerManifest).toHaveBeenCalledWith('files', filesManifest);
+        // Built-in manifests are loaded by initializeTrustedManifests in the
+        // main process — no IPC registration should happen for them.
+        expect(mockPlugin.refreshManifestFromDisk).not.toHaveBeenCalledWith('hub');
+        expect(mockPlugin.refreshManifestFromDisk).not.toHaveBeenCalledWith('terminal');
+        expect(mockPlugin.refreshManifestFromDisk).not.toHaveBeenCalledWith('files');
       });
 
       it('does not activate project-scoped builtins during init (terminal, files)', async () => {

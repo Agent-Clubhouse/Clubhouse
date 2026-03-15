@@ -20,6 +20,7 @@ vi.mock('../services/plugin-storage', () => ({
 vi.mock('../services/plugin-discovery', () => ({
   discoverCommunityPlugins: vi.fn(async () => []),
   uninstallPlugin: vi.fn(),
+  refreshManifestFromDisk: vi.fn(async () => null),
   listProjectPluginInjections: vi.fn(() => ({
     skills: [],
     agentTemplates: [],
@@ -46,7 +47,6 @@ vi.mock('../services/safe-mode', () => ({
 
 vi.mock('../services/plugin-manifest-registry', () => ({
   initializeTrustedManifests: vi.fn(),
-  refreshManifest: vi.fn(),
   unregisterManifest: vi.fn(),
 }));
 
@@ -83,7 +83,7 @@ describe('plugin-handlers', () => {
       IPC.PLUGIN.GITIGNORE_ADD, IPC.PLUGIN.GITIGNORE_REMOVE, IPC.PLUGIN.GITIGNORE_CHECK,
       IPC.PLUGIN.STARTUP_MARKER_READ, IPC.PLUGIN.STARTUP_MARKER_WRITE, IPC.PLUGIN.STARTUP_MARKER_CLEAR,
       IPC.PLUGIN.MKDIR, IPC.PLUGIN.UNINSTALL,
-      IPC.PLUGIN.REGISTER_MANIFEST,
+      IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK,
       IPC.PLUGIN.LIST_PROJECT_INJECTIONS,
       IPC.PLUGIN.CLEANUP_PROJECT_INJECTIONS,
       IPC.PLUGIN.LIST_ORPHANED_PLUGIN_IDS,
@@ -218,11 +218,10 @@ describe('plugin-handlers', () => {
     expect(pluginManifestRegistry.unregisterManifest).toHaveBeenCalledWith('p1');
   });
 
-  it('REGISTER_MANIFEST reloads the trusted manifest by plugin id', async () => {
-    const manifest = { id: 'p1', name: 'Test', version: '1.0.0', engine: { api: 0.5 }, scope: 'project' };
-    const handler = handlers.get(IPC.PLUGIN.REGISTER_MANIFEST)!;
-    await handler({}, 'p1', manifest);
-    expect(pluginManifestRegistry.refreshManifest).toHaveBeenCalledWith('p1');
+  it('REFRESH_MANIFEST_FROM_DISK delegates to pluginDiscovery.refreshManifestFromDisk', async () => {
+    const handler = handlers.get(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK)!;
+    await handler({}, 'p1');
+    expect(pluginDiscovery.refreshManifestFromDisk).toHaveBeenCalledWith('p1');
   });
 
   it('LIST_PROJECT_INJECTIONS delegates to pluginDiscovery.listProjectPluginInjections', async () => {

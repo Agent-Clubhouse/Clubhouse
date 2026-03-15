@@ -4,7 +4,6 @@ import * as path from 'path';
 import { IPC } from '../../shared/ipc-channels';
 import type {
   PluginFileRequest,
-  PluginManifest,
   PluginStorageDeleteRequest,
   PluginStorageListRequest,
   PluginStorageReadRequest,
@@ -197,15 +196,9 @@ export function registerPluginHandlers(): void {
   }));
 
   // ── Manifest Registry ─────────────────────────────────────────────────
-  // NOTE: REGISTER_MANIFEST from the renderer triggers a trusted disk re-read
-  // rather than accepting the renderer-supplied manifest payload, preventing
-  // self-escalation attacks (e.g., injecting allowedCommands).
-  ipcMain.handle(IPC.PLUGIN.REGISTER_MANIFEST, withValidatedArgs([stringArg(), objectArg<PluginManifest>()], (_event, pluginId: string, _manifest: PluginManifest) => {
-    pluginManifestRegistry.refreshManifest(pluginId);
-  }));
-
   // Re-read a plugin's manifest from disk and register it as trusted.
-  // Used during hot-reload so the renderer doesn't need to send the manifest.
+  // The main process is the sole authority for plugin security policy —
+  // no manifest payload is accepted from the renderer.
   ipcMain.handle(IPC.PLUGIN.REFRESH_MANIFEST_FROM_DISK, withValidatedArgs([stringArg()], async (_event, pluginId: string) => {
     return pluginDiscovery.refreshManifestFromDisk(pluginId);
   }));

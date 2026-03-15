@@ -73,8 +73,8 @@ export async function initializePluginSystem(): Promise<void> {
   const defaults = getDefaultEnabledIds();
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
-    // Register manifest in main-process registry for server-side policy enforcement
-    window.clubhouse.plugin.registerManifest(manifest.id, manifest);
+    // Built-in manifests are loaded by initializeTrustedManifests in the main
+    // process at startup — no IPC registration needed.
     store.setPluginModule(manifest.id, mod);
     // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
     if (defaults.has(manifest.id)) {
@@ -104,8 +104,8 @@ export async function initializePluginSystem(): Promise<void> {
       const result = validateManifest(rawManifest);
       if (result.valid && result.manifest) {
         store.registerPlugin(result.manifest, source, pluginPath, 'registered');
-        // Register manifest in main-process registry for server-side policy enforcement
-        window.clubhouse.plugin.registerManifest(result.manifest.id, result.manifest);
+        // Notify main process to load trusted manifest from disk
+        window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
       } else {
         rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
           meta: { pluginPath, errors: result.errors },
@@ -673,8 +673,8 @@ export async function discoverNewPlugins(): Promise<string[]> {
     const result = validateManifest(rawManifest);
     if (result.valid && result.manifest) {
       store.registerPlugin(result.manifest, source, pluginPath, 'registered');
-      // Register manifest in main-process registry for server-side policy enforcement
-      window.clubhouse.plugin.registerManifest(result.manifest.id, result.manifest);
+      // Notify main process to load trusted manifest from disk
+      window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
       newPluginIds.push(result.manifest.id);
       rendererLog('core:plugins', 'info', `Discovered new plugin: ${result.manifest.id}`, {
         meta: { pluginPath, source },

@@ -202,7 +202,6 @@ export const IPC = {
     MKDIR: 'plugin:mkdir',
     UNINSTALL: 'plugin:uninstall',
     LOAD_MODULE_SOURCE: 'plugin:load-module-source',
-    REGISTER_MANIFEST: 'plugin:register-manifest',
     REFRESH_MANIFEST_FROM_DISK: 'plugin:refresh-manifest-from-disk',
     CLEANUP_PROJECT_INJECTIONS: 'plugin:cleanup-project-injections',
     LIST_PROJECT_INJECTIONS: 'plugin:list-project-injections',
