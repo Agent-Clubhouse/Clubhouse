@@ -267,7 +267,7 @@ describe('agent-handlers', () => {
   it('SPAWN_AGENT logs and rethrows on error', async () => {
     vi.mocked(agentSystem.spawnAgent).mockRejectedValueOnce(new Error('spawn failed'));
     const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
-    await expect(handler({}, { agentId: 'a1', kind: 'durable', orchestrator: 'claude-code' })).rejects.toThrow('spawn failed');
+    await expect(handler({}, { agentId: 'a1', projectPath: '/p', cwd: '/p', kind: 'durable', orchestrator: 'claude-code' })).rejects.toThrow('spawn failed');
     expect(appLog).toHaveBeenCalledWith('core:ipc', 'error', 'Agent spawn failed', expect.objectContaining({
       meta: expect.objectContaining({ agentId: 'a1', error: 'spawn failed' }),
     }));
@@ -347,5 +347,37 @@ describe('agent-handlers', () => {
     const result = await handler({}, 'a1');
     expect(agentSystem.isHeadlessAgent).toHaveBeenCalledWith('a1');
     expect(result).toBe(false);
+  });
+
+  // --- Input validation ---
+
+  it('rejects non-string projectPath for LIST_DURABLE', () => {
+    const handler = handlers.get(IPC.AGENT.LIST_DURABLE)!;
+    expect(() => handler({}, 123)).toThrow('must be a string');
+  });
+
+  it('rejects non-string agentId for DELETE_DURABLE', () => {
+    const handler = handlers.get(IPC.AGENT.DELETE_DURABLE)!;
+    expect(() => handler({}, '/project', null)).toThrow('must be a string');
+  });
+
+  it('rejects non-object updates for UPDATE_DURABLE', () => {
+    const handler = handlers.get(IPC.AGENT.UPDATE_DURABLE)!;
+    expect(() => handler({}, '/project', 'a1', 'not-an-object')).toThrow('must be an object');
+  });
+
+  it('rejects SPAWN_AGENT with missing required fields', () => {
+    const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
+    expect(() => handler({}, { agentId: 'a1' })).toThrow('projectPath must be a non-empty string');
+  });
+
+  it('rejects SPAWN_AGENT with non-object param', () => {
+    const handler = handlers.get(IPC.AGENT.SPAWN_AGENT)!;
+    expect(() => handler({}, 'not-an-object')).toThrow('must be an object');
+  });
+
+  it('rejects non-integer offset for READ_TRANSCRIPT_PAGE', () => {
+    const handler = handlers.get(IPC.AGENT.READ_TRANSCRIPT_PAGE)!;
+    expect(() => handler({}, 'a1', 1.5, 10)).toThrow('must be an integer');
   });
 });

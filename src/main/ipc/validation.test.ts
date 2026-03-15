@@ -1,5 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { stringArg } from './validation';
+import { stringArg, booleanArg } from './validation';
+
+describe('booleanArg', () => {
+  it('rejects non-boolean values', () => {
+    const validator = booleanArg();
+    expect(() => validator('true', 'test')).toThrow('must be a boolean');
+    expect(() => validator(1, 'test')).toThrow('must be a boolean');
+    expect(() => validator(null, 'test')).toThrow('must be a boolean');
+  });
+
+  it('accepts boolean values', () => {
+    const validator = booleanArg();
+    expect(validator(true, 'test')).toBe(true);
+    expect(validator(false, 'test')).toBe(false);
+  });
+
+  it('allows undefined when optional', () => {
+    const validator = booleanArg({ optional: true });
+    expect(validator(undefined, 'test')).toBeUndefined();
+    expect(validator(true, 'test')).toBe(true);
+  });
+
+  it('rejects undefined when not optional', () => {
+    const validator = booleanArg();
+    expect(() => validator(undefined, 'test')).toThrow('must be a boolean');
+  });
+});
 
 describe('stringArg', () => {
   it('rejects non-string values', () => {

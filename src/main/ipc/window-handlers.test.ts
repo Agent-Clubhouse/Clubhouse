@@ -465,6 +465,23 @@ describe('window-handlers', () => {
 
   // ── Hub mutation forwarding ──────────────────────────────────────────
 
+  // --- Input validation ---
+
+  it('rejects non-object params for CREATE_POPOUT', () => {
+    const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects invalid type for CREATE_POPOUT', () => {
+    const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    expect(() => handler({}, { type: 'invalid' })).toThrow("must be 'agent' or 'hub'");
+  });
+
+  it('rejects non-number windowId for CLOSE_POPOUT', () => {
+    const handler = handlers.get(IPC.WINDOW.CLOSE_POPOUT)!;
+    expect(() => handler({}, 'not-a-number')).toThrow('must be a number');
+  });
+
   it('HUB_MUTATION is forwarded to the main window', async () => {
     const mainWin = new (BrowserWindow as any)({});
     // Create a popout so mainWin is distinguishable

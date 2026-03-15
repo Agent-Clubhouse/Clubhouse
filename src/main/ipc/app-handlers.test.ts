@@ -570,4 +570,41 @@ describe('app-handlers', () => {
     await handler({}, { enabled: true }, '/project');
     expect(ensureDefaultTemplates).toHaveBeenCalledWith('/project');
   });
+
+  // --- Input validation ---
+
+  it('rejects non-string URL for OPEN_EXTERNAL_URL', () => {
+    const handler = handleHandlers.get(IPC.APP.OPEN_EXTERNAL_URL)!;
+    expect(() => handler({}, 123)).toThrow('must be a string');
+  });
+
+  it('rejects non-object for SAVE_NOTIFICATION_SETTINGS', () => {
+    const handler = handleHandlers.get(IPC.APP.SAVE_NOTIFICATION_SETTINGS)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects non-boolean for SEND_NOTIFICATION silent param', () => {
+    const handler = handleHandlers.get(IPC.APP.SEND_NOTIFICATION)!;
+    expect(() => handler({}, 'Title', 'Body', 'not-boolean')).toThrow('must be a boolean');
+  });
+
+  it('rejects non-number for SET_DOCK_BADGE', () => {
+    const handler = handleHandlers.get(IPC.APP.SET_DOCK_BADGE)!;
+    expect(() => handler({}, 'not-a-number')).toThrow('must be a number');
+  });
+
+  it('rejects non-object for SAVE_UPDATE_SETTINGS', () => {
+    const handler = handleHandlers.get(IPC.APP.SAVE_UPDATE_SETTINGS)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects non-string for DELETE_SOUND_PACK', () => {
+    const handler = handleHandlers.get(IPC.APP.DELETE_SOUND_PACK)!;
+    expect(() => handler({}, null)).toThrow('must be a string');
+  });
+
+  it('rejects non-object for LOG_WRITE', () => {
+    const handler = onHandlers.get(IPC.LOG.LOG_WRITE)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
 });

@@ -83,9 +83,9 @@ describe('profile-handlers', () => {
       expect(mockDeleteProfile).toHaveBeenCalledWith('prof-123');
     });
 
-    it('handles empty string profileId', () => {
-      handlers['profile:delete-profile']({}, '');
-      expect(mockDeleteProfile).toHaveBeenCalledWith('');
+    it('rejects empty string profileId', () => {
+      expect(() => handlers['profile:delete-profile']({}, '')).toThrow('must be at least 1 character');
+      expect(mockDeleteProfile).not.toHaveBeenCalled();
     });
   });
 
@@ -112,6 +112,25 @@ describe('profile-handlers', () => {
 
       const result = handlers['profile:get-profile-env-keys']({}, 'claude-code');
       expect(result).toEqual([]);
+    });
+  });
+
+  // --- Input validation ---
+
+  describe('validation', () => {
+    it('rejects non-object for SAVE_PROFILE', () => {
+      expect(() => handlers['profile:save-profile']({}, 'not-object')).toThrow('must be an object');
+      expect(mockSaveProfile).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-string for DELETE_PROFILE', () => {
+      expect(() => handlers['profile:delete-profile']({}, 123)).toThrow('must be a string');
+      expect(mockDeleteProfile).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-string for GET_PROFILE_ENV_KEYS', () => {
+      expect(() => handlers['profile:get-profile-env-keys']({}, null)).toThrow('must be a string');
+      expect(mockGetProvider).not.toHaveBeenCalled();
     });
   });
 });

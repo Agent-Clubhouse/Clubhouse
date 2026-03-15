@@ -3,6 +3,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { getSettings as getThemeSettings } from '../services/theme-service';
 import { getThemeColorsForTitleBar } from '../title-bar-colors';
 import { appLog } from '../services/log-service';
+import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 declare const MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY: string;
@@ -125,7 +126,13 @@ function broadcastToPopouts(channel: string, ...args: any[]): void {
 }
 
 export function registerWindowHandlers(): void {
-  ipcMain.handle(IPC.WINDOW.CREATE_POPOUT, (_event, params: PopoutParams) => {
+  ipcMain.handle(IPC.WINDOW.CREATE_POPOUT, withValidatedArgs(
+    [objectArg<PopoutParams>({
+      validate: (v, name) => {
+        if (v.type !== 'agent' && v.type !== 'hub') throw new Error(`${name}.type must be 'agent' or 'hub'`);
+      },
+    })],
+    (_event, params) => {
     const themeColors = getThemeColors();
     const isWin = process.platform === 'win32';
 
@@ -181,15 +188,17 @@ export function registerWindowHandlers(): void {
     });
 
     return windowId;
-  });
+  }));
 
-  ipcMain.handle(IPC.WINDOW.CLOSE_POPOUT, (_event, windowId: number) => {
+  ipcMain.handle(IPC.WINDOW.CLOSE_POPOUT, withValidatedArgs(
+    [numberArg({ integer: true })],
+    (_event, windowId) => {
     const entry = popoutWindows.get(windowId);
     if (entry && !entry.window.isDestroyed()) {
       entry.window.close();
     }
     popoutWindows.delete(windowId);
-  });
+  }));
 
   ipcMain.handle(IPC.WINDOW.LIST_POPOUTS, () => {
     const list: Array<{ windowId: number; params: PopoutParams }> = [];
@@ -208,7 +217,9 @@ export function registerWindowHandlers(): void {
     return list;
   });
 
-  ipcMain.handle(IPC.WINDOW.FOCUS_MAIN, (_event, agentId?: string) => {
+  ipcMain.handle(IPC.WINDOW.FOCUS_MAIN, withValidatedArgs(
+    [stringArg({ optional: true })],
+    (_event, agentId) => {
     const mainWindow = findMainWindow();
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -217,7 +228,7 @@ export function registerWindowHandlers(): void {
         mainWindow.webContents.send(IPC.WINDOW.NAVIGATE_TO_AGENT, agentId);
       }
     }
-  });
+  }));
 
   // ── Agent state sync ────────────────────────────────────────────────────
   //
@@ -247,7 +258,9 @@ export function registerWindowHandlers(): void {
   // Same pattern: cache from HUB_STATE_CHANGED broadcasts, serve from
   // cache on GET_HUB_STATE, fall back to batched relay with 1.5s timeout.
 
-  ipcMain.handle(IPC.WINDOW.GET_HUB_STATE, (_event, hubId: string, scope: string, projectId?: string) => {
+  ipcMain.handle(IPC.WINDOW.GET_HUB_STATE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    (_event, hubId, scope, projectId) => {
     const cached = cachedHubState.get(hubId);
     if (cached) return cached;
 
@@ -275,7 +288,7 @@ export function registerWindowHandlers(): void {
       ipcMain.once(channel as any, handler);
       mainWindow.webContents.send(IPC.WINDOW.REQUEST_HUB_STATE, requestId, hubId, scope, projectId);
     });
-  });
+  }));
 
   // Forward hub state relay responses from the main renderer
   ipcMain.on(IPC.WINDOW.HUB_STATE_RESPONSE, (_event, requestId: string, state: any) => {

@@ -113,4 +113,36 @@ describe('marketplace-handlers', () => {
     expect(customMarketplaceService.toggleCustomMarketplace).toHaveBeenCalledWith(req);
     expect(result.enabled).toBe(false);
   });
+
+  // --- Input validation ---
+
+  it('rejects non-object for INSTALL_PLUGIN', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.INSTALL_PLUGIN)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects INSTALL_PLUGIN with missing pluginId', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.INSTALL_PLUGIN)!;
+    expect(() => handler({}, { version: '1.0', assetUrl: 'url', sha256: 'abc' })).toThrow('pluginId must be a non-empty string');
+  });
+
+  it('rejects non-object for UPDATE_PLUGIN', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.UPDATE_PLUGIN)!;
+    expect(() => handler({}, 'not-object')).toThrow('must be an object');
+  });
+
+  it('rejects ADD_CUSTOM with missing name', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.ADD_CUSTOM)!;
+    expect(() => handler({}, { url: 'https://example.com' })).toThrow('name must be a non-empty string');
+  });
+
+  it('rejects REMOVE_CUSTOM with missing id', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.REMOVE_CUSTOM)!;
+    expect(() => handler({}, {})).toThrow('id must be a non-empty string');
+  });
+
+  it('rejects TOGGLE_CUSTOM with non-boolean enabled', () => {
+    const handler = handlers.get(IPC.MARKETPLACE.TOGGLE_CUSTOM)!;
+    expect(() => handler({}, { id: 'cm-1', enabled: 'yes' })).toThrow('enabled must be a boolean');
+  });
 });

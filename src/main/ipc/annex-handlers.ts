@@ -5,6 +5,7 @@ import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
+import { withValidatedArgs, objectArg } from './validation';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
@@ -16,7 +17,9 @@ export function registerAnnexHandlers(): void {
     return annexSettings.getSettings();
   });
 
-  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, async (_event, settings: AnnexSettings) => {
+  ipcMain.handle(IPC.ANNEX.SAVE_SETTINGS, withValidatedArgs(
+    [objectArg<AnnexSettings>()],
+    async (_event, settings) => {
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
 
@@ -37,7 +40,7 @@ export function registerAnnexHandlers(): void {
 
     // Notify renderer of status change
     broadcastStatusChanged();
-  });
+  }));
 
   ipcMain.handle(IPC.ANNEX.GET_STATUS, () => {
     return annexServer.getStatus();

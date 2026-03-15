@@ -413,4 +413,36 @@ describe('agent-settings-handlers', () => {
     expect(result).toEqual({ ok: false, message: 'Agent not found', propagatedCount: 0 });
     expect(propagateChanges).not.toHaveBeenCalled();
   });
+
+  // --- Input validation ---
+
+  it('rejects non-string worktreePath for READ_INSTRUCTIONS', () => {
+    const handler = handlers.get(IPC.AGENT.READ_INSTRUCTIONS)!;
+    expect(() => handler({}, 123)).toThrow('must be a string');
+  });
+
+  it('rejects non-string content for SAVE_INSTRUCTIONS', () => {
+    const handler = handlers.get(IPC.AGENT.SAVE_INSTRUCTIONS)!;
+    expect(() => handler({}, '/worktree', null)).toThrow('must be a string');
+  });
+
+  it('rejects non-boolean isSource for CREATE_SKILL', () => {
+    const handler = handlers.get(IPC.AGENT.CREATE_SKILL)!;
+    expect(() => handler({}, '/base', 'skill', 'not-bool')).toThrow('must be a boolean');
+  });
+
+  it('rejects non-object permissions for SAVE_PERMISSIONS', () => {
+    const handler = handlers.get(IPC.AGENT.SAVE_PERMISSIONS)!;
+    expect(() => handler({}, '/worktree', 'not-an-object')).toThrow('must be an object');
+  });
+
+  it('rejects non-object defaults for WRITE_PROJECT_AGENT_DEFAULTS', () => {
+    const handler = handlers.get(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS)!;
+    expect(() => handler({}, '/project', 'not-an-object')).toThrow('must be an object');
+  });
+
+  it('rejects non-array selectedItemIds for PROPAGATE_CONFIG_CHANGES', () => {
+    const handler = handlers.get(IPC.AGENT.PROPAGATE_CONFIG_CHANGES)!;
+    expect(() => handler({}, '/project', 'a1', 'not-an-array')).toThrow('must be an array');
+  });
 });
