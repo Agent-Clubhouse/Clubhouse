@@ -1,11 +1,12 @@
 import { exec, execSync } from 'child_process';
-import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { app } from 'electron';
 import { DurableAgentConfig, OrchestratorId, QuickAgentDefaults, SessionInfo, WorktreeStatus, DeleteResult, GitStatusFile, GitLogEntry } from '../../shared/types';
 import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
+import { pathExists } from './fs-utils';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
 function execGitAsync(cmd: string, cwd: string): Promise<string> {
@@ -17,10 +18,8 @@ function execGitAsync(cmd: string, cwd: string): Promise<string> {
   });
 }
 
-function ensureDir(dir: string): void {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+async function ensureDir(dir: string): Promise<void> {
+  await fsp.mkdir(dir, { recursive: true });
 }
 
 function clubhouseDir(projectPath: string): string {
@@ -37,7 +36,7 @@ const GITIGNORE_BLOCK = `# Clubhouse agent manager
 .clubhouse/agents.json
 .clubhouse/settings.local.json`;
 
-export function ensureGitignore(projectPath: string): void {
+export async function ensureGitignore(projectPath: string): Promise<void> {
   const gitignorePath = path.join(projectPath, '.gitignore');
 
   const requiredLines = [
@@ -47,8 +46,8 @@ export function ensureGitignore(projectPath: string): void {
     '.clubhouse/settings.local.json',
   ];
 
-  if (fs.existsSync(gitignorePath)) {
-    const content = fs.readFileSync(gitignorePath, 'utf-8');
+  if (await pathExists(gitignorePath)) {
+    const content = await fsp.readFile(gitignorePath, 'utf-8');
 
     // Check which lines are missing
     const missing = requiredLines.filter((line) => !content.includes(line));
@@ -61,9 +60,9 @@ export function ensureGitignore(projectPath: string): void {
     }
     parts.push(...missing);
 
-    fs.appendFileSync(gitignorePath, `\n${parts.join('\n')}\n`);
+    await fsp.appendFile(gitignorePath, `\n${parts.join('\n')}\n`);
   } else {
-    fs.writeFileSync(gitignorePath, `${GITIGNORE_BLOCK}\n`);
+    await fsp.writeFile(gitignorePath, `${GITIGNORE_BLOCK}\n`);
   }
 }
 
@@ -80,11 +79,11 @@ const configCache = new Map<string, CacheEntry>();
 /** How long to wait before flushing dirty cache entries to disk (ms) */
 const FLUSH_DELAY_MS = 100;
 
-function readAgentsFromDisk(projectPath: string): DurableAgentConfig[] {
+async function readAgentsFromDisk(projectPath: string): Promise<DurableAgentConfig[]> {
   const configPath = agentsConfigPath(projectPath);
-  if (!fs.existsSync(configPath)) return [];
+  if (!(await pathExists(configPath))) return [];
   try {
-    const agents: DurableAgentConfig[] = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const agents: DurableAgentConfig[] = JSON.parse(await fsp.readFile(configPath, 'utf-8'));
     return agents;
   } catch (err) {
     appLog('core:agent-config', 'error', 'Failed to parse agents.json', {
@@ -94,18 +93,18 @@ function readAgentsFromDisk(projectPath: string): DurableAgentConfig[] {
   }
 }
 
-function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): void {
-  ensureDir(clubhouseDir(projectPath));
-  fs.writeFileSync(agentsConfigPath(projectPath), JSON.stringify(agents, null, 2), 'utf-8');
+async function writeAgentsToDisk(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
+  await ensureDir(clubhouseDir(projectPath));
+  await fsp.writeFile(agentsConfigPath(projectPath), JSON.stringify(agents, null, 2), 'utf-8');
 }
 
-function flushEntry(projectPath: string, entry: CacheEntry): void {
+async function flushEntry(projectPath: string, entry: CacheEntry): Promise<void> {
   if (entry.flushTimer) {
     clearTimeout(entry.flushTimer);
     entry.flushTimer = null;
   }
   if (entry.dirty) {
-    writeAgentsToDisk(projectPath, entry.agents);
+    await writeAgentsToDisk(projectPath, entry.agents);
     entry.dirty = false;
   }
 }
@@ -119,16 +118,16 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
   }, FLUSH_DELAY_MS);
 }
 
-function readAgents(projectPath: string): DurableAgentConfig[] {
+async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents: readAgentsFromDisk(projectPath), dirty: false, flushTimer: null };
+    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null };
     configCache.set(projectPath, entry);
   }
   return entry.agents;
 }
 
-function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
+async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): Promise<void> {
   let entry = configCache.get(projectPath);
   if (!entry) {
     entry = { agents, dirty: true, flushTimer: null };
@@ -141,17 +140,17 @@ function writeAgents(projectPath: string, agents: DurableAgentConfig[]): void {
 }
 
 /** Flush any pending writes for a project path immediately */
-export function flushAgentConfig(projectPath: string): void {
+export async function flushAgentConfig(projectPath: string): Promise<void> {
   const entry = configCache.get(projectPath);
   if (entry) {
-    flushEntry(projectPath, entry);
+    await flushEntry(projectPath, entry);
   }
 }
 
 /** Flush all pending writes across all project paths */
-export function flushAllAgentConfigs(): void {
+export async function flushAllAgentConfigs(): Promise<void> {
   for (const [projectPath, entry] of configCache) {
-    flushEntry(projectPath, entry);
+    await flushEntry(projectPath, entry);
   }
 }
 
@@ -166,21 +165,21 @@ export function clearAgentConfigCache(): void {
   configCache.clear();
 }
 
-export function listDurable(projectPath: string): DurableAgentConfig[] {
+export async function listDurable(projectPath: string): Promise<DurableAgentConfig[]> {
   return readAgents(projectPath);
 }
 
-export function getDurableConfig(projectPath: string, agentId: string): DurableAgentConfig | null {
-  const agents = readAgents(projectPath);
+export async function getDurableConfig(projectPath: string, agentId: string): Promise<DurableAgentConfig | null> {
+  const agents = await readAgents(projectPath);
   return agents.find((a) => a.id === agentId) || null;
 }
 
-export function updateDurableConfig(
+export async function updateDurableConfig(
   projectPath: string,
   agentId: string,
   updates: { quickAgentDefaults?: QuickAgentDefaults; orchestrator?: OrchestratorId; model?: string; freeAgentMode?: boolean; clubhouseModeOverride?: boolean; lastSessionId?: string | null },
-): void {
-  const agents = readAgents(projectPath);
+): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   if (updates.quickAgentDefaults !== undefined) {
@@ -217,20 +216,20 @@ export function updateDurableConfig(
       delete agent.lastSessionId;
     }
   }
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 }
 
 /** Persist the last CLI session ID for a durable agent */
-export function updateSessionId(projectPath: string, agentId: string, sessionId: string | null): void {
-  updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
+export async function updateSessionId(projectPath: string, agentId: string, sessionId: string | null): Promise<void> {
+  await updateDurableConfig(projectPath, agentId, { lastSessionId: sessionId });
 }
 
 /** Maximum number of sessions to keep in history per agent */
 const MAX_SESSION_HISTORY = 50;
 
 /** Add or update a session entry in the agent's session history */
-export function addSessionEntry(projectPath: string, agentId: string, entry: SessionInfo): void {
-  const agents = readAgents(projectPath);
+export async function addSessionEntry(projectPath: string, agentId: string, entry: SessionInfo): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
 
@@ -262,12 +261,12 @@ export function addSessionEntry(projectPath: string, agentId: string, entry: Ses
   // Also update lastSessionId
   agent.lastSessionId = entry.sessionId;
 
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 }
 
 /** Set or clear the friendly name for a session */
-export function updateSessionName(projectPath: string, agentId: string, sessionId: string, friendlyName: string | null): void {
-  const agents = readAgents(projectPath);
+export async function updateSessionName(projectPath: string, agentId: string, sessionId: string, friendlyName: string | null): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent?.sessionHistory) return;
 
@@ -280,12 +279,12 @@ export function updateSessionName(projectPath: string, agentId: string, sessionI
     delete session.friendlyName;
   }
 
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 }
 
 /** Get session history for an agent */
-export function getSessionHistory(projectPath: string, agentId: string): SessionInfo[] {
-  const agent = getDurableConfig(projectPath, agentId);
+export async function getSessionHistory(projectPath: string, agentId: string): Promise<SessionInfo[]> {
+  const agent = await getDurableConfig(projectPath, agentId);
   if (!agent?.sessionHistory) return [];
   // Return sorted by most recently active first
   return [...agent.sessionHistory].sort((a, b) =>
@@ -303,8 +302,8 @@ export async function createDurable(
   freeAgentMode?: boolean,
   mcpIds?: string[],
 ): Promise<DurableAgentConfig> {
-  ensureDir(clubhouseDir(projectPath));
-  ensureGitignore(projectPath);
+  await ensureDir(clubhouseDir(projectPath));
+  await ensureGitignore(projectPath);
 
   const id = `durable_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -316,7 +315,7 @@ export async function createDurable(
     worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
 
     // Create the branch (from current HEAD)
-    const hasGit = fs.existsSync(path.join(projectPath, '.git'));
+    const hasGit = await pathExists(path.join(projectPath, '.git'));
     if (hasGit) {
       // Ensure repo has at least one commit (required for branching/worktrees)
       try {
@@ -329,7 +328,7 @@ export async function createDurable(
         });
         try {
           const gitignorePath = path.join(projectPath, '.gitignore');
-          if (fs.existsSync(gitignorePath)) {
+          if (await pathExists(gitignorePath)) {
             await execGitAsync('git add .gitignore', projectPath);
           }
           await execGitAsync('git commit --allow-empty -m "Clubhouse - Initial Commit"', projectPath);
@@ -351,7 +350,7 @@ export async function createDurable(
       }
 
       try {
-        ensureDir(path.dirname(worktreePath));
+        await ensureDir(path.dirname(worktreePath));
         await execGitAsync(`git worktree add "${worktreePath}" "${branch}"`, projectPath);
       } catch (err) {
         appLog('core:agent-config', 'warn', 'Git worktree creation failed, falling back to plain directory', {
@@ -362,10 +361,10 @@ export async function createDurable(
             error: err instanceof Error ? err.message : String(err),
           },
         });
-        ensureDir(worktreePath);
+        await ensureDir(worktreePath);
       }
     } else {
-      ensureDir(worktreePath);
+      await ensureDir(worktreePath);
     }
   }
 
@@ -386,9 +385,9 @@ export async function createDurable(
     ...(mcpIds && mcpIds.length > 0 ? { mcpIds } : {}),
   };
 
-  const agents = readAgents(projectPath);
+  const agents = await readAgents(projectPath);
   agents.push(config);
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 
   // Apply project-level defaults as snapshots into the new worktree
   if (worktreePath) {
@@ -413,8 +412,8 @@ export async function createDurable(
   return config;
 }
 
-export function reorderDurable(projectPath: string, orderedIds: string[]): DurableAgentConfig[] {
-  const agents = readAgents(projectPath);
+export async function reorderDurable(projectPath: string, orderedIds: string[]): Promise<DurableAgentConfig[]> {
+  const agents = await readAgents(projectPath);
   const byId = new Map(agents.map((a) => [a.id, a]));
   const result: DurableAgentConfig[] = [];
   for (const id of orderedIds) {
@@ -428,24 +427,24 @@ export function reorderDurable(projectPath: string, orderedIds: string[]): Durab
   for (const agent of byId.values()) {
     result.push(agent);
   }
-  writeAgents(projectPath, result);
+  await writeAgents(projectPath, result);
   return result;
 }
 
-export function renameDurable(projectPath: string, agentId: string, newName: string): void {
-  const agents = readAgents(projectPath);
+export async function renameDurable(projectPath: string, agentId: string, newName: string): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   agent.name = newName;
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 }
 
-export function updateDurable(
+export async function updateDurable(
   projectPath: string,
   agentId: string,
   updates: { name?: string; color?: string; icon?: string | null },
-): void {
-  const agents = readAgents(projectPath);
+): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
   if (updates.name !== undefined) agent.name = updates.name;
@@ -457,23 +456,23 @@ export function updateDurable(
       agent.icon = updates.icon;
     }
   }
-  writeAgents(projectPath, agents);
+  await writeAgents(projectPath, agents);
 }
 
-export function deleteDurable(projectPath: string, agentId: string): void {
-  const agents = readAgents(projectPath);
+export async function deleteDurable(projectPath: string, agentId: string): Promise<void> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
 
   // If no worktree, just unregister
   if (!agent.worktreePath) {
     const filtered = agents.filter((a) => a.id !== agentId);
-    writeAgents(projectPath, filtered);
+    await writeAgents(projectPath, filtered);
     return;
   }
 
   // Remove worktree
-  const hasGit = fs.existsSync(path.join(projectPath, '.git'));
+  const hasGit = await pathExists(path.join(projectPath, '.git'));
   if (hasGit) {
     try {
       execSync(`git worktree remove "${agent.worktreePath}" --force`, {
@@ -505,12 +504,12 @@ export function deleteDurable(projectPath: string, agentId: string): void {
   }
 
   // Remove directory if still exists
-  if (fs.existsSync(agent.worktreePath)) {
-    fs.rmSync(agent.worktreePath, { recursive: true, force: true });
+  if (await pathExists(agent.worktreePath)) {
+    await fsp.rm(agent.worktreePath, { recursive: true, force: true });
   }
 
   const filtered = agents.filter((a) => a.id !== agentId);
-  writeAgents(projectPath, filtered);
+  await writeAgents(projectPath, filtered);
 }
 
 async function detectBaseBranch(projectPath: string): Promise<string> {
@@ -547,7 +546,7 @@ function parseLogLine(line: string): GitLogEntry | null {
 }
 
 export async function getWorktreeStatus(projectPath: string, agentId: string): Promise<WorktreeStatus> {
-  const agents = readAgents(projectPath);
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) {
     return { isValid: false, branch: '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
@@ -559,7 +558,11 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   }
 
   const wt = agent.worktreePath;
-  if (!fs.existsSync(wt) || !fs.existsSync(path.join(wt, '.git'))) {
+  const [wtExists, wtGitExists] = await Promise.all([
+    pathExists(wt),
+    pathExists(path.join(wt, '.git')),
+  ]);
+  if (!wtExists || !wtGitExists) {
     return { isValid: false, branch: agent.branch || '', uncommittedFiles: [], unpushedCommits: [], hasRemote: false };
   }
 
@@ -598,14 +601,14 @@ export async function getWorktreeStatus(projectPath: string, agentId: string): P
   };
 }
 
-export function deleteCommitAndPush(projectPath: string, agentId: string): DeleteResult {
-  const agents = readAgents(projectPath);
+export async function deleteCommitAndPush(projectPath: string, agentId: string): Promise<DeleteResult> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
   if (!wt) {
-    deleteDurable(projectPath, agentId);
+    await deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Deleted (no worktree)' };
   }
 
@@ -636,18 +639,18 @@ export function deleteCommitAndPush(projectPath: string, agentId: string): Delet
     return { ok: false, message: err.message || 'Failed to commit' };
   }
 
-  deleteDurable(projectPath, agentId);
+  await deleteDurable(projectPath, agentId);
   return { ok: true, message: 'Committed, pushed, and deleted' };
 }
 
-export function deleteWithCleanupBranch(projectPath: string, agentId: string): DeleteResult {
-  const agents = readAgents(projectPath);
+export async function deleteWithCleanupBranch(projectPath: string, agentId: string): Promise<DeleteResult> {
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
   if (!wt) {
-    deleteDurable(projectPath, agentId);
+    await deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Deleted (no worktree)' };
   }
 
@@ -688,18 +691,18 @@ export function deleteWithCleanupBranch(projectPath: string, agentId: string): D
     return { ok: false, message: err.message || 'Failed to create cleanup branch' };
   }
 
-  deleteDurable(projectPath, agentId);
+  await deleteDurable(projectPath, agentId);
   return { ok: true, message: `Saved to ${cleanupBranch} and deleted` };
 }
 
 export async function deleteSaveAsPatch(projectPath: string, agentId: string, savePath: string): Promise<DeleteResult> {
-  const agents = readAgents(projectPath);
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return { ok: false, message: 'Agent not found' };
 
   const wt = agent.worktreePath;
   if (!wt) {
-    deleteDurable(projectPath, agentId);
+    await deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Deleted (no worktree)' };
   }
 
@@ -752,7 +755,7 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
       patchContent = '# No changes to export\n';
     }
 
-    fs.writeFileSync(savePath, patchContent, 'utf-8');
+    await fsp.writeFile(savePath, patchContent, 'utf-8');
   } catch (err: any) {
     appLog('core:agent-config', 'error', 'Failed to save patch file during agent deletion', {
       meta: { agentId, savePath, error: err.message },
@@ -760,75 +763,73 @@ export async function deleteSaveAsPatch(projectPath: string, agentId: string, sa
     return { ok: false, message: err.message || 'Failed to save patch' };
   }
 
-  deleteDurable(projectPath, agentId);
+  await deleteDurable(projectPath, agentId);
   return { ok: true, message: `Patch saved to ${savePath}` };
 }
 
-export function deleteForce(projectPath: string, agentId: string): DeleteResult {
+export async function deleteForce(projectPath: string, agentId: string): Promise<DeleteResult> {
   try {
-    deleteDurable(projectPath, agentId);
+    await deleteDurable(projectPath, agentId);
     return { ok: true, message: 'Force deleted' };
   } catch (err: any) {
     return { ok: false, message: err.message || 'Failed to force delete' };
   }
 }
 
-export function deleteUnregister(projectPath: string, agentId: string): DeleteResult {
-  const agents = readAgents(projectPath);
+export async function deleteUnregister(projectPath: string, agentId: string): Promise<DeleteResult> {
+  const agents = await readAgents(projectPath);
   const filtered = agents.filter((a) => a.id !== agentId);
-  writeAgents(projectPath, filtered);
+  await writeAgents(projectPath, filtered);
   return { ok: true, message: 'Removed from agents list (files left on disk)' };
 }
 
 // --- Agent icon storage ---
 
-function getAgentIconsDir(): string {
+async function getAgentIconsDir(): Promise<string> {
   const dirName = app.isPackaged ? '.clubhouse' : '.clubhouse-dev';
   const dir = path.join(app.getPath('home'), dirName, 'agent-icons');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  await fsp.mkdir(dir, { recursive: true });
   return dir;
 }
 
 /** Save a cropped PNG data URL as the agent's icon. Returns the filename. */
-export function saveAgentIcon(projectPath: string, agentId: string, dataUrl: string): string {
-  removeAgentIconFile(agentId);
+export async function saveAgentIcon(projectPath: string, agentId: string, dataUrl: string): Promise<string> {
+  await removeAgentIconFile(agentId);
 
   const filename = `${agentId}.png`;
-  const dest = path.join(getAgentIconsDir(), filename);
+  const dest = path.join(await getAgentIconsDir(), filename);
 
   // Strip data URL prefix and write binary
   const base64 = dataUrl.replace(/^data:image\/[\w+.-]+;base64,/, '');
-  fs.writeFileSync(dest, Buffer.from(base64, 'base64'));
+  await fsp.writeFile(dest, Buffer.from(base64, 'base64'));
 
   // Update agents.json
-  const agents = readAgents(projectPath);
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (agent) {
     agent.icon = filename;
-    writeAgents(projectPath, agents);
+    await writeAgents(projectPath, agents);
   }
 
   return filename;
 }
 
 /** Read an agent icon file and return a data URL, or null if not found. */
-export function readAgentIconData(filename: string): string | null {
-  const filePath = path.join(getAgentIconsDir(), filename);
-  if (!fs.existsSync(filePath)) return null;
-  const data = fs.readFileSync(filePath);
+export async function readAgentIconData(filename: string): Promise<string | null> {
+  const filePath = path.join(await getAgentIconsDir(), filename);
+  if (!(await pathExists(filePath))) return null;
+  const data = await fsp.readFile(filePath);
   return `data:image/png;base64,${data.toString('base64')}`;
 }
 
 /** Remove the icon file for an agent. */
-export function removeAgentIconFile(agentId: string): void {
-  const iconsDir = getAgentIconsDir();
+export async function removeAgentIconFile(agentId: string): Promise<void> {
+  const iconsDir = await getAgentIconsDir();
   try {
-    const files = fs.readdirSync(iconsDir);
+    const files = await fsp.readdir(iconsDir);
     for (const file of files) {
       if (file.startsWith(agentId + '.')) {
-        fs.unlinkSync(path.join(iconsDir, file));
+        await fsp.unlink(path.join(iconsDir, file));
       }
     }
   } catch {
@@ -837,12 +838,12 @@ export function removeAgentIconFile(agentId: string): void {
 }
 
 /** Remove agent icon metadata and file. */
-export function removeAgentIcon(projectPath: string, agentId: string): void {
-  removeAgentIconFile(agentId);
-  const agents = readAgents(projectPath);
+export async function removeAgentIcon(projectPath: string, agentId: string): Promise<void> {
+  await removeAgentIconFile(agentId);
+  const agents = await readAgents(projectPath);
   const agent = agents.find((a) => a.id === agentId);
   if (agent) {
     delete agent.icon;
-    writeAgents(projectPath, agents);
+    await writeAgents(projectPath, agents);
   }
 }
