@@ -269,8 +269,21 @@ export function HeadlessAgentView({ agent }: Props) {
   const syncingTranscriptRef = useRef(false);
   const syncRequestedRef = useRef(false);
   const lastHookTimestampRef = useRef(0);
+  const flushRafRef = useRef(0);
+  const feedBufferRef = useRef<FeedItem[]>([]);
   const killAgent = useAgentStore((s) => s.killAgent);
   const spawnedAt = useAgentStore((s) => s.agentSpawnedAt[agent.id]);
+
+  // Batch feed-item state updates: push to buffer ref (O(1)), flush to state
+  // once per animation frame to avoid copying the full array on every event.
+  const scheduleFlush = useCallback(() => {
+    if (flushRafRef.current) return;
+    flushRafRef.current = requestAnimationFrame(() => {
+      flushRafRef.current = 0;
+      feedBufferRef.current = capFeedItems(feedBufferRef.current);
+      setFeedItems([...feedBufferRef.current]);
+    });
+  }, []);
 
   // Elapsed time counter — use the store's spawn timestamp so remounts
   // don't reset the timer (fixes #185).
@@ -283,13 +296,11 @@ export function HeadlessAgentView({ agent }: Props) {
   }, [agent.id, spawnedAt, agent.status]);
 
   const appendNotificationItem = useCallback((message: string, ts: number) => {
-    setFeedItems((prev) => {
-      return capFeedItems([
-        ...prev,
-        createNotificationFeedItem(message, ts, notificationCountsRef.current),
-      ]);
-    });
-  }, []);
+    feedBufferRef.current.push(
+      createNotificationFeedItem(message, ts, notificationCountsRef.current),
+    );
+    scheduleFlush();
+  }, [scheduleFlush]);
 
   // Sync transcript incrementally — hook events trigger immediate syncs while a
   // low-frequency fallback poll (5 s) catches anything hooks miss.
@@ -306,6 +317,7 @@ export function HeadlessAgentView({ agent }: Props) {
     syncingTranscriptRef.current = false;
     syncRequestedRef.current = false;
     lastHookTimestampRef.current = 0;
+    feedBufferRef.current = [];
     setFeedItems([]);
 
     async function syncTranscript(): Promise<void> {
@@ -340,7 +352,8 @@ export function HeadlessAgentView({ agent }: Props) {
           );
 
           if (newItems.length > 0) {
-            setFeedItems((prev) => capFeedItems([...prev, ...newItems]));
+            feedBufferRef.current.push(...newItems);
+            scheduleFlush();
           }
 
           if (transcriptOffsetRef.current >= page.totalEvents) return;
@@ -386,6 +399,10 @@ export function HeadlessAgentView({ agent }: Props) {
       cancelled = true;
       removeListener();
       clearInterval(fallbackInterval);
+      if (flushRafRef.current) {
+        cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = 0;
+      }
     };
   }, [agent.id, appendNotificationItem]);
 

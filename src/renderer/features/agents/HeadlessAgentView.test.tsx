@@ -25,8 +25,12 @@ function resetStore(spawnedAt?: number) {
 
 async function flushAsyncWork() {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
+    // Yield enough microtask ticks for multi-page transcript syncs
+    // to complete before flushing the batched requestAnimationFrame.
+    for (let i = 0; i < 10; i++) {
+      await Promise.resolve();
+    }
+    vi.advanceTimersByTime(16); // flush requestAnimationFrame
     await Promise.resolve();
   });
 }
@@ -362,6 +366,39 @@ describe('HeadlessAgentView', () => {
     await flushAsyncWork();
     const callsAfter5s = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
     expect(callsAfter5s).toBe(2);
+  });
+
+  it('batches rapid notification events into a single state flush', async () => {
+    let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
+    window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
+      hookCallback = cb;
+      return vi.fn();
+    });
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+      events: [],
+      totalEvents: 0,
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+
+    // Fire 5 notification events synchronously — they should be batched
+    // into a single requestAnimationFrame flush instead of 5 array copies.
+    act(() => {
+      for (let i = 0; i < 5; i++) {
+        hookCallback(headlessAgent.id, {
+          kind: 'notification',
+          message: `batch-msg-${i}`,
+          timestamp: Date.now(),
+        });
+      }
+    });
+    await flushAsyncWork();
+
+    // All 5 notifications should appear
+    for (let i = 0; i < 5; i++) {
+      expect(screen.getByText(`batch-msg-${i}`)).toBeInTheDocument();
+    }
   });
 
   it('freezes the timer when the agent is no longer running', () => {
