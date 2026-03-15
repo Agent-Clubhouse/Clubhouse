@@ -162,7 +162,6 @@ import {
   isHeadlessAgent,
   isStructuredAgent,
 } from './agent-system';
-import * as fs from 'fs';
 
 describe('agent-system', () => {
   beforeEach(() => {
