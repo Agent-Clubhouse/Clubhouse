@@ -212,8 +212,10 @@ app.on('before-quit', () => {
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
 
-  // Flush any pending agent config writes to disk
-  flushAllAgentConfigs();
+  // Flush any pending agent config writes to disk (best-effort async)
+  void flushAllAgentConfigs().catch((err) => {
+    appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
+  });
 
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();

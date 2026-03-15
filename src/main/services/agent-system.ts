@@ -333,13 +333,18 @@ async function spawnPtyAgent(
         const sessionId = provider.extractSessionId(buffer);
         if (sessionId) {
           const now = new Date().toISOString();
-          addSessionEntry(params.projectPath, exitAgentId, {
+          void addSessionEntry(params.projectPath, exitAgentId, {
             sessionId,
             startedAt: now,
             lastActiveAt: now,
-          });
-          appLog('core:agent', 'info', 'Captured session ID on exit', {
-            meta: { agentId: exitAgentId, sessionId },
+          }).then(() => {
+            appLog('core:agent', 'info', 'Captured session ID on exit', {
+              meta: { agentId: exitAgentId, sessionId },
+            });
+          }).catch((entryErr) => {
+            appLog('core:agent', 'warn', 'Failed to persist session entry', {
+              meta: { agentId: exitAgentId, sessionId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
+            });
           });
         }
       } catch (err) {
