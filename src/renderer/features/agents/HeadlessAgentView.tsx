@@ -252,6 +252,9 @@ function AnimatedTreehouse() {
 /** How recently a hook must have fired for us to consider hooks "active" and skip polling. */
 const HOOK_ACTIVE_THRESHOLD_MS = 5_000;
 
+/** Fallback poll interval — only used when hooks are not actively firing. */
+const FALLBACK_POLL_INTERVAL_MS = 5_000;
+
 export function HeadlessAgentView({ agent }: Props) {
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
   const [elapsed, setElapsed] = useState(0);
@@ -288,12 +291,10 @@ export function HeadlessAgentView({ agent }: Props) {
     });
   }, []);
 
-  // Poll transcript pages incrementally so the transcript remains the canonical
-  // source for tool/text/result activity without rebuilding the whole feed.
+  // Sync transcript incrementally — hook events trigger immediate syncs while a
+  // low-frequency fallback poll (5 s) catches anything hooks miss.
   useEffect(() => {
     let cancelled = false;
-    let pollCount = 0;
-    let interval: ReturnType<typeof setInterval>;
 
     prevCountRef.current = 0;
     transcriptOffsetRef.current = 0;
@@ -370,27 +371,21 @@ export function HeadlessAgentView({ agent }: Props) {
       },
     );
 
+    // Initial sync on mount
     void syncTranscript();
-    const fastInterval = setInterval(() => {
-      pollCount++;
-      // Skip poll when hooks are actively firing — they already trigger syncs
+
+    // Low-frequency fallback poll — only fires when hooks haven't been active
+    // and the agent is still running.  Hook-triggered syncs handle the common
+    // case so this only matters for startup or providers without hook support.
+    const fallbackInterval = setInterval(() => {
       if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
       void syncTranscript();
-      if (pollCount >= 10) {
-        clearInterval(fastInterval);
-        interval = setInterval(() => {
-          // Skip poll when hooks are actively firing
-          if (Date.now() - lastHookTimestampRef.current < HOOK_ACTIVE_THRESHOLD_MS) return;
-          void syncTranscript();
-        }, 2000);
-      }
-    }, 500);
+    }, FALLBACK_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       removeListener();
-      clearInterval(fastInterval);
-      if (interval) clearInterval(interval);
+      clearInterval(fallbackInterval);
     };
   }, [agent.id, appendNotificationItem]);
 

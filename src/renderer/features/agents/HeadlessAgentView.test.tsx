@@ -224,8 +224,9 @@ describe('HeadlessAgentView', () => {
     expect(screen.getByText('Read')).toBeInTheDocument();
     expect(screen.getByText('Inspect file')).toBeInTheDocument();
 
+    // Advance past the 5s fallback poll interval to trigger the next sync
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(5000);
     });
     await flushAsyncWork();
 
@@ -240,7 +241,7 @@ describe('HeadlessAgentView', () => {
     expect(screen.getByText('Inspect file')).toBeInTheDocument();
   });
 
-  it('suppresses polling when hooks are actively firing', async () => {
+  it('suppresses fallback polling when hooks are actively firing', async () => {
     let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
     window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
       hookCallback = cb;
@@ -257,7 +258,7 @@ describe('HeadlessAgentView', () => {
     await flushAsyncWork();
     const callsAfterMount = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
 
-    // Fire hook events to mark hooks as active
+    // Fire hook event to mark hooks as active
     act(() => {
       hookCallback(headlessAgent.id, {
         kind: 'pre_tool',
@@ -268,22 +269,35 @@ describe('HeadlessAgentView', () => {
     await flushAsyncWork();
     const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
 
-    // Advance past multiple poll intervals (500ms each) while hooks are "active"
-    // The poller should skip these cycles since hooks fired recently
+    // Fire another hook at t=3s to keep hooks "active"
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    act(() => {
+      hookCallback(headlessAgent.id, {
+        kind: 'post_tool',
+        toolName: 'Read',
+        timestamp: Date.now(),
+      });
+    });
+    await flushAsyncWork();
+    const callsAfterSecondHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+
+    // Advance to t=7.5s — the fallback poll at t=5s should have been suppressed
+    // because the second hook at t=3s keeps lastHookTimestamp within the 5s threshold
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4500);
     });
     await flushAsyncWork();
     const callsAfterPolling = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
 
-    // Hook-triggered sync should have added calls, but the poller intervals
-    // should NOT have added any additional calls
-    expect(callsAfterPolling).toBe(callsAfterHook);
-    // Verify hook did trigger at least one sync beyond the initial mount
+    // Only hook-triggered syncs should have occurred, no fallback polls
+    expect(callsAfterPolling).toBe(callsAfterSecondHook);
+    // Verify hooks triggered syncs beyond the initial mount
     expect(callsAfterHook).toBeGreaterThan(callsAfterMount);
   });
 
-  it('resumes polling when hooks stop firing', async () => {
+  it('resumes fallback polling when hooks stop firing', async () => {
     let hookCallback: (agentId: string, event: Record<string, unknown>) => void = () => {};
     window.clubhouse.agent.onHookEvent = vi.fn((cb) => {
       hookCallback = cb;
@@ -308,15 +322,46 @@ describe('HeadlessAgentView', () => {
     await flushAsyncWork();
     const callsAfterHook = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
 
-    // Advance past the hook active threshold (5s) so hooks are no longer "active"
+    // Advance past both the hook active threshold and fallback poll interval
+    // so polling resumes (hook at t=0 is stale by t=10s, and the t=10s poll fires)
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(6000);
+      await vi.advanceTimersByTimeAsync(10_000);
     });
     await flushAsyncWork();
     const callsAfterThreshold = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
 
-    // Polling should have resumed and made additional calls
+    // Fallback polling should have resumed and made additional calls
     expect(callsAfterThreshold).toBeGreaterThan(callsAfterHook);
+  });
+
+  it('does not aggressively poll during startup — only initial sync and fallback', async () => {
+    window.clubhouse.agent.readTranscriptPage = vi.fn().mockResolvedValue({
+      events: [],
+      totalEvents: 0,
+    });
+
+    render(<HeadlessAgentView agent={headlessAgent} />);
+    await flushAsyncWork();
+
+    // Initial mount sync
+    const callsAfterMount = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    expect(callsAfterMount).toBe(1);
+
+    // Advance 4.9s — no fallback poll should have fired yet (interval is 5s)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4900);
+    });
+    await flushAsyncWork();
+    const callsBefore5s = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    expect(callsBefore5s).toBe(1);
+
+    // Advance past the 5s fallback interval — exactly one fallback poll should fire
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await flushAsyncWork();
+    const callsAfter5s = vi.mocked(window.clubhouse.agent.readTranscriptPage).mock.calls.length;
+    expect(callsAfter5s).toBe(2);
   });
 
   it('freezes the timer when the agent is no longer running', () => {
