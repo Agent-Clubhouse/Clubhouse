@@ -23,6 +23,20 @@ vi.mock('fs', () => ({
   },
 }));
 
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => undefined),
+  mkdir: vi.fn(async () => undefined),
+  readdir: vi.fn(async () => []),
+  rm: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => undefined),
+  access: vi.fn(async () => { throw new Error('ENOENT'); }),
+}));
+
+vi.mock('./fs-utils', () => ({
+  pathExists: vi.fn(async () => false),
+}));
+
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -421,8 +435,8 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      // Verify fs.promises.writeFile was called with updated settings
-      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      // Verify fsp.writeFile was called with updated settings
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();
@@ -452,7 +466,7 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();
@@ -481,7 +495,7 @@ describe('config-diff-service', () => {
       expect(result.ok).toBe(true);
       expect(result.propagatedCount).toBe(1);
 
-      const writeCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => String(call[0]).includes('settings.json'),
       );
       expect(writeCall).toBeDefined();

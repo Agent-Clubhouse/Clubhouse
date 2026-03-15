@@ -135,16 +135,6 @@ describe('materialization-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Re-establish async delegates after mockReset clears implementations
-    vi.mocked(fs.promises.readFile).mockImplementation(async (...args: unknown[]) =>
-      (fs.readFileSync as (...a: unknown[]) => unknown)(...args),
-    );
-    vi.mocked(fs.promises.writeFile).mockImplementation(async () => undefined);
-    vi.mocked(fs.promises.mkdir).mockImplementation(async () => undefined);
-    vi.mocked(fs.promises.readdir).mockImplementation(async (...args: unknown[]) =>
-      (fs.readdirSync as (...a: unknown[]) => unknown)(...args),
-    );
-    vi.mocked(fs.promises.access).mockImplementation(async () => { throw new Error('ENOENT'); });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
     vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
@@ -275,7 +265,7 @@ describe('materialization-service', () => {
 
       await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
 
-      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('settings.local.json'),
         expect.stringContaining('.clubhouse/agents/bold-falcon/'),
         'utf-8',
@@ -409,8 +399,8 @@ describe('materialization-service', () => {
 
       await ensureDefaultTemplates('/project');
 
-      // Should have written settings.json via fs.promises.writeFile with agent defaults
-      const settingsWriteCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      // Should have written settings.json via fsp.writeFile with agent defaults
+      const settingsWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
       );
       expect(settingsWriteCall).toBeDefined();
@@ -424,7 +414,7 @@ describe('materialization-service', () => {
 
       await ensureDefaultTemplates('/project');
 
-      const settingsWriteCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      const settingsWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
       );
       expect(settingsWriteCall).toBeDefined();
@@ -445,7 +435,7 @@ describe('materialization-service', () => {
 
       await ensureDefaultTemplates('/project');
 
-      const settingsWriteCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      const settingsWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
       );
       expect(settingsWriteCall).toBeDefined();
@@ -535,7 +525,7 @@ describe('materialization-service', () => {
 
       await resetProjectAgentDefaults('/project');
 
-      const settingsWriteCall = vi.mocked(fs.promises.writeFile).mock.calls.find(
+      const settingsWriteCall = vi.mocked(fsp.writeFile).mock.calls.find(
         (call) => (call[0] as string).includes('settings.json') && !(call[0] as string).includes('SKILL'),
       );
       expect(settingsWriteCall).toBeDefined();
