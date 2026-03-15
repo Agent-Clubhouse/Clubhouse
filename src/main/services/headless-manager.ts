@@ -2,6 +2,7 @@ import { spawn as cpSpawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
+import { createInterface } from 'readline';
 import { app } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { JsonlParser, StreamJsonEvent } from './jsonl-parser';
@@ -439,7 +440,8 @@ export interface TranscriptPage {
 
 /**
  * Return metadata about a transcript without loading event data.
- * Uses async fs to avoid blocking the main process for large files.
+ * Streams the file line-by-line to count events without buffering the entire
+ * file contents in memory.
  */
 export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo | null> {
   // Check in-memory session first
@@ -451,12 +453,18 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
     };
   }
 
-  // Read from disk (evicted session or completed session)
+  // Stream from disk (evicted session or completed session)
   const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
     const stat = await fsPromises.stat(transcriptPath);
-    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
-    const lineCount = raw.split('\n').filter((l) => l.trim()).length;
+    const stream = fs.createReadStream(transcriptPath, { encoding: 'utf-8' });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+    let lineCount = 0;
+    for await (const line of rl) {
+      if (line.trim()) lineCount++;
+    }
+
     return { totalEvents: lineCount, fileSizeBytes: stat.size };
   } catch {
     return null;
@@ -467,7 +475,11 @@ export async function getTranscriptInfo(agentId: string): Promise<TranscriptInfo
  * Return a page of parsed transcript events.
  * `offset` is the 0-based event index; `limit` is the max events to return.
  * Events are returned in chronological order.
- * Uses async fs to avoid blocking the main process.
+ *
+ * Streams the JSONL file line-by-line so that only the lines within the
+ * requested page window are JSON-parsed. Lines before `offset` and after
+ * `offset + limit` are counted but not parsed, avoiding the O(N) parse cost
+ * of the previous read-everything-then-slice approach.
  */
 export async function readTranscriptPage(
   agentId: string,
@@ -482,20 +494,28 @@ export async function readTranscriptPage(
     return { events, totalEvents: total };
   }
 
-  // Disk: evicted session or completed session
+  // Disk: stream lines to avoid loading the entire file into memory and
+  // only JSON.parse the lines within the requested page window.
   const transcriptPath = session?.transcriptPath ?? path.join(LOGS_DIR, `${agentId}.jsonl`);
   try {
-    const raw = await fsPromises.readFile(transcriptPath, 'utf-8');
-    const allEvents = raw
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => {
-        try { return JSON.parse(line) as StreamJsonEvent; } catch { return null; }
-      })
-      .filter(Boolean) as StreamJsonEvent[];
-    const total = allEvents.length;
-    const events = allEvents.slice(offset, offset + limit);
-    return { events, totalEvents: total };
+    const stream = fs.createReadStream(transcriptPath, { encoding: 'utf-8' });
+    const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+    let lineIndex = 0;
+    const events: StreamJsonEvent[] = [];
+
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+
+      // Only parse lines within the requested page window
+      if (lineIndex >= offset && events.length < limit) {
+        try { events.push(JSON.parse(line) as StreamJsonEvent); } catch { /* skip malformed */ }
+      }
+
+      lineIndex++;
+    }
+
+    return { events, totalEvents: lineIndex };
   } catch {
     return null;
   }
