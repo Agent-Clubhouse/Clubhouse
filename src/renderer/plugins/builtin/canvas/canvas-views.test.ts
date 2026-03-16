@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { manifest } from './manifest';
 
 // ── Manifest changes ──────────────────────────────────────────────────
@@ -15,32 +15,23 @@ describe('canvas manifest — new settings', () => {
 // ── FileCanvasView helper logic ───────────────────────────────────────
 
 describe('FileCanvasView — path construction', () => {
-  it('constructs relative paths from currentDir and name', () => {
-    // This tests the path logic used in FileCanvasView:
-    // path: currentDir ? `${currentDir}/${e.name}` : e.name
-    const entries = [
-      { name: 'src', isDirectory: true },
-      { name: 'index.ts', isDirectory: false },
-    ];
+  // Helper matching the logic in FileCanvasView
+  function buildRelativePath(currentDir: string, name: string): string {
+    return currentDir ? `${currentDir}/${name}` : name;
+  }
 
-    // Root level (currentDir = '')
-    const rootPaths = entries.map((e) => ({
-      name: e.name,
-      path: '' ? `${'' }/${e.name}` : e.name,
-      isDirectory: e.isDirectory,
-    }));
-    expect(rootPaths[0].path).toBe('src');
-    expect(rootPaths[1].path).toBe('index.ts');
+  it('constructs relative paths at root level', () => {
+    expect(buildRelativePath('', 'src')).toBe('src');
+    expect(buildRelativePath('', 'index.ts')).toBe('index.ts');
+  });
 
-    // Nested level (currentDir = 'src')
-    const nestedEntries = [{ name: 'utils', isDirectory: true }, { name: 'app.ts', isDirectory: false }];
-    const nestedPaths = nestedEntries.map((e) => ({
-      name: e.name,
-      path: 'src' ? `src/${e.name}` : e.name,
-      isDirectory: e.isDirectory,
-    }));
-    expect(nestedPaths[0].path).toBe('src/utils');
-    expect(nestedPaths[1].path).toBe('src/app.ts');
+  it('constructs relative paths at nested level', () => {
+    expect(buildRelativePath('src', 'utils')).toBe('src/utils');
+    expect(buildRelativePath('src', 'app.ts')).toBe('src/app.ts');
+  });
+
+  it('constructs relative paths at deeply nested level', () => {
+    expect(buildRelativePath('src/utils', 'helpers.ts')).toBe('src/utils/helpers.ts');
   });
 
   it('navigating up strips last path segment', () => {
@@ -72,15 +63,13 @@ describe('FileCanvasView — hidden files filtering', () => {
   });
 
   it('keeps all entries when showHidden is true', () => {
-    const filtered = entries; // no filtering
-    expect(filtered).toHaveLength(5);
+    expect(entries).toHaveLength(5);
   });
 });
 
 // ── AgentCanvasView — project color helper ────────────────────────────
 
 describe('AgentCanvasView — projectColor', () => {
-  // Replicate the helper for testing
   function projectColor(name: string): string {
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -108,12 +97,10 @@ describe('AgentCanvasView — projectColor', () => {
 
 describe('CanvasView — scroll isolation', () => {
   it('stopPropagation prevents parent from receiving wheel events', () => {
-    const parentHandler = vi.fn();
-    const childHandler = vi.fn((e: { stopPropagation: () => void }) => {
+    const childHandler = (e: { stopPropagation: () => void }) => {
       e.stopPropagation();
-    });
+    };
 
-    // Simulate the pattern: child calls stopPropagation, parent should not fire
     const event = {
       stopPropagation: vi.fn(),
       deltaX: 0,
@@ -122,18 +109,5 @@ describe('CanvasView — scroll isolation', () => {
 
     childHandler(event);
     expect(event.stopPropagation).toHaveBeenCalled();
-    // In a real DOM, the parent handler would NOT be called
-    // Here we just verify the child calls stopPropagation
-  });
-});
-
-// ── webviewTag requirement ────────────────────────────────────────────
-
-describe('webviewTag in webPreferences', () => {
-  it('is documented as required for <webview> tag functionality', () => {
-    // This is a documentation test — webviewTag: true must be set in
-    // webPreferences for Electron BrowserWindow creation (src/main/index.ts
-    // and src/main/ipc/window-handlers.ts) for the canvas browser view to work
-    expect(true).toBe(true);
   });
 });
