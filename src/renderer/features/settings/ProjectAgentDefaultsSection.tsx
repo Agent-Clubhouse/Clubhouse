@@ -204,7 +204,7 @@ function ConfigItemList({
     <div className="space-y-1">
       {items.map((item) => {
         const isPlugin = item.provenance.source === 'plugin';
-        const isOrphan = isPlugin && orphanSet.has(item.provenance.pluginId);
+        const isOrphan = isPlugin && orphanSet.has((item.provenance as { source: 'plugin'; pluginId: string }).pluginId);
         return (
           <div
             key={item.id}

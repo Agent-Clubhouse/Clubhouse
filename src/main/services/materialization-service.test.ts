@@ -33,6 +33,8 @@ vi.mock('fs/promises', () => ({
   mkdir: vi.fn(() => Promise.resolve(undefined)),
   readdir: vi.fn(() => Promise.resolve([])),
   copyFile: vi.fn(() => Promise.resolve(undefined)),
+  rm: vi.fn(() => Promise.resolve(undefined)),
+  unlink: vi.fn(() => Promise.resolve(undefined)),
 }));
 
 vi.mock('./fs-utils', () => ({
@@ -140,6 +142,8 @@ describe('materialization-service', () => {
     vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
     vi.mocked(fsp.readdir).mockResolvedValue([]);
     vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.rm).mockResolvedValue(undefined);
+    vi.mocked(fsp.unlink).mockResolvedValue(undefined);
     vi.mocked(pathExists).mockResolvedValue(false);
   });
 
@@ -313,6 +317,92 @@ describe('materialization-service', () => {
       await materializeAgent({ projectPath: '/project', agent, provider: mockProvider });
 
       expect(mockProvider.writeInstructions).not.toHaveBeenCalled();
+    });
+
+    it('prunes stale skills from worktree that are not in source', async () => {
+      // readdir needs to distinguish between:
+      // 1. Source skills dir (.clubhouse/skills) — lists source skill dirs
+      // 2. Inside a source skill dir — lists files (for copyDirRecursive)
+      // 3. Worktree skills dir (.claude/skills) — lists worktree skill dirs (for pruning)
+      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown, _opts?: unknown) => {
+        const dirPath = String(p);
+        // Source skills listing
+        if (dirPath.endsWith('.clubhouse/skills')) {
+          return [{ name: 'mission', isDirectory: () => true }] as any;
+        }
+        // Inside the source 'mission' skill dir — return a file
+        if (dirPath.includes('.clubhouse/skills/mission')) {
+          return [{ name: 'SKILL.md', isDirectory: () => false }] as any;
+        }
+        // Worktree skills listing (for pruning)
+        if (dirPath.endsWith('.claude/skills')) {
+          return [
+            { name: 'mission', isDirectory: () => true },
+            { name: 'stale-skill', isDirectory: () => true },
+          ] as any;
+        }
+        return [];
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const filePath = String(p);
+        if (filePath.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: { instructions: 'test' },
+            defaultSkillsPath: 'skills',
+          });
+        }
+        if (filePath.includes('SKILL.md')) return '# Mission';
+        throw new Error('ENOENT');
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      // Should have removed the stale skill directory
+      const rmCalls = vi.mocked(fsp.rm).mock.calls;
+      const staleRm = rmCalls.find((call) =>
+        (call[0] as string).includes('stale-skill'),
+      );
+      expect(staleRm).toBeDefined();
+    });
+
+    it('does not prune skills that exist in source', async () => {
+      vi.mocked(fsp.readdir).mockImplementation(async (p: unknown, _opts?: unknown) => {
+        const dirPath = String(p);
+        if (dirPath.endsWith('.clubhouse/skills')) {
+          return [{ name: 'mission', isDirectory: () => true }] as any;
+        }
+        if (dirPath.includes('.clubhouse/skills/mission')) {
+          return [{ name: 'SKILL.md', isDirectory: () => false }] as any;
+        }
+        if (dirPath.endsWith('.claude/skills')) {
+          return [{ name: 'mission', isDirectory: () => true }] as any;
+        }
+        return [];
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: unknown) => {
+        const filePath = String(p);
+        if (filePath.includes('settings.json')) {
+          return JSON.stringify({
+            defaults: {},
+            quickOverrides: {},
+            agentDefaults: { instructions: 'test' },
+            defaultSkillsPath: 'skills',
+          });
+        }
+        if (filePath.includes('SKILL.md')) return '# Mission';
+        throw new Error('ENOENT');
+      });
+
+      await materializeAgent({ projectPath: '/project', agent: testAgent, provider: mockProvider });
+
+      // Should NOT have removed any skill directories (only copied)
+      const rmCalls = vi.mocked(fsp.rm).mock.calls;
+      const skillRm = rmCalls.find((call) =>
+        (call[0] as string).includes('skills/mission'),
+      );
+      expect(skillRm).toBeUndefined();
     });
 
     it('skips MCP JSON write for TOML settings format', async () => {
