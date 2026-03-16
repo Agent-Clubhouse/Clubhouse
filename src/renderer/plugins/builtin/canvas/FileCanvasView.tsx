@@ -9,17 +9,30 @@ interface FileCanvasViewProps {
 }
 
 export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
+  const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileTree, setFileTree] = useState<Array<{ name: string; path: string; isDirectory: boolean }>>([]);
   const [currentDir, setCurrentDir] = useState<string>('');
   const [loading, setLoading] = useState(false);
 
-  const activeProjectId = view.projectId || projects[0]?.id;
+  const activeProjectId = view.projectId || (isAppMode ? undefined : api.context.projectId);
 
-  // Load directory listing
+  // In app mode, file browsing is not available (api.project is scoped per-project)
+  if (isAppMode) {
+    return (
+      <div className="flex items-center justify-center h-full p-4">
+        <div className="text-center">
+          <div className="text-xs text-ctp-subtext0 mb-1">File browsing is available in project canvases.</div>
+          <div className="text-[10px] text-ctp-overlay0">Open a project tab to browse files.</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Load directory listing (project mode only)
   useEffect(() => {
-    if (!activeProjectId) return;
+    if (!activeProjectId || isAppMode) return;
     setLoading(true);
     api.project.listDirectory(currentDir)
       .then((entries) => {
@@ -31,18 +44,18 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
       })
       .catch(() => setFileTree([]))
       .finally(() => setLoading(false));
-  }, [api, activeProjectId, currentDir]);
+  }, [api, activeProjectId, currentDir, isAppMode]);
 
   // Load file content when a file is selected
   useEffect(() => {
-    if (!view.filePath) {
+    if (!view.filePath || isAppMode) {
       setFileContent(null);
       return;
     }
     api.project.readFile(view.filePath)
       .then(setFileContent)
       .catch(() => setFileContent('Error reading file'));
-  }, [api, view.filePath]);
+  }, [api, view.filePath, isAppMode]);
 
   const handleSelectProject = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);

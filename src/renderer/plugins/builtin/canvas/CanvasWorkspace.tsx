@@ -143,7 +143,7 @@ export function CanvasWorkspace({
 
   const gridSpacing = GRID_SIZE * viewport.zoom;
   const dotGridStyle: React.CSSProperties = {
-    backgroundImage: `radial-gradient(circle, var(--ctp-surface1, #45475a) 1px, transparent 1px)`,
+    backgroundImage: `radial-gradient(circle, var(--ctp-overlay0, #6c7086) 1px, transparent 1px)`,
     backgroundSize: `${gridSpacing}px ${gridSpacing}px`,
     backgroundPosition: `${viewport.panX * viewport.zoom}px ${viewport.panY * viewport.zoom}px`,
   };
