@@ -193,4 +193,126 @@ describe('applyTheme', () => {
       expect(mockSetProperty).toHaveBeenCalledTimes(31);
     });
   });
+
+  describe('experimental gradients (disabled by default)', () => {
+    it('does not set any font/gradient CSS variables when flag is off', () => {
+      const theme = makeTheme({
+        fonts: { ui: 'Inter', mono: 'JetBrains Mono' },
+        gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+      });
+      applyTheme(theme);
+
+      expect(mockSetProperty).not.toHaveBeenCalledWith('--theme-font-ui', expect.anything());
+      expect(mockSetProperty).not.toHaveBeenCalledWith('--theme-font-mono', expect.anything());
+      expect(mockSetProperty).not.toHaveBeenCalledWith('--theme-gradient-bg', expect.anything());
+    });
+
+    it('cleans up experimental variables when flag is off', () => {
+      applyTheme(makeTheme());
+
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-ui');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-bg');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-surface');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-accent');
+    });
+
+    it('removes experimental classes when flag is off', () => {
+      applyTheme(makeTheme());
+
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-ui', 'theme-font-mono');
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-gradient-bg');
+    });
+  });
+
+  describe('experimental gradients (enabled)', () => {
+    it('sets font CSS variables and classes when theme has fonts', () => {
+      const theme = makeTheme({
+        fonts: { ui: 'Inter', mono: 'JetBrains Mono' },
+      });
+      applyTheme(theme, { experimentalGradients: true });
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-ui', 'Inter');
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-mono', 'JetBrains Mono');
+      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-ui');
+      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-mono');
+    });
+
+    it('sets gradient CSS variables when theme has gradients', () => {
+      const theme = makeTheme({
+        gradients: {
+          background: 'linear-gradient(#1e1e2e, #000)',
+          surface: 'linear-gradient(#313244, #45475a)',
+          accent: 'linear-gradient(#cba6f7, #89b4fa)',
+        },
+      });
+      applyTheme(theme, { experimentalGradients: true });
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-bg', 'linear-gradient(#1e1e2e, #000)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-surface', 'linear-gradient(#313244, #45475a)');
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-accent', 'linear-gradient(#cba6f7, #89b4fa)');
+      expect(mockClassList.add).toHaveBeenCalledWith('theme-gradient-bg');
+    });
+
+    it('removes font classes when theme has no fonts but flag is on', () => {
+      applyTheme(makeTheme(), { experimentalGradients: true });
+
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-ui');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-ui');
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-mono');
+    });
+
+    it('removes gradient body class when theme has no background gradient', () => {
+      applyTheme(makeTheme(), { experimentalGradients: true });
+
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-bg');
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-gradient-bg');
+    });
+
+    it('caches font/gradient values to localStorage when enabled', () => {
+      const theme = makeTheme({
+        fonts: { ui: 'Inter' },
+        gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+      });
+      applyTheme(theme, { experimentalGradients: true });
+
+      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
+      expect(cached['--theme-font-ui']).toBe('Inter');
+      expect(cached['--theme-gradient-bg']).toBe('linear-gradient(#1e1e2e, #000)');
+    });
+
+    it('does not cache font/gradient values when flag is off', () => {
+      const theme = makeTheme({
+        fonts: { ui: 'Inter' },
+        gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+      });
+      applyTheme(theme);
+
+      const cached = JSON.parse(mockLocalStorage.get('clubhouse-theme-vars')!);
+      expect(cached['--theme-font-ui']).toBeUndefined();
+      expect(cached['--theme-gradient-bg']).toBeUndefined();
+    });
+
+    it('handles partial fonts (only ui, no mono)', () => {
+      const theme = makeTheme({ fonts: { ui: 'Inter' } });
+      applyTheme(theme, { experimentalGradients: true });
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-font-ui', 'Inter');
+      expect(mockClassList.add).toHaveBeenCalledWith('theme-font-ui');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-font-mono');
+      expect(mockClassList.remove).toHaveBeenCalledWith('theme-font-mono');
+    });
+
+    it('handles partial gradients (only background)', () => {
+      const theme = makeTheme({
+        gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+      });
+      applyTheme(theme, { experimentalGradients: true });
+
+      expect(mockSetProperty).toHaveBeenCalledWith('--theme-gradient-bg', 'linear-gradient(#1e1e2e, #000)');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-surface');
+      expect(mockRemoveProperty).toHaveBeenCalledWith('--theme-gradient-accent');
+    });
+  });
 });

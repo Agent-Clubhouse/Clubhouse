@@ -896,6 +896,90 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('accepts themes with optional fonts and gradients', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme',
+            name: 'My Theme',
+            type: 'dark',
+            colors: { base: '#1e1e2e' },
+            hljs: { keyword: '#ff0000' },
+            terminal: { background: '#1e1e2e' },
+            fonts: { ui: 'Inter', mono: 'JetBrains Mono' },
+            gradients: { background: 'linear-gradient(#1e1e2e, #000)', surface: 'linear-gradient(#313244, #45475a)' },
+          }],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects non-object fonts', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme', name: 'My Theme', type: 'dark',
+            colors: { base: '#1e1e2e' }, hljs: { keyword: '#ff0000' }, terminal: { background: '#1e1e2e' },
+            fonts: 'bad',
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('themes[0].fonts must be an object'))).toBe(true);
+    });
+
+    it('rejects non-string fonts.ui', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme', name: 'My Theme', type: 'dark',
+            colors: { base: '#1e1e2e' }, hljs: { keyword: '#ff0000' }, terminal: { background: '#1e1e2e' },
+            fonts: { ui: 123 },
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('themes[0].fonts.ui must be a string'))).toBe(true);
+    });
+
+    it('rejects non-object gradients', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme', name: 'My Theme', type: 'dark',
+            colors: { base: '#1e1e2e' }, hljs: { keyword: '#ff0000' }, terminal: { background: '#1e1e2e' },
+            gradients: 42,
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('themes[0].gradients must be an object'))).toBe(true);
+    });
+
+    it('rejects non-string gradients.background', () => {
+      const result = validateManifest({
+        ...v07Base,
+        contributes: {
+          help: {},
+          themes: [{
+            id: 'my-theme', name: 'My Theme', type: 'dark',
+            colors: { base: '#1e1e2e' }, hljs: { keyword: '#ff0000' }, terminal: { background: '#1e1e2e' },
+            gradients: { background: true },
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('themes[0].gradients.background must be a string'))).toBe(true);
+    });
+
   });
 
   // --- hierarchy-driven validation ---

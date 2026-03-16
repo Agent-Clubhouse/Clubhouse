@@ -89,9 +89,16 @@
     font-family: var(--theme-font-mono) !important;
   }
 
-  /* Experimental: body background gradient (class-based to avoid Windows compositing bug) */
-  body.theme-gradient-bg {
+  /* Experimental: background gradient (class on <html> for flash-prevention compat) */
+  .theme-gradient-bg body {
     background-image: var(--theme-gradient-bg);
+  }
+
+  /* When a gradient background is active, make root screen wrappers transparent
+     so the body gradient shows through. The React root is body > #root > div.bg-ctp-base.
+     Uses !important to override Tailwind's bg-ctp-base utility. */
+  .theme-gradient-bg body > #root > .bg-ctp-base {
+    background-color: transparent !important;
   }
 
   /* Scrollbar styling — auto-hide: invisible by default, visible on hover */

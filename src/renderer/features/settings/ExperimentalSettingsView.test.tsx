@@ -44,6 +44,7 @@ describe('ExperimentalSettingsView', () => {
     await waitFor(() => {
       expect(screen.getByText('Structured Mode')).toBeInTheDocument();
     });
+    expect(screen.getByText('Theme Gradients & Fonts')).toBeInTheDocument();
   });
 
   it('toggles a feature and saves', async () => {

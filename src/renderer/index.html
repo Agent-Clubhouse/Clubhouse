@@ -37,6 +37,10 @@
           if (font) {
             document.documentElement.classList.add('theme-mono');
           }
+          // Experimental: restore font/gradient classes from cached vars
+          if (vars && vars['--theme-font-ui']) document.documentElement.classList.add('theme-font-ui');
+          if (vars && vars['--theme-font-mono']) document.documentElement.classList.add('theme-font-mono');
+          if (vars && vars['--theme-gradient-bg']) document.documentElement.classList.add('theme-gradient-bg');
         } catch(e) {}
       })();
     </script>

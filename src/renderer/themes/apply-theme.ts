@@ -97,15 +97,15 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
       el.classList.remove('theme-font-mono');
     }
 
-    // Gradients — use class-based approach on body to avoid the Windows
-    // compositing bug caused by always setting background-image: none.
+    // Gradients — class-based on <html> to avoid the Windows compositing
+    // bug caused by always setting background-image: none on body.
     if (theme.gradients?.background) {
       s.setProperty('--theme-gradient-bg', theme.gradients.background);
-      document.body.classList.add('theme-gradient-bg');
+      el.classList.add('theme-gradient-bg');
       cache['--theme-gradient-bg'] = theme.gradients.background;
     } else {
       s.removeProperty('--theme-gradient-bg');
-      document.body.classList.remove('theme-gradient-bg');
+      el.classList.remove('theme-gradient-bg');
     }
     if (theme.gradients?.surface) {
       s.setProperty('--theme-gradient-surface', theme.gradients.surface);
@@ -127,7 +127,7 @@ export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions):
     s.removeProperty('--theme-gradient-surface');
     s.removeProperty('--theme-gradient-accent');
     el.classList.remove('theme-font-ui', 'theme-font-mono');
-    document.body.classList.remove('theme-gradient-bg');
+    el.classList.remove('theme-gradient-bg');
   }
 
   // Cache to localStorage for flash prevention
