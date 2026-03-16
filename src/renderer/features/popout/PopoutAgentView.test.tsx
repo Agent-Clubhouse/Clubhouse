@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PopoutAgentView } from './PopoutAgentView';
 
-const noop = () => {};
-
 vi.mock('../agents/AgentTerminal', () => ({
   AgentTerminal: ({ agentId, focused }: { agentId: string; focused?: boolean }) => (
     <div data-testid="agent-terminal" data-agent-id={agentId} data-focused={focused} />
@@ -42,8 +40,6 @@ describe('PopoutAgentView', () => {
     // Clear mock agents
     for (const key of Object.keys(mockAgents)) delete mockAgents[key];
 
-    window.clubhouse.pty.onExit = vi.fn().mockReturnValue(noop);
-    window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(noop);
     window.clubhouse.agent.killAgent = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.pty.kill = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.window.focusMain = vi.fn().mockResolvedValue(undefined);
@@ -75,6 +71,26 @@ describe('PopoutAgentView', () => {
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
   });
 
+  it('renders SleepingAgent when agent has error status', () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'error',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    expect(screen.getByTestId('sleeping-agent')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+  });
+
+  it('renders AgentTerminal when agent is creating', () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'creating',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    expect(screen.getByTestId('agent-terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('sleeping-agent')).not.toBeInTheDocument();
+  });
+
   it('renders avatar and name in floating bar', () => {
     mockAgents['agent-1'] = {
       id: 'agent-1', name: 'test-agent', status: 'running',
@@ -104,6 +120,15 @@ describe('PopoutAgentView', () => {
     expect(screen.queryByTestId('popout-stop-button')).not.toBeInTheDocument();
   });
 
+  it('does not render wake button for sleeping quick agent', () => {
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'sleeping',
+      kind: 'quick', projectId: 'proj-1', color: 'red',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+    expect(screen.queryByTestId('popout-wake-button')).not.toBeInTheDocument();
+  });
+
   it('renders View button that calls focusMain', () => {
     mockAgents['agent-1'] = {
       id: 'agent-1', name: 'test-agent', status: 'running',
@@ -127,5 +152,24 @@ describe('PopoutAgentView', () => {
   it('does not render AgentTerminal when no agentId', () => {
     render(<PopoutAgentView />);
     expect(screen.queryByTestId('agent-terminal')).not.toBeInTheDocument();
+  });
+
+  it('renders "Agent not found" when agentId given but agent not in store', () => {
+    render(<PopoutAgentView agentId="nonexistent" projectId="proj-1" />);
+    expect(screen.getByText('Agent not found')).toBeInTheDocument();
+  });
+
+  it('derives status from store, not local state — no hook/exit listeners needed', () => {
+    // The component should NOT subscribe to onHookEvent or onExit directly.
+    // Those are handled by useAgentStateSync() in PopoutWindow.tsx.
+    mockAgents['agent-1'] = {
+      id: 'agent-1', name: 'test-agent', status: 'running',
+      kind: 'durable', projectId: 'proj-1', color: 'red',
+    };
+    render(<PopoutAgentView agentId="agent-1" projectId="proj-1" />);
+
+    // Verify no direct subscriptions to PTY/hook events
+    expect(window.clubhouse.pty.onExit).not.toHaveBeenCalled();
+    expect(window.clubhouse.agent.onHookEvent).not.toHaveBeenCalled();
   });
 });
