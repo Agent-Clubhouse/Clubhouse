@@ -41,7 +41,9 @@ describe('PopoutAgentView', () => {
     for (const key of Object.keys(mockAgents)) delete mockAgents[key];
 
     window.clubhouse.agent.killAgent = vi.fn().mockResolvedValue(undefined);
+    window.clubhouse.agent.onHookEvent = vi.fn().mockReturnValue(() => {});
     window.clubhouse.pty.kill = vi.fn().mockResolvedValue(undefined);
+    window.clubhouse.pty.onExit = vi.fn().mockReturnValue(() => {});
     window.clubhouse.window.focusMain = vi.fn().mockResolvedValue(undefined);
   });
 
