@@ -5,27 +5,42 @@ import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
 import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
+import { manifest as canvasManifest } from './canvas/manifest';
+import * as canvasModule from './canvas/main';
+
 export interface BuiltinPlugin {
   manifest: PluginManifest;
   module: PluginModule;
 }
 
-/** Plugin IDs that are enabled by default in a fresh install. */
-const DEFAULT_ENABLED_IDS: ReadonlySet<string> = new Set([
-  'hub',
-  'terminal',
-  'files',
-]);
+/** Experimental feature flags that gate conditional built-in plugins. */
+export interface ExperimentalFlags {
+  canvas?: boolean;
+  [key: string]: boolean | undefined;
+}
 
-export function getBuiltinPlugins(): BuiltinPlugin[] {
-  return [
+/** Plugin IDs that are always enabled by default in a fresh install. */
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files'];
+
+export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
+  const plugins: BuiltinPlugin[] = [
     { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
   ];
+
+  if (experimentalFlags.canvas) {
+    plugins.push({ manifest: canvasManifest, module: canvasModule });
+  }
+
+  return plugins;
 }
 
 /** Returns the set of builtin plugin IDs that should be auto-enabled on first install. */
-export function getDefaultEnabledIds(): ReadonlySet<string> {
-  return DEFAULT_ENABLED_IDS;
+export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}): ReadonlySet<string> {
+  const ids = [...BASE_DEFAULT_IDS];
+  if (experimentalFlags.canvas) {
+    ids.push('canvas');
+  }
+  return new Set(ids);
 }

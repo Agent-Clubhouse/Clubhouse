@@ -17,6 +17,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Theme Gradients & Fonts',
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
+  {
+    id: 'canvas',
+    label: 'Canvas',
+    description: 'Free-form spatial workspace for arranging agent, file, and browser views on a pannable/zoomable surface. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {
