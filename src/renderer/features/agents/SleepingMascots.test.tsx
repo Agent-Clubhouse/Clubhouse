@@ -125,8 +125,8 @@ describe('SleepingMascots', () => {
       // Visor panel
       const visor = container.querySelector('rect[fill="url(#copilotVisorGrad)"]');
       expect(visor).not.toBeNull();
-      // Eyes visible through visor
-      const eyes = container.querySelectorAll('ellipse[fill="#0a1830"]');
+      // Closed eyes — dark slits
+      const eyes = container.querySelectorAll('line[stroke="#0a1830"]');
       expect(eyes.length).toBe(2);
     });
 
