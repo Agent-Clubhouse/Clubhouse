@@ -32,6 +32,13 @@ export const manifest: PluginManifest = {
         description: 'Show the cross-project canvas in the sidebar rail for managing views across all projects.',
         default: true,
       },
+      {
+        key: 'showHiddenFiles',
+        type: 'boolean',
+        label: 'Show hidden files',
+        description: 'Display files and directories starting with a dot in file views.',
+        default: true,
+      },
     ],
     help: {
       topics: [

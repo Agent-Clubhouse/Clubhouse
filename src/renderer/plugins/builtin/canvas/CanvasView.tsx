@@ -167,8 +167,8 @@ export function CanvasViewComponent({
         </button>
       </div>
 
-      {/* Content area */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      {/* Content area — stop wheel events from propagating to canvas pan/zoom */}
+      <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
         {renderContent()}
       </div>
 

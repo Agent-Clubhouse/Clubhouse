@@ -38,7 +38,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] min-w-[180px] bg-ctp-surface0 border border-surface-1 rounded-lg shadow-lg py-1"
+      className="fixed z-[9999] min-w-[180px] bg-ctp-mantle border border-surface-1 rounded-lg shadow-xl py-1 backdrop-blur-none"
       style={{ left: x, top: y }}
       data-testid="canvas-context-menu"
     >
