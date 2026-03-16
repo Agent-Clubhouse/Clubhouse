@@ -375,6 +375,8 @@ export async function previewMaterialization(params: {
 /**
  * Copy source skills or agent templates from .clubhouse to worktree,
  * applying wildcard replacement to file contents.
+ * Also prunes worktree items that no longer exist in source to prevent
+ * ghost items from persisting across wake/sleep cycles.
  */
 async function copySourceDir(
   projectPath: string,
@@ -387,16 +389,20 @@ async function copySourceDir(
     ? await listSourceSkills(projectPath)
     : await listSourceAgentTemplates(projectPath);
 
-  if (sources.length === 0) return;
-
   const targetSubdir = kind === 'skills' ? conv.skillsDir : conv.agentTemplatesDir;
   const targetBaseDir = path.join(worktreePath, conv.configDir, targetSubdir);
 
+  // Copy source items to worktree
   for (const source of sources) {
     const targetDir = path.join(targetBaseDir, source.name);
     await fsp.mkdir(targetDir, { recursive: true });
     await copyDirRecursive(source.path, targetDir, ctx);
   }
+
+  // Prune worktree items that no longer exist in source.
+  // This prevents ghost items (e.g. skills removed from source) from
+  // persisting in agent worktrees and triggering repeated config-diff prompts.
+  await pruneStaleItems(targetBaseDir, new Set(sources.map((s) => s.name)), kind);
 }
 
 async function copyDirRecursive(src: string, dest: string, ctx: WildcardContext): Promise<void> {
@@ -421,6 +427,40 @@ async function copyDirRecursive(src: string, dest: string, ctx: WildcardContext)
     }
   } catch {
     // Source dir may not exist
+  }
+}
+
+/**
+ * Remove items from the worktree target directory that no longer exist in source.
+ * Only removes directories (skills) or .md files (agent templates) to avoid
+ * deleting unrelated files.
+ */
+async function pruneStaleItems(
+  targetBaseDir: string,
+  sourceNames: Set<string>,
+  kind: 'skills' | 'agentTemplates',
+): Promise<void> {
+  try {
+    const entries = await fsp.readdir(targetBaseDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!sourceNames.has(entry.name)) {
+        const targetPath = path.join(targetBaseDir, entry.name);
+        if (kind === 'skills' && entry.isDirectory()) {
+          await fsp.rm(targetPath, { recursive: true, force: true });
+          appLog('core:materialization', 'info', `Pruned stale skill "${entry.name}" from worktree`);
+        } else if (kind === 'agentTemplates') {
+          if (entry.isDirectory()) {
+            await fsp.rm(targetPath, { recursive: true, force: true });
+            appLog('core:materialization', 'info', `Pruned stale agent template dir "${entry.name}" from worktree`);
+          } else if (entry.name.endsWith('.md') && !sourceNames.has(entry.name.replace(/\.md$/, ''))) {
+            await fsp.unlink(targetPath);
+            appLog('core:materialization', 'info', `Pruned stale agent template file "${entry.name}" from worktree`);
+          }
+        }
+      }
+    }
+  } catch {
+    // Target dir may not exist yet — nothing to prune
   }
 }
 
