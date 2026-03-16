@@ -1,10 +1,10 @@
-import { Agent, DurableAgentConfig, DeleteResult } from '../../../shared/types';
+import { Agent, DeleteResult } from '../../../shared/types';
 import { generateQuickAgentId } from '../../../shared/agent-id';
 import { generateQuickName } from '../../../shared/name-generator';
 import { expandTemplate, AgentContext } from '../../../shared/template-engine';
 import { useHeadlessStore } from '../headlessStore';
 import { useProjectStore } from '../projectStore';
-import { AgentLifecycleSlice, DeleteMode, GetAgentState, SetAgentState } from './types';
+import { AgentLifecycleSlice, GetAgentState, SetAgentState } from './types';
 
 export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): AgentLifecycleSlice {
   return {
