@@ -411,36 +411,42 @@ export function ProjectRail() {
         `}
         style={{ width: computedWidth }}
       >
-        {/* Pin button — visible when rail is expanded */}
-        <button
-          onClick={handlePinClick}
-          title={railPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
-          data-testid="rail-pin-button"
-          className={`
-            absolute top-2 right-1 z-40 w-6 h-6 flex items-center justify-center rounded
-            transition-opacity duration-200 cursor-pointer
-            ${expanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}
-            ${railPinned
-              ? 'text-ctp-accent hover:bg-surface-1'
-              : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'
-            }
-          `}
+        {/* Pin button row — visible when rail is expanded, own row above home */}
+        <div
+          className={`flex justify-end flex-shrink-0 -mb-1 transition-opacity duration-200 ${
+            expanded ? 'opacity-100 h-6' : 'opacity-0 h-0 overflow-hidden pointer-events-none'
+          }`}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill={railPinned ? 'currentColor' : 'none'}
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={railPinned ? '' : 'rotate-45'}
+          <button
+            onClick={handlePinClick}
+            title={railPinned ? 'Unpin sidebar' : 'Pin sidebar open'}
+            data-testid="rail-pin-button"
+            className={`
+              w-6 h-6 flex items-center justify-center rounded
+              transition-opacity duration-200 cursor-pointer
+              ${expanded ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+              ${railPinned
+                ? 'text-ctp-accent hover:bg-surface-1'
+                : 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1'
+              }
+            `}
           >
-            <path d="M12 17v5" />
-            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
-          </svg>
-        </button>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill={railPinned ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={railPinned ? '' : 'rotate-45'}
+            >
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+            </svg>
+          </button>
+        </div>
         {/* Home button */}
         {showHome && (
           <button
