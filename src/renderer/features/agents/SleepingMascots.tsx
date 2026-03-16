@@ -134,11 +134,6 @@ export function CopilotSleeping() {
       <line x1="87" y1="43" x2="89" y2="43" stroke="#0E7A6E" strokeWidth="0.8" />
       <line x1="87" y1="46" x2="89" y2="46" stroke="#0E7A6E" strokeWidth="0.8" />
 
-      {/* Pendant drops below ear covers */}
-      <circle cx="12" cy="56" r="2.5" fill="#26D9C4" />
-      <line x1="12" y1="52" x2="12" y2="54" stroke="#1ABFAE" strokeWidth="1.2" />
-      <circle cx="88" cy="56" r="2.5" fill="#26D9C4" />
-      <line x1="88" y1="52" x2="88" y2="54" stroke="#1ABFAE" strokeWidth="1.2" />
 
       {/* Goggles on forehead — pushed up */}
       <rect x="22" y="16" width="22" height="16" rx="7" fill="#5AB8E8" stroke="#4AA8D8" strokeWidth="1.5" />
@@ -162,18 +157,10 @@ export function CopilotSleeping() {
       {/* Visor top edge highlight */}
       <rect x="28" y="38" width="44" height="1.5" rx="0.75" fill="#D0DDE8" opacity="0.5" />
 
-      {/* Eyes visible through visor — sleeping, half-closed */}
-      <ellipse cx="38" cy="52" rx="7" ry="5" fill="#0a1830" />
-      <ellipse cx="62" cy="52" rx="7" ry="5" fill="#0a1830" />
-      {/* Sleeping eyelids — cover top portion */}
-      <ellipse cx="38" cy="50" rx="7.5" ry="4" fill="#A0B0C0" />
-      <ellipse cx="62" cy="50" rx="7.5" ry="4" fill="#A0B0C0" />
-      {/* Dim pupil glow barely peeking */}
-      <ellipse cx="38" cy="54" rx="3" ry="1.5" fill="#1a3a5a" opacity="0.5" />
-      <ellipse cx="62" cy="54" rx="3" ry="1.5" fill="#1a3a5a" opacity="0.5" />
+      {/* Closed eyes — simple dark slits */}
+      <line x1="31" y1="52" x2="45" y2="52" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
+      <line x1="55" y1="52" x2="69" y2="52" stroke="#0a1830" strokeWidth="2.5" strokeLinecap="round" />
 
-      {/* Chin guard — bottom of visor */}
-      <rect x="30" y="62" width="40" height="6" rx="3" fill="#0FA898" opacity="0.4" />
 
       <SleepingZzz x={78} y={8} />
     </svg>
