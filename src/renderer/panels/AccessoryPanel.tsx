@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useProjectStore } from '../stores/projectStore';
+import { useUpdateStore } from '../stores/updateStore';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext } from '../plugins/plugin-loader';
@@ -18,11 +19,12 @@ function SettingsCategoryNav() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
+  const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
 
   useEffect(() => {
-    window.clubhouse.app.getVersion().then((v) => setShowExperimental(isBetaBuild(v)));
-  }, []);
+    window.clubhouse.app.getVersion().then((v) => setShowExperimental(isBetaBuild(v) || previewChannel));
+  }, [previewChannel]);
 
   const navButton = (label: string, page: SettingsSubPage) => (
     <button
