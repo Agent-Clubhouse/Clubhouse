@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 
-import type { SourceControlProvider } from '../../../shared/types';
+import type { SourceControlProvider, ProjectConfigBreakdown, ProvenancedConfigItem } from '../../../shared/types';
 import { SourceSkillsSection } from './SourceSkillsSection';
 import { SourceAgentTemplatesSection } from './SourceAgentTemplatesSection';
 import { useProfileStore } from '../../stores/profileStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { usePluginStore } from '../../plugins/plugin-store';
 
 interface ProjectAgentDefaults {
   instructions?: string;
@@ -23,6 +24,214 @@ interface Props {
   projectPath: string;
   clubhouseMode?: boolean;
 }
+
+// ── Provenance badge ─────────────────────────────────────────────────────
+
+function ProvenanceBadge({ item, isOrphan }: { item: ProvenancedConfigItem; isOrphan?: boolean }) {
+  const p = item.provenance;
+  if (p.source === 'user') return null;
+  if (p.source === 'built-in') {
+    return (
+      <span className="text-[9px] px-1.5 py-0.5 rounded bg-ctp-blue/15 text-ctp-blue border border-ctp-blue/20">
+        built-in
+      </span>
+    );
+  }
+  return (
+    <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
+      isOrphan
+        ? 'bg-ctp-peach/15 text-ctp-peach border-ctp-peach/20'
+        : 'bg-ctp-mauve/15 text-ctp-mauve border-ctp-mauve/20'
+    }`}>
+      {isOrphan ? '(orphan) ' : ''}plugin: {p.pluginId}
+    </span>
+  );
+}
+
+// ── Remove button for plugin items ───────────────────────────────────────
+
+function RemoveButton({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="text-ctp-subtext0 hover:text-red-400 p-0.5 cursor-pointer transition-colors disabled:opacity-30 flex-shrink-0"
+      title="Remove this item"
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+  );
+}
+
+// ── Confirmation dialog ──────────────────────────────────────────────────
+
+function ConfirmDialog({
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  confirming,
+}: {
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirming?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
+        <h3 className="text-sm font-semibold text-ctp-text mb-2">{title}</h3>
+        <p className="text-xs text-ctp-subtext0 mb-4">{message}</p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={confirming}
+            className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
+          >
+            {confirming ? 'Removing...' : 'Remove'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Orphan banner ────────────────────────────────────────────────────────
+
+function OrphanBanner({
+  orphanedPluginIds,
+  projectPath,
+  onCleaned,
+}: {
+  orphanedPluginIds: string[];
+  projectPath: string;
+  onCleaned: () => void;
+}) {
+  const [cleaning, setCleaning] = useState<string | null>(null);
+
+  if (orphanedPluginIds.length === 0) return null;
+
+  const handleClean = async (pluginId: string) => {
+    setCleaning(pluginId);
+    try {
+      await window.clubhouse.plugin.cleanupProjectInjections(pluginId, projectPath);
+      onCleaned();
+    } catch { /* ignore */ } finally {
+      setCleaning(null);
+    }
+  };
+
+  const handleCleanAll = async () => {
+    for (const id of orphanedPluginIds) {
+      setCleaning(id);
+      try {
+        await window.clubhouse.plugin.cleanupProjectInjections(id, projectPath);
+      } catch { /* ignore */ }
+    }
+    setCleaning(null);
+    onCleaned();
+  };
+
+  return (
+    <div className="p-3 rounded-lg bg-ctp-peach/5 border border-ctp-peach/30">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-ctp-peach mb-1">
+            Orphaned plugin injections detected
+          </p>
+          <p className="text-[10px] text-ctp-subtext0 mb-2">
+            These uninstalled plugins left configs in your project defaults:
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {orphanedPluginIds.map((id) => (
+              <div key={id} className="flex items-center gap-1">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-ctp-peach/20 text-ctp-peach">{id}</span>
+                <button
+                  onClick={() => handleClean(id)}
+                  disabled={cleaning !== null}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50 transition-colors"
+                >
+                  {cleaning === id ? 'Cleaning...' : 'Clean up'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+        {orphanedPluginIds.length > 1 && (
+          <button
+            onClick={handleCleanAll}
+            disabled={cleaning !== null}
+            className="shrink-0 text-[10px] px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 cursor-pointer disabled:opacity-50 transition-colors"
+          >
+            {cleaning ? 'Cleaning...' : 'Clean all'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Provenance-aware config item list ────────────────────────────────────
+
+function ConfigItemList({
+  items,
+  orphanedPluginIds,
+  onRemove,
+  removing,
+}: {
+  items: ProvenancedConfigItem[];
+  orphanedPluginIds: string[];
+  onRemove: (item: ProvenancedConfigItem) => void;
+  removing: string | null;
+}) {
+  const orphanSet = useMemo(() => new Set(orphanedPluginIds), [orphanedPluginIds]);
+
+  if (items.length === 0) {
+    return <p className="text-xs text-ctp-subtext0/60 py-1">None configured.</p>;
+  }
+
+  return (
+    <div className="space-y-1">
+      {items.map((item) => {
+        const isPlugin = item.provenance.source === 'plugin';
+        const isOrphan = isPlugin && orphanSet.has(item.provenance.pluginId);
+        return (
+          <div
+            key={item.id}
+            className={`flex items-center justify-between py-1.5 px-2 rounded border ${
+              isOrphan
+                ? 'bg-ctp-peach/5 border-ctp-peach/20'
+                : 'bg-surface-0 border-surface-1'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="text-sm text-ctp-text font-mono truncate">{item.label}</span>
+              <ProvenanceBadge item={item} isOrphan={isOrphan} />
+            </div>
+            {(isPlugin || item.provenance.source !== 'built-in') && isPlugin && (
+              <RemoveButton
+                onClick={() => onRemove(item)}
+                disabled={removing !== null}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────
 
 export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Props) {
   const [_defaults, setDefaults] = useState<ProjectAgentDefaults>({});
@@ -46,6 +255,15 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const loadProfiles = useProfileStore((s) => s.loadProfiles);
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
+  // Provenance breakdown state
+  const [breakdown, setBreakdown] = useState<ProjectConfigBreakdown | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ProvenancedConfigItem | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  // Get known plugin IDs for orphan detection
+  const pluginIds = usePluginStore((s) => Object.keys(s.plugins));
+  const pluginIdsSerialized = useMemo(() => JSON.stringify(pluginIds.slice().sort()), [pluginIds]);
+
   const loadDefaults = useCallback(async () => {
     try {
       const d = await window.clubhouse.agentSettings.readProjectAgentDefaults(projectPath);
@@ -68,22 +286,65 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     }
   }, [projectPath]);
 
+  const loadBreakdown = useCallback(async () => {
+    try {
+      const bd = await window.clubhouse.agentSettings.getProjectConfigBreakdown(projectPath, pluginIds);
+      setBreakdown(bd);
+      // Use the parsed user instructions (without plugin blocks) for the editor
+      setInstructions(bd.userInstructions);
+    } catch {
+      // Fallback — breakdown not available
+    }
+  }, [projectPath, pluginIdsSerialized]);
+
   useEffect(() => {
     loadDefaults();
     loadProfiles();
   }, [loadDefaults, loadProfiles]);
 
+  useEffect(() => {
+    if (loaded) {
+      loadBreakdown();
+    }
+  }, [loaded, loadBreakdown]);
+
   const handleSave = async () => {
     setSaving(true);
-    const allow = permAllow.split('\n').map((l) => l.trim()).filter(Boolean);
-    const deny = permDeny.split('\n').map((l) => l.trim()).filter(Boolean);
+
+    // Reconstruct full instructions: user content + preserved plugin blocks
+    let fullInstructions = instructions;
+    if (breakdown) {
+      for (const block of breakdown.pluginInstructionBlocks) {
+        if (block.provenance.source === 'plugin') {
+          fullInstructions += `\n\n<!-- plugin:${block.provenance.pluginId}:start -->\n${block.value}\n<!-- plugin:${block.provenance.pluginId}:end -->`;
+        }
+      }
+    }
+
+    // Reconstruct permissions: user-edited rules + preserved plugin rules
+    const userAllow = permAllow.split('\n').map((l) => l.trim()).filter(Boolean);
+    const userDeny = permDeny.split('\n').map((l) => l.trim()).filter(Boolean);
+
+    // Preserve plugin-tagged rules that the user didn't edit
+    if (breakdown) {
+      for (const rule of breakdown.allowRules) {
+        if (rule.provenance.source === 'plugin') {
+          userAllow.push(rule.value);
+        }
+      }
+      for (const rule of breakdown.denyRules) {
+        if (rule.provenance.source === 'plugin') {
+          userDeny.push(rule.value);
+        }
+      }
+    }
 
     const newDefaults: ProjectAgentDefaults = {};
-    if (instructions.trim()) newDefaults.instructions = instructions;
-    if (allow.length > 0 || deny.length > 0) {
+    if (fullInstructions.trim()) newDefaults.instructions = fullInstructions;
+    if (userAllow.length > 0 || userDeny.length > 0) {
       newDefaults.permissions = {};
-      if (allow.length > 0) newDefaults.permissions.allow = allow;
-      if (deny.length > 0) newDefaults.permissions.deny = deny;
+      if (userAllow.length > 0) newDefaults.permissions.allow = userAllow;
+      if (userDeny.length > 0) newDefaults.permissions.deny = userDeny;
     }
     if (mcpJson.trim()) newDefaults.mcpJson = mcpJson;
     if (freeAgentMode) newDefaults.freeAgentMode = true;
@@ -97,6 +358,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     await window.clubhouse.agentSettings.writeProjectAgentDefaults(projectPath, newDefaults);
     setDirty(false);
     setSaving(false);
+    await loadBreakdown();
   };
 
   const handleReset = async () => {
@@ -105,9 +367,71 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
     setShowResetConfirm(false);
     setResetting(false);
     await loadDefaults();
+    await loadBreakdown();
   };
 
+  const handleRemoveItem = async () => {
+    if (!removeTarget) return;
+    setRemoving(removeTarget.id);
+    try {
+      await window.clubhouse.agentSettings.removePluginInjectionItem(projectPath, removeTarget.id);
+      await loadDefaults();
+      await loadBreakdown();
+    } catch { /* ignore */ }
+    setRemoving(null);
+    setRemoveTarget(null);
+  };
+
+  // Filter user-only permission rules for the editable textareas
+  const userAllowRules = useMemo(() => {
+    if (!breakdown) return permAllow;
+    return breakdown.allowRules
+      .filter((r) => r.provenance.source === 'user')
+      .map((r) => r.value)
+      .join('\n');
+  }, [breakdown, permAllow]);
+
+  const userDenyRules = useMemo(() => {
+    if (!breakdown) return permDeny;
+    return breakdown.denyRules
+      .filter((r) => r.provenance.source === 'user')
+      .map((r) => r.value)
+      .join('\n');
+  }, [breakdown, permDeny]);
+
+  // User-only MCP servers for the editable textarea
+  const userMcpJson = useMemo(() => {
+    if (!breakdown || !mcpJson) return mcpJson;
+    try {
+      const parsed = JSON.parse(mcpJson);
+      const servers = parsed.mcpServers || {};
+      const userServers: Record<string, unknown> = {};
+      for (const [name, config] of Object.entries(servers)) {
+        const isPlugin = breakdown.mcpServers.some(
+          (s) => s.label === name && s.provenance.source === 'plugin'
+        );
+        if (!isPlugin) {
+          userServers[name] = config;
+        }
+      }
+      if (Object.keys(userServers).length === 0 && Object.keys(servers).length > 0) {
+        // All servers are plugin-managed — show empty
+        return '';
+      }
+      return JSON.stringify({ ...parsed, mcpServers: userServers }, null, 2);
+    } catch {
+      return mcpJson;
+    }
+  }, [breakdown, mcpJson]);
+
   if (!loaded) return null;
+
+  const orphanedPluginIds = breakdown?.orphanedPluginIds || [];
+  const pluginAllowRules = breakdown?.allowRules.filter((r) => r.provenance.source === 'plugin') || [];
+  const pluginDenyRules = breakdown?.denyRules.filter((r) => r.provenance.source === 'plugin') || [];
+  const pluginMcpServers = breakdown?.mcpServers.filter((s) => s.provenance.source === 'plugin') || [];
+  const hasPluginPerms = pluginAllowRules.length > 0 || pluginDenyRules.length > 0;
+  const hasPluginMcp = pluginMcpServers.length > 0;
 
   return (
     <div className="space-y-2 mb-6">
@@ -138,29 +462,24 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
 
       {/* Reset confirmation dialog */}
       {showResetConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-ctp-base border border-surface-1 rounded-xl p-6 max-w-md mx-4 shadow-xl">
-            <h3 className="text-sm font-semibold text-ctp-text mb-2">Reset to Defaults?</h3>
-            <p className="text-xs text-ctp-subtext0 mb-4">
-              This will replace all project-level agent default settings (instructions, permissions, and commands) with the built-in defaults. Any customizations will be lost.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowResetConfirm(false)}
-                className="px-3 py-1.5 text-xs rounded-lg bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text cursor-pointer transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleReset}
-                disabled={resetting}
-                className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
-              >
-                {resetting ? 'Resetting...' : 'Reset'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Reset to Defaults?"
+          message="This will replace all project-level agent default settings (instructions, permissions, and commands) with the built-in defaults. Plugin-injected configs will be preserved. Any user customizations will be lost."
+          onConfirm={handleReset}
+          onCancel={() => setShowResetConfirm(false)}
+          confirming={resetting}
+        />
+      )}
+
+      {/* Remove item confirmation dialog */}
+      {removeTarget && (
+        <ConfirmDialog
+          title="Remove Plugin Injection?"
+          message={`Remove "${removeTarget.label}" injected by plugin "${removeTarget.provenance.source === 'plugin' ? removeTarget.provenance.pluginId : 'unknown'}"? The plugin may re-inject it on next activation.`}
+          onConfirm={handleRemoveItem}
+          onCancel={() => setRemoveTarget(null)}
+          confirming={removing !== null}
+        />
       )}
 
       <div className="space-y-4">
@@ -184,6 +503,15 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
             }
           </span>
         </div>
+
+        {/* Orphan banner */}
+        {orphanedPluginIds.length > 0 && (
+          <OrphanBanner
+            orphanedPluginIds={orphanedPluginIds}
+            projectPath={projectPath}
+            onCleaned={() => { loadDefaults(); loadBreakdown(); }}
+          />
+        )}
 
         {/* Source Control Provider */}
         <div>
@@ -308,25 +636,67 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           </p>
         )}
 
-        {/* Default instructions */}
+        {/* Default instructions — user-editable portion */}
         <div>
           <label className="block text-xs text-ctp-subtext0 mb-1">Default Instructions</label>
           <textarea
-            value={instructions}
-            onChange={(e) => { setInstructions(e.target.value); setDirty(true); }}
+            value={breakdown ? breakdown.userInstructions : instructions}
+            onChange={(e) => {
+              if (breakdown) {
+                setBreakdown({ ...breakdown, userInstructions: e.target.value });
+              }
+              setInstructions(e.target.value);
+              setDirty(true);
+            }}
             placeholder="Default CLAUDE.md content for new agents..."
             className="w-full h-28 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
             spellCheck={false}
           />
         </div>
 
-        {/* Default permissions */}
+        {/* Plugin instruction blocks — read-only with attribution */}
+        {breakdown && breakdown.pluginInstructionBlocks.length > 0 && (
+          <div>
+            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin Instructions</label>
+            <div className="space-y-2">
+              {breakdown.pluginInstructionBlocks.map((block) => {
+                const isOrphan = block.provenance.source === 'plugin' &&
+                  orphanedPluginIds.includes(block.provenance.pluginId);
+                return (
+                  <div
+                    key={block.id}
+                    className={`rounded-lg border ${
+                      isOrphan
+                        ? 'bg-ctp-peach/5 border-ctp-peach/20'
+                        : 'bg-ctp-mauve/5 border-ctp-mauve/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-inherit">
+                      <div className="flex items-center gap-2">
+                        <ProvenanceBadge item={block} isOrphan={isOrphan} />
+                      </div>
+                      <RemoveButton
+                        onClick={() => setRemoveTarget(block)}
+                        disabled={removing !== null}
+                      />
+                    </div>
+                    <pre className="px-3 py-2 text-[11px] text-ctp-subtext0 font-mono whitespace-pre-wrap overflow-x-auto max-h-32 overflow-y-auto">
+                      {block.value}
+                    </pre>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Default permissions — user-editable portion */}
         <div className="space-y-2">
           <label className="block text-xs text-ctp-subtext0">Default Permissions</label>
           <div>
             <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Allowed tools (one per line)</label>
             <textarea
-              value={permAllow}
+              value={userAllowRules}
               onChange={(e) => { setPermAllow(e.target.value); setDirty(true); }}
               placeholder={"Bash(git checkout:*)\nBash(git pull:*)\nBash(npm run:*)"}
               className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
@@ -336,7 +706,7 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           <div>
             <label className="block text-[10px] text-ctp-subtext0/60 mb-0.5">Auto-deny tools (one per line)</label>
             <textarea
-              value={permDeny}
+              value={userDenyRules}
               onChange={(e) => { setPermDeny(e.target.value); setDirty(true); }}
               placeholder={"WebFetch\nBash(curl *)"}
               className="w-full h-16 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
@@ -345,11 +715,40 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           </div>
         </div>
 
-        {/* Default MCP JSON */}
+        {/* Plugin permission rules — read-only with attribution */}
+        {hasPluginPerms && (
+          <div>
+            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin Permissions</label>
+            {pluginAllowRules.length > 0 && (
+              <div className="mb-2">
+                <span className="text-[10px] text-ctp-subtext0/60">Allow rules:</span>
+                <ConfigItemList
+                  items={pluginAllowRules}
+                  orphanedPluginIds={orphanedPluginIds}
+                  onRemove={setRemoveTarget}
+                  removing={removing}
+                />
+              </div>
+            )}
+            {pluginDenyRules.length > 0 && (
+              <div>
+                <span className="text-[10px] text-ctp-subtext0/60">Deny rules:</span>
+                <ConfigItemList
+                  items={pluginDenyRules}
+                  orphanedPluginIds={orphanedPluginIds}
+                  onRemove={setRemoveTarget}
+                  removing={removing}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Default MCP JSON — user-editable portion */}
         <div>
           <label className="block text-xs text-ctp-subtext0 mb-1">Default .mcp.json</label>
           <textarea
-            value={mcpJson}
+            value={userMcpJson}
             onChange={(e) => { setMcpJson(e.target.value); setDirty(true); }}
             placeholder='{\n  "mcpServers": {}\n}'
             className="w-full h-20 bg-surface-0 text-ctp-text text-sm font-mono rounded-lg p-3 resize-y border border-surface-1 focus:border-ctp-blue focus:outline-none"
@@ -357,11 +756,65 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           />
         </div>
 
-        {/* Source Skills */}
-        <SourceSkillsSection projectPath={projectPath} />
+        {/* Plugin MCP servers — read-only with attribution */}
+        {hasPluginMcp && (
+          <div>
+            <label className="block text-xs text-ctp-subtext0 mb-1">Plugin MCP Servers</label>
+            <ConfigItemList
+              items={pluginMcpServers}
+              orphanedPluginIds={orphanedPluginIds}
+              onRemove={setRemoveTarget}
+              removing={removing}
+            />
+          </div>
+        )}
 
-        {/* Source Agent Definitions */}
-        <SourceAgentTemplatesSection projectPath={projectPath} />
+        {/* Source Skills — with provenance badges */}
+        {breakdown ? (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
+                <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/skills/</span>
+              </div>
+            </div>
+            <ConfigItemList
+              items={breakdown.skills}
+              orphanedPluginIds={orphanedPluginIds}
+              onRemove={setRemoveTarget}
+              removing={removing}
+            />
+            {/* Still render the full editor section for user skills */}
+            <div className="mt-2">
+              <SourceSkillsSection projectPath={projectPath} />
+            </div>
+          </div>
+        ) : (
+          <SourceSkillsSection projectPath={projectPath} />
+        )}
+
+        {/* Source Agent Definitions — with provenance badges */}
+        {breakdown ? (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
+                <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/agent-templates/</span>
+              </div>
+            </div>
+            <ConfigItemList
+              items={breakdown.agentTemplates}
+              orphanedPluginIds={orphanedPluginIds}
+              onRemove={setRemoveTarget}
+              removing={removing}
+            />
+            <div className="mt-2">
+              <SourceAgentTemplatesSection projectPath={projectPath} />
+            </div>
+          </div>
+        ) : (
+          <SourceAgentTemplatesSection projectPath={projectPath} />
+        )}
       </div>
     </div>
   );
