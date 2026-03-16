@@ -23,7 +23,7 @@ import {
   generateCanvasId,
   syncCounterToInstances,
 } from './canvas-operations';
-import type { CanvasView, AgentCanvasView, FileCanvasView } from './canvas-types';
+import type { CanvasView, AgentCanvasView } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE } from './canvas-types';
 
 describe('canvas-operations', () => {

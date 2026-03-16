@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createCanvasStore, type CanvasState } from './canvas-store';
+import { createCanvasStore } from './canvas-store';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 
 function createMockStorage(data: Record<string, unknown> = {}): ScopedStorage {
@@ -163,7 +163,7 @@ describe('canvas-store', () => {
     store.getState().addView('agent', { x: 0, y: 0 });
     expect(store.getState().views).toHaveLength(1);
 
-    const id2 = store.getState().addCanvas();
+    store.getState().addCanvas();
     // New canvas should have no views
     expect(store.getState().views).toHaveLength(0);
 

@@ -12,8 +12,6 @@ import {
   updateViewTitle as updateViewTitleOp,
   bringToFront as bringToFrontOp,
   clampViewport,
-  snapPosition,
-  snapSize,
   createCanvasCounter,
   generateCanvasId,
   syncCounterToInstances,
@@ -63,7 +61,7 @@ const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function createCanvasInstance(canvasCounter: CanvasCounter, viewCounter: ViewCounter): CanvasInstance {
+function createCanvasInstance(canvasCounter: CanvasCounter, _viewCounter: ViewCounter): CanvasInstance {
   return {
     id: generateCanvasId(canvasCounter),
     name: generateHubName(),
