@@ -9,7 +9,7 @@ let lastOnSave: ((content: string) => void) | null = null;
 
 // Mock MonacoEditor and MarkdownPreview to avoid themes/require issues in jsdom
 vi.mock('./MonacoEditor', () => ({
-  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void }) => {
+  MonacoEditor: ({ value: _value, language, onSave }: { value: string; language: string; onSave?: (content: string) => void; onCursorChange?: (line: number, column: number) => void }) => {
     lastOnSave = onSave || null;
     return React.createElement('div', { 'data-testid': 'monaco-editor' }, `Monaco: ${language}`);
   },
@@ -162,5 +162,34 @@ describe('FileViewer', () => {
     await waitFor(() => {
       expect(screen.getByText('Cannot display binary file')).toBeInTheDocument();
     });
+  });
+
+  it('shows status bar with line/column and language for text files', async () => {
+    const api = createViewerAPI();
+    render(<FileViewer api={api} />);
+
+    selectFile('hello.ts');
+
+    await waitFor(() => {
+      expect(screen.getByText('Ln 1, Col 1')).toBeInTheDocument();
+    });
+
+    // Status bar should show TypeScript language
+    expect(screen.getByText('TypeScript')).toBeInTheDocument();
+    // Status bar should show encoding
+    expect(screen.getByText('UTF-8')).toBeInTheDocument();
+  });
+
+  it('does not show status bar for binary files', async () => {
+    const api = createViewerAPI();
+    render(<FileViewer api={api} />);
+
+    selectFile('data.bin');
+
+    await waitFor(() => {
+      expect(screen.getByText('Cannot display binary file')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Ln 1, Col 1')).not.toBeInTheDocument();
   });
 });

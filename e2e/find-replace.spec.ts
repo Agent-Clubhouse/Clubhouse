@@ -109,6 +109,16 @@ async function closeFindWidget() {
 
 test.beforeAll(async () => {
   ({ electronApp, window } = await launchApp());
+  // Ensure the window is wide enough for Monaco's find widget to show all
+  // elements (matchesCount, toggle buttons). With the minimap enabled the
+  // editor viewport is narrower and Monaco hides these at small widths.
+  await electronApp.evaluate(async ({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find(
+      (w) => !w.webContents.getURL().startsWith('devtools://'),
+    );
+    win?.setSize(1280, 800);
+  });
+  await window.waitForTimeout(500);
   await addProject(FIXTURE_DIR);
   await window.waitForTimeout(1_000);
 });

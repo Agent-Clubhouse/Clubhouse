@@ -16,7 +16,7 @@ const mockEditor = {
   setModel: () => {},
   addCommand: vi.fn(),
   trigger: vi.fn(),
-  updateOptions: () => {},
+  updateOptions: vi.fn(),
   getPosition: () => ({ lineNumber: 1, column: 1 }),
   setPosition: () => {},
   getScrollTop: () => 0,
@@ -48,4 +48,5 @@ export const KeyCode = {
   KeyG: 37,
   KeyD: 34,
   KeyL: 42,
+  KeyZ: 56,
 };

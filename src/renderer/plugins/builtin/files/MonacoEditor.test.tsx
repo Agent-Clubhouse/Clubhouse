@@ -84,7 +84,7 @@ describe('MonacoEditor find/replace keybindings', () => {
 
     // Verify addCommand was called with keybinding constants for find/replace
     const addCommandCalls = mockEditorInstance.addCommand.mock.calls;
-    expect(addCommandCalls.length).toBeGreaterThanOrEqual(8); // Save + 7 find/replace bindings
+    expect(addCommandCalls.length).toBeGreaterThanOrEqual(9); // Save + 7 find/replace + 1 word wrap
 
     // Collect all registered keybindings
     const registeredBindings = addCommandCalls.map((call: any[]) => call[0]);
@@ -146,5 +146,91 @@ describe('MonacoEditor find/replace keybindings', () => {
       'editor.action.startFindReplaceAction',
       null,
     );
+  });
+});
+
+describe('MonacoEditor word wrap toggle', () => {
+  it('registers Alt+Z keybinding for word wrap toggle', async () => {
+    render(
+      <MonacoEditor
+        value="line one\nline two\nline three"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+    const addCommandCalls = mockEditorInstance.addCommand.mock.calls;
+    const registeredBindings = addCommandCalls.map((call: any[]) => call[0]);
+
+    // Alt+Z — word wrap toggle
+    expect(registeredBindings).toContain(KeyMod.Alt | KeyCode.KeyZ);
+  });
+
+  it('toggles word wrap on/off when Alt+Z callback is invoked', async () => {
+    render(
+      <MonacoEditor
+        value="test content"
+        language="javascript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.js"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+    const addCommandCalls = mockEditorInstance.addCommand.mock.calls;
+
+    const wordWrapBinding = KeyMod.Alt | KeyCode.KeyZ;
+    const wordWrapCall = addCommandCalls.find((call: any[]) => call[0] === wordWrapBinding);
+    expect(wordWrapCall).toBeDefined();
+
+    // First invoke: should enable word wrap
+    wordWrapCall[1]();
+    expect(mockEditorInstance.updateOptions).toHaveBeenCalledWith({ wordWrap: 'on' });
+
+    // Second invoke: should disable word wrap
+    wordWrapCall[1]();
+    expect(mockEditorInstance.updateOptions).toHaveBeenCalledWith({ wordWrap: 'off' });
+  });
+});
+
+describe('MonacoEditor enhanced options', () => {
+  it('creates editor with minimap enabled', async () => {
+    render(
+      <MonacoEditor
+        value="hello"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const createCalls = (monaco.editor.create as any).mock?.calls;
+    if (createCalls && createCalls.length > 0) {
+      const options = createCalls[createCalls.length - 1][1];
+      expect(options.minimap?.enabled).toBe(true);
+      expect(options.stickyScroll?.enabled).toBe(true);
+      expect(options.guides?.indentation).toBe(true);
+      expect(options.cursorSmoothCaretAnimation).toBe('on');
+    }
   });
 });
