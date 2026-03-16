@@ -163,9 +163,9 @@ describe('config-provenance-service', () => {
     it('tags skills with correct provenance', async () => {
       mockSettingsFile({});
 
-      // Mock source skills listing
+      // Mock source skills listing (normalize path separators for Windows)
       vi.mocked(fsp.readdir).mockImplementation(async (p: unknown) => {
-        const dirPath = String(p);
+        const dirPath = String(p).replace(/\\/g, '/');
         if (dirPath.includes('/skills')) {
           return [
             { name: 'mission', isDirectory: () => true },

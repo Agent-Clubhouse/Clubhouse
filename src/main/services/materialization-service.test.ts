@@ -325,7 +325,7 @@ describe('materialization-service', () => {
       // 2. Inside a source skill dir — lists files (for copyDirRecursive)
       // 3. Worktree skills dir (.claude/skills) — lists worktree skill dirs (for pruning)
       vi.mocked(fsp.readdir).mockImplementation(async (p: unknown, _opts?: unknown) => {
-        const dirPath = String(p);
+        const dirPath = String(p).replace(/\\/g, '/');
         // Source skills listing
         if (dirPath.endsWith('.clubhouse/skills')) {
           return [{ name: 'mission', isDirectory: () => true }] as any;
@@ -369,7 +369,7 @@ describe('materialization-service', () => {
 
     it('does not prune skills that exist in source', async () => {
       vi.mocked(fsp.readdir).mockImplementation(async (p: unknown, _opts?: unknown) => {
-        const dirPath = String(p);
+        const dirPath = String(p).replace(/\\/g, '/');
         if (dirPath.endsWith('.clubhouse/skills')) {
           return [{ name: 'mission', isDirectory: () => true }] as any;
         }
