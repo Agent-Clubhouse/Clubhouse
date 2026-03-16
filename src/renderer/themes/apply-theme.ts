@@ -8,8 +8,14 @@ function hexToRgbChannels(hex: string): string {
   return `${r} ${g} ${b}`;
 }
 
-export function applyTheme(theme: ThemeDefinition): void {
+export interface ApplyThemeOptions {
+  /** When true, apply experimental font and gradient CSS variables from the theme. */
+  experimentalGradients?: boolean;
+}
+
+export function applyTheme(theme: ThemeDefinition, options?: ApplyThemeOptions): void {
   const s = document.documentElement.style;
+  const el = document.documentElement;
   const cache: Record<string, string> = {};
 
   // Set color CSS variables (space-separated RGB channels)
@@ -64,11 +70,64 @@ export function applyTheme(theme: ThemeDefinition): void {
 
   // Font override (Terminal theme)
   if (theme.fontOverride) {
-    document.documentElement.classList.add('theme-mono');
+    el.classList.add('theme-mono');
     localStorage.setItem('clubhouse-theme-font', theme.fontOverride);
   } else {
-    document.documentElement.classList.remove('theme-mono');
+    el.classList.remove('theme-mono');
     localStorage.removeItem('clubhouse-theme-font');
+  }
+
+  // Experimental: custom fonts and gradients
+  if (options?.experimentalGradients) {
+    // Fonts
+    if (theme.fonts?.ui) {
+      s.setProperty('--theme-font-ui', theme.fonts.ui);
+      el.classList.add('theme-font-ui');
+      cache['--theme-font-ui'] = theme.fonts.ui;
+    } else {
+      s.removeProperty('--theme-font-ui');
+      el.classList.remove('theme-font-ui');
+    }
+    if (theme.fonts?.mono) {
+      s.setProperty('--theme-font-mono', theme.fonts.mono);
+      el.classList.add('theme-font-mono');
+      cache['--theme-font-mono'] = theme.fonts.mono;
+    } else {
+      s.removeProperty('--theme-font-mono');
+      el.classList.remove('theme-font-mono');
+    }
+
+    // Gradients — use class-based approach on body to avoid the Windows
+    // compositing bug caused by always setting background-image: none.
+    if (theme.gradients?.background) {
+      s.setProperty('--theme-gradient-bg', theme.gradients.background);
+      document.body.classList.add('theme-gradient-bg');
+      cache['--theme-gradient-bg'] = theme.gradients.background;
+    } else {
+      s.removeProperty('--theme-gradient-bg');
+      document.body.classList.remove('theme-gradient-bg');
+    }
+    if (theme.gradients?.surface) {
+      s.setProperty('--theme-gradient-surface', theme.gradients.surface);
+      cache['--theme-gradient-surface'] = theme.gradients.surface;
+    } else {
+      s.removeProperty('--theme-gradient-surface');
+    }
+    if (theme.gradients?.accent) {
+      s.setProperty('--theme-gradient-accent', theme.gradients.accent);
+      cache['--theme-gradient-accent'] = theme.gradients.accent;
+    } else {
+      s.removeProperty('--theme-gradient-accent');
+    }
+  } else {
+    // Feature disabled — clean up any previously set experimental variables
+    s.removeProperty('--theme-font-ui');
+    s.removeProperty('--theme-font-mono');
+    s.removeProperty('--theme-gradient-bg');
+    s.removeProperty('--theme-gradient-surface');
+    s.removeProperty('--theme-gradient-accent');
+    el.classList.remove('theme-font-ui', 'theme-font-mono');
+    document.body.classList.remove('theme-gradient-bg');
   }
 
   // Cache to localStorage for flash prevention

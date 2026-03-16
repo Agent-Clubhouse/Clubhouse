@@ -6,7 +6,7 @@ export function buildThemeInfo(): ThemeInfo {
   const { useThemeStore } = require('../stores/themeStore');
   const state = useThemeStore.getState();
   const theme = state.theme;
-  return {
+  const info: ThemeInfo = {
     id: theme.id,
     name: theme.name,
     type: theme.type,
@@ -14,6 +14,12 @@ export function buildThemeInfo(): ThemeInfo {
     hljs: { ...theme.hljs },
     terminal: { ...theme.terminal },
   };
+  // Only expose fonts/gradients when the experimental flag is on
+  if (state.experimentalGradients) {
+    if (theme.fonts) info.fonts = { ...theme.fonts };
+    if (theme.gradients) info.gradients = { ...theme.gradients };
+  }
+  return info;
 }
 
 export function createThemeAPI(ctx: PluginContext): ThemeAPI {
@@ -25,17 +31,22 @@ export function createThemeAPI(ctx: PluginContext): ThemeAPI {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { useThemeStore } = require('../stores/themeStore');
       let prevId = useThemeStore.getState().themeId;
-      const unsub = useThemeStore.subscribe((state: { themeId: string; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string> } }) => {
+      const unsub = useThemeStore.subscribe((state: { themeId: string; experimentalGradients: boolean; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string>; fonts?: { ui?: string; mono?: string }; gradients?: { background?: string; surface?: string; accent?: string } } }) => {
         if (state.themeId !== prevId) {
           prevId = state.themeId;
-          callback({
+          const info: ThemeInfo = {
             id: state.theme.id,
             name: state.theme.name,
             type: state.theme.type,
             colors: { ...state.theme.colors },
             hljs: { ...state.theme.hljs },
             terminal: { ...state.theme.terminal },
-          });
+          };
+          if (state.experimentalGradients) {
+            if (state.theme.fonts) info.fonts = { ...state.theme.fonts };
+            if (state.theme.gradients) info.gradients = { ...state.theme.gradients };
+          }
+          callback(info);
         }
       });
       const disposable = { dispose: unsub };

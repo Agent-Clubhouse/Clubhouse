@@ -274,6 +274,36 @@ export function validateManifest(raw: unknown): ValidationResult {
             if (!theme.terminal || typeof theme.terminal !== 'object') {
               errors.push(`contributes.themes[${i}].terminal must be an object`);
             }
+            // Optional fonts/gradients validation (experimental)
+            if (theme.fonts !== undefined) {
+              if (typeof theme.fonts !== 'object' || theme.fonts === null) {
+                errors.push(`contributes.themes[${i}].fonts must be an object`);
+              } else {
+                const fonts = theme.fonts as Record<string, unknown>;
+                if (fonts.ui !== undefined && typeof fonts.ui !== 'string') {
+                  errors.push(`contributes.themes[${i}].fonts.ui must be a string`);
+                }
+                if (fonts.mono !== undefined && typeof fonts.mono !== 'string') {
+                  errors.push(`contributes.themes[${i}].fonts.mono must be a string`);
+                }
+              }
+            }
+            if (theme.gradients !== undefined) {
+              if (typeof theme.gradients !== 'object' || theme.gradients === null) {
+                errors.push(`contributes.themes[${i}].gradients must be an object`);
+              } else {
+                const gradients = theme.gradients as Record<string, unknown>;
+                if (gradients.background !== undefined && typeof gradients.background !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.background must be a string`);
+                }
+                if (gradients.surface !== undefined && typeof gradients.surface !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.surface must be a string`);
+                }
+                if (gradients.accent !== undefined && typeof gradients.accent !== 'string') {
+                  errors.push(`contributes.themes[${i}].gradients.accent must be a string`);
+                }
+              }
+            }
           }
         }
       }

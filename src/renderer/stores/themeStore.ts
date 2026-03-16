@@ -20,25 +20,32 @@ interface ThemeState {
   theme: ThemeDefinition;
   /** All available theme IDs (builtins + plugin-contributed). */
   availableThemeIds: ThemeId[];
+  /** Whether the experimental themeGradients flag is enabled. */
+  experimentalGradients: boolean;
   loadTheme: () => Promise<void>;
   setTheme: (id: ThemeId) => Promise<void>;
   /** Refresh the available themes list from the registry. */
   refreshAvailable: () => void;
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
+export const useThemeStore = create<ThemeState>((set, get) => ({
   themeId: 'catppuccin-mocha',
   theme: BUILTIN_THEMES['catppuccin-mocha'],
   availableThemeIds: getAllThemeIds(),
+  experimentalGradients: false,
 
   loadTheme: async () => {
     try {
-      const settings = await window.clubhouse.app.getTheme();
+      const [settings, experimental] = await Promise.all([
+        window.clubhouse.app.getTheme(),
+        window.clubhouse.app.getExperimentalSettings().catch(() => ({})),
+      ]);
       const id = (settings?.themeId || 'catppuccin-mocha') as ThemeId;
       const theme = resolveTheme(id);
-      applyTheme(theme);
+      const experimentalGradients = !!experimental?.themeGradients;
+      applyTheme(theme, { experimentalGradients });
       syncTitleBarOverlay(theme);
-      set({ themeId: id, theme, availableThemeIds: getAllThemeIds() });
+      set({ themeId: id, theme, experimentalGradients, availableThemeIds: getAllThemeIds() });
     } catch {
       // Use default on error
       applyTheme(BUILTIN_THEMES['catppuccin-mocha']);
@@ -48,7 +55,8 @@ export const useThemeStore = create<ThemeState>((set) => ({
   setTheme: async (id) => {
     const theme = getTheme(id);
     if (!theme) return;
-    applyTheme(theme);
+    const { experimentalGradients } = get();
+    applyTheme(theme, { experimentalGradients });
     syncTitleBarOverlay(theme);
     set({ themeId: id, theme });
     await window.clubhouse.app.saveTheme({ themeId: id });
@@ -68,7 +76,7 @@ onRegistryChange(() => {
   const currentTheme = getTheme(store.themeId);
   if (!currentTheme) {
     const fallback = BUILTIN_THEMES['catppuccin-mocha'];
-    applyTheme(fallback);
+    applyTheme(fallback, { experimentalGradients: store.experimentalGradients });
     syncTitleBarOverlay(fallback);
     useThemeStore.setState({ themeId: 'catppuccin-mocha', theme: fallback });
   }

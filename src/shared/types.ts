@@ -582,6 +582,22 @@ export interface TerminalColors {
   brightWhite: string;
 }
 
+export interface ThemeFonts {
+  /** UI font family (applied to body and all UI elements). */
+  ui?: string;
+  /** Monospace font family (applied to code, pre, kbd, terminal). */
+  mono?: string;
+}
+
+export interface ThemeGradients {
+  /** CSS gradient applied to the page background. */
+  background?: string;
+  /** CSS gradient for elevated surface elements. */
+  surface?: string;
+  /** CSS gradient for accent/highlight elements. */
+  accent?: string;
+}
+
 export interface ThemeDefinition {
   id: ThemeId;
   name: string;
@@ -590,6 +606,10 @@ export interface ThemeDefinition {
   hljs: HljsColors;
   terminal: TerminalColors;
   fontOverride?: string;
+  /** Custom font families (experimental). */
+  fonts?: ThemeFonts;
+  /** CSS gradients (experimental). */
+  gradients?: ThemeGradients;
 }
 
 export interface GitStatusFile {

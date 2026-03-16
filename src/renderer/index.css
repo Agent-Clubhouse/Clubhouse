@@ -76,6 +76,24 @@
     font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace !important;
   }
 
+  /* Experimental: custom UI font (applied via applyTheme when feature flag is on) */
+  .theme-font-ui {
+    font-family: var(--theme-font-ui) !important;
+  }
+
+  /* Experimental: custom mono font for code elements */
+  .theme-font-mono pre,
+  .theme-font-mono code,
+  .theme-font-mono kbd,
+  .theme-font-mono samp {
+    font-family: var(--theme-font-mono) !important;
+  }
+
+  /* Experimental: body background gradient (class-based to avoid Windows compositing bug) */
+  body.theme-gradient-bg {
+    background-image: var(--theme-gradient-bg);
+  }
+
   /* Scrollbar styling — auto-hide: invisible by default, visible on hover */
   ::-webkit-scrollbar {
     width: 6px;
@@ -99,6 +117,15 @@
   :hover::-webkit-scrollbar-thumb:hover {
     background: rgb(var(--ctp-surface2));
   }
+}
+
+/* Experimental: gradient utility classes (inert unless CSS variables are set) */
+.theme-gradient-surface {
+  background-image: var(--theme-gradient-surface);
+}
+
+.theme-gradient-accent {
+  background-image: var(--theme-gradient-accent);
 }
 
 /* Drag region for frameless window */

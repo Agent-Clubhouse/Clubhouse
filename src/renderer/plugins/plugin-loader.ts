@@ -1,6 +1,6 @@
 import type { PluginContext, PluginModule, PluginManifest, PluginThemeDeclaration } from '../../shared/plugin-types';
 import { PERMISSION_RISK_LEVELS } from '../../shared/plugin-types';
-import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors } from '../../shared/types';
+import type { ThemeDefinition, ThemeColors, HljsColors, TerminalColors, ThemeFonts, ThemeGradients } from '../../shared/types';
 import { usePluginStore } from './plugin-store';
 import { validateManifest } from './manifest-validator';
 import { createPluginAPI, computeWorkspaceRoot } from './plugin-api-factory';
@@ -30,6 +30,8 @@ function registerPackThemes(pluginId: string, themes: PluginThemeDeclaration[]):
       colors: decl.colors as ThemeColors,
       hljs: decl.hljs as HljsColors,
       terminal: decl.terminal as TerminalColors,
+      ...(decl.fonts ? { fonts: decl.fonts as ThemeFonts } : {}),
+      ...(decl.gradients ? { gradients: decl.gradients as ThemeGradients } : {}),
     };
     registerTheme(def);
   }

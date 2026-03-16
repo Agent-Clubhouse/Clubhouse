@@ -12,6 +12,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Structured Mode',
     description: 'Enable the structured agent execution mode for providers that support it (ACP protocol).',
   },
+  {
+    id: 'themeGradients',
+    label: 'Theme Gradients & Fonts',
+    description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

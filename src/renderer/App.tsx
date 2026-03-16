@@ -24,6 +24,7 @@ import { ConfigChangesDialog } from './features/agents/ConfigChangesDialog';
 import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
 import { ToastContainer } from './components/ToastContainer';
+import { useThemeStore } from './stores/themeStore';
 import { useToastStore } from './stores/toastStore';
 
 export function App() {
@@ -105,6 +106,12 @@ export function App() {
     }
   }, [activeProjectId, projects]);
 
+  // ── Experimental gradient background ──────────────────────────────────
+  const hasGradientBg = useThemeStore(
+    (s) => s.experimentalGradients && !!s.theme.gradients?.background,
+  );
+  const rootBg = hasGradientBg ? '' : 'bg-ctp-base';
+
   // ── Derived routing state ──────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
@@ -112,7 +119,7 @@ export function App() {
 
   if (isHome) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className={`h-screen w-screen overflow-hidden ${rootBg} text-ctp-text flex flex-col`}>
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
@@ -133,7 +140,7 @@ export function App() {
   if (isAppPlugin) {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className={`h-screen w-screen overflow-hidden ${rootBg} text-ctp-text flex flex-col`}>
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
@@ -153,7 +160,7 @@ export function App() {
 
   if (isHelp) {
     return (
-      <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+      <div className={`h-screen w-screen overflow-hidden ${rootBg} text-ctp-text flex flex-col`}>
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
