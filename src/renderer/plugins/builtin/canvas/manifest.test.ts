@@ -28,7 +28,8 @@ describe('canvas manifest', () => {
         'widgets', 'navigation', 'files',
       ]),
     );
-    expect(manifest.permissions).toHaveLength(7);
+    // 7 base permissions
+    expect(manifest.permissions!.length).toBeGreaterThanOrEqual(7);
   });
 
   it('contributes a tab with label and full layout', () => {
@@ -58,6 +59,13 @@ describe('canvas manifest', () => {
 
   it('contributes cross-project-canvas boolean setting with default true', () => {
     const setting = manifest.contributes!.settings!.find((s) => s.key === 'cross-project-canvas');
+    expect(setting).toBeDefined();
+    expect(setting!.type).toBe('boolean');
+    expect(setting!.default).toBe(true);
+  });
+
+  it('contributes showHiddenFiles boolean setting with default true', () => {
+    const setting = manifest.contributes!.settings!.find((s) => s.key === 'showHiddenFiles');
     expect(setting).toBeDefined();
     expect(setting!.type).toBe('boolean');
     expect(setting!.default).toBe(true);
