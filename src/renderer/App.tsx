@@ -85,7 +85,9 @@ export function App() {
               key: `project-enabled-${activeProjectId}`,
             }) as string[] | undefined;
             // Merge built-in project-scoped plugins so they're always enabled
-            const builtinIds = getBuiltinProjectPluginIds();
+            let expFlags = {};
+            try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+            const builtinIds = getBuiltinProjectPluginIds(expFlags);
             const base = Array.isArray(saved) ? saved : [];
             const merged = [...new Set([...base, ...builtinIds])];
             usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);

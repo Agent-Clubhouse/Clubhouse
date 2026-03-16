@@ -6,7 +6,7 @@ import { validateManifest } from './manifest-validator';
 import { createPluginAPI, computeWorkspaceRoot } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
-import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
+import { getBuiltinPlugins, getDefaultEnabledIds, type ExperimentalFlags } from './builtin';
 import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
 import { registerTheme, unregisterTheme } from '../themes';
@@ -45,9 +45,9 @@ function unregisterPackThemes(pluginId: string, themes: PluginThemeDeclaration[]
 }
 
 /** Returns IDs of built-in plugins that should be auto-enabled per project. */
-export function getBuiltinProjectPluginIds(): string[] {
-  const defaults = getDefaultEnabledIds();
-  return getBuiltinPlugins()
+export function getBuiltinProjectPluginIds(experimentalFlags: ExperimentalFlags = {}): string[] {
+  const defaults = getDefaultEnabledIds(experimentalFlags);
+  return getBuiltinPlugins(experimentalFlags)
     .filter(({ manifest }) =>
       defaults.has(manifest.id) &&
       (manifest.scope === 'project' || manifest.scope === 'dual'),
@@ -70,9 +70,17 @@ export async function initializePluginSystem(): Promise<void> {
 
   rendererLog('core:plugins', 'info', 'Initializing plugin system');
 
+  // Fetch experimental flags to gate conditional built-in plugins
+  let experimentalFlags: ExperimentalFlags = {};
+  try {
+    experimentalFlags = await window.clubhouse.app.getExperimentalSettings();
+  } catch {
+    // Default to empty — no experimental plugins
+  }
+
   // Register built-in plugins
-  const builtins = getBuiltinPlugins();
-  const defaults = getDefaultEnabledIds();
+  const builtins = getBuiltinPlugins(experimentalFlags);
+  const defaults = getDefaultEnabledIds(experimentalFlags);
   for (const { manifest, module: mod } of builtins) {
     store.registerPlugin(manifest, 'builtin', '', 'registered');
     // Built-in manifests are loaded by initializeTrustedManifests in the main
