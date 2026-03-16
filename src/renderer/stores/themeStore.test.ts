@@ -11,6 +11,7 @@ const mockApp = {
   getTheme: vi.fn<() => Promise<{ themeId: string } | null>>(),
   saveTheme: vi.fn().mockResolvedValue(undefined),
   updateTitleBarOverlay: vi.fn().mockResolvedValue(undefined),
+  getExperimentalSettings: vi.fn().mockResolvedValue({} as Record<string, boolean>),
 };
 
 vi.stubGlobal('window', {
@@ -31,9 +32,11 @@ describe('themeStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockApp.updateTitleBarOverlay.mockResolvedValue(undefined);
+    mockApp.getExperimentalSettings.mockResolvedValue({} as Record<string, boolean>);
     useThemeStore.setState({
       themeId: 'catppuccin-mocha',
       theme: THEMES['catppuccin-mocha'],
+      experimentalGradients: false,
     });
   });
 
@@ -55,7 +58,7 @@ describe('themeStore', () => {
 
       expect(getState().themeId).toBe('dracula');
       expect(getState().theme).toBe(THEMES['dracula']);
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['dracula']);
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['dracula'], { experimentalGradients: false });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: THEMES['dracula'].colors.mantle,
         symbolColor: THEMES['dracula'].colors.text,
@@ -112,7 +115,7 @@ describe('themeStore', () => {
 
       expect(getState().themeId).toBe('nord');
       expect(getState().theme).toBe(THEMES['nord']);
-      expect(applyTheme).toHaveBeenCalledWith(THEMES['nord']);
+      expect(applyTheme).toHaveBeenCalledWith(THEMES['nord'], { experimentalGradients: false });
       expect(mockApp.updateTitleBarOverlay).toHaveBeenCalledWith({
         color: THEMES['nord'].colors.mantle,
         symbolColor: THEMES['nord'].colors.text,

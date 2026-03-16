@@ -38,7 +38,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     try {
       const [settings, experimental] = await Promise.all([
         window.clubhouse.app.getTheme(),
-        window.clubhouse.app.getExperimentalSettings().catch(() => ({})),
+        window.clubhouse.app.getExperimentalSettings().catch(() => ({} as Record<string, boolean>)),
       ]);
       const id = (settings?.themeId || 'catppuccin-mocha') as ThemeId;
       const theme = resolveTheme(id);
