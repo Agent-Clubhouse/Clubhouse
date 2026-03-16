@@ -376,6 +376,10 @@ const api = {
       ipcRenderer.invoke(IPC.AGENT.WRITE_PROJECT_AGENT_DEFAULTS, projectPath, defaults),
     resetProjectAgentDefaults: (projectPath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.AGENT.RESET_PROJECT_AGENT_DEFAULTS, projectPath),
+    getProjectConfigBreakdown: (projectPath: string, knownPluginIds: string[]) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, projectPath, knownPluginIds),
+    removePluginInjectionItem: (projectPath: string, itemId: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.AGENT.REMOVE_PLUGIN_INJECTION_ITEM, projectPath, itemId),
     getConventions: (projectPath: string): Promise<{
       configDir: string;
       localInstructionsFile: string;

@@ -6,6 +6,7 @@ import { resolveOrchestrator } from '../services/agent-system';
 import { getDurableConfig } from '../services/agent-config';
 import { materializeAgent, previewMaterialization, resetProjectAgentDefaults } from '../services/materialization-service';
 import { computeConfigDiff, propagateChanges } from '../services/config-diff-service';
+import { getProjectConfigBreakdown, removePluginInjectionItem } from '../services/config-provenance-service';
 import { appLog } from '../services/log-service';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, booleanArg } from './validation';
 
@@ -259,6 +260,22 @@ export function registerAgentSettingsHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentName) => {
       await agentSettings.deleteSourceAgentTemplate(projectPath, agentName);
+    },
+  ));
+
+  // --- Project config breakdown with provenance ---
+
+  ipcMain.handle(IPC.AGENT.GET_PROJECT_CONFIG_BREAKDOWN, withValidatedArgs(
+    [stringArg(), arrayArg(stringArg())],
+    async (_event, projectPath: string, knownPluginIds: string[]) => {
+      return getProjectConfigBreakdown(projectPath, knownPluginIds);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.REMOVE_PLUGIN_INJECTION_ITEM, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, projectPath: string, itemId: string) => {
+      return removePluginInjectionItem(projectPath, itemId);
     },
   ));
 

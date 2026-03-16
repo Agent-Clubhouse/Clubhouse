@@ -252,6 +252,44 @@ export interface MaterializationPreview {
   agentTemplates: string[];
 }
 
+/** Provenance of a config item — who added it */
+export type ConfigProvenance =
+  | { source: 'user' }
+  | { source: 'built-in' }
+  | { source: 'plugin'; pluginId: string };
+
+/** A config item with provenance for the management UI */
+export interface ProvenancedConfigItem {
+  /** Unique key for this item */
+  id: string;
+  /** Human label */
+  label: string;
+  /** The raw value */
+  value: string;
+  /** Who added it */
+  provenance: ConfigProvenance;
+}
+
+/** Structured breakdown of all project agent default configs with provenance */
+export interface ProjectConfigBreakdown {
+  /** User-authored instruction text (without plugin blocks) */
+  userInstructions: string;
+  /** Plugin instruction blocks with attribution */
+  pluginInstructionBlocks: ProvenancedConfigItem[];
+  /** Permission allow rules with attribution */
+  allowRules: ProvenancedConfigItem[];
+  /** Permission deny rules with attribution */
+  denyRules: ProvenancedConfigItem[];
+  /** Skills with attribution */
+  skills: ProvenancedConfigItem[];
+  /** Agent templates with attribution */
+  agentTemplates: ProvenancedConfigItem[];
+  /** MCP servers with attribution */
+  mcpServers: ProvenancedConfigItem[];
+  /** IDs of plugins that have orphaned injections (plugin no longer installed) */
+  orphanedPluginIds: string[];
+}
+
 export interface FileNode {
   name: string;
   path: string;

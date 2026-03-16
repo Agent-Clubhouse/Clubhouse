@@ -94,6 +94,8 @@ export const IPC = {
     READ_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:read-source-agent-template-content',
     WRITE_SOURCE_AGENT_TEMPLATE_CONTENT: 'agent:write-source-agent-template-content',
     DELETE_SOURCE_AGENT_TEMPLATE: 'agent:delete-source-agent-template',
+    GET_PROJECT_CONFIG_BREAKDOWN: 'agent:get-project-config-breakdown',
+    REMOVE_PLUGIN_INJECTION_ITEM: 'agent:remove-plugin-injection-item',
     COMPUTE_CONFIG_DIFF: 'agent:compute-config-diff',
     PROPAGATE_CONFIG_CHANGES: 'agent:propagate-config-changes',
     LIST_SESSIONS: 'agent:list-sessions',
