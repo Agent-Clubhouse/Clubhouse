@@ -276,6 +276,35 @@ describe('ProjectRail pin button', () => {
     const pinBtn = screen.getByTestId('rail-pin-button');
     expect(pinBtn.className).toContain('text-ctp-subtext0');
   });
+
+  it('pin button is in its own flow container, not absolutely positioned', () => {
+    usePanelStore.setState({ railPinned: true });
+    render(<ProjectRail />);
+    const pinBtn = screen.getByTestId('rail-pin-button');
+    // Pin button itself should not be absolutely positioned
+    expect(pinBtn.className).not.toContain('absolute');
+    // Parent wrapper should be a flex container that right-aligns the button
+    const wrapper = pinBtn.parentElement!;
+    expect(wrapper.className).toContain('flex');
+    expect(wrapper.className).toContain('justify-end');
+  });
+
+  it('pin button wrapper collapses when rail is not expanded', () => {
+    render(<ProjectRail />);
+    const pinBtn = screen.getByTestId('rail-pin-button');
+    const wrapper = pinBtn.parentElement!;
+    expect(wrapper.className).toContain('h-0');
+    expect(wrapper.className).toContain('overflow-hidden');
+  });
+
+  it('pin button wrapper is visible when rail is expanded (pinned)', () => {
+    usePanelStore.setState({ railPinned: true });
+    render(<ProjectRail />);
+    const pinBtn = screen.getByTestId('rail-pin-button');
+    const wrapper = pinBtn.parentElement!;
+    expect(wrapper.className).toContain('h-6');
+    expect(wrapper.className).not.toContain('h-0');
+  });
 });
 
 describe('ProjectRail pinned behavior', () => {
