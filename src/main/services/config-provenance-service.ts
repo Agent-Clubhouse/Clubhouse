@@ -4,8 +4,6 @@ import { listOrphanedPluginIds } from './plugin-discovery';
 
 const PLUGIN_INSTRUCTION_REGEX = /<!-- plugin:([^:]+):start -->([\s\S]*?)<!-- plugin:\1:end -->/g;
 const PLUGIN_PERM_REGEX = /\/\* plugin:([^ ]+) \*\//;
-const PLUGIN_PREFIX_REGEX = /^plugin-([^-]+-(?:[^-]+-)*)/;
-
 /** Default skill names shipped by Clubhouse */
 const BUILT_IN_SKILL_NAMES = new Set([
   'mission', 'create-pr', 'go-standby', 'build', 'test', 'lint', 'validate-changes',

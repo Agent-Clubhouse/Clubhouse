@@ -74,12 +74,16 @@ function ConfirmDialog({
   onConfirm,
   onCancel,
   confirming,
+  confirmLabel = 'Remove',
+  confirmingLabel = 'Removing...',
 }: {
   title: string;
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
   confirming?: boolean;
+  confirmLabel?: string;
+  confirmingLabel?: string;
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -98,7 +102,7 @@ function ConfirmDialog({
             disabled={confirming}
             className="px-3 py-1.5 text-xs rounded-lg bg-ctp-red text-white hover:bg-ctp-red/80 cursor-pointer transition-colors"
           >
-            {confirming ? 'Removing...' : 'Remove'}
+            {confirming ? confirmingLabel : confirmLabel}
           </button>
         </div>
       </div>
@@ -260,8 +264,11 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
   const [removeTarget, setRemoveTarget] = useState<ProvenancedConfigItem | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
-  // Get known plugin IDs for orphan detection
-  const pluginIds = usePluginStore((s) => Object.keys(s.plugins));
+  // Get known plugin IDs for orphan detection.
+  // Select the raw plugins map (stable ref) and derive IDs in useMemo to avoid
+  // the Zustand infinite loop from Object.keys() creating a new array each render.
+  const pluginsMap = usePluginStore((s) => s.plugins);
+  const pluginIds = useMemo(() => Object.keys(pluginsMap), [pluginsMap]);
   const pluginIdsSerialized = useMemo(() => JSON.stringify(pluginIds.slice().sort()), [pluginIds]);
 
   const loadDefaults = useCallback(async () => {
@@ -468,6 +475,8 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           onConfirm={handleReset}
           onCancel={() => setShowResetConfirm(false)}
           confirming={resetting}
+          confirmLabel="Reset"
+          confirmingLabel="Resetting..."
         />
       )}
 
@@ -769,52 +778,33 @@ export function ProjectAgentDefaultsSection({ projectPath, clubhouseMode }: Prop
           </div>
         )}
 
-        {/* Source Skills — with provenance badges */}
-        {breakdown ? (
+        {/* Source Skills — with provenance badges above the editor */}
+        {breakdown && breakdown.skills.length > 0 && (
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Skills</h3>
-                <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/skills/</span>
-              </div>
-            </div>
+            <label className="block text-xs text-ctp-subtext0 mb-1">Managed Skills</label>
             <ConfigItemList
               items={breakdown.skills}
               orphanedPluginIds={orphanedPluginIds}
               onRemove={setRemoveTarget}
               removing={removing}
             />
-            {/* Still render the full editor section for user skills */}
-            <div className="mt-2">
-              <SourceSkillsSection projectPath={projectPath} />
-            </div>
           </div>
-        ) : (
-          <SourceSkillsSection projectPath={projectPath} />
         )}
+        <SourceSkillsSection projectPath={projectPath} />
 
-        {/* Source Agent Definitions — with provenance badges */}
-        {breakdown ? (
+        {/* Source Agent Definitions — with provenance badges above the editor */}
+        {breakdown && breakdown.agentTemplates.length > 0 && (
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider">Agent Definitions</h3>
-                <span className="text-[10px] text-ctp-subtext0/60 font-mono">.clubhouse/agent-templates/</span>
-              </div>
-            </div>
+            <label className="block text-xs text-ctp-subtext0 mb-1">Managed Agent Definitions</label>
             <ConfigItemList
               items={breakdown.agentTemplates}
               orphanedPluginIds={orphanedPluginIds}
               onRemove={setRemoveTarget}
               removing={removing}
             />
-            <div className="mt-2">
-              <SourceAgentTemplatesSection projectPath={projectPath} />
-            </div>
           </div>
-        ) : (
-          <SourceAgentTemplatesSection projectPath={projectPath} />
         )}
+        <SourceAgentTemplatesSection projectPath={projectPath} />
       </div>
     </div>
   );

@@ -23,6 +23,27 @@ describe('ProjectAgentDefaultsSection', () => {
     window.clubhouse.agentSettings.writeProjectAgentDefaults = vi.fn().mockResolvedValue(undefined);
     window.clubhouse.agentSettings.listSourceSkills = vi.fn().mockResolvedValue([]);
     window.clubhouse.agentSettings.listSourceAgentTemplates = vi.fn().mockResolvedValue([]);
+    window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+      userInstructions: 'Default instructions',
+      pluginInstructionBlocks: [],
+      allowRules: [
+        { id: 'allow-rule:0', label: 'Read(**)', value: 'Read(**)', provenance: { source: 'user' } },
+        { id: 'allow-rule:1', label: 'Edit(**)', value: 'Edit(**)', provenance: { source: 'user' } },
+      ],
+      denyRules: [
+        { id: 'deny-rule:0', label: 'WebFetch', value: 'WebFetch', provenance: { source: 'user' } },
+      ],
+      skills: [],
+      agentTemplates: [],
+      mcpServers: [],
+      orphanedPluginIds: [],
+    });
+    window.clubhouse.agentSettings.removePluginInjectionItem = vi.fn().mockResolvedValue(true);
+    // Mock plugin cleanup API (used by OrphanBanner)
+    if (!window.clubhouse.plugin) {
+      (window.clubhouse as any).plugin = {};
+    }
+    window.clubhouse.plugin.cleanupProjectInjections = vi.fn().mockResolvedValue(undefined);
   });
 
   describe('always-visible state', () => {
@@ -148,6 +169,16 @@ describe('ProjectAgentDefaultsSection', () => {
         instructions: 'test',
         sourceControlProvider: 'azure-devops',
       });
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+        userInstructions: 'test',
+        pluginInstructionBlocks: [],
+        allowRules: [],
+        denyRules: [],
+        skills: [],
+        agentTemplates: [],
+        mcpServers: [],
+        orphanedPluginIds: [],
+      });
       renderSection();
       await waitFor(() => {
         expect(screen.getByDisplayValue('Azure DevOps (az CLI)')).toBeInTheDocument();
@@ -207,6 +238,16 @@ describe('ProjectAgentDefaultsSection', () => {
     it('loads and displays existing command prefix', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockResolvedValue({
         commandPrefix: '. ./init.sh',
+      });
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+        userInstructions: '',
+        pluginInstructionBlocks: [],
+        allowRules: [],
+        denyRules: [],
+        skills: [],
+        agentTemplates: [],
+        mcpServers: [],
+        orphanedPluginIds: [],
       });
       renderSection();
       await waitFor(() => {
@@ -291,6 +332,16 @@ describe('ProjectAgentDefaultsSection', () => {
           permissions: { allow: ['Read(@@Path**)'] },
         });
       window.clubhouse.agentSettings.readProjectAgentDefaults = readMock;
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockResolvedValue({
+        userInstructions: 'Custom instructions',
+        pluginInstructionBlocks: [],
+        allowRules: [{ id: 'allow-rule:0', label: 'Read(**)', value: 'Read(**)', provenance: { source: 'user' } }],
+        denyRules: [],
+        skills: [],
+        agentTemplates: [],
+        mcpServers: [],
+        orphanedPluginIds: [],
+      });
 
       renderSection();
       await screen.findByText('Default Agent Settings');
@@ -310,12 +361,14 @@ describe('ProjectAgentDefaultsSection', () => {
   describe('loading states', () => {
     it('returns null before loading completes', () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockReturnValue(new Promise(() => {}));
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockReturnValue(new Promise(() => {}));
       const { container } = renderSection();
       expect(container.innerHTML).toBe('');
     });
 
     it('renders after load error', async () => {
       window.clubhouse.agentSettings.readProjectAgentDefaults = vi.fn().mockRejectedValue(new Error('fail'));
+      window.clubhouse.agentSettings.getProjectConfigBreakdown = vi.fn().mockRejectedValue(new Error('fail'));
       renderSection();
       expect(await screen.findByText('Default Agent Settings')).toBeInTheDocument();
     });
