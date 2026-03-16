@@ -183,7 +183,6 @@ export function MonacoEditor({
           enabled: true,
           renderCharacters: true,
           maxColumn: 80,
-          scale: 1,
           showSlider: 'mouseover',
         },
         wordWrap: 'off',
