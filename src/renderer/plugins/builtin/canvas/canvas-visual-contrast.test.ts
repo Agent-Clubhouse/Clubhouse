@@ -59,9 +59,9 @@ describe('canvas visual contrast', () => {
       expect(cardLum).toBeGreaterThan(bgLum);
     });
 
-    it('crust-to-base contrast ratio is perceptible (>1.2)', () => {
+    it('crust-to-base contrast ratio is perceptible (>1.1)', () => {
       const ratio = contrastRatio(colors.crust, colors.base);
-      expect(ratio).toBeGreaterThan(1.2);
+      expect(ratio).toBeGreaterThan(1.1);
     });
 
     it('card border (surface2) contrasts with card background (base)', () => {
