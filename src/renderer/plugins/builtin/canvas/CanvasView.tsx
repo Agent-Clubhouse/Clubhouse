@@ -136,13 +136,14 @@ export function CanvasViewComponent({
 
   return (
     <div
-      className="absolute flex flex-col bg-ctp-base border border-surface-1 rounded-lg shadow-lg overflow-hidden"
+      className="absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg overflow-hidden"
       style={{
         left: currentPos.x,
         top: currentPos.y,
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)',
       }}
       onMouseDown={(e) => { e.stopPropagation(); onFocus(); }}
       data-testid={`canvas-view-${view.id}`}
