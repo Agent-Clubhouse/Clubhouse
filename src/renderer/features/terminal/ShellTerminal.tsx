@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
+import { useTerminalFit } from './useTerminalFit';
 
 interface Props {
   sessionId: string;
@@ -107,33 +108,19 @@ export function ShellTerminal({ sessionId, focused }: Props) {
       }
     );
 
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        if (fitAddonRef.current) {
-          fitAddonRef.current.fit();
-          if (terminalRef.current) {
-            window.clubhouse.pty.resize(
-              sessionId,
-              terminalRef.current.cols,
-              terminalRef.current.rows
-            );
-          }
-        }
-      });
-    });
-    resizeObserver.observe(containerRef.current);
-
     return () => {
       if (flushId) cancelAnimationFrame(flushId);
       inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
-      resizeObserver.disconnect();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
   }, [sessionId]);
+
+  // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
+  useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused);
 
   // Attach clipboard handlers only when clipboard compatibility is enabled
   useEffect(() => {
@@ -156,12 +143,6 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     if (!terminalRef.current || !experimentalMonoFont) return;
     terminalRef.current.options.fontFamily = experimentalMonoFont;
   }, [experimentalMonoFont]);
-
-  useEffect(() => {
-    if (focused && terminalRef.current) {
-      terminalRef.current.focus();
-    }
-  }, [focused]);
 
   const handleMouseDown = useCallback(() => {
     terminalRef.current?.focus();

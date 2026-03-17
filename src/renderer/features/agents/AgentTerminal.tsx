@@ -6,6 +6,7 @@ import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { attachClipboardHandlers } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
+import { useTerminalFit } from '../terminal/useTerminalFit';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
@@ -111,33 +112,18 @@ export function AgentTerminal({ agentId, focused }: Props) {
       }
     );
 
-    // Resize observer
-    const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        if (fitAddonRef.current) {
-          fitAddonRef.current.fit();
-          if (terminalRef.current) {
-            window.clubhouse.pty.resize(
-              agentId,
-              terminalRef.current.cols,
-              terminalRef.current.rows
-            );
-          }
-        }
-      });
-    });
-    resizeObserver.observe(containerRef.current);
-
     return () => {
       inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
-      resizeObserver.disconnect();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
   }, [agentId]);
+
+  // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
+  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused);
 
   // Resume settle detection: watch PTY data and clear resuming after silence
   useEffect(() => {
@@ -188,12 +174,6 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current.options.theme = terminalColors;
     }
   }, [terminalColors]);
-
-  useEffect(() => {
-    if (focused && terminalRef.current) {
-      terminalRef.current.focus();
-    }
-  }, [focused]);
 
   const handleMouseDown = useCallback(() => {
     terminalRef.current?.focus();
