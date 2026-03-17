@@ -14,36 +14,26 @@ describe('canvas manifest — new settings', () => {
 
 // ── FileCanvasView helper logic ───────────────────────────────────────
 
-describe('FileCanvasView — path construction', () => {
-  // Helper matching the logic in FileCanvasView
-  function buildRelativePath(currentDir: string, name: string): string {
-    return currentDir ? `${currentDir}/${name}` : name;
+describe('FileCanvasView — file name extraction', () => {
+  // The split layout extracts file name from path for the view title
+  function extractFileName(filePath: string): string {
+    return filePath.split('/').pop() || filePath;
   }
 
-  it('constructs relative paths at root level', () => {
-    expect(buildRelativePath('', 'src')).toBe('src');
-    expect(buildRelativePath('', 'index.ts')).toBe('index.ts');
+  it('extracts filename from simple path', () => {
+    expect(extractFileName('index.ts')).toBe('index.ts');
   });
 
-  it('constructs relative paths at nested level', () => {
-    expect(buildRelativePath('src', 'utils')).toBe('src/utils');
-    expect(buildRelativePath('src', 'app.ts')).toBe('src/app.ts');
+  it('extracts filename from nested path', () => {
+    expect(extractFileName('src/utils/helpers.ts')).toBe('helpers.ts');
   });
 
-  it('constructs relative paths at deeply nested level', () => {
-    expect(buildRelativePath('src/utils', 'helpers.ts')).toBe('src/utils/helpers.ts');
+  it('extracts filename from deeply nested path', () => {
+    expect(extractFileName('src/renderer/plugins/builtin/canvas/FileTree.tsx')).toBe('FileTree.tsx');
   });
 
-  it('navigating up strips last path segment', () => {
-    const currentDir = 'src/utils/helpers';
-    const parent = currentDir.split('/').slice(0, -1).join('/');
-    expect(parent).toBe('src/utils');
-  });
-
-  it('navigating up from single-level dir returns empty string', () => {
-    const currentDir = 'src';
-    const parent = currentDir.split('/').slice(0, -1).join('/');
-    expect(parent).toBe('');
+  it('handles empty path gracefully', () => {
+    expect(extractFileName('')).toBe('');
   });
 });
 
