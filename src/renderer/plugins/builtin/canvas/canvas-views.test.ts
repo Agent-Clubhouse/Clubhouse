@@ -83,6 +83,41 @@ describe('AgentCanvasView — projectColor', () => {
   });
 });
 
+// ── AgentCanvasView — durable-only filtering ─────────────────────────
+
+describe('AgentCanvasView — agent filtering', () => {
+  const agents = [
+    { id: 'a1', name: 'alpha', kind: 'durable', status: 'running', projectId: 'p1' },
+    { id: 'a2', name: 'beta', kind: 'quick', status: 'running', projectId: 'p1' },
+    { id: 'a3', name: 'gamma', kind: 'durable', status: 'sleeping', projectId: 'p1' },
+    { id: 'a4', name: 'delta', kind: 'quick', status: 'sleeping', projectId: 'p1' },
+  ];
+
+  it('filters out quick agents, keeping only durable', () => {
+    const filtered = agents.filter((a) => a.kind === 'durable');
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map((a) => a.name)).toEqual(['alpha', 'gamma']);
+  });
+
+  it('excludes all quick agents regardless of status', () => {
+    const filtered = agents.filter((a) => a.kind === 'durable');
+    expect(filtered.every((a) => a.kind === 'durable')).toBe(true);
+    expect(filtered.some((a) => a.kind === 'quick')).toBe(false);
+  });
+
+  it('combines project filtering with durable-only filtering', () => {
+    const moreAgents = [
+      ...agents,
+      { id: 'a5', name: 'epsilon', kind: 'durable', status: 'running', projectId: 'p2' },
+    ];
+    const filtered = moreAgents
+      .filter((a) => a.projectId === 'p1')
+      .filter((a) => a.kind === 'durable');
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map((a) => a.name)).toEqual(['alpha', 'gamma']);
+  });
+});
+
 // ── Scroll event propagation ──────────────────────────────────────────
 
 describe('CanvasView — scroll isolation', () => {

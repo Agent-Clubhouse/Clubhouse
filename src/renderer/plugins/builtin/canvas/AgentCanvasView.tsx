@@ -85,9 +85,13 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
     }
 
     // Filter agents by selected project in app mode, or show all in project mode
-    const filteredAgents = isAppMode && selectedProjectId
+    // Only show durable agents (no quick agents)
+    const filteredAgents = (isAppMode && selectedProjectId
       ? agents.filter((a) => a.projectId === selectedProjectId)
-      : agents;
+      : agents
+    ).filter((a) => a.kind === 'durable');
+
+    const { AgentAvatar } = api.widgets;
 
     return (
       <div className="flex flex-col h-full p-2">
@@ -99,24 +103,24 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
             &larr; Back
           </button>
         )}
-        <div className="text-xs text-ctp-subtext0 mb-2">Select an agent:</div>
+        <div className="text-xs font-medium text-ctp-subtext1 uppercase tracking-wider mb-2">
+          Assign an agent
+        </div>
         <div className="flex-1 overflow-y-auto space-y-1">
           {filteredAgents.length === 0 ? (
-            <div className="text-xs text-ctp-overlay0 italic">No agents{isAppMode ? ' in this project' : ' running'}</div>
+            <div className="text-xs text-ctp-overlay0 italic">No agents{isAppMode ? ' in this project' : ' available'}</div>
           ) : (
             filteredAgents.map((agent) => (
               <button
                 key={agent.id}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-ctp-text hover:bg-ctp-surface0 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-0 hover:bg-surface-1 text-left transition-colors"
                 onClick={() => handlePickAgent(agent)}
                 data-testid={`canvas-agent-pick-${agent.id}`}
               >
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  agent.status === 'running' ? 'bg-green-500' :
-                  agent.status === 'error' ? 'bg-red-500' :
-                  'bg-ctp-overlay0'
-                }`} />
-                <span className="truncate flex-1">{agent.name || agent.id}</span>
+                <AgentAvatar agentId={agent.id} size="sm" showStatusRing />
+                <span className="text-xs text-ctp-text truncate flex-1">
+                  {agent.name || agent.id}
+                </span>
                 <span className={`text-[10px] ${
                   agent.status === 'running' ? 'text-green-400' :
                   agent.status === 'error' ? 'text-red-400' :
