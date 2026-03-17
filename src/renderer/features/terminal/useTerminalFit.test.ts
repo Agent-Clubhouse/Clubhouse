@@ -251,8 +251,8 @@ describe('useTerminalFit', () => {
       // Trigger a resize
       resizeObserverCallbacks[0]();
 
-      // fit is called but resize is not (terminal is null)
-      expect(mockFit).toHaveBeenCalled();
+      // Early return — neither fit nor resize called
+      expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
     });
 
