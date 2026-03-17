@@ -45,6 +45,8 @@ export interface LoungeState {
   customCircles: LoungeCategory[];
   /** Counter for generating unique custom circle IDs. */
   nextCircleId: number;
+  /** User-defined category ordering (persisted across derive calls). */
+  categoryOrder: string[];
 
   // Actions
   deriveCategories(projects: ProjectInfo[]): void;
@@ -53,6 +55,7 @@ export interface LoungeState {
   renameCategory(categoryId: string, label: string): void;
   moveAgent(agentId: string, targetCategoryId: string): void;
   addCircle(label: string): string;
+  reorderCategory(fromId: string, toId: string): void;
 }
 
 /**
@@ -117,6 +120,41 @@ export function disambiguateAgentName(
 
 const GENERAL_CIRCLE: LoungeCategory = { id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL };
 
+/**
+ * Apply user-defined order to categories. Categories not in the order list
+ * are appended in their natural position. General is always forced to the end.
+ */
+function applyCategoryOrder(categories: LoungeCategory[], order: string[]): LoungeCategory[] {
+  if (order.length === 0) return categories;
+
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const result: LoungeCategory[] = [];
+  const placed = new Set<string>();
+
+  // Place categories that appear in the order list
+  for (const id of order) {
+    if (id === DEFAULT_CIRCLE_ID) continue; // General always last
+    const cat = byId.get(id);
+    if (cat) {
+      result.push(cat);
+      placed.add(id);
+    }
+  }
+
+  // Append any remaining categories not in the order (except General)
+  for (const cat of categories) {
+    if (!placed.has(cat.id) && cat.id !== DEFAULT_CIRCLE_ID) {
+      result.push(cat);
+    }
+  }
+
+  // General always last
+  const general = byId.get(DEFAULT_CIRCLE_ID);
+  if (general) result.push(general);
+
+  return result;
+}
+
 // ── Store ────────────────────────────────────────────────────────────────
 
 export const createLoungeStore = () =>
@@ -129,6 +167,7 @@ export const createLoungeStore = () =>
     agentCategoryOverrides: {},
     customCircles: [],
     nextCircleId: 1,
+    categoryOrder: [],
 
     deriveCategories(projects: ProjectInfo[]) {
       set((state) => {
@@ -138,8 +177,9 @@ export const createLoungeStore = () =>
           projectId: p.id,
         }));
 
-        // Order: project-derived circles, custom circles, General always last
-        const newCategories = [...projectCategories, ...state.customCircles, GENERAL_CIRCLE];
+        // Merge all categories, then apply saved order
+        const unordered = [...projectCategories, ...state.customCircles, GENERAL_CIRCLE];
+        const newCategories = applyCategoryOrder(unordered, state.categoryOrder);
 
         // Preserve collapsed state for categories that still exist
         const newIds = new Set(newCategories.map((c) => c.id));
@@ -212,5 +252,28 @@ export const createLoungeStore = () =>
         };
       });
       return newId;
+    },
+
+    reorderCategory(fromId: string, toId: string) {
+      // Cannot move General
+      if (isDefaultCircle(fromId) || isDefaultCircle(toId)) return;
+      if (fromId === toId) return;
+
+      set((state) => {
+        const cats = state.categories.filter((c) => c.id !== DEFAULT_CIRCLE_ID);
+        const fromIdx = cats.findIndex((c) => c.id === fromId);
+        const toIdx = cats.findIndex((c) => c.id === toId);
+        if (fromIdx === -1 || toIdx === -1) return state;
+
+        const reordered = [...cats];
+        const [moved] = reordered.splice(fromIdx, 1);
+        reordered.splice(toIdx, 0, moved);
+        reordered.push(GENERAL_CIRCLE);
+
+        return {
+          categories: reordered,
+          categoryOrder: reordered.map((c) => c.id),
+        };
+      });
     },
   }));

@@ -45,10 +45,17 @@ function AgentRow({ agent, displayName, isSelected, onClick, onContextMenu }: {
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.dataTransfer.setData('application/x-lounge-agent', agent.id);
+    e.dataTransfer.effectAllowed = 'move';
+  }, [agent.id]);
+
   return React.createElement('button', {
     key: agent.id,
     onClick,
     onContextMenu,
+    draggable: true,
+    onDragStart: handleDragStart,
     title: `${displayName} — ${statusLabel(agent.status)}`,
     'data-testid': `lounge-agent-${agent.id}`,
     className: `w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors flex items-center gap-3 ${
@@ -274,7 +281,7 @@ const CHEVRON_DOWN = React.createElement('svg', {
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
-function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle }: {
+function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle, onReorderCategory }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -287,12 +294,14 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   onRename: (categoryId: string, label: string) => void;
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
   onCreateCircle: () => void;
+  onReorderCategory: (fromId: string, toId: string) => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(category.label);
   const inputRef = useRef<HTMLInputElement>(null);
   const [agentContextMenu, setAgentContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     // Default circle cannot be renamed — no context menu
@@ -319,6 +328,45 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
     setRenaming(false);
   }, []);
 
+  // ── Drag-and-drop handlers ──
+
+  const isGeneralCircle = isDefaultCircle(category.id);
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    if (isGeneralCircle) { e.preventDefault(); return; }
+    e.dataTransfer.setData('application/x-lounge-category', category.id);
+    e.dataTransfer.effectAllowed = 'move';
+  }, [category.id, isGeneralCircle]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    const hasAgent = e.dataTransfer.types.includes('application/x-lounge-agent');
+    const hasCategory = e.dataTransfer.types.includes('application/x-lounge-category');
+    if (!hasAgent && !hasCategory) return;
+    // Cannot drop a category onto General
+    if (hasCategory && isGeneralCircle) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOver(true);
+  }, [isGeneralCircle]);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const agentId = e.dataTransfer.getData('application/x-lounge-agent');
+    if (agentId) {
+      onMoveAgent(agentId, category.id);
+      return;
+    }
+    const fromCategoryId = e.dataTransfer.getData('application/x-lounge-category');
+    if (fromCategoryId && fromCategoryId !== category.id && !isGeneralCircle) {
+      onReorderCategory(fromCategoryId, category.id);
+    }
+  }, [category.id, onMoveAgent, onReorderCategory, isGeneralCircle]);
+
   useEffect(() => {
     if (renaming && inputRef.current) {
       inputRef.current.focus();
@@ -328,12 +376,19 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
 
   return React.createElement('div', {
     'data-testid': `lounge-category-${category.id}`,
+    onDragOver: handleDragOver,
+    onDragLeave: handleDragLeave,
+    onDrop: handleDrop,
   },
     // Category header
     React.createElement('button', {
       onClick: renaming ? undefined : onToggle,
       onContextMenu: handleContextMenu,
-      className: 'w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider hover:bg-surface-0 cursor-pointer transition-colors',
+      draggable: !isGeneralCircle,
+      onDragStart: handleDragStart,
+      className: `w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider hover:bg-surface-0 cursor-pointer transition-colors ${
+        dragOver ? 'bg-surface-1 ring-1 ring-ctp-accent ring-inset' : ''
+      }`,
       'data-testid': `lounge-category-toggle-${category.id}`,
     },
       isCollapsed ? CHEVRON_RIGHT : CHEVRON_DOWN,
@@ -453,6 +508,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const moveAgent = useLoungeStore((s) => s.moveAgent);
   const agentCategoryOverrides = useLoungeStore((s) => s.agentCategoryOverrides);
   const addCircle = useLoungeStore((s) => s.addCircle);
+  const reorderCategory = useLoungeStore((s) => s.reorderCategory);
 
   // Force re-render when agents change
   const [agentTick, setAgentTick] = useState(0);
@@ -547,6 +603,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 onRename: renameCategory,
                 onMoveAgent: moveAgent,
                 onCreateCircle: handleCreateCircle,
+                onReorderCategory: reorderCategory,
               });
             })
           : React.createElement(EmptyState),

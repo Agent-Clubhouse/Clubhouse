@@ -404,3 +404,74 @@ describe('addCircle', () => {
     expect(grouped.get('project:p1')).toHaveLength(0);
   });
 });
+
+describe('reorderCategory', () => {
+  it('moves a category before the target', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([
+      makeProject({ id: 'p1', name: 'P1' }),
+      makeProject({ id: 'p2', name: 'P2' }),
+      makeProject({ id: 'p3', name: 'P3' }),
+    ]);
+
+    // Move p3 before p1
+    store.getState().reorderCategory('project:p3', 'project:p1');
+    const ids = store.getState().categories.map((c) => c.id);
+    expect(ids).toEqual(['project:p3', 'project:p1', 'project:p2', DEFAULT_CIRCLE_ID]);
+  });
+
+  it('keeps General at the end after reorder', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([
+      makeProject({ id: 'p1' }),
+      makeProject({ id: 'p2' }),
+    ]);
+    store.getState().reorderCategory('project:p2', 'project:p1');
+    const cats = store.getState().categories;
+    expect(cats[cats.length - 1].id).toBe(DEFAULT_CIRCLE_ID);
+  });
+
+  it('is a no-op when dragging General', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    const before = store.getState().categories.map((c) => c.id);
+    store.getState().reorderCategory(DEFAULT_CIRCLE_ID, 'project:p1');
+    const after = store.getState().categories.map((c) => c.id);
+    expect(after).toEqual(before);
+  });
+
+  it('is a no-op when dropping onto General', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    const before = store.getState().categories.map((c) => c.id);
+    store.getState().reorderCategory('project:p1', DEFAULT_CIRCLE_ID);
+    const after = store.getState().categories.map((c) => c.id);
+    expect(after).toEqual(before);
+  });
+
+  it('is a no-op for same category', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    const before = store.getState().categories.map((c) => c.id);
+    store.getState().reorderCategory('project:p1', 'project:p1');
+    const after = store.getState().categories.map((c) => c.id);
+    expect(after).toEqual(before);
+  });
+
+  it('persists order across deriveCategories', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([
+      makeProject({ id: 'p1', name: 'P1' }),
+      makeProject({ id: 'p2', name: 'P2' }),
+    ]);
+    store.getState().reorderCategory('project:p2', 'project:p1');
+
+    // Re-derive — order should be preserved
+    store.getState().deriveCategories([
+      makeProject({ id: 'p1', name: 'P1' }),
+      makeProject({ id: 'p2', name: 'P2' }),
+    ]);
+    const ids = store.getState().categories.map((c) => c.id);
+    expect(ids).toEqual(['project:p2', 'project:p1', DEFAULT_CIRCLE_ID]);
+  });
+});
