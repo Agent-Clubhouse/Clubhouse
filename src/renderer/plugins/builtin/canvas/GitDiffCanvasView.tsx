@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { GitDiffCanvasView as GitDiffCanvasViewType, CanvasView } from './canvas-types';
-import type { PluginAPI, AgentInfo } from '../../../../shared/plugin-types';
-import type { GitInfo, GitStatusFile } from '../../../../shared/types';
+import type { PluginAPI } from '../../../../shared/plugin-types';
+import type { GitInfo } from '../../../../shared/types';
 import { MonacoDiffEditor } from './MonacoDiffEditor';
 
 interface GitDiffCanvasViewProps {
@@ -282,7 +282,13 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
         {view.filePath && (
           <>
             <span className="text-ctp-overlay0 mx-0.5">/</span>
-            <span className="truncate">{view.filePath}</span>
+            <button
+              className="truncate hover:text-ctp-text transition-colors"
+              onClick={handleBackToFiles}
+              title="Back to file list"
+            >
+              {view.filePath}
+            </button>
           </>
         )}
       </div>
