@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import type { CanvasView, Viewport, Position, Size } from './canvas-types';
+import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize } from './canvas-operations';
 import { CanvasViewComponent } from './CanvasView';
@@ -12,7 +12,7 @@ interface CanvasWorkspaceProps {
   viewport: Viewport;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
-  onAddView: (type: 'agent' | 'file' | 'browser', position: Position) => void;
+  onAddView: (type: CanvasViewType, position: Position) => void;
   onRemoveView: (viewId: string) => void;
   onMoveView: (viewId: string, position: Position) => void;
   onResizeView: (viewId: string, size: Size) => void;
@@ -114,7 +114,7 @@ export function CanvasWorkspace({
     setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
   }, [viewport]);
 
-  const handleContextMenuAction = useCallback((type: 'agent' | 'file' | 'browser') => {
+  const handleContextMenuAction = useCallback((type: CanvasViewType) => {
     if (contextMenu) {
       onAddView(type, { x: contextMenu.canvasX, y: contextMenu.canvasY });
     }

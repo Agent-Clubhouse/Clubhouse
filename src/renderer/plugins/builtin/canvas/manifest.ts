@@ -14,13 +14,14 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.6 },
   scope: 'dual',
-  permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files'],
+  permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git'],
   contributes: {
     tab: { label: 'Canvas', icon: CANVAS_TAB_ICON, layout: 'full' },
     railItem: { label: 'Canvas', icon: CANVAS_RAIL_ICON, position: 'top' },
     commands: [
       { id: 'add-agent-view', title: 'Add Agent View' },
       { id: 'add-file-view', title: 'Add File View' },
+      { id: 'add-git-diff-view', title: 'Add Git Diff View' },
       { id: 'reset-viewport', title: 'Reset Canvas Viewport', defaultBinding: 'Meta+Shift+0' },
     ],
     storage: { scope: 'project-local' },
@@ -54,6 +55,7 @@ export const manifest: PluginManifest = {
             '- **Agent View** — Shows an agent terminal or sleeping widget.',
             '- **File View** — Browse and read project files.',
             '- **Browser View** — A sandboxed web browser.',
+            '- **Git Diff View** — View changed files and diffs across projects and worktrees.',
             '',
             '### Navigation',
             '- **Pan** — Click and drag on empty space, or use two-finger scroll.',

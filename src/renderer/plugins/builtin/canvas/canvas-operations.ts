@@ -6,6 +6,7 @@ import type {
   AgentCanvasView,
   FileCanvasView,
   BrowserCanvasView,
+  GitDiffCanvasView,
   Position,
   Size,
   Viewport,
@@ -93,6 +94,8 @@ export function createView(
       return { ...base, type: 'file', title: 'Files' } satisfies FileCanvasView;
     case 'browser':
       return { ...base, type: 'browser', title: 'Browser', url: 'https://' } satisfies BrowserCanvasView;
+    case 'git-diff':
+      return { ...base, type: 'git-diff', title: 'Git Diff' } satisfies GitDiffCanvasView;
   }
 }
 
