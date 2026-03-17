@@ -25,12 +25,12 @@ async function ensureThemes(m: any): Promise<void> {
 
 /** Detect Monaco language from a file path's extension */
 export function languageFromPath(filePath: string): string {
-  const dot = filePath.lastIndexOf('.');
-  if (dot < 0) return 'plaintext';
-  const ext = filePath.slice(dot + 1).toLowerCase();
-  // Also match by full filename for extensionless files like Makefile, Dockerfile
   const baseName = filePath.split('/').pop()?.toLowerCase() ?? '';
-  return EXT_TO_LANG[ext] ?? EXT_TO_LANG[baseName] ?? 'plaintext';
+  const dot = baseName.lastIndexOf('.');
+  const ext = dot > 0 ? baseName.slice(dot + 1) : '';
+  // For dotfiles like .env or .gitignore, strip leading dot and check as extension
+  const dotfileExt = baseName.startsWith('.') && dot === 0 ? baseName.slice(1) : '';
+  return EXT_TO_LANG[ext] || EXT_TO_LANG[baseName] || EXT_TO_LANG[dotfileExt] || 'plaintext';
 }
 
 interface ReadOnlyMonacoEditorProps {

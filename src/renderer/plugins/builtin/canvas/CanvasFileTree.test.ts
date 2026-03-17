@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { FileNode } from '../../../../shared/types';
 
 // ── Tree helpers (extracted logic matching CanvasFileTree internals) ────
@@ -53,8 +53,9 @@ describe('CanvasFileTree — getExtension', () => {
     expect(getExtension('README.MD')).toBe('md');
   });
 
-  it('returns empty for dot-only names', () => {
-    expect(getExtension('.env')).toBe('env');
+  it('returns empty for dot-only names (dot at position 0)', () => {
+    // .env has dot at index 0, so getExtension returns '' per the dot > 0 check
+    expect(getExtension('.env')).toBe('');
   });
 });
 
