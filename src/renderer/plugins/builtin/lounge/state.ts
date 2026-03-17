@@ -20,21 +20,25 @@ export interface LoungeState {
   selectedProjectId: string | null;
   /** User-defined label overrides keyed by category ID. */
   renamedLabels: Record<string, string>;
+  /** Agent-to-category overrides: agentId → categoryId. */
+  agentCategoryOverrides: Record<string, string>;
 
   // Actions
   deriveCategories(projects: ProjectInfo[]): void;
   toggleCollapsed(categoryId: string): void;
   selectAgent(agentId: string | null, projectId?: string | null): void;
   renameCategory(categoryId: string, label: string): void;
+  moveAgent(agentId: string, targetCategoryId: string): void;
 }
 
 /**
  * Group agents by their categories. Returns a map of categoryId → agents.
- * Agents belong to the category matching their projectId.
+ * Agents belong to the category matching their projectId, unless overridden.
  */
 export function groupAgentsByCategory(
   agents: AgentInfo[],
   categories: LoungeCategory[],
+  overrides: Record<string, string> = {},
 ): Map<string, AgentInfo[]> {
   const projectToCategory = new Map<string, string>();
   for (const cat of categories) {
@@ -43,14 +47,20 @@ export function groupAgentsByCategory(
     }
   }
 
+  const validCategoryIds = new Set(categories.map((c) => c.id));
+
   const groups = new Map<string, AgentInfo[]>();
   for (const cat of categories) {
     groups.set(cat.id, []);
   }
 
   for (const agent of agents) {
-    const catId = projectToCategory.get(agent.projectId);
-    if (catId) {
+    const overrideCatId = overrides[agent.id];
+    // Use override if it points to a valid category, otherwise fall back to project
+    const catId = (overrideCatId && validCategoryIds.has(overrideCatId))
+      ? overrideCatId
+      : projectToCategory.get(agent.projectId);
+    if (catId && groups.has(catId)) {
       groups.get(catId)!.push(agent);
     }
   }
@@ -84,6 +94,7 @@ export const createLoungeStore = () =>
     selectedAgentId: null,
     selectedProjectId: null,
     renamedLabels: {},
+    agentCategoryOverrides: {},
 
     deriveCategories(projects: ProjectInfo[]) {
       set((state) => {
@@ -128,5 +139,11 @@ export const createLoungeStore = () =>
         );
         return { renamedLabels: newLabels, categories: newCategories };
       });
+    },
+
+    moveAgent(agentId: string, targetCategoryId: string) {
+      set((state) => ({
+        agentCategoryOverrides: { ...state.agentCategoryOverrides, [agentId]: targetCategoryId },
+      }));
     },
   }));

@@ -138,6 +138,29 @@ describe('createLoungeStore', () => {
       expect(store.getState().categories[1].label).toBe('Two');
     });
   });
+
+  describe('moveAgent', () => {
+    it('adds an override for the agent', () => {
+      const store = createLoungeStore();
+      store.getState().moveAgent('agent-1', 'project:proj-2');
+      expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-2');
+    });
+
+    it('overwrites previous override', () => {
+      const store = createLoungeStore();
+      store.getState().moveAgent('agent-1', 'project:proj-2');
+      store.getState().moveAgent('agent-1', 'project:proj-3');
+      expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-3');
+    });
+
+    it('does not affect other agents', () => {
+      const store = createLoungeStore();
+      store.getState().moveAgent('agent-1', 'project:proj-2');
+      store.getState().moveAgent('agent-2', 'project:proj-3');
+      expect(store.getState().agentCategoryOverrides['agent-1']).toBe('project:proj-2');
+      expect(store.getState().agentCategoryOverrides['agent-2']).toBe('project:proj-3');
+    });
+  });
 });
 
 describe('groupAgentsByCategory', () => {
@@ -175,6 +198,37 @@ describe('groupAgentsByCategory', () => {
     ];
 
     const grouped = groupAgentsByCategory(agents, categories);
+    expect(grouped.get('project:p1')).toHaveLength(1);
+  });
+
+  it('respects overrides to move agent to a different category', () => {
+    const categories: LoungeCategory[] = [
+      { id: 'project:p1', label: 'P1', projectId: 'p1' },
+      { id: 'project:p2', label: 'P2', projectId: 'p2' },
+    ];
+    const agents = [
+      makeAgent({ id: 'a1', projectId: 'p1' }),
+      makeAgent({ id: 'a2', projectId: 'p1' }),
+    ];
+
+    const overrides = { a2: 'project:p2' };
+    const grouped = groupAgentsByCategory(agents, categories, overrides);
+    expect(grouped.get('project:p1')).toHaveLength(1);
+    expect(grouped.get('project:p2')).toHaveLength(1);
+    expect(grouped.get('project:p2')![0].id).toBe('a2');
+  });
+
+  it('ignores overrides pointing to invalid categories', () => {
+    const categories: LoungeCategory[] = [
+      { id: 'project:p1', label: 'P1', projectId: 'p1' },
+    ];
+    const agents = [
+      makeAgent({ id: 'a1', projectId: 'p1' }),
+    ];
+
+    const overrides = { a1: 'project:nonexistent' };
+    const grouped = groupAgentsByCategory(agents, categories, overrides);
+    // Falls back to project-based grouping
     expect(grouped.get('project:p1')).toHaveLength(1);
   });
 });
