@@ -101,6 +101,43 @@ describe('createLoungeStore', () => {
       expect(store.getState().selectedProjectId).toBeNull();
     });
   });
+
+  describe('renameCategory', () => {
+    it('updates the category label', () => {
+      const store = createLoungeStore();
+      store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'Original' })]);
+      store.getState().renameCategory('project:proj-1', 'Custom Name');
+      expect(store.getState().categories[0].label).toBe('Custom Name');
+    });
+
+    it('persists renamed label across deriveCategories calls', () => {
+      const store = createLoungeStore();
+      store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'Original' })]);
+      store.getState().renameCategory('project:proj-1', 'My Label');
+
+      // Re-derive — renamed label should persist
+      store.getState().deriveCategories([makeProject({ id: 'proj-1', name: 'Original' })]);
+      expect(store.getState().categories[0].label).toBe('My Label');
+    });
+
+    it('stores the renamed label in renamedLabels', () => {
+      const store = createLoungeStore();
+      store.getState().deriveCategories([makeProject({ id: 'proj-1' })]);
+      store.getState().renameCategory('project:proj-1', 'Renamed');
+      expect(store.getState().renamedLabels['project:proj-1']).toBe('Renamed');
+    });
+
+    it('does not affect other categories', () => {
+      const store = createLoungeStore();
+      store.getState().deriveCategories([
+        makeProject({ id: 'proj-1', name: 'One' }),
+        makeProject({ id: 'proj-2', name: 'Two' }),
+      ]);
+      store.getState().renameCategory('project:proj-1', 'Renamed One');
+      expect(store.getState().categories[0].label).toBe('Renamed One');
+      expect(store.getState().categories[1].label).toBe('Two');
+    });
+  });
 });
 
 describe('groupAgentsByCategory', () => {

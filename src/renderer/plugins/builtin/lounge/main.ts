@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
 import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName } from './state';
 import type { LoungeCategory } from './state';
@@ -65,6 +65,60 @@ function AgentRow({ agent, displayName, isSelected, onClick }: {
   );
 }
 
+// ── Category Context Menu ───────────────────────────────────────────────
+
+function CategoryContextMenu({ position, onRename, onClose }: {
+  position: { x: number; y: number };
+  onRename: () => void;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  const style = useMemo(() => {
+    const menuWidth = 160;
+    const menuHeight = 32 + 8;
+    const x = Math.min(position.x, window.innerWidth - menuWidth - 8);
+    const y = Math.min(position.y, window.innerHeight - menuHeight - 8);
+    return { left: x, top: y };
+  }, [position]);
+
+  return React.createElement('div', {
+    ref: menuRef,
+    className: 'fixed z-50 min-w-[160px] py-1 rounded-lg shadow-xl border border-surface-1 bg-ctp-mantle',
+    style,
+    'data-testid': 'lounge-category-context-menu',
+  },
+    React.createElement('button', {
+      className: 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors cursor-pointer',
+      onClick: (e: React.MouseEvent) => { e.stopPropagation(); onRename(); onClose(); },
+      'data-testid': 'lounge-ctx-rename',
+    },
+      React.createElement('svg', {
+        width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+        stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+      },
+        React.createElement('path', { d: 'M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z' }),
+      ),
+      React.createElement('span', null, 'Rename'),
+    ),
+  );
+}
+
 // ── Category Section ───────────────────────────────────────────────────
 
 const CHEVRON_RIGHT = React.createElement('svg', {
@@ -77,7 +131,7 @@ const CHEVRON_DOWN = React.createElement('svg', {
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
-function CategorySection({ category, agents, allAgents, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent }: {
+function CategorySection({ category, agents, allAgents, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -86,20 +140,77 @@ function CategorySection({ category, agents, allAgents, projects, isCollapsed, s
   selectedAgentId: string | null;
   onToggle: () => void;
   onSelectAgent: (agentId: string, projectId: string) => void;
+  onRename: (categoryId: string, label: string) => void;
 }) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(category.label);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const startRename = useCallback(() => {
+    setRenameValue(category.label);
+    setRenaming(true);
+  }, [category.label]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== category.label) {
+      onRename(category.id, trimmed);
+    }
+    setRenaming(false);
+  }, [renameValue, category.id, category.label, onRename]);
+
+  const cancelRename = useCallback(() => {
+    setRenaming(false);
+  }, []);
+
+  useEffect(() => {
+    if (renaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [renaming]);
+
   return React.createElement('div', {
     'data-testid': `lounge-category-${category.id}`,
   },
     // Category header
     React.createElement('button', {
-      onClick: onToggle,
+      onClick: renaming ? undefined : onToggle,
+      onContextMenu: handleContextMenu,
       className: 'w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider hover:bg-surface-0 cursor-pointer transition-colors',
       'data-testid': `lounge-category-toggle-${category.id}`,
     },
       isCollapsed ? CHEVRON_RIGHT : CHEVRON_DOWN,
-      React.createElement('span', { className: 'flex-1 text-left truncate' }, category.label),
+      renaming
+        ? React.createElement('input', {
+            ref: inputRef,
+            value: renameValue,
+            onChange: (e: React.ChangeEvent<HTMLInputElement>) => setRenameValue(e.target.value),
+            onBlur: commitRename,
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') cancelRename();
+              e.stopPropagation();
+            },
+            onClick: (e: React.MouseEvent) => e.stopPropagation(),
+            className: 'flex-1 bg-surface-0 text-ctp-text text-xs px-1 py-0.5 rounded border border-surface-1 outline-none focus:border-ctp-accent uppercase tracking-wider font-semibold',
+            'data-testid': `lounge-category-rename-input-${category.id}`,
+          })
+        : React.createElement('span', { className: 'flex-1 text-left truncate' }, category.label),
       React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 tabular-nums' }, String(agents.length)),
     ),
+    // Context menu
+    contextMenu && React.createElement(CategoryContextMenu, {
+      position: contextMenu,
+      onRename: startRename,
+      onClose: () => setContextMenu(null),
+    }),
     // Agent rows (hidden when collapsed)
     !isCollapsed && agents.map((agent) => {
       const displayName = disambiguateAgentName(agent, allAgents, projects);
@@ -171,6 +282,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const deriveCategories = useLoungeStore((s) => s.deriveCategories);
   const toggleCollapsed = useLoungeStore((s) => s.toggleCollapsed);
   const selectAgent = useLoungeStore((s) => s.selectAgent);
+  const renameCategory = useLoungeStore((s) => s.renameCategory);
 
   // Force re-render when agents change
   const [agentTick, setAgentTick] = useState(0);
@@ -196,8 +308,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleSelectAgent = useCallback((agentId: string, projectId: string) => {
     selectAgent(agentId, projectId);
-    api.navigation.focusAgent(agentId);
-  }, [api, selectAgent]);
+  }, [selectAgent]);
 
   // Clear selection when agent disappears
   useEffect(() => {
@@ -243,6 +354,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 selectedAgentId,
                 onToggle: () => toggleCollapsed(cat.id),
                 onSelectAgent: handleSelectAgent,
+                onRename: renameCategory,
               });
             })
           : React.createElement(EmptyState),

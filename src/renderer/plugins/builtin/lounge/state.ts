@@ -18,11 +18,14 @@ export interface LoungeState {
   selectedAgentId: string | null;
   /** Project ID of the selected agent (for cross-project navigation). */
   selectedProjectId: string | null;
+  /** User-defined label overrides keyed by category ID. */
+  renamedLabels: Record<string, string>;
 
   // Actions
   deriveCategories(projects: ProjectInfo[]): void;
   toggleCollapsed(categoryId: string): void;
   selectAgent(agentId: string | null, projectId?: string | null): void;
+  renameCategory(categoryId: string, label: string): void;
 }
 
 /**
@@ -80,12 +83,13 @@ export const createLoungeStore = () =>
     collapsed: new Set<string>(),
     selectedAgentId: null,
     selectedProjectId: null,
+    renamedLabels: {},
 
     deriveCategories(projects: ProjectInfo[]) {
       set((state) => {
         const newCategories: LoungeCategory[] = projects.map((p) => ({
           id: `project:${p.id}`,
-          label: p.name,
+          label: state.renamedLabels[`project:${p.id}`] ?? p.name,
           projectId: p.id,
         }));
 
@@ -114,5 +118,15 @@ export const createLoungeStore = () =>
 
     selectAgent(agentId: string | null, projectId?: string | null) {
       set({ selectedAgentId: agentId, selectedProjectId: projectId ?? null });
+    },
+
+    renameCategory(categoryId: string, label: string) {
+      set((state) => {
+        const newLabels = { ...state.renamedLabels, [categoryId]: label };
+        const newCategories = state.categories.map((c) =>
+          c.id === categoryId ? { ...c, label } : c,
+        );
+        return { renamedLabels: newLabels, categories: newCategories };
+      });
     },
   }));
