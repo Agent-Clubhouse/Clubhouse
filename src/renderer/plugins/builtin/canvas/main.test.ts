@@ -31,7 +31,7 @@ describe('canvas main', () => {
 
     canvasModule.activate(ctx, api);
 
-    expect(ctx.subscriptions).toHaveLength(3);
+    expect(ctx.subscriptions).toHaveLength(4);
     for (const sub of ctx.subscriptions) {
       expect(typeof sub.dispose).toBe('function');
     }
