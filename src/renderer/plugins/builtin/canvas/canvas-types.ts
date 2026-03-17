@@ -1,6 +1,6 @@
 // ── Canvas data model ─────────────────────────────────────────────────
 
-export type CanvasViewType = 'agent' | 'file' | 'browser';
+export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff';
 
 export interface Position {
   x: number;
@@ -46,7 +46,17 @@ export interface BrowserCanvasView extends CanvasViewBase {
   url: string;
 }
 
-export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView;
+export interface GitDiffCanvasView extends CanvasViewBase {
+  type: 'git-diff';
+  /** Project ID whose repo to diff. */
+  projectId?: string;
+  /** Worktree directory path (when diffing an agent worktree instead of the main repo). */
+  worktreePath?: string;
+  /** Relative file path currently being diffed. */
+  filePath?: string;
+}
+
+export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 

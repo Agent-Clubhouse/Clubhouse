@@ -12,6 +12,7 @@ const MENU_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> =
   { type: 'agent', label: 'Add Agent View', icon: '>' },
   { type: 'file', label: 'Add File View', icon: '#' },
   { type: 'browser', label: 'Add Browser View', icon: '@' },
+  { type: 'git-diff', label: 'Add Git Diff View', icon: '±' },
 ];
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {

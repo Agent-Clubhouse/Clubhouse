@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
+import type { CanvasViewType } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
@@ -39,6 +40,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     store.getState().addView('file', { x: 300, y: 300 });
   });
   ctx.subscriptions.push(addFileCmd);
+
+  const addGitDiffCmd = api.commands.register('add-git-diff-view', () => {
+    const store = getStore();
+    store.getState().addView('git-diff', { x: 250, y: 250 });
+  });
+  ctx.subscriptions.push(addGitDiffCmd);
 
   const resetCmd = api.commands.register('reset-viewport', () => {
     const store = getStore();
@@ -105,7 +112,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().setViewport(vp);
   }, [store]);
 
-  const handleAddView = useCallback((type: 'agent' | 'file' | 'browser', position: { x: number; y: number }) => {
+  const handleAddView = useCallback((type: CanvasViewType, position: { x: number; y: number }) => {
     store.getState().addView(type, position);
   }, [store]);
 

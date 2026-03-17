@@ -4,6 +4,7 @@ import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
+import { GitDiffCanvasView } from './GitDiffCanvasView';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
 interface CanvasViewComponentProps {
@@ -131,6 +132,8 @@ export function CanvasViewComponent({
         return <FileCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'browser':
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
+      case 'git-diff':
+        return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
     }
   };
 
