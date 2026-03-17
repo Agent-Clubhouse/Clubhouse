@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName } from './state';
 import type { LoungeCategory } from './state';
 
 const useLoungeStore = createLoungeStore();
@@ -123,11 +123,12 @@ function CategoryContextMenu({ position, onRename, onClose }: {
 
 // ── Agent Context Menu ──────────────────────────────────────────────────
 
-function AgentContextMenu({ position, categories, currentCategoryId, onMoveTo, onClose }: {
+function AgentContextMenu({ position, categories, currentCategoryId, onMoveTo, onCreateCircle, onClose }: {
   position: { x: number; y: number };
   categories: LoungeCategory[];
   currentCategoryId: string;
   onMoveTo: (categoryId: string) => void;
+  onCreateCircle: () => void;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -236,6 +237,26 @@ function AgentContextMenu({ position, categories, currentCategoryId, onMoveTo, o
             }, '(current)'),
           ),
         ),
+        // Divider + Create new
+        React.createElement('div', { className: 'mx-2 my-1 border-t border-surface-1' }),
+        React.createElement('button', {
+          className: 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ctp-accent hover:bg-surface-1 transition-colors cursor-pointer',
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            onCreateCircle();
+            onClose();
+          },
+          'data-testid': 'lounge-move-to-create-new',
+        },
+          React.createElement('svg', {
+            width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none',
+            stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+          },
+            React.createElement('line', { x1: '12', y1: '5', x2: '12', y2: '19' }),
+            React.createElement('line', { x1: '5', y1: '12', x2: '19', y2: '12' }),
+          ),
+          React.createElement('span', null, 'Create new'),
+        ),
       ),
     ),
   );
@@ -253,7 +274,7 @@ const CHEVRON_DOWN = React.createElement('svg', {
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
-function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent }: {
+function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -265,6 +286,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   onSelectAgent: (agentId: string, projectId: string) => void;
   onRename: (categoryId: string, label: string) => void;
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
+  onCreateCircle: () => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -273,18 +295,21 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   const [agentContextMenu, setAgentContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    // Default circle cannot be renamed — no context menu
+    if (isDefaultCircle(category.id)) return;
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY });
-  }, []);
+  }, [category.id]);
 
   const startRename = useCallback(() => {
+    if (isDefaultCircle(category.id)) return;
     setRenameValue(category.label);
     setRenaming(true);
-  }, [category.label]);
+  }, [category.label, category.id]);
 
   const commitRename = useCallback(() => {
     const trimmed = renameValue.trim();
-    if (trimmed && trimmed !== category.label) {
+    if (trimmed && trimmed !== category.label && !isReservedCircleName(trimmed)) {
       onRename(category.id, trimmed);
     }
     setRenaming(false);
@@ -337,7 +362,7 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
       onClose: () => setContextMenu(null),
     }),
     // Agent rows (hidden when collapsed)
-    !isCollapsed && agents.map((agent) => {
+    !isCollapsed && agents.length > 0 && agents.map((agent) => {
       const displayName = disambiguateAgentName(agent, allAgents, projects);
       return React.createElement(AgentRow, {
         key: agent.id,
@@ -351,12 +376,17 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
         },
       });
     }),
+    // Empty custom circle hint
+    !isCollapsed && agents.length === 0 && React.createElement('div', {
+      className: 'px-8 py-2 text-[11px] text-ctp-overlay0 italic',
+    }, 'Move agents here via right-click'),
     // Agent context menu
     agentContextMenu && React.createElement(AgentContextMenu, {
       position: agentContextMenu,
       categories: allCategories,
       currentCategoryId: category.id,
       onMoveTo: (targetCategoryId: string) => onMoveAgent(agentContextMenu.agentId, targetCategoryId),
+      onCreateCircle,
       onClose: () => setAgentContextMenu(null),
     }),
   );
@@ -422,6 +452,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const renameCategory = useLoungeStore((s) => s.renameCategory);
   const moveAgent = useLoungeStore((s) => s.moveAgent);
   const agentCategoryOverrides = useLoungeStore((s) => s.agentCategoryOverrides);
+  const addCircle = useLoungeStore((s) => s.addCircle);
 
   // Force re-render when agents change
   const [agentTick, setAgentTick] = useState(0);
@@ -449,6 +480,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     selectAgent(agentId, projectId);
   }, [selectAgent]);
 
+  const handleCreateCircle = useCallback(() => {
+    addCircle('New circle');
+  }, [addCircle]);
+
   // Clear selection when agent disappears
   useEffect(() => {
     if (selectedAgentId && !agents.find((a) => a.id === selectedAgentId)) {
@@ -468,21 +503,36 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     },
       // Header
       React.createElement('div', {
-        className: 'px-3 py-3 border-b border-surface-0',
+        className: 'px-3 py-3 border-b border-surface-0 flex items-center justify-between',
       },
         React.createElement('h2', {
           className: 'text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider',
         }, 'Lounge'),
+        React.createElement('button', {
+          onClick: handleCreateCircle,
+          title: 'New circle',
+          className: 'w-5 h-5 flex items-center justify-center rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 transition-colors cursor-pointer',
+          'data-testid': 'lounge-add-circle',
+        },
+          React.createElement('svg', {
+            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none',
+            stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
+          },
+            React.createElement('line', { x1: '12', y1: '5', x2: '12', y2: '19' }),
+            React.createElement('line', { x1: '5', y1: '12', x2: '19', y2: '12' }),
+          ),
+        ),
       ),
       // Scrollable category list
       React.createElement('div', {
         className: 'flex-1 overflow-y-auto py-1',
         'data-testid': 'lounge-category-list',
       },
-        hasAgents
+        hasAgents || categories.some((c) => !c.projectId)
           ? categories.map((cat) => {
               const catAgents = grouped.get(cat.id) ?? [];
-              if (catAgents.length === 0) return null;
+              // Hide empty project-derived circles, but always show custom circles
+              if (catAgents.length === 0 && cat.projectId) return null;
               return React.createElement(CategorySection, {
                 key: cat.id,
                 category: cat,
@@ -496,6 +546,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 onSelectAgent: handleSelectAgent,
                 onRename: renameCategory,
                 onMoveAgent: moveAgent,
+                onCreateCircle: handleCreateCircle,
               });
             })
           : React.createElement(EmptyState),
