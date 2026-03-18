@@ -996,6 +996,13 @@ const api = {
     },
     setTitle: (title: string) =>
       ipcRenderer.invoke(IPC.WINDOW.SET_TITLE, title),
+    focusPopout: (windowId: number) =>
+      ipcRenderer.invoke(IPC.WINDOW.FOCUS_POPOUT, windowId),
+    onPopoutsChanged: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.WINDOW.POPOUTS_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.POPOUTS_CHANGED, listener); };
+    },
   },
 };
 

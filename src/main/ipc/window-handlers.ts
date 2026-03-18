@@ -139,6 +139,14 @@ function broadcastToPopouts(channel: string, ...args: any[]): void {
   }
 }
 
+/** Notify the main renderer that the set of active popouts has changed. */
+function broadcastPopoutsChanged(): void {
+  const mainWindow = findMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC.WINDOW.POPOUTS_CHANGED);
+  }
+}
+
 export function registerWindowHandlers(): void {
   ipcMain.handle(IPC.WINDOW.CREATE_POPOUT, withValidatedArgs(
     [objectArg<PopoutParams>({
@@ -196,6 +204,7 @@ export function registerWindowHandlers(): void {
 
     win.on('closed', () => {
       popoutWindows.delete(windowId);
+      broadcastPopoutsChanged();
       appLog('core:window', 'info', 'Pop-out window closed', { meta: { windowId } });
     });
 
@@ -203,6 +212,7 @@ export function registerWindowHandlers(): void {
       meta: { windowId, type: params.type, agentId: params.agentId },
     });
 
+    broadcastPopoutsChanged();
     return windowId;
   }));
 
@@ -243,6 +253,16 @@ export function registerWindowHandlers(): void {
       if (agentId) {
         mainWindow.webContents.send(IPC.WINDOW.NAVIGATE_TO_AGENT, agentId);
       }
+    }
+  }));
+
+  ipcMain.handle(IPC.WINDOW.FOCUS_POPOUT, withValidatedArgs(
+    [numberArg({ integer: true })],
+    (_event, windowId) => {
+    const entry = popoutWindows.get(windowId);
+    if (entry && !entry.window.isDestroyed()) {
+      if (entry.window.isMinimized()) entry.window.restore();
+      entry.window.focus();
     }
   }));
 

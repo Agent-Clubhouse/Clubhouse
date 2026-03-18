@@ -247,6 +247,9 @@ export const IPC = {
     CANVAS_STATE_CHANGED: 'window:canvas-state-changed',
     CANVAS_MUTATION: 'window:canvas-mutation',
     REQUEST_CANVAS_MUTATION: 'window:request-canvas-mutation',
+    // Popout lifecycle
+    FOCUS_POPOUT: 'window:focus-popout',
+    POPOUTS_CHANGED: 'window:popouts-changed',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',
