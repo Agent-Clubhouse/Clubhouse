@@ -120,7 +120,8 @@ describe('useTerminalFit', () => {
     });
 
     it('calls fit and resize after settle delay when page becomes visible', () => {
-      vi.useFakeTimers();
+      // Only fake setTimeout — requestAnimationFrame is already stubbed globally
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
       mockFit.mockClear();
@@ -143,7 +144,7 @@ describe('useTerminalFit', () => {
     });
 
     it('does not re-fit when page becomes hidden', () => {
-      vi.useFakeTimers();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
       mockFit.mockClear();
@@ -161,7 +162,7 @@ describe('useTerminalFit', () => {
     });
 
     it('cancels pending wake timer on unmount', () => {
-      vi.useFakeTimers();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       const { unmount } = renderHook(() =>
         useTerminalFit('s1', terminalRef, fitAddonRef, containerRef),
       );
