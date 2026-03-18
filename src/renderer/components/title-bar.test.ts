@@ -11,12 +11,6 @@ import { describe, it, expect } from 'vitest';
  * This makes the project context more prominent and reads more naturally.
  */
 
-const CORE_LABELS: Record<string, string> = {
-  agents: 'Agents',
-  settings: 'Settings',
-  help: 'Help',
-};
-
 interface MockProject {
   id: string;
   name: string;
