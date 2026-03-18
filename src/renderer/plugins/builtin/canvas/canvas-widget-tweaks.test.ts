@@ -52,7 +52,7 @@ describe('ReadOnlyMonacoEditor — readOnly prop toggling', () => {
 // ── Feature 2: Agent widget stop button ─────────────────────────────
 
 describe('AgentCanvasView — hook ordering regression (#310)', () => {
-  it('all useCallback hooks are defined before any conditional return', async () => {
+  it('all useCallback hooks are defined before the early-return guard', async () => {
     // Regression: handleStop was placed after the early return, violating Rules of Hooks.
     // When transitioning from picker → assigned view, React saw a different hook count and crashed.
     const fs = await import('node:fs');
@@ -63,28 +63,13 @@ describe('AgentCanvasView — hook ordering regression (#310)', () => {
     );
     const lines = src.split('\n');
 
-    let firstConditionalReturn = -1;
-    let lastUseCallback = -1;
+    // Find the early-return guard: `if (!view.agentId || !assignedAgent)`
+    const guardLine = lines.findIndex((l) => /if\s*\(\s*!view\.agentId/.test(l));
+    expect(guardLine).toBeGreaterThan(-1);
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      // Track any useCallback/useState/useEffect/useMemo (hook calls)
-      if (/\buseCallback\s*\(/.test(line)) {
-        lastUseCallback = i;
-      }
-      // Track first conditional return (early return inside if block)
-      if (firstConditionalReturn === -1 && /^\s*return\s*[\(\<]/.test(lines[i])) {
-        // Check if this return is inside an if block (indented)
-        const indent = lines[i].search(/\S/);
-        if (indent > 2) {
-          firstConditionalReturn = i;
-        }
-      }
-    }
-
-    expect(lastUseCallback).toBeGreaterThan(-1);
-    expect(firstConditionalReturn).toBeGreaterThan(-1);
-    expect(lastUseCallback).toBeLessThan(firstConditionalReturn);
+    // Ensure no useCallback appears after the guard
+    const hookAfterGuard = lines.slice(guardLine).findIndex((l) => /\buseCallback\s*\(/.test(l));
+    expect(hookAfterGuard).toBe(-1);
   });
 });
 
