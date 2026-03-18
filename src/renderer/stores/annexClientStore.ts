@@ -118,7 +118,7 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
 
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
-  const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites) => {
+  const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
     useAnnexClientStore.setState({ satellites });
   });
 

@@ -4,7 +4,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
-import { withValidatedArgs, stringArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -49,8 +49,8 @@ export function registerAnnexClientHandlers(): void {
 
   // Proxy IPC: resize PTY on a satellite's agent
   ipcMain.handle(IPC.ANNEX_CLIENT.PTY_RESIZE, withValidatedArgs(
-    [stringArg(), stringArg()],
-    (_event, satelliteId, agentId, cols: number, rows: number) => {
+    [stringArg(), stringArg(), numberArg(), numberArg()],
+    (_event, satelliteId, agentId, cols, rows) => {
       return annexClient.sendToSatellite(satelliteId, {
         type: 'pty:resize',
         payload: { agentId, cols, rows },
