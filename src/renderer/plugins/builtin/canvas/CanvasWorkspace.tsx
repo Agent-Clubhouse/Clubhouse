@@ -199,10 +199,12 @@ export function CanvasWorkspace({
     onMoveView(viewId, snapped);
   }, [onMoveView]);
 
-  const handleViewResizeEnd = useCallback((viewId: string, size: Size) => {
+  const handleViewResizeEnd = useCallback((viewId: string, size: Size, position: Position) => {
     const snapped = snapSize(size);
+    const snappedPos = snapPosition(position);
     onResizeView(viewId, snapped);
-  }, [onResizeView]);
+    onMoveView(viewId, snappedPos);
+  }, [onResizeView, onMoveView]);
 
   // ── Zoomed view ────────────────────────────────────────────────
 
@@ -241,7 +243,7 @@ export function CanvasWorkspace({
             onCenterView={() => handleCenterView(view.id)}
             onZoomView={() => handleToggleZoomView(view.id)}
             onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
-            onResizeEnd={(size) => handleViewResizeEnd(view.id, size)}
+            onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
             onUpdate={(updates) => onUpdateView(view.id, updates)}
           />
         ))}

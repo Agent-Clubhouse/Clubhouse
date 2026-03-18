@@ -58,7 +58,7 @@ export function MonacoDiffEditor({ original, modified, filePath }: MonacoDiffEdi
         automaticLayout: true,
         scrollBeyondLastLine: false,
         padding: { top: 4 },
-        fixedOverflowWidgets: true,
+        fixedOverflowWidgets: false,
         renderSideBySide: true,
         ignoreTrimWhitespace: false,
         renderIndicators: true,

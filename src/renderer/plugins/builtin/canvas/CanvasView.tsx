@@ -7,6 +7,32 @@ import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import type { PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 
+// ── Resize direction types ──────────────────────────────────────────
+
+export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+const CURSOR_MAP: Record<ResizeDirection, string> = {
+  n: 'ns-resize',
+  s: 'ns-resize',
+  e: 'ew-resize',
+  w: 'ew-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+};
+
+/** Size of edge resize zones in pixels */
+const EDGE_SIZE = 6;
+/** Size of corner resize zones in pixels */
+const CORNER_SIZE = 12;
+
+interface ResizeState {
+  size: Size;
+  position: Position;
+  direction: ResizeDirection;
+}
+
 interface CanvasViewComponentProps {
   view: CanvasView;
   api: PluginAPI;
@@ -17,7 +43,7 @@ interface CanvasViewComponentProps {
   onCenterView: () => void;
   onZoomView: () => void;
   onDragEnd: (position: Position) => void;
-  onResizeEnd: (size: Size) => void;
+  onResizeEnd: (size: Size, position: Position) => void;
   onUpdate: (updates: Partial<CanvasView>) => void;
 }
 
@@ -35,12 +61,12 @@ export function CanvasViewComponent({
   onUpdate,
 }: CanvasViewComponentProps) {
   const [dragPos, setDragPos] = useState<Position | null>(null);
-  const [resizeSize, setResizeSize] = useState<Size | null>(null);
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
-  const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0 });
+  const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
-  const currentPos = dragPos ?? view.position;
-  const currentSize = resizeSize ?? view.size;
+  const currentPos = resizeState?.position ?? dragPos ?? view.position;
+  const currentSize = resizeState?.size ?? view.size;
 
   // ── Permission state (agent views only) ─────────────────────────
 
@@ -121,9 +147,9 @@ export function CanvasViewComponent({
     };
   }, [dragPos, zoom, onDragEnd]);
 
-  // ── Resize ─────────────────────────────────────────────────────
+  // ── Resize (multi-directional) ─────────────────────────────────
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+  const handleResizeStart = useCallback((direction: ResizeDirection, e: React.MouseEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -133,27 +159,72 @@ export function CanvasViewComponent({
       mouseY: e.clientY,
       startW: view.size.width,
       startH: view.size.height,
+      startX: view.position.x,
+      startY: view.position.y,
+      direction,
     };
-    setResizeSize(view.size);
-  }, [view.size, onFocus]);
+    setResizeState({ size: view.size, position: view.position, direction });
+  }, [view.size, view.position, onFocus]);
 
   useEffect(() => {
-    if (resizeSize === null) return;
+    if (resizeState === null) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = (e.clientX - resizeStartRef.current.mouseX) / zoom;
-      const dy = (e.clientY - resizeStartRef.current.mouseY) / zoom;
-      setResizeSize({
-        width: Math.max(MIN_VIEW_WIDTH, resizeStartRef.current.startW + dx),
-        height: Math.max(MIN_VIEW_HEIGHT, resizeStartRef.current.startH + dy),
+      const ref = resizeStartRef.current;
+      const dx = (e.clientX - ref.mouseX) / zoom;
+      const dy = (e.clientY - ref.mouseY) / zoom;
+      const dir = ref.direction;
+
+      let newW = ref.startW;
+      let newH = ref.startH;
+      let newX = ref.startX;
+      let newY = ref.startY;
+
+      // East component: width increases with dx
+      if (dir === 'e' || dir === 'se' || dir === 'ne') {
+        newW = ref.startW + dx;
+      }
+      // West component: width decreases with dx, position moves
+      if (dir === 'w' || dir === 'sw' || dir === 'nw') {
+        newW = ref.startW - dx;
+        newX = ref.startX + dx;
+      }
+      // South component: height increases with dy
+      if (dir === 's' || dir === 'se' || dir === 'sw') {
+        newH = ref.startH + dy;
+      }
+      // North component: height decreases with dy, position moves
+      if (dir === 'n' || dir === 'ne' || dir === 'nw') {
+        newH = ref.startH - dy;
+        newY = ref.startY + dy;
+      }
+
+      // Enforce minimum size — clamp position if needed
+      if (newW < MIN_VIEW_WIDTH) {
+        if (dir === 'w' || dir === 'sw' || dir === 'nw') {
+          newX = ref.startX + ref.startW - MIN_VIEW_WIDTH;
+        }
+        newW = MIN_VIEW_WIDTH;
+      }
+      if (newH < MIN_VIEW_HEIGHT) {
+        if (dir === 'n' || dir === 'ne' || dir === 'nw') {
+          newY = ref.startY + ref.startH - MIN_VIEW_HEIGHT;
+        }
+        newH = MIN_VIEW_HEIGHT;
+      }
+
+      setResizeState({
+        size: { width: newW, height: newH },
+        position: { x: newX, y: newY },
+        direction: dir,
       });
     };
 
     const handleMouseUp = () => {
-      if (resizeSize) {
-        onResizeEnd(resizeSize);
+      if (resizeState) {
+        onResizeEnd(resizeState.size, resizeState.position);
       }
-      setResizeSize(null);
+      setResizeState(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -162,7 +233,7 @@ export function CanvasViewComponent({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizeSize, zoom, onResizeEnd]);
+  }, [resizeState, zoom, onResizeEnd]);
 
   // ── Content based on view type ─────────────────────────────────
 
@@ -183,7 +254,7 @@ export function CanvasViewComponent({
 
   return (
     <div
-      className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg overflow-hidden ${isPermission ? 'animate-pulse' : ''}`}
+      className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${isPermission ? 'animate-pulse' : ''}`}
       style={{
         left: currentPos.x,
         top: currentPos.y,
@@ -201,7 +272,7 @@ export function CanvasViewComponent({
     >
       {/* Title bar — drag handle */}
       <div
-        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"
         onMouseDown={handleDragStart}
         data-testid="canvas-view-titlebar"
       >
@@ -270,17 +341,63 @@ export function CanvasViewComponent({
       </div>
 
       {/* Content area — stop wheel events from propagating to canvas pan/zoom */}
-      <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
+      <div className="flex-1 min-h-0 overflow-hidden rounded-b-lg" onWheel={(e) => e.stopPropagation()}>
         {renderContent()}
       </div>
 
-      {/* Resize handle (bottom-right corner) */}
+      {/* ── Resize handles (edges + corners) ─────────────────────── */}
+      {/* Edge handles */}
       <div
-        className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize"
-        onMouseDown={handleResizeStart}
-        data-testid="canvas-view-resize"
+        className="absolute top-0 left-[12px] right-[12px] pointer-events-auto"
+        style={{ height: EDGE_SIZE, cursor: CURSOR_MAP.n, zIndex: 10 }}
+        onMouseDown={(e) => handleResizeStart('n', e)}
+        data-testid="canvas-view-resize-n"
+      />
+      <div
+        className="absolute bottom-0 left-[12px] right-[12px] pointer-events-auto"
+        style={{ height: EDGE_SIZE, cursor: CURSOR_MAP.s, zIndex: 10 }}
+        onMouseDown={(e) => handleResizeStart('s', e)}
+        data-testid="canvas-view-resize-s"
+      />
+      <div
+        className="absolute left-0 top-[12px] bottom-[12px] pointer-events-auto"
+        style={{ width: EDGE_SIZE, cursor: CURSOR_MAP.w, zIndex: 10 }}
+        onMouseDown={(e) => handleResizeStart('w', e)}
+        data-testid="canvas-view-resize-w"
+      />
+      <div
+        className="absolute right-0 top-[12px] bottom-[12px] pointer-events-auto"
+        style={{ width: EDGE_SIZE, cursor: CURSOR_MAP.e, zIndex: 10 }}
+        onMouseDown={(e) => handleResizeStart('e', e)}
+        data-testid="canvas-view-resize-e"
+      />
+
+      {/* Corner handles */}
+      <div
+        className="absolute top-0 left-0 pointer-events-auto"
+        style={{ width: CORNER_SIZE, height: CORNER_SIZE, cursor: CURSOR_MAP.nw, zIndex: 11 }}
+        onMouseDown={(e) => handleResizeStart('nw', e)}
+        data-testid="canvas-view-resize-nw"
+      />
+      <div
+        className="absolute top-0 right-0 pointer-events-auto"
+        style={{ width: CORNER_SIZE, height: CORNER_SIZE, cursor: CURSOR_MAP.ne, zIndex: 11 }}
+        onMouseDown={(e) => handleResizeStart('ne', e)}
+        data-testid="canvas-view-resize-ne"
+      />
+      <div
+        className="absolute bottom-0 left-0 pointer-events-auto"
+        style={{ width: CORNER_SIZE, height: CORNER_SIZE, cursor: CURSOR_MAP.sw, zIndex: 11 }}
+        onMouseDown={(e) => handleResizeStart('sw', e)}
+        data-testid="canvas-view-resize-sw"
+      />
+      <div
+        className="absolute bottom-0 right-0 pointer-events-auto"
+        style={{ width: CORNER_SIZE, height: CORNER_SIZE, cursor: CURSOR_MAP.se, zIndex: 11 }}
+        onMouseDown={(e) => handleResizeStart('se', e)}
+        data-testid="canvas-view-resize-se"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" className="text-ctp-overlay0">
+        <svg width="12" height="12" viewBox="0 0 12 12" className="text-ctp-overlay0 absolute bottom-0 right-0">
           <line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" strokeWidth="1" />
           <line x1="10" y1="6" x2="6" y2="10" stroke="currentColor" strokeWidth="1" />
         </svg>
