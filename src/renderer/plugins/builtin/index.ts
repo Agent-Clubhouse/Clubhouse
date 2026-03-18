@@ -7,6 +7,8 @@ import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
 import { manifest as canvasManifest } from './canvas/manifest';
 import * as canvasModule from './canvas/main';
+import { manifest as sessionsManifest } from './sessions/manifest';
+import * as sessionsModule from './sessions/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -16,6 +18,7 @@ export interface BuiltinPlugin {
 /** Experimental feature flags that gate conditional built-in plugins. */
 export interface ExperimentalFlags {
   canvas?: boolean;
+  sessions?: boolean;
   [key: string]: boolean | undefined;
 }
 
@@ -33,6 +36,10 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     plugins.push({ manifest: canvasManifest, module: canvasModule });
   }
 
+  if (experimentalFlags.sessions) {
+    plugins.push({ manifest: sessionsManifest, module: sessionsModule });
+  }
+
   return plugins;
 }
 
@@ -41,6 +48,9 @@ export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}):
   const ids = [...BASE_DEFAULT_IDS];
   if (experimentalFlags.canvas) {
     ids.push('canvas');
+  }
+  if (experimentalFlags.sessions) {
+    ids.push('sessions');
   }
   return new Set(ids);
 }

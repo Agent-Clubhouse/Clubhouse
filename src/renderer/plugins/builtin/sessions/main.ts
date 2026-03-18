@@ -115,8 +115,9 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   }, [api, sessionLists]);
 
   const handleAgentClick = useCallback((agent: AgentInfo) => {
+    const wasExpanded = expandedAgents.has(agent.id);
     sessionsState.toggleExpandedAgent(agent.id);
-    if (!expandedAgents.has(agent.id)) {
+    if (!wasExpanded) {
       sessionsState.setSelectedAgent({
         agentId: agent.id,
         agentName: agent.name,
@@ -259,7 +260,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const [totalEvents, setTotalEvents] = useState(0);
   const [loading, setLoading] = useState(false);
   const eventListRef = useRef<HTMLDivElement>(null);
-  const playbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const playbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load session data when selection changes
   useEffect(() => {
@@ -311,7 +312,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Playback timer
   useEffect(() => {
     if (playbackTimerRef.current) {
-      clearInterval(playbackTimerRef.current);
+      clearTimeout(playbackTimerRef.current);
       playbackTimerRef.current = null;
     }
 
@@ -331,7 +332,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     );
     const delay = Math.max(gap / playback.speed, 100); // minimum 100ms
 
-    playbackTimerRef.current = setInterval(() => {
+    playbackTimerRef.current = setTimeout(() => {
+      playbackTimerRef.current = null;
       const state = sessionsState.playback;
       const next = state.currentEventIndex + 1;
       if (next >= events.length) {
@@ -342,7 +344,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }, delay);
 
     return () => {
-      if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+      if (playbackTimerRef.current) clearTimeout(playbackTimerRef.current);
     };
   }, [playback.playing, playback.currentEventIndex, playback.speed, events]);
 

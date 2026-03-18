@@ -22,6 +22,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Canvas',
     description: 'Free-form spatial workspace for arranging agent, file, and browser views on a pannable/zoomable surface. Requires app restart.',
   },
+  {
+    id: 'sessions',
+    label: 'Sessions',
+    description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {
