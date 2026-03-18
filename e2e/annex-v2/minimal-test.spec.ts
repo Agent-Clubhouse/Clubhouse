@@ -189,18 +189,16 @@ test('settings UI shows Annex Server section', async () => {
   // Navigate to settings
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
   await settingsBtn.click();
-  await window.waitForTimeout(500);
 
-  // Look for Annex nav item
+  // The Annex nav button depends on an async useEffect chain:
+  // getVersion() → isBetaBuild() → getExperimentalSettings() → setShowAnnex(true)
+  // Use Playwright's auto-retry with a generous timeout instead of a fixed wait.
   const annexBtn = window.locator('button:has-text("Annex Server")').first();
-  const visible = await annexBtn.isVisible({ timeout: 5_000 }).catch(() => false);
-  expect(visible).toBe(true);
+  await expect(annexBtn).toBeVisible({ timeout: 10_000 });
 
-  if (visible) {
-    await annexBtn.click();
-    await window.waitForTimeout(500);
-    await window.screenshot({ path: path.join(SCREENSHOTS_DIR, 'annex-settings.png') });
-  }
+  await annexBtn.click();
+  await window.waitForTimeout(500);
+  await window.screenshot({ path: path.join(SCREENSHOTS_DIR, 'annex-settings.png') });
 
   // Toggle settings off
   await settingsBtn.click();
