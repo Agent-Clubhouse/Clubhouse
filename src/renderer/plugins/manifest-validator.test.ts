@@ -1091,14 +1091,14 @@ describe('manifest-validator', () => {
     });
   });
 
-  // ── Canvas widget contributions (v0.7+) ───────────────────────────
+  // ── Canvas widget contributions (v0.8+) ───────────────────────────
 
   describe('canvasWidgets validation', () => {
     const canvasBase = {
       id: 'canvas-plugin',
       name: 'Canvas Plugin',
       version: '1.0.0',
-      engine: { api: 0.7 },
+      engine: { api: 0.8 },
       scope: 'project' as const,
       permissions: ['files', 'canvas'],
       contributes: {
@@ -1114,13 +1114,13 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('rejects canvasWidgets with API < 0.7', () => {
+    it('rejects canvasWidgets with API < 0.8', () => {
       const result = validateManifest({
         ...canvasBase,
-        engine: { api: 0.6 },
+        engine: { api: 0.7 },
       });
       expect(result.valid).toBe(false);
-      expect(result.errors.some((e: string) => e.includes('canvasWidgets requires API >= 0.7'))).toBe(true);
+      expect(result.errors.some((e: string) => e.includes('canvasWidgets requires API >= 0.8'))).toBe(true);
     });
 
     it('rejects canvasWidgets without canvas permission', () => {
@@ -1223,6 +1223,33 @@ describe('manifest-validator', () => {
             },
           ],
         },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects canvas permission on API < 0.8', () => {
+      const result = validateManifest({
+        id: 'canvas-old',
+        name: 'Canvas Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files', 'canvas'],
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Canvas permission requires API >= 0.8'))).toBe(true);
+    });
+
+    it('accepts canvas permission on API 0.8', () => {
+      const result = validateManifest({
+        id: 'canvas-new',
+        name: 'Canvas New',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files', 'canvas'],
+        contributes: { help: {} },
       });
       expect(result.valid).toBe(true);
     });

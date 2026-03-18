@@ -3048,6 +3048,43 @@ describe('plugin-api-factory', () => {
         expect(() => api.git.status()).toThrow('not available for app-scoped');
         expect(() => api.files.readFile('x')).toThrow('not available for app-scoped');
       });
+
+      it('v0.8 project-scoped plugin: projects API is available with permission', () => {
+        const manifest: PluginManifest = {
+          id: 'test-plugin',
+          name: 'Test Plugin',
+          version: '1.0.0',
+          engine: { api: 0.8 },
+          scope: 'project',
+          permissions: ['files', 'projects'] as PluginManifest['permissions'],
+          contributes: { help: {} },
+        };
+        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
+        // Should NOT throw — v0.8 lifts the scope restriction
+        expect(typeof api.projects.list).toBe('function');
+        expect(typeof api.projects.getActive).toBe('function');
+      });
+
+      it('v0.5 project-scoped plugin: projects API still denied by scope', () => {
+        const manifest = v05Manifest(['projects']);
+        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
+        expect(() => api.projects.list()).toThrow('not available for project-scoped');
+      });
+
+      it('v0.8 project-scoped plugin without projects permission: permission denied', () => {
+        const manifest: PluginManifest = {
+          id: 'test-plugin',
+          name: 'Test Plugin',
+          version: '1.0.0',
+          engine: { api: 0.8 },
+          scope: 'project',
+          permissions: ['files'] as PluginManifest['permissions'],
+          contributes: { help: {} },
+        };
+        const api = createPluginAPI(makeCtx({ scope: 'project' }), undefined, manifest);
+        // Scope now allows, but permission is missing
+        expect(() => api.projects.list()).toThrow("requires 'projects' permission");
+      });
     });
 
     // ── Dual-scope + permissions ──────────────────────────────────────
