@@ -168,7 +168,8 @@ describe('CodexAppServerAdapter', () => {
     expect(opts.binary).toBe('sh');
     expect(opts.args[0]).toBe('-c');
     expect(opts.args[1]).toContain('source ~/.env');
-    expect(opts.args[1]).toContain('/usr/bin/codex');
+    // Binary is passed as a separate arg after '_' placeholder for exec "$@"
+    expect(opts.args).toContain('/usr/bin/codex');
   });
 
   it('emits error + end on startup failure', async () => {
