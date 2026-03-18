@@ -55,6 +55,14 @@ export function useCommandSource(): CommandItem[] {
   const appHubs = useAppHubStore((s) => s.hubs);
   const appActiveHubId = useAppHubStore((s) => s.activeHubId);
 
+  // Check if Annex experimental flag is enabled
+  const [annexExperimentalEnabled, setAnnexExperimentalEnabled] = useState(false);
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setAnnexExperimentalEnabled(!!s.annex);
+    }).catch(() => {});
+  }, []);
+
   // Load hubs from non-active projects so the palette shows all hubs
   const [otherProjectHubs, setOtherProjectHubs] = useState<CrossProjectHub[]>([]);
   useEffect(() => {
@@ -332,32 +340,34 @@ export function useCommandSource(): CommandItem[] {
       });
     }
 
-    // Annex actions
-    items.push({
-      id: 'action:toggle-annex',
-      label: annexSettings.enabled ? 'Disable Annex' : 'Enable Annex',
-      category: 'Actions',
-      keywords: ['annex', 'companion', 'ios', 'network'],
-      execute: () => {
-        useAnnexStore.getState().saveSettings({ ...annexSettings, enabled: !annexSettings.enabled });
-      },
-    });
+    // Annex actions (only when experimental flag is enabled)
+    if (annexExperimentalEnabled) {
+      items.push({
+        id: 'action:toggle-annex',
+        label: annexSettings.enabled ? 'Disable Annex' : 'Enable Annex',
+        category: 'Actions',
+        keywords: ['annex', 'companion', 'ios', 'network'],
+        execute: () => {
+          useAnnexStore.getState().saveSettings({ ...annexSettings, enabled: !annexSettings.enabled });
+        },
+      });
 
-    items.push({
-      id: 'action:annex-show-pin',
-      label: 'Show Annex PIN',
-      category: 'Actions',
-      keywords: ['annex', 'pairing', 'pin', 'companion'],
-      detail: annexSettings.enabled && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
-      execute: () => {
-        const uiState = useUIStore.getState();
-        if (uiState.explorerTab !== 'settings') {
-          toggleSettings();
-        }
-        setSettingsContext('app');
-        setSettingsSubPage('annex');
-      },
-    });
+      items.push({
+        id: 'action:annex-show-pin',
+        label: 'Show Annex PIN',
+        category: 'Actions',
+        keywords: ['annex', 'pairing', 'pin', 'companion'],
+        detail: annexSettings.enabled && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
+        execute: () => {
+          const uiState = useUIStore.getState();
+          if (uiState.explorerTab !== 'settings') {
+            toggleSettings();
+          }
+          setSettingsContext('app');
+          setSettingsSubPage('annex');
+        },
+      });
+    }
 
     // Clubhouse Mode / Agent Config shortcut
     items.push({
@@ -394,7 +404,7 @@ export function useCommandSource(): CommandItem[] {
     return items;
   }, [
     projects, agents, activeProjectId, pluginsMap, projectEnabled, shortcuts,
-    annexSettings, annexStatus,
+    annexSettings, annexStatus, annexExperimentalEnabled,
     projectHubs, projectActiveHubId, appHubs, appActiveHubId,
     otherProjectHubs,
     setActiveProject, removeProject, setActiveAgent, setExplorerTab, toggleSettings,

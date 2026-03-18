@@ -10,6 +10,10 @@ vi.mock('../services/annex-settings', () => ({
   saveSettings: vi.fn(),
 }));
 
+vi.mock('../services/experimental-settings', () => ({
+  getSettings: vi.fn(() => ({ annex: true })),
+}));
+
 vi.mock('../services/annex-server', () => ({
   start: vi.fn(),
   stop: vi.fn(),
@@ -31,6 +35,7 @@ import { IPC } from '../../shared/ipc-channels';
 import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
+import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
@@ -146,6 +151,13 @@ describe('maybeStartAnnex', () => {
 
   it('does not start server when settings.enabled is false', () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('does not start server when experimental annex flag is off', () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: true, deviceName: 'Mac' });
     maybeStartAnnex();
     expect(annexServer.start).not.toHaveBeenCalled();
   });

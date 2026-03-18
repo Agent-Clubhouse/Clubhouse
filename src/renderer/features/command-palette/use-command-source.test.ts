@@ -130,14 +130,19 @@ vi.mock('../../plugins/plugin-commands', () => ({
   pluginCommandRegistry: { execute: vi.fn() },
 }));
 
-// Mock window.clubhouse.plugin for cross-project hub storage
+// Mock window.clubhouse.plugin and app for cross-project hub storage + experimental settings
 const mockStorageRead = vi.fn();
 const mockStorageWrite = vi.fn();
+const mockGetExperimentalSettings = vi.fn().mockResolvedValue({ annex: true });
 (window as any).clubhouse = {
   ...(window as any).clubhouse,
   plugin: {
     storageRead: mockStorageRead,
     storageWrite: mockStorageWrite,
+  },
+  app: {
+    ...(window as any).clubhouse?.app,
+    getExperimentalSettings: mockGetExperimentalSettings,
   },
 };
 
@@ -159,66 +164,75 @@ describe('useCommandSource', () => {
     // Default: no hubs in other projects
     mockStorageRead.mockResolvedValue(null);
     mockStorageWrite.mockResolvedValue(undefined);
+    // Default: annex experimental flag on (restored after clearAllMocks)
+    mockGetExperimentalSettings.mockResolvedValue({ annex: true });
   });
 
-  it('includes annex settings page', () => {
+  it('annex commands hidden when experimental flag is off', async () => {
+    mockGetExperimentalSettings.mockResolvedValueOnce({});
     const { result } = renderHook(() => useCommandSource());
-    const item = findItem(result.current, 'settings:annex');
-    expect(item).toBeDefined();
-    expect(item.label).toBe('Annex');
-    expect(item.category).toBe('Settings');
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    expect(findItem(result.current, 'action:toggle-annex')).toBeUndefined();
+    expect(findItem(result.current, 'action:annex-show-pin')).toBeUndefined();
   });
 
-  it('includes toggle annex action with Enable label when disabled', () => {
+  it('includes toggle annex action when experimental flag is on', async () => {
     annexState.settings = { enabled: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:toggle-annex');
     expect(item).toBeDefined();
     expect(item.label).toBe('Enable Annex');
     expect(item.category).toBe('Actions');
   });
 
-  it('includes toggle annex action with Disable label when enabled', () => {
+  it('includes toggle annex action with Disable label when enabled', async () => {
     annexState.settings = { enabled: true, deviceName: 'Mac' };
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:toggle-annex');
     expect(item).toBeDefined();
     expect(item.label).toBe('Disable Annex');
   });
 
-  it('toggle annex calls saveSettings with toggled enabled', () => {
+  it('toggle annex calls saveSettings with toggled enabled', async () => {
     annexState.settings = { enabled: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:toggle-annex');
     item.execute();
     expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enabled: true, deviceName: '' });
   });
 
-  it('includes show annex PIN action', () => {
+  it('includes show annex PIN action when experimental flag is on', async () => {
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
     expect(item).toBeDefined();
     expect(item.label).toBe('Show Annex PIN');
     expect(item.category).toBe('Actions');
   });
 
-  it('show annex PIN includes PIN in detail when enabled', () => {
+  it('show annex PIN includes PIN in detail when enabled', async () => {
     annexState.settings = { enabled: true, deviceName: '' };
     annexState.status = { advertising: true, port: 5353, pin: '1234', connectedCount: 0 };
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
     expect(item.detail).toBe('PIN: 1234');
   });
 
-  it('show annex PIN has no detail when annex is disabled', () => {
+  it('show annex PIN has no detail when annex is disabled', async () => {
     annexState.settings = { enabled: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
     expect(item.detail).toBeUndefined();
   });
 
-  it('show annex PIN navigates to annex settings', () => {
+  it('show annex PIN navigates to annex settings', async () => {
     const { result } = renderHook(() => useCommandSource());
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');
     item.execute();
     expect(mockToggleSettings).toHaveBeenCalled();

@@ -21,9 +21,18 @@ function SettingsCategoryNav() {
   const setSettingsSubPage = useUIStore((s) => s.setSettingsSubPage);
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
+  const [showAnnex, setShowAnnex] = useState(false);
 
   useEffect(() => {
-    window.clubhouse.app.getVersion().then((v) => setShowExperimental(isBetaBuild(v) || previewChannel));
+    window.clubhouse.app.getVersion().then((v) => {
+      const isPreview = isBetaBuild(v) || previewChannel;
+      setShowExperimental(isPreview);
+      if (isPreview) {
+        window.clubhouse.app.getExperimentalSettings().then((s) => {
+          setShowAnnex(!!s.annex);
+        });
+      }
+    });
   }, [previewChannel]);
 
   const navButton = (label: string, page: SettingsSubPage) => (
@@ -59,8 +68,8 @@ function SettingsCategoryNav() {
             {navButton('Notifications', 'notifications')}
             {navButton('Sounds', 'sounds')}
             {navButton('Plugins', 'plugins')}
-            {navButton('Annex Server', 'annex')}
-            {navButton('Annex Control', 'annex-control')}
+            {showAnnex && navButton('Annex Server', 'annex')}
+            {showAnnex && navButton('Annex Control', 'annex-control')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}

@@ -20,8 +20,6 @@ import pluginsCreating from './content/plugins-creating.md';
 import settingsThemes from './content/settings-themes.md';
 import settingsSound from './content/settings-sound.md';
 import settingsNotifications from './content/settings-notifications.md';
-import settingsAnnex from './content/settings-annex.md';
-import settingsAnnexV2 from './content/settings-annex-v2.md';
 import settingsLogging from './content/settings-logging.md';
 import troubleshootingCommon from './content/troubleshooting-common.md';
 import troubleshootingSafeMode from './content/troubleshooting-safe-mode.md';
@@ -89,8 +87,7 @@ export const HELP_SECTIONS: HelpSection[] = [
       { id: 'settings-themes', title: 'Display & Themes', content: settingsThemes },
       { id: 'settings-sound', title: 'Sound & Audio', content: settingsSound },
       { id: 'settings-notifications', title: 'Notifications & Badges', content: settingsNotifications },
-      { id: 'settings-annex', title: 'Annex (iOS Companion)', content: settingsAnnex },
-      { id: 'settings-annex-v2', title: 'Annex V2 (Desktop Remote Control)', content: settingsAnnexV2 },
+      // Annex help topics are gated behind the experimental flag (visible only when opted in)
       { id: 'settings-logging', title: 'Logging & Diagnostics', content: settingsLogging },
     ],
   },

@@ -11,9 +11,9 @@ describe('help-content', () => {
     expect(ids).toEqual(['general', 'projects', 'agents', 'plugins', 'settings', 'troubleshooting']);
   });
 
-  it('has 26 total topics', () => {
+  it('has 25 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(27);
+    expect(total).toBe(25);
   });
 
   it('each section has at least 1 topic', () => {
@@ -50,9 +50,9 @@ describe('help-content', () => {
     expect(agents?.topics).toHaveLength(6);
   });
 
-  it('Settings section has 6 topics', () => {
+  it('Settings section has 4 topics', () => {
     const settings = HELP_SECTIONS.find((s) => s.id === 'settings');
-    expect(settings?.topics).toHaveLength(6);
+    expect(settings?.topics).toHaveLength(4);
   });
 
   it('includes key new topics', () => {
@@ -62,8 +62,6 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('dashboard');
     expect(allTopicIds).toContain('agents-clubhouse-mode');
     expect(allTopicIds).toContain('settings-sound');
-    expect(allTopicIds).toContain('settings-annex');
-    expect(allTopicIds).toContain('settings-annex-v2');
     expect(allTopicIds).toContain('orchestrators');
   });
 });
