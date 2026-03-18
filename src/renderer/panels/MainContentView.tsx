@@ -25,6 +25,7 @@ import { AnnexControlSettingsView } from '../features/settings/AnnexControlSetti
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
+import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 
 export function MainContentView() {
@@ -136,6 +137,7 @@ export function MainContentView() {
     if (settingsSubPage === 'sounds') return <SoundSettingsView projectId={projectId} />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
+    if (settingsSubPage === 'editor') return <EditorSettingsView />;
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
     if (settingsSubPage === 'plugins') return <PluginListSettings />;
     if (settingsSubPage === 'annex') return <AnnexSettingsView />;

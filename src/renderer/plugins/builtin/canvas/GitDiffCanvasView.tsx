@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import type { GitDiffCanvasView as GitDiffCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { GitInfo } from '../../../../shared/types';
+import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
 import { MonacoDiffEditor } from './MonacoDiffEditor';
 import { MenuPortal } from './MenuPortal';
 import { ResizableSidebar } from './ResizableSidebar';
@@ -58,6 +59,12 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
   const agents = useMemo(() => api.agents.list(), [api]);
+  const editorName = useEditorSettingsStore((s) => s.editorName);
+  const loadEditorSettings = useEditorSettingsStore((s) => s.loadSettings);
+
+  useEffect(() => {
+    loadEditorSettings();
+  }, [loadEditorSettings]);
 
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
   const [diffData, setDiffData] = useState<{ original: string; modified: string } | null>(null);
@@ -283,6 +290,18 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
     setDiffData(null);
   }, [activeProject, onUpdate]);
 
+  const fullFilePath = effectivePath && view.filePath
+    ? `${effectivePath}/${view.filePath}`
+    : null;
+
+  const handleShowInFolder = useCallback(() => {
+    if (fullFilePath) window.clubhouse.file.showInFolder(fullFilePath);
+  }, [fullFilePath]);
+
+  const handleOpenInEditor = useCallback(() => {
+    if (fullFilePath) window.clubhouse.file.openInEditor(fullFilePath);
+  }, [fullFilePath]);
+
   // ── Step 1: Project picker ──────────────────────────────────────
 
   if (!activeProjectId) {
@@ -416,6 +435,32 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
           </>
         )}
         <span className="flex-1" />
+        {fullFilePath && (
+          <>
+            <button
+              className="hover:text-ctp-text transition-colors px-1"
+              onClick={handleShowInFolder}
+              title="Reveal in Finder"
+              data-testid="git-diff-show-in-folder"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+            <button
+              className="hover:text-ctp-text transition-colors px-1"
+              onClick={handleOpenInEditor}
+              title={`Open in ${editorName}`}
+              data-testid="git-diff-open-in-editor"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </button>
+          </>
+        )}
         <button
           className="hover:text-ctp-text transition-colors px-1"
           onClick={handleRefresh}

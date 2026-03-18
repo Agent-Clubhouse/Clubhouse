@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as fileService from '../services/file-service';
@@ -5,6 +6,7 @@ import * as searchService from '../services/search-service';
 import { startWatch, stopWatch } from '../services/file-watch-service';
 import { appLog } from '../services/log-service';
 import { assertAllowedPath } from '../services/path-sandbox';
+import { editorSettings } from './settings-handlers';
 import type { FileSearchOptions } from '../../shared/types';
 import { booleanArg, numberArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
@@ -104,5 +106,17 @@ export function registerFileHandlers(): void {
   ], async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
     assertAllowedPath(rootPath);
     return searchService.searchFiles(rootPath, query, options);
+  }));
+
+  ipcMain.handle(IPC.FILE.OPEN_IN_EDITOR, withValidatedArgs([stringArg()], (_event, filePath: string) => {
+    assertAllowedPath(filePath);
+    const { editorCommand } = editorSettings.getSettings();
+    execFile(editorCommand, [filePath], (err) => {
+      if (err) {
+        appLog('core:file', 'error', 'Failed to open file in editor', {
+          meta: { filePath, editorCommand, error: err.message },
+        });
+      }
+    });
   }));
 }

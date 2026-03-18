@@ -426,7 +426,16 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental';
+export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental';
+
+// --- Editor settings ---
+
+export interface EditorSettings {
+  /** The command used to open files in the external editor (e.g. 'code', 'cursor', 'zed') */
+  editorCommand: string;
+  /** Display name for the editor (e.g. 'VS Code', 'Cursor', 'Zed') */
+  editorName: string;
+}
 
 // --- Experimental settings ---
 

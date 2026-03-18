@@ -38,10 +38,16 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ClipboardSettings } from './types';
+import type { ClipboardSettings, EditorSettings } from './types';
 
 export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
   key: 'clipboard',
   filename: 'clipboard-settings.json',
   defaults: { clipboardCompat: false },
+};
+
+export const EDITOR_SETTINGS: SettingsDefinition<EditorSettings> = {
+  key: 'editor',
+  filename: 'editor-settings.json',
+  defaults: { editorCommand: 'code', editorName: 'VS Code' },
 };

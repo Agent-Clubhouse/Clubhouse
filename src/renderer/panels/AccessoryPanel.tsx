@@ -64,6 +64,7 @@ function SettingsCategoryNav() {
             {navButton('Orchestrators & Agents', 'orchestrators')}
             {navButton('Profiles', 'profiles')}
             {navButton('Display & UI', 'display')}
+            {navButton('External Editor', 'editor')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Notifications', 'notifications')}
             {navButton('Sounds', 'sounds')}

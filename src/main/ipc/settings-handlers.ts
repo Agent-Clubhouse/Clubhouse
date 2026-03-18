@@ -13,15 +13,17 @@
  * That's it — no IPC channels, handler registration, or preload changes needed.
  */
 import { createManagedSettings } from '../services/managed-settings';
-import { CLIPBOARD_SETTINGS } from '../../shared/settings-definitions';
+import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS } from '../../shared/settings-definitions';
 
-export { CLIPBOARD_SETTINGS };
+export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS };
 
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
     clipboardCompat: process.platform === 'win32',
   },
 });
+
+export const editorSettings = createManagedSettings(EDITOR_SETTINGS);
 
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.
@@ -36,4 +38,5 @@ export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
 /** Register all managed settings IPC handlers. */
 export function registerSettingsHandlers(): void {
   clipboardSettings.register();
+  editorSettings.register();
 }
