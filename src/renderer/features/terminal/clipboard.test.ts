@@ -311,8 +311,6 @@ describe('clipboard — right-click context menu', () => {
 });
 
 // ─── Exported utility functions ──────────────────────────────────────────────
-// These were made public so the terminal-edit-handler can reuse them for
-// Electron menu-driven paste/copy routing.
 
 describe('readClipboard', () => {
   beforeEach(() => {

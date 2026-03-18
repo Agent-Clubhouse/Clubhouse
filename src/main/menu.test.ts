@@ -42,52 +42,19 @@ describe('buildMenu', () => {
     expect(Menu.setApplicationMenu).toHaveBeenCalled();
   });
 
-  it('includes a custom Edit menu with standard edit operations', () => {
-    const editMenu = capturedTemplate.find((item) => item.label === 'Edit');
-    expect(editMenu).toBeDefined();
-    expect(editMenu!.submenu).toBeDefined();
-
-    const submenu = editMenu!.submenu as MenuItemConstructorOptions[];
-    const labels = submenu.filter((item) => item.label).map((item) => item.label);
-
-    expect(labels).toContain('Undo');
-    expect(labels).toContain('Redo');
-    expect(labels).toContain('Cut');
-    expect(labels).toContain('Copy');
-    expect(labels).toContain('Paste');
-    expect(labels).toContain('Select All');
-  });
-
-  it('does NOT use role-based editMenu (which bypasses renderer)', () => {
-    // The old { role: 'editMenu' } intercepts keystrokes at the native OS level
-    // before they reach the renderer, breaking Monaco editor keyboard shortcuts.
-    const roleBasedEditMenu = capturedTemplate.find(
+  it('uses role-based editMenu for native OS edit command handling', () => {
+    const editMenu = capturedTemplate.find(
       (item) => (item as any).role === 'editMenu',
     );
-    expect(roleBasedEditMenu).toBeUndefined();
+    expect(editMenu).toBeDefined();
   });
 
-  it('sends IPC edit command when Select All is clicked', () => {
-    const editMenu = capturedTemplate.find((item) => item.label === 'Edit');
-    const submenu = editMenu!.submenu as MenuItemConstructorOptions[];
-    const selectAll = submenu.find((item) => item.label === 'Select All');
-    expect(selectAll).toBeDefined();
-    expect(selectAll!.accelerator).toBe('CmdOrCtrl+A');
-
-    // Simulate click
-    selectAll!.click!(null as any, null as any, null as any);
-
-    expect(mockWebContentsSend).toHaveBeenCalledWith('app:edit-command', 'selectAll');
-  });
-
-  it('sends IPC edit command when Copy is clicked', () => {
-    const editMenu = capturedTemplate.find((item) => item.label === 'Edit');
-    const submenu = editMenu!.submenu as MenuItemConstructorOptions[];
-    const copy = submenu.find((item) => item.label === 'Copy');
-    expect(copy).toBeDefined();
-
-    copy!.click!(null as any, null as any, null as any);
-
-    expect(mockWebContentsSend).toHaveBeenCalledWith('app:edit-command', 'copy');
+  it('includes app menu with About and Preferences', () => {
+    const appMenu = capturedTemplate.find((item) => item.label === 'Clubhouse');
+    expect(appMenu).toBeDefined();
+    const submenu = appMenu!.submenu as MenuItemConstructorOptions[];
+    const labels = submenu.filter((item) => item.label).map((item) => item.label);
+    expect(labels).toContain('About Clubhouse');
+    expect(labels).toContain('Preferences…');
   });
 });
