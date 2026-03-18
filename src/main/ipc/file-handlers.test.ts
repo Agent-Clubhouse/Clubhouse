@@ -25,12 +25,24 @@ vi.mock('../services/path-sandbox', () => ({
   assertAllowedPath: vi.fn(),
 }));
 
+vi.mock('./settings-handlers', () => ({
+  editorSettings: {
+    getSettings: vi.fn(() => ({ editorCommand: 'code', editorName: 'VS Code' })),
+  },
+}));
+
+vi.mock('child_process', () => ({
+  execFile: vi.fn(),
+}));
+
+import { execFile } from 'child_process';
 import { ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerFileHandlers } from './file-handlers';
 import * as fileService from '../services/file-service';
 import { appLog } from '../services/log-service';
 import { assertAllowedPath } from '../services/path-sandbox';
+import { editorSettings } from './settings-handlers';
 
 describe('file-handlers', () => {
   let handlers: Map<string, (...args: any[]) => any>;
@@ -48,7 +60,7 @@ describe('file-handlers', () => {
     const expectedChannels = [
       IPC.FILE.READ_TREE, IPC.FILE.READ, IPC.FILE.WRITE, IPC.FILE.READ_BINARY,
       IPC.FILE.SHOW_IN_FOLDER, IPC.FILE.MKDIR, IPC.FILE.DELETE,
-      IPC.FILE.RENAME, IPC.FILE.COPY, IPC.FILE.STAT,
+      IPC.FILE.RENAME, IPC.FILE.COPY, IPC.FILE.STAT, IPC.FILE.OPEN_IN_EDITOR,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -193,6 +205,21 @@ describe('file-handlers', () => {
     );
   });
 
+  it('OPEN_IN_EDITOR spawns the configured editor command', async () => {
+    const handler = handlers.get(IPC.FILE.OPEN_IN_EDITOR)!;
+    await handler({}, '/project/file.ts');
+    expect(assertAllowedPath).toHaveBeenCalledWith('/project/file.ts');
+    expect(editorSettings.getSettings).toHaveBeenCalled();
+    expect(execFile).toHaveBeenCalledWith('code', ['/project/file.ts'], expect.any(Function));
+  });
+
+  it('OPEN_IN_EDITOR uses the editor command from settings', async () => {
+    vi.mocked(editorSettings.getSettings).mockReturnValue({ editorCommand: 'cursor', editorName: 'Cursor' });
+    const handler = handlers.get(IPC.FILE.OPEN_IN_EDITOR)!;
+    await handler({}, '/project/file.ts');
+    expect(execFile).toHaveBeenCalledWith('cursor', ['/project/file.ts'], expect.any(Function));
+  });
+
   describe('path sandboxing', () => {
     it('validates path for single-path handlers', async () => {
       const singlePathHandlers: Array<{ channel: string; args: unknown[] }> = [
@@ -203,6 +230,7 @@ describe('file-handlers', () => {
         { channel: IPC.FILE.MKDIR, args: ['/project/dir'] },
         { channel: IPC.FILE.DELETE, args: ['/project/file.ts'] },
         { channel: IPC.FILE.STAT, args: ['/project/file.ts'] },
+        { channel: IPC.FILE.OPEN_IN_EDITOR, args: ['/project/file.ts'] },
       ];
 
       for (const { channel, args } of singlePathHandlers) {

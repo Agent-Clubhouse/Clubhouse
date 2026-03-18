@@ -71,6 +71,9 @@ vi.mock('../features/settings/GettingStartedSettingsView', () => ({
 vi.mock('../features/settings/KeyboardShortcutsSettingsView', () => ({
   KeyboardShortcutsSettingsView: () => <div />,
 }));
+vi.mock('../features/settings/EditorSettingsView', () => ({
+  EditorSettingsView: () => <div data-testid="editor-settings" />,
+}));
 
 const completedAgent: CompletedQuickAgent = {
   id: 'completed-1',

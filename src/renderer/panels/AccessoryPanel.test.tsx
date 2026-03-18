@@ -81,4 +81,9 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     expect(screen.queryByText('Experimental')).not.toBeInTheDocument();
     unmount();
   });
+
+  it('shows External Editor nav item in app settings', () => {
+    render(<AccessoryPanel />);
+    expect(screen.getByText('External Editor')).toBeInTheDocument();
+  });
 });
