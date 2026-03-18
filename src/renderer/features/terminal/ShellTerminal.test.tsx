@@ -43,6 +43,14 @@ vi.mock('./clipboard', () => ({
   attachClipboardHandlers: (...args: any[]) => (globalThis as any).__testAttachClipboard(...args),
 }));
 
+g.__testRegisterTerminalEdit = vi.fn();
+g.__testUnregisterTerminalEdit = vi.fn();
+
+vi.mock('./terminal-edit-handler', () => ({
+  registerTerminalEditHandler: (...args: any[]) => (globalThis as any).__testRegisterTerminalEdit(...args),
+  unregisterTerminalEditHandler: (...args: any[]) => (globalThis as any).__testUnregisterTerminalEdit(...args),
+}));
+
 import { ShellTerminal } from './ShellTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
@@ -57,6 +65,8 @@ describe('ShellTerminal', () => {
     g.__testFitAddon = null;
     g.__testAttachClipboard.mockClear();
     g.__testAttachClipboard.mockReturnValue(vi.fn());
+    g.__testRegisterTerminalEdit.mockClear();
+    g.__testUnregisterTerminalEdit.mockClear();
     mockOnDataCallback = null;
     mockOnExitCallback = null;
     mockRemoveDataListener.mockClear();
@@ -267,6 +277,37 @@ describe('ShellTerminal', () => {
       useClipboardSettingsStore.setState({ clipboardCompat: false });
       render(<ShellTerminal sessionId="shell-1" />);
       expect(g.__testAttachClipboard).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('terminal edit handler registration', () => {
+    it('registers with terminal edit handler on mount', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      expect(g.__testRegisterTerminalEdit).toHaveBeenCalledTimes(1);
+      const entry = g.__testRegisterTerminalEdit.mock.calls[0][0];
+      expect(entry.term).toBe(term());
+      expect(entry.container).toBeDefined();
+      expect(typeof entry.writeToPty).toBe('function');
+    });
+
+    it('registers regardless of clipboardCompat setting', () => {
+      useClipboardSettingsStore.setState({ clipboardCompat: false });
+      render(<ShellTerminal sessionId="shell-1" />);
+      expect(g.__testRegisterTerminalEdit).toHaveBeenCalledTimes(1);
+    });
+
+    it('writeToPty callback writes to the correct session', () => {
+      render(<ShellTerminal sessionId="shell-1" />);
+      const entry = g.__testRegisterTerminalEdit.mock.calls[0][0];
+      entry.writeToPty('hello');
+      expect(window.clubhouse.pty.write).toHaveBeenCalledWith('shell-1', 'hello');
+    });
+
+    it('unregisters on unmount', () => {
+      const { unmount } = render(<ShellTerminal sessionId="shell-1" />);
+      const entry = g.__testRegisterTerminalEdit.mock.calls[0][0];
+      unmount();
+      expect(g.__testUnregisterTerminalEdit).toHaveBeenCalledWith(entry);
     });
   });
 

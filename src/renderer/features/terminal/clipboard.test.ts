@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { attachClipboardHandlers } from './clipboard';
+import { attachClipboardHandlers, readClipboard, writeClipboard, pasteIntoTerminal } from './clipboard';
 
 // --- Mocks ---
 
@@ -306,6 +306,73 @@ describe('clipboard — right-click context menu', () => {
     container.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     await flush();
 
+    expect(writeToPty).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Exported utility functions ──────────────────────────────────────────────
+// These were made public so the terminal-edit-handler can reuse them for
+// Electron menu-driven paste/copy routing.
+
+describe('readClipboard', () => {
+  beforeEach(() => {
+    clipboardReadText.mockReset();
+  });
+
+  it('returns clipboard text on success', async () => {
+    clipboardReadText.mockResolvedValue('hello');
+    expect(await readClipboard()).toBe('hello');
+  });
+
+  it('returns empty string on failure', async () => {
+    clipboardReadText.mockRejectedValue(new Error('denied'));
+    expect(await readClipboard()).toBe('');
+  });
+});
+
+describe('writeClipboard', () => {
+  beforeEach(() => {
+    clipboardWriteText.mockReset();
+  });
+
+  it('writes text to clipboard', async () => {
+    await writeClipboard('test');
+    expect(clipboardWriteText).toHaveBeenCalledWith('test');
+  });
+
+  it('silently ignores write failures', async () => {
+    clipboardWriteText.mockRejectedValue(new Error('denied'));
+    await expect(writeClipboard('test')).resolves.toBeUndefined();
+  });
+});
+
+describe('pasteIntoTerminal', () => {
+  beforeEach(() => {
+    clipboardReadText.mockReset().mockResolvedValue('paste me');
+  });
+
+  it('reads clipboard and calls writeToPty', async () => {
+    const term = createMockTerminal();
+    const writeToPty = vi.fn();
+    pasteIntoTerminal(term as any, writeToPty);
+    await flush();
+    expect(writeToPty).toHaveBeenCalledWith('paste me');
+  });
+
+  it('wraps in bracketed paste when mode is active', async () => {
+    const term = createMockTerminal({ bracketedPasteMode: true });
+    const writeToPty = vi.fn();
+    pasteIntoTerminal(term as any, writeToPty);
+    await flush();
+    expect(writeToPty).toHaveBeenCalledWith('\x1b[200~paste me\x1b[201~');
+  });
+
+  it('does not call writeToPty when clipboard is empty', async () => {
+    clipboardReadText.mockResolvedValue('');
+    const term = createMockTerminal();
+    const writeToPty = vi.fn();
+    pasteIntoTerminal(term as any, writeToPty);
+    await flush();
     expect(writeToPty).not.toHaveBeenCalled();
   });
 });

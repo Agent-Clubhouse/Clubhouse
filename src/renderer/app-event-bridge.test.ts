@@ -222,6 +222,11 @@ vi.mock('./plugins/builtin/hub/hub-sync', () => ({
   applyHubMutation: vi.fn(),
 }));
 
+const mockHandleTerminalEditCommand = vi.fn(() => false);
+vi.mock('./features/terminal/terminal-edit-handler', () => ({
+  handleTerminalEditCommand: (...args: unknown[]) => mockHandleTerminalEditCommand(...args),
+}));
+
 const mockHandleMonacoEditCommand = vi.fn(() => false);
 vi.mock('./plugins/builtin/files/MonacoEditor', () => ({
   handleMonacoEditCommand: (...args: unknown[]) => mockHandleMonacoEditCommand(...args),
@@ -358,13 +363,47 @@ describe('initAppEventBridge', () => {
 
     beforeEach(() => {
       editCommandHandler = vi.mocked(window.clubhouse.app.onEditCommand).mock.calls[0][0];
+      mockHandleTerminalEditCommand.mockReturnValue(false);
       mockHandleMonacoEditCommand.mockReturnValue(false);
     });
+
+    // ─── Terminal routing ──────────────────────────────────────────
+
+    it('routes paste to focused terminal before trying Monaco', () => {
+      mockHandleTerminalEditCommand.mockReturnValue(true);
+      editCommandHandler('paste');
+      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('paste');
+      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
+    });
+
+    it('routes copy to focused terminal before trying Monaco', () => {
+      mockHandleTerminalEditCommand.mockReturnValue(true);
+      editCommandHandler('copy');
+      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('copy');
+      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
+    });
+
+    it('routes selectAll to focused terminal before trying Monaco', () => {
+      mockHandleTerminalEditCommand.mockReturnValue(true);
+      editCommandHandler('selectAll');
+      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('selectAll');
+      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
+    });
+
+    it('falls through to Monaco when terminal does not handle the command', async () => {
+      mockHandleTerminalEditCommand.mockReturnValue(false);
+      mockHandleMonacoEditCommand.mockReturnValue(true);
+      editCommandHandler('selectAll');
+      await vi.dynamicImportSettled();
+      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('selectAll');
+      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
+    });
+
+    // ─── Monaco routing ────────────────────────────────────────────
 
     it('routes edit commands to Monaco when Monaco has focus', async () => {
       mockHandleMonacoEditCommand.mockReturnValue(true);
       editCommandHandler('selectAll');
-      // Wait for dynamic import to resolve
       await vi.dynamicImportSettled();
       expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
     });
@@ -376,9 +415,11 @@ describe('initAppEventBridge', () => {
       expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('copy');
     });
 
-    it('falls back to document.execCommand when Monaco does not have focus', async () => {
+    // ─── Fallback ──────────────────────────────────────────────────
+
+    it('falls back to document.execCommand when neither terminal nor Monaco handles it', async () => {
+      mockHandleTerminalEditCommand.mockReturnValue(false);
       mockHandleMonacoEditCommand.mockReturnValue(false);
-      // jsdom doesn't define execCommand, so define it on the stub
       const execCommand = vi.fn(() => true);
       (document as any).execCommand = execCommand;
       editCommandHandler('copy');
