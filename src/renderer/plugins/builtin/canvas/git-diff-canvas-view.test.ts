@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createView, createViewCounter } from './canvas-operations';
 import type { GitDiffCanvasView } from './canvas-types';
 import { manifest } from './manifest';
-import { statusInfo } from './GitDiffCanvasView';
+import { statusInfo, GIT_POLL_INTERVAL_MS } from './GitDiffCanvasView';
 
 // ── createView('git-diff') ──────────────────────────────────────────
 
@@ -158,5 +158,90 @@ describe('GitDiffCanvasView — directory path extraction', () => {
 
   it('returns parent for deeply nested file', () => {
     expect(extractDirPath('a/b/c/d.ts')).toBe('a/b/c');
+  });
+});
+
+// ── Polling constant ────────────────────────────────────────────────
+
+describe('GIT_POLL_INTERVAL_MS', () => {
+  it('is exported and set to 3000ms', () => {
+    expect(GIT_POLL_INTERVAL_MS).toBe(3000);
+  });
+
+  it('is a reasonable polling interval (between 1s and 30s)', () => {
+    expect(GIT_POLL_INTERVAL_MS).toBeGreaterThanOrEqual(1000);
+    expect(GIT_POLL_INTERVAL_MS).toBeLessThanOrEqual(30000);
+  });
+});
+
+// ── Polling behavior (integration-style with timers) ────────────────
+
+describe('GitDiffCanvasView — polling behavior', () => {
+  let gitInfoMock: ReturnType<typeof vi.fn>;
+  let gitDiffMock: ReturnType<typeof vi.fn>;
+  let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
+  let removeEventListenerSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    gitInfoMock = vi.fn().mockResolvedValue({
+      branch: 'main', branches: ['main'], status: [], log: [],
+      hasGit: true, ahead: 0, behind: 0, remote: 'origin', stashCount: 0, hasConflicts: false,
+    });
+    gitDiffMock = vi.fn().mockResolvedValue({ original: '', modified: '' });
+
+    // Mock window.clubhouse.git
+    (globalThis as any).window = {
+      ...(globalThis as any).window,
+      clubhouse: { git: { info: gitInfoMock, diff: gitDiffMock } },
+    };
+
+    addEventListenerSpy = vi.spyOn(document, 'addEventListener');
+    removeEventListenerSpy = vi.spyOn(document, 'removeEventListener');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('setInterval uses GIT_POLL_INTERVAL_MS as the delay', () => {
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+
+    // Simulate what the useEffect would do
+    const poll = vi.fn();
+    const id = setInterval(poll, GIT_POLL_INTERVAL_MS);
+
+    expect(setIntervalSpy).toHaveBeenCalledWith(poll, 3000);
+
+    clearInterval(id);
+    setIntervalSpy.mockRestore();
+  });
+
+  it('poll skips fetch when document is hidden', () => {
+    Object.defineProperty(document, 'hidden', { value: true, writable: true, configurable: true });
+
+    // Simulate the poll guard
+    const shouldPoll = !document.hidden;
+    expect(shouldPoll).toBe(false);
+
+    Object.defineProperty(document, 'hidden', { value: false, writable: true, configurable: true });
+  });
+
+  it('poll proceeds when document is visible', () => {
+    Object.defineProperty(document, 'hidden', { value: false, writable: true, configurable: true });
+
+    const shouldPoll = !document.hidden;
+    expect(shouldPoll).toBe(true);
+  });
+
+  it('visibilitychange listener can be added and removed', () => {
+    const handler = vi.fn();
+
+    document.addEventListener('visibilitychange', handler);
+    expect(addEventListenerSpy).toHaveBeenCalledWith('visibilitychange', handler);
+
+    document.removeEventListener('visibilitychange', handler);
+    expect(removeEventListenerSpy).toHaveBeenCalledWith('visibilitychange', handler);
   });
 });

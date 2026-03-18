@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import type { GitDiffCanvasView as GitDiffCanvasViewType, CanvasView } from './canvas-types';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { GitInfo } from '../../../../shared/types';
 import { MonacoDiffEditor } from './MonacoDiffEditor';
+
+/** How often to poll git status (ms). */
+export const GIT_POLL_INTERVAL_MS = 3000;
 
 interface GitDiffCanvasViewProps {
   view: GitDiffCanvasViewType;
@@ -83,32 +86,95 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
   // The effective directory to run git commands against
   const effectivePath = view.worktreePath || activeProject?.path;
 
-  // ── Load git status when project/worktree changes ───────────────
+  // Track whether initial load has completed (to avoid flicker on polls)
+  const initialLoadDone = useRef(false);
+
+  // Reset initial-load flag when the target path changes
+  useEffect(() => {
+    initialLoadDone.current = false;
+  }, [effectivePath]);
+
+  // ── Fetch helpers (reusable by initial load + poll) ─────────────
+
+  const fetchGitInfo = useCallback((dir: string, isInitial: boolean) => {
+    if (isInitial) {
+      setGitInfo(null);
+      setLoading(true);
+    }
+    window.clubhouse.git.info(dir)
+      .then((info: GitInfo) => {
+        setGitInfo(info);
+        if (isInitial) setLoading(false);
+        initialLoadDone.current = true;
+      })
+      .catch(() => {
+        if (isInitial) { setGitInfo(null); setLoading(false); }
+      });
+  }, []);
+
+  const fetchDiff = useCallback((dir: string, filePath: string, isInitial: boolean) => {
+    if (isInitial) setDiffData(null);
+    window.clubhouse.git.diff(dir, filePath, false)
+      .then((data: { original: string; modified: string }) => setDiffData(data))
+      .catch(() => { if (isInitial) setDiffData(null); });
+  }, []);
+
+  // ── Initial load when project/worktree changes ──────────────────
 
   useEffect(() => {
     if (!effectivePath) {
       setGitInfo(null);
       return;
     }
-    setGitInfo(null);
-    setLoading(true);
-    window.clubhouse.git.info(effectivePath)
-      .then((info: GitInfo) => { setGitInfo(info); setLoading(false); })
-      .catch(() => { setGitInfo(null); setLoading(false); });
-  }, [effectivePath]);
+    fetchGitInfo(effectivePath, true);
+  }, [effectivePath, fetchGitInfo]);
 
-  // ── Load diff when a file is selected ───────────────────────────
+  // ── Initial diff load when file selection changes ───────────────
 
   useEffect(() => {
     if (!view.filePath || !effectivePath) {
       setDiffData(null);
       return;
     }
-    setDiffData(null);
-    window.clubhouse.git.diff(effectivePath, view.filePath, false)
-      .then((data: { original: string; modified: string }) => setDiffData(data))
-      .catch(() => setDiffData(null));
-  }, [view.filePath, effectivePath]);
+    fetchDiff(effectivePath, view.filePath, true);
+  }, [view.filePath, effectivePath, fetchDiff]);
+
+  // ── Periodic polling for auto-refresh ───────────────────────────
+
+  useEffect(() => {
+    if (!effectivePath) return;
+
+    const poll = () => {
+      if (document.hidden) return;
+      fetchGitInfo(effectivePath, false);
+      if (view.filePath) {
+        fetchDiff(effectivePath, view.filePath, false);
+      }
+    };
+
+    const intervalId = setInterval(poll, GIT_POLL_INTERVAL_MS);
+
+    // Also refresh immediately when the tab becomes visible again
+    const onVisibilityChange = () => {
+      if (!document.hidden) poll();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [effectivePath, view.filePath, fetchGitInfo, fetchDiff]);
+
+  // ── Manual refresh ──────────────────────────────────────────────
+
+  const handleRefresh = useCallback(() => {
+    if (!effectivePath) return;
+    fetchGitInfo(effectivePath, false);
+    if (view.filePath) {
+      fetchDiff(effectivePath, view.filePath, false);
+    }
+  }, [effectivePath, view.filePath, fetchGitInfo, fetchDiff]);
 
   // ── Callbacks ───────────────────────────────────────────────────
 
@@ -291,6 +357,15 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
             </button>
           </>
         )}
+        <span className="flex-1" />
+        <button
+          className="hover:text-ctp-text transition-colors px-1"
+          onClick={handleRefresh}
+          title="Refresh"
+          data-testid="git-diff-refresh"
+        >
+          &#x21bb;
+        </button>
       </div>
 
       {/* Split panel: file list + diff */}
