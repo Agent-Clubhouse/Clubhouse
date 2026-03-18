@@ -66,9 +66,11 @@ interface CanvasViewComponentProps {
   api: PluginAPI;
   zoom: number;
   isZoomed?: boolean;
+  isSelected?: boolean;
   attention?: CanvasViewAttention | null;
   onClose: () => void;
   onFocus: () => void;
+  onSelect: () => void;
   onCenterView: () => void;
   onZoomView: () => void;
   onDragEnd: (position: Position) => void;
@@ -81,9 +83,11 @@ export function CanvasViewComponent({
   api,
   zoom,
   isZoomed,
+  isSelected,
   attention,
   onClose,
   onFocus,
+  onSelect,
   onCenterView,
   onZoomView,
   onDragEnd,
@@ -311,6 +315,11 @@ export function CanvasViewComponent({
 
   const { AgentAvatar } = api.widgets;
 
+  // ── Selection highlight ─────────────────────────────────────────
+  const selectionShadow = isSelected
+    ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+    : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+
   return (
     <div
       className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${attentionClass}`}
@@ -320,11 +329,12 @@ export function CanvasViewComponent({
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
-        ...(!attention && { boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)' }),
+        ...(!attention && { boxShadow: selectionShadow }),
       }}
-      onMouseDown={(e) => { e.stopPropagation(); onFocus(); }}
+      onMouseDown={(e) => { e.stopPropagation(); onSelect(); }}
       data-testid={`canvas-view-${view.id}`}
       data-attention={attention?.level ?? undefined}
+      data-selected={isSelected ? 'true' : undefined}
     >
       {/* Title bar — drag handle */}
       <div
@@ -411,11 +421,15 @@ export function CanvasViewComponent({
         </div>
       </div>
 
-      {/* Content area — stop wheel events from propagating to canvas pan/zoom.
+      {/* Content area — only stop wheel propagation when this view is selected,
+          so unselected views let scroll events pan the canvas.
           When the view is zoomed, the overlay renders a full-size copy of the
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
-      <div className="flex-1 min-h-0 overflow-hidden rounded-b-lg" onWheel={(e) => e.stopPropagation()}>
+      <div
+        className="flex-1 min-h-0 overflow-hidden rounded-b-lg"
+        onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
+      >
         {!isZoomed && renderContent()}
       </div>
 

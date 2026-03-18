@@ -64,11 +64,15 @@ export interface CanvasState {
   // Zoom (temporary full-screen for a single view)
   zoomView: (viewId: string | null) => void;
 
+  // Selection (which view receives keyboard/scroll events)
+  selectView: (viewId: string | null) => void;
+
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
+  selectedViewId: string | null;
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────
@@ -86,6 +90,7 @@ function createCanvasInstance(canvasCounter: CanvasCounter, _viewCounter: ViewCo
     viewport: { panX: 0, panY: 0, zoom: 1 },
     nextZIndex: 0,
     zoomedViewId: null,
+    selectedViewId: null,
   };
 }
 
@@ -100,15 +105,17 @@ function updateActiveCanvas(state: CanvasState, updater: (canvas: CanvasInstance
     views: active.views,
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
+    selectedViewId: active.selectedViewId,
   };
 }
 
-function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId'> {
+function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId'> {
   const active = canvases.find((c) => c.id === activeCanvasId) ?? canvases[0];
   return {
     views: active.views,
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
+    selectedViewId: active.selectedViewId,
   };
 }
 
@@ -125,6 +132,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     views: initialCanvas.views,
     viewport: initialCanvas.viewport,
     zoomedViewId: null,
+    selectedViewId: null,
     loaded: false,
 
     activeCanvas: () => {
@@ -153,6 +161,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               viewport: clampViewport(s.viewport),
               nextZIndex: s.nextZIndex,
               zoomedViewId: s.zoomedViewId ?? null,
+              selectedViewId: null,
             };
           });
           syncCounterToInstances(canvases, canvasCounter);
@@ -257,6 +266,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     removeView: (viewId) => {
       set(updateActiveCanvas(get(), (canvas) => ({
         views: removeViewOp(canvas.views, viewId),
+        selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
       })));
     },
 
@@ -325,6 +335,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       set(updateActiveCanvas(get(), () => ({
         zoomedViewId: viewId,
       })));
+    },
+
+    // ── Selection ────────────────────────────────────────────────
+
+    selectView: (viewId) => {
+      set(updateActiveCanvas(get(), (canvas) => {
+        if (viewId === null) {
+          return { selectedViewId: null };
+        }
+        // Also bring selected view to front
+        const result = bringToFrontOp(canvas.views, viewId, canvas.nextZIndex);
+        return {
+          selectedViewId: viewId,
+          views: result.views,
+          nextZIndex: result.nextZIndex,
+        };
+      }));
     },
   }));
 }

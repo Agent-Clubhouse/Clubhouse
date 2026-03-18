@@ -81,6 +81,8 @@ export interface CanvasInstance {
   viewport: Viewport;
   nextZIndex: number;
   zoomedViewId: string | null;
+  /** Which view is currently selected (receives keyboard/scroll events). Ephemeral — not persisted. */
+  selectedViewId: string | null;
 }
 
 /** Serialisable snapshot persisted to storage */

@@ -13,10 +13,14 @@ import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
+/** Pixels to pan per arrow key press (2 grid units). */
+const ARROW_PAN_STEP = 40;
+
 interface CanvasWorkspaceProps {
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
+  selectedViewId: string | null;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
@@ -27,12 +31,14 @@ interface CanvasWorkspaceProps {
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
   onZoomView: (viewId: string | null) => void;
+  onSelectView: (viewId: string | null) => void;
 }
 
 export function CanvasWorkspace({
   views,
   viewport,
   zoomedViewId,
+  selectedViewId,
   api,
   onViewportChange,
   onAddView,
@@ -43,6 +49,7 @@ export function CanvasWorkspace({
   onFocusView,
   onUpdateView,
   onZoomView,
+  onSelectView,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -73,6 +80,8 @@ export function CanvasWorkspace({
     // Only start pan on middle-click or left-click on empty space
     if (e.button === 1 || (e.button === 0 && e.target === e.currentTarget)) {
       e.preventDefault();
+      // Clicking empty space deselects any selected widget
+      onSelectView(null);
       setIsPanning(true);
       panStartRef.current = {
         x: e.clientX,
@@ -81,7 +90,7 @@ export function CanvasWorkspace({
         panY: viewport.panY,
       };
     }
-  }, [viewport.panX, viewport.panY]);
+  }, [viewport.panX, viewport.panY, onSelectView]);
 
   useEffect(() => {
     if (!isPanning) return;
@@ -129,6 +138,41 @@ export function CanvasWorkspace({
       });
     }
   }, [viewport, onViewportChange]);
+
+  // ── Keyboard: arrow keys pan when nothing is selected ─────────
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Escape always deselects
+    if (e.key === 'Escape' && selectedViewId) {
+      e.preventDefault();
+      onSelectView(null);
+      containerRef.current?.focus();
+      return;
+    }
+
+    // When a widget is selected, let keyboard events pass through to it
+    // (except global shortcuts handled by the app shell)
+    if (selectedViewId) return;
+
+    let dx = 0;
+    let dy = 0;
+    switch (e.key) {
+      case 'ArrowLeft':  dx = ARROW_PAN_STEP; break;
+      case 'ArrowRight': dx = -ARROW_PAN_STEP; break;
+      case 'ArrowUp':    dy = ARROW_PAN_STEP; break;
+      case 'ArrowDown':  dy = -ARROW_PAN_STEP; break;
+      // Escape deselects (redundant since selectedViewId is null, but good for clarity)
+      case 'Escape':     onSelectView(null); return;
+      default: return;
+    }
+
+    e.preventDefault();
+    onViewportChange({
+      panX: viewport.panX + dx,
+      panY: viewport.panY + dy,
+      zoom: viewport.zoom,
+    });
+  }, [selectedViewId, viewport, onViewportChange, onSelectView]);
 
   // ── Context menu ───────────────────────────────────────────────
 
@@ -255,6 +299,7 @@ export function CanvasWorkspace({
       style={dotGridStyle}
       onMouseDown={handleMouseDown}
       onWheel={handleWheel}
+      onKeyDown={handleKeyDown}
       onContextMenu={handleContextMenu}
       onClick={handleDismissContextMenu}
       data-testid="canvas-workspace"
@@ -276,9 +321,11 @@ export function CanvasWorkspace({
             api={api}
             zoom={viewport.zoom}
             isZoomed={zoomedViewId === view.id}
+            isSelected={selectedViewId === view.id}
             attention={attentionMap.get(view.id) ?? null}
             onClose={() => onRemoveView(view.id)}
             onFocus={() => onFocusView(view.id)}
+            onSelect={() => onSelectView(view.id)}
             onCenterView={() => handleCenterView(view.id)}
             onZoomView={() => handleToggleZoomView(view.id)}
             onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
