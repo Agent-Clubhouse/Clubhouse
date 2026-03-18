@@ -795,13 +795,14 @@ describe('Provider integration tests', () => {
       expect(caps.permissions).toBe(true);
     });
 
-    it('CodexCli: headless and permissions, no hooks or structuredOutput', () => {
+    it('CodexCli: headless, permissions, and structuredMode, no hooks or structuredOutput', () => {
       const caps = new CodexCliProvider().getCapabilities();
       expect(caps.headless).toBe(true);
       expect(caps.structuredOutput).toBe(false);
       expect(caps.hooks).toBe(false);
       expect(caps.sessionResume).toBe(true);
       expect(caps.permissions).toBe(true);
+      expect(caps.structuredMode).toBe(true);
     });
 
     it('OpenCode: no hooks or permissions', () => {
@@ -1157,10 +1158,10 @@ describe('Provider integration tests', () => {
       expect(isSessionCapable(new OpenCodeProvider())).toBe(false);
     });
 
-    it('isStructuredCapable returns true for ClaudeCode and CopilotCli', () => {
+    it('isStructuredCapable returns true for ClaudeCode, CopilotCli, and CodexCli', () => {
       expect(isStructuredCapable(new ClaudeCodeProvider())).toBe(true);
       expect(isStructuredCapable(new CopilotCliProvider())).toBe(true);
-      expect(isStructuredCapable(new CodexCliProvider())).toBe(false);
+      expect(isStructuredCapable(new CodexCliProvider())).toBe(true);
       expect(isStructuredCapable(new OpenCodeProvider())).toBe(false);
     });
 
