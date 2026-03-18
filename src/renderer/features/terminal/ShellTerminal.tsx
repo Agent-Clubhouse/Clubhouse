@@ -5,6 +5,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
+import { registerTerminalEditHandler, unregisterTerminalEditHandler } from './terminal-edit-handler';
+import type { RegisteredTerminal } from './terminal-edit-handler';
 import { useTerminalFit } from './useTerminalFit';
 
 interface Props {
@@ -132,6 +134,21 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     );
     return cleanup;
   }, [clipboardCompat, sessionId]);
+
+  // Register with the terminal edit-command handler so that Electron menu
+  // shortcuts (Cmd+V, Cmd+C, Cmd+A) route to this terminal when focused.
+  // This is needed because the Electron menu accelerator intercepts the
+  // keyboard event before it reaches xterm.js.
+  useEffect(() => {
+    if (!terminalRef.current || !containerRef.current) return;
+    const entry: RegisteredTerminal = {
+      term: terminalRef.current,
+      writeToPty: (data) => window.clubhouse.pty.write(sessionId, data),
+      container: containerRef.current,
+    };
+    registerTerminalEditHandler(entry);
+    return () => unregisterTerminalEditHandler(entry);
+  }, [sessionId]);
 
   useEffect(() => {
     if (terminalRef.current) {
