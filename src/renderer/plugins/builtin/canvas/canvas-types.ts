@@ -66,6 +66,7 @@ export interface CanvasInstance {
   views: CanvasView[];
   viewport: Viewport;
   nextZIndex: number;
+  zoomedViewId: string | null;
 }
 
 /** Serialisable snapshot persisted to storage */
@@ -75,6 +76,7 @@ export interface CanvasInstanceData {
   views: CanvasView[];
   viewport: Viewport;
   nextZIndex: number;
+  zoomedViewId?: string | null;
 }
 
 // ── Constants ────────────────────────────────────────────────────────

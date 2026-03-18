@@ -67,6 +67,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const activeCanvasId = store((s) => s.activeCanvasId);
   const views = store((s) => s.views);
   const viewport = store((s) => s.viewport);
+  const zoomedViewId = store((s) => s.zoomedViewId);
   const loaded = store((s) => s.loaded);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -86,7 +87,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, loaded, scheduleSave]);
 
   // ── Canvas tab bar callbacks ───────────────────────────────────
 
@@ -136,6 +137,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().updateView(viewId, updates);
   }, [store]);
 
+  const handleZoomView = useCallback((viewId: string | null) => {
+    store.getState().zoomView(viewId);
+  }, [store]);
+
   if (!loaded) {
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
@@ -155,6 +160,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       React.createElement(CanvasWorkspace, {
         views,
         viewport,
+        zoomedViewId,
         api,
         onViewportChange: handleViewportChange,
         onAddView: handleAddView,
@@ -163,6 +169,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         onResizeView: handleResizeView,
         onFocusView: handleFocusView,
         onUpdateView: handleUpdateView,
+        onZoomView: handleZoomView,
       }),
     ),
   );

@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
 import { CanvasViewComponent } from './CanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu } from './CanvasContextMenu';
@@ -10,6 +10,7 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 interface CanvasWorkspaceProps {
   views: CanvasView[];
   viewport: Viewport;
+  zoomedViewId: string | null;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
@@ -18,11 +19,13 @@ interface CanvasWorkspaceProps {
   onResizeView: (viewId: string, size: Size) => void;
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
+  onZoomView: (viewId: string | null) => void;
 }
 
 export function CanvasWorkspace({
   views,
   viewport,
+  zoomedViewId,
   api,
   onViewportChange,
   onAddView,
@@ -31,6 +34,7 @@ export function CanvasWorkspace({
   onResizeView,
   onFocusView,
   onUpdateView,
+  onZoomView,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -139,6 +143,42 @@ export function CanvasWorkspace({
     onViewportChange({ panX: 0, panY: 0, zoom: 1 });
   }, [onViewportChange]);
 
+  const handleCenter = useCallback(() => {
+    onViewportChange({ panX: 0, panY: 0, zoom: viewport.zoom });
+  }, [viewport.zoom, onViewportChange]);
+
+  const handleSizeToFit = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || views.length === 0) return;
+    onViewportChange(viewportToFitViews(views, rect.width, rect.height));
+  }, [views, onViewportChange]);
+
+  // ── Per-view actions ───────────────────────────────────────────
+
+  const handleCenterView = useCallback((viewId: string) => {
+    const view = views.find((v) => v.id === viewId);
+    if (!view) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+  }, [views, viewport.zoom, onViewportChange]);
+
+  const handleToggleZoomView = useCallback((viewId: string) => {
+    if (zoomedViewId === viewId) {
+      onZoomView(null);
+    } else {
+      onZoomView(viewId);
+      // Also center on the view
+      const view = views.find((v) => v.id === viewId);
+      if (view) {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect) {
+          onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+        }
+      }
+    }
+  }, [views, viewport.zoom, zoomedViewId, onZoomView, onViewportChange]);
+
   // ── Dot grid background ────────────────────────────────────────
 
   const gridSpacing = GRID_SIZE * viewport.zoom;
@@ -159,6 +199,10 @@ export function CanvasWorkspace({
     const snapped = snapSize(size);
     onResizeView(viewId, snapped);
   }, [onResizeView]);
+
+  // ── Zoomed view ────────────────────────────────────────────────
+
+  const zoomedView = zoomedViewId ? views.find((v) => v.id === zoomedViewId) : null;
 
   return (
     <div
@@ -187,8 +231,11 @@ export function CanvasWorkspace({
             view={view}
             api={api}
             zoom={viewport.zoom}
+            isZoomed={zoomedViewId === view.id}
             onClose={() => onRemoveView(view.id)}
             onFocus={() => onFocusView(view.id)}
+            onCenterView={() => handleCenterView(view.id)}
+            onZoomView={() => handleToggleZoomView(view.id)}
             onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
             onResizeEnd={(size) => handleViewResizeEnd(view.id, size)}
             onUpdate={(updates) => onUpdateView(view.id, updates)}
@@ -196,12 +243,50 @@ export function CanvasWorkspace({
         ))}
       </div>
 
+      {/* Zoomed view overlay */}
+      {zoomedView && (
+        <div
+          className="absolute inset-0 z-[9999] flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) onZoomView(null); }}
+          data-testid="canvas-zoom-overlay"
+        >
+          <div
+            className="w-[calc(100%-48px)] h-[calc(100%-48px)] flex flex-col bg-ctp-base border border-surface-2 rounded-lg overflow-hidden"
+            style={{ boxShadow: '0 8px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(88, 91, 112, 0.2)' }}
+          >
+            {/* Zoomed title bar */}
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-ctp-mantle border-b border-surface-0 flex-shrink-0">
+              <span className="text-[10px] text-ctp-overlay0 font-mono uppercase tracking-wider">
+                {zoomedView.type}
+              </span>
+              <span className="text-xs text-ctp-subtext0 truncate flex-1">{zoomedView.title}</span>
+              <button
+                className="text-[10px] px-2 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text transition-colors"
+                onClick={() => onZoomView(null)}
+                data-testid="canvas-zoom-restore"
+              >
+                Restore
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
+              {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'file' && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Controls overlay */}
       <CanvasControls
         zoom={viewport.zoom}
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onZoomReset={handleZoomReset}
+        onCenter={handleCenter}
+        onSizeToFit={handleSizeToFit}
+        hasViews={views.length > 0}
       />
 
       {/* Context menu */}

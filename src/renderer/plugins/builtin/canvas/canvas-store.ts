@@ -48,10 +48,14 @@ export interface CanvasState {
   // Viewport
   setViewport: (viewport: Viewport) => void;
 
+  // Zoom (temporary full-screen for a single view)
+  zoomView: (viewId: string | null) => void;
+
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
   views: CanvasView[];
   viewport: Viewport;
+  zoomedViewId: string | null;
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────
@@ -68,6 +72,7 @@ function createCanvasInstance(canvasCounter: CanvasCounter, _viewCounter: ViewCo
     views: [],
     viewport: { panX: 0, panY: 0, zoom: 1 },
     nextZIndex: 0,
+    zoomedViewId: null,
   };
 }
 
@@ -81,14 +86,16 @@ function updateActiveCanvas(state: CanvasState, updater: (canvas: CanvasInstance
     canvases,
     views: active.views,
     viewport: active.viewport,
+    zoomedViewId: active.zoomedViewId,
   };
 }
 
-function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport'> {
+function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId'> {
   const active = canvases.find((c) => c.id === activeCanvasId) ?? canvases[0];
   return {
     views: active.views,
     viewport: active.viewport,
+    zoomedViewId: active.zoomedViewId,
   };
 }
 
@@ -104,6 +111,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     activeCanvasId: initialCanvas.id,
     views: initialCanvas.views,
     viewport: initialCanvas.viewport,
+    zoomedViewId: null,
     loaded: false,
 
     activeCanvas: () => {
@@ -125,6 +133,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               views: s.views,
               viewport: clampViewport(s.viewport),
               nextZIndex: s.nextZIndex,
+              zoomedViewId: s.zoomedViewId ?? null,
             };
           });
           syncCounterToInstances(canvases, canvasCounter);
@@ -255,6 +264,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     setViewport: (viewport) => {
       set(updateActiveCanvas(get(), () => ({
         viewport: clampViewport(viewport),
+      })));
+    },
+
+    // ── Zoom ──────────────────────────────────────────────────────
+
+    zoomView: (viewId) => {
+      set(updateActiveCanvas(get(), () => ({
+        zoomedViewId: viewId,
       })));
     },
   }));
