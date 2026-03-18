@@ -140,7 +140,7 @@ describe('CanvasView — scroll isolation', () => {
 // ── Permission indicator logic ─────────────────────────────────────────
 
 describe('CanvasView — permission indicator', () => {
-  const borderColorForState = (state: string | null, focused = false) => {
+  const borderColorForState = (state: string | null) => {
     const isPermission = state === 'needs_permission';
     const isToolError = state === 'tool_error';
     return isPermission

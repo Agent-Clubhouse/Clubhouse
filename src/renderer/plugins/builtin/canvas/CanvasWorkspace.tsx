@@ -3,6 +3,10 @@ import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './can
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
 import { CanvasViewComponent } from './CanvasView';
+import { AgentCanvasView } from './AgentCanvasView';
+import { FileCanvasView } from './FileCanvasView';
+import { BrowserCanvasView } from './BrowserCanvasView';
+import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import type { PluginAPI } from '../../../../shared/plugin-types';
@@ -269,10 +273,10 @@ export function CanvasWorkspace({
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
-              {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'file' && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'file' && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
             </div>
           </div>
         </div>
