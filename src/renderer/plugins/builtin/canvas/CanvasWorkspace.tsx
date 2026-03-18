@@ -231,7 +231,8 @@ export function CanvasWorkspace({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden select-none bg-ctp-crust"
+      className="relative w-full h-full overflow-hidden select-none bg-ctp-crust focus:outline-none"
+      tabIndex={-1}
       style={dotGridStyle}
       onMouseDown={handleMouseDown}
       onWheel={handleWheel}

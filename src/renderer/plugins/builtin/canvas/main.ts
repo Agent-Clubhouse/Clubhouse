@@ -182,7 +182,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }, 'Loading canvas...');
   }
 
-  return React.createElement('div', { className: 'flex flex-col h-full w-full' },
+  return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'canvas-panel' },
     React.createElement(CanvasTabBar, {
       canvases,
       activeCanvasId,

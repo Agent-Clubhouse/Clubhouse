@@ -68,6 +68,12 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     }
   }, [isOpen]);
 
+  // Return focus to the workspace so Cmd+F continues to work after close
+  const focusWorkspace = useCallback(() => {
+    const workspace = document.querySelector<HTMLElement>('[data-testid="canvas-workspace"]');
+    workspace?.focus();
+  }, []);
+
   // Close on click outside
   useEffect(() => {
     if (!isOpen) return;
@@ -75,19 +81,20 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setQuery('');
+        focusWorkspace();
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [isOpen]);
+  }, [isOpen, focusWorkspace]);
 
   // Keyboard shortcut: Cmd/Ctrl+F to open search when canvas is focused
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        // Only intercept if we're inside the canvas workspace
-        const workspace = document.querySelector('[data-testid="canvas-workspace"]');
-        if (workspace && workspace.contains(document.activeElement || document.body)) {
+        // Intercept if focus is within the canvas panel (workspace + tab bar)
+        const panel = document.querySelector('[data-testid="canvas-panel"]');
+        if (panel && panel.contains(document.activeElement)) {
           e.preventDefault();
           setIsOpen(true);
         }
@@ -101,7 +108,8 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     onSelectView(viewId);
     setIsOpen(false);
     setQuery('');
-  }, [onSelectView]);
+    focusWorkspace();
+  }, [onSelectView, focusWorkspace]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -118,15 +126,19 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     } else if (e.key === 'Escape') {
       setIsOpen(false);
       setQuery('');
+      focusWorkspace();
     }
-  }, [filteredViews, selectedIndex, handleSelect]);
+  }, [filteredViews, selectedIndex, handleSelect, focusWorkspace]);
 
   const handleToggle = useCallback(() => {
     setIsOpen((prev) => {
-      if (prev) setQuery('');
+      if (prev) {
+        setQuery('');
+        focusWorkspace();
+      }
       return !prev;
     });
-  }, []);
+  }, [focusWorkspace]);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 
