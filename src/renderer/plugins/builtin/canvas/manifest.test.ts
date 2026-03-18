@@ -46,7 +46,7 @@ describe('canvas manifest', () => {
 
   it('contributes commands including reset-viewport with defaultBinding', () => {
     const cmds = manifest.contributes!.commands!;
-    expect(cmds).toHaveLength(4);
+    expect(cmds).toHaveLength(5);
     const resetCmd = cmds.find((c) => c.id === 'reset-viewport');
     expect(resetCmd).toBeDefined();
     expect(resetCmd!.defaultBinding).toBe('Meta+Shift+0');

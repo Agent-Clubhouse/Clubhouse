@@ -119,6 +119,7 @@ vi.stubGlobal('clubhouse', {
     createBranch: asyncNoop,
     stash: asyncNoop,
     stashPop: asyncNoop,
+    listWorktrees: async () => [],
   },
   agentSettings: {
     readInstructions: async () => '',
