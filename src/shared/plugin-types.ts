@@ -57,7 +57,8 @@ export type PluginPermission =
   | 'workspace.watch'
   | 'workspace.cross-plugin'
   | 'workspace.shared'
-  | 'workspace.cross-project';
+  | 'workspace.cross-project'
+  | 'canvas';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -88,6 +89,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'workspace.cross-plugin',
   'workspace.shared',
   'workspace.cross-project',
+  'canvas',
 ] as const;
 
 // ── Permission risk levels ────────────────────────────────────────────
@@ -143,6 +145,9 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
   'agent-config': 'elevated',
   'agent-config.cross-project': 'elevated',
   'agent-config.mcp': 'elevated',
+
+  // elevated — canvas widget registration
+  canvas: 'elevated',
 
   // elevated — workspace access
   workspace: 'elevated',
@@ -217,6 +222,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'workspace.cross-plugin': 'Read another plugin\'s workspace (requires target to declare workspace.shared)',
   'workspace.shared': 'Allow other plugins with workspace.cross-plugin to read this plugin\'s workspace',
   'workspace.cross-project': 'Access workspace data scoped to other projects where the plugin is enabled',
+  canvas: 'Register custom canvas widget types and query canvas widgets',
 };
 
 export interface PluginHelpTopic {
@@ -281,6 +287,20 @@ export interface PluginGlobalDialogDeclaration {
   commandId?: string;
 }
 
+/** Declare a canvas widget type that ships with this plugin (v0.7+, requires 'canvas' permission). */
+export interface PluginCanvasWidgetDeclaration {
+  /** Unique widget type ID within the plugin (will be qualified as `plugin:{pluginId}:{id}` at runtime). */
+  id: string;
+  /** Display label shown in the "Add…" context menu. */
+  label: string;
+  /** SVG icon string or icon name shown in context menu and title bar. */
+  icon?: string;
+  /** Default widget size in pixels. Falls back to 480×480 if omitted. */
+  defaultSize?: { width: number; height: number };
+  /** Keys this widget type exposes as queryable metadata (e.g. ['url', 'sessionId']). */
+  metadataKeys?: string[];
+}
+
 export interface PluginContributes {
   tab?: {
     label: string;
@@ -304,6 +324,8 @@ export interface PluginContributes {
   agentConfig?: PluginAgentConfigDeclaration;
   /** Declare a global dialog action (v0.7+). */
   globalDialog?: PluginGlobalDialogDeclaration;
+  /** Declare canvas widget types that this plugin provides (v0.7+, requires 'canvas' permission). */
+  canvasWidgets?: PluginCanvasWidgetDeclaration[];
 }
 
 /** Plugin kind: 'plugin' (default) has a main module; 'pack' is headless (no JS, manifest-only). */
@@ -599,6 +621,72 @@ export interface WidgetsAPI {
   }>;
 }
 
+// ── Canvas widget metadata ───────────────────────────────────────────
+/** Flat key-value bag stored on each canvas widget instance for query/filtering. */
+export type CanvasWidgetMetadata = Record<string, string | number | boolean | null>;
+
+/** A handle returned by queryWidgets — lightweight reference to a canvas widget instance. */
+export interface CanvasWidgetHandle {
+  /** Internal unique widget instance ID (e.g. "cv_3"). */
+  id: string;
+  /** Fully-qualified widget type (e.g. "agent", "plugin:my-plugin:chart"). */
+  type: string;
+  /** User-facing display name (auto-deduplicated). */
+  displayName: string;
+  /** Queryable metadata bag. */
+  metadata: CanvasWidgetMetadata;
+}
+
+/** Filter passed to queryWidgets(). All fields are optional; results match ALL specified criteria. */
+export interface CanvasWidgetFilter {
+  /** Match exact widget type (e.g. "agent", "plugin:my-plugin:chart"). */
+  type?: string;
+  /** Match widgets whose metadata contains all of these key-value pairs. */
+  metadata?: CanvasWidgetMetadata;
+  /** Match widget by internal ID. */
+  id?: string;
+  /** Substring match on display name (case-insensitive). */
+  displayName?: string;
+}
+
+/** Descriptor provided at runtime when a plugin registers a canvas widget type. */
+export interface CanvasWidgetDescriptor {
+  /** Widget type ID — must match a declared canvasWidgets[].id in the plugin manifest. */
+  id: string;
+  /** React component rendered inside the canvas widget frame. Receives the PluginAPI + widget state. */
+  component: React.ComponentType<CanvasWidgetComponentProps>;
+  /** Optional callback to generate a display name from widget metadata. Defaults to the manifest label. */
+  generateDisplayName?: (metadata: CanvasWidgetMetadata) => string;
+}
+
+/** Props passed to a plugin-provided canvas widget component. */
+export interface CanvasWidgetComponentProps {
+  /** The widget instance's internal ID. */
+  widgetId: string;
+  /** The PluginAPI for this plugin. */
+  api: PluginAPI;
+  /** Current metadata for this widget instance. */
+  metadata: CanvasWidgetMetadata;
+  /** Callback to update metadata (merges with existing). */
+  onUpdateMetadata: (updates: CanvasWidgetMetadata) => void;
+  /** Current widget size in pixels. */
+  size: { width: number; height: number };
+}
+
+export interface CanvasAPI {
+  /**
+   * Register a canvas widget type at runtime. The widget type `id` must match
+   * a declared `contributes.canvasWidgets[].id` in the plugin manifest.
+   * Returns a Disposable that unregisters the widget type.
+   */
+  registerWidgetType(descriptor: CanvasWidgetDescriptor): Disposable;
+  /**
+   * Query all canvas widget instances matching the filter.
+   * Returns lightweight handles (not React components).
+   */
+  queryWidgets(filter?: CanvasWidgetFilter): CanvasWidgetHandle[];
+}
+
 export interface TerminalAPI {
   /** Spawn an interactive shell in the given directory (defaults to project root). */
   spawn(sessionId: string, cwd?: string): Promise<void>;
@@ -889,6 +977,7 @@ export interface PluginAPI {
   sounds: SoundsAPI;
   theme: ThemeAPI;
   workspace: WorkspaceAPI;
+  canvas: CanvasAPI;
   context: PluginContextInfo;
 }
 

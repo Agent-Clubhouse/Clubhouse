@@ -7,6 +7,7 @@ import type {
   FileCanvasView,
   BrowserCanvasView,
   GitDiffCanvasView,
+  PluginCanvasView,
   Position,
   Size,
   Viewport,
@@ -21,7 +22,9 @@ import {
   MIN_ZOOM,
   MAX_ZOOM,
   CANVAS_SIZE,
+  deduplicateDisplayName,
 } from './canvas-types';
+import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 
 // ── ID generation ────────────────────────────────────────────────────
 
@@ -78,6 +81,7 @@ export function createView(
   position: Position,
   nextZIndex: number,
   counter: ViewCounter = defaultCounter,
+  existingDisplayNames: string[] = [],
 ): CanvasView {
   const snappedPos = snapPosition(position);
   const base = {
@@ -88,15 +92,93 @@ export function createView(
   };
 
   switch (type) {
-    case 'agent':
-      return { ...base, type: 'agent', title: 'Agent', agentId: null } satisfies AgentCanvasView;
-    case 'file':
-      return { ...base, type: 'file', title: 'Files' } satisfies FileCanvasView;
-    case 'browser':
-      return { ...base, type: 'browser', title: 'Browser', url: 'https://' } satisfies BrowserCanvasView;
-    case 'git-diff':
-      return { ...base, type: 'git-diff', title: 'Git Diff' } satisfies GitDiffCanvasView;
+    case 'agent': {
+      const displayName = deduplicateDisplayName('Agent', existingDisplayNames);
+      return { ...base, type: 'agent', title: 'Agent', displayName, metadata: {}, agentId: null } satisfies AgentCanvasView;
+    }
+    case 'file': {
+      const displayName = deduplicateDisplayName('Files', existingDisplayNames);
+      return { ...base, type: 'file', title: 'Files', displayName, metadata: {} } satisfies FileCanvasView;
+    }
+    case 'browser': {
+      const displayName = deduplicateDisplayName('Browser', existingDisplayNames);
+      return { ...base, type: 'browser', title: 'Browser', displayName, metadata: {}, url: 'https://' } satisfies BrowserCanvasView;
+    }
+    case 'git-diff': {
+      const displayName = deduplicateDisplayName('Git Diff', existingDisplayNames);
+      return { ...base, type: 'git-diff', title: 'Git Diff', displayName, metadata: {} } satisfies GitDiffCanvasView;
+    }
+    case 'plugin':
+      // Plugin views are created via createPluginView instead
+      throw new Error('Use createPluginView() for plugin widget types');
   }
+}
+
+export function createPluginView(
+  pluginId: string,
+  pluginWidgetType: string,
+  label: string,
+  position: Position,
+  nextZIndex: number,
+  counter: ViewCounter = defaultCounter,
+  existingDisplayNames: string[] = [],
+  metadata: CanvasWidgetMetadata = {},
+  defaultSize?: { width: number; height: number },
+): PluginCanvasView {
+  const snappedPos = snapPosition(position);
+  const displayName = deduplicateDisplayName(label, existingDisplayNames);
+  return {
+    id: generateViewId(counter),
+    type: 'plugin',
+    position: snappedPos,
+    size: defaultSize
+      ? { width: Math.max(MIN_VIEW_WIDTH, defaultSize.width), height: Math.max(MIN_VIEW_HEIGHT, defaultSize.height) }
+      : { width: DEFAULT_VIEW_WIDTH, height: DEFAULT_VIEW_HEIGHT },
+    title: label,
+    displayName,
+    zIndex: nextZIndex,
+    metadata,
+    pluginWidgetType,
+    pluginId,
+  };
+}
+
+// ── Widget query ────────────────────────────────────────────────────────
+
+export function queryViews(views: CanvasView[], filter?: CanvasWidgetFilter): CanvasWidgetHandle[] {
+  if (!filter) {
+    return views.map(viewToHandle);
+  }
+
+  return views.filter((v) => {
+    if (filter.id && v.id !== filter.id) return false;
+    if (filter.type) {
+      const viewType = v.type === 'plugin' ? (v as PluginCanvasView).pluginWidgetType : v.type;
+      if (viewType !== filter.type) return false;
+    }
+    if (filter.displayName) {
+      if (!v.displayName.toLowerCase().includes(filter.displayName.toLowerCase())) return false;
+    }
+    if (filter.metadata) {
+      for (const [key, value] of Object.entries(filter.metadata)) {
+        if (value === null) {
+          if (v.metadata[key] !== null && v.metadata[key] !== undefined) return false;
+        } else {
+          if (v.metadata[key] !== value) return false;
+        }
+      }
+    }
+    return true;
+  }).map(viewToHandle);
+}
+
+function viewToHandle(v: CanvasView): CanvasWidgetHandle {
+  return {
+    id: v.id,
+    type: v.type === 'plugin' ? (v as PluginCanvasView).pluginWidgetType : v.type,
+    displayName: v.displayName,
+    metadata: { ...v.metadata },
+  };
 }
 
 export function removeView(views: CanvasView[], viewId: string): CanvasView[] {

@@ -1,11 +1,12 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
-import type { PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
+import type { PluginAPI, PluginAgentDetailedStatus, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
 interface CanvasViewComponentProps {
   view: CanvasView;
@@ -166,6 +167,10 @@ export function CanvasViewComponent({
 
   // ── Content based on view type ─────────────────────────────────
 
+  const handleUpdateMetadata = useCallback((updates: CanvasWidgetMetadata) => {
+    onUpdate({ metadata: { ...view.metadata, ...updates } });
+  }, [view.metadata, onUpdate]);
+
   const renderContent = () => {
     switch (view.type) {
       case 'agent':
@@ -176,6 +181,28 @@ export function CanvasViewComponent({
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
       case 'git-diff':
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
+      case 'plugin': {
+        const pluginView = view as PluginCanvasViewType;
+        const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
+        if (!registered) {
+          return (
+            <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
+              Widget type "{pluginView.pluginWidgetType}" is not available.
+              The providing plugin may be disabled or uninstalled.
+            </div>
+          );
+        }
+        const Component = registered.descriptor.component;
+        return (
+          <Component
+            widgetId={view.id}
+            api={api}
+            metadata={view.metadata}
+            onUpdateMetadata={handleUpdateMetadata}
+            size={currentSize}
+          />
+        );
+      }
     }
   };
 
@@ -209,9 +236,9 @@ export function CanvasViewComponent({
         {agentInfo && <AgentAvatar agentId={agentInfo.id} size="sm" showStatusRing />}
 
         <span className="text-[10px] text-ctp-overlay0 font-mono uppercase tracking-wider">
-          {view.type}
+          {view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() : view.type}
         </span>
-        <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.title}</span>
+        <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.displayName || view.title}</span>
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">

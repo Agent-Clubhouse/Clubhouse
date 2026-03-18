@@ -20,6 +20,7 @@ import { createLoggingAPI } from './plugin-api-logging';
 import { createProcessAPI } from './plugin-api-process';
 import { createSoundsAPI } from './plugin-api-sounds';
 import { createThemeAPI } from './plugin-api-theme';
+import { createCanvasAPI } from './plugin-api-canvas';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
@@ -123,6 +124,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     workspace: gated(
       true, scopeLabel, 'workspace', 'workspace',
       ctx.pluginId, manifest, () => createWorkspaceAPI(ctx, manifest),
+    ),
+    canvas: gated(
+      true, scopeLabel, 'canvas', 'canvas',
+      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
     ),
     context: contextInfo, // always available
   };

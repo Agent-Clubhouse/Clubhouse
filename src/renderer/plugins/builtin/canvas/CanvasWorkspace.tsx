@@ -8,8 +8,8 @@ import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { CanvasControls } from './CanvasControls';
-import { CanvasContextMenu } from './CanvasContextMenu';
-import type { PluginAPI } from '../../../../shared/plugin-types';
+import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
+import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
 interface CanvasWorkspaceProps {
   views: CanvasView[];
@@ -18,6 +18,7 @@ interface CanvasWorkspaceProps {
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
+  onAddPluginView: (pluginId: string, qualifiedType: string, label: string, position: Position, defaultSize?: { width: number; height: number }) => void;
   onRemoveView: (viewId: string) => void;
   onMoveView: (viewId: string, position: Position) => void;
   onResizeView: (viewId: string, size: Size) => void;
@@ -33,6 +34,7 @@ export function CanvasWorkspace({
   api,
   onViewportChange,
   onAddView,
+  onAddPluginView,
   onRemoveView,
   onMoveView,
   onResizeView,
@@ -122,12 +124,16 @@ export function CanvasWorkspace({
     setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
   }, [viewport]);
 
-  const handleContextMenuAction = useCallback((type: CanvasViewType) => {
-    if (contextMenu) {
-      onAddView(type, { x: contextMenu.canvasX, y: contextMenu.canvasY });
+  const handleContextMenuAction = useCallback((selection: ContextMenuSelection) => {
+    if (!contextMenu) { setContextMenu(null); return; }
+    const pos = { x: contextMenu.canvasX, y: contextMenu.canvasY };
+    if (selection.kind === 'builtin') {
+      onAddView(selection.type, pos);
+    } else {
+      onAddPluginView(selection.pluginId, selection.qualifiedType, selection.label, pos, selection.defaultSize);
     }
     setContextMenu(null);
-  }, [contextMenu, onAddView]);
+  }, [contextMenu, onAddView, onAddPluginView]);
 
   const handleDismissContextMenu = useCallback(() => {
     setContextMenu(null);

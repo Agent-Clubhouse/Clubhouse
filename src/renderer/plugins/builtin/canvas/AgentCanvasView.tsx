@@ -35,7 +35,12 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
   );
 
   const handlePickAgent = useCallback((agent: AgentInfo) => {
-    onUpdate({ agentId: agent.id, projectId: agent.projectId, title: agent.name || agent.id } as Partial<AgentCanvasViewType>);
+    onUpdate({
+      agentId: agent.id,
+      projectId: agent.projectId,
+      title: agent.name || agent.id,
+      metadata: { agentId: agent.id, projectId: agent.projectId ?? null, agentName: agent.name ?? null },
+    } as Partial<AgentCanvasViewType>);
   }, [onUpdate]);
 
   const handleBackToProjects = useCallback(() => {

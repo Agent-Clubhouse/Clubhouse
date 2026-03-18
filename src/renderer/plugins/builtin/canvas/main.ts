@@ -1,9 +1,10 @@
 import React, { useEffect, useCallback, useRef } from 'react';
-import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
+import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasViewType } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
+import { setCanvasQueryProvider } from '../../plugin-api-canvas';
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -28,6 +29,13 @@ export function getProjectCanvasStore(projectId: string | null): ReturnType<type
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   const getStore = () =>
     api.context.mode === 'app' ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
+
+  // Wire up the canvas query provider so other plugins can query widgets via api.canvas.queryWidgets()
+  setCanvasQueryProvider((filter?: CanvasWidgetFilter) => {
+    const store = getStore();
+    return store.getState().queryViews(filter);
+  });
+  ctx.subscriptions.push({ dispose: () => setCanvasQueryProvider(null) });
 
   const addAgentCmd = api.commands.register('add-agent-view', () => {
     const store = getStore();
@@ -117,6 +125,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().addView(type, position);
   }, [store]);
 
+  const handleAddPluginView = useCallback((
+    pluginId: string, qualifiedType: string, label: string,
+    position: { x: number; y: number }, defaultSize?: { width: number; height: number },
+  ) => {
+    store.getState().addPluginView(pluginId, qualifiedType, label, position, undefined, defaultSize);
+  }, [store]);
+
   const handleRemoveView = useCallback((viewId: string) => {
     store.getState().removeView(viewId);
   }, [store]);
@@ -164,6 +179,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         api,
         onViewportChange: handleViewportChange,
         onAddView: handleAddView,
+        onAddPluginView: handleAddPluginView,
         onRemoveView: handleRemoveView,
         onMoveView: handleMoveView,
         onResizeView: handleResizeView,

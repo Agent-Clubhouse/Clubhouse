@@ -1090,4 +1090,141 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
   });
+
+  // ── Canvas widget contributions (v0.7+) ───────────────────────────
+
+  describe('canvasWidgets validation', () => {
+    const canvasBase = {
+      id: 'canvas-plugin',
+      name: 'Canvas Plugin',
+      version: '1.0.0',
+      engine: { api: 0.7 },
+      scope: 'project' as const,
+      permissions: ['files', 'canvas'],
+      contributes: {
+        help: { topics: [{ id: 'h', title: 'Help', content: 'Help content' }] },
+        canvasWidgets: [
+          { id: 'chart', label: 'Chart', icon: '+' },
+        ],
+      },
+    };
+
+    it('accepts valid canvasWidgets declaration', () => {
+      const result = validateManifest(canvasBase);
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects canvasWidgets with API < 0.7', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        engine: { api: 0.6 },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('canvasWidgets requires API >= 0.7'))).toBe(true);
+    });
+
+    it('rejects canvasWidgets without canvas permission', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        permissions: ['files'],
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('requires the "canvas" permission'))).toBe(true);
+    });
+
+    it('rejects canvasWidgets that is not an array', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: { ...canvasBase.contributes, canvasWidgets: 'not-array' },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('must be an array'))).toBe(true);
+    });
+
+    it('rejects widget without id', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [{ label: 'Chart', icon: '+' }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('id must be a non-empty string'))).toBe(true);
+    });
+
+    it('rejects widget without label', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [{ id: 'chart' }],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('label must be a non-empty string'))).toBe(true);
+    });
+
+    it('rejects duplicate widget IDs', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [
+            { id: 'chart', label: 'Chart' },
+            { id: 'chart', label: 'Chart 2' },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('is a duplicate'))).toBe(true);
+    });
+
+    it('validates defaultSize', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [
+            { id: 'chart', label: 'Chart', defaultSize: { width: -1, height: 400 } },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('width must be a positive number'))).toBe(true);
+    });
+
+    it('validates metadataKeys is array of strings', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [
+            { id: 'chart', label: 'Chart', metadataKeys: [123] },
+          ],
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('metadataKeys[0] must be a string'))).toBe(true);
+    });
+
+    it('accepts widget with all optional fields', () => {
+      const result = validateManifest({
+        ...canvasBase,
+        contributes: {
+          ...canvasBase.contributes,
+          canvasWidgets: [
+            {
+              id: 'chart',
+              label: 'Chart',
+              icon: '+',
+              defaultSize: { width: 600, height: 400 },
+              metadataKeys: ['dataSource', 'chartType'],
+            },
+          ],
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
 });

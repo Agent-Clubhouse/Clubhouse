@@ -71,13 +71,13 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
 
   const handleSelectProject = useCallback((projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
-    onUpdate({ projectId, filePath: undefined, title: project?.name || 'Files' } as Partial<FileCanvasViewType>);
+    onUpdate({ projectId, filePath: undefined, title: project?.name || 'Files', metadata: { projectId, filePath: null } } as Partial<FileCanvasViewType>);
     setFileContent(null);
   }, [projects, onUpdate]);
 
   const handleSelectFile = useCallback((filePath: string) => {
     const fileName = filePath.split('/').pop() || filePath;
-    onUpdate({ filePath, title: fileName } as Partial<FileCanvasViewType>);
+    onUpdate({ filePath, title: fileName, metadata: { filePath, projectId: activeProjectId ?? null } } as Partial<FileCanvasViewType>);
   }, [onUpdate]);
 
   const handleBackToProjects = useCallback(() => {

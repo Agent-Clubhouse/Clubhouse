@@ -353,6 +353,67 @@ export function validateManifest(raw: unknown): ValidationResult {
     }
   }
 
+    // v0.7+ contributes.canvasWidgets validation
+    if (contrib.canvasWidgets !== undefined) {
+      if (apiVersion < 0.7) {
+        errors.push('contributes.canvasWidgets requires API >= 0.7');
+      } else if (!Array.isArray(contrib.canvasWidgets)) {
+        errors.push('contributes.canvasWidgets must be an array');
+      } else {
+        const seenIds = new Set<string>();
+        for (let i = 0; i < contrib.canvasWidgets.length; i++) {
+          const widget = contrib.canvasWidgets[i] as Record<string, unknown>;
+          if (!widget || typeof widget !== 'object') {
+            errors.push(`contributes.canvasWidgets[${i}] must be an object`);
+          } else {
+            if (typeof widget.id !== 'string' || !widget.id) {
+              errors.push(`contributes.canvasWidgets[${i}].id must be a non-empty string`);
+            } else if (seenIds.has(widget.id as string)) {
+              errors.push(`contributes.canvasWidgets[${i}].id "${widget.id}" is a duplicate`);
+            } else {
+              seenIds.add(widget.id as string);
+            }
+            if (typeof widget.label !== 'string' || !widget.label) {
+              errors.push(`contributes.canvasWidgets[${i}].label must be a non-empty string`);
+            }
+            if (widget.icon !== undefined && typeof widget.icon !== 'string') {
+              errors.push(`contributes.canvasWidgets[${i}].icon must be a string`);
+            }
+            if (widget.defaultSize !== undefined) {
+              if (!widget.defaultSize || typeof widget.defaultSize !== 'object') {
+                errors.push(`contributes.canvasWidgets[${i}].defaultSize must be an object`);
+              } else {
+                const ds = widget.defaultSize as Record<string, unknown>;
+                if (typeof ds.width !== 'number' || ds.width <= 0) {
+                  errors.push(`contributes.canvasWidgets[${i}].defaultSize.width must be a positive number`);
+                }
+                if (typeof ds.height !== 'number' || ds.height <= 0) {
+                  errors.push(`contributes.canvasWidgets[${i}].defaultSize.height must be a positive number`);
+                }
+              }
+            }
+            if (widget.metadataKeys !== undefined) {
+              if (!Array.isArray(widget.metadataKeys)) {
+                errors.push(`contributes.canvasWidgets[${i}].metadataKeys must be an array`);
+              } else {
+                for (let j = 0; j < (widget.metadataKeys as unknown[]).length; j++) {
+                  if (typeof (widget.metadataKeys as unknown[])[j] !== 'string') {
+                    errors.push(`contributes.canvasWidgets[${i}].metadataKeys[${j}] must be a string`);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // canvasWidgets requires the 'canvas' permission
+      if (Array.isArray(m.permissions) && !(m.permissions as string[]).includes('canvas')) {
+        errors.push('contributes.canvasWidgets requires the "canvas" permission');
+      }
+    }
+  }
+
   // Pack plugins must have at least one pack contribution
   if (isPack && m.contributes && typeof m.contributes === 'object') {
     const contrib = m.contributes as Record<string, unknown>;

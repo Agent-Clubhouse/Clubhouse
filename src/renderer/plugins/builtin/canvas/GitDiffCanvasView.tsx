@@ -185,6 +185,7 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
       worktreePath: undefined,
       filePath: undefined,
       title: project?.name || 'Git Diff',
+      metadata: { projectId, worktreePath: null, filePath: null },
     } as Partial<GitDiffCanvasViewType>);
   }, [projects, onUpdate]);
 
@@ -193,21 +194,27 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
       worktreePath: wt.path,
       filePath: undefined,
       title: wt.label,
+      metadata: { worktreePath: wt.path, filePath: null, projectId: activeProjectId ?? null },
     } as Partial<GitDiffCanvasViewType>);
-  }, [onUpdate]);
+  }, [activeProjectId, onUpdate]);
 
   const handleSelectMainRepo = useCallback(() => {
     onUpdate({
       worktreePath: undefined,
       filePath: undefined,
       title: activeProject?.name || 'Git Diff',
+      metadata: { worktreePath: null, filePath: null, projectId: activeProjectId ?? null },
     } as Partial<GitDiffCanvasViewType>);
-  }, [activeProject, onUpdate]);
+  }, [activeProject, activeProjectId, onUpdate]);
 
   const handleSelectFile = useCallback((filePath: string) => {
     const fileName = filePath.split('/').pop() || filePath;
-    onUpdate({ filePath, title: fileName } as Partial<GitDiffCanvasViewType>);
-  }, [onUpdate]);
+    onUpdate({
+      filePath,
+      title: fileName,
+      metadata: { filePath, projectId: activeProjectId ?? null, worktreePath: view.worktreePath ?? null },
+    } as Partial<GitDiffCanvasViewType>);
+  }, [activeProjectId, view.worktreePath, onUpdate]);
 
   const handleBackToProjects = useCallback(() => {
     onUpdate({
@@ -215,13 +222,18 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
       worktreePath: undefined,
       filePath: undefined,
       title: 'Git Diff',
+      metadata: { projectId: null, worktreePath: null, filePath: null },
     } as Partial<GitDiffCanvasViewType>);
     setGitInfo(null);
     setDiffData(null);
   }, [onUpdate]);
 
   const handleBackToFiles = useCallback(() => {
-    onUpdate({ filePath: undefined, title: activeProject?.name || 'Git Diff' } as Partial<GitDiffCanvasViewType>);
+    onUpdate({
+      filePath: undefined,
+      title: activeProject?.name || 'Git Diff',
+      metadata: { filePath: null },
+    } as Partial<GitDiffCanvasViewType>);
     setDiffData(null);
   }, [activeProject, onUpdate]);
 

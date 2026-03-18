@@ -25,7 +25,7 @@ export function BrowserCanvasView({ view, onUpdate }: BrowserCanvasViewProps) {
       url = `https://${url}`;
     }
     if (isAllowedUrl(url)) {
-      onUpdate({ url, title: url } as Partial<BrowserCanvasViewType>);
+      onUpdate({ url, title: url, metadata: { url } } as Partial<BrowserCanvasViewType>);
     }
   }, [addressBar, onUpdate]);
 

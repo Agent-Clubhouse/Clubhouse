@@ -1,6 +1,8 @@
 // ── Canvas data model ─────────────────────────────────────────────────
+import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
-export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff';
+/** Built-in canvas view types. Plugin widget types use the 'plugin' discriminant. */
+export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'plugin';
 
 export interface Position {
   x: number;
@@ -26,7 +28,11 @@ interface CanvasViewBase {
   position: Position;
   size: Size;
   title: string;
+  /** Auto-deduplicated user-facing display name. */
+  displayName: string;
   zIndex: number;
+  /** Queryable metadata bag — every widget type populates relevant keys. */
+  metadata: CanvasWidgetMetadata;
 }
 
 export interface AgentCanvasView extends CanvasViewBase {
@@ -56,7 +62,15 @@ export interface GitDiffCanvasView extends CanvasViewBase {
   filePath?: string;
 }
 
-export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView;
+export interface PluginCanvasView extends CanvasViewBase {
+  type: 'plugin';
+  /** Fully-qualified plugin widget type: "plugin:{pluginId}:{widgetId}". */
+  pluginWidgetType: string;
+  /** The plugin ID that owns this widget. */
+  pluginId: string;
+}
+
+export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | PluginCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
@@ -77,6 +91,21 @@ export interface CanvasInstanceData {
   viewport: Viewport;
   nextZIndex: number;
   zoomedViewId?: string | null;
+}
+
+// ── Display name deduplication ────────────────────────────────────────
+
+/**
+ * Given a base display name and the list of existing display names on the canvas,
+ * returns a unique name by appending " (2)", " (3)", etc. if needed.
+ */
+export function deduplicateDisplayName(baseName: string, existingNames: string[]): string {
+  if (!existingNames.includes(baseName)) return baseName;
+  let suffix = 2;
+  while (existingNames.includes(`${baseName} (${suffix})`)) {
+    suffix++;
+  }
+  return `${baseName} (${suffix})`;
 }
 
 // ── Constants ────────────────────────────────────────────────────────

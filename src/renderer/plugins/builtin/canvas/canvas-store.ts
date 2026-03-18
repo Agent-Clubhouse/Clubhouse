@@ -2,16 +2,19 @@ import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Position, Size, Viewport } from './canvas-types';
+import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import {
   createViewCounter,
   syncCounterToViews,
   createView as createViewOp,
+  createPluginView as createPluginViewOp,
   removeView as removeViewOp,
   updateViewPosition as updateViewPosOp,
   updateViewSize as updateViewSizeOp,
   updateViewTitle as updateViewTitleOp,
   bringToFront as bringToFrontOp,
   clampViewport,
+  queryViews as queryViewsOp,
   createCanvasCounter,
   generateCanvasId,
   syncCounterToInstances,
@@ -38,12 +41,22 @@ export interface CanvasState {
 
   // View operations (on active canvas)
   addView: (type: CanvasViewType, position: Position) => string;
+  addPluginView: (
+    pluginId: string,
+    pluginWidgetType: string,
+    label: string,
+    position: Position,
+    metadata?: CanvasWidgetMetadata,
+    defaultSize?: { width: number; height: number },
+  ) => string;
   removeView: (viewId: string) => void;
   moveView: (viewId: string, position: Position) => void;
   resizeView: (viewId: string, size: Size) => void;
   renameView: (viewId: string, title: string) => void;
   focusView: (viewId: string) => void;
   updateView: (viewId: string, updates: Partial<CanvasView>) => void;
+  updateViewMetadata: (viewId: string, metadataUpdates: CanvasWidgetMetadata) => void;
+  queryViews: (filter?: CanvasWidgetFilter) => CanvasWidgetHandle[];
 
   // Viewport
   setViewport: (viewport: Viewport) => void;
@@ -126,11 +139,17 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
-            syncCounterToViews(s.views, viewCounter);
+            // Migrate views from pre-metadata format: backfill displayName and metadata
+            const migratedViews = s.views.map((v: any) => ({
+              ...v,
+              metadata: v.metadata ?? {},
+              displayName: v.displayName ?? v.title ?? v.type ?? '',
+            })) as CanvasView[];
+            syncCounterToViews(migratedViews, viewCounter);
             return {
               id: s.id,
               name: s.name,
-              views: s.views,
+              views: migratedViews,
               viewport: clampViewport(s.viewport),
               nextZIndex: s.nextZIndex,
               zoomedViewId: s.zoomedViewId ?? null,
@@ -207,7 +226,25 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     addView: (type, position) => {
       let newViewId = '';
       set(updateActiveCanvas(get(), (canvas) => {
-        const view = createViewOp(type, position, canvas.nextZIndex, viewCounter);
+        const existingNames = canvas.views.map((v) => v.displayName);
+        const view = createViewOp(type, position, canvas.nextZIndex, viewCounter, existingNames);
+        newViewId = view.id;
+        return {
+          views: [...canvas.views, view],
+          nextZIndex: canvas.nextZIndex + 1,
+        };
+      }));
+      return newViewId;
+    },
+
+    addPluginView: (pluginId, pluginWidgetType, label, position, metadata, defaultSize) => {
+      let newViewId = '';
+      set(updateActiveCanvas(get(), (canvas) => {
+        const existingNames = canvas.views.map((v) => v.displayName);
+        const view = createPluginViewOp(
+          pluginId, pluginWidgetType, label, position,
+          canvas.nextZIndex, viewCounter, existingNames, metadata ?? {}, defaultSize,
+        );
         newViewId = view.id;
         return {
           views: [...canvas.views, view],
@@ -257,6 +294,21 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           v.id === viewId ? { ...v, ...updates } as CanvasView : v
         ),
       })));
+    },
+
+    updateViewMetadata: (viewId, metadataUpdates) => {
+      set(updateActiveCanvas(get(), (canvas) => ({
+        views: canvas.views.map((v) =>
+          v.id === viewId
+            ? { ...v, metadata: { ...v.metadata, ...metadataUpdates } } as CanvasView
+            : v
+        ),
+      })));
+    },
+
+    queryViews: (filter?) => {
+      const { views } = get();
+      return queryViewsOp(views, filter);
     },
 
     // ── Viewport ─────────────────────────────────────────────────
