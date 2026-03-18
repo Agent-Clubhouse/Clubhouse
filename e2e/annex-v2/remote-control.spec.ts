@@ -5,7 +5,7 @@
  * effects of remote control: lock overlay appearance/disappearance,
  * pause UX, and snapshot data integrity.
  */
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import WebSocket from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';

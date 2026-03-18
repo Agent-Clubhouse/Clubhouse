@@ -8,7 +8,6 @@
  * (pty.spawnShell) as the control surface instead.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
-import WebSocket from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
 import { launchApp } from '../launch';
