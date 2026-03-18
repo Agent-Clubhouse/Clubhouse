@@ -241,6 +241,7 @@ vi.stubGlobal('clubhouse', {
     onNotificationClicked: () => noop,
     onOpenSettings: () => noop,
     onOpenAbout: () => noop,
+    onEditCommand: () => noop,
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,
     updateTitleBarOverlay: asyncNoop,

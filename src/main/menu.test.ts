@@ -5,6 +5,9 @@ import type { MenuItemConstructorOptions } from 'electron';
 
 let capturedTemplate: MenuItemConstructorOptions[] = [];
 
+const mockWebContentsSend = vi.fn();
+const mockFocusedWindow = { webContents: { send: mockWebContentsSend } };
+
 vi.mock('electron', () => {
   const mockApp = { name: 'Clubhouse' };
   const mockMenu = {
@@ -15,9 +18,7 @@ vi.mock('electron', () => {
     }),
   };
   const mockBrowserWindow = {
-    getFocusedWindow: vi.fn(() => ({
-      webContents: { send: vi.fn() },
-    })),
+    getFocusedWindow: vi.fn(() => mockFocusedWindow),
   };
   return {
     app: mockApp,
@@ -27,7 +28,7 @@ vi.mock('electron', () => {
 });
 
 import { buildMenu } from './menu';
-import { BrowserWindow, Menu } from 'electron';
+import { Menu } from 'electron';
 
 describe('buildMenu', () => {
   beforeEach(() => {
@@ -76,8 +77,7 @@ describe('buildMenu', () => {
     // Simulate click
     selectAll!.click!(null as any, null as any, null as any);
 
-    const win = (BrowserWindow.getFocusedWindow as any)();
-    expect(win.webContents.send).toHaveBeenCalledWith('app:edit-command', 'selectAll');
+    expect(mockWebContentsSend).toHaveBeenCalledWith('app:edit-command', 'selectAll');
   });
 
   it('sends IPC edit command when Copy is clicked', () => {
@@ -88,7 +88,6 @@ describe('buildMenu', () => {
 
     copy!.click!(null as any, null as any, null as any);
 
-    const win = (BrowserWindow.getFocusedWindow as any)();
-    expect(win.webContents.send).toHaveBeenCalledWith('app:edit-command', 'copy');
+    expect(mockWebContentsSend).toHaveBeenCalledWith('app:edit-command', 'copy');
   });
 });
