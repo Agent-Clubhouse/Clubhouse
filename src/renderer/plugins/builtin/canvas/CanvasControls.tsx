@@ -1,6 +1,7 @@
 import React from 'react';
-import type { CanvasView } from './canvas-types';
+import type { CanvasView, CanvasViewAttention } from './canvas-types';
 import { CanvasSearch } from './CanvasSearch';
+import { useAttentionCycler } from './canvas-attention';
 
 interface CanvasControlsProps {
   zoom: number;
@@ -12,10 +13,13 @@ interface CanvasControlsProps {
   onCenter: () => void;
   onSizeToFit: () => void;
   onSelectView: (viewId: string) => void;
+  attentionMap?: Map<string, CanvasViewAttention>;
 }
 
-export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
+  const effectiveMap = attentionMap ?? new Map();
+  const { count, currentIndex, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 
@@ -24,6 +28,56 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
       className="absolute top-3 right-3 flex items-center gap-1 bg-ctp-mantle/90 backdrop-blur-sm rounded-lg border border-surface-0 px-1.5 py-1 shadow-sm"
       data-testid="canvas-controls"
     >
+      {/* Attention cycling */}
+      {count > 0 && (
+        <>
+          <div className="flex items-center gap-0.5" data-testid="canvas-attention-cycler">
+            <button
+              onClick={goPrev}
+              className="w-5 h-5 flex items-center justify-center rounded text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+              title="Previous attention item"
+              data-testid="canvas-attention-prev"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <div
+              className="flex items-center gap-1 px-1"
+              title={`${count} card${count !== 1 ? 's' : ''} need${count === 1 ? 's' : ''} attention`}
+            >
+              {/* Exclamation icon */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-yellow-400">
+                <path
+                  d="M12 2L2 22h20L12 2z"
+                  fill="currentColor"
+                  fillOpacity="0.15"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                />
+                <line x1="12" y1="10" x2="12" y2="14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="12" cy="17.5" r="1" fill="currentColor" />
+              </svg>
+              <span className="text-[10px] font-mono text-yellow-400 min-w-[2ch] text-center">
+                {count}
+              </span>
+            </div>
+            <button
+              onClick={goNext}
+              className="w-5 h-5 flex items-center justify-center rounded text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+              title="Next attention item"
+              data-testid="canvas-attention-next"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+          <div className="w-px h-4 bg-surface-0 mx-0.5" />
+        </>
+      )}
+
       {/* Search */}
       {hasViews && <CanvasSearch views={views} onSelectView={onSelectView} />}
 
