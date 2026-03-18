@@ -355,6 +355,52 @@ describe('agentStore', () => {
       getState().handleHookEvent('a_unk', { kind: 'unknown_event' as any, timestamp: 100 });
       expect(getState().agentDetailedStatus['a_unk']).toBeUndefined();
     });
+
+    it('needs_permission is not overwritten by notification events', () => {
+      seedAgent({ id: 'a_guard', status: 'running' });
+      getState().handleHookEvent('a_guard', { kind: 'permission_request', toolName: 'Bash', timestamp: 100 });
+      expect(getState().agentDetailedStatus['a_guard'].state).toBe('needs_permission');
+
+      // A notification arrives while waiting for permission — should be ignored
+      getState().handleHookEvent('a_guard', { kind: 'notification', message: 'Waiting', timestamp: 200 });
+      expect(getState().agentDetailedStatus['a_guard'].state).toBe('needs_permission');
+    });
+
+    it('needs_permission is not overwritten by stop events', () => {
+      seedAgent({ id: 'a_guard2', status: 'running' });
+      getState().handleHookEvent('a_guard2', { kind: 'permission_request', toolName: 'Edit', timestamp: 100 });
+
+      getState().handleHookEvent('a_guard2', { kind: 'stop', timestamp: 200 });
+      expect(getState().agentDetailedStatus['a_guard2'].state).toBe('needs_permission');
+    });
+
+    it('needs_permission is not overwritten by post_tool events', () => {
+      seedAgent({ id: 'a_guard3', status: 'running' });
+      getState().handleHookEvent('a_guard3', { kind: 'permission_request', toolName: 'Bash', timestamp: 100 });
+
+      getState().handleHookEvent('a_guard3', { kind: 'post_tool', timestamp: 200 });
+      expect(getState().agentDetailedStatus['a_guard3'].state).toBe('needs_permission');
+    });
+
+    it('needs_permission IS cleared by pre_tool (permission granted)', () => {
+      seedAgent({ id: 'a_grant', status: 'running' });
+      getState().handleHookEvent('a_grant', { kind: 'permission_request', toolName: 'Bash', timestamp: 100 });
+      expect(getState().agentDetailedStatus['a_grant'].state).toBe('needs_permission');
+
+      // pre_tool means permission was granted and tool is now executing
+      getState().handleHookEvent('a_grant', { kind: 'pre_tool', toolName: 'Bash', toolVerb: 'Running command', timestamp: 200 });
+      expect(getState().agentDetailedStatus['a_grant'].state).toBe('working');
+    });
+
+    it('needs_permission IS updated by a new permission_request', () => {
+      seedAgent({ id: 'a_newperm', status: 'running' });
+      getState().handleHookEvent('a_newperm', { kind: 'permission_request', toolName: 'Bash', timestamp: 100 });
+
+      // New permission request replaces old one
+      getState().handleHookEvent('a_newperm', { kind: 'permission_request', toolName: 'Edit', timestamp: 200 });
+      expect(getState().agentDetailedStatus['a_newperm'].state).toBe('needs_permission');
+      expect(getState().agentDetailedStatus['a_newperm'].toolName).toBe('Edit');
+    });
   });
 
   describe('clearStaleStatuses', () => {

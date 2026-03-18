@@ -108,6 +108,18 @@ export function deduplicateDisplayName(baseName: string, existingNames: string[]
   return `${baseName} (${suffix})`;
 }
 
+// ── Attention system ─────────────────────────────────────────────────
+
+/** Attention level indicates a card requires user action. */
+export type CanvasViewAttentionLevel = 'warning' | 'error';
+
+export interface CanvasViewAttention {
+  level: CanvasViewAttentionLevel;
+  message: string;
+  /** The view that needs attention. */
+  viewId: string;
+}
+
 // ── Constants ────────────────────────────────────────────────────────
 
 export const GRID_SIZE = 20;

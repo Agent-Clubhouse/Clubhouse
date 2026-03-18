@@ -260,6 +260,41 @@
   animation: attention-pulse 1.8s ease-in-out infinite;
 }
 
+/* Canvas: attention flash border — outside the card, never clips inner content */
+@keyframes canvas-attention-flash {
+  0%, 100% {
+    outline-color: rgba(250, 204, 21, 0.9);
+    box-shadow: 0 0 12px 3px rgba(250, 204, 21, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    outline-color: rgba(250, 204, 21, 0.35);
+    box-shadow: 0 0 4px 1px rgba(250, 204, 21, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@keyframes canvas-error-flash {
+  0%, 100% {
+    outline-color: rgba(248, 113, 113, 0.9);
+    box-shadow: 0 0 12px 3px rgba(248, 113, 113, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5);
+  }
+  50% {
+    outline-color: rgba(248, 113, 113, 0.35);
+    box-shadow: 0 0 4px 1px rgba(248, 113, 113, 0.1), 0 4px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.canvas-attention-warning {
+  outline: 2.5px solid rgba(250, 204, 21, 0.9);
+  outline-offset: 2px;
+  animation: canvas-attention-flash 1.5s ease-in-out infinite;
+}
+
+.canvas-attention-error {
+  outline: 2.5px solid rgba(248, 113, 113, 0.9);
+  outline-offset: 2px;
+  animation: canvas-error-flash 1.5s ease-in-out infinite;
+}
+
 /* Headless agent: animated clubhouse */
 @keyframes window-glow {
   0%, 100% {
