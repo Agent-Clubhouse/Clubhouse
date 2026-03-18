@@ -63,6 +63,7 @@ describe('help-content', () => {
     expect(allTopicIds).toContain('agents-clubhouse-mode');
     expect(allTopicIds).toContain('settings-sound');
     expect(allTopicIds).toContain('settings-annex');
+    expect(allTopicIds).toContain('settings-annex-v2');
     expect(allTopicIds).toContain('orchestrators');
   });
 });

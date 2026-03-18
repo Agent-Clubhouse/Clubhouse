@@ -115,3 +115,9 @@
 ### 2026-03-17 — #870: Remote Agent Views
 - Created `src/renderer/hooks/useRemoteAgents.ts`: unified hook for remote agent data, isRemoteProjectId helper
 - Provides interface for reading remote agents from remoteProjectStore when active project is remote
+
+### 2026-03-17 — #871: Help Docs
+- Created `src/renderer/features/help/content/settings-annex-v2.md`: comprehensive help for Annex V2
+  - Covers: overview, setup, pairing, usage, locking, security model, troubleshooting
+- Modified `src/renderer/features/help/help-content.ts`: registered new help topic
+- Modified `src/renderer/features/help/help-content.test.ts`: added topic ID assertion
