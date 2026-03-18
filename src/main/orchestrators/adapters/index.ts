@@ -5,3 +5,7 @@ export { AcpAdapter } from './acp-adapter';
 export type { AcpAdapterOpts } from './acp-adapter';
 export { StreamJsonAdapter } from './stream-json-adapter';
 export type { StreamJsonAdapterOpts } from './stream-json-adapter';
+export { CodexAppServerClient } from './codex-app-server-client';
+export type { CodexAppServerClientOpts } from './codex-app-server-client';
+export { CodexAppServerAdapter } from './codex-app-server-adapter';
+export type { CodexAppServerAdapterOpts } from './codex-app-server-adapter';

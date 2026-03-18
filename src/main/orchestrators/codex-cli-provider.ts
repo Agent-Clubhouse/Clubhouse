@@ -9,8 +9,11 @@ import {
   HeadlessOpts,
   HeadlessCommandResult,
   HeadlessCapable,
+  StructuredAdapter,
+  StructuredCapable,
 } from './types';
 import { BaseProvider } from './base-provider';
+import { CodexAppServerAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
@@ -37,7 +40,7 @@ const CODEX_MODEL_CHOICES_PATTERN = /--model\s+(?:<\w+>)?\s*.*?\(choices:\s*([\s
 const DEFAULT_DURABLE_PERMISSIONS = ['shell(git:*)', 'shell(npm:*)', 'shell(npx:*)'];
 const DEFAULT_QUICK_PERMISSIONS = [...DEFAULT_DURABLE_PERMISSIONS, 'shell(*)', 'apply_patch'];
 
-export class CodexCliProvider extends BaseProvider implements HeadlessCapable {
+export class CodexCliProvider extends BaseProvider implements HeadlessCapable, StructuredCapable {
   readonly id = 'codex-cli' as const;
   readonly displayName = 'Codex CLI';
   readonly shortName = 'CX';
@@ -109,7 +112,7 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable {
       hooks: false,
       sessionResume: true,
       permissions: true,
-      structuredMode: false,
+      structuredMode: true,
     };
   }
 
@@ -187,6 +190,15 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable {
     if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
 
     return { binary, args, env };
+  }
+
+  // ── StructuredCapable ───────────────────────────────────────────────────
+
+  createStructuredAdapter(): StructuredAdapter {
+    return new CodexAppServerAdapter({
+      binary: this.findBinary(),
+      toolVerbs: TOOL_VERBS,
+    });
   }
 
   // ── HeadlessCapable ─────────────────────────────────────────────────────
