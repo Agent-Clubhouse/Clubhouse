@@ -75,7 +75,7 @@ export function ReadOnlyMonacoEditor({ value, filePath }: ReadOnlyMonacoEditorPr
         automaticLayout: true,
         scrollBeyondLastLine: false,
         padding: { top: 4 },
-        fixedOverflowWidgets: true,
+        fixedOverflowWidgets: false,
         folding: true,
         showFoldingControls: 'mouseover',
         guides: {
