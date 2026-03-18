@@ -28,6 +28,7 @@ import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
 import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
+import { handleTerminalEditCommand } from './features/terminal/terminal-edit-handler';
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
@@ -503,13 +504,18 @@ function selectAllInContainer(container: HTMLElement): void {
 
 function initEditCommandListener(): () => void {
   return window.clubhouse.app.onEditCommand((command: string) => {
-    // 1. Try Monaco editor first
+    // 1. Try focused terminal first (synchronous).
+    //    This handles paste/copy/selectAll for xterm.js terminals, which cannot
+    //    receive keyboard events intercepted by the Electron menu accelerator.
+    if (handleTerminalEditCommand(command)) return;
+
+    // 2. Try Monaco editor
     // Lazy-import to avoid circular dependency — the module is already loaded
     // by the time edit commands arrive.
     import('./plugins/builtin/files/MonacoEditor').then(({ handleMonacoEditCommand }) => {
       if (handleMonacoEditCommand(command)) return;
 
-      // 2. Scope selectAll to the focused container when inside markdown preview
+      // 3. Scope selectAll to the focused container when inside markdown preview
       if (command === 'selectAll') {
         const active = document.activeElement;
         const preview = active?.closest?.('.help-content') ??
@@ -520,7 +526,7 @@ function initEditCommandListener(): () => void {
         }
       }
 
-      // 3. Fallback: native DOM command (works for inputs, textareas, contenteditable)
+      // 4. Fallback: native DOM command (works for inputs, textareas, contenteditable)
       document.execCommand(command);
     });
   });
