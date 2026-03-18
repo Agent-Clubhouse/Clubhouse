@@ -52,9 +52,15 @@ vi.mock('./fs-utils', () => ({
   pathExists: vi.fn(),
 }));
 
+// Mock git-service (isInsideGitRepo is used for git repo detection)
+vi.mock('./git-service', () => ({
+  isInsideGitRepo: vi.fn(),
+}));
+
 import * as fsp from 'fs/promises';
 import { exec, execFile } from 'child_process';
 import { pathExists } from './fs-utils';
+import { isInsideGitRepo } from './git-service';
 import {
   listDurable,
   createDurable,
@@ -131,6 +137,8 @@ describe('readAgents (via listDurable)', () => {
 describe('createDurable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: project is inside a git repo
+    vi.mocked(isInsideGitRepo).mockResolvedValue(true);
     const writtenData: Record<string, string> = {};
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
@@ -181,6 +189,7 @@ describe('createDurable', () => {
   });
 
   it('falls back to mkdir when no git', async () => {
+    vi.mocked(isInsideGitRepo).mockResolvedValue(false);
     vi.mocked(pathExists).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.endsWith('.git')) return false;
@@ -405,6 +414,8 @@ describe('createDurable', () => {
 describe('deleteDurable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: project is inside a git repo
+    vi.mocked(isInsideGitRepo).mockResolvedValue(true);
   });
 
   it('removes agent from config file', async () => {
