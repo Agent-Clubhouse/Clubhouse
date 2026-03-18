@@ -59,7 +59,8 @@ function SettingsCategoryNav() {
             {navButton('Notifications', 'notifications')}
             {navButton('Sounds', 'sounds')}
             {navButton('Plugins', 'plugins')}
-            {navButton('Annex', 'annex')}
+            {navButton('Annex Server', 'annex')}
+            {navButton('Annex Control', 'annex-control')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}

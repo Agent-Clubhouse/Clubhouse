@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
+import { AnnexIdentitySection } from './AnnexIdentitySection';
 
 export function AnnexSettingsView() {
   const settings = useAnnexStore((s) => s.settings);
@@ -16,9 +17,9 @@ export function AnnexSettingsView() {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Annex</h2>
+        <h2 className="text-lg font-semibold text-ctp-text mb-1">Annex Server</h2>
         <p className="text-sm text-ctp-subtext0 mb-6">
-          Monitor your agents from an iOS companion app over the local network.
+          Allow other Clubhouse instances and the iOS companion app to connect to this machine.
         </p>
 
         {/* Enable toggle */}
@@ -26,7 +27,7 @@ export function AnnexSettingsView() {
           <div>
             <div className="text-sm text-ctp-text font-medium">Enable Annex server</div>
             <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Start a local network server for the iOS companion app
+              Start a local network server for remote control and monitoring
             </div>
           </div>
           <div data-testid="annex-toggle">
@@ -86,6 +87,16 @@ export function AnnexSettingsView() {
                 className="w-full px-3 py-1.5 text-sm rounded bg-surface-0 border border-surface-1
                   text-ctp-text placeholder-ctp-subtext0 focus:outline-none focus:border-indigo-500"
                 placeholder="Clubhouse on my Mac"
+              />
+            </div>
+
+            {/* Identity section */}
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-ctp-text mb-2">Identity</h3>
+              <AnnexIdentitySection
+                settings={settings}
+                status={status}
+                onSave={saveSettings}
               />
             </div>
           </>

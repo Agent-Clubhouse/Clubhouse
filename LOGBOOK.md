@@ -83,3 +83,12 @@
 - Modified `src/shared/types.ts`: added autoReconnect to AnnexSettings
 - Modified `src/main/services/annex-settings.ts`: autoReconnect default true
 - Modified `src/renderer/stores/annexStore.ts`: updated default settings
+
+### 2026-03-17 — #864: Settings UI
+- Created `src/renderer/features/settings/AnnexControlSettingsView.tsx`: new settings page for satellite management
+- Created `src/renderer/features/settings/AnnexIdentitySection.tsx`: reusable alias/color/fingerprint section
+- Created `src/renderer/features/settings/PairedSatelliteList.tsx`: satellite list with status indicators, retry/disconnect
+- Modified `src/renderer/features/settings/AnnexSettingsView.tsx`: renamed to "Annex Server", added identity section
+- Modified `src/shared/types.ts`: added 'annex-control' to SettingsSubPage
+- Modified `src/renderer/panels/AccessoryPanel.tsx`: added "Annex Control" nav item, renamed "Annex" to "Annex Server"
+- Modified `src/renderer/panels/MainContentView.tsx`: added routing for annex-control page

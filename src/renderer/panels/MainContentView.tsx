@@ -21,6 +21,7 @@ import { AboutSettingsView } from '../features/settings/AboutSettingsView';
 import { LoggingSettingsView } from '../features/settings/LoggingSettingsView';
 import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 import { AnnexSettingsView } from '../features/settings/AnnexSettingsView';
+import { AnnexControlSettingsView } from '../features/settings/AnnexControlSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
 import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
@@ -138,6 +139,7 @@ export function MainContentView() {
     if (settingsSubPage === 'plugin-detail') return <PluginDetailSettings />;
     if (settingsSubPage === 'plugins') return <PluginListSettings />;
     if (settingsSubPage === 'annex') return <AnnexSettingsView />;
+    if (settingsSubPage === 'annex-control') return <AnnexControlSettingsView />;
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
