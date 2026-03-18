@@ -29,10 +29,12 @@ export function AnnexSettingsView() {
               Start a local network server for the iOS companion app
             </div>
           </div>
-          <Toggle
-            checked={settings.enabled}
-            onChange={(v) => saveSettings({ ...settings, enabled: v })}
-          />
+          <div data-testid="annex-toggle">
+            <Toggle
+              checked={settings.enabled}
+              onChange={(v) => saveSettings({ ...settings, enabled: v })}
+            />
+          </div>
         </div>
 
         {settings.enabled && (

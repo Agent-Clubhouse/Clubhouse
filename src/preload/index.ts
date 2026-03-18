@@ -730,7 +730,7 @@ const api = {
   annex: {
     getSettings: () =>
       ipcRenderer.invoke(IPC.ANNEX.GET_SETTINGS),
-    saveSettings: (settings: { enabled: boolean; deviceName: string }) =>
+    saveSettings: (settings: { enabled: boolean; deviceName: string; alias: string; icon: string; color: string }) =>
       ipcRenderer.invoke(IPC.ANNEX.SAVE_SETTINGS, settings),
     getStatus: () =>
       ipcRenderer.invoke(IPC.ANNEX.GET_STATUS),
@@ -741,6 +741,10 @@ const api = {
       port: number;
       pin: string;
       connectedCount: number;
+      fingerprint: string;
+      alias: string;
+      icon: string;
+      color: string;
     }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, s: any) => callback(s);
       ipcRenderer.on(IPC.ANNEX.STATUS_CHANGED, listener);

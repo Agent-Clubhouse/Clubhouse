@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
+import * as annexIdentity from './annex-identity';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import * as ptyManager from './pty-manager';
@@ -735,6 +736,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // GET /api/v1/identity — no auth required (public identity info)
+  if (method === 'GET' && url === '/api/v1/identity') {
+    const identity = annexIdentity.getPublicIdentity();
+    if (!identity) {
+      sendJson(res, 503, { error: 'identity_not_ready' });
+      return;
+    }
+    const settings = annexSettings.getSettings();
+    sendJson(res, 200, {
+      alias: settings.alias,
+      icon: settings.icon,
+      color: settings.color,
+      fingerprint: identity.fingerprint,
+      publicKey: identity.publicKey,
+    });
+    return;
+  }
+
   // POST /pair — no auth required
   if (method === 'POST' && url === '/pair') {
     readBody(req).then((raw) => {
@@ -927,6 +946,9 @@ function handleWsMessage(ws: WebSocket, data: string): void {
 
 export function start(): void {
   if (httpServer) return;
+
+  // Generate identity on first enable (lazy creation)
+  annexIdentity.getOrCreateIdentity();
 
   currentPin = generatePin();
 
@@ -1126,11 +1148,17 @@ export function stop(): void {
 }
 
 export function getStatus(): AnnexStatus {
+  const settings = annexSettings.getSettings();
+  const identity = annexIdentity.getPublicIdentity();
   return {
     advertising: !!bonjourService,
     port: serverPort,
     pin: currentPin,
     connectedCount: wss ? wss.clients.size : 0,
+    fingerprint: identity?.fingerprint || '',
+    alias: settings.alias,
+    icon: settings.icon,
+    color: settings.color,
   };
 }
 

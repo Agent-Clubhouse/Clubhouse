@@ -4,6 +4,9 @@ import type { AnnexSettings, AnnexStatus } from '../../shared/types';
 const DEFAULT_SETTINGS: AnnexSettings = {
   enabled: false,
   deviceName: '',
+  alias: '',
+  icon: 'computer',
+  color: 'indigo',
 };
 
 const DEFAULT_STATUS: AnnexStatus = {
@@ -11,6 +14,10 @@ const DEFAULT_STATUS: AnnexStatus = {
   port: 0,
   pin: '',
   connectedCount: 0,
+  fingerprint: '',
+  alias: '',
+  icon: 'computer',
+  color: 'indigo',
 };
 
 interface AnnexStoreState {

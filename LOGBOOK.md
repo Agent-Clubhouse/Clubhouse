@@ -23,3 +23,15 @@
 ### 2026-03-17 — Note
 - Node.js runtime not available in this environment; tests written but not yet executed
 - Code correctness verified by manual review against existing patterns
+
+## Phase 1: Security Foundation
+
+### 2026-03-17 — #859: Identity System
+- Created `src/main/services/annex-identity.ts`: Ed25519 keypair gen, persist, fingerprint
+- Created `src/main/services/annex-identity.test.ts`: unit tests for keygen, idempotency, permissions, fingerprints
+- Modified `src/shared/types.ts`: extended AnnexSettings (alias, icon, color), AnnexStatus (fingerprint, alias, icon, color), added AnnexPeer type
+- Modified `src/main/services/annex-settings.ts`: added defaults for alias, icon, color
+- Modified `src/main/services/annex-server.ts`: added GET /api/v1/identity endpoint, identity init on start, enriched getStatus()
+- Modified `src/preload/index.ts`: updated annex API types for new fields
+- Modified `src/renderer/stores/annexStore.ts`: updated defaults for new fields
+- Modified `src/renderer/features/settings/AnnexSettingsView.tsx`: added data-testid for toggle
