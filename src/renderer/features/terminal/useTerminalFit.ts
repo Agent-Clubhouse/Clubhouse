@@ -2,6 +2,12 @@ import { useEffect, type RefObject } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
 
+/** Delay (ms) after wake-from-sleep before re-fitting the terminal.
+ *  Gives the browser layout engine time to recalculate dimensions and
+ *  font metrics — particularly important for canvas views where CSS
+ *  transforms affect rendered element sizes. */
+const WAKE_SETTLE_MS = 150;
+
 /**
  * Manages terminal fit/resize with focus-awareness for multi-window correctness.
  *
@@ -29,10 +35,16 @@ export function useTerminalFit(
      * When `sendResize` is false the xterm canvas is re-laid-out (fixing
      * visual wrapping) but the IPC resize is skipped so a background
      * window doesn't clobber the active window's PTY dimensions.
+     *
+     * Skips entirely when the container has zero dimensions — this guards
+     * against measuring stale layout after wake-from-sleep or when the
+     * container is hidden (e.g. behind a zoom overlay).
      */
     const fitAndResize = (sendResize: boolean) => {
       requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current) return;
+        const el = containerRef.current;
+        if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         fitAddonRef.current.fit();
         if (sendResize) {
           window.clubhouse.pty.resize(
@@ -50,9 +62,13 @@ export function useTerminalFit(
     });
     resizeObserver.observe(container);
 
-    // Wake from sleep / tab restore: re-fit when page becomes visible
+    // Wake from sleep / tab restore: delay the re-fit so the browser
+    // layout engine can stabilise dimensions and font metrics first.
+    let wakeTimer: ReturnType<typeof setTimeout> | null = null;
     const onVisibility = () => {
-      if (!document.hidden) fitAndResize(true);
+      if (!document.hidden) {
+        wakeTimer = setTimeout(() => fitAndResize(true), WAKE_SETTLE_MS);
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -64,6 +80,7 @@ export function useTerminalFit(
       resizeObserver.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onWindowFocus);
+      if (wakeTimer) clearTimeout(wakeTimer);
     };
   }, [sessionId]);
 
