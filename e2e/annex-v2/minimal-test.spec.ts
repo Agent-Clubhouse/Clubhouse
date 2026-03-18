@@ -173,7 +173,9 @@ test('brute-force lockout after wrong PINs', async () => {
 });
 
 test('settings UI shows Annex Server section', async () => {
-  // Ensure experimental annex flag is enabled (nav item is gated behind it)
+  // Ensure experimental annex flag is enabled (nav item is gated behind it).
+  // showAnnex in AccessoryPanel is set once in useEffect on mount, so we must
+  // reload the page after saving the flag to force React to re-initialize.
   await window.evaluate(async () => {
     const w = window as any;
     const expSettings = await w.clubhouse.app.getExperimentalSettings();
@@ -181,13 +183,12 @@ test('settings UI shows Annex Server section', async () => {
       await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
     }
   });
+  await window.reload({ waitUntil: 'domcontentloaded' });
+  await window.locator('#root').waitFor({ state: 'visible', timeout: 10_000 });
 
-  // Close settings if open, then re-open to force AccessoryPanel remount
-  // (showAnnex is set in useEffect on mount, won't re-read after save)
+  // Navigate to settings
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
-  await settingsBtn.click(); // toggle off
-  await window.waitForTimeout(300);
-  await settingsBtn.click(); // toggle on — remounts AccessoryPanel
+  await settingsBtn.click();
   await window.waitForTimeout(500);
 
   // Look for Annex nav item
