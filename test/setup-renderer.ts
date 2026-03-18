@@ -305,6 +305,8 @@ vi.stubGlobal('clubhouse', {
   },
   annexClient: {
     getSatellites: async () => [],
+    getDiscovered: async () => [],
+    pairWith: async () => ({ success: false, error: 'mock' }),
     connect: asyncNoop,
     disconnect: asyncNoop,
     retry: asyncNoop,
@@ -314,6 +316,7 @@ vi.stubGlobal('clubhouse', {
     agentSpawn: asyncNoop,
     agentKill: asyncNoop,
     onSatellitesChanged: () => noop,
+    onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,
   },
   window: {

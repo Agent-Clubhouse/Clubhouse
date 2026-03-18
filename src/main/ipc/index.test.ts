@@ -14,6 +14,7 @@ vi.mock('./window-handlers', () => ({ registerWindowHandlers: vi.fn() }));
 vi.mock('./annex-handlers', () => ({
   registerAnnexHandlers: vi.fn(),
   maybeStartAnnex: vi.fn(),
+  maybeStartAnnexClient: vi.fn(),
 }));
 vi.mock('./marketplace-handlers', () => ({ registerMarketplaceHandlers: vi.fn() }));
 vi.mock('./profile-handlers', () => ({ registerProfileHandlers: vi.fn() }));
@@ -40,7 +41,7 @@ import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
-import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
+import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerBuiltinProviders } from '../orchestrators';
@@ -108,5 +109,10 @@ describe('registerAllHandlers', () => {
   it('calls maybeStartAnnex after handler registration', () => {
     registerAllHandlers();
     expect(maybeStartAnnex).toHaveBeenCalled();
+  });
+
+  it('calls maybeStartAnnexClient after handler registration', () => {
+    registerAllHandlers();
+    expect(maybeStartAnnexClient).toHaveBeenCalled();
   });
 });
