@@ -1,0 +1,219 @@
+import { describe, it, expect } from 'vitest';
+import type { CanvasView, AgentCanvasView, FileCanvasView, BrowserCanvasView, GitDiffCanvasView, PluginCanvasView } from './canvas-types';
+
+// ── Inline the search logic for unit testing ─────────────────────────
+
+const TYPE_LABELS: Record<string, string> = {
+  agent: 'Agent',
+  file: 'Files',
+  browser: 'Browser',
+  'git-diff': 'Git Diff',
+  plugin: 'Plugin',
+};
+
+function buildSearchableText(view: CanvasView): string {
+  const parts: string[] = [
+    view.displayName,
+    view.title,
+    view.type,
+    TYPE_LABELS[view.type] ?? '',
+  ];
+  for (const [key, val] of Object.entries(view.metadata)) {
+    if (val != null) {
+      parts.push(String(key), String(val));
+    }
+  }
+  if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
+  if (view.type === 'file' && view.filePath) parts.push(view.filePath);
+  if (view.type === 'browser') parts.push(view.url);
+  if (view.type === 'git-diff' && view.filePath) parts.push(view.filePath);
+  if (view.type === 'plugin') parts.push(view.pluginWidgetType);
+
+  return parts.join(' ').toLowerCase();
+}
+
+function filterViews(views: CanvasView[], query: string): CanvasView[] {
+  if (!query.trim()) return views;
+  const terms = query.toLowerCase().trim().split(/\s+/);
+  return views.filter((view) => {
+    const text = buildSearchableText(view);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+// ── Test fixtures ────────────────────────────────────────────────────
+
+const baseView = {
+  position: { x: 0, y: 0 },
+  size: { width: 480, height: 480 },
+  zIndex: 0,
+};
+
+const agentView: AgentCanvasView = {
+  ...baseView,
+  id: 'cv_1',
+  type: 'agent',
+  title: 'Agent',
+  displayName: 'My Agent',
+  metadata: { agentName: 'curious-tapir' },
+  agentId: 'agent_123',
+};
+
+const fileView: FileCanvasView = {
+  ...baseView,
+  id: 'cv_2',
+  type: 'file',
+  title: 'Files',
+  displayName: 'Source Files',
+  metadata: { filePath: 'src/main/index.ts' },
+  filePath: 'src/main/index.ts',
+};
+
+const browserView: BrowserCanvasView = {
+  ...baseView,
+  id: 'cv_3',
+  type: 'browser',
+  title: 'Browser',
+  displayName: 'Docs Browser',
+  metadata: { url: 'https://docs.example.com' },
+  url: 'https://docs.example.com',
+};
+
+const diffView: GitDiffCanvasView = {
+  ...baseView,
+  id: 'cv_4',
+  type: 'git-diff',
+  title: 'Git Diff',
+  displayName: 'Main Diff',
+  metadata: { filePath: 'README.md' },
+  filePath: 'README.md',
+};
+
+const pluginView: PluginCanvasView = {
+  ...baseView,
+  id: 'cv_5',
+  type: 'plugin',
+  title: 'Terminal',
+  displayName: 'My Terminal',
+  metadata: {},
+  pluginWidgetType: 'plugin:terminal:shell',
+  pluginId: 'terminal',
+};
+
+const allViews: CanvasView[] = [agentView, fileView, browserView, diffView, pluginView];
+
+// ── Tests ────────────────────────────────────────────────────────────
+
+describe('canvas search — buildSearchableText', () => {
+  it('includes displayName in searchable text', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('my agent');
+  });
+
+  it('includes type in searchable text', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('agent');
+  });
+
+  it('includes type label in searchable text', () => {
+    const text = buildSearchableText(diffView);
+    expect(text).toContain('git diff');
+  });
+
+  it('includes metadata values in searchable text', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('curious-tapir');
+  });
+
+  it('includes filePath for file views', () => {
+    const text = buildSearchableText(fileView);
+    expect(text).toContain('src/main/index.ts');
+  });
+
+  it('includes url for browser views', () => {
+    const text = buildSearchableText(browserView);
+    expect(text).toContain('docs.example.com');
+  });
+
+  it('includes pluginWidgetType for plugin views', () => {
+    const text = buildSearchableText(pluginView);
+    expect(text).toContain('plugin:terminal:shell');
+  });
+
+  it('includes filePath for git-diff views', () => {
+    const text = buildSearchableText(diffView);
+    expect(text).toContain('readme.md');
+  });
+});
+
+describe('canvas search — filterViews', () => {
+  it('returns all views when query is empty', () => {
+    expect(filterViews(allViews, '')).toEqual(allViews);
+    expect(filterViews(allViews, '   ')).toEqual(allViews);
+  });
+
+  it('filters by type keyword', () => {
+    const result = filterViews(allViews, 'agent');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
+  });
+
+  it('filters by display name', () => {
+    const result = filterViews(allViews, 'docs browser');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_3');
+  });
+
+  it('filters by metadata value', () => {
+    const result = filterViews(allViews, 'curious-tapir');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
+  });
+
+  it('supports multiple search terms (AND logic)', () => {
+    const result = filterViews(allViews, 'file src');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_2');
+  });
+
+  it('is case-insensitive', () => {
+    const result = filterViews(allViews, 'BROWSER');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_3');
+  });
+
+  it('filters by git-diff type label', () => {
+    const result = filterViews(allViews, 'diff');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_4');
+  });
+
+  it('filters by plugin widget type', () => {
+    const result = filterViews(allViews, 'terminal');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_5');
+  });
+
+  it('returns empty array when nothing matches', () => {
+    const result = filterViews(allViews, 'nonexistent');
+    expect(result).toHaveLength(0);
+  });
+
+  it('matches partial strings', () => {
+    const result = filterViews(allViews, 'brow');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_3');
+  });
+
+  it('matches against URL in browser views', () => {
+    const result = filterViews(allViews, 'example.com');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_3');
+  });
+
+  it('matches against file paths in metadata', () => {
+    const result = filterViews(allViews, 'readme');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_4');
+  });
+});

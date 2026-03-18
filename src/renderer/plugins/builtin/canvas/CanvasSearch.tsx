@@ -1,0 +1,214 @@
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import type { CanvasView } from './canvas-types';
+
+interface CanvasSearchProps {
+  views: CanvasView[];
+  onSelectView: (viewId: string) => void;
+}
+
+/** Friendly labels for built-in view types. */
+const TYPE_LABELS: Record<string, string> = {
+  agent: 'Agent',
+  file: 'Files',
+  browser: 'Browser',
+  'git-diff': 'Git Diff',
+  plugin: 'Plugin',
+};
+
+/** Build a flat searchable string from a view's identity fields. */
+function buildSearchableText(view: CanvasView): string {
+  const parts: string[] = [
+    view.displayName,
+    view.title,
+    view.type,
+    TYPE_LABELS[view.type] ?? '',
+  ];
+  // Include metadata values
+  for (const [key, val] of Object.entries(view.metadata)) {
+    if (val != null) {
+      parts.push(String(key), String(val));
+    }
+  }
+  // Type-specific fields
+  if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
+  if (view.type === 'file' && view.filePath) parts.push(view.filePath);
+  if (view.type === 'browser') parts.push(view.url);
+  if (view.type === 'git-diff' && view.filePath) parts.push(view.filePath);
+  if (view.type === 'plugin') parts.push(view.pluginWidgetType);
+
+  return parts.join(' ').toLowerCase();
+}
+
+export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Filter views based on query
+  const filteredViews = useMemo(() => {
+    if (!query.trim()) return views;
+    const terms = query.toLowerCase().trim().split(/\s+/);
+    return views.filter((view) => {
+      const text = buildSearchableText(view);
+      return terms.every((term) => text.includes(term));
+    });
+  }, [views, query]);
+
+  // Reset selected index when results change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filteredViews.length, query]);
+
+  // Focus input when opened
+  useEffect(() => {
+    if (isOpen) {
+      inputRef.current?.focus();
+    }
+  }, [isOpen]);
+
+  // Close on click outside
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  // Keyboard shortcut: Cmd/Ctrl+F to open search when canvas is focused
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        // Only intercept if we're inside the canvas workspace
+        const workspace = document.querySelector('[data-testid="canvas-workspace"]');
+        if (workspace && workspace.contains(document.activeElement || document.body)) {
+          e.preventDefault();
+          setIsOpen(true);
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSelect = useCallback((viewId: string) => {
+    onSelectView(viewId);
+    setIsOpen(false);
+    setQuery('');
+  }, [onSelectView]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((i) => Math.min(i + 1, filteredViews.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredViews[selectedIndex]) {
+        handleSelect(filteredViews[selectedIndex].id);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+      setQuery('');
+    }
+  }, [filteredViews, selectedIndex, handleSelect]);
+
+  const handleToggle = useCallback(() => {
+    setIsOpen((prev) => {
+      if (prev) setQuery('');
+      return !prev;
+    });
+  }, []);
+
+  const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
+
+  if (!isOpen) {
+    return (
+      <button
+        onClick={handleToggle}
+        className={btnClass}
+        title="Search views (⌘F)"
+        data-testid="canvas-search-toggle"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative" data-testid="canvas-search-container">
+      <div className="flex items-center gap-1">
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search cards…"
+            className="w-48 h-6 pl-6 pr-2 text-xs bg-surface-0 border border-surface-1 rounded text-ctp-text placeholder:text-ctp-overlay0 outline-none focus:border-ctp-blue/50"
+            data-testid="canvas-search-input"
+          />
+          <svg
+            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 text-ctp-overlay0"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
+        <button
+          onClick={handleToggle}
+          className={btnClass}
+          title="Close search"
+          data-testid="canvas-search-close"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Results dropdown */}
+      <div
+        className="absolute top-8 right-0 w-64 max-h-64 overflow-y-auto bg-ctp-mantle border border-surface-1 rounded-lg shadow-lg z-50"
+        data-testid="canvas-search-results"
+      >
+        {filteredViews.length === 0 ? (
+          <div className="px-3 py-2 text-xs text-ctp-overlay0">No matching cards</div>
+        ) : (
+          filteredViews.map((view, index) => (
+            <button
+              key={view.id}
+              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-xs transition-colors ${
+                index === selectedIndex
+                  ? 'bg-surface-1 text-ctp-text'
+                  : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-text'
+              }`}
+              onClick={() => handleSelect(view.id)}
+              onMouseEnter={() => setSelectedIndex(index)}
+              data-testid={`canvas-search-result-${view.id}`}
+            >
+              <span className="text-[9px] font-mono uppercase tracking-wider text-ctp-overlay0 w-12 flex-shrink-0">
+                {TYPE_LABELS[view.type] ?? view.type}
+              </span>
+              <span className="truncate">{view.displayName || view.title}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
