@@ -34,19 +34,15 @@ export function App() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
 
-  // ── Annex lock state ────────────────────────────────────────────────────
-  const lockState = useLockStore((s) => ({
-    locked: s.locked,
-    paused: s.paused,
-    controllerAlias: s.controllerAlias,
-    controllerIcon: s.controllerIcon,
-    controllerColor: s.controllerColor,
-    controllerFingerprint: s.controllerFingerprint,
-  }));
-  const lockActions = useLockStore((s) => ({
-    togglePause: s.togglePause,
-    unlock: s.unlock,
-  }));
+  // ── Annex lock state (individual selectors to avoid reference-inequality re-render loops) ──
+  const lockLocked = useLockStore((s) => s.locked);
+  const lockPaused = useLockStore((s) => s.paused);
+  const lockControllerAlias = useLockStore((s) => s.controllerAlias);
+  const lockControllerIcon = useLockStore((s) => s.controllerIcon);
+  const lockControllerColor = useLockStore((s) => s.controllerColor);
+  const lockControllerFingerprint = useLockStore((s) => s.controllerFingerprint);
+  const lockTogglePause = useLockStore((s) => s.togglePause);
+  const lockUnlock = useLockStore((s) => s.unlock);
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
@@ -125,17 +121,17 @@ export function App() {
 
   // ── Lock overlay action handlers ─────────────────────────────────────────
   const handleLockDisconnect = () => {
-    if (lockState.controllerFingerprint) {
-      window.clubhouse.annex.disconnectController(lockState.controllerFingerprint);
+    if (lockControllerFingerprint) {
+      window.clubhouse.annex.disconnectController(lockControllerFingerprint);
     }
-    lockActions.unlock();
+    lockUnlock();
   };
   const handleLockPause = () => {
-    lockActions.togglePause();
+    lockTogglePause();
   };
   const handleLockDisableAndDisconnect = () => {
     window.clubhouse.annex.disableAndDisconnect();
-    lockActions.unlock();
+    lockUnlock();
   };
 
   // ── Derived routing state ──────────────────────────────────────────────
@@ -146,7 +142,14 @@ export function App() {
   // Lock overlay element (shared across all return paths)
   const lockOverlay = (
     <SatelliteLockOverlay
-      lockState={lockState}
+      lockState={{
+        locked: lockLocked,
+        paused: lockPaused,
+        controllerAlias: lockControllerAlias,
+        controllerIcon: lockControllerIcon,
+        controllerColor: lockControllerColor,
+        controllerFingerprint: lockControllerFingerprint,
+      }}
       onDisconnect={handleLockDisconnect}
       onPause={handleLockPause}
       onDisableAndDisconnect={handleLockDisableAndDisconnect}
