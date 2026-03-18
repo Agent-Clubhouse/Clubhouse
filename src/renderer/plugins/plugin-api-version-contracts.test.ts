@@ -602,7 +602,9 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        const result = validateManifest(minimalV07Manifest({
+        // Canvas permission requires API >= 0.8, use v0.8 manifest
+        const manifestFn = perm === 'canvas' ? minimalV08Manifest : minimalV07Manifest;
+        const result = validateManifest(manifestFn({
           permissions,
           ...extras,
         }));
