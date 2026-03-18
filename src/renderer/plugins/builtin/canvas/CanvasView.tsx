@@ -121,6 +121,14 @@ export function CanvasViewComponent({
     return buildProjectContext(view, projects);
   }, [api, view]);
 
+  const isAgentRunning = agentInfo != null && (agentInfo.status === 'running' || agentInfo.status === 'creating');
+
+  const handleSleep = useCallback(async () => {
+    if (view.type !== 'agent') return;
+    const agentId = (view as AgentCanvasViewType).agentId;
+    if (agentId) await api.agents.kill(agentId);
+  }, [view, api]);
+
   // ── Attention CSS class — uses outline so the glow goes OUTSIDE the card ──
 
   const attentionClass = attention
@@ -337,6 +345,18 @@ export function CanvasViewComponent({
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
+          {isAgentRunning && (
+            <button
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleSleep(); }}
+              title="Sleep agent"
+              data-testid="canvas-view-sleep"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            </button>
+          )}
           <button
             className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
             onClick={(e) => { e.stopPropagation(); onCenterView(); }}
