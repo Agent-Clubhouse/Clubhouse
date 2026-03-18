@@ -131,12 +131,12 @@ export class AnnexProtocolClient {
       this.ws.on('message', (data) => {
         try {
           const msg = JSON.parse(data.toString());
-          // Notify listeners
-          for (const listener of this.messageListeners) {
+          // Queue first so waitForMessage listeners can splice it out
+          this.messageQueue.push(msg);
+          // Then notify listeners
+          for (const listener of [...this.messageListeners]) {
             listener(msg);
           }
-          // Also queue for waitForMessage
-          this.messageQueue.push(msg);
         } catch {
           // Ignore parse errors
         }
@@ -173,6 +173,9 @@ export class AnnexProtocolClient {
       const listener = (msg: Record<string, unknown>) => {
         if (msg.type === type) {
           cleanup();
+          // Remove from queue too — the on('message') handler also pushes there
+          const qi = this.messageQueue.indexOf(msg);
+          if (qi !== -1) this.messageQueue.splice(qi, 1);
           resolve(msg);
         }
       };
