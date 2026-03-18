@@ -6,14 +6,14 @@ const MODE_LABELS: Record<PaletteMode, string | null> = {
   commands: 'Commands',
   agents: 'Agents',
   projects: 'Projects',
-  hubs: 'Hubs',
+  spaces: 'Spaces',
 };
 
 const MODE_HINTS: { prefix: string; label: string }[] = [
   { prefix: '>', label: 'commands' },
   { prefix: '@', label: 'agents' },
   { prefix: '/', label: 'projects' },
-  { prefix: '#', label: 'hubs' },
+  { prefix: '#', label: 'spaces' },
 ];
 
 export function CommandPaletteInput() {

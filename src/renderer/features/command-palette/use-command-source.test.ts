@@ -122,6 +122,34 @@ vi.mock('../../plugins/builtin/hub/main', () => ({
   ),
 }));
 
+const mockSetProjectActiveCanvas = vi.fn();
+const mockSetAppActiveCanvas = vi.fn();
+
+const projectCanvasState = {
+  canvases: [{ id: 'pc1', name: 'ProjectCanvas1' }] as any[],
+  activeCanvasId: 'pc1',
+  setActiveCanvas: mockSetProjectActiveCanvas,
+};
+
+const appCanvasState = {
+  canvases: [{ id: 'ac1', name: 'AppCanvas1' }] as any[],
+  activeCanvasId: 'ac1',
+  setActiveCanvas: mockSetAppActiveCanvas,
+};
+
+const mockProjectCanvasStore = Object.assign(
+  (selector: any) => selector(projectCanvasState),
+  { getState: () => projectCanvasState, subscribe: () => () => {}, destroy: () => {} },
+);
+
+vi.mock('../../plugins/builtin/canvas/main', () => ({
+  getProjectCanvasStore: () => mockProjectCanvasStore,
+  useAppCanvasStore: Object.assign(
+    (selector: any) => selector(appCanvasState),
+    { getState: () => appCanvasState },
+  ),
+}));
+
 vi.mock('../../plugins/plugin-hotkeys', () => ({
   pluginHotkeyRegistry: { getAll: () => [] },
 }));
@@ -156,7 +184,9 @@ describe('useCommandSource', () => {
     projectStoreState.activeProjectId = 'p1';
     projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
     projectHubState.activeHubId = 'ph1';
-    // Default: no hubs in other projects
+    projectCanvasState.canvases = [{ id: 'pc1', name: 'ProjectCanvas1' }];
+    projectCanvasState.activeCanvasId = 'pc1';
+    // Default: no hubs/canvases in other projects
     mockStorageRead.mockResolvedValue(null);
     mockStorageWrite.mockResolvedValue(undefined);
   });
@@ -253,7 +283,7 @@ describe('useCommandSource', () => {
     expect(mockSetSettingsSubPage).toHaveBeenCalledWith('orchestrators');
   });
 
-  // ── Hub resolution tests ────────────────────────────────────────────
+  // ── Spaces (hub + canvas) resolution tests ──────────────────────────
 
   it('includes both project hubs and app hubs when a project is active', () => {
     const { result } = renderHook(() => useCommandSource());
@@ -268,25 +298,25 @@ describe('useCommandSource', () => {
     expect(appHub2.label).toBe('AppHub2');
   });
 
-  it('marks the active project hub as Active', () => {
+  it('marks the active project hub as Active with Hub prefix', () => {
     const { result } = renderHook(() => useCommandSource());
     const projectHub = findItem(result.current, 'hub:project:ph1');
-    expect(projectHub.detail).toBe('Active');
+    expect(projectHub.detail).toBe('Hub · Active');
   });
 
-  it('shows project name as detail for non-active project hubs', () => {
+  it('shows project name with Hub prefix in detail for non-active project hubs', () => {
     projectHubState.hubs = [{ id: 'ph1', name: 'PH1' }, { id: 'ph2', name: 'PH2' }];
     projectHubState.activeHubId = 'ph1';
     const { result } = renderHook(() => useCommandSource());
     const ph2 = findItem(result.current, 'hub:project:ph2');
-    expect(ph2.detail).toBe('Test');
+    expect(ph2.detail).toBe('Hub · Test');
     projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
   });
 
-  it('labels app hubs with Home detail', () => {
+  it('labels app hubs with Hub · Home detail', () => {
     const { result } = renderHook(() => useCommandSource());
     const appHub2 = findItem(result.current, 'hub:app:ah2');
-    expect(appHub2.detail).toBe('Home');
+    expect(appHub2.detail).toBe('Hub · Home');
   });
 
   it('project hub execution switches to project, navigates to hub tab, and activates hub', () => {
@@ -307,11 +337,12 @@ describe('useCommandSource', () => {
     expect(mockSetAppActiveHub).toHaveBeenCalledWith('ah1');
   });
 
-  it('all hub items have # type indicator', () => {
+  it('all space items have # type indicator and Spaces category', () => {
     const { result } = renderHook(() => useCommandSource());
-    const hubItems = result.current.filter((i: any) => i.category === 'Hubs');
-    for (const hub of hubItems) {
-      expect(hub.typeIndicator).toBe('#');
+    const spaceItems = result.current.filter((i: any) => i.category === 'Spaces');
+    expect(spaceItems.length).toBeGreaterThan(0);
+    for (const item of spaceItems) {
+      expect(item.typeIndicator).toBe('#');
     }
   });
 
@@ -335,8 +366,8 @@ describe('useCommandSource', () => {
     const oh1 = findItem(result.current, 'hub:project:p2:oh1');
     const oh2 = findItem(result.current, 'hub:project:p2:oh2');
     expect(oh1.label).toBe('OtherHub1');
-    expect(oh1.detail).toBe('Other');
-    expect(oh1.category).toBe('Hubs');
+    expect(oh1.detail).toBe('Hub · Other');
+    expect(oh1.category).toBe('Spaces');
     expect(oh1.typeIndicator).toBe('#');
     expect(oh2).toBeDefined();
     expect(oh2.label).toBe('OtherHub2');
@@ -406,5 +437,115 @@ describe('useCommandSource', () => {
     // Active project hubs and app hubs should still be present
     expect(findItem(result.current, 'hub:project:ph1')).toBeDefined();
     expect(findItem(result.current, 'hub:app:ah1')).toBeDefined();
+  });
+
+  // ── Canvas resolution tests ─────────────────────────────────────────
+
+  it('includes project canvases and app canvases as Spaces items', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectCanvas = findItem(result.current, 'canvas:project:pc1');
+    const appCanvas = findItem(result.current, 'canvas:app:ac1');
+    expect(projectCanvas).toBeDefined();
+    expect(projectCanvas.label).toBe('ProjectCanvas1');
+    expect(projectCanvas.category).toBe('Spaces');
+    expect(projectCanvas.typeIndicator).toBe('#');
+    expect(appCanvas).toBeDefined();
+    expect(appCanvas.label).toBe('AppCanvas1');
+    expect(appCanvas.category).toBe('Spaces');
+  });
+
+  it('marks the active project canvas with Canvas · Active detail', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectCanvas = findItem(result.current, 'canvas:project:pc1');
+    expect(projectCanvas.detail).toBe('Canvas · Active');
+  });
+
+  it('labels app canvases with Canvas · Home detail', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const appCanvas = findItem(result.current, 'canvas:app:ac1');
+    expect(appCanvas.detail).toBe('Canvas · Home');
+  });
+
+  it('project canvas execution switches to project, navigates to canvas tab, and activates canvas', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const projectCanvas = findItem(result.current, 'canvas:project:pc1');
+    projectCanvas.execute();
+    expect(mockSetActiveProject).toHaveBeenCalledWith('p1');
+    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:canvas', 'p1');
+    expect(mockSetProjectActiveCanvas).toHaveBeenCalledWith('pc1');
+  });
+
+  it('app canvas execution switches to home, navigates to canvas tab, and activates canvas', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const appCanvas = findItem(result.current, 'canvas:app:ac1');
+    appCanvas.execute();
+    expect(mockSetActiveProject).toHaveBeenCalledWith(null);
+    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:canvas');
+    expect(mockSetAppActiveCanvas).toHaveBeenCalledWith('ac1');
+  });
+
+  it('loads canvases from non-active projects via storage', async () => {
+    mockStorageRead.mockImplementation(async (req: any) => {
+      if (req.projectPath === '/other' && req.key === 'canvas-instances') {
+        return [{ id: 'oc1', name: 'OtherCanvas1' }];
+      }
+      return null;
+    });
+
+    const { result } = renderHook(() => useCommandSource());
+
+    await waitFor(() => {
+      const oc1 = findItem(result.current, 'canvas:project:p2:oc1');
+      expect(oc1).toBeDefined();
+    });
+
+    const oc1 = findItem(result.current, 'canvas:project:p2:oc1');
+    expect(oc1.label).toBe('OtherCanvas1');
+    expect(oc1.detail).toBe('Canvas · Other');
+    expect(oc1.category).toBe('Spaces');
+    expect(oc1.typeIndicator).toBe('#');
+  });
+
+  it('cross-project canvas execution pre-writes active canvas to storage then switches', async () => {
+    mockStorageRead.mockImplementation(async (req: any) => {
+      if (req.projectPath === '/other' && req.key === 'canvas-instances') {
+        return [{ id: 'oc1', name: 'OtherCanvas1' }];
+      }
+      return null;
+    });
+
+    const { result } = renderHook(() => useCommandSource());
+
+    await waitFor(() => {
+      expect(findItem(result.current, 'canvas:project:p2:oc1')).toBeDefined();
+    });
+
+    const oc1 = findItem(result.current, 'canvas:project:p2:oc1');
+    await act(async () => {
+      await oc1.execute();
+    });
+
+    expect(mockStorageWrite).toHaveBeenCalledWith({
+      pluginId: 'canvas',
+      scope: 'project-local',
+      key: 'canvas-active-id',
+      value: 'oc1',
+      projectPath: '/other',
+    });
+    expect(mockSetActiveProject).toHaveBeenCalledWith('p2');
+    expect(mockSetExplorerTab).toHaveBeenCalledWith('plugin:canvas', 'p2');
+  });
+
+  it('hub items show Hub prefix and canvas items show Canvas prefix in detail', () => {
+    const { result } = renderHook(() => useCommandSource());
+    const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
+    const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
+
+    for (const hub of hubItems) {
+      expect(hub.detail).toMatch(/^Hub/);
+    }
+    for (const canvas of canvasItems) {
+      expect(canvas.detail).toMatch(/^Canvas/);
+    }
   });
 });

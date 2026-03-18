@@ -29,7 +29,7 @@ export function CommandPalette() {
     if (mode === 'commands') return allCommands.filter((c) => c.category === 'Actions' || c.category === 'Settings' || c.category === 'Navigation');
     if (mode === 'agents') return allCommands.filter((c) => c.category === 'Agents');
     if (mode === 'projects') return allCommands.filter((c) => c.category === 'Projects');
-    if (mode === 'hubs') return allCommands.filter((c) => c.category === 'Hubs');
+    if (mode === 'spaces') return allCommands.filter((c) => c.category === 'Spaces');
     return allCommands;
   }, [allCommands, mode]);
 
