@@ -3,6 +3,7 @@ import type { GitDiffCanvasView as GitDiffCanvasViewType, CanvasView } from './c
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { GitInfo } from '../../../../shared/types';
 import { MonacoDiffEditor } from './MonacoDiffEditor';
+import { MenuPortal } from './MenuPortal';
 
 /** How often to poll git status (ms). */
 export const GIT_POLL_INTERVAL_MS = 3000;
@@ -495,74 +496,78 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
         </div>
       </div>
 
-      {/* Right-click context menu */}
+      {/* Right-click context menu — rendered in a portal to escape CSS transform containing blocks */}
       {contextMenu && !confirmRevert && (
-        <div
-          className="fixed z-50 bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-lg py-1 min-w-[140px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-          data-testid="git-diff-context-menu"
-        >
-          {contextMenu.staged ? (
-            <button
-              className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
-              onClick={() => handleUnstageFile(contextMenu.filePath)}
-              data-testid="git-diff-unstage"
-            >
-              Unstage
-            </button>
-          ) : (
-            <button
-              className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
-              onClick={() => handleStageFile(contextMenu.filePath)}
-              data-testid="git-diff-stage"
-            >
-              Stage
-            </button>
-          )}
-          <button
-            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-ctp-surface1 transition-colors"
-            onClick={() => setConfirmRevert(contextMenu.filePath)}
-            data-testid="git-diff-revert"
+        <MenuPortal>
+          <div
+            className="fixed z-[9999] bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-lg py-1 min-w-[140px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+            data-testid="git-diff-context-menu"
           >
-            Revert Changes
-          </button>
-        </div>
+            {contextMenu.staged ? (
+              <button
+                className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
+                onClick={() => handleUnstageFile(contextMenu.filePath)}
+                data-testid="git-diff-unstage"
+              >
+                Unstage
+              </button>
+            ) : (
+              <button
+                className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
+                onClick={() => handleStageFile(contextMenu.filePath)}
+                data-testid="git-diff-stage"
+              >
+                Stage
+              </button>
+            )}
+            <button
+              className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-ctp-surface1 transition-colors"
+              onClick={() => setConfirmRevert(contextMenu.filePath)}
+              data-testid="git-diff-revert"
+            >
+              Revert Changes
+            </button>
+          </div>
+        </MenuPortal>
       )}
 
-      {/* Revert confirmation dialog */}
+      {/* Revert confirmation dialog — also in a portal for the same reason */}
       {confirmRevert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setConfirmRevert(null); setContextMenu(null); }}>
-          <div
-            className="bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-xl p-4 max-w-[320px]"
-            onClick={(e) => e.stopPropagation()}
-            data-testid="git-diff-revert-confirm"
-          >
-            <div className="text-sm text-ctp-text font-medium mb-2">Revert changes?</div>
-            <div className="text-xs text-ctp-subtext0 mb-4">
-              This will discard all changes to <span className="font-mono text-ctp-peach">{confirmRevert.split('/').pop()}</span>. This action cannot be undone.
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                className="text-[11px] px-3 py-1 rounded bg-ctp-surface1 text-ctp-subtext0 hover:bg-ctp-surface2 transition-colors"
-                onClick={() => { setConfirmRevert(null); setContextMenu(null); }}
-                data-testid="git-diff-revert-cancel"
-              >
-                Cancel
-              </button>
-              <button
-                className="text-[11px] px-3 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-                onClick={() => {
-                  const isUntracked = contextMenu?.status.trim() === '??' || contextMenu?.status.trim() === '?';
-                  handleRevertFile(confirmRevert, isUntracked);
-                }}
-                data-testid="git-diff-revert-confirm-btn"
-              >
-                Revert
-              </button>
+        <MenuPortal>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40" onClick={() => { setConfirmRevert(null); setContextMenu(null); }}>
+            <div
+              className="bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-xl p-4 max-w-[320px]"
+              onClick={(e) => e.stopPropagation()}
+              data-testid="git-diff-revert-confirm"
+            >
+              <div className="text-sm text-ctp-text font-medium mb-2">Revert changes?</div>
+              <div className="text-xs text-ctp-subtext0 mb-4">
+                This will discard all changes to <span className="font-mono text-ctp-peach">{confirmRevert.split('/').pop()}</span>. This action cannot be undone.
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  className="text-[11px] px-3 py-1 rounded bg-ctp-surface1 text-ctp-subtext0 hover:bg-ctp-surface2 transition-colors"
+                  onClick={() => { setConfirmRevert(null); setContextMenu(null); }}
+                  data-testid="git-diff-revert-cancel"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="text-[11px] px-3 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                  onClick={() => {
+                    const isUntracked = contextMenu?.status.trim() === '??' || contextMenu?.status.trim() === '?';
+                    handleRevertFile(confirmRevert, isUntracked);
+                  }}
+                  data-testid="git-diff-revert-confirm-btn"
+                >
+                  Revert
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </MenuPortal>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas } from './canvas-operations';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
@@ -118,10 +118,9 @@ export function CanvasWorkspace({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const canvasX = (e.clientX - rect.left) / viewport.zoom - viewport.panX;
-    const canvasY = (e.clientY - rect.top) / viewport.zoom - viewport.panY;
+    const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
 
-    setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
+    setContextMenu({ x: e.clientX, y: e.clientY, canvasX: canvasPos.x, canvasY: canvasPos.y });
   }, [viewport]);
 
   const handleContextMenuAction = useCallback((selection: ContextMenuSelection) => {

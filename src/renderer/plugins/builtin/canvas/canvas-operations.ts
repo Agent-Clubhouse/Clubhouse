@@ -357,6 +357,42 @@ export function reflowViews(
   });
 }
 
+// ── Coordinate conversion ────────────────────────────────────────────
+
+/**
+ * Convert screen (viewport) coordinates to canvas-space coordinates.
+ * The canvas transform is: scale(zoom) translate(panX, panY) with transformOrigin 0 0.
+ * Visual position of canvas point (cx,cy) = ((cx + panX) * zoom, (cy + panY) * zoom).
+ * Inverse: cx = (screenX - containerLeft) / zoom - panX
+ */
+export function screenToCanvas(
+  clientX: number,
+  clientY: number,
+  containerRect: { left: number; top: number },
+  viewport: Viewport,
+): Position {
+  return {
+    x: (clientX - containerRect.left) / viewport.zoom - viewport.panX,
+    y: (clientY - containerRect.top) / viewport.zoom - viewport.panY,
+  };
+}
+
+/**
+ * Convert canvas-space coordinates to screen (viewport) coordinates.
+ * Inverse of screenToCanvas.
+ */
+export function canvasToScreen(
+  canvasX: number,
+  canvasY: number,
+  containerRect: { left: number; top: number },
+  viewport: Viewport,
+): { x: number; y: number } {
+  return {
+    x: (canvasX + viewport.panX) * viewport.zoom + containerRect.left,
+    y: (canvasY + viewport.panY) * viewport.zoom + containerRect.top,
+  };
+}
+
 // ── Canvas instance helpers ──────────────────────────────────────────
 
 export interface CanvasCounter {
