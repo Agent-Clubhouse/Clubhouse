@@ -378,17 +378,19 @@ describe('initAppEventBridge', () => {
 
     it('falls back to document.execCommand when Monaco does not have focus', async () => {
       mockHandleMonacoEditCommand.mockReturnValue(false);
-      const execCommand = vi.spyOn(document, 'execCommand').mockReturnValue(true);
+      // jsdom doesn't define execCommand, so define it on the stub
+      const execCommand = vi.fn(() => true);
+      (document as any).execCommand = execCommand;
       editCommandHandler('copy');
       await vi.dynamicImportSettled();
       expect(execCommand).toHaveBeenCalledWith('copy');
-      execCommand.mockRestore();
+      delete (document as any).execCommand;
     });
 
     it('scopes selectAll to markdown preview container when present', async () => {
       mockHandleMonacoEditCommand.mockReturnValue(false);
 
-      // Create a mock .help-content element
+      // Create a mock .help-content element in the stub document
       const preview = document.createElement('div');
       preview.className = 'help-content';
       preview.textContent = 'Hello markdown world';
@@ -398,7 +400,7 @@ describe('initAppEventBridge', () => {
         removeAllRanges: vi.fn(),
         addRange: vi.fn(),
       };
-      vi.spyOn(window, 'getSelection').mockReturnValue(mockSelection as unknown as Selection);
+      (window as any).getSelection = vi.fn(() => mockSelection);
 
       editCommandHandler('selectAll');
       await vi.dynamicImportSettled();
@@ -407,7 +409,7 @@ describe('initAppEventBridge', () => {
       expect(mockSelection.addRange).toHaveBeenCalled();
 
       document.body.removeChild(preview);
-      vi.restoreAllMocks();
+      delete (window as any).getSelection;
     });
   });
 });
