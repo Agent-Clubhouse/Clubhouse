@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName } from './state';
-import type { LoungeCategory } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, isDefaultCircle, isReservedCircleName, getPersistedState } from './state';
+import type { LoungeCategory, LoungePersistedState } from './state';
 
 const useLoungeStore = createLoungeStore();
+
+const STORAGE_KEY = 'lounge-state';
 
 export function activate(ctx: PluginContext, _api: PluginAPI): void {
   // No commands to register yet — reserved for future keybindings
@@ -281,7 +283,55 @@ const CHEVRON_DOWN = React.createElement('svg', {
   stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round',
 }, React.createElement('polyline', { points: '6 9 12 15 18 9' }));
 
-function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle, onReorderCategory }: {
+// ── Emoji Picker ──────────────────────────────────────────────────────
+
+const EMOJI_OPTIONS = [
+  '⭐', '💬', '🔥', '🚀', '💡', '🎯', '🏠', '📁',
+  '🛠️', '🧪', '📋', '🎨', '🔒', '🌐', '📊', '🤖',
+  '💎', '🎵', '📸', '🏆', '❤️', '⚡', '🌟', '🎮',
+];
+
+function EmojiPicker({ currentEmoji, onSelect, onClose }: {
+  currentEmoji: string;
+  onSelect: (emoji: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [onClose]);
+
+  return React.createElement('div', {
+    ref,
+    className: 'ml-8 mr-3 mb-1 p-2 rounded-lg bg-ctp-mantle border border-surface-1 shadow-lg grid grid-cols-8 gap-1',
+    'data-testid': 'lounge-emoji-picker',
+  },
+    ...EMOJI_OPTIONS.map((emoji) =>
+      React.createElement('button', {
+        key: emoji,
+        onClick: () => onSelect(emoji),
+        className: `w-7 h-7 flex items-center justify-center rounded text-sm cursor-pointer transition-colors ${
+          emoji === currentEmoji ? 'bg-surface-1 ring-1 ring-ctp-accent' : 'hover:bg-surface-0'
+        }`,
+        'data-testid': `lounge-emoji-option-${emoji}`,
+      }, emoji),
+    ),
+  );
+}
+
+function CategorySection({ category, agents, allAgents, allCategories, projects, isCollapsed, selectedAgentId, onToggle, onSelectAgent, onRename, onMoveAgent, onCreateCircle, onReorderCategory, onSetEmoji }: {
   category: LoungeCategory;
   agents: AgentInfo[];
   allAgents: AgentInfo[];
@@ -295,10 +345,12 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
   onMoveAgent: (agentId: string, targetCategoryId: string) => void;
   onCreateCircle: () => void;
   onReorderCategory: (fromId: string, toId: string) => void;
+  onSetEmoji: (categoryId: string, emoji: string) => void;
 }) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(category.label);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [agentContextMenu, setAgentContextMenu] = useState<{ agentId: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -392,6 +444,15 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
       'data-testid': `lounge-category-toggle-${category.id}`,
     },
       isCollapsed ? CHEVRON_RIGHT : CHEVRON_DOWN,
+      // Emoji — clickable to open picker during rename, otherwise decorative
+      renaming
+        ? React.createElement('button', {
+            onClick: (e: React.MouseEvent) => { e.stopPropagation(); setEmojiPickerOpen(!emojiPickerOpen); },
+            className: 'text-sm flex-shrink-0 hover:bg-surface-1 rounded px-0.5 cursor-pointer',
+            title: 'Change icon',
+            'data-testid': `lounge-category-emoji-btn-${category.id}`,
+          }, category.emoji || '📁')
+        : React.createElement('span', { className: 'text-sm flex-shrink-0' }, category.emoji || '📁'),
       renaming
         ? React.createElement('input', {
             ref: inputRef,
@@ -410,6 +471,12 @@ function CategorySection({ category, agents, allAgents, allCategories, projects,
         : React.createElement('span', { className: 'flex-1 text-left truncate' }, category.label),
       React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 tabular-nums' }, String(agents.length)),
     ),
+    // Emoji picker (shown during rename)
+    renaming && emojiPickerOpen && React.createElement(EmojiPicker, {
+      currentEmoji: category.emoji || '📁',
+      onSelect: (emoji: string) => { onSetEmoji(category.id, emoji); setEmojiPickerOpen(false); },
+      onClose: () => setEmojiPickerOpen(false),
+    }),
     // Context menu
     contextMenu && React.createElement(CategoryContextMenu, {
       position: contextMenu,
@@ -509,6 +576,35 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const agentCategoryOverrides = useLoungeStore((s) => s.agentCategoryOverrides);
   const addCircle = useLoungeStore((s) => s.addCircle);
   const reorderCategory = useLoungeStore((s) => s.reorderCategory);
+  const setCategoryEmoji = useLoungeStore((s) => s.setCategoryEmoji);
+  const loadPersistedState = useLoungeStore((s) => s.loadPersistedState);
+
+  // Load persisted state on mount
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api.storage.global.read(STORAGE_KEY).then((data) => {
+      if (data) loadPersistedState(data as LoungePersistedState);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, [api, loadPersistedState]);
+
+  // Debounced auto-save (500ms after any persistable state change)
+  const renamedLabels = useLoungeStore((s) => s.renamedLabels);
+  const customCircles = useLoungeStore((s) => s.customCircles);
+  const nextCircleId = useLoungeStore((s) => s.nextCircleId);
+  const categoryOrder = useLoungeStore((s) => s.categoryOrder);
+  const categoryEmojis = useLoungeStore((s) => s.categoryEmojis);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const state = useLoungeStore.getState();
+      api.storage.global.write(STORAGE_KEY, getPersistedState(state)).catch(() => {});
+    }, 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [api, loaded, renamedLabels, agentCategoryOverrides, customCircles, nextCircleId, categoryOrder, categoryEmojis, collapsed]);
 
   // Force re-render when agents change
   const [agentTick, setAgentTick] = useState(0);
@@ -604,6 +700,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
                 onMoveAgent: moveAgent,
                 onCreateCircle: handleCreateCircle,
                 onReorderCategory: reorderCategory,
+                onSetEmoji: setCategoryEmoji,
               });
             })
           : React.createElement(EmptyState),

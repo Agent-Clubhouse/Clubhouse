@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, DEFAULT_CIRCLE_ID, DEFAULT_CIRCLE_LABEL, isReservedCircleName, isDefaultCircle } from './state';
-import type { LoungeCategory } from './state';
+import { createLoungeStore, groupAgentsByCategory, disambiguateAgentName, DEFAULT_CIRCLE_ID, DEFAULT_CIRCLE_LABEL, isReservedCircleName, isDefaultCircle, getPersistedState } from './state';
+import type { LoungeCategory, LoungePersistedState } from './state';
 import type { AgentInfo, ProjectInfo } from '../../../../shared/plugin-types';
 
 function makeAgent(overrides: Partial<AgentInfo> & { id: string; projectId: string }): AgentInfo {
@@ -26,7 +26,7 @@ describe('createLoungeStore', () => {
     const store = createLoungeStore();
     const state = store.getState();
     expect(state.categories).toHaveLength(1);
-    expect(state.categories[0]).toEqual({ id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL });
+    expect(state.categories[0]).toEqual({ id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL, emoji: '💬' });
     expect(state.collapsed.size).toBe(0);
     expect(state.selectedAgentId).toBeNull();
     expect(state.selectedProjectId).toBeNull();
@@ -41,9 +41,9 @@ describe('createLoungeStore', () => {
       ]);
       const { categories } = store.getState();
       expect(categories).toHaveLength(3);
-      expect(categories[0]).toEqual({ id: 'project:proj-1', label: 'Project One', projectId: 'proj-1' });
-      expect(categories[1]).toEqual({ id: 'project:proj-2', label: 'Project Two', projectId: 'proj-2' });
-      expect(categories[2]).toEqual({ id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL });
+      expect(categories[0]).toEqual({ id: 'project:proj-1', label: 'Project One', emoji: '📁', projectId: 'proj-1' });
+      expect(categories[1]).toEqual({ id: 'project:proj-2', label: 'Project Two', emoji: '📁', projectId: 'proj-2' });
+      expect(categories[2]).toEqual({ id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL, emoji: '💬' });
     });
 
     it('preserves collapsed state for surviving categories', () => {
@@ -354,7 +354,7 @@ describe('addCircle', () => {
     const id = store.getState().addCircle('My Circle');
     expect(id).toBe('circle:1');
     expect(store.getState().customCircles).toHaveLength(1);
-    expect(store.getState().customCircles[0]).toEqual({ id: 'circle:1', label: 'My Circle' });
+    expect(store.getState().customCircles[0]).toEqual({ id: 'circle:1', label: 'My Circle', emoji: '⭐' });
   });
 
   it('inserts custom circle before General in categories', () => {
@@ -473,5 +473,92 @@ describe('reorderCategory', () => {
     ]);
     const ids = store.getState().categories.map((c) => c.id);
     expect(ids).toEqual(['project:p2', 'project:p1', DEFAULT_CIRCLE_ID]);
+  });
+});
+
+describe('setCategoryEmoji', () => {
+  it('changes emoji on a project circle', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    store.getState().setCategoryEmoji('project:p1', '🔥');
+    expect(store.getState().categories[0].emoji).toBe('🔥');
+  });
+
+  it('changes emoji on the General circle', () => {
+    const store = createLoungeStore();
+    store.getState().setCategoryEmoji(DEFAULT_CIRCLE_ID, '🏠');
+    expect(store.getState().categories.find((c) => c.id === DEFAULT_CIRCLE_ID)!.emoji).toBe('🏠');
+  });
+
+  it('changes emoji on a custom circle', () => {
+    const store = createLoungeStore();
+    const id = store.getState().addCircle('VIPs');
+    store.getState().setCategoryEmoji(id, '💎');
+    expect(store.getState().categories.find((c) => c.id === id)!.emoji).toBe('💎');
+    expect(store.getState().customCircles.find((c) => c.id === id)!.emoji).toBe('💎');
+  });
+
+  it('persists emoji across deriveCategories', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    store.getState().setCategoryEmoji('project:p1', '🚀');
+
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    expect(store.getState().categories[0].emoji).toBe('🚀');
+  });
+
+  it('stores emoji in categoryEmojis', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    store.getState().setCategoryEmoji('project:p1', '🎯');
+    expect(store.getState().categoryEmojis['project:p1']).toBe('🎯');
+  });
+});
+
+describe('persistence (getPersistedState / loadPersistedState)', () => {
+  it('round-trips state through persist/load', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1', name: 'P1' })]);
+    store.getState().addCircle('Favorites');
+    store.getState().renameCategory('project:p1', 'My Proj');
+    store.getState().moveAgent('a1', 'circle:1');
+    store.getState().setCategoryEmoji('project:p1', '🚀');
+    store.getState().toggleCollapsed('project:p1');
+
+    const snapshot = getPersistedState(store.getState());
+
+    // Create a fresh store and load the snapshot
+    const store2 = createLoungeStore();
+    store2.getState().loadPersistedState(snapshot);
+
+    const s2 = store2.getState();
+    expect(s2.renamedLabels['project:p1']).toBe('My Proj');
+    expect(s2.agentCategoryOverrides['a1']).toBe('circle:1');
+    expect(s2.customCircles).toHaveLength(1);
+    expect(s2.customCircles[0].label).toBe('Favorites');
+    expect(s2.nextCircleId).toBe(2);
+    expect(s2.categoryEmojis['project:p1']).toBe('🚀');
+    expect(s2.collapsed.has('project:p1')).toBe(true);
+  });
+
+  it('getPersistedState serializes collapsed as array', () => {
+    const store = createLoungeStore();
+    store.getState().deriveCategories([makeProject({ id: 'p1' })]);
+    store.getState().toggleCollapsed('project:p1');
+
+    const snapshot = getPersistedState(store.getState());
+    expect(Array.isArray(snapshot.collapsed)).toBe(true);
+    expect(snapshot.collapsed).toContain('project:p1');
+  });
+
+  it('loadPersistedState handles missing fields gracefully', () => {
+    const store = createLoungeStore();
+    store.getState().loadPersistedState({} as LoungePersistedState);
+
+    const s = store.getState();
+    expect(s.renamedLabels).toEqual({});
+    expect(s.customCircles).toEqual([]);
+    expect(s.categoryOrder).toEqual([]);
+    expect(s.collapsed.size).toBe(0);
   });
 });

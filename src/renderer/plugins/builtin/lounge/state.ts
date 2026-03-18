@@ -6,6 +6,9 @@ import type { AgentInfo, ProjectInfo } from '../../../../shared/plugin-types';
 /** The permanent catch-all circle ID. Cannot be renamed or deleted. */
 export const DEFAULT_CIRCLE_ID = 'circle:general';
 export const DEFAULT_CIRCLE_LABEL = 'General';
+export const DEFAULT_CIRCLE_EMOJI = '💬';
+export const DEFAULT_PROJECT_EMOJI = '📁';
+export const DEFAULT_CUSTOM_EMOJI = '⭐';
 
 /** Reserved circle names (case-insensitive). */
 const RESERVED_NAMES = new Set(['general']);
@@ -25,6 +28,8 @@ export function isDefaultCircle(categoryId: string): boolean {
 export interface LoungeCategory {
   id: string;
   label: string;
+  /** Emoji icon displayed before the label. */
+  emoji?: string;
   /** When derived from a project, holds the project ID. Absent for custom circles. */
   projectId?: string;
 }
@@ -47,6 +52,8 @@ export interface LoungeState {
   nextCircleId: number;
   /** User-defined category ordering (persisted across derive calls). */
   categoryOrder: string[];
+  /** User-defined emoji overrides keyed by category ID. */
+  categoryEmojis: Record<string, string>;
 
   // Actions
   deriveCategories(projects: ProjectInfo[]): void;
@@ -56,6 +63,33 @@ export interface LoungeState {
   moveAgent(agentId: string, targetCategoryId: string): void;
   addCircle(label: string): string;
   reorderCategory(fromId: string, toId: string): void;
+  setCategoryEmoji(categoryId: string, emoji: string): void;
+  /** Hydrate store from persisted data. */
+  loadPersistedState(data: LoungePersistedState): void;
+}
+
+/** Subset of LoungeState that is persisted to storage. */
+export interface LoungePersistedState {
+  renamedLabels: Record<string, string>;
+  agentCategoryOverrides: Record<string, string>;
+  customCircles: LoungeCategory[];
+  nextCircleId: number;
+  categoryOrder: string[];
+  categoryEmojis: Record<string, string>;
+  collapsed: string[];
+}
+
+/** Extract the persistable subset from the store. */
+export function getPersistedState(state: LoungeState): LoungePersistedState {
+  return {
+    renamedLabels: state.renamedLabels,
+    agentCategoryOverrides: state.agentCategoryOverrides,
+    customCircles: state.customCircles,
+    nextCircleId: state.nextCircleId,
+    categoryOrder: state.categoryOrder,
+    categoryEmojis: state.categoryEmojis,
+    collapsed: Array.from(state.collapsed),
+  };
 }
 
 /**
@@ -118,7 +152,7 @@ export function disambiguateAgentName(
 
 // ── Default circle (always present) ──────────────────────────────────────
 
-const GENERAL_CIRCLE: LoungeCategory = { id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL };
+const GENERAL_CIRCLE: LoungeCategory = { id: DEFAULT_CIRCLE_ID, label: DEFAULT_CIRCLE_LABEL, emoji: DEFAULT_CIRCLE_EMOJI };
 
 /**
  * Apply user-defined order to categories. Categories not in the order list
@@ -168,17 +202,31 @@ export const createLoungeStore = () =>
     customCircles: [],
     nextCircleId: 1,
     categoryOrder: [],
+    categoryEmojis: {},
 
     deriveCategories(projects: ProjectInfo[]) {
       set((state) => {
         const projectCategories: LoungeCategory[] = projects.map((p) => ({
           id: `project:${p.id}`,
           label: state.renamedLabels[`project:${p.id}`] ?? p.name,
+          emoji: state.categoryEmojis[`project:${p.id}`] ?? DEFAULT_PROJECT_EMOJI,
           projectId: p.id,
         }));
 
+        // Apply emoji overrides to custom circles
+        const customWithEmojis = state.customCircles.map((c) => ({
+          ...c,
+          emoji: state.categoryEmojis[c.id] ?? c.emoji,
+        }));
+
+        // Apply emoji override to General
+        const general: LoungeCategory = {
+          ...GENERAL_CIRCLE,
+          emoji: state.categoryEmojis[DEFAULT_CIRCLE_ID] ?? GENERAL_CIRCLE.emoji,
+        };
+
         // Merge all categories, then apply saved order
-        const unordered = [...projectCategories, ...state.customCircles, GENERAL_CIRCLE];
+        const unordered = [...projectCategories, ...customWithEmojis, general];
         const newCategories = applyCategoryOrder(unordered, state.categoryOrder);
 
         // Preserve collapsed state for categories that still exist
@@ -241,7 +289,7 @@ export const createLoungeStore = () =>
       set((state) => {
         const id = `circle:${state.nextCircleId}`;
         newId = id;
-        const circle: LoungeCategory = { id, label };
+        const circle: LoungeCategory = { id, label, emoji: DEFAULT_CUSTOM_EMOJI };
         const newCustomCircles = [...state.customCircles, circle];
         // Insert before General (General is always last)
         const cats = state.categories.filter((c) => c.id !== DEFAULT_CIRCLE_ID);
@@ -274,6 +322,31 @@ export const createLoungeStore = () =>
           categories: reordered,
           categoryOrder: reordered.map((c) => c.id),
         };
+      });
+    },
+
+    setCategoryEmoji(categoryId: string, emoji: string) {
+      set((state) => {
+        const newEmojis = { ...state.categoryEmojis, [categoryId]: emoji };
+        const newCategories = state.categories.map((c) =>
+          c.id === categoryId ? { ...c, emoji } : c,
+        );
+        const newCustomCircles = state.customCircles.map((c) =>
+          c.id === categoryId ? { ...c, emoji } : c,
+        );
+        return { categoryEmojis: newEmojis, categories: newCategories, customCircles: newCustomCircles };
+      });
+    },
+
+    loadPersistedState(data: LoungePersistedState) {
+      set({
+        renamedLabels: data.renamedLabels ?? {},
+        agentCategoryOverrides: data.agentCategoryOverrides ?? {},
+        customCircles: data.customCircles ?? [],
+        nextCircleId: data.nextCircleId ?? 1,
+        categoryOrder: data.categoryOrder ?? [],
+        categoryEmojis: data.categoryEmojis ?? {},
+        collapsed: new Set(data.collapsed ?? []),
       });
     },
   }));
