@@ -6,7 +6,7 @@ import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
-import type { PluginAPI, PluginAgentDetailedStatus, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
@@ -106,16 +106,6 @@ export function CanvasViewComponent({
     const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
     return () => sub.dispose();
   }, [api, view.type]);
-
-  const detailedStatus: PluginAgentDetailedStatus | null = useMemo(() => {
-    if (view.type !== 'agent') return null;
-    const agentId = (view as AgentCanvasViewType).agentId;
-    if (!agentId) return null;
-    return api.agents.getDetailedStatus(agentId);
-  }, [api, view, agentTick]);
-
-  const isPermission = detailedStatus?.state === 'needs_permission';
-  const isToolError = detailedStatus?.state === 'tool_error';
 
   // Agent info for identity chip
   const agentInfo = useMemo(() => {

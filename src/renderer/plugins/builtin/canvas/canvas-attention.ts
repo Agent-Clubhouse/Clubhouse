@@ -1,7 +1,7 @@
 // ── Canvas attention — compute which views need user attention ────────
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { CanvasView, CanvasViewAttention, CanvasViewAttentionLevel, Viewport, Position, Size } from './canvas-types';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import type { CanvasView, CanvasViewAttention, Viewport, Size } from './canvas-types';
 import type { PluginAPI, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 
 // ── Pure helpers (exported for tests) ────────────────────────────────
@@ -39,7 +39,7 @@ export interface OffScreenIndicator {
 export function viewToScreenRect(
   view: CanvasView,
   viewport: Viewport,
-  containerSize: Size,
+  _containerSize: Size,
 ): { left: number; top: number; right: number; bottom: number } {
   const left = (view.position.x + viewport.panX) * viewport.zoom;
   const top = (view.position.y + viewport.panY) * viewport.zoom;

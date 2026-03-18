@@ -19,7 +19,7 @@ interface CanvasControlsProps {
 export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView, attentionMap }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
-  const { count, currentIndex, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
+  const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { CanvasView, AgentCanvasView } from './canvas-types';
+import type { AgentCanvasView } from './canvas-types';
 import type { PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 import {
   agentAttention,
