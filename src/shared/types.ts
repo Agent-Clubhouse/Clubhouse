@@ -788,3 +788,25 @@ export interface HubStateSnapshot {
   zoomedPaneId: string | null;
 }
 
+// ── Canvas state sync (main window ↔ pop-out windows) ─────────────────
+
+export type CanvasMutation =
+  | { type: 'addView'; viewType: string; position: { x: number; y: number } }
+  | { type: 'addPluginView'; pluginId: string; qualifiedType: string; label: string; position: { x: number; y: number }; defaultSize?: { width: number; height: number } }
+  | { type: 'removeView'; viewId: string }
+  | { type: 'moveView'; viewId: string; position: { x: number; y: number } }
+  | { type: 'resizeView'; viewId: string; size: { width: number; height: number } }
+  | { type: 'focusView'; viewId: string }
+  | { type: 'updateView'; viewId: string; updates: Record<string, unknown> }
+  | { type: 'setViewport'; viewport: { panX: number; panY: number; zoom: number } }
+  | { type: 'zoomView'; viewId: string | null };
+
+export interface CanvasStateSnapshot {
+  canvasId: string;
+  name: string;
+  views: unknown[]; // CanvasView[] — kept as unknown to avoid circular dependency
+  viewport: { panX: number; panY: number; zoom: number };
+  nextZIndex: number;
+  zoomedViewId: string | null;
+}
+

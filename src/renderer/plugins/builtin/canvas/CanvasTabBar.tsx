@@ -8,6 +8,7 @@ interface CanvasTabBarProps {
   onAddCanvas: () => void;
   onRemoveCanvas: (canvasId: string) => void;
   onRenameCanvas: (canvasId: string, name: string) => void;
+  onPopOutCanvas?: (canvasId: string, canvasName: string) => void;
 }
 
 export function CanvasTabBar({
@@ -17,6 +18,7 @@ export function CanvasTabBar({
   onAddCanvas,
   onRemoveCanvas,
   onRenameCanvas,
+  onPopOutCanvas,
 }: CanvasTabBarProps) {
   return (
     <div
@@ -32,6 +34,7 @@ export function CanvasTabBar({
           onSelect={() => onSelectCanvas(canvas.id)}
           onRemove={() => onRemoveCanvas(canvas.id)}
           onRename={(name) => onRenameCanvas(canvas.id, name)}
+          onPopOut={onPopOutCanvas ? () => onPopOutCanvas(canvas.id, canvas.name) : undefined}
         />
       ))}
       <button
@@ -55,9 +58,10 @@ interface CanvasTabProps {
   onSelect: () => void;
   onRemove: () => void;
   onRename: (name: string) => void;
+  onPopOut?: () => void;
 }
 
-function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename }: CanvasTabProps) {
+function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename, onPopOut }: CanvasTabProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(canvas.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -121,15 +125,33 @@ function CanvasTab({ canvas, active, canClose, onSelect, onRemove, onRename }: C
         <span className="truncate">{canvas.name}</span>
       )}
 
-      {!editing && (active || hovered) && canClose && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 ml-0.5 flex-shrink-0"
-          title="Close canvas"
-          data-testid="canvas-tab-close"
-        >
-          &times;
-        </button>
+      {!editing && (active || hovered) && (
+        <div className="flex items-center gap-0.5 ml-0.5 flex-shrink-0">
+          {onPopOut && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onPopOut(); }}
+              className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-surface-2 hover:text-ctp-text"
+              title="Pop out canvas"
+              data-testid="canvas-tab-popout"
+            >
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 2 14 2 14 7" />
+                <line x1="14" y1="2" x2="7" y2="9" />
+                <path d="M12 9v5a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1h5" />
+              </svg>
+            </button>
+          )}
+          {canClose && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              className="w-4 h-4 flex items-center justify-center rounded text-[9px] text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400"
+              title="Close canvas"
+              data-testid="canvas-tab-close"
+            >
+              &times;
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

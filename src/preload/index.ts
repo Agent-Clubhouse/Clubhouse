@@ -765,24 +765,26 @@ const api = {
     },
   },
   window: {
-    createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; hubId?: string; projectId?: string; title?: string }) =>
+    createPopout: (params: { type: 'agent' | 'hub' | 'canvas'; agentId?: string; hubId?: string; canvasId?: string; projectId?: string; title?: string }) =>
       ipcRenderer.invoke(IPC.WINDOW.CREATE_POPOUT, params),
     closePopout: (windowId: number) =>
       ipcRenderer.invoke(IPC.WINDOW.CLOSE_POPOUT, windowId),
     listPopouts: () =>
       ipcRenderer.invoke(IPC.WINDOW.LIST_POPOUTS),
     isPopout: () => process.argv.some((a: string) => a.startsWith('--popout-type=')),
-    getPopoutParams: (): { type: string; agentId?: string; hubId?: string; projectId?: string } | null => {
+    getPopoutParams: (): { type: string; agentId?: string; hubId?: string; canvasId?: string; projectId?: string } | null => {
       const typeArg = process.argv.find((a: string) => a.startsWith('--popout-type='));
       if (!typeArg) return null;
       const type = typeArg.split('=')[1];
       const agentArg = process.argv.find((a: string) => a.startsWith('--popout-agent-id='));
       const hubArg = process.argv.find((a: string) => a.startsWith('--popout-hub-id='));
+      const canvasArg = process.argv.find((a: string) => a.startsWith('--popout-canvas-id='));
       const projectArg = process.argv.find((a: string) => a.startsWith('--popout-project-id='));
       return {
         type,
         agentId: agentArg?.split('=')[1],
         hubId: hubArg?.split('=')[1],
+        canvasId: canvasArg?.split('=')[1],
         projectId: projectArg?.split('=')[1],
       };
     },
@@ -871,6 +873,61 @@ const api = {
         callback(hubId, scope, mutation, projectId);
       ipcRenderer.on(IPC.WINDOW.REQUEST_HUB_MUTATION, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_HUB_MUTATION, listener); };
+    },
+
+    // Canvas state sync — leader/follower protocol
+    getCanvasState: (canvasId: string, scope: string, projectId?: string): Promise<{
+      canvasId: string;
+      name: string;
+      views: unknown[];
+      viewport: { panX: number; panY: number; zoom: number };
+      nextZIndex: number;
+      zoomedViewId: string | null;
+    } | null> =>
+      ipcRenderer.invoke(IPC.WINDOW.GET_CANVAS_STATE, canvasId, scope, projectId),
+    onRequestCanvasState: (callback: (requestId: string, canvasId: string, scope: string, projectId?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, requestId: string, canvasId: string, scope: string, projectId?: string) =>
+        callback(requestId, canvasId, scope, projectId);
+      ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_STATE, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_STATE, listener); };
+    },
+    respondCanvasState: (requestId: string, state: {
+      canvasId: string;
+      name: string;
+      views: unknown[];
+      viewport: { panX: number; panY: number; zoom: number };
+      nextZIndex: number;
+      zoomedViewId: string | null;
+    } | null) =>
+      ipcRenderer.send(IPC.WINDOW.CANVAS_STATE_RESPONSE, requestId, state),
+    onCanvasStateChanged: (callback: (state: {
+      canvasId: string;
+      name: string;
+      views: unknown[];
+      viewport: { panX: number; panY: number; zoom: number };
+      nextZIndex: number;
+      zoomedViewId: string | null;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      ipcRenderer.on(IPC.WINDOW.CANVAS_STATE_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.CANVAS_STATE_CHANGED, listener); };
+    },
+    broadcastCanvasState: (state: {
+      canvasId: string;
+      name: string;
+      views: unknown[];
+      viewport: { panX: number; panY: number; zoom: number };
+      nextZIndex: number;
+      zoomedViewId: string | null;
+    }) =>
+      ipcRenderer.send(IPC.WINDOW.CANVAS_STATE_CHANGED, state),
+    sendCanvasMutation: (canvasId: string, scope: string, mutation: unknown, projectId?: string) =>
+      ipcRenderer.send(IPC.WINDOW.CANVAS_MUTATION, canvasId, scope, mutation, projectId),
+    onCanvasMutation: (callback: (canvasId: string, scope: string, mutation: unknown, projectId?: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, canvasId: string, scope: string, mutation: unknown, projectId?: string) =>
+        callback(canvasId, scope, mutation, projectId);
+      ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener);
+      return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener); };
     },
   },
 };
