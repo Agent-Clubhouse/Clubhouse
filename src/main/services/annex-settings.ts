@@ -8,6 +8,7 @@ const store = createSettingsStore<AnnexSettings>('annex-settings.json', {
   alias: os.hostname(),
   icon: 'computer',
   color: 'indigo',
+  autoReconnect: true,
 });
 
 export const getSettings = store.get;

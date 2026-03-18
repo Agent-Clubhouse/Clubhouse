@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS: AnnexSettings = {
   alias: '',
   icon: 'computer',
   color: 'indigo',
+  autoReconnect: true,
 };
 
 const DEFAULT_STATUS: AnnexStatus = {

@@ -446,6 +446,8 @@ export interface AnnexSettings {
   icon: string;
   /** Color identifier from AGENT_COLORS palette (defaults to 'indigo') */
   color: string;
+  /** Whether to auto-reconnect to satellites after disconnection */
+  autoReconnect: boolean;
 }
 
 export interface AnnexStatus {

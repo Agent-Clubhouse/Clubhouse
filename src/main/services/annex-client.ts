@@ -74,7 +74,13 @@ interface SatelliteConnectionInternal {
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   bearerToken: string | null;
+  heartbeatInterval: ReturnType<typeof setInterval> | null;
+  pongTimeout: ReturnType<typeof setTimeout> | null;
 }
+
+// Heartbeat constants
+const HEARTBEAT_INTERVAL_MS = 30_000;  // 30s ping
+const PONG_TIMEOUT_MS = 10_000;        // 10s pong timeout → dead
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -215,6 +221,15 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
       setState(sat, 'connected');
       sat.reconnectAttempt = 0;
       annexPeers.updateLastSeen(sat.fingerprint);
+      startHeartbeat(sat);
+    });
+
+    ws.on('pong', () => {
+      // Clear the pong timeout — connection is alive
+      if (sat.pongTimeout) {
+        clearTimeout(sat.pongTimeout);
+        sat.pongTimeout = null;
+      }
     });
 
     ws.on('message', (data) => {
@@ -277,8 +292,52 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
   }
 }
 
+function startHeartbeat(sat: SatelliteConnectionInternal): void {
+  stopHeartbeat(sat);
+  sat.heartbeatInterval = setInterval(() => {
+    if (!sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
+      stopHeartbeat(sat);
+      return;
+    }
+    // Send ping
+    try {
+      sat.ws.ping();
+    } catch {
+      stopHeartbeat(sat);
+      return;
+    }
+    // Set pong timeout
+    sat.pongTimeout = setTimeout(() => {
+      appLog('core:annex-client', 'warn', 'Heartbeat pong timeout — closing connection', {
+        meta: { fingerprint: sat.fingerprint },
+      });
+      if (sat.ws) {
+        try { sat.ws.terminate(); } catch { /* ignore */ }
+        sat.ws = null;
+      }
+      setState(sat, 'disconnected', 'Heartbeat timeout');
+      scheduleReconnect(sat);
+    }, PONG_TIMEOUT_MS);
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat(sat: SatelliteConnectionInternal): void {
+  if (sat.heartbeatInterval) {
+    clearInterval(sat.heartbeatInterval);
+    sat.heartbeatInterval = null;
+  }
+  if (sat.pongTimeout) {
+    clearTimeout(sat.pongTimeout);
+    sat.pongTimeout = null;
+  }
+}
+
 function scheduleReconnect(sat: SatelliteConnectionInternal): void {
   if (sat.reconnectTimer) clearTimeout(sat.reconnectTimer);
+
+  // Check if auto-reconnect is enabled
+  const settings = annexSettings.getSettings();
+  if (!settings.autoReconnect) return;
 
   // Exponential backoff: 1s, 2s, 4s, 8s, 30s cap
   const delay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
@@ -292,6 +351,7 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
+  stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
     sat.reconnectTimer = null;
@@ -361,6 +421,8 @@ function startDiscovery(): void {
         reconnectTimer: null,
         reconnectAttempt: 0,
         bearerToken: null,
+        heartbeatInterval: null,
+        pongTimeout: null,
       };
 
       satellites.set(fingerprint, sat);
@@ -431,6 +493,8 @@ export function connect(fingerprint: string, bearerToken?: string): void {
       reconnectTimer: null,
       reconnectAttempt: 0,
       bearerToken: bearerToken || null,
+      heartbeatInterval: null,
+      pongTimeout: null,
     };
     satellites.set(fingerprint, sat);
   }
@@ -476,6 +540,20 @@ export function sendToSatellite(fingerprint: string, message: Record<string, unk
 export function scan(): void {
   stopDiscovery();
   startDiscovery();
+}
+
+/**
+ * Resume all disconnected satellites (e.g., after power resume).
+ */
+export function resumeAllConnections(): void {
+  for (const sat of satellites.values()) {
+    if (sat.state === 'disconnected' && sat.bearerToken) {
+      sat.reconnectAttempt = 0; // Reset backoff on resume
+      connectToSatellite(sat);
+    }
+  }
+  // Also restart discovery in case mDNS state was lost
+  scan();
 }
 
 export function startClient(): void {

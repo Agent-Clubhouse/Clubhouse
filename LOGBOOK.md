@@ -72,3 +72,14 @@
   - 64KB limit on pty:input data
   - Extended snapshot with protocolVersion: 2, agentsMeta
   - Added handleSpawnQuickAgentWs and handleWakeAgentWs for WS-based agent control
+
+### 2026-03-17 — #865: Reconnection & State Sync
+- Modified `src/main/services/annex-client.ts`:
+  - Added 30s ping/pong heartbeat with 10s pong timeout
+  - startHeartbeat/stopHeartbeat lifecycle management
+  - resumeAllConnections() for power resume
+  - scheduleReconnect checks autoReconnect setting
+- Modified `src/main/index.ts`: added powerMonitor.on('resume') listener
+- Modified `src/shared/types.ts`: added autoReconnect to AnnexSettings
+- Modified `src/main/services/annex-settings.ts`: autoReconnect default true
+- Modified `src/renderer/stores/annexStore.ts`: updated default settings

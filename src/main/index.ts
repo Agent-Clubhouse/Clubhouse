@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, powerMonitor } from 'electron';
 import { registerAllHandlers } from './ipc';
 import { killAll, startStaleSweep as startPtyStaleSweep, stopStaleSweep as stopPtyStaleSweep } from './services/pty-manager';
 import { cleanupWatchesForWindow, stopAllWatches } from './services/file-watch-service';
@@ -131,6 +131,14 @@ app.on('ready', () => {
 
   registerAllHandlers();
   buildMenu();
+
+  // Resume satellite connections when the machine wakes from sleep
+  powerMonitor.on('resume', () => {
+    try {
+      const annexClient = require('./services/annex-client');
+      annexClient.resumeAllConnections();
+    } catch { /* annex client may not be loaded */ }
+  });
 
   appLog('core:startup', 'info', `Clubhouse v${app.getVersion()} starting`, {
     meta: {
