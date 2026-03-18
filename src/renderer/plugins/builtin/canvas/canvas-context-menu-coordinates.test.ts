@@ -134,25 +134,24 @@ describe('Context menu coordinate correctness', () => {
       //
       // The fix (portal to document.body) ensures the menu is not inside
       // any transformed ancestor, so position: fixed works correctly.
-      const containerOffset = { left: 100, top: 80 };
-      const zoom = 0.5;
-      const panX = 200;
-      const panY = 100;
+      const rect = { left: 100, top: 80 };
+      const viewport = { panX: 200, panY: 100, zoom: 0.5 };
 
       const clientX = 350;
       const clientY = 250;
 
       // Without portal: the browser would offset by the transform container's
       // visual bounds, causing the menu to appear at the wrong position.
-      // The exact offset depends on the CSS transform math, but it would NOT
-      // be at (350, 250).
-
-      // With portal: menu renders at body level, so position: fixed uses
-      // viewport coordinates correctly.
+      // With portal: menu renders at body level, position: fixed works correctly.
       const portalMenuLeft = clientX;
       const portalMenuTop = clientY;
       expect(portalMenuLeft).toBe(350);
       expect(portalMenuTop).toBe(250);
+
+      // The canvas coordinates are still correctly calculated
+      const canvasPos = screenToCanvas(clientX, clientY, rect, viewport);
+      expect(canvasPos.x).toBe(300); // (350-100)/0.5 - 200 = 500 - 200 = 300
+      expect(canvasPos.y).toBe(240); // (250-80)/0.5 - 100 = 340 - 100 = 240
     });
   });
 });
