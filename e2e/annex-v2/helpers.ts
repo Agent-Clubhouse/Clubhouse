@@ -212,6 +212,61 @@ export function waitForMessage(
 }
 
 /**
+ * Collect pty:data messages until accumulated data contains the marker string.
+ * Returns the full accumulated output.
+ */
+export function collectPtyData(
+  ws: WebSocket,
+  marker: string,
+  timeout = 30_000,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let accumulated = '';
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for PTY marker "${marker}" in output (${timeout}ms). Got: ${accumulated.slice(-200)}`));
+    }, timeout);
+
+    function onMessage(data: WebSocket.Data) {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.type === 'pty:data' && typeof msg.payload?.data === 'string') {
+          accumulated += msg.payload.data;
+          if (accumulated.includes(marker)) {
+            cleanup();
+            resolve(accumulated);
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    function onError(err: Error) {
+      cleanup();
+      reject(err);
+    }
+
+    function onClose() {
+      cleanup();
+      reject(new Error(`WebSocket closed while waiting for PTY marker "${marker}"`));
+    }
+
+    function cleanup() {
+      clearTimeout(timer);
+      ws.removeListener('message', onMessage);
+      ws.removeListener('error', onError);
+      ws.removeListener('close', onClose);
+    }
+
+    ws.on('message', onMessage);
+    ws.on('error', onError);
+    ws.on('close', onClose);
+  });
+}
+
+/**
  * Wait for the WebSocket to reach the OPEN state.
  */
 export function waitForOpen(ws: WebSocket, timeout = 10_000): Promise<void> {
