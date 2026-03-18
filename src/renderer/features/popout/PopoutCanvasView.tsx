@@ -9,7 +9,7 @@
  *   the main window via IPC — no local state modification.
  * - Periodic reconciliation (every 30 seconds) catches any missed events.
  */
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { CanvasWorkspace } from '../../plugins/builtin/canvas/CanvasWorkspace';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from '../../plugins/builtin/canvas/canvas-types';
 import { clampViewport } from '../../plugins/builtin/canvas/canvas-operations';
@@ -103,10 +103,6 @@ function createPopoutApi(projectId?: string): PluginAPI {
       const active = state.projects.find((p) => p.id === state.activeProjectId);
       return active ? { id: active.id, name: active.name, path: active.path } : null;
     },
-    onChange(callback: () => void): Disposable {
-      const unsub = useProjectStore.subscribe(callback);
-      return { dispose: unsub };
-    },
   };
 
   const widgets = createWidgetsAPI();
@@ -126,15 +122,16 @@ function createPopoutApi(projectId?: string): PluginAPI {
     widgets,
     // Minimal stubs for APIs used by some canvas views
     project: {
-      readFile: () => Promise.resolve(null),
-      listFiles: () => Promise.resolve([]),
-      getProjectPath: () => null,
-      getProjectName: () => null,
+      readFile: (): Promise<string | null> => Promise.resolve(null),
+      listFiles: (): Promise<string[]> => Promise.resolve([]),
+      getProjectPath: (): string | null => null,
+      getProjectName: (): string | null => null,
     },
     settings: {
-      get: () => null,
-      set: () => {},
-      onChange: () => ({ dispose: () => {} }),
+      get: (_key: string): undefined => undefined,
+      getAll: (): Record<string, unknown> => ({}),
+      set: (_key: string, _value: unknown): void => {},
+      onChange: (_cb: (key: string, value: unknown) => void): Disposable => ({ dispose: () => {} }),
     },
   } as unknown as PluginAPI;
 }
