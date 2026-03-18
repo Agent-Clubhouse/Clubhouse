@@ -65,13 +65,25 @@ async function dismissNotifications() {
   }
 }
 
+/**
+ * Click an explorer tab by dispatching a JS click event directly.
+ * The project rail can overlay explorer tabs and intercept pointer events,
+ * so we bypass the Playwright pointer event system entirely.
+ */
+async function clickExplorerTab(testId: string) {
+  await window.waitForSelector(`[data-testid="${testId}"]`, { timeout: 10_000 });
+  await window.evaluate((tid) => {
+    const el = document.querySelector(`[data-testid="${tid}"]`) as HTMLElement;
+    if (el) el.click();
+  }, testId);
+  await window.waitForTimeout(500);
+}
+
 /** Navigate to the terminal tab and verify it's active. */
 async function navigateToTerminal() {
-  const terminalTab = window.locator('[data-testid="explorer-tab-plugin:terminal"]');
-  await terminalTab.scrollIntoViewIfNeeded();
-  await terminalTab.click({ force: true });
+  await clickExplorerTab('explorer-tab-plugin:terminal');
 
-  // Verify tab activation via title bar (proven pattern from other E2E tests)
+  // Verify tab activation via title bar
   await expect(window.locator('[data-testid="title-bar"]')).toContainText(
     'Terminal',
     { timeout: 10_000 },
@@ -94,8 +106,8 @@ test.beforeAll(async () => {
     { timeout: 5_000 },
   );
 
-  // Wait for plugins to fully load
-  await window.waitForTimeout(1_000);
+  // Wait for plugins and background git operations to settle
+  await window.waitForTimeout(2_000);
 
   // Dismiss notification banners that might block clicks
   await dismissNotifications();
@@ -318,9 +330,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(shellTerminal).toContainText(marker, { timeout: 10_000 });
 
     // Switch to agents tab
-    const agentsTab = window.locator('[data-testid="explorer-tab-agents"]');
-    await agentsTab.scrollIntoViewIfNeeded();
-    await agentsTab.click({ force: true });
+    await clickExplorerTab('explorer-tab-agents');
     await expect(window.locator('[data-testid="title-bar"]')).toContainText(
       'Agents',
       { timeout: 5_000 },
@@ -345,9 +355,7 @@ test.describe('Terminal Restart and Cleanup', () => {
     await expect(mainPanel).toBeVisible({ timeout: 10_000 });
 
     // Switch to agents tab
-    const agentsTab = window.locator('[data-testid="explorer-tab-agents"]');
-    await agentsTab.scrollIntoViewIfNeeded();
-    await agentsTab.click({ force: true });
+    await clickExplorerTab('explorer-tab-agents');
     await expect(window.locator('[data-testid="title-bar"]')).toContainText(
       'Agents',
       { timeout: 5_000 },

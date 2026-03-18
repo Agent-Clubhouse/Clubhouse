@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult } from '../../shared/types';
 import { appLog } from './log-service';
-import { pathExists } from './fs-utils';
 
 // Conflict status codes from git porcelain format
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
@@ -74,8 +73,22 @@ async function run(args: string[], cwd: string): Promise<string> {
   return result.ok ? result.message : '';
 }
 
+/**
+ * Check whether a directory is inside a git work tree.
+ * Uses `git rev-parse --is-inside-work-tree` which naturally walks up parent
+ * directories, so a project that is a subfolder of a repo is correctly detected.
+ */
+export async function isInsideGitRepo(dirPath: string): Promise<boolean> {
+  try {
+    const out = await gitExec(['rev-parse', '--is-inside-work-tree'], dirPath);
+    return out.trim() === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export async function getGitInfo(dirPath: string): Promise<GitInfo> {
-  const hasGit = await pathExists(path.join(dirPath, '.git'));
+  const hasGit = await isInsideGitRepo(dirPath);
   if (!hasGit) {
     return { branch: '', branches: [], status: [], log: [], hasGit: false, ahead: 0, behind: 0, remote: '', stashCount: 0, hasConflicts: false };
   }

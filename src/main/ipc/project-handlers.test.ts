@@ -38,6 +38,10 @@ vi.mock('../services/agent-config', () => ({
   ensureGitignore: vi.fn(),
 }));
 
+vi.mock('../services/git-service', () => ({
+  isInsideGitRepo: vi.fn(),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -70,6 +74,7 @@ import { IPC } from '../../shared/ipc-channels';
 import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
 import { appLog } from '../services/log-service';
+import { isInsideGitRepo } from '../services/git-service';
 import { registerProjectHandlers } from './project-handlers';
 
 describe('project-handlers', () => {
@@ -207,23 +212,23 @@ describe('project-handlers', () => {
 
   // --- CHECK_GIT ---
 
-  it('CHECK_GIT returns true when .git directory exists', async () => {
-    vi.mocked(fsp.access).mockResolvedValueOnce(undefined);
+  it('CHECK_GIT returns true when inside a git repo', async () => {
+    vi.mocked(isInsideGitRepo).mockResolvedValueOnce(true);
 
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/my-project');
 
-    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/my-project', '.git'));
+    expect(isInsideGitRepo).toHaveBeenCalledWith('/tmp/my-project');
     expect(result).toBe(true);
   });
 
-  it('CHECK_GIT returns false when .git directory does not exist', async () => {
-    vi.mocked(fsp.access).mockRejectedValueOnce(new Error('ENOENT'));
+  it('CHECK_GIT returns false when not inside a git repo', async () => {
+    vi.mocked(isInsideGitRepo).mockResolvedValueOnce(false);
 
     const handler = handlers.get(IPC.PROJECT.CHECK_GIT)!;
     const result = await handler({}, '/tmp/no-git-project');
 
-    expect(fsp.access).toHaveBeenCalledWith(path.join('/tmp/no-git-project', '.git'));
+    expect(isInsideGitRepo).toHaveBeenCalledWith('/tmp/no-git-project');
     expect(result).toBe(false);
   });
 

@@ -7,6 +7,7 @@ import { appLog } from './log-service';
 import { applyAgentDefaults, readProjectAgentDefaults } from './agent-settings-service';
 import { resolveOrchestrator } from './agent-system';
 import { pathExists } from './fs-utils';
+import { isInsideGitRepo } from './git-service';
 
 /** Non-blocking git command execution. Prevents UI freezes in large repos. */
 function execGitAsync(cmd: string, cwd: string): Promise<string> {
@@ -344,7 +345,7 @@ export async function createDurable(
     worktreePath = path.join(clubhouseDir(projectPath), 'agents', name);
 
     // Create the branch (from current HEAD)
-    const hasGit = await pathExists(path.join(projectPath, '.git'));
+    const hasGit = await isInsideGitRepo(projectPath);
     if (hasGit) {
       // Ensure repo has at least one commit (required for branching/worktrees)
       try {
@@ -501,7 +502,7 @@ export async function deleteDurable(projectPath: string, agentId: string): Promi
   }
 
   // Remove worktree
-  const hasGit = await pathExists(path.join(projectPath, '.git'));
+  const hasGit = await isInsideGitRepo(projectPath);
   if (hasGit) {
     try {
       await execGitFileAsync(['worktree', 'remove', agent.worktreePath, '--force'], projectPath);
