@@ -482,6 +482,58 @@ describe('window-handlers', () => {
     expect(() => handler({}, 'not-a-number')).toThrow('must be a number');
   });
 
+  it('registers FOCUS_POPOUT handler', () => {
+    expect(handlers.has(IPC.WINDOW.FOCUS_POPOUT)).toBe(true);
+  });
+
+  it('FOCUS_POPOUT focuses the specified popout window', async () => {
+    // Create a main window so popouts are distinguishable
+    new (BrowserWindow as any)({});
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    const windowId = await createHandler({}, { type: 'agent', agentId: 'a1' });
+
+    const allWindows = BrowserWindow.getAllWindows();
+    const popoutWin = allWindows.find((w: any) => w.id === windowId) as any;
+    expect(popoutWin).toBeDefined();
+
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_POPOUT)!;
+    await focusHandler({}, windowId);
+
+    expect(popoutWin.focused).toBe(true);
+  });
+
+  it('FOCUS_POPOUT restores minimized popout window', async () => {
+    new (BrowserWindow as any)({});
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    const windowId = await createHandler({}, { type: 'canvas', canvasId: 'c1' });
+
+    const allWindows = BrowserWindow.getAllWindows();
+    const popoutWin = allWindows.find((w: any) => w.id === windowId) as any;
+    popoutWin.minimized = true;
+
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_POPOUT)!;
+    await focusHandler({}, windowId);
+
+    expect(popoutWin.minimized).toBe(false);
+    expect(popoutWin.focused).toBe(true);
+  });
+
+  it('FOCUS_POPOUT is a no-op for unknown windowId', async () => {
+    const focusHandler = handlers.get(IPC.WINDOW.FOCUS_POPOUT)!;
+    // Should not throw
+    await focusHandler({}, 999);
+  });
+
+  it('CREATE_POPOUT broadcasts POPOUTS_CHANGED to main window', async () => {
+    const mainWin = new (BrowserWindow as any)({});
+    const createHandler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
+    await createHandler({}, { type: 'agent', agentId: 'a1' });
+
+    expect(mainWin.webContents.send).toHaveBeenCalledWith(
+      IPC.WINDOW.POPOUTS_CHANGED,
+    );
+  });
+
   it('HUB_MUTATION is forwarded to the main window', async () => {
     const mainWin = new (BrowserWindow as any)({});
     // Create a popout so mainWin is distinguishable
