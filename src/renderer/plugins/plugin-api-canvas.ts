@@ -13,8 +13,6 @@ import type {
 } from '../../shared/plugin-types';
 import {
   registerCanvasWidgetType,
-  getRegisteredWidgetTypes,
-  qualifyWidgetType,
 } from './canvas-widget-registry';
 
 export function createCanvasAPI(ctx: PluginContext, manifest?: PluginManifest): CanvasAPI {

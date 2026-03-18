@@ -351,7 +351,6 @@ export function validateManifest(raw: unknown): ValidationResult {
         }
       }
     }
-  }
 
     // v0.7+ contributes.canvasWidgets validation
     if (contrib.canvasWidgets !== undefined) {

@@ -9,7 +9,7 @@ import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
-import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { PluginAPI } from '../../../../shared/plugin-types';
 
 interface CanvasWorkspaceProps {
   views: CanvasView[];

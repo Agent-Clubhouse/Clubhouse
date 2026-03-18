@@ -203,6 +203,10 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       onDidChange: () => ({ dispose: noop }),
       getColor: () => null,
     },
+    canvas: {
+      registerWidgetType: () => ({ dispose: noop }),
+      queryWidgets: () => [],
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

@@ -123,7 +123,7 @@ const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'p
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -1554,6 +1554,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
       'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
+      'canvas',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });
