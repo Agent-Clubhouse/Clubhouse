@@ -18,7 +18,7 @@ vi.mock('fs', async () => {
 
 import * as fs from 'fs';
 import { execFile } from 'child_process';
-import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
+import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees } from './git-service';
 
 // No longer need to mock pathExists — git repo detection uses git rev-parse via execFile
 
@@ -943,5 +943,96 @@ describe('getGitInfo — command failure resilience', () => {
       const info = await getGitInfo(DIR);
       expect(info.hasConflicts).toBe(true);
     }
+  });
+});
+
+// ── listWorktrees ────────────────────────────────────────────────────
+
+describe('listWorktrees', () => {
+  /** Helper that only handles the 4-arg overload used by gitExec. */
+  function mockWorktreeExec(output: string) {
+    vi.mocked(execFile).mockImplementation(
+      ((...args: any[]) => {
+        const cb = args[args.length - 1];
+        if (typeof cb === 'function') {
+          cb(null, output, '');
+        }
+        return {} as any;
+      }) as any,
+    );
+  }
+
+  it('parses porcelain output with main and linked worktrees', async () => {
+    const porcelainOutput = [
+      'worktree /Users/test/project',
+      'HEAD abc1234',
+      'branch refs/heads/main',
+      '',
+      'worktree /Users/test/project/.clubhouse/agents/my-agent',
+      'HEAD def5678',
+      'branch refs/heads/my-agent/standby',
+      '',
+    ].join('\n');
+
+    mockWorktreeExec(porcelainOutput);
+
+    const entries = await listWorktrees(DIR);
+    expect(entries).toHaveLength(2);
+
+    expect(entries[0].path).toBe('/Users/test/project');
+    expect(entries[0].label).toBe('project');
+    expect(entries[0].branch).toBe('main');
+    expect(entries[0].isBare).toBe(false);
+
+    expect(entries[1].path).toBe('/Users/test/project/.clubhouse/agents/my-agent');
+    expect(entries[1].label).toBe('my-agent');
+    expect(entries[1].branch).toBe('my-agent/standby');
+    expect(entries[1].isBare).toBe(false);
+  });
+
+  it('handles bare worktree', async () => {
+    const porcelainOutput = [
+      'worktree /Users/test/project',
+      'HEAD abc1234',
+      'branch refs/heads/main',
+      'bare',
+      '',
+    ].join('\n');
+
+    mockWorktreeExec(porcelainOutput);
+
+    const entries = await listWorktrees(DIR);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].isBare).toBe(true);
+  });
+
+  it('handles detached HEAD (no branch line)', async () => {
+    const porcelainOutput = [
+      'worktree /Users/test/project',
+      'HEAD abc1234',
+      'detached',
+      '',
+    ].join('\n');
+
+    mockWorktreeExec(porcelainOutput);
+
+    const entries = await listWorktrees(DIR);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].branch).toBe('');
+  });
+
+  it('rejects on git error', async () => {
+    vi.mocked(execFile).mockImplementation(
+      ((...args: any[]) => {
+        const cb = args[args.length - 1];
+        if (typeof cb === 'function') {
+          const err = new Error('fail') as any;
+          err.stderr = 'fatal: not a git repository';
+          cb(err, '', err.stderr);
+        }
+        return {} as any;
+      }) as any,
+    );
+    await expect(listWorktrees(DIR)).rejects.toThrow();
   });
 });

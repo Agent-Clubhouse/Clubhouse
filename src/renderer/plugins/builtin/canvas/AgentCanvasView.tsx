@@ -47,12 +47,6 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
     setSelectedProjectId(null);
   }, []);
 
-  const handleStop = useCallback(async () => {
-    if (view.agentId) {
-      await api.agents.kill(view.agentId);
-    }
-  }, [view.agentId, api]);
-
   // No agent assigned — show picker
   if (!view.agentId || !assignedAgent) {
     // App mode: two-step picker (project -> agents)
@@ -154,16 +148,6 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
         {React.createElement(api.widgets.AgentTerminal, {
           agentId: view.agentId,
         })}
-        <div className="absolute top-1 right-1 z-10">
-          <button
-            onClick={handleStop}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
-            title="Stop agent"
-            data-testid="canvas-agent-stop"
-          >
-            Stop
-          </button>
-        </div>
       </div>
     );
   }

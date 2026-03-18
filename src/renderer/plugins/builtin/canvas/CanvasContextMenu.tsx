@@ -24,6 +24,7 @@ const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }
   { type: 'file', label: 'Add File View', icon: '#' },
   { type: 'browser', label: 'Add Browser View', icon: '@' },
   { type: 'git-diff', label: 'Add Git Diff View', icon: '±' },
+  { type: 'terminal', label: 'Add Terminal View', icon: '$' },
 ];
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {

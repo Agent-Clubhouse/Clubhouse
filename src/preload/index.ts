@@ -294,6 +294,7 @@ const api = {
       ipcRenderer.invoke(IPC.GIT.CREATE_BRANCH, dirPath, branchName),
     stash: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH, dirPath),
     stashPop: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH_POP, dirPath),
+    listWorktrees: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.LIST_WORKTREES, dirPath),
   },
   agentSettings: {
     readInstructions: (worktreePath: string, projectPath?: string) =>

@@ -58,6 +58,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   });
   ctx.subscriptions.push(addGitDiffCmd);
 
+  const addTerminalCmd = api.commands.register('add-terminal-view', () => {
+    const store = getStore();
+    store.getState().addView('terminal', { x: 300, y: 200 });
+  });
+  ctx.subscriptions.push(addTerminalCmd);
+
   const resetCmd = api.commands.register('reset-viewport', () => {
     const store = getStore();
     store.getState().setViewport({ panX: 0, panY: 0, zoom: 1 });
@@ -79,6 +85,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const views = store((s) => s.views);
   const viewport = store((s) => s.viewport);
   const zoomedViewId = store((s) => s.zoomedViewId);
+  const selectedViewId = store((s) => s.selectedViewId);
   const loaded = store((s) => s.loaded);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
@@ -179,6 +186,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().zoomView(viewId);
   }, [store]);
 
+  const handleSelectView = useCallback((viewId: string | null) => {
+    store.getState().selectView(viewId);
+  }, [store]);
+
   if (!loaded) {
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
@@ -211,6 +222,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             views,
             viewport,
             zoomedViewId,
+            selectedViewId,
             api,
             onViewportChange: handleViewportChange,
             onAddView: handleAddView,
@@ -221,6 +233,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onFocusView: handleFocusView,
             onUpdateView: handleUpdateView,
             onZoomView: handleZoomView,
+            onSelectView: handleSelectView,
           }),
         ),
   );

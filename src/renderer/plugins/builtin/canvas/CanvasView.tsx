@@ -1,11 +1,12 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
+import { TerminalCanvasView } from './TerminalCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -19,7 +20,7 @@ export function formatViewType(raw: string): string {
 
 /** Build a project context label for the title bar, e.g. "(Clubhouse)" or "(Clubhouse::worktree)". */
 export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): string | null {
-  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType).projectId : undefined;
+  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType | TerminalCanvasViewType).projectId : undefined;
   if (!projectId) return null;
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
@@ -66,9 +67,11 @@ interface CanvasViewComponentProps {
   api: PluginAPI;
   zoom: number;
   isZoomed?: boolean;
+  isSelected?: boolean;
   attention?: CanvasViewAttention | null;
   onClose: () => void;
   onFocus: () => void;
+  onSelect: () => void;
   onCenterView: () => void;
   onZoomView: () => void;
   onDragEnd: (position: Position) => void;
@@ -81,9 +84,11 @@ export function CanvasViewComponent({
   api,
   zoom,
   isZoomed,
+  isSelected,
   attention,
   onClose,
   onFocus,
+  onSelect,
   onCenterView,
   onZoomView,
   onDragEnd,
@@ -120,6 +125,14 @@ export function CanvasViewComponent({
     const projects = api.projects.list();
     return buildProjectContext(view, projects);
   }, [api, view]);
+
+  const isAgentRunning = agentInfo != null && (agentInfo.status === 'running' || agentInfo.status === 'creating');
+
+  const handleSleep = useCallback(async () => {
+    if (view.type !== 'agent') return;
+    const agentId = (view as AgentCanvasViewType).agentId;
+    if (agentId) await api.agents.kill(agentId);
+  }, [view, api]);
 
   // ── Attention CSS class — uses outline so the glow goes OUTSIDE the card ──
 
@@ -276,6 +289,8 @@ export function CanvasViewComponent({
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
       case 'git-diff':
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
+      case 'terminal':
+        return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
@@ -303,6 +318,11 @@ export function CanvasViewComponent({
 
   const { AgentAvatar } = api.widgets;
 
+  // ── Selection highlight ─────────────────────────────────────────
+  const selectionShadow = isSelected
+    ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+    : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+
   return (
     <div
       className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${attentionClass}`}
@@ -312,11 +332,12 @@ export function CanvasViewComponent({
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
-        ...(!attention && { boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)' }),
+        ...(!attention && { boxShadow: selectionShadow }),
       }}
-      onMouseDown={(e) => { e.stopPropagation(); onFocus(); }}
+      onMouseDown={(e) => { e.stopPropagation(); onSelect(); }}
       data-testid={`canvas-view-${view.id}`}
       data-attention={attention?.level ?? undefined}
+      data-selected={isSelected ? 'true' : undefined}
     >
       {/* Title bar — drag handle */}
       <div
@@ -337,6 +358,18 @@ export function CanvasViewComponent({
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
+          {isAgentRunning && (
+            <button
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleSleep(); }}
+              title="Sleep agent"
+              data-testid="canvas-view-sleep"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            </button>
+          )}
           <button
             className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
             onClick={(e) => { e.stopPropagation(); onCenterView(); }}
@@ -391,11 +424,15 @@ export function CanvasViewComponent({
         </div>
       </div>
 
-      {/* Content area — stop wheel events from propagating to canvas pan/zoom.
+      {/* Content area — only stop wheel propagation when this view is selected,
+          so unselected views let scroll events pan the canvas.
           When the view is zoomed, the overlay renders a full-size copy of the
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
-      <div className="flex-1 min-h-0 overflow-hidden rounded-b-lg" onWheel={(e) => e.stopPropagation()}>
+      <div
+        className="flex-1 min-h-0 overflow-hidden rounded-b-lg"
+        onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
+      >
         {!isZoomed && renderContent()}
       </div>
 

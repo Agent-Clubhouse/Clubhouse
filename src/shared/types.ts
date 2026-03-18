@@ -749,6 +749,17 @@ export interface GitOpResult {
   message: string;
 }
 
+export interface GitWorktreeEntry {
+  /** Absolute path to the worktree directory. */
+  path: string;
+  /** Short label for display (last path segment). */
+  label: string;
+  /** Current branch checked out in this worktree (empty string if detached). */
+  branch: string;
+  /** Whether this is the main/bare worktree. */
+  isBare: boolean;
+}
+
 export interface McpServerEntry {
   name: string;
   command: string;

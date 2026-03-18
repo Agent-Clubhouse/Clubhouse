@@ -100,6 +100,50 @@ describe('Canvas title bar — buildProjectContext', () => {
   });
 });
 
+// ── Sleep button visibility logic ──────────────────────────────────
+
+describe('Canvas title bar — sleep button visibility', () => {
+  /**
+   * Mirrors the logic in CanvasView that determines whether the sleep
+   * button renders in the title bar:
+   *   const isAgentRunning = agentInfo != null && (agentInfo.status === 'running' || agentInfo.status === 'creating');
+   */
+  function shouldShowSleepButton(
+    viewType: string,
+    agentStatus: string | null,
+  ): boolean {
+    if (viewType !== 'agent') return false;
+    return agentStatus === 'running' || agentStatus === 'creating';
+  }
+
+  it('shows sleep button for a running agent', () => {
+    expect(shouldShowSleepButton('agent', 'running')).toBe(true);
+  });
+
+  it('shows sleep button for a creating agent', () => {
+    expect(shouldShowSleepButton('agent', 'creating')).toBe(true);
+  });
+
+  it('hides sleep button for a sleeping agent', () => {
+    expect(shouldShowSleepButton('agent', 'sleeping')).toBe(false);
+  });
+
+  it('hides sleep button for an error agent', () => {
+    expect(shouldShowSleepButton('agent', 'error')).toBe(false);
+  });
+
+  it('hides sleep button when agent info is null', () => {
+    expect(shouldShowSleepButton('agent', null)).toBe(false);
+  });
+
+  it('hides sleep button for non-agent view types', () => {
+    expect(shouldShowSleepButton('file', 'running')).toBe(false);
+    expect(shouldShowSleepButton('browser', 'running')).toBe(false);
+    expect(shouldShowSleepButton('git-diff', 'running')).toBe(false);
+    expect(shouldShowSleepButton('plugin', 'running')).toBe(false);
+  });
+});
+
 // ── Plugin widget type extraction ───────────────────────────────────
 
 function extractPluginWidgetType(pluginWidgetType: string): string {
