@@ -16,6 +16,10 @@ const mockRemovers = {
   onHookEvent: vi.fn(),
   onAgentSpawned: vi.fn(),
   onEditCommand: vi.fn(),
+  onStatusChanged: vi.fn(),
+  onLockStateChanged: vi.fn(),
+  onSatellitesChanged: vi.fn(),
+  onSatelliteEvent: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -48,6 +52,12 @@ vi.stubGlobal('window', {
     },
     annex: {
       onAgentSpawned: vi.fn(() => mockRemovers.onAgentSpawned),
+      onStatusChanged: vi.fn(() => mockRemovers.onStatusChanged),
+      onLockStateChanged: vi.fn(() => mockRemovers.onLockStateChanged),
+    },
+    annexClient: {
+      onSatellitesChanged: vi.fn(() => mockRemovers.onSatellitesChanged),
+      onSatelliteEvent: vi.fn(() => mockRemovers.onSatelliteEvent),
     },
     agentSettings: {
       computeConfigDiff: vi.fn(),
