@@ -63,8 +63,10 @@ describe('EditorSettingsView', () => {
 
   it('shows current editor command and name', () => {
     render(<EditorSettingsView />);
-    expect(screen.getByText(/Currently using:/)).toBeInTheDocument();
-    expect(screen.getByText('code')).toBeInTheDocument();
+    const status = screen.getByText(/Currently using:/);
+    expect(status).toBeInTheDocument();
+    expect(status.textContent).toContain('code');
+    expect(status.textContent).toContain('VS Code');
   });
 
   it('renders custom command input', () => {
