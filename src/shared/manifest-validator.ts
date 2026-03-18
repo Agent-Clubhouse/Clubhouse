@@ -221,6 +221,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (workspacePerms.length > 0 && apiVersion < 0.7) {
       errors.push('Workspace permissions require API >= 0.7');
     }
+
+    // Canvas permission requires API >= 0.8
+    if (permissions.includes('canvas') && apiVersion < 0.8) {
+      errors.push('Canvas permission requires API >= 0.8');
+    }
   }
 
   // Validate command declarations with defaultBinding (v0.6+ feature)
@@ -352,10 +357,10 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
-    // v0.7+ contributes.canvasWidgets validation
+    // v0.8+ contributes.canvasWidgets validation
     if (contrib.canvasWidgets !== undefined) {
-      if (apiVersion < 0.7) {
-        errors.push('contributes.canvasWidgets requires API >= 0.7');
+      if (apiVersion < 0.8) {
+        errors.push('contributes.canvasWidgets requires API >= 0.8');
       } else if (!Array.isArray(contrib.canvasWidgets)) {
         errors.push('contributes.canvasWidgets must be an array');
       } else {
