@@ -142,8 +142,8 @@ export function clampZoom(zoom: number): number {
 
 export function clampPosition(pos: Position): Position {
   return {
-    x: Math.max(0, Math.min(CANVAS_SIZE, pos.x)),
-    y: Math.max(0, Math.min(CANVAS_SIZE, pos.y)),
+    x: Math.max(-CANVAS_SIZE, Math.min(CANVAS_SIZE, pos.x)),
+    y: Math.max(-CANVAS_SIZE, Math.min(CANVAS_SIZE, pos.y)),
   };
 }
 
@@ -174,6 +174,59 @@ export function zoomTowardPoint(
   const newPanY = (clientY - containerRect.top) / clamped - mouseYInCanvas;
 
   return { panX: newPanX, panY: newPanY, zoom: clamped };
+}
+
+// ── Viewport helpers ──────────────────────────────────────────────────
+
+/** Compute the bounding box of all views. Returns null if no views. */
+export function computeBoundingBox(views: CanvasView[]): { x: number; y: number; width: number; height: number } | null {
+  if (views.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of views) {
+    minX = Math.min(minX, v.position.x);
+    minY = Math.min(minY, v.position.y);
+    maxX = Math.max(maxX, v.position.x + v.size.width);
+    maxY = Math.max(maxY, v.position.y + v.size.height);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Return a viewport that fits all views with padding inside the given container size. */
+export function viewportToFitViews(
+  views: CanvasView[],
+  containerWidth: number,
+  containerHeight: number,
+  padding = 60,
+): Viewport {
+  const bbox = computeBoundingBox(views);
+  if (!bbox) return { panX: 0, panY: 0, zoom: 1 };
+
+  const availW = containerWidth - padding * 2;
+  const availH = containerHeight - padding * 2;
+  const scaleX = availW / bbox.width;
+  const scaleY = availH / bbox.height;
+  const zoom = clampZoom(Math.min(scaleX, scaleY, 1)); // don't zoom above 1
+
+  const centerX = bbox.x + bbox.width / 2;
+  const centerY = bbox.y + bbox.height / 2;
+  const panX = (containerWidth / 2) / zoom - centerX;
+  const panY = (containerHeight / 2) / zoom - centerY;
+
+  return { panX, panY, zoom };
+}
+
+/** Return a viewport centered on a specific view. */
+export function viewportToCenterView(
+  view: CanvasView,
+  containerWidth: number,
+  containerHeight: number,
+  zoom: number,
+): Viewport {
+  const centerX = view.position.x + view.size.width / 2;
+  const centerY = view.position.y + view.size.height / 2;
+  const panX = (containerWidth / 2) / zoom - centerX;
+  const panY = (containerHeight / 2) / zoom - centerY;
+  return { panX, panY, zoom };
 }
 
 // ── Overlap detection & reflow ───────────────────────────────────────
