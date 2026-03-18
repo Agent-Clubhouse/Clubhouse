@@ -23,7 +23,9 @@ import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
 import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
-import type { AgentHookEvent, AgentStatus, HubMutation, SoundEvent } from '../shared/types';
+import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore } from './plugins/builtin/canvas/main';
+import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
+import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { handleTerminalEditCommand } from './features/terminal/terminal-edit-handler';
@@ -100,6 +102,44 @@ function initWindowListeners(): (() => void)[] {
       (hubId: string, scope: string, mutation: unknown, projectId?: string) => {
         const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
         applyHubMutation(store, hubId, mutation as HubMutation);
+      },
+    ),
+  );
+
+  // Respond to canvas state requests from pop-out windows
+  removers.push(
+    window.clubhouse.window.onRequestCanvasState(
+      (requestId: string, canvasId: string, scope: string, projectId?: string) => {
+        const store = scope === 'global' ? useAppCanvasStore :
+          (projectId && hasProjectCanvasStore(projectId)) ? getProjectCanvasStore(projectId) : null;
+        if (!store) {
+          window.clubhouse.window.respondCanvasState(requestId, null);
+          return;
+        }
+        const state = store.getState();
+        const canvas = state.canvases.find((c) => c.id === canvasId);
+        if (canvas) {
+          window.clubhouse.window.respondCanvasState(requestId, {
+            canvasId: canvas.id,
+            name: canvas.name,
+            views: canvas.views,
+            viewport: canvas.viewport,
+            nextZIndex: canvas.nextZIndex,
+            zoomedViewId: canvas.zoomedViewId,
+          });
+        } else {
+          window.clubhouse.window.respondCanvasState(requestId, null);
+        }
+      },
+    ),
+  );
+
+  // Apply canvas mutations forwarded from pop-out windows
+  removers.push(
+    window.clubhouse.window.onCanvasMutation(
+      (canvasId: string, scope: string, mutation: unknown, projectId?: string) => {
+        const store = scope === 'global' ? useAppCanvasStore : getProjectCanvasStore(projectId ?? null);
+        applyCanvasMutation(store, canvasId, mutation as CanvasMutation);
       },
     ),
   );

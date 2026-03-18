@@ -5,6 +5,7 @@ import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
+import { broadcastCanvasState } from './canvas-sync';
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -97,6 +98,25 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     scheduleSave();
   }, [canvases, views, viewport, zoomedViewId, loaded, scheduleSave]);
 
+  // Broadcast canvas state changes to pop-out windows
+  useEffect(() => {
+    if (!loaded) return;
+    // Only broadcast from the main window, not from pop-outs
+    if (window.clubhouse.window.isPopout()) return;
+    broadcastCanvasState(store, activeCanvasId);
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded]);
+
+  // ── Pop-out handler ─────────────────────────────────────────────
+
+  const handlePopOutCanvas = useCallback(async (canvasId: string, canvasName: string) => {
+    await window.clubhouse.window.createPopout({
+      type: 'canvas',
+      canvasId,
+      projectId: isAppMode ? undefined : api.context.projectId,
+      title: `Canvas — ${canvasName}`,
+    });
+  }, [isAppMode, api]);
+
   // ── Canvas tab bar callbacks ───────────────────────────────────
 
   const handleSelectCanvas = useCallback((canvasId: string) => {
@@ -170,6 +190,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onAddCanvas: handleAddCanvas,
       onRemoveCanvas: handleRemoveCanvas,
       onRenameCanvas: handleRenameCanvas,
+      onPopOutCanvas: handlePopOutCanvas,
     }),
     React.createElement('div', { className: 'flex-1 min-h-0' },
       React.createElement(CanvasWorkspace, {

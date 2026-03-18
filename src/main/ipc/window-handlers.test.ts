@@ -474,7 +474,7 @@ describe('window-handlers', () => {
 
   it('rejects invalid type for CREATE_POPOUT', () => {
     const handler = handlers.get(IPC.WINDOW.CREATE_POPOUT)!;
-    expect(() => handler({}, { type: 'invalid' })).toThrow("must be 'agent' or 'hub'");
+    expect(() => handler({}, { type: 'invalid' })).toThrow("must be 'agent', 'hub', or 'canvas'");
   });
 
   it('rejects non-number windowId for CLOSE_POPOUT', () => {
