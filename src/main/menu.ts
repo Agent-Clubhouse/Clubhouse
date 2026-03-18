@@ -1,13 +1,6 @@
 import { app, Menu, BrowserWindow } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 
-function sendEditCommand(command: string): void {
-  const win = BrowserWindow.getFocusedWindow();
-  if (win) {
-    win.webContents.send(IPC.APP.EDIT_COMMAND, command);
-  }
-}
-
 export function buildMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
@@ -40,18 +33,7 @@ export function buildMenu(): void {
         { role: 'quit' },
       ],
     },
-    {
-      label: 'Edit',
-      submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => sendEditCommand('undo') },
-        { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendEditCommand('redo') },
-        { type: 'separator' },
-        { label: 'Cut', accelerator: 'CmdOrCtrl+X', click: () => sendEditCommand('cut') },
-        { label: 'Copy', accelerator: 'CmdOrCtrl+C', click: () => sendEditCommand('copy') },
-        { label: 'Paste', accelerator: 'CmdOrCtrl+V', click: () => sendEditCommand('paste') },
-        { label: 'Select All', accelerator: 'CmdOrCtrl+A', click: () => sendEditCommand('selectAll') },
-      ],
-    },
+    { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
   ];

@@ -17,7 +17,6 @@ const mockRemovers = {
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
   onAgentSpawned: vi.fn(),
-  onEditCommand: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -26,7 +25,6 @@ vi.stubGlobal('window', {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
-      onEditCommand: vi.fn(() => mockRemovers.onEditCommand),
     },
     window: {
       isPopout: vi.fn(() => false),
@@ -237,15 +235,6 @@ vi.mock('./plugins/builtin/canvas/canvas-sync', () => ({
   applyCanvasMutation: vi.fn(),
 }));
 
-const mockHandleTerminalEditCommand = vi.fn(() => false);
-vi.mock('./features/terminal/terminal-edit-handler', () => ({
-  handleTerminalEditCommand: (...args: unknown[]) => mockHandleTerminalEditCommand(...args),
-}));
-
-const mockHandleMonacoEditCommand = vi.fn(() => false);
-vi.mock('./plugins/builtin/files/MonacoEditor', () => ({
-  handleMonacoEditCommand: (...args: unknown[]) => mockHandleMonacoEditCommand(...args),
-}));
 
 vi.mock('./stores/soundStore', () => ({
   useSoundStore: Object.assign(
@@ -371,103 +360,4 @@ describe('initAppEventBridge', () => {
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
 
-  it('should register edit command listener', () => {
-    expect(window.clubhouse.app.onEditCommand).toHaveBeenCalled();
-  });
-
-  describe('edit command dispatch', () => {
-    let editCommandHandler: (command: string) => void;
-
-    beforeEach(() => {
-      editCommandHandler = vi.mocked(window.clubhouse.app.onEditCommand).mock.calls[0][0];
-      mockHandleTerminalEditCommand.mockReturnValue(false);
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-    });
-
-    // ─── Terminal routing ──────────────────────────────────────────
-
-    it('routes paste to focused terminal before trying Monaco', () => {
-      mockHandleTerminalEditCommand.mockReturnValue(true);
-      editCommandHandler('paste');
-      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('paste');
-      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
-    });
-
-    it('routes copy to focused terminal before trying Monaco', () => {
-      mockHandleTerminalEditCommand.mockReturnValue(true);
-      editCommandHandler('copy');
-      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('copy');
-      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
-    });
-
-    it('routes selectAll to focused terminal before trying Monaco', () => {
-      mockHandleTerminalEditCommand.mockReturnValue(true);
-      editCommandHandler('selectAll');
-      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('selectAll');
-      expect(mockHandleMonacoEditCommand).not.toHaveBeenCalled();
-    });
-
-    it('falls through to Monaco when terminal does not handle the command', async () => {
-      mockHandleTerminalEditCommand.mockReturnValue(false);
-      mockHandleMonacoEditCommand.mockReturnValue(true);
-      editCommandHandler('selectAll');
-      await vi.dynamicImportSettled();
-      expect(mockHandleTerminalEditCommand).toHaveBeenCalledWith('selectAll');
-      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
-    });
-
-    // ─── Monaco routing ────────────────────────────────────────────
-
-    it('routes edit commands to Monaco when Monaco has focus', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(true);
-      editCommandHandler('selectAll');
-      await vi.dynamicImportSettled();
-      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
-    });
-
-    it('routes copy command to Monaco when Monaco has focus', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(true);
-      editCommandHandler('copy');
-      await vi.dynamicImportSettled();
-      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('copy');
-    });
-
-    // ─── Fallback ──────────────────────────────────────────────────
-
-    it('falls back to document.execCommand when neither terminal nor Monaco handles it', async () => {
-      mockHandleTerminalEditCommand.mockReturnValue(false);
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-      const execCommand = vi.fn(() => true);
-      (document as any).execCommand = execCommand;
-      editCommandHandler('copy');
-      await vi.dynamicImportSettled();
-      expect(execCommand).toHaveBeenCalledWith('copy');
-      delete (document as any).execCommand;
-    });
-
-    it('scopes selectAll to markdown preview container when present', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-
-      // Create a mock .help-content element in the stub document
-      const preview = document.createElement('div');
-      preview.className = 'help-content';
-      preview.textContent = 'Hello markdown world';
-      document.body.appendChild(preview);
-
-      const mockSelection = {
-        removeAllRanges: vi.fn(),
-        addRange: vi.fn(),
-      };
-      (window as any).getSelection = vi.fn(() => mockSelection);
-
-      editCommandHandler('selectAll');
-      await vi.dynamicImportSettled();
-
-      expect(mockSelection.removeAllRanges).toHaveBeenCalled();
-      expect(mockSelection.addRange).toHaveBeenCalled();
-
-      document.body.removeChild(preview);
-      delete (window as any).getSelection;
-    });
-  });
 });
