@@ -92,3 +92,7 @@
 - Modified `src/shared/types.ts`: added 'annex-control' to SettingsSubPage
 - Modified `src/renderer/panels/AccessoryPanel.tsx`: added "Annex Control" nav item, renamed "Annex" to "Annex Server"
 - Modified `src/renderer/panels/MainContentView.tsx`: added routing for annex-control page
+
+### 2026-03-17 — #866: Remote Project Model & Proxy Store
+- Created `src/renderer/stores/remoteProjectStore.ts`: Zustand store for satellite projects/agents, namespaced agent IDs
+- Created `src/renderer/services/project-proxy.ts`: routing layer (remote: prefix → annex client, else → local IPC)
