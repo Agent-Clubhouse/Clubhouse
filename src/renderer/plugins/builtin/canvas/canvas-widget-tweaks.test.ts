@@ -51,6 +51,43 @@ describe('ReadOnlyMonacoEditor — readOnly prop toggling', () => {
 
 // ── Feature 2: Agent widget stop button ─────────────────────────────
 
+describe('AgentCanvasView — hook ordering regression (#310)', () => {
+  it('all useCallback hooks are defined before any conditional return', async () => {
+    // Regression: handleStop was placed after the early return, violating Rules of Hooks.
+    // When transitioning from picker → assigned view, React saw a different hook count and crashed.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const src = fs.readFileSync(
+      path.resolve(__dirname, 'AgentCanvasView.tsx'),
+      'utf-8',
+    );
+    const lines = src.split('\n');
+
+    let firstConditionalReturn = -1;
+    let lastUseCallback = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      // Track any useCallback/useState/useEffect/useMemo (hook calls)
+      if (/\buseCallback\s*\(/.test(line)) {
+        lastUseCallback = i;
+      }
+      // Track first conditional return (early return inside if block)
+      if (firstConditionalReturn === -1 && /^\s*return\s*[\(\<]/.test(lines[i])) {
+        // Check if this return is inside an if block (indented)
+        const indent = lines[i].search(/\S/);
+        if (indent > 2) {
+          firstConditionalReturn = i;
+        }
+      }
+    }
+
+    expect(lastUseCallback).toBeGreaterThan(-1);
+    expect(firstConditionalReturn).toBeGreaterThan(-1);
+    expect(lastUseCallback).toBeLessThan(firstConditionalReturn);
+  });
+});
+
 describe('AgentCanvasView — stop button', () => {
   it('calls api.agents.kill with the agent ID', async () => {
     const kill = vi.fn().mockResolvedValue(undefined);
