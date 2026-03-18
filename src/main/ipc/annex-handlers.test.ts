@@ -20,6 +20,19 @@ vi.mock('../services/annex-server', () => ({
   getStatus: vi.fn(() => ({ advertising: false, port: 0, pin: '', connectedCount: 0 })),
   regeneratePin: vi.fn(),
   broadcastThemeChanged: vi.fn(),
+  disconnectPeer: vi.fn(),
+}));
+
+vi.mock('../services/annex-client', () => ({
+  startClient: vi.fn(),
+  stopClient: vi.fn(),
+}));
+
+vi.mock('../services/annex-peers', () => ({
+  listPeers: vi.fn(() => []),
+  removePeer: vi.fn(() => true),
+  removeAllPeers: vi.fn(),
+  unlockPairing: vi.fn(),
 }));
 
 vi.mock('../services/log-service', () => ({
@@ -32,9 +45,10 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
+import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
+import * as annexClient from '../services/annex-client';
 import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -81,12 +95,28 @@ describe('annex-handlers', () => {
     expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('stopped'));
   });
 
+  it('SAVE_SETTINGS starts client when enabling', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Mac' });
+    const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+    await handler({}, { enabled: true, deviceName: 'Mac' });
+    expect(annexClient.startClient).toHaveBeenCalled();
+  });
+
+  it('SAVE_SETTINGS stops client when disabling', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: true, deviceName: 'Mac' });
+    const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
+    await handler({}, { enabled: false, deviceName: 'Mac' });
+    expect(annexClient.stopClient).toHaveBeenCalled();
+  });
+
   it('SAVE_SETTINGS does not start/stop when enabled state unchanged', async () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: true, deviceName: 'Mac' });
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     await handler({}, { enabled: true, deviceName: 'New Name' });
     expect(annexServer.start).not.toHaveBeenCalled();
     expect(annexServer.stop).not.toHaveBeenCalled();
+    expect(annexClient.startClient).not.toHaveBeenCalled();
+    expect(annexClient.stopClient).not.toHaveBeenCalled();
   });
 
   it('SAVE_SETTINGS logs error when server start fails', async () => {
@@ -168,6 +198,34 @@ describe('maybeStartAnnex', () => {
     maybeStartAnnex();
     expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
       meta: expect.objectContaining({ error: 'bind failed' }),
+    }));
+  });
+});
+
+describe('maybeStartAnnexClient', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('starts client when experimental annex flag is on', () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    maybeStartAnnexClient();
+    expect(annexClient.startClient).toHaveBeenCalled();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('client auto-started'));
+  });
+
+  it('does not start client when experimental annex flag is off', () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
+    maybeStartAnnexClient();
+    expect(annexClient.startClient).not.toHaveBeenCalled();
+  });
+
+  it('logs error when client start fails', () => {
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexClient.startClient).mockImplementationOnce(() => { throw new Error('bonjour failed'); });
+    maybeStartAnnexClient();
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'error', expect.any(String), expect.objectContaining({
+      meta: expect.objectContaining({ error: 'bonjour failed' }),
     }));
   });
 });
