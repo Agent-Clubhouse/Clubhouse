@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { statusInfo } from './GitDiffCanvasView';
 
 // ── Feature 1: File browser read-only toggle ────────────────────────
 
