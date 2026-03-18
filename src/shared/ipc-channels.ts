@@ -270,6 +270,9 @@ export const IPC = {
     UNLOCK_PAIRING: 'annex:unlock-pairing',
     PAIRING_LOCKED: 'annex:pairing-locked',
     PEERS_CHANGED: 'annex:peers-changed',
+    LOCK_STATE_CHANGED: 'annex:lock-state-changed',
+    DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
+    DISABLE_AND_DISCONNECT: 'annex:disable-and-disconnect',
   },
   ANNEX_CLIENT: {
     GET_SATELLITES: 'annex-client:get-satellites',

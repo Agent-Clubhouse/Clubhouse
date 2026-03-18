@@ -96,3 +96,8 @@
 ### 2026-03-17 — #866: Remote Project Model & Proxy Store
 - Created `src/renderer/stores/remoteProjectStore.ts`: Zustand store for satellite projects/agents, namespaced agent IDs
 - Created `src/renderer/services/project-proxy.ts`: routing layer (remote: prefix → annex client, else → local IPC)
+
+### 2026-03-17 — #867: Satellite Locking
+- Created `src/renderer/features/annex/SatelliteLockOverlay.tsx`: full-screen lock overlay with controller identity, disconnect/pause/disable actions
+- Created `src/renderer/stores/lockStore.ts`: Zustand store for lock state (locked, paused, controller info)
+- Modified `src/shared/ipc-channels.ts`: added LOCK_STATE_CHANGED, DISCONNECT_CONTROLLER, DISABLE_AND_DISCONNECT channels
