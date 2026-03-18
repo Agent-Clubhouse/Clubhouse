@@ -7,6 +7,7 @@ import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import type { PluginAPI, PluginAgentDetailedStatus, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ interface CanvasViewComponentProps {
   api: PluginAPI;
   zoom: number;
   isZoomed?: boolean;
+  attention?: CanvasViewAttention | null;
   onClose: () => void;
   onFocus: () => void;
   onCenterView: () => void;
@@ -79,6 +81,7 @@ export function CanvasViewComponent({
   api,
   zoom,
   isZoomed,
+  attention,
   onClose,
   onFocus,
   onCenterView,
@@ -128,14 +131,13 @@ export function CanvasViewComponent({
     return buildProjectContext(view, projects);
   }, [api, view]);
 
-  // ── Border styles (matching hub pane) ───────────────────────────
+  // ── Attention CSS class — uses outline so the glow goes OUTSIDE the card ──
 
-  const borderColor = isPermission
-    ? 'rgb(249,115,22)'
-    : isToolError
-      ? 'rgb(234,179,8)'
-      : 'transparent';
-  const borderWidth = (isPermission || isToolError) ? 2 : 0;
+  const attentionClass = attention
+    ? attention.level === 'error'
+      ? 'canvas-attention-error'
+      : 'canvas-attention-warning'
+    : '';
 
   // ── Drag ───────────────────────────────────────────────────────
 
@@ -313,21 +315,18 @@ export function CanvasViewComponent({
 
   return (
     <div
-      className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${isPermission ? 'animate-pulse' : ''}`}
+      className={`absolute flex flex-col bg-ctp-base border border-surface-2 rounded-lg ${attentionClass}`}
       style={{
         left: currentPos.x,
         top: currentPos.y,
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
-        boxShadow: borderWidth > 0
-          ? `inset 0 0 0 ${borderWidth}px ${borderColor}, 0 4px 24px rgba(0, 0, 0, 0.5)`
-          : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)',
+        ...(!attention && { boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)' }),
       }}
       onMouseDown={(e) => { e.stopPropagation(); onFocus(); }}
       data-testid={`canvas-view-${view.id}`}
-      data-permission={isPermission ? 'true' : undefined}
-      data-tool-error={isToolError ? 'true' : undefined}
+      data-attention={attention?.level ?? undefined}
     >
       {/* Title bar — drag handle */}
       <div
