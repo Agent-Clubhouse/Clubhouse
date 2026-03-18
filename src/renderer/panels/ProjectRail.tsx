@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { useAnnexClientStore } from '../stores/annexClientStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { SatelliteSection } from './SatelliteSection';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { usePanelStore } from '../stores/panelStore';
@@ -9,6 +12,41 @@ import { Badge } from '../components/Badge';
 import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { AGENT_COLORS } from '../../shared/name-generator';
+
+/** Renders satellite sections (connected first, then offline, both alphabetical). */
+function SatelliteSections({ activeProjectId, expanded, onSelectProject }: {
+  activeProjectId: string | null;
+  expanded: boolean;
+  onSelectProject: (id: string) => void;
+}) {
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+
+  if (satellites.length === 0) return null;
+
+  // Sort: connected first, then alphabetical
+  const sorted = [...satellites].sort((a, b) => {
+    if (a.state === 'connected' && b.state !== 'connected') return -1;
+    if (a.state !== 'connected' && b.state === 'connected') return 1;
+    return a.alias.localeCompare(b.alias);
+  });
+
+  return (
+    <>
+      <div className="border-t border-surface-2 my-1 flex-shrink-0" />
+      {sorted.map((sat) => (
+        <SatelliteSection
+          key={sat.id}
+          satellite={sat}
+          projects={satelliteProjects[sat.fingerprint] || []}
+          activeProjectId={activeProjectId}
+          expanded={expanded}
+          onSelectProject={onSelectProject}
+        />
+      ))}
+    </>
+  );
+}
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -530,6 +568,13 @@ export function ProjectRail() {
           >
             +
           </button>
+
+          {/* Satellite sections (Annex V2) */}
+          <SatelliteSections
+            activeProjectId={activeProjectId}
+            expanded={expanded}
+            onSelectProject={(id) => exitSettingsAndNavigate(() => setActiveProject(id))}
+          />
         </div>
         {/* Bottom app-scoped plugin items */}
         {bottomPluginItems.map((entry) => {

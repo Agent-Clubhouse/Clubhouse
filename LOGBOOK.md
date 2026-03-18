@@ -105,3 +105,9 @@
 ### 2026-03-17 — #868: Plugin Matching
 - Created `src/renderer/services/plugin-matcher.ts`: matchPlugins() — compares satellite vs local plugins (matched/missing/version_mismatch)
 - Created `src/renderer/services/plugin-matcher.test.ts`: unit tests for all match states
+
+## Phase 4: UI Integration
+
+### 2026-03-17 — #869: Project Rail Satellite Sections
+- Created `src/renderer/panels/SatelliteSection.tsx`: collapsible satellite section with divider, status dot, color bar, project list
+- Modified `src/renderer/panels/ProjectRail.tsx`: added SatelliteSections component, wired to annexClientStore + remoteProjectStore
