@@ -25,7 +25,7 @@ describe('AnnexSettingsView', () => {
 
   it('renders without crash', () => {
     render(<AnnexSettingsView />);
-    expect(screen.getByText('Annex')).toBeInTheDocument();
+    expect(screen.getByText('Annex Server')).toBeInTheDocument();
   });
 
   it('calls loadSettings on mount', () => {

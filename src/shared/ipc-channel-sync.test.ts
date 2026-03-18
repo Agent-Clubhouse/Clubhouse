@@ -82,6 +82,9 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.ANNEX.AGENT_SPAWNED',
   'IPC.ANNEX.PAIRING_LOCKED',
   'IPC.ANNEX.PEERS_CHANGED',
+  'IPC.ANNEX.LOCK_STATE_CHANGED',
+  'IPC.ANNEX_CLIENT.SATELLITES_CHANGED',
+  'IPC.ANNEX_CLIENT.SATELLITE_EVENT',
   'IPC.MARKETPLACE.PLUGIN_UPDATES_CHANGED',
   'IPC.WINDOW.NAVIGATE_TO_AGENT',
   'IPC.WINDOW.REQUEST_AGENT_STATE',
@@ -206,7 +209,8 @@ describe('IPC Channel Sync', () => {
       const mismatches: string[] = [];
       for (const [dottedPath, value] of channelMap) {
         // Extract group from dotted path: IPC.PTY.DATA -> pty
-        const group = dottedPath.split('.')[1].toLowerCase();
+        // Replace underscores with dashes since channel strings use dashes (e.g. ANNEX_CLIENT -> annex-client)
+        const group = dottedPath.split('.')[1].toLowerCase().replace(/_/g, '-');
         const prefix = value.split(':')[0];
         if (group !== prefix) {
           mismatches.push(`${dottedPath} has value '${value}' but expected prefix '${group}:'`);

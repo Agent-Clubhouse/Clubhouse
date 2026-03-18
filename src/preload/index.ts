@@ -793,6 +793,15 @@ const api = {
       ipcRenderer.on(IPC.ANNEX.PAIRING_LOCKED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.PAIRING_LOCKED, listener); };
     },
+    onLockStateChanged: (callback: (state: { locked: boolean; remainingMs: number }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: any) => callback(state);
+      ipcRenderer.on(IPC.ANNEX.LOCK_STATE_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX.LOCK_STATE_CHANGED, listener); };
+    },
+    disconnectController: (fingerprint: string) =>
+      ipcRenderer.invoke(IPC.ANNEX.DISCONNECT_CONTROLLER, fingerprint),
+    disableAndDisconnect: () =>
+      ipcRenderer.invoke(IPC.ANNEX.DISABLE_AND_DISCONNECT),
   },
   annexClient: {
     getSatellites: () =>

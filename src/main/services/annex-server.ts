@@ -1459,6 +1459,13 @@ export function regeneratePin(): void {
   }
 }
 
+/** Disconnect a specific peer's WebSocket connection by fingerprint. */
+export function disconnectPeer(_fingerprint: string): void {
+  // TODO: Track peer fingerprints per WebSocket connection to close only the matching one.
+  // For now this is a no-op stub; full implementation will map ws → fingerprint.
+  appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint: _fingerprint } });
+}
+
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */
 export function getWsAuthType(ws: WebSocket): WsAuthType {
   return wsAuthTypes.get(ws) || 'bearer';

@@ -80,6 +80,20 @@ export function registerAnnexHandlers(): void {
   ipcMain.handle(IPC.ANNEX.UNLOCK_PAIRING, () => {
     annexPeers.unlockPairing();
   });
+
+  ipcMain.handle(IPC.ANNEX.DISCONNECT_CONTROLLER, withValidatedArgs(
+    [stringArg()],
+    (_event, fingerprint) => {
+      // Disconnect a specific controller WebSocket by fingerprint
+      annexServer.disconnectPeer(fingerprint);
+    },
+  ));
+
+  ipcMain.handle(IPC.ANNEX.DISABLE_AND_DISCONNECT, async () => {
+    annexServer.stop();
+    await annexSettings.saveSettings({ ...annexSettings.getSettings(), enabled: false });
+    broadcastStatusChanged();
+  });
 }
 
 /** Conditionally start Annex if settings say enabled. Call after IPC registration. */

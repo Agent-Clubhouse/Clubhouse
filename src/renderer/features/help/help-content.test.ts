@@ -13,7 +13,7 @@ describe('help-content', () => {
 
   it('has 26 total topics', () => {
     const total = HELP_SECTIONS.reduce((sum, s) => sum + s.topics.length, 0);
-    expect(total).toBe(26);
+    expect(total).toBe(27);
   });
 
   it('each section has at least 1 topic', () => {
@@ -50,9 +50,9 @@ describe('help-content', () => {
     expect(agents?.topics).toHaveLength(6);
   });
 
-  it('Settings section has 5 topics', () => {
+  it('Settings section has 6 topics', () => {
     const settings = HELP_SECTIONS.find((s) => s.id === 'settings');
-    expect(settings?.topics).toHaveLength(5);
+    expect(settings?.topics).toHaveLength(6);
   });
 
   it('includes key new topics', () => {

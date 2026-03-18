@@ -11,7 +11,7 @@ const mockAnnex = {
 };
 
 Object.defineProperty(globalThis, 'window', {
-  value: { clubhouse: { annex: mockAnnex } },
+  value: { clubhouse: { annex: mockAnnex, annexClient: {} } },
   writable: true,
 });
 
@@ -22,7 +22,7 @@ function getState() {
   return useAnnexStore.getState();
 }
 
-const DEFAULT_SETTINGS: AnnexSettings = { enabled: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo' };
+const DEFAULT_SETTINGS: AnnexSettings = { enabled: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo', autoReconnect: true };
 const DEFAULT_STATUS: AnnexStatus = { advertising: false, port: 0, pin: '', connectedCount: 0, fingerprint: '', alias: '', icon: 'computer', color: 'indigo' };
 
 // ---------- tests ----------
