@@ -271,4 +271,17 @@ export const IPC = {
     PAIRING_LOCKED: 'annex:pairing-locked',
     PEERS_CHANGED: 'annex:peers-changed',
   },
+  ANNEX_CLIENT: {
+    GET_SATELLITES: 'annex-client:get-satellites',
+    CONNECT: 'annex-client:connect',
+    DISCONNECT: 'annex-client:disconnect',
+    RETRY: 'annex-client:retry',
+    SCAN: 'annex-client:scan',
+    SATELLITES_CHANGED: 'annex-client:satellites-changed',
+    SATELLITE_EVENT: 'annex-client:satellite-event',
+    PTY_INPUT: 'annex-client:pty-input',
+    PTY_RESIZE: 'annex-client:pty-resize',
+    AGENT_SPAWN: 'annex-client:agent-spawn',
+    AGENT_KILL: 'annex-client:agent-kill',
+  },
 } as const;

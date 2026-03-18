@@ -482,6 +482,37 @@ export interface AnnexPeer {
   lastSeen: string;
 }
 
+// ── Annex client (controller) types ───────────────────────────────────
+
+export type SatelliteConnectionState = 'disconnected' | 'discovering' | 'connecting' | 'connected';
+
+export interface SatelliteConnection {
+  id: string;
+  alias: string;
+  icon: string;
+  color: string;
+  fingerprint: string;
+  state: SatelliteConnectionState;
+  host: string;
+  mainPort: number;
+  pairingPort: number;
+  snapshot: SatelliteSnapshot | null;
+  lastError: string | null;
+}
+
+export interface SatelliteSnapshot {
+  projects: Project[];
+  agents: Record<string, Agent[]>;
+  quickAgents: Record<string, unknown[]>;
+  theme: unknown;
+  orchestrators: unknown;
+  pendingPermissions: unknown[];
+  lastSeq: number;
+  plugins?: unknown[];
+  agentsMeta?: unknown;
+  protocolVersion?: number;
+}
+
 // --- Auto-update types ---
 
 export type UpdateState = 'idle' | 'checking' | 'downloading' | 'ready' | 'error';

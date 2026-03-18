@@ -9,6 +9,7 @@ import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
+import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
@@ -40,6 +41,7 @@ export function registerAllHandlers(): void {
   registerProcessHandlers();
   registerWindowHandlers();
   registerAnnexHandlers();
+  registerAnnexClientHandlers();
   registerMarketplaceHandlers();
   registerProfileHandlers();
   registerSettingsHandlers();

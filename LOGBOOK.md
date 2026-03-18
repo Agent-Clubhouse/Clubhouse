@@ -55,3 +55,12 @@
   - WS connections tagged with authType (mtls|bearer) via WeakMap
   - Bonjour publishes v:2 + pairingPort in TXT record
   - Graceful fallback to plain HTTP if TLS fails
+
+### 2026-03-17 — #862: Annex Client & Service Discovery
+- Created `src/main/services/annex-client.ts`: Bonjour browser, satellite state machine, mTLS WS client, snapshot storage
+- Created `src/main/ipc/annex-client-handlers.ts`: IPC handlers for getSatellites, connect, disconnect, retry, scan, proxy PTY/agent commands
+- Created `src/renderer/stores/annexClientStore.ts`: Zustand store for satellite connections + snapshots
+- Modified `src/shared/ipc-channels.ts`: added ANNEX_CLIENT section (12 channels)
+- Modified `src/shared/types.ts`: added SatelliteConnection, SatelliteSnapshot types
+- Modified `src/preload/index.ts`: added annexClient.* API
+- Modified `src/main/ipc/index.ts`: registered annex client handlers

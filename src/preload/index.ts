@@ -794,6 +794,36 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.ANNEX.PAIRING_LOCKED, listener); };
     },
   },
+  annexClient: {
+    getSatellites: () =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GET_SATELLITES),
+    connect: (fingerprint: string, bearerToken?: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.CONNECT, fingerprint, bearerToken),
+    disconnect: (fingerprint: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.DISCONNECT, fingerprint),
+    retry: (fingerprint: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.RETRY, fingerprint),
+    scan: () =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.SCAN),
+    ptyInput: (satelliteId: string, agentId: string, data: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_INPUT, satelliteId, agentId, data),
+    ptyResize: (satelliteId: string, agentId: string, cols: number, rows: number) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_RESIZE, satelliteId, agentId, cols, rows),
+    agentSpawn: (satelliteId: string, params: unknown) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SPAWN, satelliteId, params),
+    agentKill: (satelliteId: string, agentId: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
+    onSatellitesChanged: (callback: (satellites: unknown[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, sats: any) => callback(sats);
+      ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener); };
+    },
+    onSatelliteEvent: (callback: (event: { satelliteId: string; type: string; payload: unknown }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITE_EVENT, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.SATELLITE_EVENT, listener); };
+    },
+  },
   window: {
     createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; hubId?: string; projectId?: string; title?: string }) =>
       ipcRenderer.invoke(IPC.WINDOW.CREATE_POPOUT, params),
