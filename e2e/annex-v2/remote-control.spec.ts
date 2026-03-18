@@ -14,11 +14,27 @@ import {
   enableAnnexViaPreload,
   getAnnexStatus,
   pairViaHttp,
+  connectWs,
+  connectWsPlain,
   waitForOpen,
   waitForMessage,
 } from './helpers';
 import { generateTestIdentity, connectMtlsWs, type TestIdentity } from './tls-test-utils';
 import { addProject, stubDialogForPath } from '../smoke-helpers';
+
+/** Connect with bearer token only (tries wss, falls back to ws). No lock overlay. */
+async function connectBearerWs(host: string, port: number, token: string): Promise<WebSocket> {
+  let ws = connectWs(host, port, token);
+  try {
+    await waitForOpen(ws, 5_000);
+    return ws;
+  } catch {
+    ws.close();
+    ws = connectWsPlain(host, port, token);
+    await waitForOpen(ws, 10_000);
+    return ws;
+  }
+}
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
@@ -46,7 +62,7 @@ test.beforeAll(async () => {
 
   const status = await getAnnexStatus(satellite.window);
   satPort = status.port;
-  pairingPort = (status as any).pairingPort || status.port;
+  pairingPort = status.pairingPort;
 
   // Generate test identity and pair
   identity = generateTestIdentity();
@@ -169,46 +185,38 @@ test('snapshot contains satellite project data', async () => {
 test('snapshot updates when project is added', async () => {
   const { satellite } = handles;
 
-  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  // Get initial project count via bearer WS (no lock overlay)
+  let ws = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+  let initialCount: number;
   try {
-    await waitForOpen(ws, 10_000);
-
-    // Get initial snapshot
     const initialSnapshot = await waitForMessage(ws, 'snapshot', 15_000);
     const initialProjects = ((initialSnapshot.payload as any).projects as any[]) || [];
-    const initialCount = initialProjects.length;
-
-    // Add another fixture project
-    const fixtureB = path.resolve(__dirname, '../fixtures/project-b');
-    if (fs.existsSync(fixtureB)) {
-      await stubDialogForPath(satellite.electronApp, fixtureB);
-      await addProject(satellite.electronApp, satellite.window, fixtureB);
-
-      // Wait for a snapshot update broadcast
-      // The server broadcasts snapshot updates when project list changes
-      // We need to wait for a message that indicates the project was added
-      // The exact mechanism may be a full snapshot re-send or a delta event
-      await satellite.window.waitForTimeout(2_000);
-
-      // Reconnect to get a fresh snapshot with the new project
-      ws.close();
-      const ws2 = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
-      try {
-        await waitForOpen(ws2, 10_000);
-        const updatedSnapshot = await waitForMessage(ws2, 'snapshot', 15_000);
-        const updatedProjects = ((updatedSnapshot.payload as any).projects as any[]) || [];
-
-        expect(updatedProjects.length).toBeGreaterThan(initialCount);
-        console.log(`Project count updated: ${initialCount} -> ${updatedProjects.length}`);
-      } finally {
-        ws2.close();
-      }
-    } else {
-      // If fixture-b doesn't exist, skip but don't fail
-      console.log('Skipping dynamic project test: fixtures/project-b not found');
-    }
+    initialCount = initialProjects.length;
   } finally {
-    if (ws.readyState === WebSocket.OPEN) ws.close();
+    ws.close();
+  }
+
+  // Add another fixture project (no lock overlay blocking clicks)
+  const fixtureB = path.resolve(__dirname, '../fixtures/project-b');
+  if (!fs.existsSync(fixtureB)) {
+    console.log('Skipping dynamic project test: fixtures/project-b not found');
+    return;
+  }
+
+  await stubDialogForPath(satellite.electronApp, fixtureB);
+  await addProject(satellite.electronApp, satellite.window, fixtureB);
+  await satellite.window.waitForTimeout(2_000);
+
+  // Reconnect to get a fresh snapshot with the new project
+  ws = await connectBearerWs('127.0.0.1', satPort, bearerToken);
+  try {
+    const updatedSnapshot = await waitForMessage(ws, 'snapshot', 15_000);
+    const updatedProjects = ((updatedSnapshot.payload as any).projects as any[]) || [];
+
+    expect(updatedProjects.length).toBeGreaterThan(initialCount);
+    console.log(`Project count updated: ${initialCount} -> ${updatedProjects.length}`);
+  } finally {
+    ws.close();
   }
 });
 
@@ -218,7 +226,7 @@ test('two mTLS connections: lock persists until both disconnect', async () => {
   // Generate a second identity and pair it
   const identity2 = generateTestIdentity();
   const status = await getAnnexStatus(satellite.window);
-  const port2 = (status as any).pairingPort || status.port;
+  const port2 = status.pairingPort;
 
   // Unlock pairing if locked from previous tests
   await satellite.window.evaluate(async () => {

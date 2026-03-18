@@ -44,6 +44,7 @@ export async function enableAnnex(window: Page): Promise<void> {
 export interface AnnexStatusInfo {
   advertising: boolean;
   port: number;
+  pairingPort: number;
   pin: string;
   connectedCount: number;
 }
@@ -57,6 +58,7 @@ export async function getAnnexStatus(page: Page): Promise<AnnexStatusInfo> {
     return {
       advertising: status.advertising,
       port: status.port,
+      pairingPort: status.pairingPort || status.port,
       pin: status.pin,
       connectedCount: status.connectedCount,
     };

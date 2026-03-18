@@ -335,6 +335,7 @@ export function spawnShell(id: string, projectPath: string): void {
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
     broadcastToAllWindows(IPC.PTY.DATA, id, data);
+    annexEventBus.emitPtyData(id, data);
   });
 
   proc.onExit(({ exitCode }) => {
