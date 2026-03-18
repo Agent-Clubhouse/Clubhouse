@@ -4,6 +4,7 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 import type { GitInfo } from '../../../../shared/types';
 import { MonacoDiffEditor } from './MonacoDiffEditor';
 import { MenuPortal } from './MenuPortal';
+import { ResizableSidebar } from './ResizableSidebar';
 
 /** How often to poll git status (ms). */
 export const GIT_POLL_INTERVAL_MS = 3000;
@@ -428,7 +429,7 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
       {/* Split panel: file list + diff */}
       <div className="flex flex-1 min-h-0">
         {/* File list sidebar */}
-        <div className="w-[200px] flex-shrink-0 border-r border-surface-0 overflow-y-auto bg-ctp-mantle/30">
+        <ResizableSidebar defaultWidth={200} minWidth={120} maxWidth={400} className="overflow-y-auto bg-ctp-mantle/30">
           {loading ? (
             <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
               Loading&hellip;
@@ -474,7 +475,7 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
               })}
             </div>
           )}
-        </div>
+        </ResizableSidebar>
 
         {/* Diff content area */}
         <div className="flex-1 min-w-0 flex flex-col">
