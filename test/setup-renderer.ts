@@ -313,5 +313,12 @@ vi.stubGlobal('clubhouse', {
     broadcastHubState: noop,
     sendHubMutation: noop,
     onHubMutation: () => noop,
+    getCanvasState: async () => null,
+    onRequestCanvasState: () => noop,
+    respondCanvasState: noop,
+    onCanvasStateChanged: () => noop,
+    broadcastCanvasState: noop,
+    sendCanvasMutation: noop,
+    onCanvasMutation: () => noop,
   },
 });
