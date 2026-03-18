@@ -16,14 +16,11 @@ vi.mock('fs', async () => {
   };
 });
 
-vi.mock('./fs-utils', () => ({
-  pathExists: vi.fn(),
-}));
-
 import * as fs from 'fs';
-import { pathExists } from './fs-utils';
 import { execFile } from 'child_process';
-import { getGitInfo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
+import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop } from './git-service';
+
+// No longer need to mock pathExists — git repo detection uses git rev-parse via execFile
 
 const DIR = path.join(path.sep, 'test', 'repo');
 
@@ -57,6 +54,7 @@ function mockGitExecError(stderr: string) {
 /** Standard mock for getGitInfo-style tests — routes by arg content */
 function mockGitInfoExec(overrides: Record<string, string> = {}) {
   const defaults: Record<string, string> = {
+    '--is-inside-work-tree': 'true\n',
     'rev-parse': 'main\n',
     'branch --no-color': '* main\n',
     'status --porcelain': '',
@@ -74,13 +72,49 @@ function mockGitInfoExec(overrides: Record<string, string> = {}) {
   });
 }
 
+/** Mock execFile so that `git rev-parse --is-inside-work-tree` returns the given value */
+function mockIsInsideGitRepo(inside: boolean) {
+  mockGitExec((args) => {
+    if (args.includes('--is-inside-work-tree')) {
+      if (inside) return 'true\n';
+      throw new Error('fatal: not a git repository');
+    }
+    return '';
+  });
+}
+
+describe('isInsideGitRepo', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns true when inside a git work tree', async () => {
+    mockIsInsideGitRepo(true);
+    expect(await isInsideGitRepo(DIR)).toBe(true);
+  });
+
+  it('returns false when not inside a git repo', async () => {
+    mockIsInsideGitRepo(false);
+    expect(await isInsideGitRepo(DIR)).toBe(false);
+  });
+
+  it('detects subfolder of a git repo (git rev-parse walks up)', async () => {
+    // git rev-parse --is-inside-work-tree returns true even from subdirectories
+    mockGitExec((args) => {
+      if (args.includes('--is-inside-work-tree')) return 'true\n';
+      return '';
+    });
+    expect(await isInsideGitRepo(path.join(DIR, 'subdir', 'nested'))).toBe(true);
+  });
+});
+
 describe('getGitInfo', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('no .git returns hasGit:false and empty fields', async () => {
-    vi.mocked(pathExists).mockResolvedValue(false);
+  it('not inside git repo returns hasGit:false and empty fields', async () => {
+    mockIsInsideGitRepo(false);
     const info = await getGitInfo(DIR);
     expect(info.hasGit).toBe(false);
     expect(info.branch).toBe('');
@@ -92,7 +126,6 @@ describe('getGitInfo', () => {
   });
 
   it('parses branch from rev-parse', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'rev-parse': 'feature/my-branch\n',
       'branch --no-color': '  main\n* feature/my-branch\n',
@@ -102,7 +135,6 @@ describe('getGitInfo', () => {
   });
 
   it('parses git branch --no-color list, strips * prefix', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'branch --no-color': '* main\n  develop\n  feature/x\n',
     });
@@ -111,7 +143,6 @@ describe('getGitInfo', () => {
   });
 
   it('parses porcelain status — staged, unstaged, untracked', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'M  staged.ts\n M unstaged.ts\n?? new.ts\n',
     });
@@ -123,7 +154,6 @@ describe('getGitInfo', () => {
   });
 
   it('parses ||| delimited log into GitLogEntry', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'log': 'abc123|||abc|||Fix bug|||Author|||2 hours ago\n',
     });
@@ -139,7 +169,6 @@ describe('getGitInfo', () => {
   });
 
   it('calculates ahead/behind from rev-list', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'remote': 'origin\n',
       'rev-list': '3\t5\n',
@@ -151,7 +180,6 @@ describe('getGitInfo', () => {
   });
 
   it('no remote returns ahead:0, behind:0', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({ 'remote': '\n' });
     const info = await getGitInfo(DIR);
     expect(info.ahead).toBe(0);
@@ -159,9 +187,9 @@ describe('getGitInfo', () => {
   });
 
   it('uses -uall flag to enumerate files inside untracked directories', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('status')) {
         expect(args).toContain('-uall');
         return '?? src/new-folder/index.ts\n?? src/new-folder/utils.ts\n?? src/new-folder/types.ts\n';
@@ -181,7 +209,6 @@ describe('getGitInfo', () => {
   });
 
   it('parses nested directory paths for modified files', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'M  src/components/Header.tsx\n M src/utils/helpers/format.ts\nA  src/pages/new/Dashboard.tsx\n',
     });
@@ -193,7 +220,6 @@ describe('getGitInfo', () => {
   });
 
   it('handles renamed files with arrow syntax', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'R  old-name.ts -> new-name.ts\n',
     });
@@ -205,7 +231,6 @@ describe('getGitInfo', () => {
   });
 
   it('handles mix of staged adds in new dirs and unstaged modifications', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'A  lib/new-module/index.ts\nA  lib/new-module/helper.ts\n M src/app.ts\n?? docs/notes.md\n',
     });
@@ -221,7 +246,6 @@ describe('getGitInfo', () => {
   });
 
   it('empty status returns empty array, not parse artifacts', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec();
     const info = await getGitInfo(DIR);
     expect(info.status).toEqual([]);
@@ -255,7 +279,6 @@ describe('push', () => {
   });
 
   it('returns ok:false when no remote', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({ 'remote': '\n' });
     const result = await push(DIR);
     expect(result.ok).toBe(false);
@@ -269,7 +292,6 @@ describe('pull', () => {
   });
 
   it('returns ok:false when no remote', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({ 'remote': '\n' });
     const result = await pull(DIR);
     expect(result.ok).toBe(false);
@@ -503,7 +525,6 @@ describe('getGitInfo — rename parsing', () => {
   });
 
   it('splits rename into path and origPath', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'R  src/old.ts -> src/new.ts\n',
     });
@@ -515,7 +536,6 @@ describe('getGitInfo — rename parsing', () => {
   });
 
   it('splits copy into path and origPath', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'C  base.ts -> copy.ts\n',
     });
@@ -532,7 +552,6 @@ describe('getGitInfo — conflict detection', () => {
   });
 
   it('sets hasConflicts=true when UU status present', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'UU src/conflict.ts\n M src/ok.ts\n',
     });
@@ -542,7 +561,6 @@ describe('getGitInfo — conflict detection', () => {
   });
 
   it('detects AA (both-added) as conflict', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'AA both-added.ts\n',
     });
@@ -551,7 +569,6 @@ describe('getGitInfo — conflict detection', () => {
   });
 
   it('hasConflicts=false when no conflict codes', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'status --porcelain': 'M  file.ts\n?? new.ts\n',
     });
@@ -566,7 +583,6 @@ describe('getGitInfo — stash count', () => {
   });
 
   it('counts stash entries', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'stash': 'stash@{0}: WIP on main\nstash@{1}: WIP on feature\n',
     });
@@ -575,7 +591,6 @@ describe('getGitInfo — stash count', () => {
   });
 
   it('returns stashCount=0 when no stashes', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec();
     const info = await getGitInfo(DIR);
     expect(info.stashCount).toBe(0);
@@ -628,10 +643,10 @@ describe('push — success case', () => {
   });
 
   it('pushes to remote branch and returns ok:true', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     let pushCalled = false;
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('push')) {
         pushCalled = true;
         return 'Everything up-to-date\n';
@@ -651,9 +666,9 @@ describe('push — success case', () => {
   });
 
   it('returns error message when push command fails', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('push')) {
         const err = new Error('rejected') as any;
         err.stderr = 'rejected: non-fast-forward';
@@ -680,10 +695,10 @@ describe('pull — success case', () => {
   });
 
   it('pulls from remote branch and returns ok:true', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     let pullCalled = false;
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('pull')) {
         pullCalled = true;
         return 'Already up to date.\n';
@@ -703,9 +718,9 @@ describe('pull — success case', () => {
   });
 
   it('returns error when pull has merge conflicts', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('pull')) {
         const err = new Error('merge conflict') as any;
         err.stderr = 'CONFLICT (content): Merge conflict in file.ts';
@@ -877,10 +892,10 @@ describe('getGitInfo — command failure resilience', () => {
     vi.clearAllMocks();
   });
 
-  it('returns HEAD when rev-parse fails', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
+  it('returns HEAD when rev-parse --abbrev-ref fails', async () => {
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('rev-parse')) throw new Error('fatal');
       if (argsStr.includes('branch --no-color')) return '* main\n';
       if (argsStr.includes('status')) return '';
@@ -894,9 +909,9 @@ describe('getGitInfo — command failure resilience', () => {
   });
 
   it('returns empty branches when git branch fails', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitExec((args) => {
       const argsStr = args.join(' ');
+      if (argsStr.includes('--is-inside-work-tree')) return 'true\n';
       if (argsStr.includes('rev-parse')) return 'main\n';
       if (argsStr.includes('branch --no-color')) throw new Error('fatal');
       if (argsStr.includes('status')) return '';
@@ -910,7 +925,6 @@ describe('getGitInfo — command failure resilience', () => {
   });
 
   it('handles multiple log entries', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     mockGitInfoExec({
       'log': 'aaa|||aa|||First commit|||Alice|||1 hour ago\nbbb|||bb|||Second commit|||Bob|||2 hours ago\nccc|||cc|||Third commit|||Charlie|||3 hours ago\n',
     });
@@ -921,7 +935,6 @@ describe('getGitInfo — command failure resilience', () => {
   });
 
   it('detects all conflict codes: DD, AU, UD, UA, DU', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
     const conflictCodes = ['DD', 'AU', 'UD', 'UA', 'DU'];
     for (const code of conflictCodes) {
       mockGitInfoExec({

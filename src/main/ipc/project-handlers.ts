@@ -7,6 +7,7 @@ import * as projectStore from '../services/project-store';
 import { ensureGitignore } from '../services/agent-config';
 import { readLaunchWrapper, writeLaunchWrapper, readMcpCatalog, writeMcpCatalog, readDefaultMcps, writeDefaultMcps } from '../services/agent-settings-service';
 import { appLog } from '../services/log-service';
+import { isInsideGitRepo } from '../services/git-service';
 import { arrayArg, objectArg, stringArg, withValidatedArgs } from './validation';
 
 export function registerProjectHandlers(): void {
@@ -40,12 +41,7 @@ export function registerProjectHandlers(): void {
   });
 
   ipcMain.handle(IPC.PROJECT.CHECK_GIT, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
-    try {
-      await fsp.access(path.join(dirPath, '.git'));
-      return true;
-    } catch {
-      return false;
-    }
+    return isInsideGitRepo(dirPath);
   }));
 
   ipcMain.handle(IPC.PROJECT.GIT_INIT, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
