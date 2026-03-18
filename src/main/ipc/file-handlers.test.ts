@@ -17,6 +17,10 @@ vi.mock('../services/file-service', () => ({
   stat: vi.fn(async () => ({ size: 100, isFile: true })),
 }));
 
+vi.mock('../services/search-service', () => ({
+  searchFiles: vi.fn(async () => []),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
