@@ -28,9 +28,17 @@ describe('useTerminalFit', () => {
 
   const terminalRef = { current: { cols: 80, rows: 24, focus: mockFocus } as any };
   const fitAddonRef = { current: { fit: mockFit } as any };
-  const containerRef = { current: document.createElement('div') };
+  // Container with non-zero dimensions (clientWidth/clientHeight)
+  let containerEl: HTMLDivElement;
+  let containerRef: { current: HTMLDivElement };
 
   beforeEach(() => {
+    containerEl = document.createElement('div');
+    // jsdom returns 0 for clientWidth/clientHeight by default; stub non-zero values
+    Object.defineProperty(containerEl, 'clientWidth', { value: 480, configurable: true });
+    Object.defineProperty(containerEl, 'clientHeight', { value: 320, configurable: true });
+    containerRef = { current: containerEl };
+
     mockFit.mockClear();
     mockFocus.mockClear();
     mockResize.mockClear();
@@ -111,7 +119,8 @@ describe('useTerminalFit', () => {
       expect(visibilityListeners).toHaveLength(1);
     });
 
-    it('calls fit and resize when page becomes visible', () => {
+    it('calls fit and resize after settle delay when page becomes visible', () => {
+      vi.useFakeTimers();
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
       mockFit.mockClear();
@@ -120,11 +129,21 @@ describe('useTerminalFit', () => {
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       visibilityListeners[0]();
 
+      // Should NOT fire immediately — wake settle delay
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+
+      // Advance past the 150ms wake settle delay
+      vi.advanceTimersByTime(150);
+
       expect(mockFit).toHaveBeenCalledTimes(1);
       expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
+
+      vi.useRealTimers();
     });
 
     it('does not re-fit when page becomes hidden', () => {
+      vi.useFakeTimers();
       renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
 
       mockFit.mockClear();
@@ -133,8 +152,34 @@ describe('useTerminalFit', () => {
       Object.defineProperty(document, 'hidden', { value: true, configurable: true });
       visibilityListeners[0]();
 
+      vi.advanceTimersByTime(200);
+
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('cancels pending wake timer on unmount', () => {
+      vi.useFakeTimers();
+      const { unmount } = renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef),
+      );
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      visibilityListeners[0]();
+
+      // Unmount before the timer fires
+      unmount();
+      vi.advanceTimersByTime(200);
+
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
     });
 
     it('removes visibilitychange listener on unmount', () => {
@@ -224,6 +269,60 @@ describe('useTerminalFit', () => {
 
       // No new calls — focused didn't change
       expect(mockFocus).not.toHaveBeenCalled();
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('zero-dimension guard', () => {
+    it('skips fit and resize when container has zero width', () => {
+      const zeroWidthEl = document.createElement('div');
+      Object.defineProperty(zeroWidthEl, 'clientWidth', { value: 0, configurable: true });
+      Object.defineProperty(zeroWidthEl, 'clientHeight', { value: 320, configurable: true });
+      const zeroRef = { current: zeroWidthEl };
+
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, zeroRef));
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      resizeObserverCallbacks[0]();
+
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
+    it('skips fit and resize when container has zero height', () => {
+      const zeroHeightEl = document.createElement('div');
+      Object.defineProperty(zeroHeightEl, 'clientWidth', { value: 480, configurable: true });
+      Object.defineProperty(zeroHeightEl, 'clientHeight', { value: 0, configurable: true });
+      const zeroRef = { current: zeroHeightEl };
+
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, zeroRef));
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      resizeObserverCallbacks[0]();
+
+      expect(mockFit).not.toHaveBeenCalled();
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
+    it('skips fit and resize when container ref becomes null', () => {
+      const mutableRef = { current: containerEl as HTMLDivElement | null };
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, mutableRef));
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      // Null out the container ref after mount
+      mutableRef.current = null;
+      resizeObserverCallbacks[0]();
+
       expect(mockFit).not.toHaveBeenCalled();
       expect(mockResize).not.toHaveBeenCalled();
     });

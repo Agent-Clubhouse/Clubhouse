@@ -402,9 +402,12 @@ export function CanvasViewComponent({
         </div>
       </div>
 
-      {/* Content area — stop wheel events from propagating to canvas pan/zoom */}
+      {/* Content area — stop wheel events from propagating to canvas pan/zoom.
+          When the view is zoomed, the overlay renders a full-size copy of the
+          content, so skip rendering here to prevent duplicate terminals from
+          racing on PTY resize. */}
       <div className="flex-1 min-h-0 overflow-hidden rounded-b-lg" onWheel={(e) => e.stopPropagation()}>
-        {renderContent()}
+        {!isZoomed && renderContent()}
       </div>
 
       {/* ── Resize handles (edges + corners) ─────────────────────── */}
