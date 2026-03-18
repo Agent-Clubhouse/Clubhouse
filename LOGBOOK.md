@@ -111,3 +111,7 @@
 ### 2026-03-17 — #869: Project Rail Satellite Sections
 - Created `src/renderer/panels/SatelliteSection.tsx`: collapsible satellite section with divider, status dot, color bar, project list
 - Modified `src/renderer/panels/ProjectRail.tsx`: added SatelliteSections component, wired to annexClientStore + remoteProjectStore
+
+### 2026-03-17 — #870: Remote Agent Views
+- Created `src/renderer/hooks/useRemoteAgents.ts`: unified hook for remote agent data, isRemoteProjectId helper
+- Provides interface for reading remote agents from remoteProjectStore when active project is remote
