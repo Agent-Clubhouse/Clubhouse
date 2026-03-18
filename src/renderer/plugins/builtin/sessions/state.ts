@@ -38,11 +38,13 @@ export const sessionsState = {
   },
 
   toggleExpandedAgent(agentId: string): void {
-    if (this.expandedAgents.has(agentId)) {
-      this.expandedAgents.delete(agentId);
+    const next = new Set(this.expandedAgents);
+    if (next.has(agentId)) {
+      next.delete(agentId);
     } else {
-      this.expandedAgents.add(agentId);
+      next.add(agentId);
     }
+    this.expandedAgents = next;
     this.notify();
   },
 
