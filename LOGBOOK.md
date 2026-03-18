@@ -35,3 +35,11 @@
 - Modified `src/preload/index.ts`: updated annex API types for new fields
 - Modified `src/renderer/stores/annexStore.ts`: updated defaults for new fields
 - Modified `src/renderer/features/settings/AnnexSettingsView.tsx`: added data-testid for toggle
+
+### 2026-03-17 — #860: Durable Pairing & Key Exchange
+- Created `src/main/services/annex-peers.ts`: peer CRUD, brute-force protection state machine
+- Created `src/main/services/annex-peers.test.ts`: unit tests for CRUD, brute-force, lockout
+- Modified `src/shared/ipc-channels.ts`: added LIST_PEERS, REMOVE_PEER, REMOVE_ALL_PEERS, UNLOCK_PAIRING, PAIRING_LOCKED, PEERS_CHANGED
+- Modified `src/main/ipc/annex-handlers.ts`: registered peer management handlers
+- Modified `src/preload/index.ts`: exposed listPeers, removePeer, removeAllPeers, unlockPairing, onPeersChanged, onPairingLocked
+- Modified `src/main/services/annex-server.ts`: extended POST /pair with key exchange (publicKey, alias, icon, color), brute-force middleware

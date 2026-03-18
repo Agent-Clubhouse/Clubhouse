@@ -264,5 +264,11 @@ export const IPC = {
     REGENERATE_PIN: 'annex:regenerate-pin',
     STATUS_CHANGED: 'annex:status-changed',
     AGENT_SPAWNED: 'annex:agent-spawned',
+    LIST_PEERS: 'annex:list-peers',
+    REMOVE_PEER: 'annex:remove-peer',
+    REMOVE_ALL_PEERS: 'annex:remove-all-peers',
+    UNLOCK_PAIRING: 'annex:unlock-pairing',
+    PAIRING_LOCKED: 'annex:pairing-locked',
+    PEERS_CHANGED: 'annex:peers-changed',
   },
 } as const;

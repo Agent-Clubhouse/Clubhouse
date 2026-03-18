@@ -767,6 +767,32 @@ const api = {
       ipcRenderer.on(IPC.ANNEX.AGENT_SPAWNED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX.AGENT_SPAWNED, listener); };
     },
+    listPeers: () =>
+      ipcRenderer.invoke(IPC.ANNEX.LIST_PEERS),
+    removePeer: (fingerprint: string) =>
+      ipcRenderer.invoke(IPC.ANNEX.REMOVE_PEER, fingerprint),
+    removeAllPeers: () =>
+      ipcRenderer.invoke(IPC.ANNEX.REMOVE_ALL_PEERS),
+    unlockPairing: () =>
+      ipcRenderer.invoke(IPC.ANNEX.UNLOCK_PAIRING),
+    onPeersChanged: (callback: (peers: Array<{
+      fingerprint: string;
+      publicKey: string;
+      alias: string;
+      icon: string;
+      color: string;
+      pairedAt: string;
+      lastSeen: string;
+    }>) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, peers: any) => callback(peers);
+      ipcRenderer.on(IPC.ANNEX.PEERS_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX.PEERS_CHANGED, listener); };
+    },
+    onPairingLocked: (callback: (locked: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, locked: any) => callback(locked);
+      ipcRenderer.on(IPC.ANNEX.PAIRING_LOCKED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX.PAIRING_LOCKED, listener); };
+    },
   },
   window: {
     createPopout: (params: { type: 'agent' | 'hub'; agentId?: string; hubId?: string; projectId?: string; title?: string }) =>

@@ -5,6 +5,7 @@ import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
 import * as annexIdentity from './annex-identity';
+import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
 import * as agentConfig from './agent-config';
 import * as ptyManager from './pty-manager';
@@ -754,8 +755,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /pair — no auth required
+  // POST /pair — no auth required (with brute-force protection)
   if (method === 'POST' && url === '/pair') {
+    const source = req.socket.remoteAddress || 'unknown';
+    const bruteCheck = annexPeers.checkBruteForce(source);
+
+    if (!bruteCheck.allowed) {
+      if (bruteCheck.locked) {
+        sendJson(res, 429, { error: 'pairing_locked', message: 'Too many failed attempts. Pairing is locked.' });
+      } else {
+        sendJson(res, 429, { error: 'rate_limited', retryAfterMs: bruteCheck.delayMs });
+      }
+      return;
+    }
+
     readBody(req).then((raw) => {
       const body = parseJsonBody(raw);
       if (!body) {
@@ -767,13 +780,50 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         sendJson(res, 400, { error: 'invalid_json' });
         return;
       }
-      if (pin === currentPin) {
-        const token = randomUUID();
-        sessionTokens.add(token);
-        sendJson(res, 200, { token });
-      } else {
+
+      if (pin !== currentPin) {
+        annexPeers.recordFailedAttempt(source);
         sendJson(res, 401, { error: 'invalid_pin' });
+        return;
       }
+
+      // PIN is correct — generate session token
+      annexPeers.recordSuccessfulAttempt(source);
+      const token = randomUUID();
+      sessionTokens.add(token);
+
+      // Get our identity for key exchange
+      const identity = annexIdentity.getOrCreateIdentity();
+      const settings = annexSettings.getSettings();
+
+      // If the client sent their public key, store them as a peer
+      const clientPublicKey = body.publicKey as string | undefined;
+      const clientAlias = body.alias as string | undefined;
+      const clientIcon = body.icon as string | undefined;
+      const clientColor = body.color as string | undefined;
+
+      if (clientPublicKey) {
+        const clientFingerprint = annexIdentity.computeFingerprint(clientPublicKey);
+        annexPeers.addPeer({
+          fingerprint: clientFingerprint,
+          publicKey: clientPublicKey,
+          alias: clientAlias || 'Unknown',
+          icon: clientIcon || 'computer',
+          color: clientColor || 'indigo',
+          pairedAt: new Date().toISOString(),
+          lastSeen: new Date().toISOString(),
+        });
+      }
+
+      // Return our identity + token
+      sendJson(res, 200, {
+        token,
+        publicKey: identity.publicKey,
+        alias: settings.alias,
+        icon: settings.icon,
+        color: settings.color,
+        fingerprint: identity.fingerprint,
+      });
     }).catch((err) => {
       appLog('core:annex', 'error', 'readBody failed', { meta: { error: err instanceof Error ? err.message : String(err) } });
       res.writeHead(400);

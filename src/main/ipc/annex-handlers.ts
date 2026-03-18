@@ -3,13 +3,18 @@ import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
+import * as annexPeers from '../services/annex-peers';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, objectArg } from './validation';
+import { withValidatedArgs, objectArg, stringArg } from './validation';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
   broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, status);
+}
+
+function broadcastPeersChanged(): void {
+  broadcastToAllWindows(IPC.ANNEX.PEERS_CHANGED, annexPeers.listPeers());
 }
 
 export function registerAnnexHandlers(): void {
@@ -50,6 +55,30 @@ export function registerAnnexHandlers(): void {
     annexServer.regeneratePin();
     broadcastStatusChanged();
     return annexServer.getStatus();
+  });
+
+  // --- Peer management ---
+
+  ipcMain.handle(IPC.ANNEX.LIST_PEERS, () => {
+    return annexPeers.listPeers();
+  });
+
+  ipcMain.handle(IPC.ANNEX.REMOVE_PEER, withValidatedArgs(
+    [stringArg()],
+    (_event, fingerprint) => {
+      const removed = annexPeers.removePeer(fingerprint);
+      if (removed) broadcastPeersChanged();
+      return removed;
+    },
+  ));
+
+  ipcMain.handle(IPC.ANNEX.REMOVE_ALL_PEERS, () => {
+    annexPeers.removeAllPeers();
+    broadcastPeersChanged();
+  });
+
+  ipcMain.handle(IPC.ANNEX.UNLOCK_PAIRING, () => {
+    annexPeers.unlockPairing();
   });
 }
 
