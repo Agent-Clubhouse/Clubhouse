@@ -27,8 +27,10 @@ import { generateTestIdentity, connectMtlsWs, type TestIdentity } from './tls-te
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
-/** Cross-platform temp directory for PTY cwd */
-const SHELL_CWD = os.tmpdir();
+/** Cross-platform safe directory for PTY cwd.
+ * os.tmpdir() is blocked on macOS (/private/var is restricted).
+ * Use the user's home directory instead. */
+const SHELL_CWD = os.homedir();
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;

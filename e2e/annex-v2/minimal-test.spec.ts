@@ -181,11 +181,13 @@ test('settings UI shows Annex Server section', async () => {
       await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
     }
   });
-  await window.waitForTimeout(500);
 
-  // Navigate to settings
+  // Close settings if open, then re-open to force AccessoryPanel remount
+  // (showAnnex is set in useEffect on mount, won't re-read after save)
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
-  await settingsBtn.click();
+  await settingsBtn.click(); // toggle off
+  await window.waitForTimeout(300);
+  await settingsBtn.click(); // toggle on — remounts AccessoryPanel
   await window.waitForTimeout(500);
 
   // Look for Annex nav item
