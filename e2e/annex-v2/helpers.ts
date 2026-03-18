@@ -67,8 +67,18 @@ export async function getAnnexStatus(page: Page): Promise<AnnexStatusInfo> {
 
 /**
  * Enable Annex server programmatically via the preload API (no UI interaction).
+ * Also enables the experimental flag so the server actually starts.
  */
 export async function enableAnnexViaPreload(page: Page): Promise<void> {
+  // Enable the experimental flag first (annex is gated behind it)
+  await page.evaluate(async () => {
+    const w = window as any;
+    const expSettings = await w.clubhouse.app.getExperimentalSettings();
+    if (!expSettings.annex) {
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
+    }
+  });
+
   await page.evaluate(async () => {
     const settings = await (window as any).clubhouse.annex.getSettings();
     if (!settings.enabled) {

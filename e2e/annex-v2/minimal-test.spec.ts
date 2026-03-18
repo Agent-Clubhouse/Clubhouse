@@ -59,6 +59,15 @@ test('annex preload API is available', async () => {
 });
 
 test('annex server can be enabled and returns status', async () => {
+  // Enable experimental flag first (annex is gated behind it)
+  await window.evaluate(async () => {
+    const w = window as any;
+    const expSettings = await w.clubhouse.app.getExperimentalSettings();
+    if (!expSettings.annex) {
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
+    }
+  });
+
   // Enable annex via preload API
   await window.evaluate(async () => {
     const w = window as any;
