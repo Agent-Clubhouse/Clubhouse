@@ -69,4 +69,8 @@ export function registerGitHandlers(): void {
   ipcMain.handle(IPC.GIT.STASH_POP, withValidatedArgs([stringArg()], (_event, dirPath: string) => {
     return gitService.stashPop(dirPath);
   }));
+
+  ipcMain.handle(IPC.GIT.LIST_WORKTREES, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
+    return deferInvocation(() => gitService.listWorktrees(dirPath));
+  }));
 }

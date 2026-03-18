@@ -7,6 +7,7 @@ import type {
   FileCanvasView,
   BrowserCanvasView,
   GitDiffCanvasView,
+  TerminalCanvasView,
   PluginCanvasView,
   Position,
   Size,
@@ -107,6 +108,10 @@ export function createView(
     case 'git-diff': {
       const displayName = deduplicateDisplayName('Git Diff', existingDisplayNames);
       return { ...base, type: 'git-diff', title: 'Git Diff', displayName, metadata: {} } satisfies GitDiffCanvasView;
+    }
+    case 'terminal': {
+      const displayName = deduplicateDisplayName('Terminal', existingDisplayNames);
+      return { ...base, type: 'terminal', title: 'Terminal', displayName, metadata: {} } satisfies TerminalCanvasView;
     }
     case 'plugin':
       // Plugin views are created via createPluginView instead

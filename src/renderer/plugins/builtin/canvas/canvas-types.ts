@@ -2,7 +2,7 @@
 import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
 /** Built-in canvas view types. Plugin widget types use the 'plugin' discriminant. */
-export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'plugin';
+export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'terminal' | 'plugin';
 
 export interface Position {
   x: number;
@@ -62,6 +62,14 @@ export interface GitDiffCanvasView extends CanvasViewBase {
   filePath?: string;
 }
 
+export interface TerminalCanvasView extends CanvasViewBase {
+  type: 'terminal';
+  /** Project ID to open the terminal in. */
+  projectId?: string;
+  /** Working directory path (project root or a worktree path). */
+  cwd?: string;
+}
+
 export interface PluginCanvasView extends CanvasViewBase {
   type: 'plugin';
   /** Fully-qualified plugin widget type: "plugin:{pluginId}:{widgetId}". */
@@ -70,7 +78,7 @@ export interface PluginCanvasView extends CanvasViewBase {
   pluginId: string;
 }
 
-export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | PluginCanvasView;
+export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | TerminalCanvasView | PluginCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 

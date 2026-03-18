@@ -140,6 +140,7 @@ export const IPC = {
     CREATE_BRANCH: 'git:create-branch',
     STASH: 'git:stash',
     STASH_POP: 'git:stash-pop',
+    LIST_WORKTREES: 'git:list-worktrees',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',

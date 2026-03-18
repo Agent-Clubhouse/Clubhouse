@@ -56,6 +56,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   });
   ctx.subscriptions.push(addGitDiffCmd);
 
+  const addTerminalCmd = api.commands.register('add-terminal-view', () => {
+    const store = getStore();
+    store.getState().addView('terminal', { x: 300, y: 200 });
+  });
+  ctx.subscriptions.push(addTerminalCmd);
+
   const resetCmd = api.commands.register('reset-viewport', () => {
     const store = getStore();
     store.getState().setViewport({ panX: 0, panY: 0, zoom: 1 });

@@ -1,7 +1,7 @@
 import { execFile as nodeExecFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult } from '../../shared/types';
+import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry } from '../../shared/types';
 import { appLog } from './log-service';
 
 // Conflict status codes from git porcelain format
@@ -266,4 +266,41 @@ export async function stash(dirPath: string): Promise<GitOpResult> {
 
 export async function stashPop(dirPath: string): Promise<GitOpResult> {
   return runResult(['stash', 'pop'], dirPath);
+}
+
+/**
+ * List git worktrees for a repository.
+ * Returns the main worktree plus any linked worktrees.
+ */
+export async function listWorktrees(dirPath: string): Promise<GitWorktreeEntry[]> {
+  const output = await gitExec(['worktree', 'list', '--porcelain'], dirPath);
+  const entries: GitWorktreeEntry[] = [];
+  let current: Partial<GitWorktreeEntry> = {};
+
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current.path = line.slice('worktree '.length);
+    } else if (line === 'bare') {
+      current.isBare = true;
+    } else if (line.startsWith('branch ')) {
+      // branch refs/heads/main → main
+      const ref = line.slice('branch '.length);
+      current.branch = ref.replace('refs/heads/', '');
+    } else if (line === '') {
+      // Empty line terminates a worktree block
+      if (current.path) {
+        const wtPath = current.path;
+        const segments = wtPath.replace(/\/+$/, '').split('/');
+        entries.push({
+          path: wtPath,
+          label: segments[segments.length - 1] || wtPath,
+          branch: current.branch || '',
+          isBare: current.isBare || false,
+        });
+      }
+      current = {};
+    }
+  }
+
+  return entries;
 }

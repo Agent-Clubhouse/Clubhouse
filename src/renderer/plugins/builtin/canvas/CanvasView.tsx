@@ -1,11 +1,12 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
+import { TerminalCanvasView } from './TerminalCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -19,7 +20,7 @@ export function formatViewType(raw: string): string {
 
 /** Build a project context label for the title bar, e.g. "(Clubhouse)" or "(Clubhouse::worktree)". */
 export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): string | null {
-  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType).projectId : undefined;
+  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType | TerminalCanvasViewType).projectId : undefined;
   if (!projectId) return null;
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
@@ -276,6 +277,8 @@ export function CanvasViewComponent({
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
       case 'git-diff':
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
+      case 'terminal':
+        return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
