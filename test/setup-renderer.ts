@@ -313,5 +313,6 @@ vi.stubGlobal('clubhouse', {
     broadcastHubState: noop,
     sendHubMutation: noop,
     onHubMutation: () => noop,
+    setTitle: asyncNoop,
   },
 });

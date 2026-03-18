@@ -19,6 +19,7 @@ export function TitleBar() {
 
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
+  const dynamicTitle = usePluginStore((s) => activePluginId ? s.pluginTitles[activePluginId] : undefined);
 
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
@@ -26,11 +27,17 @@ export function TitleBar() {
   const activeProject = projects.find((p) => p.id === activeProjectId);
 
   const tabLabel = (() => {
+    // Dynamic title from window.setTitle() takes priority
+    if (dynamicTitle) return dynamicTitle;
     if (!activePluginEntry) return CORE_LABELS[explorerTab] || explorerTab;
     if (explorerTab.startsWith('plugin:app:')) {
-      return activePluginEntry.manifest.contributes?.railItem?.label || activePluginEntry.manifest.name || activePluginId;
+      return activePluginEntry.manifest.contributes?.railItem?.title
+        || activePluginEntry.manifest.contributes?.railItem?.label
+        || activePluginEntry.manifest.name || activePluginId;
     }
-    return activePluginEntry.manifest.contributes?.tab?.label || activePluginEntry.manifest.name || activePluginId;
+    return activePluginEntry.manifest.contributes?.tab?.title
+      || activePluginEntry.manifest.contributes?.tab?.label
+      || activePluginEntry.manifest.name || activePluginId;
   })();
 
   const titleText = isHome

@@ -306,11 +306,15 @@ export interface PluginContributes {
     label: string;
     icon?: string;        // SVG string or icon name
     layout?: 'sidebar-content' | 'full';  // default: 'sidebar-content'
+    /** Custom window/tab title (v0.8+). Defaults to label if not specified. */
+    title?: string;
   };
   railItem?: {
     label: string;
     icon?: string;
     position?: 'top' | 'bottom';  // default: 'top'
+    /** Custom window/tab title (v0.8+). Defaults to label if not specified. */
+    title?: string;
   };
   commands?: PluginCommandDeclaration[];
   settings?: PluginSettingDeclaration[];
@@ -673,6 +677,16 @@ export interface CanvasWidgetComponentProps {
   size: { width: number; height: number };
 }
 
+// ── Window API (v0.8+) ────────────────────────────────────────────────
+export interface WindowAPI {
+  /** Set a custom title for the plugin's tab/window. Overrides the manifest default. */
+  setTitle(title: string): void;
+  /** Reset the title back to the manifest default (contributes.tab.title or contributes.tab.label). */
+  resetTitle(): void;
+  /** Get the current effective title. */
+  getTitle(): string;
+}
+
 export interface CanvasAPI {
   /**
    * Register a canvas widget type at runtime. The widget type `id` must match
@@ -978,6 +992,8 @@ export interface PluginAPI {
   theme: ThemeAPI;
   workspace: WorkspaceAPI;
   canvas: CanvasAPI;
+  /** Window title management (v0.8+). */
+  window: WindowAPI;
   context: PluginContextInfo;
 }
 

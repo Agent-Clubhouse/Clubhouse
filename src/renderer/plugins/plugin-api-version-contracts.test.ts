@@ -35,6 +35,7 @@ import type {
   SoundsAPI,
   ThemeAPI,
   WorkspaceAPI,
+  WindowAPI,
   PluginContextInfo,
   PluginManifest,
   PluginPermission,
@@ -117,13 +118,15 @@ const WORKSPACE_API_METHODS: (keyof WorkspaceAPI)[] = [
   'listDir', 'readTree', 'watch', 'forPlugin', 'forProject',
 ];
 
+const WINDOW_API_METHODS: (keyof WindowAPI)[] = ['setTitle', 'resetTitle', 'getTitle'];
+
 const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'projectPath'];
 
 // Top-level PluginAPI namespaces
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
@@ -1048,6 +1051,69 @@ describe('§2b v0.7 pack plugins and new contributions', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('v0.8 tab.title is accepted', () => {
+      const result = validateManifest(minimalV08Manifest({
+        scope: 'project',
+        contributes: {
+          help: {},
+          tab: { label: 'My Plugin', title: 'Custom Title' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('v0.8 railItem.title is accepted on app-scoped plugin', () => {
+      const result = validateManifest(minimalV08Manifest({
+        scope: 'app',
+        contributes: {
+          help: {},
+          railItem: { label: 'My Rail', title: 'Custom Rail Title' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('tab.title is rejected on v0.7 manifests', () => {
+      const result = validateManifest(minimalV07Manifest({
+        contributes: {
+          help: {},
+          tab: { label: 'My Plugin', title: 'Custom Title' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('railItem.title is rejected on v0.7 manifests', () => {
+      const result = validateManifest({
+        id: 'test-plugin',
+        name: 'Test Plugin',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'app',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          railItem: { label: 'My Rail', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('railItem.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('tab.title must be a non-empty string', () => {
+      const result = validateManifest(minimalV08Manifest({
+        contributes: {
+          help: {},
+          tab: { label: 'My Plugin', title: '' },
+        },
+      } as Record<string, unknown>));
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title must be a non-empty string'))).toBe(true);
+    });
+
     it('v0.8 inherits all v0.7 features', () => {
       const result = validateManifest({
         id: 'v08-full',
@@ -1273,6 +1339,14 @@ describe('§3 API surface area contracts — createMockAPI()', () => {
     }
   });
 
+  describe('api.window surface', () => {
+    for (const method of WINDOW_API_METHODS) {
+      it(`api.window.${method} exists and is callable`, () => {
+        expect(typeof api.window[method]).toBe('function');
+      });
+    }
+  });
+
   describe('api.context surface', () => {
     for (const prop of CONTEXT_PROPERTIES) {
       it(`api.context.${prop} exists`, () => {
@@ -1441,6 +1515,18 @@ describe('§4 Mock API safe return values', () => {
     expect(typeof d.dispose).toBe('function');
   });
 
+  it('api.window.getTitle() returns empty string', () => {
+    expect(api.window.getTitle()).toBe('');
+  });
+
+  it('api.window.setTitle() is a no-op', () => {
+    expect(api.window.setTitle('test')).toBeUndefined();
+  });
+
+  it('api.window.resetTitle() is a no-op', () => {
+    expect(api.window.resetTitle()).toBeUndefined();
+  });
+
   it('api.context has expected default values', () => {
     expect(api.context.mode).toBe('project');
     expect(api.context.projectId).toBe('test-project');
@@ -1591,6 +1677,13 @@ describe('§6 Regression guards — API surface removal detection', () => {
       expect(c in api.widgets).toBe(true);
     }
   });
+
+  it('removing any WindowAPI method would be detected', () => {
+    const api = createMockAPI();
+    for (const method of WINDOW_API_METHODS) {
+      expect(method in api.window).toBe(true);
+    }
+  });
 });
 
 // =============================================================================
@@ -1716,6 +1809,24 @@ describe('§8 Cross-version backward compatibility', () => {
     expect(result.valid).toBe(true);
     expect(result.manifest).toBeDefined();
     expect(result.manifest!.engine.api).toBe(0.8);
+  });
+
+  it('v0.8 title features work on v0.8 manifests', () => {
+    const result = validateManifest({
+      id: 'v08-title',
+      name: 'v0.8 Title',
+      version: '1.0.0',
+      engine: { api: 0.8 },
+      scope: 'dual',
+      permissions: ['files'],
+      contributes: {
+        help: {},
+        tab: { label: 'My Tab', title: 'Hub: My Hub' },
+        railItem: { label: 'My Rail', title: 'Hub: My Hub' },
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
   });
 
   it('v0.8 canvas features work on v0.8 manifests', () => {

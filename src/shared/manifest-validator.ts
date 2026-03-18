@@ -357,6 +357,28 @@ export function validateManifest(raw: unknown): ValidationResult {
       }
     }
 
+    // v0.8+ contributes.tab.title / contributes.railItem.title validation
+    if (contrib.tab && typeof contrib.tab === 'object') {
+      const tab = contrib.tab as Record<string, unknown>;
+      if (tab.title !== undefined) {
+        if (apiVersion < 0.8) {
+          errors.push('contributes.tab.title requires API >= 0.8');
+        } else if (typeof tab.title !== 'string' || !tab.title) {
+          errors.push('contributes.tab.title must be a non-empty string');
+        }
+      }
+    }
+    if (contrib.railItem && typeof contrib.railItem === 'object') {
+      const rail = contrib.railItem as Record<string, unknown>;
+      if (rail.title !== undefined) {
+        if (apiVersion < 0.8) {
+          errors.push('contributes.railItem.title requires API >= 0.8');
+        } else if (typeof rail.title !== 'string' || !rail.title) {
+          errors.push('contributes.railItem.title must be a non-empty string');
+        }
+      }
+    }
+
     // v0.8+ contributes.canvasWidgets validation
     if (contrib.canvasWidgets !== undefined) {
       if (apiVersion < 0.8) {
