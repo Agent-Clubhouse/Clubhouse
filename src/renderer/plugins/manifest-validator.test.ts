@@ -1254,4 +1254,122 @@ describe('manifest-validator', () => {
       expect(result.valid).toBe(true);
     });
   });
+
+  describe('v0.8 contributes.tab.title / railItem.title', () => {
+    it('accepts tab.title on v0.8 manifest', () => {
+      const result = validateManifest({
+        id: 'title-test',
+        name: 'Title Test',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'My Tab', title: 'Custom Window Title' },
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts railItem.title on v0.8 app-scoped manifest', () => {
+      const result = validateManifest({
+        id: 'rail-title',
+        name: 'Rail Title',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'app',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          railItem: { label: 'My Rail', title: 'Custom Rail Title' },
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects tab.title on v0.7 manifest', () => {
+      const result = validateManifest({
+        id: 'title-old',
+        name: 'Title Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'Tab', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('rejects railItem.title on v0.7 manifest', () => {
+      const result = validateManifest({
+        id: 'rail-old',
+        name: 'Rail Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'app',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          railItem: { label: 'Rail', title: 'Custom' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('railItem.title requires API >= 0.8'))).toBe(true);
+    });
+
+    it('rejects empty string tab.title', () => {
+      const result = validateManifest({
+        id: 'empty-title',
+        name: 'Empty Title',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'Tab', title: '' },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title must be a non-empty string'))).toBe(true);
+    });
+
+    it('rejects non-string tab.title', () => {
+      const result = validateManifest({
+        id: 'bad-title',
+        name: 'Bad Title',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'Tab', title: 42 },
+        },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('tab.title must be a non-empty string'))).toBe(true);
+    });
+
+    it('allows tab without title on v0.8 (title is optional)', () => {
+      const result = validateManifest({
+        id: 'no-title',
+        name: 'No Title',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files'],
+        contributes: {
+          help: {},
+          tab: { label: 'Tab' },
+        },
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
 });

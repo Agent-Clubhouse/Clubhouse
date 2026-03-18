@@ -21,6 +21,7 @@ import { createProcessAPI } from './plugin-api-process';
 import { createSoundsAPI } from './plugin-api-sounds';
 import { createThemeAPI } from './plugin-api-theme';
 import { createCanvasAPI } from './plugin-api-canvas';
+import { createWindowAPI } from './plugin-api-window';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
@@ -131,6 +132,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'canvas', 'canvas',
       ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
     ),
+    window: createWindowAPI(ctx, manifest), // always available (v0.8+)
     context: contextInfo, // always available
   };
 

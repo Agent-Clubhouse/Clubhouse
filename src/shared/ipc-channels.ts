@@ -239,6 +239,7 @@ export const IPC = {
     HUB_STATE_CHANGED: 'window:hub-state-changed',
     HUB_MUTATION: 'window:hub-mutation',
     REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
+    SET_TITLE: 'window:set-title',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',

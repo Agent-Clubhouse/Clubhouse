@@ -302,6 +302,16 @@ export function registerWindowHandlers(): void {
     broadcastToPopouts(IPC.WINDOW.HUB_STATE_CHANGED, state);
   });
 
+  // ── Plugin window title ─────────────────────────────────────────────
+  ipcMain.handle(IPC.WINDOW.SET_TITLE, withValidatedArgs(
+    [stringArg()],
+    (event, title) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      win.setTitle(title);
+    }
+  }));
+
   // Pop-out sends a hub mutation → forward to main renderer
   ipcMain.on(IPC.WINDOW.HUB_MUTATION, (_event, hubId: string, scope: string, mutation: any, projectId?: string) => {
     const mainWindow = findMainWindow();
