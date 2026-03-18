@@ -3,6 +3,7 @@ import type { FileCanvasView as FileCanvasViewType, CanvasView } from './canvas-
 import type { PluginAPI } from '../../../../shared/plugin-types';
 import { CanvasFileTree } from './CanvasFileTree';
 import { ReadOnlyMonacoEditor } from './ReadOnlyMonacoEditor';
+import { ResizableSidebar } from './ResizableSidebar';
 
 interface FileCanvasViewProps {
   view: FileCanvasViewType;
@@ -176,7 +177,7 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
       {/* Split panel: tree + content */}
       <div className="flex flex-1 min-h-0">
         {/* File tree sidebar */}
-        <div className="w-[180px] flex-shrink-0 border-r border-surface-0 overflow-hidden flex flex-col bg-ctp-mantle/30">
+        <ResizableSidebar defaultWidth={180} minWidth={120} maxWidth={400} className="overflow-hidden flex flex-col bg-ctp-mantle/30">
           <CanvasFileTree
             api={api}
             projectPath={activeProject?.path || ''}
@@ -185,7 +186,7 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
             showHidden={showHidden}
             onSelectFile={handleSelectFile}
           />
-        </div>
+        </ResizableSidebar>
 
         {/* File content area */}
         <div className="flex-1 min-w-0 flex flex-col">
