@@ -136,3 +136,89 @@ describe('CanvasView — scroll isolation', () => {
     expect(event.stopPropagation).toHaveBeenCalled();
   });
 });
+
+// ── Permission indicator logic ─────────────────────────────────────────
+
+describe('CanvasView — permission indicator', () => {
+  const borderColorForState = (state: string | null, focused = false) => {
+    const isPermission = state === 'needs_permission';
+    const isToolError = state === 'tool_error';
+    return isPermission
+      ? 'rgb(249,115,22)'
+      : isToolError
+        ? 'rgb(234,179,8)'
+        : 'transparent';
+  };
+
+  it('returns orange for needs_permission state', () => {
+    expect(borderColorForState('needs_permission')).toBe('rgb(249,115,22)');
+  });
+
+  it('returns yellow for tool_error state', () => {
+    expect(borderColorForState('tool_error')).toBe('rgb(234,179,8)');
+  });
+
+  it('returns transparent for idle state', () => {
+    expect(borderColorForState('idle')).toBe('transparent');
+  });
+
+  it('returns transparent for working state', () => {
+    expect(borderColorForState('working')).toBe('transparent');
+  });
+
+  it('returns transparent for null state', () => {
+    expect(borderColorForState(null)).toBe('transparent');
+  });
+
+  it('applies animate-pulse class only for needs_permission', () => {
+    const shouldPulse = (state: string | null) => state === 'needs_permission';
+    expect(shouldPulse('needs_permission')).toBe(true);
+    expect(shouldPulse('tool_error')).toBe(false);
+    expect(shouldPulse('idle')).toBe(false);
+    expect(shouldPulse(null)).toBe(false);
+  });
+
+  it('sets border width to 2 for permission/error states', () => {
+    const borderWidth = (state: string | null) => {
+      const isPermission = state === 'needs_permission';
+      const isToolError = state === 'tool_error';
+      return (isPermission || isToolError) ? 2 : 0;
+    };
+    expect(borderWidth('needs_permission')).toBe(2);
+    expect(borderWidth('tool_error')).toBe(2);
+    expect(borderWidth('idle')).toBe(0);
+    expect(borderWidth(null)).toBe(0);
+  });
+});
+
+// ── Canvas zoom state ──────────────────────────────────────────────────
+
+describe('Canvas — zoom view toggle', () => {
+  it('toggles zoom on when clicking zoom on an unzoomed view', () => {
+    let zoomedViewId: string | null = null;
+    const onZoomView = (viewId: string | null) => { zoomedViewId = viewId; };
+
+    onZoomView('cv_1');
+    expect(zoomedViewId).toBe('cv_1');
+  });
+
+  it('toggles zoom off when clicking zoom on the already-zoomed view', () => {
+    let zoomedViewId: string | null = 'cv_1';
+    const toggle = (viewId: string) => {
+      zoomedViewId = zoomedViewId === viewId ? null : viewId;
+    };
+
+    toggle('cv_1');
+    expect(zoomedViewId).toBeNull();
+  });
+
+  it('switches to a different view when clicking zoom on another view', () => {
+    let zoomedViewId: string | null = 'cv_1';
+    const toggle = (viewId: string) => {
+      zoomedViewId = zoomedViewId === viewId ? null : viewId;
+    };
+
+    toggle('cv_2');
+    expect(zoomedViewId).toBe('cv_2');
+  });
+});

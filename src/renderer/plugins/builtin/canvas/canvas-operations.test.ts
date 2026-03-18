@@ -17,6 +17,9 @@ import {
   clampPosition,
   clampViewport,
   zoomTowardPoint,
+  computeBoundingBox,
+  viewportToFitViews,
+  viewportToCenterView,
   detectOverlaps,
   reflowViews,
   createCanvasCounter,
@@ -158,13 +161,13 @@ describe('canvas-operations', () => {
       expect(result[0].position).toEqual({ x: 300, y: 400 });
     });
 
-    it('clamps negative positions to 0', () => {
+    it('allows negative positions within symmetric bounds', () => {
       const views: CanvasView[] = [
         { id: 'cv_1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null },
       ];
       const result = updateViewPosition(views, 'cv_1', { x: -100, y: -50 });
-      expect(result[0].position.x).toBe(0);
-      expect(result[0].position.y).toBe(0);
+      expect(result[0].position.x).toBe(-100);
+      expect(result[0].position.y).toBe(-50);
     });
   });
 
@@ -220,12 +223,20 @@ describe('canvas-operations', () => {
   });
 
   describe('clampPosition', () => {
-    it('clamps negative values to 0', () => {
-      expect(clampPosition({ x: -10, y: -20 })).toEqual({ x: 0, y: 0 });
+    it('allows moderate negative values (symmetric range)', () => {
+      expect(clampPosition({ x: -10, y: -20 })).toEqual({ x: -10, y: -20 });
+    });
+
+    it('clamps values below -CANVAS_SIZE', () => {
+      expect(clampPosition({ x: -(CANVAS_SIZE + 100), y: -(CANVAS_SIZE + 200) })).toEqual({ x: -CANVAS_SIZE, y: -CANVAS_SIZE });
     });
 
     it('clamps values above CANVAS_SIZE', () => {
       expect(clampPosition({ x: CANVAS_SIZE + 100, y: CANVAS_SIZE + 200 })).toEqual({ x: CANVAS_SIZE, y: CANVAS_SIZE });
+    });
+
+    it('passes through values within range', () => {
+      expect(clampPosition({ x: 500, y: -300 })).toEqual({ x: 500, y: -300 });
     });
   });
 
@@ -308,6 +319,84 @@ describe('canvas-operations', () => {
       ];
       const result = reflowViews(views, 'cv_1', 'right');
       expect(result).toEqual(views);
+    });
+  });
+
+  // ── Viewport helpers ─────────────────────────────────────────────
+
+  describe('computeBoundingBox', () => {
+    it('returns null for empty array', () => {
+      expect(computeBoundingBox([])).toBeNull();
+    });
+
+    it('computes bounding box of a single view', () => {
+      const views: CanvasView[] = [
+        { id: 'cv_1', type: 'agent', position: { x: 100, y: 200 }, size: { width: 300, height: 400 }, title: 'A', zIndex: 0, agentId: null },
+      ];
+      expect(computeBoundingBox(views)).toEqual({ x: 100, y: 200, width: 300, height: 400 });
+    });
+
+    it('computes bounding box of multiple views', () => {
+      const views: CanvasView[] = [
+        { id: 'cv_1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null },
+        { id: 'cv_2', type: 'agent', position: { x: 300, y: 100 }, size: { width: 200, height: 200 }, title: 'B', zIndex: 1, agentId: null },
+      ];
+      const bbox = computeBoundingBox(views);
+      expect(bbox).toEqual({ x: 0, y: 0, width: 500, height: 300 });
+    });
+
+    it('handles views at negative positions', () => {
+      const views: CanvasView[] = [
+        { id: 'cv_1', type: 'agent', position: { x: -100, y: -50 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null },
+        { id: 'cv_2', type: 'agent', position: { x: 100, y: 100 }, size: { width: 200, height: 200 }, title: 'B', zIndex: 1, agentId: null },
+      ];
+      const bbox = computeBoundingBox(views);
+      expect(bbox).toEqual({ x: -100, y: -50, width: 400, height: 350 });
+    });
+  });
+
+  describe('viewportToFitViews', () => {
+    it('returns default viewport for empty views', () => {
+      expect(viewportToFitViews([], 800, 600)).toEqual({ panX: 0, panY: 0, zoom: 1 });
+    });
+
+    it('fits a single view in the container', () => {
+      const views: CanvasView[] = [
+        { id: 'cv_1', type: 'agent', position: { x: 100, y: 100 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null },
+      ];
+      const vp = viewportToFitViews(views, 800, 600);
+      // Center should be at (200, 200) in canvas space
+      // With zoom 1 and container 800x600, panX = 400/1 - 200 = 200, panY = 300/1 - 200 = 100
+      expect(vp.zoom).toBeLessThanOrEqual(1);
+      expect(vp.zoom).toBeGreaterThanOrEqual(MIN_ZOOM);
+    });
+
+    it('zoom does not exceed 1', () => {
+      const views: CanvasView[] = [
+        { id: 'cv_1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 50, height: 50 }, title: 'A', zIndex: 0, agentId: null },
+      ];
+      const vp = viewportToFitViews(views, 800, 600);
+      expect(vp.zoom).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('viewportToCenterView', () => {
+    it('centers viewport on a view', () => {
+      const view: CanvasView = { id: 'cv_1', type: 'agent', position: { x: 100, y: 100 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null };
+      const vp = viewportToCenterView(view, 800, 600, 1);
+      // Center of view is (200, 200). panX = 400 - 200 = 200, panY = 300 - 200 = 100
+      expect(vp.panX).toBe(200);
+      expect(vp.panY).toBe(100);
+      expect(vp.zoom).toBe(1);
+    });
+
+    it('accounts for zoom when centering', () => {
+      const view: CanvasView = { id: 'cv_1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null };
+      const vp = viewportToCenterView(view, 800, 600, 2);
+      // Center of view is (100, 100). panX = (400/2) - 100 = 100, panY = (300/2) - 100 = 50
+      expect(vp.panX).toBe(100);
+      expect(vp.panY).toBe(50);
+      expect(vp.zoom).toBe(2);
     });
   });
 

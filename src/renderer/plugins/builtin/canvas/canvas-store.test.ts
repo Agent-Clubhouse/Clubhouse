@@ -156,6 +156,40 @@ describe('canvas-store', () => {
     expect(store.getState().viewport.zoom).toBe(2.0);
   });
 
+  // ── Zoom view ───────────────────────────────────────────────────
+
+  it('starts with no zoomed view', () => {
+    expect(store.getState().zoomedViewId).toBeNull();
+  });
+
+  it('zooms a view', () => {
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+    store.getState().zoomView(viewId);
+    expect(store.getState().zoomedViewId).toBe(viewId);
+  });
+
+  it('unzooms a view', () => {
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+    store.getState().zoomView(viewId);
+    store.getState().zoomView(null);
+    expect(store.getState().zoomedViewId).toBeNull();
+  });
+
+  it('zoomed view is per-canvas', () => {
+    const canvas1 = store.getState().canvases[0].id;
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+    store.getState().zoomView(viewId);
+    expect(store.getState().zoomedViewId).toBe(viewId);
+
+    // Switch to new canvas — zoomed should be null
+    store.getState().addCanvas();
+    expect(store.getState().zoomedViewId).toBeNull();
+
+    // Switch back — should still be zoomed
+    store.getState().setActiveCanvas(canvas1);
+    expect(store.getState().zoomedViewId).toBe(viewId);
+  });
+
   // ── Canvas isolation ───────────────────────────────────────────
 
   it('views are isolated per canvas', () => {
