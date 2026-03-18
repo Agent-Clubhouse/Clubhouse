@@ -40,6 +40,7 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
   const projects = useMemo(() => api.projects.list(), [api]);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
+  const [readOnly, setReadOnly] = useState(true);
 
   const activeProjectId = view.projectId || (isAppMode ? undefined : api.context.projectId);
   const activeProject = useMemo(
@@ -79,6 +80,16 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
     const fileName = filePath.split('/').pop() || filePath;
     onUpdate({ filePath, title: fileName, metadata: { filePath, projectId: activeProjectId ?? null } } as Partial<FileCanvasViewType>);
   }, [onUpdate]);
+
+  const handleSave = useCallback(async (content: string) => {
+    if (!view.filePath || !activeProject) return;
+    if (isAppMode) {
+      await window.clubhouse.file.write(`${activeProject.path}/${view.filePath}`, content);
+    } else {
+      await api.project.writeFile(view.filePath, content);
+    }
+    setFileContent(content);
+  }, [api, isAppMode, activeProject, view.filePath]);
 
   const handleBackToProjects = useCallback(() => {
     onUpdate({ projectId: undefined, filePath: undefined, title: 'Files' } as Partial<FileCanvasViewType>);
@@ -144,6 +155,22 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
             <span className="truncate">{view.filePath}</span>
           </>
         )}
+        <span className="flex-1" />
+        <label
+          className="flex items-center gap-1 cursor-pointer select-none ml-2"
+          title={readOnly ? 'Read-only mode' : 'Edit mode'}
+        >
+          <input
+            type="checkbox"
+            checked={readOnly}
+            onChange={(e) => setReadOnly(e.target.checked)}
+            className="accent-ctp-blue w-3 h-3"
+            data-testid="file-readonly-toggle"
+          />
+          <span className={readOnly ? 'text-ctp-subtext0' : 'text-ctp-peach'}>
+            {readOnly ? 'Read-only' : 'Editing'}
+          </span>
+        </label>
       </div>
 
       {/* Split panel: tree + content */}
@@ -166,6 +193,8 @@ export function FileCanvasView({ view, api, onUpdate }: FileCanvasViewProps) {
             <ReadOnlyMonacoEditor
               value={fileContent}
               filePath={view.filePath}
+              readOnly={readOnly}
+              onSave={handleSave}
             />
           ) : view.filePath && fileContent === null ? (
             <div className="flex-1 flex items-center justify-center text-ctp-subtext0 text-xs">

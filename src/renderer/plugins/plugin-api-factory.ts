@@ -21,6 +21,7 @@ import { createProcessAPI } from './plugin-api-process';
 import { createSoundsAPI } from './plugin-api-sounds';
 import { createThemeAPI } from './plugin-api-theme';
 import { createCanvasAPI } from './plugin-api-canvas';
+import { createWindowAPI } from './plugin-api-window';
 
 // Re-export test helpers and utilities used by external consumers
 export { _resetEnforcedViolations } from './plugin-api-shared';
@@ -33,8 +34,10 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
 
   // For dual-scope plugins, project API is available only in project mode
   const projectAvailable = ctx.scope === 'project' || (isDual && effectiveMode === 'project');
-  // For dual-scope plugins, projects API is always available; for single scope it depends
-  const projectsAvailable = ctx.scope === 'app' || isDual;
+  // For dual-scope plugins, projects API is always available; for single scope it depends.
+  // v0.8+: project-scoped plugins can also access projects API (lifted scope restriction).
+  const apiVersion = manifest?.engine?.api ?? 0;
+  const projectsAvailable = ctx.scope === 'app' || isDual || (ctx.scope === 'project' && apiVersion >= 0.8);
   const scopeLabel = effectiveMode === 'app' ? 'app' : ctx.scope;
 
   const contextInfo: PluginContextInfo = {
@@ -129,6 +132,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       true, scopeLabel, 'canvas', 'canvas',
       ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
     ),
+    window: createWindowAPI(ctx, manifest), // always available (v0.8+)
     context: contextInfo, // always available
   };
 

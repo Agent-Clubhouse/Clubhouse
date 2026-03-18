@@ -145,7 +145,7 @@ export const IPC = {
     OPEN_EXTERNAL_URL: 'app:open-external-url',
     OPEN_SETTINGS: 'app:open-settings',
     OPEN_ABOUT: 'app:open-about',
-    EDIT_COMMAND: 'app:edit-command',
+
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
     SEND_NOTIFICATION: 'app:send-notification',
@@ -239,6 +239,14 @@ export const IPC = {
     HUB_STATE_CHANGED: 'window:hub-state-changed',
     HUB_MUTATION: 'window:hub-mutation',
     REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
+    SET_TITLE: 'window:set-title',
+    // Canvas state sync
+    GET_CANVAS_STATE: 'window:get-canvas-state',
+    REQUEST_CANVAS_STATE: 'window:request-canvas-state',
+    CANVAS_STATE_RESPONSE: 'window:canvas-state-response',
+    CANVAS_STATE_CHANGED: 'window:canvas-state-changed',
+    CANVAS_MUTATION: 'window:canvas-mutation',
+    REQUEST_CANVAS_MUTATION: 'window:request-canvas-mutation',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',

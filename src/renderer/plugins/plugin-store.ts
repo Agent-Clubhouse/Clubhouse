@@ -28,6 +28,8 @@ interface PluginState {
   externalPluginsEnabled: boolean;
   permissionViolations: PermissionViolation[];
   contextRevision: number;
+  /** Dynamic plugin titles set via the window API (pluginId -> title). */
+  pluginTitles: Record<string, string>;
 
   // Actions
   bumpContextRevision: () => void;
@@ -49,6 +51,8 @@ interface PluginState {
   recordPermissionViolation: (violation: PermissionViolation) => void;
   clearPermissionViolation: (pluginId: string) => void;
   setPendingPermissions: (pluginId: string, permissions: PluginPermission[] | undefined) => void;
+  setPluginTitle: (pluginId: string, title: string) => void;
+  clearPluginTitle: (pluginId: string) => void;
 }
 
 export const usePluginStore = create<PluginState>((set) => ({
@@ -61,6 +65,7 @@ export const usePluginStore = create<PluginState>((set) => ({
   externalPluginsEnabled: false,
   permissionViolations: [],
   contextRevision: 0,
+  pluginTitles: {},
 
   bumpContextRevision: () =>
     set((s) => ({ contextRevision: s.contextRevision + 1 })),
@@ -207,5 +212,16 @@ export const usePluginStore = create<PluginState>((set) => ({
           [pluginId]: { ...entry, pendingPermissions: permissions },
         },
       };
+    }),
+
+  setPluginTitle: (pluginId, title) =>
+    set((s) => ({
+      pluginTitles: { ...s.pluginTitles, [pluginId]: title },
+    })),
+
+  clearPluginTitle: (pluginId) =>
+    set((s) => {
+      const { [pluginId]: _, ...rest } = s.pluginTitles;
+      return { pluginTitles: rest };
     }),
 }));

@@ -8,7 +8,7 @@ function platformIsMac(): boolean {
  * Read text from the system clipboard.
  * Falls back to empty string on failure (e.g. permission denied).
  */
-async function readClipboard(): Promise<string> {
+export async function readClipboard(): Promise<string> {
   try {
     return await navigator.clipboard.readText();
   } catch {
@@ -19,7 +19,7 @@ async function readClipboard(): Promise<string> {
 /**
  * Write text to the system clipboard.
  */
-async function writeClipboard(text: string): Promise<void> {
+export async function writeClipboard(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
@@ -30,7 +30,7 @@ async function writeClipboard(text: string): Promise<void> {
 /**
  * Paste clipboard text into the terminal, respecting bracketed paste mode.
  */
-async function pasteIntoTerminal(
+export async function pasteIntoTerminal(
   term: Terminal,
   writeToPty: (data: string) => void
 ): Promise<void> {

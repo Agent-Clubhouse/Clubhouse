@@ -86,9 +86,9 @@ describe('commandPaletteStore', () => {
       expect(useCommandPaletteStore.getState().mode).toBe('agents');
     });
 
-    it('derives mode "hubs" from # prefix', () => {
+    it('derives mode "spaces" from # prefix', () => {
       useCommandPaletteStore.getState().setQuery('#myhub');
-      expect(useCommandPaletteStore.getState().mode).toBe('hubs');
+      expect(useCommandPaletteStore.getState().mode).toBe('spaces');
     });
 
     it('derives mode "projects" from / prefix', () => {

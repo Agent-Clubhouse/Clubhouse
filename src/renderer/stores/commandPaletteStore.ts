@@ -4,7 +4,7 @@ import { rendererLog } from '../plugins/renderer-logger';
 const RECENTS_KEY = 'clubhouse_command_palette_recents';
 const MAX_RECENTS = 20;
 
-export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects' | 'hubs';
+export type PaletteMode = 'all' | 'commands' | 'agents' | 'projects' | 'spaces';
 
 interface RecentCommand {
   id: string;
@@ -32,7 +32,7 @@ function saveRecents(recents: RecentCommand[]): void {
 function deriveMode(query: string): PaletteMode {
   if (query.startsWith('>')) return 'commands';
   if (query.startsWith('@')) return 'agents';
-  if (query.startsWith('#')) return 'hubs';
+  if (query.startsWith('#')) return 'spaces';
   if (query.startsWith('/')) return 'projects';
   return 'all';
 }

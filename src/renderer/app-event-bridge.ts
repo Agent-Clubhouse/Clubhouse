@@ -23,12 +23,15 @@ import { pluginHotkeyRegistry } from './plugins/plugin-hotkeys';
 import { pluginEventBus } from './plugins/plugin-events';
 import { getProjectHubStore, useAppHubStore } from './plugins/builtin/hub/main';
 import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
-import type { AgentHookEvent, AgentStatus, HubMutation, SoundEvent } from '../shared/types';
+import { useAppCanvasStore, getProjectCanvasStore, hasProjectCanvasStore } from './plugins/builtin/canvas/main';
+import { applyCanvasMutation } from './plugins/builtin/canvas/canvas-sync';
+import type { AgentHookEvent, AgentStatus, HubMutation, CanvasMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initAnnexClientListener } from './stores/annexClientStore';
 import { useLockStore } from './stores/lockStore';
+
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
@@ -102,6 +105,44 @@ function initWindowListeners(): (() => void)[] {
       (hubId: string, scope: string, mutation: unknown, projectId?: string) => {
         const store = scope === 'global' ? useAppHubStore : getProjectHubStore(projectId ?? null);
         applyHubMutation(store, hubId, mutation as HubMutation);
+      },
+    ),
+  );
+
+  // Respond to canvas state requests from pop-out windows
+  removers.push(
+    window.clubhouse.window.onRequestCanvasState(
+      (requestId: string, canvasId: string, scope: string, projectId?: string) => {
+        const store = scope === 'global' ? useAppCanvasStore :
+          (projectId && hasProjectCanvasStore(projectId)) ? getProjectCanvasStore(projectId) : null;
+        if (!store) {
+          window.clubhouse.window.respondCanvasState(requestId, null);
+          return;
+        }
+        const state = store.getState();
+        const canvas = state.canvases.find((c) => c.id === canvasId);
+        if (canvas) {
+          window.clubhouse.window.respondCanvasState(requestId, {
+            canvasId: canvas.id,
+            name: canvas.name,
+            views: canvas.views,
+            viewport: canvas.viewport,
+            nextZIndex: canvas.nextZIndex,
+            zoomedViewId: canvas.zoomedViewId,
+          });
+        } else {
+          window.clubhouse.window.respondCanvasState(requestId, null);
+        }
+      },
+    ),
+  );
+
+  // Apply canvas mutations forwarded from pop-out windows
+  removers.push(
+    window.clubhouse.window.onCanvasMutation(
+      (canvasId: string, scope: string, mutation: unknown, projectId?: string) => {
+        const store = scope === 'global' ? useAppCanvasStore : getProjectCanvasStore(projectId ?? null);
+        applyCanvasMutation(store, canvasId, mutation as CanvasMutation);
       },
     ),
   );
@@ -450,45 +491,6 @@ function initStaleStatusCleanup(): () => void {
   return () => clearInterval(id);
 }
 
-// ─── Edit Command Dispatcher ────────────────────────────────────────────────
-// Handles edit commands (undo, redo, cut, copy, paste, selectAll) sent from
-// the Electron menu. Routes to Monaco when a Monaco editor has focus, otherwise
-// falls back to native DOM commands.
-
-function selectAllInContainer(container: HTMLElement): void {
-  const sel = window.getSelection();
-  if (!sel) return;
-  const range = document.createRange();
-  range.selectNodeContents(container);
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
-
-function initEditCommandListener(): () => void {
-  return window.clubhouse.app.onEditCommand((command: string) => {
-    // 1. Try Monaco editor first
-    // Lazy-import to avoid circular dependency — the module is already loaded
-    // by the time edit commands arrive.
-    import('./plugins/builtin/files/MonacoEditor').then(({ handleMonacoEditCommand }) => {
-      if (handleMonacoEditCommand(command)) return;
-
-      // 2. Scope selectAll to the focused container when inside markdown preview
-      if (command === 'selectAll') {
-        const active = document.activeElement;
-        const preview = active?.closest?.('.help-content') ??
-          document.querySelector('.help-content');
-        if (preview) {
-          selectAllInContainer(preview as HTMLElement);
-          return;
-        }
-      }
-
-      // 3. Fallback: native DOM command (works for inputs, textareas, contenteditable)
-      document.execCommand(command);
-    });
-  });
-}
-
 // ─── Keyboard Shortcut Dispatcher ───────────────────────────────────────────
 
 function initKeyboardShortcuts(): () => void {
@@ -572,7 +574,6 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initActiveAgentSound());
   cleanups.push(initNotificationClearing());
   cleanups.push(initStaleStatusCleanup());
-  cleanups.push(initEditCommandListener());
   cleanups.push(initKeyboardShortcuts());
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());

@@ -207,6 +207,11 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       registerWidgetType: () => ({ dispose: noop }),
       queryWidgets: () => [],
     },
+    window: {
+      setTitle: noop,
+      resetTitle: noop,
+      getTitle: () => '',
+    },
     context: {
       mode: 'project',
       projectId: 'test-project',

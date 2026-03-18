@@ -176,6 +176,50 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
     }
   }, [effectivePath, view.filePath, fetchGitInfo, fetchDiff]);
 
+  // ── Context menu state ─────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; filePath: string; status: string; staged: boolean } | null>(null);
+  const [confirmRevert, setConfirmRevert] = useState<string | null>(null);
+
+  const handleFileContextMenu = useCallback((e: React.MouseEvent, filePath: string, status: string, staged: boolean) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, filePath, status, staged });
+  }, []);
+
+  const handleStageFile = useCallback(async (filePath: string) => {
+    if (!effectivePath) return;
+    await window.clubhouse.git.stage(effectivePath, filePath);
+    setContextMenu(null);
+    handleRefresh();
+  }, [effectivePath, handleRefresh]);
+
+  const handleUnstageFile = useCallback(async (filePath: string) => {
+    if (!effectivePath) return;
+    await window.clubhouse.git.unstage(effectivePath, filePath);
+    setContextMenu(null);
+    handleRefresh();
+  }, [effectivePath, handleRefresh]);
+
+  const handleRevertFile = useCallback(async (filePath: string, isUntracked: boolean) => {
+    if (!effectivePath) return;
+    await window.clubhouse.git.discard(effectivePath, filePath, isUntracked);
+    setContextMenu(null);
+    setConfirmRevert(null);
+    handleRefresh();
+    // If we were viewing the reverted file, clear the diff
+    if (view.filePath === filePath) {
+      onUpdate({ filePath: undefined, title: activeProject?.name || 'Git Diff', metadata: { filePath: null } } as Partial<GitDiffCanvasViewType>);
+      setDiffData(null);
+    }
+  }, [effectivePath, view.filePath, activeProject, onUpdate, handleRefresh]);
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClickOutside = () => { setContextMenu(null); setConfirmRevert(null); };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [contextMenu]);
+
   // ── Callbacks ───────────────────────────────────────────────────
 
   const handleSelectProject = useCallback((projectId: string) => {
@@ -408,6 +452,7 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
                       isSelected ? 'bg-ctp-surface1' : 'hover:bg-surface-0'
                     }`}
                     onClick={() => handleSelectFile(file.path)}
+                    onContextMenu={(e) => handleFileContextMenu(e, file.path, file.status, file.staged)}
                     title={`${file.path} (${info.label})`}
                     data-testid={`git-diff-file-${file.path}`}
                   >
@@ -449,6 +494,76 @@ export function GitDiffCanvasView({ view, api, onUpdate }: GitDiffCanvasViewProp
           )}
         </div>
       </div>
+
+      {/* Right-click context menu */}
+      {contextMenu && !confirmRevert && (
+        <div
+          className="fixed z-50 bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-lg py-1 min-w-[140px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          data-testid="git-diff-context-menu"
+        >
+          {contextMenu.staged ? (
+            <button
+              className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
+              onClick={() => handleUnstageFile(contextMenu.filePath)}
+              data-testid="git-diff-unstage"
+            >
+              Unstage
+            </button>
+          ) : (
+            <button
+              className="w-full text-left px-3 py-1.5 text-[11px] text-ctp-text hover:bg-ctp-surface1 transition-colors"
+              onClick={() => handleStageFile(contextMenu.filePath)}
+              data-testid="git-diff-stage"
+            >
+              Stage
+            </button>
+          )}
+          <button
+            className="w-full text-left px-3 py-1.5 text-[11px] text-red-400 hover:bg-ctp-surface1 transition-colors"
+            onClick={() => setConfirmRevert(contextMenu.filePath)}
+            data-testid="git-diff-revert"
+          >
+            Revert Changes
+          </button>
+        </div>
+      )}
+
+      {/* Revert confirmation dialog */}
+      {confirmRevert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setConfirmRevert(null); setContextMenu(null); }}>
+          <div
+            className="bg-ctp-surface0 border border-ctp-surface2 rounded-lg shadow-xl p-4 max-w-[320px]"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="git-diff-revert-confirm"
+          >
+            <div className="text-sm text-ctp-text font-medium mb-2">Revert changes?</div>
+            <div className="text-xs text-ctp-subtext0 mb-4">
+              This will discard all changes to <span className="font-mono text-ctp-peach">{confirmRevert.split('/').pop()}</span>. This action cannot be undone.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                className="text-[11px] px-3 py-1 rounded bg-ctp-surface1 text-ctp-subtext0 hover:bg-ctp-surface2 transition-colors"
+                onClick={() => { setConfirmRevert(null); setContextMenu(null); }}
+                data-testid="git-diff-revert-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                className="text-[11px] px-3 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                onClick={() => {
+                  const isUntracked = contextMenu?.status.trim() === '??' || contextMenu?.status.trim() === '?';
+                  handleRevertFile(confirmRevert, isUntracked);
+                }}
+                data-testid="git-diff-revert-confirm-btn"
+              >
+                Revert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -112,10 +112,10 @@ describe('CommandPalette', () => {
     expect(useCommandPaletteStore.getState().mode).toBe('agents');
   });
 
-  it('sets mode to hubs with # prefix', () => {
+  it('sets mode to spaces with # prefix', () => {
     useCommandPaletteStore.setState({ isOpen: true });
     useCommandPaletteStore.getState().setQuery('#hub');
-    expect(useCommandPaletteStore.getState().mode).toBe('hubs');
+    expect(useCommandPaletteStore.getState().mode).toBe('spaces');
   });
 
   it('sets mode to projects with / prefix', () => {

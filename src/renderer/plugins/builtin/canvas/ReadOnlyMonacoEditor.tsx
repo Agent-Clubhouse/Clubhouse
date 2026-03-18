@@ -36,9 +36,11 @@ export function languageFromPath(filePath: string): string {
 interface ReadOnlyMonacoEditorProps {
   value: string;
   filePath: string;
+  readOnly?: boolean;
+  onSave?: (content: string) => void;
 }
 
-export function ReadOnlyMonacoEditor({ value, filePath }: ReadOnlyMonacoEditorProps) {
+export function ReadOnlyMonacoEditor({ value, filePath, readOnly = true, onSave }: ReadOnlyMonacoEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
@@ -61,7 +63,7 @@ export function ReadOnlyMonacoEditor({ value, filePath }: ReadOnlyMonacoEditorPr
       const editor = m.editor.create(containerRef.current, {
         model,
         theme: `clubhouse-${themeId}`,
-        readOnly: true,
+        readOnly,
         fontSize: 12,
         fontFamily: 'SF Mono, Fira Code, JetBrains Mono, monospace',
         bracketPairColorization: { enabled: true },
@@ -87,7 +89,15 @@ export function ReadOnlyMonacoEditor({ value, filePath }: ReadOnlyMonacoEditorPr
         stickyScroll: { enabled: true, maxLineCount: 3 },
         lineNumbers: 'on',
         lineNumbersMinChars: 3,
-        domReadOnly: true,
+        domReadOnly: readOnly,
+      });
+
+      // Ctrl/Cmd+S to save when editable
+      editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => {
+        if (onSave) {
+          const content = editor.getModel()?.getValue() ?? '';
+          onSave(content);
+        }
       });
 
       editorRef.current = editor;
@@ -104,6 +114,12 @@ export function ReadOnlyMonacoEditor({ value, filePath }: ReadOnlyMonacoEditorPr
       }
     };
   }, []);
+
+  // Toggle readOnly when prop changes
+  useEffect(() => {
+    if (!editorRef.current) return;
+    editorRef.current.updateOptions({ readOnly, domReadOnly: readOnly });
+  }, [readOnly]);
 
   // Update content & language when filePath or value changes
   useEffect(() => {

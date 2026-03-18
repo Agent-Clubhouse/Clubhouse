@@ -241,7 +241,7 @@ vi.stubGlobal('clubhouse', {
     onNotificationClicked: () => noop,
     onOpenSettings: () => noop,
     onOpenAbout: () => noop,
-    onEditCommand: () => noop,
+
     getTheme: async () => ({ themeId: 'catppuccin-mocha' }),
     saveTheme: asyncNoop,
     updateTitleBarOverlay: asyncNoop,
@@ -335,5 +335,13 @@ vi.stubGlobal('clubhouse', {
     broadcastHubState: noop,
     sendHubMutation: noop,
     onHubMutation: () => noop,
+    getCanvasState: async () => null,
+    onRequestCanvasState: () => noop,
+    respondCanvasState: noop,
+    onCanvasStateChanged: () => noop,
+    broadcastCanvasState: noop,
+    sendCanvasMutation: noop,
+    onCanvasMutation: () => noop,
+    setTitle: asyncNoop,
   },
 });

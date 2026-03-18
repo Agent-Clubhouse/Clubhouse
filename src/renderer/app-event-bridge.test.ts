@@ -11,6 +11,8 @@ const mockRemovers = {
   onRequestAgentState: vi.fn(),
   onRequestHubState: vi.fn(),
   onHubMutation: vi.fn(),
+  onRequestCanvasState: vi.fn(),
+  onCanvasMutation: vi.fn(),
   onNavigateToAgent: vi.fn(),
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
@@ -28,7 +30,6 @@ vi.stubGlobal('window', {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
-      onEditCommand: vi.fn(() => mockRemovers.onEditCommand),
     },
     window: {
       isPopout: vi.fn(() => false),
@@ -38,6 +39,9 @@ vi.stubGlobal('window', {
       onRequestHubState: vi.fn(() => mockRemovers.onRequestHubState),
       respondHubState: vi.fn(),
       onHubMutation: vi.fn(() => mockRemovers.onHubMutation),
+      onRequestCanvasState: vi.fn(() => mockRemovers.onRequestCanvasState),
+      respondCanvasState: vi.fn(),
+      onCanvasMutation: vi.fn(() => mockRemovers.onCanvasMutation),
       onNavigateToAgent: vi.fn(() => mockRemovers.onNavigateToAgent),
     },
     pty: {
@@ -232,10 +236,16 @@ vi.mock('./plugins/builtin/hub/hub-sync', () => ({
   applyHubMutation: vi.fn(),
 }));
 
-const mockHandleMonacoEditCommand = vi.fn(() => false);
-vi.mock('./plugins/builtin/files/MonacoEditor', () => ({
-  handleMonacoEditCommand: (...args: unknown[]) => mockHandleMonacoEditCommand(...args),
+vi.mock('./plugins/builtin/canvas/main', () => ({
+  useAppCanvasStore: { getState: () => ({ canvases: [] }) },
+  getProjectCanvasStore: vi.fn(() => ({ getState: () => ({ canvases: [] }) })),
+  hasProjectCanvasStore: vi.fn(() => false),
 }));
+
+vi.mock('./plugins/builtin/canvas/canvas-sync', () => ({
+  applyCanvasMutation: vi.fn(),
+}));
+
 
 vi.mock('./stores/soundStore', () => ({
   useSoundStore: Object.assign(
@@ -278,6 +288,8 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onRequestAgentState).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestHubState).toHaveBeenCalled();
     expect(window.clubhouse.window.onHubMutation).toHaveBeenCalled();
+    expect(window.clubhouse.window.onRequestCanvasState).toHaveBeenCalled();
+    expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
   });
 
@@ -359,67 +371,4 @@ describe('initAppEventBridge', () => {
     expect(mockPlaySound).not.toHaveBeenCalled();
   });
 
-  it('should register edit command listener', () => {
-    expect(window.clubhouse.app.onEditCommand).toHaveBeenCalled();
-  });
-
-  describe('edit command dispatch', () => {
-    let editCommandHandler: (command: string) => void;
-
-    beforeEach(() => {
-      editCommandHandler = vi.mocked(window.clubhouse.app.onEditCommand).mock.calls[0][0];
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-    });
-
-    it('routes edit commands to Monaco when Monaco has focus', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(true);
-      editCommandHandler('selectAll');
-      // Wait for dynamic import to resolve
-      await vi.dynamicImportSettled();
-      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
-    });
-
-    it('routes copy command to Monaco when Monaco has focus', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(true);
-      editCommandHandler('copy');
-      await vi.dynamicImportSettled();
-      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('copy');
-    });
-
-    it('falls back to document.execCommand when Monaco does not have focus', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-      // jsdom doesn't define execCommand, so define it on the stub
-      const execCommand = vi.fn(() => true);
-      (document as any).execCommand = execCommand;
-      editCommandHandler('copy');
-      await vi.dynamicImportSettled();
-      expect(execCommand).toHaveBeenCalledWith('copy');
-      delete (document as any).execCommand;
-    });
-
-    it('scopes selectAll to markdown preview container when present', async () => {
-      mockHandleMonacoEditCommand.mockReturnValue(false);
-
-      // Create a mock .help-content element in the stub document
-      const preview = document.createElement('div');
-      preview.className = 'help-content';
-      preview.textContent = 'Hello markdown world';
-      document.body.appendChild(preview);
-
-      const mockSelection = {
-        removeAllRanges: vi.fn(),
-        addRange: vi.fn(),
-      };
-      (window as any).getSelection = vi.fn(() => mockSelection);
-
-      editCommandHandler('selectAll');
-      await vi.dynamicImportSettled();
-
-      expect(mockSelection.removeAllRanges).toHaveBeenCalled();
-      expect(mockSelection.addRange).toHaveBeenCalled();
-
-      document.body.removeChild(preview);
-      delete (window as any).getSelection;
-    });
-  });
 });
