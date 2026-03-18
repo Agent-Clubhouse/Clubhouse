@@ -36,7 +36,7 @@ export function TitleBar() {
   const titleText = isHome
     ? 'Home'
     : activeProject
-      ? `${tabLabel} (${activeProject.displayName || activeProject.name})`
+      ? `${activeProject.displayName || activeProject.name} \u00b7 ${tabLabel}`
       : tabLabel;
 
   const isWin = window.clubhouse.platform === 'win32';

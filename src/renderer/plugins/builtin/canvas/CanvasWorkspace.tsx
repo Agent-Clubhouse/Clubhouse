@@ -268,8 +268,8 @@ export function CanvasWorkspace({
           >
             {/* Zoomed title bar */}
             <div className="flex items-center gap-1.5 px-3 py-2 bg-ctp-mantle border-b border-surface-0 flex-shrink-0">
-              <span className="text-[10px] text-ctp-overlay0 font-mono uppercase tracking-wider">
-                {zoomedView.type}
+              <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
+                {zoomedView.type.charAt(0).toUpperCase() + zoomedView.type.slice(1).replace(/-/g, ' ')}
               </span>
               <span className="text-xs text-ctp-subtext0 truncate flex-1">{zoomedView.title}</span>
               <button

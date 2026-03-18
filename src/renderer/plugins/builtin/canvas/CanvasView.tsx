@@ -306,8 +306,8 @@ export function CanvasViewComponent({
         {/* Agent identity chip */}
         {agentInfo && <AgentAvatar agentId={agentInfo.id} size="sm" showStatusRing />}
 
-        <span className="text-[10px] text-ctp-overlay0 font-mono uppercase tracking-wider">
-          {view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() : view.type}
+        <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
+          {(() => { const raw = view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type; return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' '); })()}
         </span>
         <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.displayName || view.title}</span>
 
