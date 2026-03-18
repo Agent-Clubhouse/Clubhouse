@@ -17,6 +17,13 @@ import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 
+// Allow overriding userData path for running multiple isolated instances (e.g. testing,
+// dual-instance Annex V2 workflows). Must be set before app.name so that any early
+// app.getPath('userData') calls after 'ready' resolve to the custom directory.
+if (process.env.CLUBHOUSE_USER_DATA) {
+  app.setPath('userData', process.env.CLUBHOUSE_USER_DATA);
+}
+
 // Set the app name early so the dock, menu bar, and notifications all say "Clubhouse"
 // instead of "Electron" during development.
 app.name = 'Clubhouse';
