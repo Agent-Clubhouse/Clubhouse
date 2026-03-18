@@ -106,8 +106,9 @@ export function MarkdownPreview({ content }: { content: string }) {
   }, [content]);
 
   return React.createElement('div', {
-    className: 'help-content p-4 overflow-auto h-full',
+    className: 'help-content p-4 overflow-auto h-full focus:outline-none',
     dangerouslySetInnerHTML: { __html: html },
     onClick: handleClick,
+    tabIndex: 0,
   });
 }

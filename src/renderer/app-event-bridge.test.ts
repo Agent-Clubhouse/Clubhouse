@@ -15,6 +15,7 @@ const mockRemovers = {
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
   onAgentSpawned: vi.fn(),
+  onEditCommand: vi.fn(),
 };
 
 vi.stubGlobal('window', {
@@ -23,6 +24,7 @@ vi.stubGlobal('window', {
       onOpenSettings: vi.fn(() => mockRemovers.onOpenSettings),
       onOpenAbout: vi.fn(() => mockRemovers.onOpenAbout),
       onNotificationClicked: vi.fn(() => mockRemovers.onNotificationClicked),
+      onEditCommand: vi.fn(() => mockRemovers.onEditCommand),
     },
     window: {
       isPopout: vi.fn(() => false),
@@ -220,6 +222,11 @@ vi.mock('./plugins/builtin/hub/hub-sync', () => ({
   applyHubMutation: vi.fn(),
 }));
 
+const mockHandleMonacoEditCommand = vi.fn(() => false);
+vi.mock('./plugins/builtin/files/MonacoEditor', () => ({
+  handleMonacoEditCommand: (...args: unknown[]) => mockHandleMonacoEditCommand(...args),
+}));
+
 vi.mock('./stores/soundStore', () => ({
   useSoundStore: Object.assign(
     vi.fn(),
@@ -340,5 +347,67 @@ describe('initAppEventBridge', () => {
     }
 
     expect(mockPlaySound).not.toHaveBeenCalled();
+  });
+
+  it('should register edit command listener', () => {
+    expect(window.clubhouse.app.onEditCommand).toHaveBeenCalled();
+  });
+
+  describe('edit command dispatch', () => {
+    let editCommandHandler: (command: string) => void;
+
+    beforeEach(() => {
+      editCommandHandler = vi.mocked(window.clubhouse.app.onEditCommand).mock.calls[0][0];
+      mockHandleMonacoEditCommand.mockReturnValue(false);
+    });
+
+    it('routes edit commands to Monaco when Monaco has focus', async () => {
+      mockHandleMonacoEditCommand.mockReturnValue(true);
+      editCommandHandler('selectAll');
+      // Wait for dynamic import to resolve
+      await vi.dynamicImportSettled();
+      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('selectAll');
+    });
+
+    it('routes copy command to Monaco when Monaco has focus', async () => {
+      mockHandleMonacoEditCommand.mockReturnValue(true);
+      editCommandHandler('copy');
+      await vi.dynamicImportSettled();
+      expect(mockHandleMonacoEditCommand).toHaveBeenCalledWith('copy');
+    });
+
+    it('falls back to document.execCommand when Monaco does not have focus', async () => {
+      mockHandleMonacoEditCommand.mockReturnValue(false);
+      const execCommand = vi.spyOn(document, 'execCommand').mockReturnValue(true);
+      editCommandHandler('copy');
+      await vi.dynamicImportSettled();
+      expect(execCommand).toHaveBeenCalledWith('copy');
+      execCommand.mockRestore();
+    });
+
+    it('scopes selectAll to markdown preview container when present', async () => {
+      mockHandleMonacoEditCommand.mockReturnValue(false);
+
+      // Create a mock .help-content element
+      const preview = document.createElement('div');
+      preview.className = 'help-content';
+      preview.textContent = 'Hello markdown world';
+      document.body.appendChild(preview);
+
+      const mockSelection = {
+        removeAllRanges: vi.fn(),
+        addRange: vi.fn(),
+      };
+      vi.spyOn(window, 'getSelection').mockReturnValue(mockSelection as unknown as Selection);
+
+      editCommandHandler('selectAll');
+      await vi.dynamicImportSettled();
+
+      expect(mockSelection.removeAllRanges).toHaveBeenCalled();
+      expect(mockSelection.addRange).toHaveBeenCalled();
+
+      document.body.removeChild(preview);
+      vi.restoreAllMocks();
+    });
   });
 });

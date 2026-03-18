@@ -102,6 +102,35 @@ export function isModelDirty(filePath: string): boolean {
   return cached.model.getValue() !== cached.savedContent;
 }
 
+// ── Edit Command Dispatch ─────────────────────────────────────────────
+// Routes edit commands (from Electron menu) to the focused Monaco editor.
+
+const MONACO_EDIT_ACTIONS: Record<string, string> = {
+  undo: 'undo',
+  redo: 'redo',
+  cut: 'editor.action.clipboardCutAction',
+  copy: 'editor.action.clipboardCopyAction',
+  paste: 'editor.action.clipboardPasteAction',
+  selectAll: 'editor.action.selectAll',
+};
+
+/**
+ * Attempt to dispatch an edit command to a focused Monaco editor.
+ * Returns true if a Monaco editor handled the command, false otherwise.
+ */
+export function handleMonacoEditCommand(command: string): boolean {
+  if (!monacoModule) return false;
+  const editors = monacoModule.editor.getEditors();
+  const focused = editors.find((e: any) => e.hasTextFocus());
+  if (!focused) return false;
+
+  const action = MONACO_EDIT_ACTIONS[command];
+  if (!action) return false;
+
+  focused.trigger('menu', action, null);
+  return true;
+}
+
 // ── Editor Component ─────────────────────────────────────────────────
 
 interface MonacoEditorProps {

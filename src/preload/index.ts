@@ -600,6 +600,11 @@ const api = {
       ipcRenderer.on(IPC.APP.OPEN_ABOUT, listener);
       return () => { ipcRenderer.removeListener(IPC.APP.OPEN_ABOUT, listener); };
     },
+    onEditCommand: (callback: (command: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, command: string) => callback(command);
+      ipcRenderer.on(IPC.APP.EDIT_COMMAND, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.EDIT_COMMAND, listener); };
+    },
     getTheme: () =>
       ipcRenderer.invoke(IPC.APP.GET_THEME),
     saveTheme: (settings: { themeId: string }) =>

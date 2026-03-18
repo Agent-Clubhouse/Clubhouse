@@ -25,6 +25,10 @@ const mockEditor = {
   setScrollLeft: () => {},
   onDidChangeModelContent: () => ({ dispose: () => {} }),
   onDidChangeCursorPosition: () => ({ dispose: () => {} }),
+  hasTextFocus: vi.fn(() => false),
+  focus: () => {},
+  revealLineInCenter: () => {},
+  setSelection: () => {},
 };
 
 export const editor = {
@@ -34,6 +38,7 @@ export const editor = {
   setModelLanguage: () => {},
   getModel: () => null as any,
   createModel: () => mockModel,
+  getEditors: vi.fn(() => [mockEditor]),
 };
 
 export const Uri = {

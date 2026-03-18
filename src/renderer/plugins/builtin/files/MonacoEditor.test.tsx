@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MonacoEditor } from './MonacoEditor';
+import { MonacoEditor, handleMonacoEditCommand } from './MonacoEditor';
 import { KeyMod, KeyCode } from 'monaco-editor';
 
 // Mock themes to avoid require issues in jsdom
@@ -204,6 +204,106 @@ describe('MonacoEditor word wrap toggle', () => {
     // Second invoke: should disable word wrap
     wordWrapCall[1]();
     expect(mockEditorInstance.updateOptions).toHaveBeenCalledWith({ wordWrap: 'off' });
+  });
+});
+
+describe('handleMonacoEditCommand', () => {
+  it('returns false when no Monaco module is loaded', () => {
+    // Before any editor is rendered, monacoModule is null
+    // handleMonacoEditCommand should safely return false
+    expect(handleMonacoEditCommand('selectAll')).toBe(false);
+  });
+
+  it('dispatches selectAll to focused Monaco editor', async () => {
+    render(
+      <MonacoEditor
+        value="hello"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+
+    // Simulate editor having focus
+    mockEditorInstance.hasTextFocus.mockReturnValue(true);
+
+    expect(handleMonacoEditCommand('selectAll')).toBe(true);
+    expect(mockEditorInstance.trigger).toHaveBeenCalledWith('menu', 'editor.action.selectAll', null);
+  });
+
+  it('dispatches copy to focused Monaco editor', async () => {
+    render(
+      <MonacoEditor
+        value="hello"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+    mockEditorInstance.hasTextFocus.mockReturnValue(true);
+
+    expect(handleMonacoEditCommand('copy')).toBe(true);
+    expect(mockEditorInstance.trigger).toHaveBeenCalledWith('menu', 'editor.action.clipboardCopyAction', null);
+  });
+
+  it('returns false when no editor has focus', async () => {
+    render(
+      <MonacoEditor
+        value="hello"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+    mockEditorInstance.hasTextFocus.mockReturnValue(false);
+
+    expect(handleMonacoEditCommand('selectAll')).toBe(false);
+  });
+
+  it('returns false for unknown command', async () => {
+    render(
+      <MonacoEditor
+        value="hello"
+        language="typescript"
+        onSave={() => {}}
+        onDirtyChange={() => {}}
+        filePath="test.ts"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading editor…')).not.toBeInTheDocument();
+    });
+
+    const monaco = await import('monaco-editor');
+    const mockEditorInstance = (monaco.editor.create as any)();
+    mockEditorInstance.hasTextFocus.mockReturnValue(true);
+
+    expect(handleMonacoEditCommand('unknownCommand')).toBe(false);
   });
 });
 

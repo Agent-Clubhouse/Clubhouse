@@ -145,6 +145,7 @@ export const IPC = {
     OPEN_EXTERNAL_URL: 'app:open-external-url',
     OPEN_SETTINGS: 'app:open-settings',
     OPEN_ABOUT: 'app:open-about',
+    EDIT_COMMAND: 'app:edit-command',
     GET_NOTIFICATION_SETTINGS: 'app:get-notification-settings',
     SAVE_NOTIFICATION_SETTINGS: 'app:save-notification-settings',
     SEND_NOTIFICATION: 'app:send-notification',
