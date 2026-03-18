@@ -51,6 +51,28 @@ describe('ReadOnlyMonacoEditor — readOnly prop toggling', () => {
 
 // ── Feature 2: Agent widget stop button ─────────────────────────────
 
+describe('AgentCanvasView — hook ordering regression (#310)', () => {
+  it('all useCallback hooks are defined before the early-return guard', async () => {
+    // Regression: handleStop was placed after the early return, violating Rules of Hooks.
+    // When transitioning from picker → assigned view, React saw a different hook count and crashed.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const src = fs.readFileSync(
+      path.resolve(__dirname, 'AgentCanvasView.tsx'),
+      'utf-8',
+    );
+    const lines = src.split('\n');
+
+    // Find the early-return guard: `if (!view.agentId || !assignedAgent)`
+    const guardLine = lines.findIndex((l) => /if\s*\(\s*!view\.agentId/.test(l));
+    expect(guardLine).toBeGreaterThan(-1);
+
+    // Ensure no useCallback appears after the guard
+    const hookAfterGuard = lines.slice(guardLine).findIndex((l) => /\buseCallback\s*\(/.test(l));
+    expect(hookAfterGuard).toBe(-1);
+  });
+});
+
 describe('AgentCanvasView — stop button', () => {
   it('calls api.agents.kill with the agent ID', async () => {
     const kill = vi.fn().mockResolvedValue(undefined);

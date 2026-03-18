@@ -47,6 +47,12 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
     setSelectedProjectId(null);
   }, []);
 
+  const handleStop = useCallback(async () => {
+    if (view.agentId) {
+      await api.agents.kill(view.agentId);
+    }
+  }, [view.agentId, api]);
+
   // No agent assigned — show picker
   if (!view.agentId || !assignedAgent) {
     // App mode: two-step picker (project -> agents)
@@ -138,12 +144,6 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
       </div>
     );
   }
-
-  const handleStop = useCallback(async () => {
-    if (view.agentId) {
-      await api.agents.kill(view.agentId);
-    }
-  }, [view.agentId, api]);
 
   // Agent assigned — show terminal or sleeping widget
   const isRunning = assignedAgent.status === 'running' || assignedAgent.status === 'creating';

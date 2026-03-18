@@ -240,6 +240,13 @@ export const IPC = {
     HUB_MUTATION: 'window:hub-mutation',
     REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
     SET_TITLE: 'window:set-title',
+    // Canvas state sync
+    GET_CANVAS_STATE: 'window:get-canvas-state',
+    REQUEST_CANVAS_STATE: 'window:request-canvas-state',
+    CANVAS_STATE_RESPONSE: 'window:canvas-state-response',
+    CANVAS_STATE_CHANGED: 'window:canvas-state-changed',
+    CANVAS_MUTATION: 'window:canvas-mutation',
+    REQUEST_CANVAS_MUTATION: 'window:request-canvas-mutation',
   },
   MARKETPLACE: {
     FETCH_REGISTRY: 'marketplace:fetch-registry',

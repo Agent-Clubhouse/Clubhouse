@@ -11,6 +11,8 @@ const mockRemovers = {
   onRequestAgentState: vi.fn(),
   onRequestHubState: vi.fn(),
   onHubMutation: vi.fn(),
+  onRequestCanvasState: vi.fn(),
+  onCanvasMutation: vi.fn(),
   onNavigateToAgent: vi.fn(),
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
@@ -32,6 +34,9 @@ vi.stubGlobal('window', {
       onRequestHubState: vi.fn(() => mockRemovers.onRequestHubState),
       respondHubState: vi.fn(),
       onHubMutation: vi.fn(() => mockRemovers.onHubMutation),
+      onRequestCanvasState: vi.fn(() => mockRemovers.onRequestCanvasState),
+      respondCanvasState: vi.fn(),
+      onCanvasMutation: vi.fn(() => mockRemovers.onCanvasMutation),
       onNavigateToAgent: vi.fn(() => mockRemovers.onNavigateToAgent),
     },
     pty: {
@@ -220,6 +225,17 @@ vi.mock('./plugins/builtin/hub/hub-sync', () => ({
   applyHubMutation: vi.fn(),
 }));
 
+vi.mock('./plugins/builtin/canvas/main', () => ({
+  useAppCanvasStore: { getState: () => ({ canvases: [] }) },
+  getProjectCanvasStore: vi.fn(() => ({ getState: () => ({ canvases: [] }) })),
+  hasProjectCanvasStore: vi.fn(() => false),
+}));
+
+vi.mock('./plugins/builtin/canvas/canvas-sync', () => ({
+  applyCanvasMutation: vi.fn(),
+}));
+
+
 vi.mock('./stores/soundStore', () => ({
   useSoundStore: Object.assign(
     vi.fn(),
@@ -261,6 +277,8 @@ describe('initAppEventBridge', () => {
     expect(window.clubhouse.window.onRequestAgentState).toHaveBeenCalled();
     expect(window.clubhouse.window.onRequestHubState).toHaveBeenCalled();
     expect(window.clubhouse.window.onHubMutation).toHaveBeenCalled();
+    expect(window.clubhouse.window.onRequestCanvasState).toHaveBeenCalled();
+    expect(window.clubhouse.window.onCanvasMutation).toHaveBeenCalled();
     expect(window.clubhouse.window.onNavigateToAgent).toHaveBeenCalled();
   });
 

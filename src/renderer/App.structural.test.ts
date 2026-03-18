@@ -491,6 +491,8 @@ describe('app-event-bridge.ts – listener registration', () => {
       'onRequestAgentState',
       'onRequestHubState',
       'onHubMutation',
+      'onRequestCanvasState',
+      'onCanvasMutation',
       'onNavigateToAgent',
     ];
 
