@@ -26,6 +26,9 @@ import { applyHubMutation } from './plugins/builtin/hub/hub-sync';
 import type { AgentHookEvent, AgentStatus, HubMutation, SoundEvent } from '../shared/types';
 import { useSoundStore } from './stores/soundStore';
 import { useSessionSettingsStore } from './stores/sessionSettingsStore';
+import { initAnnexListener } from './stores/annexStore';
+import { initAnnexClientListener } from './stores/annexClientStore';
+import { useLockStore } from './stores/lockStore';
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
 
@@ -534,6 +537,23 @@ function initKeyboardShortcuts(): () => void {
   return () => window.removeEventListener('keydown', handler);
 }
 
+// ─── Annex Lock State Listener ──────────────────────────────────────────────
+
+function initAnnexLockStateListener(): () => void {
+  return window.clubhouse.annex.onLockStateChanged((state: { locked: boolean; controllerAlias?: string; controllerIcon?: string; controllerColor?: string; controllerFingerprint?: string; remainingMs: number }) => {
+    if (state.locked) {
+      useLockStore.getState().lock({
+        controllerAlias: state.controllerAlias || 'Unknown',
+        controllerIcon: state.controllerIcon || '',
+        controllerColor: state.controllerColor || 'indigo',
+        controllerFingerprint: state.controllerFingerprint || '',
+      });
+    } else {
+      useLockStore.getState().unlock();
+    }
+  });
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -554,6 +574,9 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initStaleStatusCleanup());
   cleanups.push(initEditCommandListener());
   cleanups.push(initKeyboardShortcuts());
+  cleanups.push(initAnnexListener());
+  cleanups.push(initAnnexClientListener());
+  cleanups.push(initAnnexLockStateListener());
 
   return () => {
     for (const cleanup of cleanups) {

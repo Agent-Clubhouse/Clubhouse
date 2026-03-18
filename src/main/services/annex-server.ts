@@ -55,6 +55,8 @@ const sessionTokens = new Set<string>();
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
 const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
+// Track peer fingerprint per WebSocket connection (for mTLS connections)
+const wsPeerFingerprints = new WeakMap<WebSocket, string>();
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
@@ -1215,10 +1217,12 @@ export function start(): void {
     // Check auth: mTLS peer cert OR bearer token
     let authType: WsAuthType = 'bearer';
 
+    let peerFingerprintForWs: string | undefined;
     if (tlsServer && socket instanceof tls.TLSSocket) {
       const peerFingerprint = annexTls.extractPeerFingerprint(socket);
       if (peerFingerprint && annexPeers.isPairedPeer(peerFingerprint)) {
         authType = 'mtls';
+        peerFingerprintForWs = peerFingerprint;
         annexPeers.updateLastSeen(peerFingerprint);
       }
     }
@@ -1235,6 +1239,9 @@ export function start(): void {
 
     wss!.handleUpgrade(req, socket, head, (ws) => {
       wsAuthTypes.set(ws, authType);
+      if (peerFingerprintForWs) {
+        wsPeerFingerprints.set(ws, peerFingerprintForWs);
+      }
       wss!.emit('connection', ws, req);
     });
   });
@@ -1243,9 +1250,40 @@ export function start(): void {
     // Send snapshot on connect
     ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
 
+    // Broadcast lock state when an mTLS controller connects
+    const authType = wsAuthTypes.get(ws);
+    if (authType === 'mtls') {
+      const fingerprint = wsPeerFingerprints.get(ws);
+      const peer = fingerprint ? annexPeers.getPeer(fingerprint) : null;
+      broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
+        locked: true,
+        controllerAlias: peer?.alias || 'Remote Controller',
+        controllerIcon: peer?.icon || '',
+        controllerColor: peer?.color || 'indigo',
+        controllerFingerprint: fingerprint || '',
+        remainingMs: 0,
+      });
+    }
+
     // Listen for client messages (replay requests)
     ws.on('message', (data) => {
       handleWsMessage(ws, data.toString());
+    });
+
+    // Broadcast unlock when mTLS controller disconnects
+    ws.on('close', () => {
+      if (authType === 'mtls') {
+        // Check if any other mTLS connections are still open
+        const hasMtlsClient = Array.from(wss?.clients || []).some(
+          (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
+        );
+        if (!hasMtlsClient) {
+          broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
+            locked: false,
+            remainingMs: 0,
+          });
+        }
+      }
     });
   });
 
@@ -1460,10 +1498,14 @@ export function regeneratePin(): void {
 }
 
 /** Disconnect a specific peer's WebSocket connection by fingerprint. */
-export function disconnectPeer(_fingerprint: string): void {
-  // TODO: Track peer fingerprints per WebSocket connection to close only the matching one.
-  // For now this is a no-op stub; full implementation will map ws → fingerprint.
-  appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint: _fingerprint } });
+export function disconnectPeer(fingerprint: string): void {
+  appLog('core:annex', 'info', `disconnectPeer called`, { meta: { fingerprint } });
+  if (!wss) return;
+  for (const client of wss.clients) {
+    if (wsPeerFingerprints.get(client) === fingerprint) {
+      try { client.close(1000, 'disconnected_by_satellite'); } catch { /* ignore */ }
+    }
+  }
 }
 
 /** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */

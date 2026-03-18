@@ -5,24 +5,14 @@
  * from the main process.
  */
 import { create } from 'zustand';
+import { useRemoteProjectStore } from './remoteProjectStore';
+import type { SatelliteSnapshot } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type SatelliteState = 'disconnected' | 'discovering' | 'connecting' | 'connected';
-
-export interface SatelliteSnapshot {
-  projects: unknown[];
-  agents: Record<string, unknown[]>;
-  quickAgents: Record<string, unknown[]>;
-  theme: unknown;
-  orchestrators: unknown;
-  pendingPermissions: unknown[];
-  lastSeq: number;
-  plugins?: unknown[];
-  protocolVersion?: number;
-}
 
 export interface SatelliteConnection {
   id: string;
@@ -116,15 +106,47 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   },
 }));
 
+// ---------------------------------------------------------------------------
+// Satellite PTY Data Bus — simple event emitter for forwarding pty:data events
+// ---------------------------------------------------------------------------
+
+type PtyDataListener = (satelliteId: string, agentId: string, data: string) => void;
+const ptyDataListeners = new Set<PtyDataListener>();
+
+export const satellitePtyDataBus = {
+  on(listener: PtyDataListener): () => void {
+    ptyDataListeners.add(listener);
+    return () => { ptyDataListeners.delete(listener); };
+  },
+  emit(satelliteId: string, agentId: string, data: string): void {
+    for (const listener of ptyDataListeners) {
+      try { listener(satelliteId, agentId, data); } catch { /* ignore */ }
+    }
+  },
+};
+
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
     useAnnexClientStore.setState({ satellites });
   });
 
-  const unsubEvents = window.clubhouse.annexClient.onSatelliteEvent((event) => {
-    // Satellite events can be handled by other stores/components
-    // For now, just log them for debugging
+  const unsubEvents = window.clubhouse.annexClient.onSatelliteEvent((event: { satelliteId: string; type: string; payload: unknown }) => {
+    const { satelliteId, type, payload } = event;
+
+    if (type === 'snapshot') {
+      // Find satellite name from current satellites list
+      const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
+      const satelliteName = satellite?.alias || satelliteId;
+      useRemoteProjectStore.getState().applySatelliteSnapshot(
+        satelliteId,
+        satelliteName,
+        payload as SatelliteSnapshot,
+      );
+    } else if (type === 'pty:data') {
+      const p = payload as { agentId: string; data: string };
+      satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
+    }
   });
 
   return () => {

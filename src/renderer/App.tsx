@@ -25,12 +25,28 @@ import { initApp } from './app-initializer';
 import { initAppEventBridge } from './app-event-bridge';
 import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './stores/toastStore';
+import { SatelliteLockOverlay } from './features/annex/SatelliteLockOverlay';
+import { useLockStore } from './stores/lockStore';
 
 export function App() {
   // ── Routing state (minimal selectors for view switching) ────────────────
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
+
+  // ── Annex lock state ────────────────────────────────────────────────────
+  const lockState = useLockStore((s) => ({
+    locked: s.locked,
+    paused: s.paused,
+    controllerAlias: s.controllerAlias,
+    controllerIcon: s.controllerIcon,
+    controllerColor: s.controllerColor,
+    controllerFingerprint: s.controllerFingerprint,
+  }));
+  const lockActions = useLockStore((s) => ({
+    togglePause: s.togglePause,
+    unlock: s.unlock,
+  }));
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
@@ -107,14 +123,40 @@ export function App() {
     }
   }, [activeProjectId, projects]);
 
+  // ── Lock overlay action handlers ─────────────────────────────────────────
+  const handleLockDisconnect = () => {
+    if (lockState.controllerFingerprint) {
+      window.clubhouse.annex.disconnectController(lockState.controllerFingerprint);
+    }
+    lockActions.unlock();
+  };
+  const handleLockPause = () => {
+    lockActions.togglePause();
+  };
+  const handleLockDisableAndDisconnect = () => {
+    window.clubhouse.annex.disableAndDisconnect();
+    lockActions.unlock();
+  };
+
   // ── Derived routing state ──────────────────────────────────────────────
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHelp = explorerTab === 'help';
   const isHome = activeProjectId === null && explorerTab !== 'settings' && !isAppPlugin && !isHelp;
 
+  // Lock overlay element (shared across all return paths)
+  const lockOverlay = (
+    <SatelliteLockOverlay
+      lockState={lockState}
+      onDisconnect={handleLockDisconnect}
+      onPause={handleLockPause}
+      onDisableAndDisconnect={handleLockDisableAndDisconnect}
+    />
+  );
+
   if (isHome) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
@@ -136,6 +178,7 @@ export function App() {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
@@ -156,6 +199,7 @@ export function App() {
   if (isHelp) {
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
+        {lockOverlay}
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
@@ -175,6 +219,7 @@ export function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
+      {lockOverlay}
       <TitleBar />
       <PermissionViolationBanner />
       <UpdateBanner />
