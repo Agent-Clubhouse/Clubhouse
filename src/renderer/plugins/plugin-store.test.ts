@@ -33,6 +33,7 @@ describe('pluginStore', () => {
       pluginSettings: {},
       externalPluginsEnabled: false,
       permissionViolations: [],
+      pluginTitles: {},
     });
   });
 
@@ -344,6 +345,41 @@ describe('pluginStore', () => {
       getState().setSafeModeActive(true);
       getState().setSafeModeActive(false);
       expect(getState().safeModeActive).toBe(false);
+    });
+  });
+
+  describe('pluginTitles', () => {
+    it('defaults to empty object', () => {
+      expect(getState().pluginTitles).toEqual({});
+    });
+
+    it('setPluginTitle sets a dynamic title', () => {
+      getState().setPluginTitle('hub', 'Hub: My Hub');
+      expect(getState().pluginTitles['hub']).toBe('Hub: My Hub');
+    });
+
+    it('setPluginTitle overwrites previous title', () => {
+      getState().setPluginTitle('hub', 'Hub: First');
+      getState().setPluginTitle('hub', 'Hub: Second');
+      expect(getState().pluginTitles['hub']).toBe('Hub: Second');
+    });
+
+    it('clearPluginTitle removes the title', () => {
+      getState().setPluginTitle('hub', 'Hub: My Hub');
+      getState().clearPluginTitle('hub');
+      expect(getState().pluginTitles['hub']).toBeUndefined();
+    });
+
+    it('clearPluginTitle is safe for non-existent plugin', () => {
+      getState().clearPluginTitle('nonexistent');
+      expect(getState().pluginTitles).toEqual({});
+    });
+
+    it('different plugins have independent titles', () => {
+      getState().setPluginTitle('hub', 'Hub: Alpha');
+      getState().setPluginTitle('files', 'Files: Beta');
+      expect(getState().pluginTitles['hub']).toBe('Hub: Alpha');
+      expect(getState().pluginTitles['files']).toBe('Files: Beta');
     });
   });
 });

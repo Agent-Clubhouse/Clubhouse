@@ -1,16 +1,20 @@
 import React from 'react';
+import type { CanvasView } from './canvas-types';
+import { CanvasSearch } from './CanvasSearch';
 
 interface CanvasControlsProps {
   zoom: number;
   hasViews?: boolean;
+  views: CanvasView[];
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
   onCenter: () => void;
   onSizeToFit: () => void;
+  onSelectView: (viewId: string) => void;
 }
 
-export function CanvasControls({ zoom, hasViews, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit }: CanvasControlsProps) {
+export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZoomReset, onCenter, onSizeToFit, onSelectView }: CanvasControlsProps) {
   const zoomPercent = Math.round(zoom * 100);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
@@ -20,6 +24,11 @@ export function CanvasControls({ zoom, hasViews, onZoomIn, onZoomOut, onZoomRese
       className="absolute top-3 right-3 flex items-center gap-1 bg-ctp-mantle/90 backdrop-blur-sm rounded-lg border border-surface-0 px-1.5 py-1 shadow-sm"
       data-testid="canvas-controls"
     >
+      {/* Search */}
+      {hasViews && <CanvasSearch views={views} onSelectView={onSelectView} />}
+
+      {hasViews && <div className="w-px h-4 bg-surface-0 mx-0.5" />}
+
       {/* Center viewport */}
       <button
         onClick={onCenter}

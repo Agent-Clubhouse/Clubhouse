@@ -929,6 +929,8 @@ const api = {
       ipcRenderer.on(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener);
       return () => { ipcRenderer.removeListener(IPC.WINDOW.REQUEST_CANVAS_MUTATION, listener); };
     },
+    setTitle: (title: string) =>
+      ipcRenderer.invoke(IPC.WINDOW.SET_TITLE, title),
   },
 };
 

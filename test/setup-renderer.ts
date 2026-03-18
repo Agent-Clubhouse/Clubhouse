@@ -320,5 +320,6 @@ vi.stubGlobal('clubhouse', {
     broadcastCanvasState: noop,
     sendCanvasMutation: noop,
     onCanvasMutation: () => noop,
+    setTitle: asyncNoop,
   },
 });

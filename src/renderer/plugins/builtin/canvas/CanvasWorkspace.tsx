@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
-import { CanvasViewComponent } from './CanvasView';
+import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
@@ -163,6 +163,18 @@ export function CanvasWorkspace({
     onViewportChange(viewportToFitViews(views, rect.width, rect.height));
   }, [views, onViewportChange]);
 
+  // ── Search → focus on view ────────────────────────────────────────
+
+  const handleSearchSelect = useCallback((viewId: string) => {
+    const view = views.find((v) => v.id === viewId);
+    if (!view) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Center on the view and bring it to front
+    onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+    onFocusView(viewId);
+  }, [views, viewport.zoom, onViewportChange, onFocusView]);
+
   // ── Per-view actions ───────────────────────────────────────────
 
   const handleCenterView = useCallback((viewId: string) => {
@@ -268,10 +280,11 @@ export function CanvasWorkspace({
           >
             {/* Zoomed title bar */}
             <div className="flex items-center gap-1.5 px-3 py-2 bg-ctp-mantle border-b border-surface-0 flex-shrink-0">
-              <span className="text-[10px] text-ctp-overlay0 font-mono uppercase tracking-wider">
-                {zoomedView.type}
+              <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
+                {formatViewType(zoomedView.type)}
               </span>
               <span className="text-xs text-ctp-subtext0 truncate flex-1">{zoomedView.title}</span>
+              {(() => { const ctx = buildProjectContext(zoomedView, api.projects.list()); return ctx ? <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({ctx})</span> : null; })()}
               <button
                 className="text-[10px] px-2 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text transition-colors"
                 onClick={() => onZoomView(null)}
@@ -299,6 +312,8 @@ export function CanvasWorkspace({
         onCenter={handleCenter}
         onSizeToFit={handleSizeToFit}
         hasViews={views.length > 0}
+        views={views}
+        onSelectView={handleSearchSelect}
       />
 
       {/* Context menu */}

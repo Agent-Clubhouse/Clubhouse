@@ -139,13 +139,33 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
     );
   }
 
+  const handleStop = useCallback(async () => {
+    if (view.agentId) {
+      await api.agents.kill(view.agentId);
+    }
+  }, [view.agentId, api]);
+
   // Agent assigned — show terminal or sleeping widget
   const isRunning = assignedAgent.status === 'running' || assignedAgent.status === 'creating';
 
   if (isRunning) {
-    return React.createElement(api.widgets.AgentTerminal, {
-      agentId: view.agentId,
-    });
+    return (
+      <div className="relative flex flex-col h-full">
+        {React.createElement(api.widgets.AgentTerminal, {
+          agentId: view.agentId,
+        })}
+        <div className="absolute top-1 right-1 z-10">
+          <button
+            onClick={handleStop}
+            className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            title="Stop agent"
+            data-testid="canvas-agent-stop"
+          >
+            Stop
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return React.createElement(api.widgets.SleepingAgent, {

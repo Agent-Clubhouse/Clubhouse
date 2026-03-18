@@ -239,6 +239,7 @@ export const IPC = {
     HUB_STATE_CHANGED: 'window:hub-state-changed',
     HUB_MUTATION: 'window:hub-mutation',
     REQUEST_HUB_MUTATION: 'window:request-hub-mutation',
+    SET_TITLE: 'window:set-title',
     // Canvas state sync
     GET_CANVAS_STATE: 'window:get-canvas-state',
     REQUEST_CANVAS_STATE: 'window:request-canvas-state',
