@@ -101,3 +101,7 @@
 - Created `src/renderer/features/annex/SatelliteLockOverlay.tsx`: full-screen lock overlay with controller identity, disconnect/pause/disable actions
 - Created `src/renderer/stores/lockStore.ts`: Zustand store for lock state (locked, paused, controller info)
 - Modified `src/shared/ipc-channels.ts`: added LOCK_STATE_CHANGED, DISCONNECT_CONTROLLER, DISABLE_AND_DISCONNECT channels
+
+### 2026-03-17 — #868: Plugin Matching
+- Created `src/renderer/services/plugin-matcher.ts`: matchPlugins() — compares satellite vs local plugins (matched/missing/version_mismatch)
+- Created `src/renderer/services/plugin-matcher.test.ts`: unit tests for all match states
