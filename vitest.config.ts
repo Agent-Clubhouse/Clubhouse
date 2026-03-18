@@ -27,6 +27,12 @@ const aliases = {
   ws: path.resolve(__dirname, 'src/__mocks__/ws.ts'),
 };
 
+/** Integration tests need the real `ws` module (e.g. protocol-client tests). */
+const integrationAliases = {
+  electron: path.resolve(__dirname, 'src/__mocks__/electron.ts'),
+  'monaco-editor': path.resolve(__dirname, 'src/__mocks__/monaco-editor.ts'),
+};
+
 export default defineConfig({
   plugins: [rawMarkdown()],
   test: {
@@ -71,7 +77,7 @@ export default defineConfig({
           include: ['test/**/*.test.ts'],
           environment: 'node',
         },
-        resolve: { alias: aliases },
+        resolve: { alias: integrationAliases },
       },
     ],
   },

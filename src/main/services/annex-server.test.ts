@@ -38,8 +38,39 @@ vi.mock('./pty-manager', () => ({
 
 // Mock annex-settings
 vi.mock('./annex-settings', () => ({
-  getSettings: vi.fn().mockReturnValue({ enabled: false, deviceName: 'Test Machine' }),
+  getSettings: vi.fn().mockReturnValue({ enabled: false, deviceName: 'Test Machine', alias: 'test-host', icon: 'computer', color: 'indigo' }),
   saveSettings: vi.fn(),
+}));
+
+// Mock annex-identity
+vi.mock('./annex-identity', () => ({
+  getOrCreateIdentity: vi.fn().mockReturnValue({
+    publicKey: 'mock-public-key',
+    privateKey: 'mock-private-key',
+    fingerprint: 'aa:bb:cc',
+    createdAt: '2025-01-01T00:00:00.000Z',
+  }),
+  getPublicIdentity: vi.fn().mockReturnValue({
+    publicKey: 'mock-public-key',
+    fingerprint: 'aa:bb:cc',
+  }),
+  computeFingerprint: vi.fn().mockReturnValue('dd:ee:ff'),
+}));
+
+// Mock annex-tls — force TLS creation to fail so we fall back to plain HTTP
+vi.mock('./annex-tls', () => ({
+  createTlsServerOptions: vi.fn().mockImplementation(() => { throw new Error('TLS disabled in test'); }),
+  extractPeerFingerprint: vi.fn().mockReturnValue(null),
+}));
+
+// Mock annex-peers
+vi.mock('./annex-peers', () => ({
+  checkBruteForce: vi.fn().mockReturnValue({ allowed: true, locked: false }),
+  recordFailedAttempt: vi.fn(),
+  recordSuccessfulAttempt: vi.fn(),
+  addPeer: vi.fn(),
+  isPairedPeer: vi.fn().mockReturnValue(false),
+  updateLastSeen: vi.fn(),
 }));
 
 // Mock agent-system
@@ -68,6 +99,9 @@ vi.mock('../util/ipc-broadcast', () => ({
 
 import * as annexServer from './annex-server';
 import * as annexSettings from './annex-settings';
+import * as annexIdentity from './annex-identity';
+import * as annexTls from './annex-tls';
+import * as annexPeers from './annex-peers';
 import * as projectStore from './project-store';
 import * as agentConfigModule from './agent-config';
 import * as ptyManagerModule from './pty-manager';
@@ -105,7 +139,8 @@ async function startAndPair(): Promise<{ port: number; token: string; pin: strin
   annexServer.start();
   await new Promise((r) => setTimeout(r, 100));
   const status = annexServer.getStatus();
-  const pairRes = await request(status.port, 'POST', '/pair', { pin: status.pin });
+  // Pair on the pairing port (plain HTTP), then use the main port for authenticated requests
+  const pairRes = await request(status.pairingPort, 'POST', '/pair', { pin: status.pin });
   const { token } = JSON.parse(pairRes.body);
   return { port: status.port, token, pin: status.pin };
 }
@@ -117,7 +152,22 @@ function authHeaders(token: string): Record<string, string> {
 describe('annex-server', () => {
   beforeEach(() => {
     // Re-apply mock return values after mockReset clears them
-    vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Test Machine' });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enabled: false, deviceName: 'Test Machine', alias: 'test-host', icon: 'computer', color: 'indigo' });
+    vi.mocked(annexIdentity.getOrCreateIdentity).mockReturnValue({
+      publicKey: 'mock-public-key',
+      privateKey: 'mock-private-key',
+      fingerprint: 'aa:bb:cc',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    });
+    vi.mocked(annexIdentity.getPublicIdentity).mockReturnValue({
+      publicKey: 'mock-public-key',
+      fingerprint: 'aa:bb:cc',
+    });
+    vi.mocked(annexIdentity.computeFingerprint).mockReturnValue('dd:ee:ff');
+    vi.mocked(annexTls.createTlsServerOptions).mockImplementation(() => { throw new Error('TLS disabled in test'); });
+    vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, locked: false } as any);
+    vi.mocked(annexPeers.recordFailedAttempt).mockReturnValue(undefined);
+    vi.mocked(annexPeers.recordSuccessfulAttempt).mockReturnValue(undefined);
     vi.mocked(projectStore.list).mockReturnValue([]);
     vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
     vi.mocked(ptyManagerModule.getBuffer).mockReturnValue('');
@@ -159,7 +209,7 @@ describe('annex-server', () => {
     await new Promise((r) => setTimeout(r, 50));
     const status = annexServer.getStatus();
 
-    const res = await request(status.port, 'POST', '/pair', { pin: '000000' });
+    const res = await request(status.pairingPort, 'POST', '/pair', { pin: '000000' });
     expect(res.status).toBe(401);
     expect(JSON.parse(res.body)).toEqual({ error: 'invalid_pin' });
   });
@@ -169,7 +219,7 @@ describe('annex-server', () => {
     await new Promise((r) => setTimeout(r, 50));
     const status = annexServer.getStatus();
 
-    const res = await request(status.port, 'POST', '/pair', { pin: status.pin });
+    const res = await request(status.pairingPort, 'POST', '/pair', { pin: status.pin });
     expect(res.status).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.token).toBeDefined();

@@ -22,8 +22,8 @@ function getState() {
   return useAnnexStore.getState();
 }
 
-const DEFAULT_SETTINGS: AnnexSettings = { enabled: false, deviceName: '' };
-const DEFAULT_STATUS: AnnexStatus = { advertising: false, port: 0, pin: '', connectedCount: 0 };
+const DEFAULT_SETTINGS: AnnexSettings = { enabled: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo' };
+const DEFAULT_STATUS: AnnexStatus = { advertising: false, port: 0, pin: '', connectedCount: 0, fingerprint: '', alias: '', icon: 'computer', color: 'indigo' };
 
 // ---------- tests ----------
 describe('annexStore', () => {
