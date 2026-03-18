@@ -49,31 +49,32 @@ export interface AnnexStatusInfo {
 }
 
 /**
- * Read Annex status (port + PIN) via IPC evaluation in the main process.
+ * Read Annex status (port + PIN) via the preload API in the renderer.
  */
-export async function getAnnexStatus(electronApp: ElectronApp): Promise<AnnexStatusInfo> {
-  return electronApp.evaluate(async ({ ipcMain }) => {
-    // Access the annex server module through require
-    const annexServer = require('./services/annex-server');
-    return annexServer.getStatus();
+export async function getAnnexStatus(page: Page): Promise<AnnexStatusInfo> {
+  return page.evaluate(async () => {
+    const status = await (window as any).clubhouse.annex.getStatus();
+    return {
+      advertising: status.advertising,
+      port: status.port,
+      pin: status.pin,
+      connectedCount: status.connectedCount,
+    };
   });
 }
 
 /**
- * Enable Annex server programmatically via IPC (no UI interaction).
+ * Enable Annex server programmatically via the preload API (no UI interaction).
  */
-export async function enableAnnexViaIpc(electronApp: ElectronApp): Promise<void> {
-  await electronApp.evaluate(async () => {
-    const { ipcMain } = require('electron');
-    const annexSettings = require('./services/annex-settings');
-    const annexServer = require('./services/annex-server');
-
-    const settings = annexSettings.getSettings();
+export async function enableAnnexViaPreload(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const settings = await (window as any).clubhouse.annex.getSettings();
     if (!settings.enabled) {
-      await annexSettings.saveSettings({ ...settings, enabled: true });
-      annexServer.start();
+      await (window as any).clubhouse.annex.saveSettings({ ...settings, enabled: true });
     }
   });
+  // Wait for server to start
+  await page.waitForTimeout(2000);
 }
 
 // ---------------------------------------------------------------------------
@@ -141,8 +142,22 @@ export async function fetchAuthed(
 
 /**
  * Connect to an Annex server's WebSocket endpoint.
+ * Tries wss:// first (TLS with self-signed cert), falls back to ws://.
  */
 export function connectWs(host: string, port: number, token: string): WebSocket {
+  // The main port may be TLS — use wss:// with rejectUnauthorized: false for self-signed certs
+  const ws = new WebSocket(
+    `wss://${host}:${port}/ws?token=${encodeURIComponent(token)}`,
+    { rejectUnauthorized: false },
+  );
+  return ws;
+}
+
+/**
+ * Connect to an Annex server's WebSocket endpoint using plain ws://.
+ * Use this when the main server fell back to HTTP (no TLS).
+ */
+export function connectWsPlain(host: string, port: number, token: string): WebSocket {
   const ws = new WebSocket(`ws://${host}:${port}/ws?token=${encodeURIComponent(token)}`);
   return ws;
 }
