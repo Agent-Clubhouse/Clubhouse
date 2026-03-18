@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas } from './canvas-operations';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
@@ -9,6 +9,8 @@ import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
+import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
+import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
 interface CanvasWorkspaceProps {
@@ -46,6 +48,24 @@ export function CanvasWorkspace({
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
+  const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
+
+  // ── Attention system ───────────────────────────────────────────
+  const attentionMap = useCanvasAttention(views, api);
+
+  // Track container size for off-screen indicator computation
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setContainerSize({ width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const offScreenIndicators = computeOffScreenIndicators(views, attentionMap, viewport, containerSize);
 
   // ── Pan via mouse drag on empty space ──────────────────────────
 
@@ -118,10 +138,9 @@ export function CanvasWorkspace({
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const canvasX = (e.clientX - rect.left) / viewport.zoom - viewport.panX;
-    const canvasY = (e.clientY - rect.top) / viewport.zoom - viewport.panY;
+    const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
 
-    setContextMenu({ x: e.clientX, y: e.clientY, canvasX, canvasY });
+    setContextMenu({ x: e.clientX, y: e.clientY, canvasX: canvasPos.x, canvasY: canvasPos.y });
   }, [viewport]);
 
   const handleContextMenuAction = useCallback((selection: ContextMenuSelection) => {
@@ -257,6 +276,7 @@ export function CanvasWorkspace({
             api={api}
             zoom={viewport.zoom}
             isZoomed={zoomedViewId === view.id}
+            attention={attentionMap.get(view.id) ?? null}
             onClose={() => onRemoveView(view.id)}
             onFocus={() => onFocusView(view.id)}
             onCenterView={() => handleCenterView(view.id)}
@@ -304,6 +324,12 @@ export function CanvasWorkspace({
         </div>
       )}
 
+      {/* Off-screen attention indicators */}
+      <CanvasAttentionIndicators
+        indicators={offScreenIndicators}
+        onNavigate={handleSearchSelect}
+      />
+
       {/* Controls overlay */}
       <CanvasControls
         zoom={viewport.zoom}
@@ -315,6 +341,7 @@ export function CanvasWorkspace({
         hasViews={views.length > 0}
         views={views}
         onSelectView={handleSearchSelect}
+        attentionMap={attentionMap}
       />
 
       {/* Context menu */}

@@ -92,14 +92,25 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('does not include the sessions plugin (hidden for stable release)', () => {
+  it('does not include the sessions plugin without experimental flag', () => {
     const plugins = getBuiltinPlugins();
     const ids = plugins.map((p) => p.manifest.id);
     expect(ids).not.toContain('sessions');
   });
 
-  it('does not auto-enable the sessions plugin', () => {
+  it('does not auto-enable the sessions plugin without experimental flag', () => {
     const defaultIds = getDefaultEnabledIds();
     expect(defaultIds.has('sessions')).toBe(false);
+  });
+
+  it('includes sessions plugin when experimental flag is set', () => {
+    const plugins = getBuiltinPlugins({ sessions: true });
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).toContain('sessions');
+  });
+
+  it('auto-enables sessions plugin when experimental flag is set', () => {
+    const defaultIds = getDefaultEnabledIds({ sessions: true });
+    expect(defaultIds.has('sessions')).toBe(true);
   });
 });

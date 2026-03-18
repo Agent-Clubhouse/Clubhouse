@@ -27,6 +27,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Annex (Remote Control)',
     description: 'Desktop-to-desktop remote control over LAN. Enables the Annex Server and Annex Control settings pages. Requires app restart.',
   },
+  {
+    id: 'sessions',
+    label: 'Sessions',
+    description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

@@ -84,6 +84,13 @@ describe('sessionsState', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it('toggleExpandedAgent produces a new Set reference (required for useSyncExternalStore)', () => {
+    const before = sessionsState.expandedAgents;
+    sessionsState.toggleExpandedAgent('a1');
+    const after = sessionsState.expandedAgents;
+    expect(before).not.toBe(after);
+  });
+
   // ── Playback ───────────────────────────────────────────────────────
 
   it('setPlaybackPlaying updates playing state', () => {

@@ -25,6 +25,8 @@ import {
   createCanvasCounter,
   generateCanvasId,
   syncCounterToInstances,
+  screenToCanvas,
+  canvasToScreen,
 } from './canvas-operations';
 import type { CanvasView, AgentCanvasView } from './canvas-types';
 import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE } from './canvas-types';
@@ -417,6 +419,108 @@ describe('canvas-operations', () => {
       );
       expect(counter.value).toBe(5);
       expect(generateCanvasId(counter)).toBe('canvas_6');
+    });
+  });
+
+  // ── Coordinate conversion ──────────────────────────────────────────
+
+  describe('screenToCanvas', () => {
+    const rect = { left: 50, top: 30 };
+
+    it('converts screen coords at zoom 1 with no pan', () => {
+      const viewport = { panX: 0, panY: 0, zoom: 1 };
+      const result = screenToCanvas(250, 230, rect, viewport);
+      expect(result.x).toBe(200);
+      expect(result.y).toBe(200);
+    });
+
+    it('accounts for zoom', () => {
+      const viewport = { panX: 0, panY: 0, zoom: 2 };
+      const result = screenToCanvas(250, 230, rect, viewport);
+      // (250 - 50) / 2 - 0 = 100
+      // (230 - 30) / 2 - 0 = 100
+      expect(result.x).toBe(100);
+      expect(result.y).toBe(100);
+    });
+
+    it('accounts for pan offset', () => {
+      const viewport = { panX: 100, panY: 50, zoom: 1 };
+      const result = screenToCanvas(250, 230, rect, viewport);
+      // (250 - 50) / 1 - 100 = 100
+      // (230 - 30) / 1 - 50 = 150
+      expect(result.x).toBe(100);
+      expect(result.y).toBe(150);
+    });
+
+    it('accounts for both zoom and pan', () => {
+      const viewport = { panX: 50, panY: 25, zoom: 0.5 };
+      const result = screenToCanvas(150, 130, rect, viewport);
+      // (150 - 50) / 0.5 - 50 = 200 - 50 = 150
+      // (130 - 30) / 0.5 - 25 = 200 - 25 = 175
+      expect(result.x).toBe(150);
+      expect(result.y).toBe(175);
+    });
+
+    it('handles fractional zoom', () => {
+      const viewport = { panX: 0, panY: 0, zoom: 0.75 };
+      const result = screenToCanvas(125, 105, rect, viewport);
+      // (125 - 50) / 0.75 = 100
+      // (105 - 30) / 0.75 = 100
+      expect(result.x).toBe(100);
+      expect(result.y).toBe(100);
+    });
+  });
+
+  describe('canvasToScreen', () => {
+    const rect = { left: 50, top: 30 };
+
+    it('converts canvas coords at zoom 1 with no pan', () => {
+      const viewport = { panX: 0, panY: 0, zoom: 1 };
+      const result = canvasToScreen(200, 200, rect, viewport);
+      expect(result.x).toBe(250);
+      expect(result.y).toBe(230);
+    });
+
+    it('accounts for zoom', () => {
+      const viewport = { panX: 0, panY: 0, zoom: 2 };
+      const result = canvasToScreen(100, 100, rect, viewport);
+      // (100 + 0) * 2 + 50 = 250
+      // (100 + 0) * 2 + 30 = 230
+      expect(result.x).toBe(250);
+      expect(result.y).toBe(230);
+    });
+
+    it('accounts for pan offset', () => {
+      const viewport = { panX: 100, panY: 50, zoom: 1 };
+      const result = canvasToScreen(100, 150, rect, viewport);
+      // (100 + 100) * 1 + 50 = 250
+      // (150 + 50) * 1 + 30 = 230
+      expect(result.x).toBe(250);
+      expect(result.y).toBe(230);
+    });
+
+    it('is the inverse of screenToCanvas', () => {
+      const viewport = { panX: -30, panY: 75, zoom: 1.5 };
+      const clientX = 400;
+      const clientY = 350;
+
+      const canvasPos = screenToCanvas(clientX, clientY, rect, viewport);
+      const screenPos = canvasToScreen(canvasPos.x, canvasPos.y, rect, viewport);
+
+      expect(screenPos.x).toBeCloseTo(clientX, 10);
+      expect(screenPos.y).toBeCloseTo(clientY, 10);
+    });
+
+    it('roundtrips correctly with extreme zoom', () => {
+      const viewport = { panX: 500, panY: -200, zoom: 0.25 };
+      const clientX = 200;
+      const clientY = 150;
+
+      const canvasPos = screenToCanvas(clientX, clientY, rect, viewport);
+      const screenPos = canvasToScreen(canvasPos.x, canvasPos.y, rect, viewport);
+
+      expect(screenPos.x).toBeCloseTo(clientX, 10);
+      expect(screenPos.y).toBeCloseTo(clientY, 10);
     });
   });
 });
