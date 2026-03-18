@@ -64,3 +64,11 @@
 - Modified `src/shared/types.ts`: added SatelliteConnection, SatelliteSnapshot types
 - Modified `src/preload/index.ts`: added annexClient.* API
 - Modified `src/main/ipc/index.ts`: registered annex client handlers
+
+### 2026-03-17 — #863: Protocol V2 Bidirectional Control
+- Modified `src/main/services/annex-server.ts`:
+  - Added WS control message handlers: pty:input, pty:resize, agent:spawn, agent:wake, agent:kill
+  - Security gate: control messages require mTLS auth (rejected for bearer-only connections)
+  - 64KB limit on pty:input data
+  - Extended snapshot with protocolVersion: 2, agentsMeta
+  - Added handleSpawnQuickAgentWs and handleWakeAgentWs for WS-based agent control

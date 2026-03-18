@@ -308,10 +308,25 @@ async function buildSnapshot(): Promise<object> {
     });
   }
 
+  // Build agents metadata (execution modes, detailed statuses)
+  const agentsMeta: Record<string, { executionMode: string | null; detailedStatus: AgentDetailedStatus | null }> = {};
+  for (const projectAgents of Object.values(agents)) {
+    for (const agent of projectAgents as Array<{ id: string; status: string; executionMode: string | null }>) {
+      if (agent.status === 'running') {
+        agentsMeta[agent.id] = {
+          executionMode: agent.executionMode,
+          detailedStatus: getDetailedStatus(agent.id),
+        };
+      }
+    }
+  }
+
   return {
+    protocolVersion: 2,
     projects,
     agents,
     quickAgents,
+    agentsMeta,
     theme: getThemeColors(),
     orchestrators: getOrchestratorsMap(),
     pendingPermissions: permissionQueue.listPending(),
@@ -968,19 +983,23 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 // WebSocket message handler (Issue 8 — bidirectional)
 // ---------------------------------------------------------------------------
 
+const MAX_PTY_INPUT_SIZE = 64 * 1024; // 64KB
+
 function handleWsMessage(ws: WebSocket, data: string): void {
-  let msg: { type?: string; since?: number };
+  let msg: { type?: string; payload?: Record<string, unknown>; since?: number };
   try {
     msg = JSON.parse(data);
   } catch {
     return;
   }
 
-  if (msg.type === 'replay' && typeof msg.since === 'number') {
+  const type = msg.type;
+
+  // --- Replay (available to all authenticated connections) ---
+  if (type === 'replay' && typeof msg.since === 'number') {
     const events = eventReplay.getEventsSince(msg.since);
 
     if (events === null) {
-      // Gap — client's seq is too old for the buffer
       ws.send(JSON.stringify({
         type: 'replay:gap',
         oldestAvailable: eventReplay.getOldestSeq(),
@@ -1006,6 +1025,145 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     }
 
     ws.send(JSON.stringify({ type: 'replay:end' }));
+    return;
+  }
+
+  // --- Control messages (mTLS-only) ---
+  const authType = wsAuthTypes.get(ws);
+  const isMtls = authType === 'mtls';
+
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill')) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
+    return;
+  }
+
+  const payload = msg.payload || {};
+
+  switch (type) {
+    case 'pty:input': {
+      const agentId = payload.agentId as string;
+      const inputData = payload.data as string;
+      if (!agentId || typeof inputData !== 'string') break;
+      if (inputData.length > MAX_PTY_INPUT_SIZE) {
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'pty:input data exceeds 64KB limit' } }));
+        break;
+      }
+      ptyManager.write(agentId, inputData);
+      break;
+    }
+
+    case 'pty:resize': {
+      const agentId = payload.agentId as string;
+      const cols = payload.cols as number;
+      const rows = payload.rows as number;
+      if (!agentId || typeof cols !== 'number' || typeof rows !== 'number') break;
+      ptyManager.resize(agentId, cols, rows);
+      break;
+    }
+
+    case 'agent:spawn': {
+      const projectId = payload.projectId as string;
+      const prompt = payload.prompt as string;
+      if (!projectId || !prompt) break;
+      // Reuse the quick agent spawn logic
+      findProjectById(projectId).then((project) => {
+        if (!project) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        handleSpawnQuickAgentWs(ws, project, payload);
+      });
+      break;
+    }
+
+    case 'agent:wake': {
+      const agentId = payload.agentId as string;
+      const message = payload.message as string;
+      if (!agentId || !message) break;
+      handleWakeAgentWs(ws, agentId, message, payload.model as string | undefined);
+      break;
+    }
+
+    case 'agent:kill': {
+      const agentId = payload.agentId as string;
+      if (!agentId) break;
+      ptyManager.gracefulKill(agentId);
+      ws.send(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
+      break;
+    }
+  }
+}
+
+// WS-based quick agent spawn (mirrors HTTP handler)
+async function handleSpawnQuickAgentWs(
+  ws: WebSocket,
+  project: Awaited<ReturnType<typeof findProjectById>> & {},
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const prompt = payload.prompt as string;
+  const parentAgentId = payload.parentAgentId as string | null;
+  const agentId = generateQuickAgentId();
+  const name = generateQuickName();
+  const model = payload.model as string | undefined;
+  const orchestrator = (payload.orchestrator as string) || project.orchestrator || 'claude-code';
+  const freeAgentMode = (payload.freeAgentMode as boolean) ?? false;
+
+  const tracked: TrackedQuickAgent = {
+    id: agentId, name, kind: 'quick', status: 'starting', prompt,
+    model: model || null, orchestrator, freeAgentMode,
+    parentAgentId: parentAgentId || null, projectId: project.id, spawnedAt: Date.now(),
+  };
+  trackedQuickAgents.set(agentId, tracked);
+
+  broadcastAndBuffer('agent:spawned', {
+    id: agentId, name, kind: 'quick', status: 'starting', prompt,
+    model: model || null, orchestrator, freeAgentMode, parentAgentId, projectId: project.id,
+  });
+
+  try {
+    await spawnAgent({
+      agentId, projectPath: project.path, cwd: project.path,
+      kind: 'quick', model, mission: prompt, orchestrator, freeAgentMode,
+    });
+    tracked.status = 'running';
+    broadcastToAllWindows(IPC.ANNEX.AGENT_SPAWNED, {
+      id: agentId, name, kind: 'quick', status: 'running', prompt,
+      model: model || null, orchestrator, freeAgentMode,
+      parentAgentId, projectId: project.id, headless: true,
+    });
+    ws.send(JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
+  } catch (err) {
+    tracked.status = 'failed';
+    trackedQuickAgents.delete(agentId);
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
+  }
+}
+
+// WS-based agent wake (mirrors HTTP handler)
+async function handleWakeAgentWs(ws: WebSocket, agentId: string, message: string, model?: string): Promise<void> {
+  const agentInfo = await findAgentAcrossProjects(agentId);
+  if (!agentInfo) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
+    return;
+  }
+  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
+    return;
+  }
+  const { config, project } = agentInfo;
+  const agentModel = model || config.model;
+  const cwd = config.worktreePath || project.path;
+
+  try {
+    await spawnAgent({
+      agentId: config.id, projectPath: project.path, cwd,
+      kind: 'durable', model: agentModel, mission: message,
+      orchestrator: config.orchestrator, freeAgentMode: config.freeAgentMode,
+    });
+    broadcastAndBuffer('agent:woken', { agentId: config.id, message, source: 'annex-v2' });
+    ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
+  } catch (err) {
+    ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
 
