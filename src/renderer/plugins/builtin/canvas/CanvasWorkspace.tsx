@@ -163,6 +163,18 @@ export function CanvasWorkspace({
     onViewportChange(viewportToFitViews(views, rect.width, rect.height));
   }, [views, onViewportChange]);
 
+  // ── Search → focus on view ────────────────────────────────────────
+
+  const handleSearchSelect = useCallback((viewId: string) => {
+    const view = views.find((v) => v.id === viewId);
+    if (!view) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Center on the view and bring it to front
+    onViewportChange(viewportToCenterView(view, rect.width, rect.height, viewport.zoom));
+    onFocusView(viewId);
+  }, [views, viewport.zoom, onViewportChange, onFocusView]);
+
   // ── Per-view actions ───────────────────────────────────────────
 
   const handleCenterView = useCallback((viewId: string) => {
@@ -300,6 +312,8 @@ export function CanvasWorkspace({
         onCenter={handleCenter}
         onSizeToFit={handleSizeToFit}
         hasViews={views.length > 0}
+        views={views}
+        onSelectView={handleSearchSelect}
       />
 
       {/* Context menu */}
