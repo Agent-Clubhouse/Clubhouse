@@ -6,6 +6,8 @@ import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
 import { broadcastCanvasState } from './canvas-sync';
+import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
+import { usePopouts } from '../../../hooks/usePopouts';
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -79,6 +81,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const zoomedViewId = store((s) => s.zoomedViewId);
   const loaded = store((s) => s.loaded);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { findCanvasPopout } = usePopouts();
 
   // Load persisted state
   useEffect(() => {
@@ -182,6 +185,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     }, 'Loading canvas...');
   }
 
+  const canvasPopout = findCanvasPopout(activeCanvasId);
+  const activeCanvas = canvases.find((c) => c.id === activeCanvasId);
+
   return React.createElement('div', { className: 'flex flex-col h-full w-full', 'data-testid': 'canvas-panel' },
     React.createElement(CanvasTabBar, {
       canvases,
@@ -192,23 +198,31 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onRenameCanvas: handleRenameCanvas,
       onPopOutCanvas: handlePopOutCanvas,
     }),
-    React.createElement('div', { className: 'flex-1 min-h-0' },
-      React.createElement(CanvasWorkspace, {
-        views,
-        viewport,
-        zoomedViewId,
-        api,
-        onViewportChange: handleViewportChange,
-        onAddView: handleAddView,
-        onAddPluginView: handleAddPluginView,
-        onRemoveView: handleRemoveView,
-        onMoveView: handleMoveView,
-        onResizeView: handleResizeView,
-        onFocusView: handleFocusView,
-        onUpdateView: handleUpdateView,
-        onZoomView: handleZoomView,
-      }),
-    ),
+    canvasPopout
+      ? React.createElement('div', { className: 'flex-1 min-h-0' },
+          React.createElement(PoppedOutPlaceholder, {
+            type: 'canvas',
+            name: activeCanvas?.name,
+            windowId: canvasPopout.windowId,
+          }),
+        )
+      : React.createElement('div', { className: 'flex-1 min-h-0' },
+          React.createElement(CanvasWorkspace, {
+            views,
+            viewport,
+            zoomedViewId,
+            api,
+            onViewportChange: handleViewportChange,
+            onAddView: handleAddView,
+            onAddPluginView: handleAddPluginView,
+            onRemoveView: handleRemoveView,
+            onMoveView: handleMoveView,
+            onResizeView: handleResizeView,
+            onFocusView: handleFocusView,
+            onUpdateView: handleUpdateView,
+            onZoomView: handleZoomView,
+          }),
+        ),
   );
 }
 

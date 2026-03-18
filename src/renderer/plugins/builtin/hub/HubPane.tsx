@@ -1,6 +1,8 @@
 import React, { useCallback, useMemo, useState, useRef } from 'react';
 import type { LeafPane } from './pane-tree';
 import type { PluginAPI, AgentInfo, PluginAgentDetailedStatus, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
+import type { PopoutEntry } from '../../../hooks/usePopouts';
+import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 
 interface HubPaneProps {
   pane: LeafPane;
@@ -17,6 +19,7 @@ interface HubPaneProps {
   agents: AgentInfo[];
   detailedStatuses: Record<string, PluginAgentDetailedStatus | null>;
   completedAgents: CompletedQuickAgentInfo[];
+  findAgentPopout?: (agentId: string) => PopoutEntry | undefined;
   children?: React.ReactNode; // picker slot
 }
 
@@ -41,6 +44,7 @@ export function HubPane({
   agents,
   detailedStatuses,
   completedAgents,
+  findAgentPopout,
   children,
 }: HubPaneProps) {
   const [hoveredEdge, setHoveredEdge] = useState<SplitEdge | null>(null);
@@ -172,7 +176,13 @@ export function HubPane({
     >
       {/* Content area */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
-        {agent ? (
+        {pane.agentId && findAgentPopout?.(pane.agentId) ? (
+          <PoppedOutPlaceholder
+            type="agent"
+            name={agent?.name}
+            windowId={findAgentPopout(pane.agentId)!.windowId}
+          />
+        ) : agent ? (
           agent.status === 'running' ? (
             <AgentTerminal agentId={agent.id} focused={focused} />
           ) : (

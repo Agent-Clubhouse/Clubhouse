@@ -8,6 +8,8 @@ import { HubTabBar } from './HubTabBar';
 import { AgentPicker } from './AgentPicker';
 import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
 import { broadcastHubState } from './hub-sync';
+import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
+import { usePopouts } from '../../../hooks/usePopouts';
 
 const PANE_PREFIX = 'hub';
 
@@ -142,6 +144,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store]);
 
   const zoomedPaneId = store((s) => s.zoomedPaneId);
+  const { findHubPopout, findAgentPopout } = usePopouts();
 
   const handleSplitResize = useCallback((splitId: string, ratio: number) => {
     store.getState().setSplitRatio(splitId, ratio);
@@ -179,8 +182,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [isAppMode, api]);
 
   // ── Stable PaneComponent identity ──────────────────────────────────
-  const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId });
-  dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId };
+  const dataRef = useRef({ api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout });
+  dataRef.current = { api, agents, detailedStatuses, completedAgents, isAppMode, handleSplit, handleClose, handleSwap, handleAssign, handleFocus, handleZoom, zoomedPaneId, findAgentPopout };
 
   const HubPaneComponent = useCallback(({ pane, focused, canClose }: PaneComponentProps) => {
     const d = dataRef.current;
@@ -211,12 +214,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       agents: d.agents,
       detailedStatuses: d.detailedStatuses,
       completedAgents: d.completedAgents,
+      findAgentPopout: d.findAgentPopout,
     }, picker);
   }, []); // Empty deps — stable identity, reads latest values from ref
 
   if (!loaded) {
     return React.createElement('div', { className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs' }, 'Loading hub...');
   }
+
+  const hubPopout = findHubPopout(activeHubId);
+  const activeHub = hubs.find((h) => h.id === activeHubId);
 
   return React.createElement('div', { className: 'flex flex-col h-full w-full' },
     React.createElement(HubTabBar, {
@@ -228,15 +235,23 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onRenameHub: handleRenameHub,
       onPopOutHub: handlePopOutHub,
     }),
-    React.createElement('div', { className: 'flex-1 min-h-0' },
-      React.createElement(PaneContainer, {
-        tree: paneTree,
-        focusedPaneId,
-        PaneComponent: HubPaneComponent,
-        zoomedPaneId,
-        onSplitResize: handleSplitResize,
-      }),
-    ),
+    hubPopout
+      ? React.createElement('div', { className: 'flex-1 min-h-0' },
+          React.createElement(PoppedOutPlaceholder, {
+            type: 'hub',
+            name: activeHub?.name,
+            windowId: hubPopout.windowId,
+          }),
+        )
+      : React.createElement('div', { className: 'flex-1 min-h-0' },
+          React.createElement(PaneContainer, {
+            tree: paneTree,
+            focusedPaneId,
+            PaneComponent: HubPaneComponent,
+            zoomedPaneId,
+            onSplitResize: handleSplitResize,
+          }),
+        ),
   );
 }
 

@@ -8,6 +8,8 @@ import { SleepingAgent } from '../features/agents/SleepingAgent';
 import { HeadlessAgentView } from '../features/agents/HeadlessAgentView';
 import { AgentSettingsView } from '../features/agents/AgentSettingsView';
 import { QuickAgentGhost } from '../features/agents/QuickAgentGhost';
+import { PoppedOutPlaceholder } from '../features/popout/PoppedOutPlaceholder';
+import { usePopouts } from '../hooks/usePopouts';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
 import { SoundSettingsView } from '../features/settings/SoundSettingsView';
@@ -39,6 +41,7 @@ export function MainContentView() {
   const selectCompleted = useQuickAgentStore((s) => s.selectCompleted);
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const { findAgentPopout } = usePopouts();
 
   // Track whether the agent terminal should receive focus.
   // Must transition false→true to trigger AgentTerminal's focus useEffect,
@@ -87,6 +90,20 @@ export function MainContentView() {
       activeAgent.kind === 'durable'
     ) {
       return <AgentSettingsView agent={activeAgent} />;
+    }
+
+    // Show placeholder when this agent is popped out
+    if (activeAgentId) {
+      const agentPopout = findAgentPopout(activeAgentId);
+      if (agentPopout) {
+        return (
+          <PoppedOutPlaceholder
+            type="agent"
+            name={activeAgent?.name}
+            windowId={agentPopout.windowId}
+          />
+        );
+      }
     }
 
     if (!activeAgent) {
