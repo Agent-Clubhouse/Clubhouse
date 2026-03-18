@@ -1,6 +1,9 @@
 import * as http from 'http';
+import * as https from 'https';
+import * as tls from 'tls';
 import { randomInt, randomUUID } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import * as annexTls from './annex-tls';
 import Bonjour, { Service } from 'bonjour-service';
 import * as annexEventBus from './annex-event-bus';
 import * as annexSettings from './annex-settings';
@@ -35,13 +38,23 @@ import type {
 // Server state
 // ---------------------------------------------------------------------------
 
-let httpServer: http.Server | null = null;
+// Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
+let pairingServer: http.Server | null = null;
+let pairingPort = 0;
+
+// Main port (TLS with mTLS): all authenticated endpoints + WSS
+let tlsServer: https.Server | null = null;
+let httpServer: http.Server | null = null; // Legacy fallback — to be removed when mTLS is fully validated
 let wss: WebSocketServer | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
-let serverPort = 0;
+let serverPort = 0; // Main TLS port
 let currentPin = '';
 const sessionTokens = new Set<string>();
+
+// Tag WebSocket connections with auth type for security gating
+type WsAuthType = 'bearer' | 'mtls';
+const wsAuthTypes = new WeakMap<WebSocket, WsAuthType>();
 
 let unsubPtyData: (() => void) | null = null;
 let unsubHookEvent: (() => void) | null = null;
@@ -719,16 +732,15 @@ async function handleStructuredPermissionResponse(
 }
 
 // ---------------------------------------------------------------------------
-// HTTP request handler
+// Pairing-port request handler (plain HTTP, unauthenticated)
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   const url = req.url || '/';
   const method = req.method || 'GET';
 
-  // CORS headers for local network
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
   if (method === 'OPTIONS') {
@@ -737,7 +749,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // GET /api/v1/identity — no auth required (public identity info)
+  // GET /api/v1/identity — public identity info
   if (method === 'GET' && url === '/api/v1/identity') {
     const identity = annexIdentity.getPublicIdentity();
     if (!identity) {
@@ -755,7 +767,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /pair — no auth required (with brute-force protection)
+  // POST /pair — with brute-force protection
   if (method === 'POST' && url === '/pair') {
     const source = req.socket.remoteAddress || 'unknown';
     const bruteCheck = annexPeers.checkBruteForce(source);
@@ -771,15 +783,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     readBody(req).then((raw) => {
       const body = parseJsonBody(raw);
-      if (!body) {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
+      if (!body) { sendJson(res, 400, { error: 'invalid_json' }); return; }
       const pin = body.pin;
-      if (typeof pin !== 'string') {
-        sendJson(res, 400, { error: 'invalid_json' });
-        return;
-      }
+      if (typeof pin !== 'string') { sendJson(res, 400, { error: 'invalid_json' }); return; }
 
       if (pin !== currentPin) {
         annexPeers.recordFailedAttempt(source);
@@ -787,35 +793,26 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
       }
 
-      // PIN is correct — generate session token
       annexPeers.recordSuccessfulAttempt(source);
       const token = randomUUID();
       sessionTokens.add(token);
 
-      // Get our identity for key exchange
       const identity = annexIdentity.getOrCreateIdentity();
       const settings = annexSettings.getSettings();
 
-      // If the client sent their public key, store them as a peer
       const clientPublicKey = body.publicKey as string | undefined;
-      const clientAlias = body.alias as string | undefined;
-      const clientIcon = body.icon as string | undefined;
-      const clientColor = body.color as string | undefined;
-
       if (clientPublicKey) {
-        const clientFingerprint = annexIdentity.computeFingerprint(clientPublicKey);
         annexPeers.addPeer({
-          fingerprint: clientFingerprint,
+          fingerprint: annexIdentity.computeFingerprint(clientPublicKey),
           publicKey: clientPublicKey,
-          alias: clientAlias || 'Unknown',
-          icon: clientIcon || 'computer',
-          color: clientColor || 'indigo',
+          alias: (body.alias as string) || 'Unknown',
+          icon: (body.icon as string) || 'computer',
+          color: (body.color as string) || 'indigo',
           pairedAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
         });
       }
 
-      // Return our identity + token
       sendJson(res, 200, {
         token,
         publicKey: identity.publicKey,
@@ -832,7 +829,29 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // All other endpoints require auth
+  sendJson(res, 404, { error: 'not_found' });
+}
+
+// ---------------------------------------------------------------------------
+// Main-port request handler (serves authenticated endpoints)
+// ---------------------------------------------------------------------------
+
+async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const url = req.url || '/';
+  const method = req.method || 'GET';
+
+  // CORS headers for local network
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+  if (method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // All endpoints on the main server require auth (mTLS or bearer token)
   const token = extractBearerToken(req);
   if (!isValidToken(token)) {
     sendJson(res, 401, { error: 'unauthorized' });
@@ -995,18 +1014,39 @@ function handleWsMessage(ws: WebSocket, data: string): void {
 // ---------------------------------------------------------------------------
 
 export function start(): void {
-  if (httpServer) return;
+  if (tlsServer || httpServer) return;
 
   // Generate identity on first enable (lazy creation)
-  annexIdentity.getOrCreateIdentity();
+  const identity = annexIdentity.getOrCreateIdentity();
 
   currentPin = generatePin();
 
-  httpServer = http.createServer(handleRequest);
+  // --- Pairing server (plain HTTP) ---
+  pairingServer = http.createServer(handlePairingRequest);
+
+  // --- Main server (TLS with mTLS) ---
+  let tlsOptions: tls.TlsOptions;
+  try {
+    tlsOptions = annexTls.createTlsServerOptions(identity);
+    tlsServer = https.createServer(tlsOptions, handleRequest);
+  } catch (err) {
+    appLog('core:annex', 'warn', 'TLS server creation failed, falling back to plain HTTP', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+    // Fallback: use plain HTTP for the main server (legacy/iOS compat)
+    tlsServer = null;
+  }
+
+  // If TLS failed, fall back to HTTP for the main server
+  const mainServer = tlsServer || http.createServer(handleRequest);
+  if (!tlsServer) {
+    httpServer = mainServer as http.Server;
+  }
 
   wss = new WebSocketServer({ noServer: true });
 
-  httpServer.on('upgrade', (req, socket, head) => {
+  // WebSocket upgrade handler for the main server
+  mainServer.on('upgrade', (req: http.IncomingMessage, socket: any, head: Buffer) => {
     const urlObj = new URL(req.url || '/', `http://${req.headers.host}`);
 
     if (urlObj.pathname !== '/ws') {
@@ -1014,14 +1054,29 @@ export function start(): void {
       return;
     }
 
-    const token = urlObj.searchParams.get('token');
-    if (!isValidToken(token || undefined)) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-      socket.destroy();
-      return;
+    // Check auth: mTLS peer cert OR bearer token
+    let authType: WsAuthType = 'bearer';
+
+    if (tlsServer && socket instanceof tls.TLSSocket) {
+      const peerFingerprint = annexTls.extractPeerFingerprint(socket);
+      if (peerFingerprint && annexPeers.isPairedPeer(peerFingerprint)) {
+        authType = 'mtls';
+        annexPeers.updateLastSeen(peerFingerprint);
+      }
+    }
+
+    if (authType !== 'mtls') {
+      // Fall back to bearer token auth
+      const token = urlObj.searchParams.get('token');
+      if (!isValidToken(token || undefined)) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
     }
 
     wss!.handleUpgrade(req, socket, head, (ws) => {
+      wsAuthTypes.set(ws, authType);
       wss!.emit('connection', ws, req);
     });
   });
@@ -1044,33 +1099,25 @@ export function start(): void {
   });
 
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {
-    // Update detailed status cache
     detailedStatusCache.set(agentId, hookEventToDetailedStatus(event));
-
     broadcastAndBuffer('hook:event', { agentId, event });
   });
 
   unsubStructuredEvent = annexEventBus.onStructuredEvent((agentId, event) => {
-    // Update detailed status from structured events
     const status = structuredEventToDetailedStatus(event);
     if (status) {
       detailedStatusCache.set(agentId, status);
     }
-
     broadcastAndBuffer('structured:event', { agentId, event });
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {
-    // Clear detailed status for exited agent
     detailedStatusCache.delete(agentId);
-    // Clear pending permissions for exited agent
     permissionQueue.clearForAgent(agentId);
-    // Clear replay buffer events for this agent
     eventReplay.clearForAgent(agentId);
 
     broadcastAndBuffer('pty:exit', { agentId, exitCode });
 
-    // If this was a tracked quick agent, broadcast completion
     const tracked = trackedQuickAgents.get(agentId);
     if (tracked) {
       tracked.status = exitCode === 0 ? 'completed' : 'failed';
@@ -1082,10 +1129,7 @@ export function start(): void {
         projectId: tracked.projectId,
         parentAgentId: tracked.parentAgentId,
       });
-      // Remove from tracked list after a short delay (so clients can read the final state)
-      setTimeout(() => {
-        trackedQuickAgents.delete(agentId);
-      }, 60_000);
+      setTimeout(() => { trackedQuickAgents.delete(agentId); }, 60_000);
     }
   });
 
@@ -1093,7 +1137,6 @@ export function start(): void {
     broadcastAndBuffer('agent:spawned', { id: agentId, kind, projectId, ...meta });
   });
 
-  // Subscribe to permission requests from the queue
   unsubPermissionRequest = permissionQueue.onPermissionRequest((permission) => {
     broadcastAndBuffer('permission:request', {
       requestId: permission.requestId,
@@ -1106,35 +1149,54 @@ export function start(): void {
     });
   });
 
-  // Periodically evict stale replay buffer entries
-  staleEvictionInterval = setInterval(() => {
-    eventReplay.evictStale();
-  }, 60_000);
+  staleEvictionInterval = setInterval(() => { eventReplay.evictStale(); }, 60_000);
 
-  httpServer.listen(0, '0.0.0.0', () => {
-    const addr = httpServer?.address();
+  // Start both servers
+  let mainReady = false;
+  let pairingReady = false;
+
+  function publishBonjour() {
+    if (!mainReady || !pairingReady) return;
+    try {
+      bonjour = new Bonjour();
+      const settings = annexSettings.getSettings();
+      bonjourService = bonjour.publish({
+        name: settings.deviceName,
+        type: 'clubhouse-annex',
+        port: serverPort,
+        txt: {
+          v: '2',
+          pairingPort: String(pairingPort),
+          fingerprint: identity.fingerprint,
+        },
+      });
+      appLog('core:annex', 'info', 'mDNS service published (v2)', {
+        meta: { name: settings.deviceName, mainPort: serverPort, pairingPort },
+      });
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to publish mDNS', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
+  mainServer.listen(0, '0.0.0.0', () => {
+    const addr = mainServer.address();
     if (addr && typeof addr === 'object') {
       serverPort = addr.port;
-      appLog('core:annex', 'info', `Annex server listening on 0.0.0.0:${serverPort}`);
+      appLog('core:annex', 'info', `Annex main server listening on 0.0.0.0:${serverPort} (${tlsServer ? 'TLS' : 'HTTP'})`);
+      mainReady = true;
+      publishBonjour();
+    }
+  });
 
-      // Publish mDNS
-      try {
-        bonjour = new Bonjour();
-        const settings = annexSettings.getSettings();
-        bonjourService = bonjour.publish({
-          name: settings.deviceName,
-          type: 'clubhouse-annex',
-          port: serverPort,
-          txt: { v: '1' },
-        });
-        appLog('core:annex', 'info', 'mDNS service published', {
-          meta: { name: settings.deviceName, port: serverPort },
-        });
-      } catch (err) {
-        appLog('core:annex', 'error', 'Failed to publish mDNS', {
-          meta: { error: err instanceof Error ? err.message : String(err) },
-        });
-      }
+  pairingServer.listen(0, '0.0.0.0', () => {
+    const addr = pairingServer?.address();
+    if (addr && typeof addr === 'object') {
+      pairingPort = addr.port;
+      appLog('core:annex', 'info', `Annex pairing server listening on 0.0.0.0:${pairingPort} (HTTP)`);
+      pairingReady = true;
+      publishBonjour();
     }
   });
 }
@@ -1180,13 +1242,22 @@ export function stop(): void {
     bonjour = null;
   }
 
-  // Close HTTP server
+  // Close servers
+  if (tlsServer) {
+    tlsServer.close();
+    tlsServer = null;
+  }
   if (httpServer) {
     httpServer.close();
     httpServer = null;
   }
+  if (pairingServer) {
+    pairingServer.close();
+    pairingServer = null;
+  }
 
   serverPort = 0;
+  pairingPort = 0;
   currentPin = '';
   sessionTokens.clear();
   detailedStatusCache.clear();
@@ -1197,7 +1268,7 @@ export function stop(): void {
   appLog('core:annex', 'info', 'Annex server stopped');
 }
 
-export function getStatus(): AnnexStatus {
+export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: boolean } {
   const settings = annexSettings.getSettings();
   const identity = annexIdentity.getPublicIdentity();
   return {
@@ -1209,6 +1280,8 @@ export function getStatus(): AnnexStatus {
     alias: settings.alias,
     icon: settings.icon,
     color: settings.color,
+    pairingPort,
+    tlsEnabled: !!tlsServer,
   };
 }
 
@@ -1226,4 +1299,9 @@ export function regeneratePin(): void {
       try { client.close(); } catch { /* ignore */ }
     }
   }
+}
+
+/** Get the auth type of a WebSocket connection. Used by protocol V2 to gate control messages. */
+export function getWsAuthType(ws: WebSocket): WsAuthType {
+  return wsAuthTypes.get(ws) || 'bearer';
 }

@@ -43,3 +43,15 @@
 - Modified `src/main/ipc/annex-handlers.ts`: registered peer management handlers
 - Modified `src/preload/index.ts`: exposed listPeers, removePeer, removeAllPeers, unlockPairing, onPeersChanged, onPairingLocked
 - Modified `src/main/services/annex-server.ts`: extended POST /pair with key exchange (publicKey, alias, icon, color), brute-force middleware
+
+### 2026-03-17 — #861: mTLS Transport
+- Created `src/main/services/annex-tls.ts`: self-signed X.509 cert generation (ECDSA P-256), CN=fingerprint, mTLS server/client options
+  - Uses raw ASN.1/DER construction (no external deps needed)
+  - Ed25519 kept for identity, ECDSA P-256 for TLS (broader Node.js TLS support)
+- Created `src/main/services/annex-tls.test.ts`: cert generation, PEM validation, X.509 parsing, CN verification
+- Modified `src/main/services/annex-server.ts`: MAJOR refactor — dual-port architecture
+  - Pairing port (plain HTTP): POST /pair, GET /api/v1/identity, OPTIONS
+  - Main port (TLS with mTLS): all authenticated endpoints + WSS
+  - WS connections tagged with authType (mtls|bearer) via WeakMap
+  - Bonjour publishes v:2 + pairingPort in TXT record
+  - Graceful fallback to plain HTTP if TLS fails
