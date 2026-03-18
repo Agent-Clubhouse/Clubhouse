@@ -77,14 +77,17 @@ test('annex server can be enabled and returns status', async () => {
     }
   });
 
-  // Wait for server to start
-  await window.waitForTimeout(2000);
-
-  // Get status
-  const status = await window.evaluate(async () => {
-    const w = window as any;
-    return w.clubhouse.annex.getStatus();
-  });
+  // Poll for server to start advertising (may take a few seconds on CI)
+  let status: any;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    status = await window.evaluate(async () => {
+      const w = window as any;
+      return w.clubhouse.annex.getStatus();
+    });
+    if (status.advertising) break;
+    await window.waitForTimeout(500);
+  }
 
   expect(status.advertising).toBe(true);
   expect(status.port).toBeGreaterThan(0);
@@ -170,6 +173,16 @@ test('brute-force lockout after wrong PINs', async () => {
 });
 
 test('settings UI shows Annex Server section', async () => {
+  // Ensure experimental annex flag is enabled (nav item is gated behind it)
+  await window.evaluate(async () => {
+    const w = window as any;
+    const expSettings = await w.clubhouse.app.getExperimentalSettings();
+    if (!expSettings.annex) {
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
+    }
+  });
+  await window.waitForTimeout(500);
+
   // Navigate to settings
   const settingsBtn = window.locator('[data-testid="nav-settings"]');
   await settingsBtn.click();

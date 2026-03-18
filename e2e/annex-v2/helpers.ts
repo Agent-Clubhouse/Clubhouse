@@ -85,8 +85,15 @@ export async function enableAnnexViaPreload(page: Page): Promise<void> {
       await (window as any).clubhouse.annex.saveSettings({ ...settings, enabled: true });
     }
   });
-  // Wait for server to start
-  await page.waitForTimeout(2000);
+  // Poll for server to start advertising (may take a few seconds on CI)
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const status = await page.evaluate(async () => {
+      return (window as any).clubhouse.annex.getStatus();
+    });
+    if (status.advertising) break;
+    await page.waitForTimeout(500);
+  }
 }
 
 // ---------------------------------------------------------------------------

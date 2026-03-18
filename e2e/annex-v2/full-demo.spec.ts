@@ -50,6 +50,14 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
 
   // ── Step 2: Enable Annex on satellite ─────────────────────────────────
   console.log('\n=== Step 2: Enable Annex on satellite ===');
+  // Enable experimental flag first (annex is gated behind it)
+  await satellite.window.evaluate(async () => {
+    const w = window as any;
+    const expSettings = await w.clubhouse.app.getExperimentalSettings();
+    if (!expSettings.annex) {
+      await w.clubhouse.app.saveExperimentalSettings({ ...expSettings, annex: true });
+    }
+  });
   await satellite.window.evaluate(async () => {
     const w = window as any;
     const settings = await w.clubhouse.annex.getSettings();
@@ -57,11 +65,16 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
       await w.clubhouse.annex.saveSettings({ ...settings, enabled: true });
     }
   });
-  await satellite.window.waitForTimeout(2000);
-
-  const satStatus = await satellite.window.evaluate(async () => {
-    return (window as any).clubhouse.annex.getStatus();
-  });
+  // Poll for server to start advertising (may take a few seconds on CI)
+  let satStatus: any;
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    satStatus = await satellite.window.evaluate(async () => {
+      return (window as any).clubhouse.annex.getStatus();
+    });
+    if (satStatus.advertising) break;
+    await satellite.window.waitForTimeout(500);
+  }
   expect(satStatus.advertising).toBe(true);
   expect(satStatus.port).toBeGreaterThan(0);
   expect(satStatus.pin).toBeTruthy();

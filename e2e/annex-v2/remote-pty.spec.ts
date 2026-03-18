@@ -8,6 +8,7 @@
  * (pty.spawnShell) as the control surface instead.
  */
 import { test, expect, _electron as electron, Page } from '@playwright/test';
+import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { launchApp } from '../launch';
@@ -25,6 +26,9 @@ import { generateTestIdentity, connectMtlsWs, type TestIdentity } from './tls-te
 
 const SCREENSHOTS_DIR = path.resolve(__dirname, 'screenshots');
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+
+/** Cross-platform temp directory for PTY cwd */
+const SHELL_CWD = os.tmpdir();
 
 let electronApp: Awaited<ReturnType<typeof electron.launch>>;
 let window: Page;
@@ -127,10 +131,10 @@ test('spawn shell, send echo command, receive output back', async () => {
 
     // Spawn a shell on the satellite
     await window.evaluate(
-      async (id: string) => {
-        await (window as any).clubhouse.pty.spawnShell(id, '/tmp');
+      async ([id, cwd]: [string, string]) => {
+        await (window as any).clubhouse.pty.spawnShell(id, cwd);
       },
-      shellId,
+      [shellId, SHELL_CWD] as [string, string],
     );
 
     // Wait for the shell prompt to arrive as pty:data (proves event bus → WS works)
@@ -183,10 +187,10 @@ test('pty:resize accepted without error', async () => {
 
   // Spawn a shell
   await window.evaluate(
-    async (id: string) => {
-      await (window as any).clubhouse.pty.spawnShell(id, '/tmp');
+    async ([id, cwd]: [string, string]) => {
+      await (window as any).clubhouse.pty.spawnShell(id, cwd);
     },
-    shellId,
+    [shellId, SHELL_CWD] as [string, string],
   );
   await window.waitForTimeout(500);
 
@@ -222,10 +226,10 @@ test('agent:kill terminates remote shell', async () => {
 
   // Spawn a shell
   await window.evaluate(
-    async (id: string) => {
-      await (window as any).clubhouse.pty.spawnShell(id, '/tmp');
+    async ([id, cwd]: [string, string]) => {
+      await (window as any).clubhouse.pty.spawnShell(id, cwd);
     },
-    shellId,
+    [shellId, SHELL_CWD] as [string, string],
   );
   await window.waitForTimeout(500);
 
