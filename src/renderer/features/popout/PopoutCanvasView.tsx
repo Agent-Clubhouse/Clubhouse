@@ -140,6 +140,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [views, setViews] = useState<CanvasView[]>([]);
   const [viewport, setViewport] = useState<Viewport>({ panX: 0, panY: 0, zoom: 1 });
   const [zoomedViewId, setZoomedViewId] = useState<string | null>(null);
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -293,6 +294,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         views={views}
         viewport={viewport}
         zoomedViewId={zoomedViewId}
+        selectedViewId={selectedViewId}
         api={api}
         onViewportChange={handleViewportChange}
         onAddView={handleAddView}
@@ -303,6 +305,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onFocusView={handleFocusView}
         onUpdateView={handleUpdateView}
         onZoomView={handleZoomView}
+        onSelectView={setSelectedViewId}
       />
     </div>
   );
