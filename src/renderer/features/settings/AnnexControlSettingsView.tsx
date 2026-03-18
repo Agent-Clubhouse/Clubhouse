@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { PairedSatelliteList } from './PairedSatelliteList';
+import { PairingWizard } from './PairingWizard';
 
 export function AnnexControlSettingsView() {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const loadSatellites = useAnnexClientStore((s) => s.loadSatellites);
   const scan = useAnnexClientStore((s) => s.scan);
+  const [showPairing, setShowPairing] = useState(false);
 
   useEffect(() => {
     loadSatellites();
@@ -25,6 +27,13 @@ export function AnnexControlSettingsView() {
             <div className="text-sm text-ctp-text font-medium">Paired Satellites</div>
             <div className="flex gap-2">
               <button
+                onClick={() => setShowPairing((v) => !v)}
+                className="px-3 py-1.5 text-xs rounded bg-ctp-blue text-ctp-base font-medium
+                  hover:bg-ctp-blue/80 transition-colors cursor-pointer"
+              >
+                {showPairing ? 'Cancel' : 'Add Satellite'}
+              </button>
+              <button
                 onClick={scan}
                 className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
                   transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
@@ -34,12 +43,16 @@ export function AnnexControlSettingsView() {
             </div>
           </div>
 
-          {satellites.length === 0 ? (
+          {satellites.length === 0 && !showPairing ? (
             <div className="text-xs text-ctp-subtext0 py-4 text-center">
-              No paired satellites. Use the pairing wizard to connect to another Clubhouse instance.
+              No paired satellites. Click "Add Satellite" to pair with another Clubhouse instance.
             </div>
           ) : (
             <PairedSatelliteList satellites={satellites} />
+          )}
+
+          {showPairing && (
+            <PairingWizard onClose={() => setShowPairing(false)} />
           )}
         </div>
       </div>

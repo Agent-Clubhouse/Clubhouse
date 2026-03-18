@@ -36,6 +36,17 @@ export function registerAnnexClientHandlers(): void {
     annexClient.scan();
   });
 
+  ipcMain.handle(IPC.ANNEX_CLIENT.GET_DISCOVERED, () => {
+    return annexClient.getDiscoveredServices();
+  });
+
+  ipcMain.handle(IPC.ANNEX_CLIENT.PAIR_WITH, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, fingerprint, pin) => {
+      return annexClient.pairWithService(fingerprint, pin);
+    },
+  ));
+
   // Proxy IPC: send PTY input to a satellite's agent
   ipcMain.handle(IPC.ANNEX_CLIENT.PTY_INPUT, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],

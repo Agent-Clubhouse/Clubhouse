@@ -58,6 +58,20 @@ let bonjourBrowser: Browser | null = null;
 let bonjourInstance: InstanceType<typeof Bonjour> | null = null;
 const satellites = new Map<string, SatelliteConnectionInternal>();
 
+/** Discovered but unpaired services visible on the LAN. */
+export interface DiscoveredService {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  host: string;
+  mainPort: number;
+  pairingPort: number;
+  publicKey: string;
+}
+
+const discoveredServices = new Map<string, DiscoveredService>();
+
 interface SatelliteConnectionInternal {
   id: string;
   alias: string;
@@ -88,6 +102,10 @@ const PONG_TIMEOUT_MS = 10_000;        // 10s pong timeout → dead
 
 function broadcastSatellitesChanged(): void {
   broadcastToAllWindows(IPC.ANNEX_CLIENT?.SATELLITES_CHANGED || 'annex-client:satellites-changed', getSatellites());
+}
+
+function broadcastDiscoveredChanged(): void {
+  broadcastToAllWindows(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED, getDiscoveredServices());
 }
 
 function broadcastSatelliteEvent(satelliteId: string, type: string, payload: unknown): void {
@@ -160,7 +178,15 @@ function httpPost(host: string, port: number, path: string, data: unknown): Prom
 // Connection management
 // ---------------------------------------------------------------------------
 
-async function identifyService(service: RemoteService): Promise<string | null> {
+interface RemoteIdentity {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  publicKey: string;
+}
+
+async function identifyService(service: RemoteService): Promise<RemoteIdentity | null> {
   const txt = service.txt || {};
   const host = service.host || service.referer?.address;
   if (!host) return null;
@@ -173,7 +199,14 @@ async function identifyService(service: RemoteService): Promise<string | null> {
     const res = await httpGet(host, pPort, '/api/v1/identity');
     if (res.status !== 200) return null;
     const identity = JSON.parse(res.body);
-    return identity.fingerprint || null;
+    if (!identity.fingerprint) return null;
+    return {
+      fingerprint: identity.fingerprint,
+      alias: identity.alias || 'Unknown',
+      icon: identity.icon || 'computer',
+      color: identity.color || 'indigo',
+      publicKey: identity.publicKey || '',
+    };
   } catch {
     return null;
   }
@@ -373,64 +406,100 @@ function startDiscovery(): void {
   try {
     bonjourInstance = new Bonjour();
     bonjourBrowser = bonjourInstance.find({ type: 'clubhouse-annex' }, async (service) => {
-      const fingerprint = await identifyService(service);
-      if (!fingerprint) return;
+      const identity = await identifyService(service);
+      if (!identity) return;
 
-      // Only connect to known peers
-      if (!annexPeers.isPairedPeer(fingerprint)) return;
+      const { fingerprint } = identity;
+      const txt = service.txt || {};
+      const host = service.host || service.referer?.address || '';
+      const mainPort = service.port || 0;
+      const pairingPort = txt.pairingPort ? parseInt(txt.pairingPort, 10) : service.port || 0;
 
-      // Skip if we already have this satellite
-      if (satellites.has(fingerprint)) {
-        // Update host/port if changed
-        const sat = satellites.get(fingerprint)!;
-        const txt = service.txt || {};
-        const host = service.host || service.referer?.address || sat.host;
-        const mainPort = service.port || sat.mainPort;
-        const pairingPort = txt.pairingPort ? parseInt(txt.pairingPort, 10) : sat.pairingPort;
+      // Skip our own identity
+      const localIdentity = annexIdentity.getIdentity();
+      if (localIdentity && localIdentity.fingerprint === fingerprint) return;
 
-        if (host !== sat.host || mainPort !== sat.mainPort) {
-          sat.host = host;
-          sat.mainPort = mainPort;
-          sat.pairingPort = pairingPort;
-          // Reconnect if disconnected
-          if (sat.state === 'disconnected' && sat.bearerToken) {
-            connectToSatellite(sat);
-          }
+      // Paired peer — track as satellite
+      if (annexPeers.isPairedPeer(fingerprint)) {
+        // Remove from discovered if it was there
+        if (discoveredServices.has(fingerprint)) {
+          discoveredServices.delete(fingerprint);
+          broadcastDiscoveredChanged();
         }
+
+        // Skip if we already have this satellite
+        if (satellites.has(fingerprint)) {
+          const sat = satellites.get(fingerprint)!;
+          if (host !== sat.host || mainPort !== sat.mainPort) {
+            sat.host = host;
+            sat.mainPort = mainPort;
+            sat.pairingPort = pairingPort;
+            if (sat.state === 'disconnected' && sat.bearerToken) {
+              connectToSatellite(sat);
+            }
+          }
+          return;
+        }
+
+        const peer = annexPeers.getPeer(fingerprint);
+        if (!peer) return;
+
+        const sat: SatelliteConnectionInternal = {
+          id: fingerprint,
+          alias: peer.alias,
+          icon: peer.icon,
+          color: peer.color,
+          fingerprint,
+          state: 'discovering',
+          host,
+          mainPort,
+          pairingPort,
+          snapshot: null,
+          lastError: null,
+          ws: null,
+          reconnectTimer: null,
+          reconnectAttempt: 0,
+          bearerToken: null,
+          heartbeatInterval: null,
+          pongTimeout: null,
+        };
+
+        satellites.set(fingerprint, sat);
+        broadcastSatellitesChanged();
+
+        appLog('core:annex-client', 'info', 'Discovered paired satellite', {
+          meta: { fingerprint, alias: peer.alias, host, port: mainPort },
+        });
         return;
       }
 
-      // Register new satellite
-      const peer = annexPeers.getPeer(fingerprint);
-      if (!peer) return;
+      // Unpaired peer — track as discovered service
+      if (!discoveredServices.has(fingerprint)) {
+        discoveredServices.set(fingerprint, {
+          fingerprint,
+          alias: identity.alias,
+          icon: identity.icon,
+          color: identity.color,
+          host,
+          mainPort,
+          pairingPort,
+          publicKey: identity.publicKey,
+        });
+        broadcastDiscoveredChanged();
 
-      const txt = service.txt || {};
-      const sat: SatelliteConnectionInternal = {
-        id: fingerprint,
-        alias: peer.alias,
-        icon: peer.icon,
-        color: peer.color,
-        fingerprint,
-        state: 'discovering',
-        host: service.host || service.referer?.address || '',
-        mainPort: service.port || 0,
-        pairingPort: txt.pairingPort ? parseInt(txt.pairingPort, 10) : service.port || 0,
-        snapshot: null,
-        lastError: null,
-        ws: null,
-        reconnectTimer: null,
-        reconnectAttempt: 0,
-        bearerToken: null,
-        heartbeatInterval: null,
-        pongTimeout: null,
-      };
-
-      satellites.set(fingerprint, sat);
-      broadcastSatellitesChanged();
-
-      appLog('core:annex-client', 'info', 'Discovered satellite', {
-        meta: { fingerprint, alias: peer.alias, host: sat.host, port: sat.mainPort },
-      });
+        appLog('core:annex-client', 'info', 'Discovered unpaired service', {
+          meta: { fingerprint, alias: identity.alias, host, port: mainPort },
+        });
+      } else {
+        // Update host/port if changed
+        const existing = discoveredServices.get(fingerprint)!;
+        if (host !== existing.host || mainPort !== existing.mainPort) {
+          existing.host = host;
+          existing.mainPort = mainPort;
+          existing.pairingPort = pairingPort;
+          broadcastDiscoveredChanged();
+        }
+      }
     });
 
     appLog('core:annex-client', 'info', 'Bonjour discovery started');
@@ -537,7 +606,97 @@ export function sendToSatellite(fingerprint: string, message: Record<string, unk
   return true;
 }
 
+export function getDiscoveredServices(): DiscoveredService[] {
+  return Array.from(discoveredServices.values());
+}
+
+/**
+ * Pair with a discovered (unpaired) service by fingerprint and PIN.
+ * On success, adds the peer, removes it from discovered, creates a satellite,
+ * and initiates connection.
+ */
+export async function pairWithService(fingerprint: string, pin: string): Promise<{ success: boolean; error?: string }> {
+  const discovered = discoveredServices.get(fingerprint);
+  if (!discovered) {
+    return { success: false, error: 'Service not found — it may have gone offline' };
+  }
+
+  const localIdentity = annexIdentity.getOrCreateIdentity();
+  const localSettings = annexSettings.getSettings();
+
+  try {
+    const res = await httpPost(discovered.host, discovered.pairingPort, '/pair', {
+      pin,
+      publicKey: localIdentity.publicKey,
+      alias: localSettings.alias,
+      icon: localSettings.icon,
+      color: localSettings.color,
+    });
+
+    if (res.status !== 200) {
+      const body = (() => { try { return JSON.parse(res.body); } catch { return {}; } })();
+      return { success: false, error: body.error || `Pairing failed (HTTP ${res.status})` };
+    }
+
+    const response = JSON.parse(res.body);
+    const bearerToken: string = response.token;
+
+    // Add as a paired peer
+    annexPeers.addPeer({
+      fingerprint: discovered.fingerprint,
+      publicKey: discovered.publicKey,
+      alias: discovered.alias,
+      icon: discovered.icon,
+      color: discovered.color,
+      pairedAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    });
+
+    // Remove from discovered
+    discoveredServices.delete(fingerprint);
+    broadcastDiscoveredChanged();
+
+    // Create satellite entry and connect
+    const sat: SatelliteConnectionInternal = {
+      id: fingerprint,
+      alias: discovered.alias,
+      icon: discovered.icon,
+      color: discovered.color,
+      fingerprint,
+      state: 'disconnected',
+      host: discovered.host,
+      mainPort: discovered.mainPort,
+      pairingPort: discovered.pairingPort,
+      snapshot: null,
+      lastError: null,
+      ws: null,
+      reconnectTimer: null,
+      reconnectAttempt: 0,
+      bearerToken,
+      heartbeatInterval: null,
+      pongTimeout: null,
+    };
+
+    satellites.set(fingerprint, sat);
+    broadcastSatellitesChanged();
+
+    // Initiate connection
+    connectToSatellite(sat);
+
+    appLog('core:annex-client', 'info', 'Paired with service', {
+      meta: { fingerprint, alias: discovered.alias },
+    });
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Pairing failed' };
+  }
+}
+
 export function scan(): void {
+  // Clear discovered services on rescan so stale entries are dropped
+  discoveredServices.clear();
+  broadcastDiscoveredChanged();
   stopDiscovery();
   startDiscovery();
 }
@@ -566,5 +725,6 @@ export function stopClient(): void {
     disconnectSatellite(sat);
   }
   satellites.clear();
+  discoveredServices.clear();
   stopDiscovery();
 }

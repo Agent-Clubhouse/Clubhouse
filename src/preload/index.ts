@@ -819,10 +819,19 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SPAWN, satelliteId, params),
     agentKill: (satelliteId: string, agentId: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
+    getDiscovered: () =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GET_DISCOVERED),
+    pairWith: (fingerprint: string, pin: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.PAIR_WITH, fingerprint, pin),
     onSatellitesChanged: (callback: (satellites: unknown[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, sats: any) => callback(sats);
       ipcRenderer.on(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.SATELLITES_CHANGED, listener); };
+    },
+    onDiscoveredChanged: (callback: (services: unknown[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+      ipcRenderer.on(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.ANNEX_CLIENT.DISCOVERED_CHANGED, listener); };
     },
     onSatelliteEvent: (callback: (event: { satelliteId: string; type: string; payload: unknown }) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);

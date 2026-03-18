@@ -8,7 +8,7 @@ import { registerAppHandlers } from './app-handlers';
 import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
-import { registerAnnexHandlers, maybeStartAnnex } from './annex-handlers';
+import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
@@ -55,4 +55,7 @@ export function registerAllHandlers(): void {
 
   // Conditionally start Annex LAN server if enabled in settings
   maybeStartAnnex();
+
+  // Conditionally start Annex client (Bonjour discovery) for satellite detection
+  maybeStartAnnexClient();
 }

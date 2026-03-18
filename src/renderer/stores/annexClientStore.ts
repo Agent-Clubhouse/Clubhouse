@@ -29,12 +29,30 @@ export interface SatelliteConnection {
 }
 
 // ---------------------------------------------------------------------------
+// Discovered service type (mirrors main process DiscoveredService)
+// ---------------------------------------------------------------------------
+
+export interface DiscoveredService {
+  fingerprint: string;
+  alias: string;
+  icon: string;
+  color: string;
+  host: string;
+  mainPort: number;
+  pairingPort: number;
+  publicKey: string;
+}
+
+// ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
 
 interface AnnexClientStoreState {
   satellites: SatelliteConnection[];
+  discoveredServices: DiscoveredService[];
   loadSatellites: () => Promise<void>;
+  loadDiscovered: () => Promise<void>;
+  pairWith: (fingerprint: string, pin: string) => Promise<{ success: boolean; error?: string }>;
   connect: (fingerprint: string, bearerToken?: string) => Promise<void>;
   disconnect: (fingerprint: string) => Promise<void>;
   retry: (fingerprint: string) => Promise<void>;
@@ -47,6 +65,7 @@ interface AnnexClientStoreState {
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   satellites: [],
+  discoveredServices: [],
 
   loadSatellites: async () => {
     try {
@@ -54,6 +73,23 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
       set({ satellites });
     } catch {
       // Keep empty
+    }
+  },
+
+  loadDiscovered: async () => {
+    try {
+      const discoveredServices = await window.clubhouse.annexClient.getDiscovered();
+      set({ discoveredServices });
+    } catch {
+      // Keep empty
+    }
+  },
+
+  pairWith: async (fingerprint, pin) => {
+    try {
+      return await window.clubhouse.annexClient.pairWith(fingerprint, pin);
+    } catch {
+      return { success: false, error: 'IPC error' };
     }
   },
 
@@ -131,6 +167,10 @@ export function initAnnexClientListener(): () => void {
     useAnnexClientStore.setState({ satellites });
   });
 
+  const unsubDiscovered = window.clubhouse.annexClient.onDiscoveredChanged((services: DiscoveredService[]) => {
+    useAnnexClientStore.setState({ discoveredServices: services });
+  });
+
   const unsubEvents = window.clubhouse.annexClient.onSatelliteEvent((event: { satelliteId: string; type: string; payload: unknown }) => {
     const { satelliteId, type, payload } = event;
 
@@ -151,6 +191,7 @@ export function initAnnexClientListener(): () => void {
 
   return () => {
     unsubSatellites();
+    unsubDiscovered();
     unsubEvents();
   };
 }

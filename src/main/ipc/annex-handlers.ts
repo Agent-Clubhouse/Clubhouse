@@ -3,6 +3,7 @@ import { IPC } from '../../shared/ipc-channels';
 import type { AnnexSettings } from '../../shared/types';
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
+import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
 import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
@@ -44,6 +45,15 @@ export function registerAnnexHandlers(): void {
       } else if (!settings.enabled && previous.enabled) {
         annexServer.stop();
         appLog('core:annex', 'info', 'Annex server stopped via settings');
+      }
+
+      // Start/stop client discovery alongside the server
+      if (settings.enabled && !previous.enabled) {
+        annexClient.startClient();
+        appLog('core:annex', 'info', 'Annex client started via settings');
+      } else if (!settings.enabled && previous.enabled) {
+        annexClient.stopClient();
+        appLog('core:annex', 'info', 'Annex client stopped via settings');
       }
     }
 
@@ -117,5 +127,20 @@ export function maybeStartAnnex(): void {
         meta: { error: err instanceof Error ? err.message : String(err) },
       });
     }
+  }
+}
+
+/** Conditionally start the Annex Bonjour client for discovering satellites. */
+export function maybeStartAnnexClient(): void {
+  const expSettings = experimentalSettings.getSettings();
+  if (!expSettings.annex) return;
+
+  try {
+    annexClient.startClient();
+    appLog('core:annex', 'info', 'Annex client auto-started on launch');
+  } catch (err) {
+    appLog('core:annex', 'error', 'Failed to auto-start Annex client', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
   }
 }
