@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews } from './canvas-operations';
-import { CanvasViewComponent } from './CanvasView';
+import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
@@ -269,9 +269,10 @@ export function CanvasWorkspace({
             {/* Zoomed title bar */}
             <div className="flex items-center gap-1.5 px-3 py-2 bg-ctp-mantle border-b border-surface-0 flex-shrink-0">
               <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
-                {zoomedView.type.charAt(0).toUpperCase() + zoomedView.type.slice(1).replace(/-/g, ' ')}
+                {formatViewType(zoomedView.type)}
               </span>
               <span className="text-xs text-ctp-subtext0 truncate flex-1">{zoomedView.title}</span>
+              {(() => { const ctx = buildProjectContext(zoomedView, api.projects.list()); return ctx ? <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({ctx})</span> : null; })()}
               <button
                 className="text-[10px] px-2 py-0.5 rounded bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text transition-colors"
                 onClick={() => onZoomView(null)}

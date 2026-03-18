@@ -1,12 +1,38 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
+import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import type { PluginAPI, PluginAgentDetailedStatus, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+/** Sentence-case a view type string: 'git-diff' → 'Git diff' */
+export function formatViewType(raw: string): string {
+  return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' ');
+}
+
+/** Build a project context label for the title bar, e.g. "(Clubhouse)" or "(Clubhouse::worktree)". */
+export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): string | null {
+  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType).projectId : undefined;
+  if (!projectId) return null;
+  const project = projects.find((p) => p.id === projectId);
+  if (!project) return null;
+
+  const worktreePath = (view.type === 'git-diff') ? (view as GitDiffCanvasViewType).worktreePath : undefined;
+  if (worktreePath) {
+    // Extract short worktree name from path (last non-empty segment)
+    const segments = worktreePath.replace(/\/+$/, '').split('/');
+    const wtName = segments[segments.length - 1] || worktreePath;
+    return `${project.name}::${wtName}`;
+  }
+
+  return project.name;
+}
 
 // ── Resize direction types ──────────────────────────────────────────
 
@@ -95,6 +121,12 @@ export function CanvasViewComponent({
     if (!agentId) return null;
     return api.agents.list().find((a) => a.id === agentId) ?? null;
   }, [api, view, agentTick]);
+
+  // Project context for title bar
+  const projectContext = useMemo(() => {
+    const projects = api.projects.list();
+    return buildProjectContext(view, projects);
+  }, [api, view]);
 
   // ── Border styles (matching hub pane) ───────────────────────────
 
@@ -307,9 +339,12 @@ export function CanvasViewComponent({
         {agentInfo && <AgentAvatar agentId={agentInfo.id} size="sm" showStatusRing />}
 
         <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
-          {(() => { const raw = view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type; return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' '); })()}
+          {formatViewType(view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type)}
         </span>
         <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.displayName || view.title}</span>
+        {projectContext && (
+          <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({projectContext})</span>
+        )}
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">

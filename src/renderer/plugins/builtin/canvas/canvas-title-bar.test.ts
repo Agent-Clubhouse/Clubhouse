@@ -1,18 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { formatViewType, buildProjectContext } from './CanvasView';
+import type { CanvasView } from './canvas-types';
+import type { ProjectInfo } from '../../../../shared/plugin-types';
 
-/**
- * Canvas title bar type label formatting.
- *
- * The canvas view title bar shows a type badge with sentence-case text
- * (first letter capitalised, hyphens replaced with spaces) instead of
- * the previous ALL-CAPS monospace style.
- */
+// ── formatViewType ──────────────────────────────────────────────────
 
-function formatViewType(raw: string): string {
-  return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' ');
-}
-
-describe('Canvas title bar — type label formatting', () => {
+describe('Canvas title bar — formatViewType', () => {
   it('capitalises first letter of simple types', () => {
     expect(formatViewType('agent')).toBe('Agent');
     expect(formatViewType('file')).toBe('File');
@@ -37,11 +30,78 @@ describe('Canvas title bar — type label formatting', () => {
   });
 });
 
-/**
- * Plugin widget type extraction — mirrors the CanvasView logic for
- * extracting the widget type from a pluginWidgetType string like
- * "canvas:my-plugin:timeline".
- */
+// ── buildProjectContext ─────────────────────────────────────────────
+
+const projects: ProjectInfo[] = [
+  { id: 'p1', name: 'Clubhouse', path: '/home/user/Clubhouse' },
+  { id: 'p2', name: 'OtherApp', path: '/home/user/OtherApp' },
+];
+
+function makeView(overrides: Partial<CanvasView> & { type: string }): CanvasView {
+  return {
+    id: 'cv_1',
+    position: { x: 0, y: 0 },
+    size: { width: 480, height: 480 },
+    title: 'Test',
+    displayName: 'Test',
+    zIndex: 1,
+    metadata: {},
+    ...overrides,
+  } as CanvasView;
+}
+
+describe('Canvas title bar — buildProjectContext', () => {
+  it('returns project name for agent view with projectId', () => {
+    const view = makeView({ type: 'agent', agentId: 'a1', projectId: 'p1' });
+    expect(buildProjectContext(view, projects)).toBe('Clubhouse');
+  });
+
+  it('returns project name for file view with projectId', () => {
+    const view = makeView({ type: 'file', projectId: 'p2', filePath: 'src/index.ts' });
+    expect(buildProjectContext(view, projects)).toBe('OtherApp');
+  });
+
+  it('returns null when view has no projectId', () => {
+    const view = makeView({ type: 'agent', agentId: 'a1' });
+    expect(buildProjectContext(view, projects)).toBeNull();
+  });
+
+  it('returns null when projectId does not match any project', () => {
+    const view = makeView({ type: 'agent', agentId: 'a1', projectId: 'unknown' });
+    expect(buildProjectContext(view, projects)).toBeNull();
+  });
+
+  it('returns null for browser views (no projectId field)', () => {
+    const view = makeView({ type: 'browser', url: 'https://example.com' });
+    expect(buildProjectContext(view, projects)).toBeNull();
+  });
+
+  it('returns project::worktree for git-diff view with worktreePath', () => {
+    const view = makeView({
+      type: 'git-diff',
+      projectId: 'p1',
+      worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir',
+    });
+    expect(buildProjectContext(view, projects)).toBe('Clubhouse::curious-tapir');
+  });
+
+  it('returns just project name for git-diff view without worktreePath', () => {
+    const view = makeView({ type: 'git-diff', projectId: 'p1' });
+    expect(buildProjectContext(view, projects)).toBe('Clubhouse');
+  });
+
+  it('handles worktreePath with trailing slash', () => {
+    const view = makeView({
+      type: 'git-diff',
+      projectId: 'p1',
+      worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir/',
+    });
+    expect(buildProjectContext(view, projects)).toBe('Clubhouse::curious-tapir');
+  });
+});
+
+// ── Plugin widget type extraction ───────────────────────────────────
+
 function extractPluginWidgetType(pluginWidgetType: string): string {
   return pluginWidgetType.split(':').pop() || '';
 }
