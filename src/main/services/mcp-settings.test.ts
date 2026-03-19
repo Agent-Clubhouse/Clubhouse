@@ -19,7 +19,7 @@ vi.mock('./clubhouse-mode-settings', () => ({
   getSettings: vi.fn(() => ({ ...cmStored })),
 }));
 
-import { isMcpEnabled, isMcpEnabledForAny, getSettings, saveSettings } from './mcp-settings';
+import { isMcpEnabled, isMcpEnabledForAny, saveSettings } from './mcp-settings';
 import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
 import { resetAllSettingsStoresForTests } from './settings-store';
 
