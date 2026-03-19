@@ -1,21 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
 import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
-import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sessionsState } from './state';
-import type { PlaybackState } from './state';
-
-// ── Color helpers ────────────────────────────────────────────────────
-
-function resolveAgentColorHex(colorId: string | undefined): string {
-  if (!colorId) return '#6366f1'; // default indigo
-  const found = AGENT_COLORS.find((c) => c.id === colorId);
-  return found?.hex || '#6366f1';
-}
-
-function getAgentInitials(name: string): string {
-  return name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
-}
+import type { PlaybackState, SessionListEntry } from './state';
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -35,13 +22,17 @@ function useSessionsState() {
   const getSelectedSessionId = useCallback(() => sessionsState.selectedSessionId, []);
   const getExpandedAgents = useCallback(() => sessionsState.expandedAgents, []);
   const getPlayback = useCallback(() => sessionsState.playback, []);
+  const getSessionLists = useCallback(() => sessionsState.sessionLists, []);
+  const getLoadingAgents = useCallback(() => sessionsState.loadingAgents, []);
 
   const selectedAgent = useSyncExternalStore(subscribe, getSelectedAgent);
   const selectedSessionId = useSyncExternalStore(subscribe, getSelectedSessionId);
   const expandedAgents = useSyncExternalStore(subscribe, getExpandedAgents);
   const playback = useSyncExternalStore(subscribe, getPlayback);
+  const sessionLists = useSyncExternalStore(subscribe, getSessionLists);
+  const loadingAgents = useSyncExternalStore(subscribe, getLoadingAgents);
 
-  return { selectedAgent, selectedSessionId, expandedAgents, playback };
+  return { selectedAgent, selectedSessionId, expandedAgents, playback, sessionLists, loadingAgents };
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────
@@ -84,22 +75,12 @@ function formatTokens(n: number): string {
 
 // ── Sidebar Panel ──────────────────────────────────────────────────────
 
-interface SessionListEntry {
-  sessionId: string;
-  startedAt: string;
-  lastActiveAt: string;
-  friendlyName?: string;
-}
-
 export function SidebarPanel({ api }: { api: PluginAPI }) {
-  const { selectedAgent, selectedSessionId, expandedAgents } = useSessionsState();
+  const { selectedAgent, selectedSessionId, expandedAgents, sessionLists, loadingAgents } = useSessionsState();
   const [durableAgents, setDurableAgents] = useState<AgentInfo[]>([]);
   const [completedAgents, setCompletedAgents] = useState<CompletedQuickAgentInfo[]>([]);
-  const [sessionLists, setSessionLists] = useState<Record<string, SessionListEntry[]>>({});
-  const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set());
 
-  // Use a ref to track which agents have been fetched, so closures don't go stale
-  const fetchedRef = useRef<Set<string>>(new Set());
+  const AgentAvatar = api.widgets.AgentAvatar;
 
   const refreshAgents = useCallback(() => {
     const all = api.agents.list();
@@ -113,28 +94,29 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     return () => sub.dispose();
   }, [api, refreshAgents]);
 
-  // Reset fetched tracking when component mounts (e.g. after plugin re-enable)
-  useEffect(() => {
-    fetchedRef.current = new Set();
-  }, []);
-
-  // Load sessions when an agent is expanded
+  // Load sessions for an agent (uses module-level tracking to avoid duplicate fetches)
   const loadSessions = useCallback(async (agentId: string) => {
-    if (fetchedRef.current.has(agentId)) return;
-    fetchedRef.current.add(agentId);
-    setLoadingAgents((prev) => new Set(prev).add(agentId));
+    if (sessionsState.fetchedAgents.has(agentId)) return;
+    sessionsState.markFetched(agentId);
+    sessionsState.setLoadingAgent(agentId, true);
     try {
       const sessions = await api.agents.listSessions(agentId);
-      setSessionLists((prev) => ({ ...prev, [agentId]: sessions }));
+      sessionsState.setSessionList(agentId, sessions);
     } catch {
-      setSessionLists((prev) => ({ ...prev, [agentId]: [] }));
+      sessionsState.setSessionList(agentId, []);
     }
-    setLoadingAgents((prev) => {
-      const next = new Set(prev);
-      next.delete(agentId);
-      return next;
-    });
+    sessionsState.setLoadingAgent(agentId, false);
   }, [api]);
+
+  // On mount, auto-fetch sessions for any agents that are already expanded
+  // This ensures session data survives navigation away and back
+  useEffect(() => {
+    for (const agentId of sessionsState.expandedAgents) {
+      if (!sessionsState.fetchedAgents.has(agentId)) {
+        loadSessions(agentId);
+      }
+    }
+  }, [loadSessions]);
 
   const handleAgentClick = useCallback((agent: AgentInfo) => {
     const wasExpanded = expandedAgents.has(agent.id);
@@ -183,8 +165,6 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
       // Durable agents
       durableAgents.map((agent) => {
-        const colorHex = resolveAgentColorHex(agent.color);
-        const initials = getAgentInitials(agent.name);
         const isSelected = selectedAgent?.agentId === agent.id;
         const isExpanded = expandedAgents.has(agent.id);
 
@@ -200,21 +180,13 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
             'data-testid': `sessions-agent-${agent.id}`,
           },
             React.createElement('div', { className: 'flex items-center gap-3' },
-              // Avatar circle with initials
-              React.createElement('div', { className: 'relative flex-shrink-0' },
-                React.createElement('div', {
-                  className: 'w-8 h-8 rounded-full flex items-center justify-center border-2',
-                  style: {
-                    borderColor: agent.status === 'running' ? '#22c55e'
-                      : agent.status === 'error' ? '#f87171'
-                      : '#6c7086',
-                  },
-                },
-                  React.createElement('div', {
-                    className: 'w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white',
-                    style: { backgroundColor: colorHex },
-                  }, initials),
-                ),
+              // Use the real AgentAvatar widget (supports custom icons, colors, status rings)
+              React.createElement('div', { className: 'flex-shrink-0' },
+                React.createElement(AgentAvatar, {
+                  agentId: agent.id,
+                  size: 'sm',
+                  showStatusRing: true,
+                }),
               ),
 
               // Name + status
@@ -436,8 +408,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return () => api.window.resetTitle();
   }, [api, selectedAgent?.agentName, selectedSessionId]);
 
-  // No selection state
-  if (!selectedAgent || !selectedSessionId) {
+  // No agent selected at all
+  if (!selectedAgent) {
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-sm',
       'data-testid': 'sessions-main-panel',
@@ -445,6 +417,24 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       React.createElement('div', { className: 'text-center' },
         React.createElement('div', { className: 'text-lg mb-2' }, '\u23F0'),
         React.createElement('div', null, 'Select an agent and session to view details'),
+      ),
+    );
+  }
+
+  // Quick agent selected — show completed info (no session needed)
+  if (selectedAgent.kind === 'quick' && !selectedSessionId) {
+    return React.createElement(CompletedAgentDetail, { api, agentId: selectedAgent.agentId, agentName: selectedAgent.agentName });
+  }
+
+  // Durable agent selected but no session yet
+  if (!selectedSessionId) {
+    return React.createElement('div', {
+      className: 'flex items-center justify-center h-full text-ctp-subtext0 text-sm',
+      'data-testid': 'sessions-main-panel',
+    },
+      React.createElement('div', { className: 'text-center' },
+        React.createElement('div', { className: 'text-lg mb-2' }, '\u23F0'),
+        React.createElement('div', null, 'Select a session to view details'),
       ),
     );
   }
@@ -491,6 +481,76 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         onLoadMore: loadMore,
         listRef: eventListRef,
       }),
+    ),
+  );
+}
+
+// ── Completed Agent Detail ──────────────────────────────────────────────
+
+function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; agentId: string; agentName: string }) {
+  const completed = api.agents.listCompleted().find((c) => c.id === agentId);
+
+  if (!completed) {
+    return React.createElement('div', {
+      className: 'flex items-center justify-center h-full text-ctp-subtext0 text-sm',
+      'data-testid': 'sessions-main-panel',
+    }, 'Agent details not available');
+  }
+
+  return React.createElement('div', {
+    className: 'flex flex-col h-full bg-ctp-base',
+    'data-testid': 'sessions-main-panel',
+  },
+    // Header
+    React.createElement('div', {
+      className: 'flex items-center px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+    },
+      React.createElement('span', { className: 'text-xs font-medium text-ctp-text' },
+        `Completed \u2014 ${agentName}`,
+      ),
+    ),
+
+    // Content
+    React.createElement('div', { className: 'flex-1 overflow-y-auto' },
+      React.createElement('div', {
+        className: 'mx-3 my-2 p-3 rounded-lg bg-ctp-mantle border border-ctp-surface0',
+        'data-testid': 'completed-agent-card',
+      },
+        // Mission
+        completed.mission && React.createElement('div', { className: 'mb-3' },
+          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Mission'),
+          React.createElement('div', { className: 'text-xs text-ctp-text' }, completed.mission),
+        ),
+
+        // Summary
+        completed.summary && React.createElement('div', { className: 'mb-3' },
+          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Summary'),
+          React.createElement('div', { className: 'text-xs text-ctp-subtext1 line-clamp-5' }, completed.summary),
+        ),
+
+        // Stats row
+        React.createElement('div', { className: 'grid grid-cols-2 gap-2 text-center mb-3' },
+          StatBadge('Exit Code', String(completed.exitCode)),
+          StatBadge('Files', String(completed.filesModified.length)),
+        ),
+
+        // Completed time
+        React.createElement('div', {
+          className: 'text-[10px] text-ctp-overlay0',
+        }, `Completed ${formatRelativeTime(new Date(completed.completedAt).toISOString())}`),
+
+        // File list
+        completed.filesModified.length > 0 && React.createElement('div', { className: 'mt-2 pt-2 border-t border-ctp-surface0' },
+          React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Modified files'),
+          React.createElement('div', { className: 'space-y-0.5' },
+            completed.filesModified.map((f) => React.createElement('div', {
+              key: f,
+              className: 'text-[10px] text-ctp-subtext0 truncate',
+              title: f,
+            }, f)),
+          ),
+        ),
+      ),
     ),
   );
 }

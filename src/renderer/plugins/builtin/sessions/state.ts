@@ -18,11 +18,26 @@ export interface PlaybackState {
   currentEventIndex: number;
 }
 
+export interface SessionListEntry {
+  sessionId: string;
+  startedAt: string;
+  lastActiveAt: string;
+  friendlyName?: string;
+}
+
 export const sessionsState = {
   selectedAgent: null as SelectedAgent | null,
   selectedSessionId: null as string | null,
   expandedAgents: new Set<string>(),
   playback: { playing: false, speed: 1, currentEventIndex: 0 } as PlaybackState,
+
+  /** Session lists keyed by agentId — persists across SidebarPanel unmount/remount */
+  sessionLists: {} as Record<string, SessionListEntry[]>,
+  /** Which agents are currently loading sessions */
+  loadingAgents: new Set<string>(),
+  /** Which agents have already been fetched (prevents duplicate requests) */
+  fetchedAgents: new Set<string>(),
+
   listeners: new Set<() => void>(),
 
   setSelectedAgent(agent: SelectedAgent | null): void {
@@ -46,6 +61,27 @@ export const sessionsState = {
     }
     this.expandedAgents = next;
     this.notify();
+  },
+
+  setSessionList(agentId: string, sessions: SessionListEntry[]): void {
+    this.sessionLists = { ...this.sessionLists, [agentId]: sessions };
+    this.notify();
+  },
+
+  setLoadingAgent(agentId: string, loading: boolean): void {
+    const next = new Set(this.loadingAgents);
+    if (loading) {
+      next.add(agentId);
+    } else {
+      next.delete(agentId);
+    }
+    this.loadingAgents = next;
+    this.notify();
+  },
+
+  markFetched(agentId: string): void {
+    this.fetchedAgents = new Set(this.fetchedAgents).add(agentId);
+    // No notify needed — this is internal bookkeeping
   },
 
   setPlaybackPlaying(playing: boolean): void {
@@ -81,6 +117,9 @@ export const sessionsState = {
     this.selectedSessionId = null;
     this.expandedAgents = new Set();
     this.playback = { playing: false, speed: 1, currentEventIndex: 0 };
+    this.sessionLists = {};
+    this.loadingAgents = new Set();
+    this.fetchedAgents = new Set();
     this.listeners.clear();
   },
 };

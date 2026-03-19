@@ -282,26 +282,31 @@ async function spawnPtyAgent(
     bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
-    // Capture session ID for durable agents
-    if (params.kind === 'durable' && buffer && isSessionCapable(provider)) {
+    // Capture session ID for durable agents — works for all providers
+    if (params.kind === 'durable') {
       try {
-        const sessionId = provider.extractSessionId(buffer);
-        if (sessionId) {
-          const now = new Date().toISOString();
-          void addSessionEntry(params.projectPath, exitAgentId, {
-            sessionId,
-            startedAt: now,
-            lastActiveAt: now,
-          }).then(() => {
-            appLog('core:agent', 'info', 'Captured session ID on exit', {
-              meta: { agentId: exitAgentId, sessionId },
-            });
-          }).catch((entryErr) => {
-            appLog('core:agent', 'warn', 'Failed to persist session entry', {
-              meta: { agentId: exitAgentId, sessionId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
-            });
-          });
+        // Try provider-specific session ID extraction first, then fall back to generated UUID
+        let sessionId: string | null = null;
+        if (buffer && isSessionCapable(provider)) {
+          sessionId = provider.extractSessionId(buffer);
         }
+        if (!sessionId) {
+          sessionId = randomUUID();
+        }
+        const now = new Date().toISOString();
+        void addSessionEntry(params.projectPath, exitAgentId, {
+          sessionId,
+          startedAt: now,
+          lastActiveAt: now,
+        }).then(() => {
+          appLog('core:agent', 'info', 'Captured session ID on exit', {
+            meta: { agentId: exitAgentId, sessionId },
+          });
+        }).catch((entryErr) => {
+          appLog('core:agent', 'warn', 'Failed to persist session entry', {
+            meta: { agentId: exitAgentId, sessionId, error: entryErr instanceof Error ? entryErr.message : String(entryErr) },
+          });
+        });
       } catch (err) {
         appLog('core:agent', 'warn', 'Failed to capture session ID', {
           meta: { agentId: exitAgentId, error: err instanceof Error ? err.message : String(err) },

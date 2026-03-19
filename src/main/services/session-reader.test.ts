@@ -165,6 +165,90 @@ describe('normalizeSessionEvents', () => {
     expect(events[0].type).toBe('tool_use');
     expect(events[0].toolName).toBe('Bash');
   });
+
+  // ── Role-based conversation format (Bug 1 fix) ────────────────────
+
+  it('converts role:user events to user_message', () => {
+    const raw: StreamJsonEvent[] = [{
+      type: '', // no type field — role-based format
+      role: 'user',
+      content: [{ type: 'text', text: 'Hello from role format' }],
+    } as any];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('user_message');
+    expect(events[0].text).toBe('Hello from role format');
+  });
+
+  it('converts role:human events to user_message', () => {
+    const raw: StreamJsonEvent[] = [{
+      type: '', // fallthrough to role check
+      role: 'human',
+      content: 'Simple text message',
+    } as any];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('user_message');
+    expect(events[0].text).toBe('Simple text message');
+  });
+
+  it('converts role:assistant events with text blocks', () => {
+    const raw: StreamJsonEvent[] = [{
+      type: '',
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Let me help you.' },
+      ],
+      usage: { input_tokens: 200, output_tokens: 80 },
+      model: 'claude-sonnet-4-5-20250514',
+    } as any];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('assistant_message');
+    expect(events[0].text).toBe('Let me help you.');
+    expect(events[0].usage).toEqual({ inputTokens: 200, outputTokens: 80 });
+    expect(events[0].model).toBe('claude-sonnet-4-5-20250514');
+  });
+
+  it('converts role:assistant events with tool_use blocks', () => {
+    const raw: StreamJsonEvent[] = [{
+      type: '',
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', name: 'Edit', input: { file_path: '/src/app.ts' } },
+      ],
+    } as any];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('tool_use');
+    expect(events[0].toolName).toBe('Edit');
+    expect(events[0].filePath).toBe('/src/app.ts');
+  });
+
+  it('converts role:assistant string content', () => {
+    const raw: StreamJsonEvent[] = [{
+      type: '',
+      role: 'assistant',
+      content: 'Simple assistant response',
+    } as any];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('assistant_message');
+    expect(events[0].text).toBe('Simple assistant response');
+  });
+
+  it('handles mixed verbose and role-based formats in same stream', () => {
+    const raw: StreamJsonEvent[] = [
+      { type: 'user', message: 'Verbose user message' },
+      { type: '', role: 'assistant', content: [{ type: 'text', text: 'Role-based response' }] } as any,
+      { type: 'result', result: 'Done', total_cost_usd: 0.01, duration_ms: 1000 },
+    ];
+    const events = normalizeSessionEvents(raw);
+    expect(events).toHaveLength(3);
+    expect(events[0].type).toBe('user_message');
+    expect(events[1].type).toBe('assistant_message');
+    expect(events[2].type).toBe('result');
+  });
 });
 
 // ── buildSessionSummary ────────────────────────────────────────────────
