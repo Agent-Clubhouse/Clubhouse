@@ -140,13 +140,16 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 // ── Main Panel ─────────────────────────────────────────────────────────
 
 export function MainPanel({ api }: { api: PluginAPI }) {
-  const { currentUrl } = useBrowserState();
   const protocolSettings = useProtocolSettings(api);
   const [addressBar, setAddressBar] = useState('');
   const [error, setError] = useState<string | null>(null);
   const webviewRef = useRef<HTMLWebViewElement>(null);
   const [navigatedUrl, setNavigatedUrl] = useState('');
   const [pageTitle, setPageTitle] = useState('');
+  // Ref tracks current navigated URL to break browserState subscription recursion.
+  // Without this, navigateTo → setCurrentPage → subscriber → navigateTo loops infinitely
+  // because the subscriber closure captures a stale navigatedUrl.
+  const navigatedUrlRef = useRef('');
 
   // Dynamic title
   useEffect(() => {
@@ -160,17 +163,33 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return () => api.window.resetTitle();
   }, [api, pageTitle, navigatedUrl]);
 
+  const navigateTo = useCallback((rawUrl: string) => {
+    const url = normalizeAddress(rawUrl);
+    if (!url) return;
+
+    const result = validateUrl(url, protocolSettings);
+    if (!result.valid) {
+      setError(result.error || 'Invalid URL.');
+      return;
+    }
+
+    setError(null);
+    setAddressBar(url);
+    setNavigatedUrl(url);
+    navigatedUrlRef.current = url; // Update ref BEFORE setCurrentPage to prevent recursion
+    browserState.setCurrentPage(url, '');
+  }, [protocolSettings]);
+
   // Listen for external navigation requests (from sidebar history clicks)
   useEffect(() => {
     const unsub = browserState.subscribe(() => {
       const url = browserState.currentUrl;
-      if (url && url !== navigatedUrl) {
+      if (url && url !== navigatedUrlRef.current) {
         navigateTo(url);
       }
     });
     return unsub;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigatedUrl, protocolSettings]);
+  }, [navigateTo]);
 
   // Listen for commands
   useEffect(() => {
@@ -213,22 +232,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       wv.removeEventListener?.('page-title-updated', handleTitleUpdate);
     };
   }, [navigatedUrl]);
-
-  const navigateTo = useCallback((rawUrl: string) => {
-    const url = normalizeAddress(rawUrl);
-    if (!url) return;
-
-    const result = validateUrl(url, protocolSettings);
-    if (!result.valid) {
-      setError(result.error || 'Invalid URL.');
-      return;
-    }
-
-    setError(null);
-    setAddressBar(url);
-    setNavigatedUrl(url);
-    browserState.setCurrentPage(url, '');
-  }, [protocolSettings]);
 
   const handleNavigate = useCallback(() => {
     navigateTo(addressBar);
