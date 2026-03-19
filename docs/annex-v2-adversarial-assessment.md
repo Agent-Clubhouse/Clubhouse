@@ -66,15 +66,13 @@ PTY data is broadcast to all WS clients without backpressure. A slow client can 
 
 | Issue | Title | Label |
 |-------|-------|-------|
-| TBD | Quick agent persistence to disk | enhancement |
-| TBD | Snapshot versioning/sequencing | enhancement |
-| TBD | Bearer token expiration/rotation | enhancement |
-| TBD | PTY write size error reporting | bug |
-| TBD | PTY flow control / backpressure | enhancement |
-| TBD | TLS validation model overhaul | enhancement |
-| TBD | Plugin version negotiation enforcement | enhancement |
-
-*Issue numbers will be filled in after filing in Phase 7.*
+| [#933](https://github.com/Agent-Clubhouse/Clubhouse/issues/933) | Quick agent persistence to disk | enhancement |
+| [#934](https://github.com/Agent-Clubhouse/Clubhouse/issues/934) | Snapshot versioning/sequencing | enhancement |
+| [#935](https://github.com/Agent-Clubhouse/Clubhouse/issues/935) | Bearer token expiration/rotation | enhancement |
+| [#936](https://github.com/Agent-Clubhouse/Clubhouse/issues/936) | PTY write size error reporting | bug |
+| [#937](https://github.com/Agent-Clubhouse/Clubhouse/issues/937) | PTY flow control / backpressure | enhancement |
+| [#938](https://github.com/Agent-Clubhouse/Clubhouse/issues/938) | TLS validation model overhaul | enhancement |
+| [#939](https://github.com/Agent-Clubhouse/Clubhouse/issues/939) | Plugin version negotiation enforcement | enhancement |
 
 ## 5. Recommendations (Prioritized)
 
