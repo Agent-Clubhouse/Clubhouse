@@ -318,6 +318,7 @@ vi.stubGlobal('clubhouse', {
     agentSpawn: asyncNoop,
     agentKill: asyncNoop,
     agentWake: asyncNoop,
+    ptyGetBuffer: vi.fn(async () => ''),
     forgetSatellite: asyncNoop,
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
