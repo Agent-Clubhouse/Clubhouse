@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createViewCounter,
   createView,
+  updateViewSize,
 } from './canvas-operations';
 import type { CanvasView, AnchorCanvasView } from './canvas-types';
-import { DEFAULT_ANCHOR_WIDTH, DEFAULT_ANCHOR_HEIGHT, GRID_SIZE } from './canvas-types';
+import { DEFAULT_ANCHOR_WIDTH, DEFAULT_ANCHOR_HEIGHT, ANCHOR_HEIGHT, GRID_SIZE } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 
@@ -99,7 +100,7 @@ describe('anchor canvas widget', () => {
       id: 'cv_10',
       type: 'anchor',
       position: { x: 0, y: 0 },
-      size: { width: DEFAULT_ANCHOR_WIDTH, height: DEFAULT_ANCHOR_HEIGHT },
+      size: { width: DEFAULT_ANCHOR_WIDTH, height: ANCHOR_HEIGHT },
       title: 'Anchor',
       displayName: 'Section Header',
       metadata: {},
@@ -214,12 +215,66 @@ describe('anchor canvas widget', () => {
     });
   });
 
+  describe('compact anchor — fixed height', () => {
+    it('creates anchor with height equal to ANCHOR_HEIGHT', () => {
+      const counter = createViewCounter(0);
+      const view = createView('anchor', { x: 0, y: 0 }, 0, counter);
+      expect(view.size.height).toBe(ANCHOR_HEIGHT);
+      expect(view.size.height).toBe(50);
+    });
+
+    it('updateViewSize forces anchor height to ANCHOR_HEIGHT', () => {
+      const counter = createViewCounter(0);
+      const view = createView('anchor', { x: 0, y: 0 }, 0, counter) as AnchorCanvasView;
+      const updated = updateViewSize([view], view.id, { width: 300, height: 500 });
+      expect(updated[0].size.height).toBe(ANCHOR_HEIGHT);
+      expect(updated[0].size.width).toBe(300);
+    });
+
+    it('updateViewSize still enforces MIN_VIEW_HEIGHT for non-anchor views', () => {
+      const counter = createViewCounter(0);
+      const agent = createView('agent', { x: 0, y: 0 }, 0, counter);
+      const updated = updateViewSize([agent], agent.id, { width: 300, height: 50 });
+      expect(updated[0].size.height).toBe(150); // MIN_VIEW_HEIGHT
+    });
+
+    it('defaults autoCollapse to undefined', () => {
+      const counter = createViewCounter(0);
+      const view = createView('anchor', { x: 0, y: 0 }, 0, counter) as AnchorCanvasView;
+      expect(view.autoCollapse).toBeUndefined();
+    });
+
+    it('persists autoCollapse via updateView', () => {
+      const store = createCanvasStore();
+      const viewId = store.getState().addView('anchor', { x: 0, y: 0 });
+      store.getState().updateView(viewId, { autoCollapse: true } as Partial<AnchorCanvasView>);
+      const view = store.getState().views[0] as AnchorCanvasView;
+      expect(view.autoCollapse).toBe(true);
+    });
+
+    it('persists autoCollapse through save/load', async () => {
+      const storage = createMockStorage();
+      const store1 = createCanvasStore();
+      await store1.getState().loadCanvas(storage);
+
+      const viewId = store1.getState().addView('anchor', { x: 0, y: 0 });
+      store1.getState().updateView(viewId, { autoCollapse: true } as Partial<AnchorCanvasView>);
+      await store1.getState().saveCanvas(storage);
+
+      const store2 = createCanvasStore();
+      await store2.getState().loadCanvas(storage);
+
+      const loaded = store2.getState().views[0] as AnchorCanvasView;
+      expect(loaded.autoCollapse).toBe(true);
+    });
+  });
+
   describe('anchor cycler', () => {
     it('counts anchor views correctly', () => {
       const views: CanvasView[] = [
-        { id: 'cv_1', type: 'anchor', position: { x: 0, y: 0 }, size: { width: 240, height: 160 }, title: 'A', displayName: 'A', metadata: {}, zIndex: 0, label: 'A' } as AnchorCanvasView,
+        { id: 'cv_1', type: 'anchor', position: { x: 0, y: 0 }, size: { width: 240, height: ANCHOR_HEIGHT }, title: 'A', displayName: 'A', metadata: {}, zIndex: 0, label: 'A' } as AnchorCanvasView,
         { id: 'cv_2', type: 'agent', position: { x: 200, y: 0 }, size: { width: 480, height: 480 }, title: 'Agent', displayName: 'Agent', metadata: {}, zIndex: 1, agentId: null },
-        { id: 'cv_3', type: 'anchor', position: { x: 400, y: 0 }, size: { width: 240, height: 160 }, title: 'B', displayName: 'B', metadata: {}, zIndex: 2, label: 'B' } as AnchorCanvasView,
+        { id: 'cv_3', type: 'anchor', position: { x: 400, y: 0 }, size: { width: 240, height: ANCHOR_HEIGHT }, title: 'B', displayName: 'B', metadata: {}, zIndex: 2, label: 'B' } as AnchorCanvasView,
       ];
 
       const anchorIds = views.filter((v) => v.type === 'anchor').map((v) => v.id);
