@@ -361,12 +361,20 @@ export function CanvasViewComponent({
           transition: dragPos ? undefined : 'width 150ms ease',
           ...(!attention && { boxShadow: selectionShadow }),
         }}
-        onMouseDown={(e) => { e.stopPropagation(); onSelect(); }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (e.metaKey || e.ctrlKey) {
+            onToggleSelect();
+          } else if (!isMultiSelected) {
+            onSelect();
+          }
+        }}
         onMouseEnter={() => setAnchorHovered(true)}
         onMouseLeave={() => setAnchorHovered(false)}
         data-testid={`canvas-view-${view.id}`}
         data-attention={attention?.level ?? undefined}
         data-selected={isSelected ? 'true' : undefined}
+        data-multi-selected={isMultiSelected ? 'true' : undefined}
         data-collapsed={isCollapsedVisually ? 'true' : undefined}
       >
         {/* Anchor icon — always visible, acts as drag handle */}
