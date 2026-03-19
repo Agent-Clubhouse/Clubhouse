@@ -271,7 +271,9 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
         const msg = JSON.parse(data.toString());
         handleSatelliteMessage(sat, msg);
       } catch {
-        // Ignore parse errors
+        appLog('core:annex-client', 'warn', 'Malformed JSON from satellite', {
+          meta: { fingerprint: sat.fingerprint, preview: data.toString().slice(0, 200) },
+        });
       }
     });
 
@@ -338,6 +340,8 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
       sat.ws.ping();
     } catch {
       stopHeartbeat(sat);
+      setState(sat, 'disconnected', 'Heartbeat ping failed');
+      scheduleReconnect(sat);
       return;
     }
     // Set pong timeout
@@ -631,12 +635,23 @@ export function retry(fingerprint: string): void {
 
 /**
  * Send a message to a satellite's WebSocket.
+ * Returns an object with `sent` status and optional error context.
  */
-export function sendToSatellite(fingerprint: string, message: Record<string, unknown>): boolean {
+export function sendToSatellite(fingerprint: string, message: Record<string, unknown>): { sent: boolean; error?: string } {
   const sat = satellites.get(fingerprint);
-  if (!sat || !sat.ws || sat.ws.readyState !== WebSocket.OPEN) return false;
-  sat.ws.send(JSON.stringify(message));
-  return true;
+  if (!sat || !sat.ws || sat.ws.readyState !== WebSocket.OPEN) {
+    return { sent: false, error: 'not_connected' };
+  }
+  try {
+    sat.ws.send(JSON.stringify(message));
+    return { sent: true };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    appLog('core:annex-client', 'warn', 'sendToSatellite: send failed', {
+      meta: { fingerprint, error: errorMsg },
+    });
+    return { sent: false, error: `send_failed: ${errorMsg}` };
+  }
 }
 
 export function getDiscoveredServices(): DiscoveredService[] {
