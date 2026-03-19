@@ -11,6 +11,7 @@ import { TerminalCanvasView } from './TerminalCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
+import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -73,6 +74,12 @@ interface CanvasViewComponentProps {
   /** When true, hide this view because it's part of a multi-drag (non-primary). */
   multiDragHidden?: boolean;
   attention?: CanvasViewAttention | null;
+  /** All views on the canvas (needed for LinkDropdown target list). */
+  allViews?: CanvasView[];
+  /** Whether MCP is enabled — controls visibility of Link/Wire buttons. */
+  mcpEnabled?: boolean;
+  /** Callback to start wire drag from this agent view. */
+  onStartWireDrag?: (view: AgentCanvasViewType) => void;
   onClose: () => void;
   onFocus: () => void;
   onSelect: () => void;
@@ -94,6 +101,9 @@ export function CanvasViewComponent({
   isMultiSelected,
   multiDragHidden,
   attention,
+  allViews,
+  mcpEnabled,
+  onStartWireDrag,
   onClose,
   onFocus,
   onSelect,
@@ -108,6 +118,7 @@ export function CanvasViewComponent({
   const [dragPos, setDragPos] = useState<Position | null>(null);
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const [anchorHovered, setAnchorHovered] = useState(false);
+  const [linkDropdownOpen, setLinkDropdownOpen] = useState(false);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
@@ -551,6 +562,53 @@ export function CanvasViewComponent({
 
         {/* Quick action buttons */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
+          {/* MCP Link button (agent views with assigned agent, when MCP enabled) */}
+          {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && (
+            <div className="relative">
+              <button
+                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                  linkDropdownOpen
+                    ? 'text-ctp-blue bg-ctp-blue/10'
+                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                }`}
+                onClick={(e) => { e.stopPropagation(); setLinkDropdownOpen(!linkDropdownOpen); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Link to widget"
+                data-testid="canvas-view-link"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              </button>
+              {linkDropdownOpen && allViews && (
+                <LinkDropdown
+                  agentView={view as AgentCanvasViewType}
+                  views={allViews}
+                  onClose={() => setLinkDropdownOpen(false)}
+                />
+              )}
+            </div>
+          )}
+          {/* MCP Wire drag button (agent views with assigned agent, when MCP enabled) */}
+          {mcpEnabled && view.type === 'agent' && (view as AgentCanvasViewType).agentId && onStartWireDrag && (
+            <button
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onStartWireDrag(view as AgentCanvasViewType);
+              }}
+              title="Drag to connect"
+              data-testid="canvas-view-wire"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="5" cy="12" r="3" />
+                <circle cx="19" cy="12" r="3" />
+                <line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+            </button>
+          )}
           {isAgentRunning && (
             <button
               className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-blue-500/20 hover:text-blue-400 transition-colors"
