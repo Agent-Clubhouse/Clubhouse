@@ -18,7 +18,7 @@ vi.mock('fs', async () => {
 
 import * as fs from 'fs';
 import { execFile } from 'child_process';
-import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees } from './git-service';
+import { getGitInfo, isInsideGitRepo, checkout, commit, push, pull, getFileDiff, stage, unstage, stageAll, unstageAll, discardFile, createBranch, stash, stashPop, listWorktrees, getLog, showCommit, getCommitFileDiff } from './git-service';
 
 // No longer need to mock pathExists — git repo detection uses git rev-parse via execFile
 
@@ -1034,5 +1034,137 @@ describe('listWorktrees', () => {
       }) as any,
     );
     await expect(listWorktrees(DIR)).rejects.toThrow();
+  });
+});
+
+// ── getLog ───────────────────────────────────────────────────────────
+
+describe('getLog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('parses log entries with pagination', async () => {
+    mockGitExec((args) => {
+      if (args.includes('log')) {
+        return 'aaa111|||aaa|||First commit|||Alice|||1 hour ago\nbbb222|||bbb|||Second commit|||Bob|||2 hours ago\n';
+      }
+      return '';
+    });
+    const entries = await getLog(DIR, 10, 0);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].hash).toBe('aaa111');
+    expect(entries[0].subject).toBe('First commit');
+    expect(entries[1].author).toBe('Bob');
+  });
+
+  it('returns empty array when no commits', async () => {
+    mockGitExec(() => '');
+    const entries = await getLog(DIR, 10, 0);
+    expect(entries).toEqual([]);
+  });
+
+  it('passes skip and limit to git command', async () => {
+    mockGitExec(() => '');
+    await getLog(DIR, 25, 10);
+    const call = vi.mocked(execFile).mock.calls[0];
+    const args = call[1] as string[];
+    expect(args).toContain('-25');
+    expect(args).toContain('--skip=10');
+    expect(args).toContain('-M');
+  });
+});
+
+// ── showCommit ───────────────────────────────────────────────────────
+
+describe('showCommit', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('parses diff-tree output into files', async () => {
+    mockGitExec(() => 'M\tsrc/app.ts\nA\tsrc/new.ts\nD\told.ts\n');
+    const detail = await showCommit(DIR, 'abc123def');
+    expect(detail.hash).toBe('abc123def');
+    expect(detail.files).toHaveLength(3);
+    expect(detail.files[0]).toEqual({ status: 'M', path: 'src/app.ts' });
+    expect(detail.files[1]).toEqual({ status: 'A', path: 'src/new.ts' });
+    expect(detail.files[2]).toEqual({ status: 'D', path: 'old.ts' });
+  });
+
+  it('parses renames with origPath', async () => {
+    mockGitExec(() => 'R100\told-name.ts\tnew-name.ts\n');
+    const detail = await showCommit(DIR, 'abc123de');
+    expect(detail.files[0]).toEqual({ status: 'R100', origPath: 'old-name.ts', path: 'new-name.ts' });
+  });
+
+  it('rejects invalid commit hash', async () => {
+    await expect(showCommit(DIR, 'not-a-hash!')).rejects.toThrow('Invalid commit hash');
+  });
+
+  it('rejects short hash under 4 chars', async () => {
+    await expect(showCommit(DIR, 'abc')).rejects.toThrow('Invalid commit hash');
+  });
+
+  it('returns empty files when commit has no changes', async () => {
+    mockGitExec(() => '');
+    const detail = await showCommit(DIR, 'abc1234');
+    expect(detail.files).toEqual([]);
+  });
+});
+
+// ── getCommitFileDiff ────────────────────────────────────────────────
+
+describe('getCommitFileDiff', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns before and after content for a modified file', async () => {
+    mockGitExec((args) => {
+      const ref = args[1] as string;
+      if (ref.includes('^:')) return 'old content\n';
+      if (ref.includes(':')) return 'new content\n';
+      return '';
+    });
+    const diff = await getCommitFileDiff(DIR, 'abc1234', 'src/app.ts');
+    expect(diff.original).toBe('old content\n');
+    expect(diff.modified).toBe('new content\n');
+  });
+
+  it('returns empty original for newly added file', async () => {
+    mockGitExec((args) => {
+      const ref = args[1] as string;
+      if (ref.includes('^:')) throw new Error('not found');
+      if (ref.includes(':')) return 'new file content\n';
+      return '';
+    });
+    const diff = await getCommitFileDiff(DIR, 'abc1234', 'new.ts');
+    expect(diff.original).toBe('');
+    expect(diff.modified).toBe('new file content\n');
+  });
+
+  it('returns empty modified for deleted file', async () => {
+    mockGitExec((args) => {
+      const ref = args[1] as string;
+      if (ref.includes('^:')) return 'deleted content\n';
+      if (ref.includes(':')) throw new Error('not found');
+      return '';
+    });
+    const diff = await getCommitFileDiff(DIR, 'abc1234', 'gone.ts');
+    expect(diff.original).toBe('deleted content\n');
+    expect(diff.modified).toBe('');
+  });
+
+  it('rejects invalid commit hash', async () => {
+    await expect(getCommitFileDiff(DIR, 'bad!hash', 'file.ts')).rejects.toThrow('Invalid commit hash');
+  });
+
+  it('rejects absolute file path', async () => {
+    await expect(getCommitFileDiff(DIR, 'abc1234', '/etc/passwd')).rejects.toThrow('must be relative');
+  });
+
+  it('rejects traversal path', async () => {
+    await expect(getCommitFileDiff(DIR, 'abc1234', '../../etc/passwd')).rejects.toThrow('traverse above');
   });
 });

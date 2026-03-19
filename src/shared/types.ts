@@ -806,6 +806,17 @@ export interface GitWorktreeEntry {
   isBare: boolean;
 }
 
+export interface GitCommitFileEntry {
+  path: string;
+  status: string;
+  origPath?: string;
+}
+
+export interface GitCommitDetail {
+  hash: string;
+  files: GitCommitFileEntry[];
+}
+
 export interface McpServerEntry {
   name: string;
   command: string;

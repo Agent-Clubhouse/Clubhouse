@@ -295,6 +295,12 @@ const api = {
     stash: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH, dirPath),
     stashPop: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.STASH_POP, dirPath),
     listWorktrees: (dirPath: string) => ipcRenderer.invoke(IPC.GIT.LIST_WORKTREES, dirPath),
+    log: (dirPath: string, limit?: number, offset?: number) =>
+      ipcRenderer.invoke(IPC.GIT.LOG, dirPath, limit, offset),
+    showCommit: (dirPath: string, hash: string) =>
+      ipcRenderer.invoke(IPC.GIT.SHOW_COMMIT, dirPath, hash),
+    commitDiff: (dirPath: string, hash: string, filePath: string) =>
+      ipcRenderer.invoke(IPC.GIT.COMMIT_DIFF, dirPath, hash, filePath),
   },
   agentSettings: {
     readInstructions: (worktreePath: string, projectPath?: string) =>

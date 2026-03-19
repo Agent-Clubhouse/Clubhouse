@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as gitService from '../services/git-service';
-import { booleanArg, stringArg, withValidatedArgs } from './validation';
+import { booleanArg, numberArg, stringArg, withValidatedArgs } from './validation';
 
 function deferInvocation<Result>(operation: () => Promise<Result> | Result): Promise<Result> {
   return new Promise((resolve, reject) => {
@@ -72,5 +72,20 @@ export function registerGitHandlers(): void {
 
   ipcMain.handle(IPC.GIT.LIST_WORKTREES, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
     return deferInvocation(() => gitService.listWorktrees(dirPath));
+  }));
+
+  ipcMain.handle(IPC.GIT.LOG, withValidatedArgs(
+    [stringArg(), numberArg({ integer: true, min: 1, optional: true }), numberArg({ integer: true, min: 0, optional: true })],
+    async (_event, dirPath: string, limit?: number, offset?: number) => {
+      return deferInvocation(() => gitService.getLog(dirPath, limit, offset));
+    },
+  ));
+
+  ipcMain.handle(IPC.GIT.SHOW_COMMIT, withValidatedArgs([stringArg(), stringArg()], async (_event, dirPath: string, hash: string) => {
+    return deferInvocation(() => gitService.showCommit(dirPath, hash));
+  }));
+
+  ipcMain.handle(IPC.GIT.COMMIT_DIFF, withValidatedArgs([stringArg(), stringArg(), stringArg()], async (_event, dirPath: string, hash: string, filePath: string) => {
+    return deferInvocation(() => gitService.getCommitFileDiff(dirPath, hash, filePath));
   }));
 }

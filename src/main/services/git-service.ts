@@ -1,7 +1,7 @@
 import { execFile as nodeExecFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry } from '../../shared/types';
+import { GitInfo, GitStatusFile, GitLogEntry, GitOpResult, GitWorktreeEntry, GitCommitDetail, GitCommitFileEntry } from '../../shared/types';
 import { appLog } from './log-service';
 
 // Conflict status codes from git porcelain format
@@ -266,6 +266,91 @@ export async function stash(dirPath: string): Promise<GitOpResult> {
 
 export async function stashPop(dirPath: string): Promise<GitOpResult> {
   return runResult(['stash', 'pop'], dirPath);
+}
+
+/** Validate that a string looks like a hex commit hash (short or full). */
+function validateCommitHash(hash: string): void {
+  if (!/^[0-9a-f]{4,40}$/i.test(hash)) {
+    throw new Error(`Invalid commit hash: must be 4-40 hex characters`);
+  }
+}
+
+/**
+ * Get paginated git log with optional offset.
+ * Returns an array of GitLogEntry objects.
+ */
+export async function getLog(
+  dirPath: string,
+  limit: number = 50,
+  offset: number = 0,
+): Promise<GitLogEntry[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const safeOffset = Math.max(0, offset);
+  const raw = await run(
+    ['log', '--format=%H|||%h|||%s|||%an|||%ar', `-${safeLimit}`, `--skip=${safeOffset}`, '-M'],
+    dirPath,
+  );
+  if (!raw) return [];
+  return raw
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, shortHash, subject, author, date] = line.split('|||');
+      return { hash, shortHash, subject, author, date };
+    });
+}
+
+/**
+ * Show the files changed in a specific commit.
+ * Returns a GitCommitDetail with the list of affected files.
+ */
+export async function showCommit(dirPath: string, hash: string): Promise<GitCommitDetail> {
+  validateCommitHash(hash);
+  const raw = await run(
+    ['diff-tree', '--no-commit-id', '--name-status', '-r', '-M', hash],
+    dirPath,
+  );
+  const files: GitCommitFileEntry[] = raw
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('\t');
+      const status = parts[0];
+      if (status.startsWith('R') || status.startsWith('C')) {
+        return { status, origPath: parts[1], path: parts[2] || parts[1] };
+      }
+      return { status, path: parts[1] || '' };
+    });
+  return { hash, files };
+}
+
+/**
+ * Get the diff of a single file within a specific commit.
+ * Returns the before/after content for use in a diff editor.
+ */
+export async function getCommitFileDiff(
+  dirPath: string,
+  hash: string,
+  filePath: string,
+): Promise<{ original: string; modified: string }> {
+  validateCommitHash(hash);
+  validateFilePath(filePath);
+
+  let original = '';
+  try {
+    original = await gitExec(['show', `${hash}^:${filePath}`], dirPath);
+  } catch {
+    // File didn't exist before this commit
+  }
+
+  let modified = '';
+  try {
+    modified = await gitExec(['show', `${hash}:${filePath}`], dirPath);
+  } catch {
+    // File was deleted in this commit
+  }
+
+  return { original, modified };
 }
 
 /**

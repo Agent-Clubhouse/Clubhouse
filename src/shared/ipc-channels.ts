@@ -142,6 +142,9 @@ export const IPC = {
     STASH: 'git:stash',
     STASH_POP: 'git:stash-pop',
     LIST_WORKTREES: 'git:list-worktrees',
+    LOG: 'git:log',
+    SHOW_COMMIT: 'git:show-commit',
+    COMMIT_DIFF: 'git:commit-diff',
   },
   APP: {
     OPEN_EXTERNAL_URL: 'app:open-external-url',
