@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import * as experimentalSettings from '../services/experimental-settings';
+import { isMcpEnabled } from '../services/mcp-settings';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
@@ -17,8 +17,7 @@ function broadcastBindingsChanged(): void {
 }
 
 export function registerMcpBindingHandlers(): void {
-  const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.clubhouseMcp) {
+  if (!isMcpEnabled()) {
     return; // Feature not enabled — don't register any handlers
   }
 
@@ -70,10 +69,9 @@ export function registerMcpBindingHandlers(): void {
   ));
 }
 
-/** Conditionally start the MCP bridge server if experimental flag is on. */
+/** Conditionally start the MCP bridge server if MCP is enabled. */
 export function maybeStartMcpBridge(): void {
-  const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.clubhouseMcp) {
+  if (!isMcpEnabled()) {
     return;
   }
 
