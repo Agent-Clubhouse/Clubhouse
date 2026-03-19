@@ -306,4 +306,12 @@ export const IPC = {
     FORGET_SATELLITE: 'annex-client:forget-satellite',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
   },
+  MCP_BINDING: {
+    GET_BINDINGS: 'mcp-binding:get-bindings',
+    BIND: 'mcp-binding:bind',
+    UNBIND: 'mcp-binding:unbind',
+    BINDINGS_CHANGED: 'mcp-binding:bindings-changed',
+    REGISTER_WEBVIEW: 'mcp-binding:register-webview',
+    UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
+  },
 } as const;

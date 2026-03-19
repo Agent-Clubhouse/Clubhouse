@@ -9,6 +9,7 @@ import { registerPluginHandlers } from './plugin-handlers';
 import { registerProcessHandlers } from './process-handlers';
 import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
+import { registerMcpBindingHandlers, maybeStartMcpBridge } from './mcp-binding-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
@@ -45,6 +46,7 @@ export function registerAllHandlers(): void {
   registerMarketplaceHandlers();
   registerProfileHandlers();
   registerSettingsHandlers();
+  registerMcpBindingHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {
@@ -58,4 +60,7 @@ export function registerAllHandlers(): void {
 
   // Conditionally start Annex client (Bonjour discovery) for satellite detection
   maybeStartAnnexClient();
+
+  // Conditionally start MCP bridge server for agent-widget interaction
+  maybeStartMcpBridge();
 }

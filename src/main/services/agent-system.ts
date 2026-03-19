@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getProvider, getAllProviders, OrchestratorId, OrchestratorProvider, isHookCapable, isHeadlessCapable, isSessionCapable, isStructuredCapable } from '../orchestrators';
 import { waitReady as waitHookServerReady } from './hook-server';
@@ -15,6 +16,9 @@ import * as structuredManager from './structured-manager';
 import { applyLaunchWrapper } from '../orchestrators/shared';
 import type { LaunchWrapperConfig } from '../../shared/types';
 import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrator, DEFAULT_ORCHESTRATOR } from './agent-registry';
+import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
+import { injectClubhouseMcp } from './clubhouse-mcp/injection';
+import { bindingManager } from './clubhouse-mcp/binding-manager';
 
 // Re-export registry functions for backward compatibility
 export { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, untrackAgent, resolveOrchestrator } from './agent-registry';
@@ -122,6 +126,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         freeAgentMode: params.freeAgentMode,
         commandPrefix,
       }, (exitAgentId) => {
+        bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
       });
       return;
@@ -159,6 +164,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
           headlessResult.outputKind || 'stream-json',
           (exitAgentId) => {
             configPipeline.restoreForAgent(exitAgentId);
+            bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
           },
           commandPrefix,
@@ -193,13 +199,27 @@ async function spawnPtyAgent(
     configPipeline.snapshotFile(params.agentId, hookConfigPath);
   }
 
-  // Run hook server setup and command building in parallel — they're independent.
-  const [, spawnCmd] = await Promise.all([
+  // Snapshot MCP config before injection so we can restore on exit
+  const mcpConfigPath = configPipeline.getHooksConfigPath(provider, params.cwd)
+    ? undefined // hooks config already snapshotted above
+    : undefined;
+  const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
+  configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+
+  // Run hook server setup, MCP bridge setup, and command building in parallel.
+  let mcpPort = 0;
+  const [, , spawnCmd] = await Promise.all([
     waitHookServerReady().then(async (port) => {
       if (isHookCapable(provider)) {
         const hookUrl = `http://127.0.0.1:${port}/hook`;
         await provider.writeHooksConfig(params.cwd, hookUrl);
       }
+    }),
+    waitMcpBridgeReady().then(async (port) => {
+      mcpPort = port;
+      await injectClubhouseMcp(params.cwd, params.agentId, port, nonce, provider.conventions);
+    }).catch(() => {
+      // MCP bridge not started (feature disabled) — continue without it
     }),
     provider.buildSpawnCommand({
       cwd: params.cwd,
@@ -237,7 +257,14 @@ async function spawnPtyAgent(
     },
   });
 
-  const spawnEnv = { ...env, ...profileEnv, ...wrapperConfig?.env, CLUBHOUSE_AGENT_ID: params.agentId, CLUBHOUSE_HOOK_NONCE: nonce };
+  const spawnEnv: Record<string, string> = {
+    ...env,
+    ...profileEnv,
+    ...wrapperConfig?.env,
+    CLUBHOUSE_AGENT_ID: params.agentId,
+    CLUBHOUSE_HOOK_NONCE: nonce,
+    ...(mcpPort > 0 ? { CLUBHOUSE_MCP_PORT: String(mcpPort) } : {}),
+  };
 
   if (profileEnv) {
     appLog('core:agent', 'info', 'Profile env injected', {
@@ -247,6 +274,7 @@ async function spawnPtyAgent(
 
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
+    bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents

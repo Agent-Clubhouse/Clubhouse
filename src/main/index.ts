@@ -12,6 +12,7 @@ import { appLog } from './services/log-service';
 import { startPeriodicChecks as startUpdateChecks, stopPeriodicChecks as stopUpdateChecks, applyUpdateOnQuit } from './services/auto-update-service';
 import { startPeriodicPluginUpdateChecks, stopPeriodicPluginUpdateChecks } from './services/plugin-update-service';
 import * as annexServer from './services/annex-server';
+import { bridgeServer as mcpBridgeServer } from './services/clubhouse-mcp';
 import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast';
 import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
@@ -236,6 +237,7 @@ app.on('before-quit', () => {
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();
   annexServer.stop();
+  mcpBridgeServer.stop();
   restoreAll();
   killAll();
   stopAllWatches();
