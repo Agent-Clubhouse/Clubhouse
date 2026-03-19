@@ -429,8 +429,9 @@ function startDiscovery(): void {
       const localIdentity = annexIdentity.getIdentity();
       if (localIdentity && localIdentity.fingerprint === fingerprint) return;
 
-      // Paired peer — track as satellite
-      if (annexPeers.isPairedPeer(fingerprint)) {
+      // Paired peer — only connect to peers we've paired as satellites (not controllers)
+      const peerRecord = annexPeers.getPeer(fingerprint);
+      if (peerRecord && (peerRecord.role === 'satellite' || !peerRecord.role)) {
         // Remove from discovered if it was there
         if (discoveredServices.has(fingerprint)) {
           discoveredServices.delete(fingerprint);
@@ -673,7 +674,7 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
     const response = JSON.parse(res.body);
     const bearerToken: string = response.token;
 
-    // Add as a paired peer
+    // Add as a paired peer — we initiated pairing, so this peer is our satellite
     annexPeers.addPeer({
       fingerprint: discovered.fingerprint,
       publicKey: discovered.publicKey,
@@ -682,6 +683,7 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
       color: discovered.color,
       pairedAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
+      role: 'satellite', // We paired with them → they are our satellite
     });
 
     // Remove from discovered

@@ -481,6 +481,9 @@ export interface AnnexStatus {
 
 // ── Annex peer types ──────────────────────────────────────────────────
 
+/** Role of a peer relative to this machine. */
+export type AnnexPeerRole = 'controller' | 'satellite';
+
 export interface AnnexPeer {
   /** SHA-256 fingerprint of the peer's public key */
   fingerprint: string;
@@ -496,6 +499,13 @@ export interface AnnexPeer {
   pairedAt: string;
   /** ISO timestamp of last successful connection */
   lastSeen: string;
+  /**
+   * The role of this peer relative to us:
+   * - 'controller': This peer controls us (we are their satellite)
+   * - 'satellite': This peer is our satellite (we control them)
+   * Legacy peers without a role are treated as 'satellite' for backward compat.
+   */
+  role?: AnnexPeerRole;
 }
 
 // ── Annex client (controller) types ───────────────────────────────────

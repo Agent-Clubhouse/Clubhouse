@@ -828,6 +828,7 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
           color: (body.color as string) || 'indigo',
           pairedAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
+          role: 'controller', // This peer initiated pairing → they control us
         });
       }
 
@@ -1221,10 +1222,14 @@ export function start(): void {
     let peerFingerprintForWs: string | undefined;
     if (tlsServer && socket instanceof tls.TLSSocket) {
       const peerFingerprint = annexTls.extractPeerFingerprint(socket);
-      if (peerFingerprint && annexPeers.isPairedPeer(peerFingerprint)) {
-        authType = 'mtls';
-        peerFingerprintForWs = peerFingerprint;
-        annexPeers.updateLastSeen(peerFingerprint);
+      if (peerFingerprint) {
+        const peer = annexPeers.getPeer(peerFingerprint);
+        // Only grant mTLS auth to peers with role 'controller' (or legacy peers without a role)
+        if (peer && (peer.role === 'controller' || !peer.role)) {
+          authType = 'mtls';
+          peerFingerprintForWs = peerFingerprint;
+          annexPeers.updateLastSeen(peerFingerprint);
+        }
       }
     }
 
