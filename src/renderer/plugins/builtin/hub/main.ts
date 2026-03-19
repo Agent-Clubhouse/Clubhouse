@@ -233,7 +233,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }
 
   const hubPopout = findHubPopout(activeHubId);
-  const activeHub = hubs.find((h) => h.id === activeHubId);
 
   return React.createElement('div', { className: 'flex flex-col h-full w-full' },
     React.createElement(HubTabBar, {

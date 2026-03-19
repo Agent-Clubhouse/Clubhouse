@@ -14,7 +14,7 @@ import {
   createViewCounter,
   queryViews,
 } from './canvas-operations';
-import type { CanvasView, FileCanvasView, TerminalCanvasView } from './canvas-types';
+import type { CanvasView, FileCanvasView } from './canvas-types';
 
 describe('v0.8 plugin API upgrade', () => {
   // ── All manifests validate at v0.8 ──────────────────────────────────

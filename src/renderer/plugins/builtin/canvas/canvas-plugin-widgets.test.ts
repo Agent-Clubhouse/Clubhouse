@@ -49,9 +49,9 @@ describe('canvas plugin widget support', () => {
       expect(view.metadata).toEqual({});
     });
 
-    it('generates displayName for file view', () => {
+    it('generates displayName for legacy-file view', () => {
       const view = createView('file', { x: 0, y: 0 }, 0, counter);
-      expect(view.displayName).toBe('Files');
+      expect(view.displayName).toBe('Files (Legacy)');
     });
 
     it('deduplicates when existing names are provided', () => {

@@ -4,7 +4,7 @@
 // widget API so 1p widgets go through the same registration/validation path as 3p.
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { CanvasWidgetComponentProps, PluginAPI } from '../../../../shared/plugin-types';
+import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitWorktreeEntry } from '../../../../shared/types';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
 
@@ -19,7 +19,7 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size }: CanvasWidgetComponentProps) {
+export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 

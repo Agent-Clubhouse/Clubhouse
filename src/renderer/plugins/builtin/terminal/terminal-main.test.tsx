@@ -452,7 +452,7 @@ describe('Terminal activate/deactivate', () => {
     activate(ctx, api);
 
     expect(registerSpy).toHaveBeenCalledWith('restart', expect.any(Function));
-    expect(ctx.subscriptions).toHaveLength(1);
+    expect(ctx.subscriptions).toHaveLength(2); // command + canvas widget
   });
 
   it('deactivate does not throw', () => {

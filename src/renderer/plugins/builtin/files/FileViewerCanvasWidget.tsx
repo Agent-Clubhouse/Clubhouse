@@ -31,7 +31,7 @@ async function readProjectFile(
   return api.project.readFile(relativePath);
 }
 
-export function FileViewerCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size }: CanvasWidgetComponentProps) {
+export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
   const editorName = useEditorSettingsStore((s) => s.editorName);
