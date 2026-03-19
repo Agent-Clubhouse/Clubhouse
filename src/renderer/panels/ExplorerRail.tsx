@@ -1,7 +1,7 @@
 import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
-import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, type PluginMatchResult } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
@@ -10,7 +10,7 @@ import { AGENT_COLORS } from '../../shared/name-generator';
 
 const EMPTY_STRING_ARRAY: string[] = [];
 
-interface TabEntry { id: string; label: string; icon: ReactNode }
+interface TabEntry { id: string; label: string; icon: ReactNode; disabled?: boolean; disabledReason?: string }
 
 const TAB_ORDER_KEY_PREFIX = 'clubhouse_explorer_tab_order_';
 
@@ -123,6 +123,7 @@ const PLUGIN_FALLBACK_ICON = (
 );
 
 function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isActive: boolean; projectId: string | null; onClick: () => void }) {
+  const isDisabled = tab.disabled === true;
   const badges = useBadgeStore((s) => s.badges);
   const bsEnabled = useBadgeSettingsStore((s) => s.enabled);
   const bsPluginBadges = useBadgeSettingsStore((s) => s.pluginBadges);
@@ -143,21 +144,24 @@ function TabButton({ tab, isActive, projectId, onClick }: { tab: TabEntry; isAct
 
   return (
     <button
-      onClick={onClick}
+      onClick={isDisabled ? undefined : onClick}
       data-testid={`explorer-tab-${tab.id}`}
       data-active={isActive}
+      title={isDisabled ? tab.disabledReason : undefined}
       className={`
         w-full px-3 py-3 text-left text-sm flex items-center gap-3
-        transition-colors duration-100 cursor-pointer
-        ${isActive
-          ? 'bg-surface-1 text-ctp-text'
-          : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1'
+        transition-colors duration-100
+        ${isDisabled
+          ? 'opacity-40 cursor-not-allowed'
+          : isActive
+            ? 'bg-surface-1 text-ctp-text cursor-pointer'
+            : 'text-ctp-subtext0 hover:bg-surface-0 hover:text-ctp-subtext1 cursor-pointer'
         }
       `}
     >
       {tab.icon}
       <span className="flex-1">{tab.label}</span>
-      {tabBadge && <Badge type={tabBadge.type} value={tabBadge.value} inline />}
+      {tabBadge && !isDisabled && <Badge type={tabBadge.type} value={tabBadge.value} inline />}
     </button>
   );
 }
@@ -180,19 +184,57 @@ export function ExplorerRail() {
     return projects.find((p) => p.id === activeProjectId);
   }, [activeProjectId, projects, satelliteProjects]);
   const allPlugins = usePluginStore((s) => s.plugins);
+  const isRemote = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
   const enabledPluginIds = usePluginStore(
-    (s) => (activeProjectId ? s.projectEnabled[activeProjectId] : undefined) ?? EMPTY_STRING_ARRAY,
+    (s) => (activeProjectId && !isRemote ? s.projectEnabled[activeProjectId] : undefined) ?? EMPTY_STRING_ARRAY,
   );
+
+  // For remote projects, derive plugin tabs from pluginMatchState
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  const remotePluginMatches: PluginMatchResult[] = useMemo(() => {
+    if (!isRemote || !activeProjectId) return [];
+    // Extract satelliteId from remote project ID: "remote:<satelliteId>:<projectId>"
+    const match = activeProjectId.match(/^remote:([^:]+):/);
+    if (!match) return [];
+    return pluginMatchState[match[1]] || [];
+  }, [isRemote, activeProjectId, pluginMatchState]);
 
   // Memoize plugin tab data to avoid new arrays every render.
   // Build a stable key from enabled IDs + their activation status so the memo
   // only recalculates when the actual plugin list or statuses change.
   const pluginTabKey = useMemo(
-    () => enabledPluginIds.map((id) => `${id}:${allPlugins[id]?.status ?? ''}`).join(','),
-    [enabledPluginIds, allPlugins],
+    () => isRemote
+      ? remotePluginMatches.map((p) => `${p.id}:${p.status}`).join(',')
+      : enabledPluginIds.map((id) => `${id}:${allPlugins[id]?.status ?? ''}`).join(','),
+    [isRemote, enabledPluginIds, allPlugins, remotePluginMatches],
   );
 
   const pluginEntries: TabEntry[] = useMemo(() => {
+    if (isRemote) {
+      // For remote projects, show plugin tabs from the satellite's installed plugins
+      return remotePluginMatches
+        .filter((p) => {
+          const contributes = p.contributes as { tab?: { label: string; icon?: string } } | undefined;
+          return (p.scope === 'project' || p.scope === 'dual') && contributes?.tab;
+        })
+        .map((p) => {
+          const contributes = p.contributes as { tab: { label: string; icon?: string } };
+          const isAvailable = p.status === 'matched';
+          return {
+            id: `plugin:${p.id}`,
+            label: contributes.tab.label,
+            icon: contributes.tab.icon
+              ? <span className={isAvailable ? '' : 'opacity-40'} dangerouslySetInnerHTML={{ __html: contributes.tab.icon }} />
+              : <span className={isAvailable ? '' : 'opacity-40'}>{PLUGIN_FALLBACK_ICON}</span>,
+            disabled: !isAvailable,
+            disabledReason: p.status === 'missing'
+              ? `${p.name} is not installed on this machine`
+              : p.status === 'version_mismatch'
+                ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
+                : undefined,
+          };
+        });
+    }
     return enabledPluginIds
       .map((id) => allPlugins[id])
       .filter((entry) => entry && (entry.manifest.scope === 'project' || entry.manifest.scope === 'dual') && entry.status === 'activated' && entry.manifest.contributes?.tab)
