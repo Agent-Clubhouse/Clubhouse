@@ -807,7 +807,7 @@ export async function refreshCommunityPlugins(): Promise<RefreshResult> {
 
   if (result.discovered.length || result.activated.length || result.incompatible.length) {
     rendererLog('core:plugins', 'info', 'Community plugins refreshed', {
-      meta: result,
+      meta: { ...result },
     });
   }
 
