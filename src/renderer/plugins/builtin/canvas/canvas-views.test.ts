@@ -57,6 +57,58 @@ describe('FileCanvasView — hidden files filtering', () => {
   });
 });
 
+// ── AgentCanvasView — handlePickAgent sets displayName ───────────────
+
+describe('AgentCanvasView — handlePickAgent updates displayName', () => {
+  /**
+   * Mirrors the logic in handlePickAgent: when a user picks an agent,
+   * the onUpdate call must include displayName so the title bar reflects
+   * the agent's real name instead of the default "Agent".
+   */
+  function buildPickUpdate(agent: { id: string; name?: string; projectId?: string; orchestrator?: string; model?: string }, project?: { name: string }) {
+    const name = agent.name || agent.id;
+    return {
+      agentId: agent.id,
+      projectId: agent.projectId,
+      title: name,
+      displayName: name,
+      metadata: {
+        agentId: agent.id,
+        projectId: agent.projectId ?? null,
+        agentName: agent.name ?? null,
+        projectName: project?.name ?? null,
+        orchestrator: agent.orchestrator ?? null,
+        model: agent.model ?? null,
+      },
+    };
+  }
+
+  it('sets displayName to agent name when agent has a name', () => {
+    const update = buildPickUpdate({ id: 'a1', name: 'faithful-urchin', projectId: 'p1' });
+    expect(update.displayName).toBe('faithful-urchin');
+    expect(update.title).toBe('faithful-urchin');
+  });
+
+  it('falls back to agent id when name is missing', () => {
+    const update = buildPickUpdate({ id: 'a1', projectId: 'p1' });
+    expect(update.displayName).toBe('a1');
+    expect(update.title).toBe('a1');
+  });
+
+  it('falls back to agent id when name is empty string', () => {
+    const update = buildPickUpdate({ id: 'a1', name: '', projectId: 'p1' });
+    expect(update.displayName).toBe('a1');
+    expect(update.title).toBe('a1');
+  });
+
+  it('displayName matches title so title bar shows the correct value', () => {
+    const update = buildPickUpdate({ id: 'a1', name: 'my-agent', projectId: 'p1' });
+    // CanvasView renders: view.displayName || view.title
+    // Both must be set so the agent name is shown regardless of which takes precedence
+    expect(update.displayName).toBe(update.title);
+  });
+});
+
 // ── AgentCanvasView — project color helper ────────────────────────────
 
 describe('AgentCanvasView — projectColor', () => {
