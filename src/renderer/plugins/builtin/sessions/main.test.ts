@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { activate, deactivate, MainPanel, SidebarPanel } from './main';
 import { sessionsState } from './state';
@@ -486,7 +486,7 @@ describe('SidebarPanel', () => {
 
   it('each AGENT_COLORS entry maps to correct hex in avatar', () => {
     // Regression: ensure all color IDs resolve correctly, not as CSS color names
-    const agents = AGENT_COLORS.map((c, i) =>
+    const agents = AGENT_COLORS.map((c) =>
       makeDurableAgent({ id: `agent-${c.id}`, name: `test-${c.id}`, color: c.id }),
     );
     api = createMockAPI({
@@ -937,7 +937,7 @@ describe('MainPanel', () => {
     sessionsState.setSelectedAgent({ agentId: 'a1', agentName: 'Alpha', kind: 'durable' });
     sessionsState.setSelectedSession('sess-1');
 
-    const { rerender } = render(React.createElement(MainPanel, { api }));
+    render(React.createElement(MainPanel, { api }));
 
     await waitFor(() => {
       expect(screen.getByTestId('session-event-list')).toBeDefined();
