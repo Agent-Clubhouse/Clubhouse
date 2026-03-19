@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { activate, deactivate, MainPanel, SidebarPanel } from './main';
 import { sessionsState } from './state';
@@ -227,11 +227,10 @@ describe('SidebarPanel', () => {
     });
     render(React.createElement(SidebarPanel, { api }));
 
-    // AgentAvatar should be called with the agent's ID, sm size, and status ring
-    expect(avatarSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ agentId: agent.id, size: 'sm', showStatusRing: true }),
-      expect.anything(),
-    );
+    // AgentAvatar should have been rendered — verify via props in the first call
+    expect(avatarSpy).toHaveBeenCalled();
+    const firstCallProps = avatarSpy.mock.calls[0][0];
+    expect(firstCallProps).toMatchObject({ agentId: agent.id, size: 'sm', showStatusRing: true });
   });
 
   it('shows status label for different statuses', () => {
@@ -445,8 +444,9 @@ describe('SidebarPanel', () => {
 
     // Should be called once per durable agent
     expect(avatarSpy).toHaveBeenCalledTimes(2);
-    expect(avatarSpy).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a1' }), expect.anything());
-    expect(avatarSpy).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a2' }), expect.anything());
+    const agentIds = avatarSpy.mock.calls.map((c) => c[0]?.agentId);
+    expect(agentIds).toContain('a1');
+    expect(agentIds).toContain('a2');
   });
 
   it('renders multiple durable agents in order', () => {
@@ -885,14 +885,14 @@ describe('MainPanel', () => {
       expect(screen.getByTestId('session-event-list')).toBeDefined();
     });
 
-    // Clear selection
+    // Clear session selection (agent still selected)
     await act(async () => {
       sessionsState.setSelectedSession(null);
     });
 
-    // Should show placeholder again
+    // Should show session-only placeholder since durable agent is still selected
     await waitFor(() => {
-      expect(screen.getByText('Select an agent and session to view details')).toBeDefined();
+      expect(screen.getByText('Select a session to view details')).toBeDefined();
     });
   });
 
