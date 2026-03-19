@@ -1369,6 +1369,9 @@ export function start(): void {
       appLog('core:annex', 'info', 'mDNS service published (v2)', {
         meta: { name: settings.deviceName, mainPort: serverPort, pairingPort },
       });
+
+      // Broadcast updated status to renderer so UI reflects "Advertising" instead of "Starting..."
+      broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to publish mDNS', {
         meta: { error: err instanceof Error ? err.message : String(err) },

@@ -10,9 +10,18 @@ export function AnnexSettingsView() {
   const loadSettings = useAnnexStore((s) => s.loadSettings);
   const regeneratePin = useAnnexStore((s) => s.regeneratePin);
 
+  const loadStatus = useAnnexStore((s) => s.loadStatus);
+
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  // Poll status while server is enabled but not yet advertising (catches missed broadcasts)
+  useEffect(() => {
+    if (!settings.enabled || status.advertising) return;
+    const interval = setInterval(loadStatus, 2000);
+    return () => clearInterval(interval);
+  }, [settings.enabled, status.advertising, loadStatus]);
 
   return (
     <div className="h-full overflow-y-auto p-6">

@@ -216,32 +216,20 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   setState(sat, 'connecting');
 
   const identity = annexIdentity.getOrCreateIdentity();
-  const settings = annexSettings.getSettings();
 
-  // If we don't have a bearer token, pair first
-  if (!sat.bearerToken) {
-    try {
-      // We need the PIN — for now, auto-pairing requires pre-existing peer relationship
-      // (pairing was done through the wizard). Check if we already have a token from wizard pairing.
-      appLog('core:annex-client', 'warn', 'No bearer token for satellite, cannot auto-connect', {
-        meta: { fingerprint: sat.fingerprint },
-      });
-      setState(sat, 'disconnected', 'Not paired — use the pairing wizard');
-      return;
-    } catch (err) {
-      setState(sat, 'disconnected', err instanceof Error ? err.message : 'Pairing failed');
-      return;
-    }
-  }
-
-  // Connect via WebSocket
+  // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
   try {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
-    const protocol = sat.mainPort ? 'wss' : 'ws';
-    const wsUrl = `${protocol}://${sat.host}:${sat.mainPort}/ws?token=${encodeURIComponent(sat.bearerToken)}`;
+    // Build URL: use bearer token if available (e.g. fresh pairing), otherwise mTLS handles auth
+    const tokenParam = sat.bearerToken ? `?token=${encodeURIComponent(sat.bearerToken)}` : '';
+    const wsUrl = `wss://${sat.host}:${sat.mainPort}/ws${tokenParam}`;
+
+    appLog('core:annex-client', 'info', 'Connecting to satellite', {
+      meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort, hasBearerToken: !!sat.bearerToken },
+    });
 
     const ws = new WebSocket(wsUrl, {
-      ...(protocol === 'wss' ? tlsOptions : {}),
+      ...tlsOptions,
       handshakeTimeout: 10_000,
     });
 
@@ -377,7 +365,7 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
   sat.reconnectAttempt++;
 
   sat.reconnectTimer = setTimeout(() => {
-    if (sat.state === 'disconnected' && sat.bearerToken) {
+    if (sat.state === 'disconnected') {
       connectToSatellite(sat);
     }
   }, delay);
@@ -430,13 +418,15 @@ function startDiscovery(): void {
         // Skip if we already have this satellite
         if (satellites.has(fingerprint)) {
           const sat = satellites.get(fingerprint)!;
-          if (host !== sat.host || mainPort !== sat.mainPort) {
+          const hostChanged = host !== sat.host || mainPort !== sat.mainPort;
+          if (hostChanged) {
             sat.host = host;
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
-            if (sat.state === 'disconnected' && sat.bearerToken) {
-              connectToSatellite(sat);
-            }
+          }
+          // Auto-reconnect if disconnected (mTLS handles auth — no bearer token needed)
+          if (sat.state === 'disconnected' && sat.host && sat.mainPort) {
+            connectToSatellite(sat);
           }
           return;
         }
@@ -470,6 +460,11 @@ function startDiscovery(): void {
         appLog('core:annex-client', 'info', 'Discovered paired satellite', {
           meta: { fingerprint, alias: peer.alias, host, port: mainPort },
         });
+
+        // Auto-connect using mTLS (no bearer token needed for paired peers)
+        if (host && mainPort) {
+          connectToSatellite(sat);
+        }
         return;
       }
 
@@ -590,7 +585,7 @@ export function disconnect(fingerprint: string): void {
 
 export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
-  if (sat && sat.state === 'disconnected' && sat.bearerToken) {
+  if (sat && sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     connectToSatellite(sat);
   }
@@ -706,7 +701,7 @@ export function scan(): void {
  */
 export function resumeAllConnections(): void {
   for (const sat of satellites.values()) {
-    if (sat.state === 'disconnected' && sat.bearerToken) {
+    if (sat.state === 'disconnected') {
       sat.reconnectAttempt = 0; // Reset backoff on resume
       connectToSatellite(sat);
     }
