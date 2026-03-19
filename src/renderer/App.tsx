@@ -27,6 +27,7 @@ import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './stores/toastStore';
 import { SatelliteLockOverlay } from './features/annex/SatelliteLockOverlay';
 import { useLockStore } from './stores/lockStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from './stores/remoteProjectStore';
 
 export function App() {
   // ── Routing state (minimal selectors for view switching) ────────────────
@@ -87,7 +88,9 @@ export function App() {
       useAgentStore.getState().restoreProjectAgent(activeProjectId);
 
       const project = projects.find((p) => p.id === activeProjectId);
-      if (project) {
+      const isRemote = isRemoteProjectId(activeProjectId);
+
+      if (project || isRemote) {
         // Load project plugin config then activate
         (async () => {
           // Wait for the plugin system to finish initializing before
@@ -96,21 +99,39 @@ export function App() {
           // empty plugin registry and silently skip community plugins.
           await pluginSystemReady;
 
-          try {
-            const saved = await window.clubhouse.plugin.storageRead({
-              pluginId: '_system',
-              scope: 'global',
-              key: `project-enabled-${activeProjectId}`,
-            }) as string[] | undefined;
-            // Merge built-in project-scoped plugins so they're always enabled
-            let expFlags = {};
-            try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
-            const builtinIds = getBuiltinProjectPluginIds(expFlags);
-            const base = Array.isArray(saved) ? saved : [];
-            const merged = [...new Set([...base, ...builtinIds])];
-            usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
-          } catch { /* no saved config */ }
-          await handleProjectSwitch(prevId, activeProjectId, project.path);
+          if (isRemote) {
+            // Remote project: use matched plugins from satellite snapshot
+            const parsed = parseNamespacedId(activeProjectId);
+            if (parsed) {
+              const matchState = useRemoteProjectStore.getState().pluginMatchState[parsed.satelliteId] || [];
+              const matchedIds = matchState
+                .filter((p) => p.status === 'matched')
+                .map((p) => p.id);
+              // Merge built-in project-scoped plugins
+              let expFlags = {};
+              try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+              const builtinIds = getBuiltinProjectPluginIds(expFlags);
+              const merged = [...new Set([...matchedIds, ...builtinIds])];
+              usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
+            }
+            await handleProjectSwitch(prevId, activeProjectId, '__remote__');
+          } else {
+            try {
+              const saved = await window.clubhouse.plugin.storageRead({
+                pluginId: '_system',
+                scope: 'global',
+                key: `project-enabled-${activeProjectId}`,
+              }) as string[] | undefined;
+              // Merge built-in project-scoped plugins so they're always enabled
+              let expFlags = {};
+              try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+              const builtinIds = getBuiltinProjectPluginIds(expFlags);
+              const base = Array.isArray(saved) ? saved : [];
+              const merged = [...new Set([...base, ...builtinIds])];
+              usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
+            } catch { /* no saved config */ }
+            await handleProjectSwitch(prevId, activeProjectId, project!.path);
+          }
         })().catch((err) => {
           rendererLog('core:plugins', 'error', 'Project switch error', {
             projectId: activeProjectId,
