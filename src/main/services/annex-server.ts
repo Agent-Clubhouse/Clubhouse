@@ -381,7 +381,13 @@ function broadcastWs(message: object): void {
   const data = JSON.stringify(message);
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(data);
+      try {
+        client.send(data);
+      } catch (err) {
+        appLog('core:annex', 'warn', 'broadcastWs: failed to send to client', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   }
 }
@@ -1029,6 +1035,9 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   try {
     msg = JSON.parse(data);
   } catch {
+    appLog('core:annex', 'warn', 'Malformed JSON in WebSocket message', {
+      meta: { preview: data.slice(0, 200) },
+    });
     return;
   }
 
@@ -1296,7 +1305,16 @@ export function start(): void {
 
   wss.on('connection', async (ws) => {
     // Send snapshot on connect
-    ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+    try {
+      ws.send(JSON.stringify({ type: 'snapshot', payload: await buildSnapshot() }));
+    } catch (err) {
+      appLog('core:annex', 'error', 'Failed to send snapshot on connect', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+      try {
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
+      } catch { /* client already gone */ }
+    }
 
     // Broadcast lock state when an mTLS controller connects
     const authType = wsAuthTypes.get(ws);
