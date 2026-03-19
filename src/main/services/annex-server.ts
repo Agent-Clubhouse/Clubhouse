@@ -295,9 +295,31 @@ async function buildSnapshot(): Promise<object> {
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
 
+  // Resolve project icon data URLs for remote display
+  const projectIcons: Record<string, string> = {};
+  for (const proj of projects) {
+    if (proj.icon) {
+      const dataUrl = await projectStore.readIconData(proj.icon);
+      if (dataUrl) projectIcons[proj.id] = dataUrl;
+    }
+  }
+
+  // Resolve agent icon data URLs
+  const agentIcons: Record<string, string> = {};
+
   for (const proj of projects) {
     const durables = await agentConfig.listDurable(proj.path);
-    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
+    const mapped = durables.map((d) => mapDurableAgent(d, proj.id));
+
+    // Resolve agent icon data URLs
+    for (const d of durables) {
+      if (d.icon) {
+        const dataUrl = await agentConfig.readAgentIconData(d.icon);
+        if (dataUrl) agentIcons[d.id] = dataUrl;
+      }
+    }
+
+    agents[proj.id] = mapped;
     quickAgents[proj.id] = [];
   }
 
@@ -345,6 +367,8 @@ async function buildSnapshot(): Promise<object> {
     pendingPermissions: permissionQueue.listPending(),
     lastSeq: eventReplay.getLastSeq(),
     plugins,
+    projectIcons,
+    agentIcons,
   };
 }
 

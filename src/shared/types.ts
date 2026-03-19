@@ -546,6 +546,10 @@ export interface SatelliteSnapshot {
   plugins?: SnapshotPluginSummary[];
   agentsMeta?: unknown;
   protocolVersion?: number;
+  /** Project icon data URLs keyed by project ID. */
+  projectIcons?: Record<string, string>;
+  /** Agent icon data URLs keyed by agent ID. */
+  agentIcons?: Record<string, string>;
 }
 
 // --- Auto-update types ---

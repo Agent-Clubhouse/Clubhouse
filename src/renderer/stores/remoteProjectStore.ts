@@ -68,6 +68,12 @@ interface RemoteProjectStoreState {
   /** Plugin match results per satellite */
   pluginMatchState: Record<string, PluginMatchResult[]>;
 
+  /** Remote project icon data URLs keyed by namespaced project ID */
+  remoteProjectIcons: Record<string, string>;
+
+  /** Remote agent icon data URLs keyed by namespaced agent ID */
+  remoteAgentIcons: Record<string, string>;
+
   /** Apply a satellite snapshot to the store. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
@@ -137,6 +143,8 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   remoteAgents: {},
   remoteAgentDetailedStatus: {},
   pluginMatchState: {},
+  remoteProjectIcons: {},
+  remoteAgentIcons: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
     // Map projects to RemoteProject
@@ -168,6 +176,21 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       ? computePluginMatchState(snapshot.plugins)
       : [];
 
+    // Namespace icon data URLs
+    const newProjectIcons: Record<string, string> = {};
+    if (snapshot.projectIcons) {
+      for (const [projId, dataUrl] of Object.entries(snapshot.projectIcons)) {
+        newProjectIcons[`remote:${satelliteId}:${projId}`] = dataUrl;
+      }
+    }
+
+    const newAgentIcons: Record<string, string> = {};
+    if (snapshot.agentIcons) {
+      for (const [agentId, dataUrl] of Object.entries(snapshot.agentIcons)) {
+        newAgentIcons[namespacedAgentId(satelliteId, agentId)] = dataUrl;
+      }
+    }
+
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
       // Remove old agents for this satellite
@@ -176,6 +199,16 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         if (key.startsWith(`remote:${satelliteId}:`)) {
           delete filteredAgents[key];
         }
+      }
+
+      // Remove old icons for this satellite
+      const filteredProjectIcons = { ...state.remoteProjectIcons };
+      const filteredAgentIcons = { ...state.remoteAgentIcons };
+      for (const key of Object.keys(filteredProjectIcons)) {
+        if (key.startsWith(`remote:${satelliteId}:`)) delete filteredProjectIcons[key];
+      }
+      for (const key of Object.keys(filteredAgentIcons)) {
+        if (key.startsWith(`remote:${satelliteId}:`)) delete filteredAgentIcons[key];
       }
 
       return {
@@ -191,6 +224,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...state.pluginMatchState,
           [satelliteId]: pluginMatches,
         },
+        remoteProjectIcons: {
+          ...filteredProjectIcons,
+          ...newProjectIcons,
+        },
+        remoteAgentIcons: {
+          ...filteredAgentIcons,
+          ...newAgentIcons,
+        },
       };
     });
   },
@@ -202,6 +243,8 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
 
       const newAgents = { ...state.remoteAgents };
       const newStatuses = { ...state.remoteAgentDetailedStatus };
+      const newProjectIcons = { ...state.remoteProjectIcons };
+      const newAgentIcons = { ...state.remoteAgentIcons };
       for (const key of Object.keys(newAgents)) {
         if (key.startsWith(`remote:${satelliteId}:`)) {
           delete newAgents[key];
@@ -212,11 +255,20 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       const newPluginMatch = { ...state.pluginMatchState };
       delete newPluginMatch[satelliteId];
 
+      for (const key of Object.keys(newProjectIcons)) {
+        if (key.startsWith(`remote:${satelliteId}:`)) delete newProjectIcons[key];
+      }
+      for (const key of Object.keys(newAgentIcons)) {
+        if (key.startsWith(`remote:${satelliteId}:`)) delete newAgentIcons[key];
+      }
+
       return {
         satelliteProjects: newProjects,
         remoteAgents: newAgents,
         remoteAgentDetailedStatus: newStatuses,
         pluginMatchState: newPluginMatch,
+        remoteProjectIcons: newProjectIcons,
+        remoteAgentIcons: newAgentIcons,
       };
     });
   },
