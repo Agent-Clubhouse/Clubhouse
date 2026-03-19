@@ -30,7 +30,7 @@ import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShor
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { McpSettingsView } from '../features/settings/McpSettingsView';
-import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId } from '../stores/remoteProjectStore';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -46,7 +46,7 @@ export function MainContentView() {
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const { findAgentPopout } = usePopouts();
-  const isRemoteProject = activeProjectId?.startsWith('remote:') ?? false;
+  const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
   const agents = isRemoteProject ? { ...localAgents, ...remoteAgents } : localAgents;
 
   // Track whether the agent terminal should receive focus.

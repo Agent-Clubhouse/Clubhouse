@@ -6,14 +6,19 @@
  * reads from remoteProjectStore; otherwise falls back to the regular agentStore.
  */
 import { useMemo } from 'react';
-import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId } from '../stores/remoteProjectStore';
+import {
+  useRemoteProjectStore,
+  isRemoteAgentId,
+  isRemoteProjectId as storeIsRemoteProjectId,
+  parseNamespacedId,
+} from '../stores/remoteProjectStore';
 import type { Agent } from '../../shared/types';
 
 /**
  * Check if a project ID refers to a remote project.
  */
 export function isRemoteProjectId(projectId: string | null): boolean {
-  return !!projectId && projectId.startsWith('remote:');
+  return !!projectId && storeIsRemoteProjectId(projectId);
 }
 
 /**
@@ -33,8 +38,8 @@ export function useRemoteAgents(projectId: string | null): Agent[] {
  * Get the satellite ID from a remote project ID.
  */
 export function getSatelliteIdFromProjectId(projectId: string): string | null {
-  const match = projectId.match(/^remote:([^:]+):/);
-  return match ? match[1] : null;
+  const parsed = parseNamespacedId(projectId);
+  return parsed ? parsed.satelliteId : null;
 }
 
 export { isRemoteAgentId, parseNamespacedId };

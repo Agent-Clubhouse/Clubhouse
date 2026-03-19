@@ -1,7 +1,7 @@
 import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
-import { useRemoteProjectStore, isRemoteProjectId, type PluginMatchResult } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId, type PluginMatchResult } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
@@ -174,7 +174,7 @@ export function ExplorerRail() {
   const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const activeProject = useMemo(() => {
     if (!activeProjectId) return undefined;
-    if (activeProjectId.startsWith('remote:')) {
+    if (isRemoteProjectId(activeProjectId)) {
       for (const rps of Object.values(satelliteProjects)) {
         const found = rps.find((p) => p.id === activeProjectId);
         if (found) return found;
@@ -193,10 +193,9 @@ export function ExplorerRail() {
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const remotePluginMatches: PluginMatchResult[] = useMemo(() => {
     if (!isRemote || !activeProjectId) return [];
-    // Extract satelliteId from remote project ID: "remote:<satelliteId>:<projectId>"
-    const match = activeProjectId.match(/^remote:([^:]+):/);
-    if (!match) return [];
-    return pluginMatchState[match[1]] || [];
+    const parsed = parseNamespacedId(activeProjectId);
+    if (!parsed) return [];
+    return pluginMatchState[parsed.satelliteId] || [];
   }, [isRemote, activeProjectId, pluginMatchState]);
 
   // Memoize plugin tab data to avoid new arrays every render.

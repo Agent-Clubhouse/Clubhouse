@@ -29,26 +29,45 @@ export function isRemoteProject(project: Project | RemoteProject): project is Re
   return 'remote' in project && (project as RemoteProject).remote === true;
 }
 
+/**
+ * Namespace delimiter — must not appear in fingerprints (hex:hex colon-separated)
+ * or agent/project IDs (alphanum + underscore). Double-pipe is safe.
+ */
+const NS_SEP = '||';
+const NS_PREFIX = `remote${NS_SEP}`;
+
 /** Namespace an agent ID for routing unambiguity. */
 export function namespacedAgentId(satelliteId: string, agentId: string): string {
-  return `remote:${satelliteId}:${agentId}`;
+  return `${NS_PREFIX}${satelliteId}${NS_SEP}${agentId}`;
 }
 
-/** Parse a namespaced agent ID back to its components. */
+/** Namespace a project ID. */
+export function namespacedProjectId(satelliteId: string, projectId: string): string {
+  return `${NS_PREFIX}${satelliteId}${NS_SEP}${projectId}`;
+}
+
+/** Return the prefix used for all IDs belonging to a satellite. */
+export function satellitePrefix(satelliteId: string): string {
+  return `${NS_PREFIX}${satelliteId}${NS_SEP}`;
+}
+
+/** Parse a namespaced ID (agent or project) back to its components. */
 export function parseNamespacedId(id: string): { satelliteId: string; agentId: string } | null {
-  const match = id.match(/^remote:([^:]+):(.+)$/);
-  if (!match) return null;
-  return { satelliteId: match[1], agentId: match[2] };
+  if (!id.startsWith(NS_PREFIX)) return null;
+  const rest = id.slice(NS_PREFIX.length);
+  const sepIdx = rest.indexOf(NS_SEP);
+  if (sepIdx === -1) return null;
+  return { satelliteId: rest.slice(0, sepIdx), agentId: rest.slice(sepIdx + NS_SEP.length) };
 }
 
 /** Check if an agent ID is a remote (namespaced) ID. */
 export function isRemoteAgentId(id: string): boolean {
-  return id.startsWith('remote:');
+  return id.startsWith(NS_PREFIX);
 }
 
 /** Check if a project ID is a remote (namespaced) ID. */
 export function isRemoteProjectId(id: string): boolean {
-  return id.startsWith('remote:');
+  return id.startsWith(NS_PREFIX);
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +172,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     // Map projects to RemoteProject
     const projects: RemoteProject[] = (snapshot.projects || []).map((p) => ({
       ...p,
-      id: `remote:${satelliteId}:${p.id}`,
+      id: namespacedProjectId(satelliteId, p.id),
       path: '__remote__',
       remote: true as const,
       satelliteId,
@@ -169,7 +188,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         newAgents[nsId] = {
           ...agent,
           id: nsId,
-          projectId: `remote:${satelliteId}:${agent.projectId}`,
+          projectId: namespacedProjectId(satelliteId, agent.projectId),
         };
       }
     }
@@ -183,7 +202,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     const newProjectIcons: Record<string, string> = {};
     if (snapshot.projectIcons) {
       for (const [projId, dataUrl] of Object.entries(snapshot.projectIcons)) {
-        newProjectIcons[`remote:${satelliteId}:${projId}`] = dataUrl;
+        newProjectIcons[namespacedProjectId(satelliteId, projId)] = dataUrl;
       }
     }
 
@@ -199,7 +218,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       // Remove old agents for this satellite
       const filteredAgents = { ...state.remoteAgents };
       for (const key of Object.keys(filteredAgents)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) {
+        if (key.startsWith(satellitePrefix(satelliteId))) {
           delete filteredAgents[key];
         }
       }
@@ -208,10 +227,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       const filteredProjectIcons = { ...state.remoteProjectIcons };
       const filteredAgentIcons = { ...state.remoteAgentIcons };
       for (const key of Object.keys(filteredProjectIcons)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) delete filteredProjectIcons[key];
+        if (key.startsWith(satellitePrefix(satelliteId))) delete filteredProjectIcons[key];
       }
       for (const key of Object.keys(filteredAgentIcons)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) delete filteredAgentIcons[key];
+        if (key.startsWith(satellitePrefix(satelliteId))) delete filteredAgentIcons[key];
       }
 
       return {
@@ -249,7 +268,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       const newProjectIcons = { ...state.remoteProjectIcons };
       const newAgentIcons = { ...state.remoteAgentIcons };
       for (const key of Object.keys(newAgents)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) {
+        if (key.startsWith(satellitePrefix(satelliteId))) {
           delete newAgents[key];
           delete newStatuses[key];
         }
@@ -259,10 +278,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       delete newPluginMatch[satelliteId];
 
       for (const key of Object.keys(newProjectIcons)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) delete newProjectIcons[key];
+        if (key.startsWith(satellitePrefix(satelliteId))) delete newProjectIcons[key];
       }
       for (const key of Object.keys(newAgentIcons)) {
-        if (key.startsWith(`remote:${satelliteId}:`)) delete newAgentIcons[key];
+        if (key.startsWith(satellitePrefix(satelliteId))) delete newAgentIcons[key];
       }
 
       return {
