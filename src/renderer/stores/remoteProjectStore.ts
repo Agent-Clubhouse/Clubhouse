@@ -83,6 +83,9 @@ interface RemoteProjectStoreState {
   /** Update a remote agent's detailed status. */
   updateRemoteAgentStatus: (satelliteId: string, agentId: string, status: AgentDetailedStatus) => void;
 
+  /** Update a remote agent's run state (running/sleeping). */
+  updateRemoteAgentRunState: (satelliteId: string, agentId: string, status: 'running' | 'sleeping') => void;
+
   /** Get all remote projects (flattened). */
   getAllRemoteProjects: () => RemoteProject[];
 }
@@ -281,6 +284,20 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         [nsId]: status,
       },
     }));
+  },
+
+  updateRemoteAgentRunState: (satelliteId, agentId, status) => {
+    const nsId = namespacedAgentId(satelliteId, agentId);
+    set((state) => {
+      const agent = state.remoteAgents[nsId];
+      if (!agent) return state;
+      return {
+        remoteAgents: {
+          ...state.remoteAgents,
+          [nsId]: { ...agent, status },
+        },
+      };
+    });
   },
 
   getAllRemoteProjects: () => {

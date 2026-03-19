@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { useAgentStore } from '../../stores/agentStore';
+import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClientStore';
+import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { attachClipboardHandlers } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit } from '../terminal/useTerminalFit';
@@ -23,6 +25,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const terminalColors = useThemeStore((s) => s.theme.terminal);
   const clipboardCompat = useClipboardSettingsStore((s) => s.clipboardCompat);
   const loadClipboard = useClipboardSettingsStore((s) => s.loadSettings);
+
+  const isRemote = isRemoteAgentId(agentId);
+  const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agentId) : null, [agentId, isRemote]);
+  const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
+  const sendPtyResize = useAnnexClientStore((s) => s.sendPtyResize);
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
@@ -64,53 +71,78 @@ export function AgentTerminal({ agentId, focused }: Props) {
     // Initial fit, replay buffered output, and focus
     requestAnimationFrame(() => {
       fitAddon.fit();
-      window.clubhouse.pty.resize(agentId, term.cols, term.rows);
+      if (!isRemote) {
+        window.clubhouse.pty.resize(agentId, term.cols, term.rows);
+      } else if (remoteParts) {
+        sendPtyResize(remoteParts.satelliteId, remoteParts.agentId, term.cols, term.rows);
+      }
       term.focus();
-      // Replay buffered output so switching agents restores the terminal
-      window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
-        if (terminalRef.current !== term) return;
-        if (buf) term.write(buf);
+
+      if (!isRemote) {
+        // Replay buffered output so switching agents restores the terminal
+        window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
+          if (terminalRef.current !== term) return;
+          if (buf) term.write(buf);
+          bufferReplayed = true;
+        });
+      } else {
+        // Remote agents don't have a local buffer — mark as ready immediately
         bufferReplayed = true;
-      });
+      }
     });
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Forward user input to PTY
+    // Forward user input to PTY (local or remote)
     const inputDisposable = term.onData((data) => {
-      window.clubhouse.pty.write(agentId, data);
+      if (!isRemote) {
+        window.clubhouse.pty.write(agentId, data);
+      } else if (remoteParts) {
+        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+      }
     });
 
     // Gate live PTY data until after the buffer snapshot has been replayed.
-    // Without this, the same output can be written twice: once from the
-    // real-time broadcast and again when getBuffer() resolves, causing
-    // duplicate lines (e.g. the exec command appearing multiple times).
     let bufferReplayed = false;
 
-    // Receive PTY output
-    const removeDataListener = window.clubhouse.pty.onData(
-      (id: string, data: string) => {
-        if (id === agentId && bufferReplayed) {
-          term.write(data);
-        }
-      }
-    );
+    let removeDataListener: () => void;
+    let removeExitListener: () => void;
 
-    // Reset terminal state when the PTY process exits.
-    // CLI tools (e.g. Copilot CLI) can leave the terminal in alternate screen
-    // buffer mode or with a hidden cursor if they crash or exit uncleanly.
-    const removeExitListener = window.clubhouse.pty.onExit(
-      (id: string, _exitCode: number) => {
-        if (id === agentId && terminalRef.current) {
-          terminalRef.current.write(
-            '\x1b[?1049l' + // exit alternate screen buffer
-            '\x1b[?25h' +   // show cursor
-            '\x1b[0m'       // reset text attributes
-          );
+    if (!isRemote) {
+      // Local PTY: receive from local pty manager
+      removeDataListener = window.clubhouse.pty.onData(
+        (id: string, data: string) => {
+          if (id === agentId && bufferReplayed) {
+            term.write(data);
+          }
         }
-      }
-    );
+      );
+
+      removeExitListener = window.clubhouse.pty.onExit(
+        (id: string, _exitCode: number) => {
+          if (id === agentId && terminalRef.current) {
+            terminalRef.current.write(
+              '\x1b[?1049l' + // exit alternate screen buffer
+              '\x1b[?25h' +   // show cursor
+              '\x1b[0m'       // reset text attributes
+            );
+          }
+        }
+      );
+    } else {
+      // Remote PTY: receive from satellite via WS
+      const satId = remoteParts?.satelliteId;
+      const origAgentId = remoteParts?.agentId;
+      removeDataListener = satellitePtyDataBus.on(
+        (incomingSatId: string, incomingAgentId: string, data: string) => {
+          if (incomingSatId === satId && incomingAgentId === origAgentId && bufferReplayed) {
+            term.write(data);
+          }
+        }
+      );
+      removeExitListener = () => {}; // No local exit event for remote agents
+    }
 
     return () => {
       inputDisposable.dispose();
@@ -120,7 +152,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId]);
+  }, [agentId, isRemote, remoteParts, sendPtyInput, sendPtyResize]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused);
@@ -160,13 +192,16 @@ export function AgentTerminal({ agentId, focused }: Props) {
   // Attach clipboard handlers only when clipboard compatibility is enabled
   useEffect(() => {
     if (!clipboardCompat || !terminalRef.current || !containerRef.current) return;
-    const cleanup = attachClipboardHandlers(
-      terminalRef.current,
-      containerRef.current,
-      (data) => window.clubhouse.pty.write(agentId, data)
-    );
+    const writeData = (data: string) => {
+      if (!isRemote) {
+        window.clubhouse.pty.write(agentId, data);
+      } else if (remoteParts) {
+        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+      }
+    };
+    const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData);
     return cleanup;
-  }, [clipboardCompat, agentId]);
+  }, [clipboardCompat, agentId, isRemote, remoteParts, sendPtyInput]);
 
   // Live-update theme on existing terminal instances
   useEffect(() => {
@@ -181,9 +216,13 @@ export function AgentTerminal({ agentId, focused }: Props) {
 
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
     useCallback((data: string) => {
-      window.clubhouse.pty.write(agentId, data);
+      if (!isRemote) {
+        window.clubhouse.pty.write(agentId, data);
+      } else if (remoteParts) {
+        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+      }
       terminalRef.current?.focus();
-    }, [agentId])
+    }, [agentId, isRemote, remoteParts, sendPtyInput])
   );
 
   return (

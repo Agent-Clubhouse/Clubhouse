@@ -91,6 +91,17 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // Proxy IPC: wake a sleeping agent on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_WAKE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    (_event, satelliteId, agentId, message) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'agent:wake',
+        payload: { agentId, message },
+      });
+    },
+  ));
+
   // Permanently forget a satellite (disconnect + remove peer + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_SATELLITE, withValidatedArgs(
     [stringArg()],

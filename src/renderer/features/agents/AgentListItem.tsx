@@ -3,6 +3,8 @@ import { Agent } from '../../../shared/types';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { getOrchestratorColor, getModelColor, getOrchestratorLabel, formatModelLabel } from './orchestrator-colors';
 
@@ -128,13 +130,22 @@ function ContextMenu({ actions, position, onClose }: {
 
 export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQuickChild, isNested }: Props) {
   // Fine-grained selectors: subscribe only to the specific state/actions needed
+  const isRemote = isRemoteAgentId(agent.id);
+  const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
+
   const killAgent = useAgentStore((s) => s.killAgent);
   const removeAgent = useAgentStore((s) => s.removeAgent);
   const spawnDurableAgent = useAgentStore((s) => s.spawnDurableAgent);
   const openAgentSettings = useAgentStore((s) => s.openAgentSettings);
   const openDeleteDialog = useAgentStore((s) => s.openDeleteDialog);
-  const detailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
-  const iconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const localDetailed = useAgentStore((s) => s.agentDetailedStatus[agent.id]);
+  const remoteDetailed = useRemoteProjectStore((s) => s.remoteAgentDetailedStatus[agent.id]);
+  const detailed = isRemote ? remoteDetailed : localDetailed;
+  const localIconDataUrl = useAgentStore((s) => s.agentIcons[agent.id]);
+  const remoteIconDataUrl = useRemoteProjectStore((s) => s.remoteAgentIcons[agent.id]);
+  const iconDataUrl = isRemote ? remoteIconDataUrl : localIconDataUrl;
+  const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
+  const sendAgentKill = useAnnexClientStore((s) => s.sendAgentKill);
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const activeProject = projects.find((p) => p.id === activeProjectId);
@@ -158,29 +169,43 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
 
   const handleStopOrRemove = useCallback(async () => {
     if (agent.status === 'running') {
-      await killAgent(agent.id);
+      if (isRemote && remoteParts) {
+        await sendAgentKill(remoteParts.satelliteId, remoteParts.agentId);
+      } else {
+        await killAgent(agent.id);
+      }
     } else if (agent.kind === 'quick') {
       removeAgent(agent.id);
     }
-  }, [agent.status, agent.kind, agent.id, killAgent, removeAgent]);
+  }, [agent.status, agent.kind, agent.id, killAgent, removeAgent, isRemote, remoteParts, sendAgentKill]);
 
   const handleWake = useCallback(async () => {
-    if (!activeProject || agent.status === 'running') return;
+    if (agent.status === 'running') return;
+    if (isRemote && remoteParts) {
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake up');
+      return;
+    }
+    if (!activeProject) return;
     const configs = await window.clubhouse.agent.listDurable(activeProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
       await spawnDurableAgent(activeProject.id, activeProject.path, config, false);
     }
-  }, [activeProject, agent.status, agent.id, spawnDurableAgent]);
+  }, [activeProject, agent.status, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
 
   const handleWakeAndResume = useCallback(async () => {
-    if (!activeProject || agent.status === 'running') return;
+    if (agent.status === 'running') return;
+    if (isRemote && remoteParts) {
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake and resume');
+      return;
+    }
+    if (!activeProject) return;
     const configs = await window.clubhouse.agent.listDurable(activeProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
       await spawnDurableAgent(activeProject.id, activeProject.path, config, true);
     }
-  }, [activeProject, agent.status, agent.id, spawnDurableAgent]);
+  }, [activeProject, agent.status, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
 
   const handleDelete = useCallback(() => {
     openDeleteDialog(agent.id);

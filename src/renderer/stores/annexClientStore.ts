@@ -63,6 +63,7 @@ interface AnnexClientStoreState {
   sendPtyResize: (satelliteId: string, agentId: string, cols: number, rows: number) => Promise<void>;
   sendAgentSpawn: (satelliteId: string, params: unknown) => Promise<void>;
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
+  sendAgentWake: (satelliteId: string, agentId: string, message: string) => Promise<void>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
@@ -154,6 +155,12 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
       await window.clubhouse.annexClient.agentKill(satelliteId, agentId);
     } catch { /* ignore */ }
   },
+
+  sendAgentWake: async (satelliteId, agentId, message) => {
+    try {
+      await window.clubhouse.annexClient.agentWake(satelliteId, agentId, message);
+    } catch { /* ignore */ }
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -200,6 +207,28 @@ export function initAnnexClientListener(): () => void {
     } else if (type === 'pty:data') {
       const p = payload as { agentId: string; data: string };
       satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
+    } else if (type === 'hook:event') {
+      // Agent detailed status update (pre_tool, post_tool, etc.)
+      const p = payload as { agentId: string; event: unknown };
+      if (p.agentId && p.event) {
+        useRemoteProjectStore.getState().updateRemoteAgentStatus(
+          satelliteId, p.agentId, p.event as import('../../shared/types').AgentDetailedStatus,
+        );
+      }
+    } else if (type === 'agent:woken' || type === 'agent:spawned') {
+      // Agent started running — update status to 'running'
+      const p = payload as { agentId?: string; id?: string };
+      const agentId = p.agentId || p.id;
+      if (agentId) {
+        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'running');
+      }
+    } else if (type === 'pty:exit' || type === 'agent:completed') {
+      // Agent stopped — update status to 'sleeping'
+      const p = payload as { agentId?: string; id?: string; exitCode?: number };
+      const agentId = p.agentId || p.id;
+      if (agentId) {
+        useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
+      }
     }
   });
 
