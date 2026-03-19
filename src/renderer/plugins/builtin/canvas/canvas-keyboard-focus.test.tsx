@@ -27,6 +27,7 @@ function stubApi(): PluginAPI {
     agents: {
       list: () => [],
       onAnyChange: () => ({ dispose: () => {} }),
+      getDetailedStatus: () => null,
     },
     projects: { list: () => [] },
     context: { mode: 'project', projectId: 'p1' },
