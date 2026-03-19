@@ -17,15 +17,30 @@ describe('terminal plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.6', () => {
-    expect(manifest.engine.api).toBe(0.6);
+  it('targets API v0.8', () => {
+    expect(manifest.engine.api).toBe(0.8);
   });
 
-  it('declares required permissions', () => {
+  it('declares required permissions including canvas', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['terminal', 'commands', 'agents']),
+      expect.arrayContaining(['terminal', 'commands', 'agents', 'canvas']),
     );
-    expect(manifest.permissions).toHaveLength(3);
+    expect(manifest.permissions).toHaveLength(4);
+  });
+
+  it('contributes tab.title', () => {
+    expect(manifest.contributes!.tab!.title).toBe('Terminal');
+  });
+
+  it('declares a shell canvas widget', () => {
+    const widgets = manifest.contributes?.canvasWidgets;
+    expect(widgets).toBeDefined();
+    expect(widgets).toHaveLength(1);
+    const shell = widgets![0];
+    expect(shell.id).toBe('shell');
+    expect(shell.label).toBe('Terminal');
+    expect(shell.defaultSize).toEqual({ width: 480, height: 360 });
+    expect(shell.metadataKeys).toEqual(['projectId', 'cwd']);
   });
 
   it('contributes help topics', () => {

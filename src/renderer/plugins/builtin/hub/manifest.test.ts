@@ -17,8 +17,13 @@ describe('hub manifest', () => {
     expect(manifest.scope).toBe('dual');
   });
 
-  it('targets engine.api 0.6', () => {
-    expect(manifest.engine.api).toBe(0.6);
+  it('targets engine.api 0.8', () => {
+    expect(manifest.engine.api).toBe(0.8);
+  });
+
+  it('contributes tab.title and railItem.title', () => {
+    expect(manifest.contributes!.tab!.title).toBe('Hub');
+    expect(manifest.contributes!.railItem!.title).toBe('Hub');
   });
 
   it('declares required permissions', () => {
