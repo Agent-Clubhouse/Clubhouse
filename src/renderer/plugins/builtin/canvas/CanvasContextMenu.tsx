@@ -19,13 +19,27 @@ interface CanvasContextMenuProps {
   onDismiss: () => void;
 }
 
+/** First-class built-in view types. File and Terminal are now provided by their
+ *  respective plugins via the widget API; legacy versions remain available
+ *  at the bottom of the menu for backward compatibility. */
 const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
   { type: 'agent', label: 'Add Agent View', icon: '>' },
-  { type: 'file', label: 'Add File View', icon: '#' },
   { type: 'browser', label: 'Add Browser View', icon: '@' },
   { type: 'git-diff', label: 'Add Git Diff View', icon: '±' },
-  { type: 'terminal', label: 'Add Terminal View', icon: '$' },
   { type: 'anchor', label: 'Add Anchor', icon: '⚓' },
+];
+
+/** Qualified types for the plugin-provided file and terminal widgets.
+ *  These are shown in the context menu with the main built-in items. */
+const PROMOTED_PLUGIN_TYPES = new Set([
+  'plugin:files:file-viewer',
+  'plugin:terminal:shell',
+]);
+
+/** Deprecated built-in view types that use the legacy rendering path. */
+const LEGACY_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
+  { type: 'legacy-file', label: 'Add File View (Legacy)', icon: '#' },
+  { type: 'legacy-terminal', label: 'Add Terminal View (Legacy)', icon: '$' },
 ];
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
@@ -71,6 +85,10 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     });
   }, [onSelect]);
 
+  // Separate promoted plugin widgets (file-viewer, terminal) from other 3p widgets
+  const promotedWidgets = pluginWidgets.filter((w) => PROMOTED_PLUGIN_TYPES.has(w.qualifiedType));
+  const otherWidgets = pluginWidgets.filter((w) => !PROMOTED_PLUGIN_TYPES.has(w.qualifiedType));
+
   return (
     <MenuPortal>
       <div
@@ -79,6 +97,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
         style={{ left: x, top: y }}
         data-testid="canvas-context-menu"
       >
+        {/* Built-in views + promoted plugin widgets (File Viewer, Terminal) */}
         {BUILTIN_ITEMS.map(({ type, label, icon }) => (
           <button
             key={type}
@@ -90,10 +109,25 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             {label}
           </button>
         ))}
-        {pluginWidgets.length > 0 && (
+        {promotedWidgets.map((widget) => (
+          <button
+            key={widget.qualifiedType}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
+            onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
+            data-testid={`canvas-context-menu-${widget.qualifiedType}`}
+          >
+            <span className="w-4 text-center font-mono text-ctp-overlay0">
+              {widget.declaration.icon || '+'}
+            </span>
+            Add {widget.declaration.label}
+          </button>
+        ))}
+
+        {/* Other 3rd-party plugin widgets */}
+        {otherWidgets.length > 0 && (
           <>
             <div className="border-t border-surface-0 my-1" />
-            {pluginWidgets.map((widget) => (
+            {otherWidgets.map((widget) => (
               <button
                 key={widget.qualifiedType}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
@@ -108,6 +142,20 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             ))}
           </>
         )}
+
+        {/* Legacy view types — deprecated, for backward compatibility */}
+        <div className="border-t border-surface-0 my-1" />
+        {LEGACY_ITEMS.map(({ type, label, icon }) => (
+          <button
+            key={type}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-overlay0 hover:bg-ctp-surface1 transition-colors text-left"
+            onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
+            data-testid={`canvas-context-menu-${type}`}
+          >
+            <span className="w-4 text-center font-mono text-ctp-overlay0">{icon}</span>
+            {label}
+          </button>
+        ))}
       </div>
     </MenuPortal>
   );

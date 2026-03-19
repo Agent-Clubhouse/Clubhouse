@@ -17,8 +17,12 @@ describe('sessions plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.6', () => {
-    expect(manifest.engine.api).toBe(0.6);
+  it('targets API v0.8', () => {
+    expect(manifest.engine.api).toBe(0.8);
+  });
+
+  it('contributes tab.title', () => {
+    expect(manifest.contributes!.tab!.title).toBe('Sessions');
   });
 
   it('declares required permissions', () => {

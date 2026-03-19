@@ -6,13 +6,13 @@ import { manifest } from './manifest';
 // ── createView('terminal') ──────────────────────────────────────────
 
 describe('createView — terminal type', () => {
-  it('creates a terminal view with correct defaults', () => {
+  it('creates a legacy-terminal view with correct defaults', () => {
     const counter = createViewCounter(0);
     const view = createView('terminal', { x: 100, y: 200 }, 5, counter);
 
-    expect(view.type).toBe('terminal');
-    expect(view.title).toBe('Terminal');
-    expect(view.displayName).toBe('Terminal');
+    expect(view.type).toBe('legacy-terminal');
+    expect(view.title).toBe('Terminal (Legacy)');
+    expect(view.displayName).toBe('Terminal (Legacy)');
     expect(view.zIndex).toBe(5);
     expect(view.position.x).toBe(100);
     expect(view.position.y).toBe(200);
@@ -34,11 +34,11 @@ describe('createView — terminal type', () => {
 
   it('deduplicates display names', () => {
     const counter = createViewCounter(0);
-    const v1 = createView('terminal', { x: 0, y: 0 }, 0, counter, ['Terminal']);
-    expect(v1.displayName).toBe('Terminal (2)');
+    const v1 = createView('terminal', { x: 0, y: 0 }, 0, counter, ['Terminal (Legacy)']);
+    expect(v1.displayName).toBe('Terminal (Legacy) (2)');
 
-    const v2 = createView('terminal', { x: 0, y: 0 }, 0, counter, ['Terminal', 'Terminal (2)']);
-    expect(v2.displayName).toBe('Terminal (3)');
+    const v2 = createView('terminal', { x: 0, y: 0 }, 0, counter, ['Terminal (Legacy)', 'Terminal (Legacy) (2)']);
+    expect(v2.displayName).toBe('Terminal (Legacy) (3)');
   });
 });
 
@@ -107,11 +107,11 @@ describe('TerminalCanvasView — projectColor', () => {
 // ── CanvasViewType union includes terminal ──────────────────────────
 
 describe('CanvasViewType — terminal', () => {
-  it('terminal is a valid canvas view type', () => {
-    // Verify by creating a view — if terminal weren't in the type, this would throw
+  it('terminal maps to legacy-terminal canvas view type', () => {
+    // createView('terminal') now produces legacy-terminal views
     const counter = createViewCounter(0);
     const view = createView('terminal', { x: 0, y: 0 }, 0, counter);
-    expect(view.type).toBe('terminal');
+    expect(view.type).toBe('legacy-terminal');
   });
 });
 

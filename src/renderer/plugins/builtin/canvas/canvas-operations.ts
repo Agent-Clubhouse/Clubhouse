@@ -100,9 +100,10 @@ export function createView(
       const displayName = deduplicateDisplayName('Agent', existingDisplayNames);
       return { ...base, type: 'agent', title: 'Agent', displayName, metadata: {}, agentId: null } satisfies AgentCanvasView;
     }
-    case 'file': {
-      const displayName = deduplicateDisplayName('Files', existingDisplayNames);
-      return { ...base, type: 'file', title: 'Files', displayName, metadata: {} } satisfies FileCanvasView;
+    case 'file':
+    case 'legacy-file': {
+      const displayName = deduplicateDisplayName('Files (Legacy)', existingDisplayNames);
+      return { ...base, type: 'legacy-file', title: 'Files (Legacy)', displayName, metadata: {} } satisfies FileCanvasView;
     }
     case 'browser': {
       const displayName = deduplicateDisplayName('Browser', existingDisplayNames);
@@ -112,9 +113,10 @@ export function createView(
       const displayName = deduplicateDisplayName('Git Diff', existingDisplayNames);
       return { ...base, type: 'git-diff', title: 'Git Diff', displayName, metadata: {} } satisfies GitDiffCanvasView;
     }
-    case 'terminal': {
-      const displayName = deduplicateDisplayName('Terminal', existingDisplayNames);
-      return { ...base, type: 'terminal', title: 'Terminal', displayName, metadata: {} } satisfies TerminalCanvasView;
+    case 'terminal':
+    case 'legacy-terminal': {
+      const displayName = deduplicateDisplayName('Terminal (Legacy)', existingDisplayNames);
+      return { ...base, type: 'legacy-terminal', title: 'Terminal (Legacy)', displayName, metadata: {} } satisfies TerminalCanvasView;
     }
     case 'anchor': {
       const displayName = deduplicateDisplayName('Anchor', existingDisplayNames);

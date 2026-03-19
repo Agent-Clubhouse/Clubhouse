@@ -48,7 +48,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 
   const addFileCmd = api.commands.register('add-file-view', () => {
     const store = getStore();
-    store.getState().addView('file', { x: 300, y: 300 });
+    store.getState().addPluginView('files', 'plugin:files:file-viewer', 'File Viewer', { x: 300, y: 300 }, undefined, { width: 560, height: 480 });
   });
   ctx.subscriptions.push(addFileCmd);
 
@@ -60,7 +60,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 
   const addTerminalCmd = api.commands.register('add-terminal-view', () => {
     const store = getStore();
-    store.getState().addView('terminal', { x: 300, y: 200 });
+    store.getState().addPluginView('terminal', 'plugin:terminal:shell', 'Terminal', { x: 300, y: 200 }, undefined, { width: 480, height: 360 });
   });
   ctx.subscriptions.push(addTerminalCmd);
 
@@ -94,6 +94,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+
+  // Dynamic title: show active canvas tab name
+  const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
+  useEffect(() => {
+    if (activeCanvasName) {
+      api.window.setTitle(activeCanvasName);
+    } else {
+      api.window.resetTitle();
+    }
+  }, [api, activeCanvasName]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 

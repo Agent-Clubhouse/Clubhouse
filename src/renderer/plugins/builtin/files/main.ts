@@ -5,6 +5,7 @@ import { disposeAllModels } from './MonacoEditor';
 import { FileTree } from './FileTree';
 import { FileViewer } from './FileViewer';
 import { SearchPanel } from './SearchPanel';
+import { FileViewerCanvasWidget } from './FileViewerCanvasWidget';
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   // Refresh file tree command
@@ -80,6 +81,20 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
       'Meta+Shift+[',
     ),
   );
+
+  // Register canvas widget for file viewing
+  ctx.subscriptions.push(
+    api.canvas.registerWidgetType({
+      id: 'file-viewer',
+      component: FileViewerCanvasWidget,
+      generateDisplayName: (metadata) => {
+        if (metadata.filePath && typeof metadata.filePath === 'string') {
+          return metadata.filePath.split('/').pop() || 'File Viewer';
+        }
+        return 'File Viewer';
+      },
+    }),
+  );
 }
 
 export function deactivate(): void {
@@ -103,7 +118,32 @@ function SidebarWrapper({ api }: { api: PluginAPI }) {
 }
 
 export const SidebarPanel = SidebarWrapper;
-export const MainPanel = FileViewer;
+
+/** Wrapper around FileViewer that sets dynamic title based on active file tab. */
+function FilesMainPanel({ api }: { api: PluginAPI }) {
+  const [activeFileName, setActiveFileName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const tab = fileState.getActiveTab();
+      setActiveFileName(tab?.filePath?.split('/').pop() ?? null);
+    };
+    update();
+    return fileState.subscribe(update);
+  }, []);
+
+  useEffect(() => {
+    if (activeFileName) {
+      api.window.setTitle(activeFileName);
+    } else {
+      api.window.resetTitle();
+    }
+  }, [api, activeFileName]);
+
+  return React.createElement(FileViewer, { api });
+}
+
+export const MainPanel = FilesMainPanel;
 
 // Compile-time type assertion
 const _: PluginModule = { activate, deactivate, MainPanel, SidebarPanel };

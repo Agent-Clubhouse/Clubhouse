@@ -17,15 +17,30 @@ describe('files plugin manifest', () => {
     expect(manifest.scope).toBe('project');
   });
 
-  it('targets API v0.6', () => {
-    expect(manifest.engine.api).toBe(0.6);
+  it('targets API v0.8', () => {
+    expect(manifest.engine.api).toBe(0.8);
   });
 
-  it('declares required permissions including files.watch and storage', () => {
+  it('declares required permissions including canvas', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage']),
+      expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas']),
     );
-    expect(manifest.permissions).toHaveLength(6);
+    expect(manifest.permissions).toHaveLength(7);
+  });
+
+  it('contributes tab.title', () => {
+    expect(manifest.contributes!.tab!.title).toBe('Files');
+  });
+
+  it('declares a file-viewer canvas widget', () => {
+    const widgets = manifest.contributes?.canvasWidgets;
+    expect(widgets).toBeDefined();
+    expect(widgets).toHaveLength(1);
+    const fileViewer = widgets![0];
+    expect(fileViewer.id).toBe('file-viewer');
+    expect(fileViewer.label).toBe('File Viewer');
+    expect(fileViewer.defaultSize).toEqual({ width: 560, height: 480 });
+    expect(fileViewer.metadataKeys).toEqual(['projectId', 'filePath']);
   });
 
   it('contributes help topics', () => {

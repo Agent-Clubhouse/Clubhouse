@@ -15,15 +15,15 @@ describe('files plugin', () => {
       expect(manifest.id).toBe('files');
     });
 
-    it('targets API v0.6', () => {
-      expect(manifest.engine.api).toBe(0.6);
+    it('targets API v0.8', () => {
+      expect(manifest.engine.api).toBe(0.8);
     });
 
-    it('declares required permissions', () => {
+    it('declares required permissions including canvas', () => {
       expect(manifest.permissions).toEqual(
-        expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage']),
+        expect.arrayContaining(['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas']),
       );
-      expect(manifest.permissions).toHaveLength(6);
+      expect(manifest.permissions).toHaveLength(7);
     });
 
     it('is project-scoped', () => {

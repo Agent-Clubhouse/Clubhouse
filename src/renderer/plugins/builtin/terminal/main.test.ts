@@ -40,10 +40,11 @@ describe('terminal plugin activate()', () => {
     expect(registerSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('pushes exactly one disposable to ctx.subscriptions', () => {
+  it('pushes two disposables to ctx.subscriptions (command + canvas widget)', () => {
     activate(ctx, api);
-    expect(ctx.subscriptions).toHaveLength(1);
+    expect(ctx.subscriptions).toHaveLength(2);
     expect(typeof ctx.subscriptions[0].dispose).toBe('function');
+    expect(typeof ctx.subscriptions[1].dispose).toBe('function');
   });
 
   it('does not call any terminal API methods during activation', () => {
@@ -72,7 +73,7 @@ describe('terminal plugin activate()', () => {
     activate(ctx, api);
     activate(ctx, api);
     expect(registerSpy).toHaveBeenCalledTimes(2);
-    expect(ctx.subscriptions).toHaveLength(2);
+    expect(ctx.subscriptions).toHaveLength(4); // 2 x (command + canvas widget)
   });
 });
 
@@ -582,7 +583,7 @@ describe('terminal plugin lifecycle', () => {
       commands: { register: () => ({ dispose: disposeSpy }), execute: vi.fn() },
     });
     activate(ctx, api);
-    expect(ctx.subscriptions).toHaveLength(1);
+    expect(ctx.subscriptions).toHaveLength(2); // command + canvas widget
     ctx.subscriptions[0].dispose();
     expect(disposeSpy).toHaveBeenCalledTimes(1);
   });

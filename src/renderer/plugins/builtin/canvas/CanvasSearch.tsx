@@ -32,7 +32,7 @@ function buildSearchableText(view: CanvasView): string {
   }
   // Type-specific fields
   if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
-  if (view.type === 'file' && view.filePath) parts.push(view.filePath);
+  if ((view.type === 'file' || view.type === 'legacy-file') && view.filePath) parts.push(view.filePath);
   if (view.type === 'browser') parts.push(view.url);
   if (view.type === 'git-diff' && view.filePath) parts.push(view.filePath);
   if (view.type === 'anchor') parts.push(view.label);

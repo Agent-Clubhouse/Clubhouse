@@ -12,12 +12,12 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Split-pane workspace for managing agents — per-project or across all projects.',
   author: 'Clubhouse',
-  engine: { api: 0.6 },
+  engine: { api: 0.8 },
   scope: 'dual',
   permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'notifications'],
   contributes: {
-    tab: { label: 'Hub', icon: GRID_ICON, layout: 'full' },
-    railItem: { label: 'Hub', icon: SPOKE_ICON, position: 'top' },
+    tab: { label: 'Hub', title: 'Hub', icon: GRID_ICON, layout: 'full' },
+    railItem: { label: 'Hub', title: 'Hub', icon: SPOKE_ICON, position: 'top' },
     commands: [{ id: 'split-pane', title: 'Split Pane', defaultBinding: 'Meta+Shift+\\' }],
     storage: { scope: 'project-local' },
     settings: [

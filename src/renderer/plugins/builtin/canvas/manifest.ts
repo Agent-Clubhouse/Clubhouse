@@ -12,12 +12,12 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Free-form spatial workspace for arranging agent views, file views, and browser views.',
   author: 'Clubhouse',
-  engine: { api: 0.6 },
+  engine: { api: 0.8 },
   scope: 'dual',
   permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal'],
   contributes: {
-    tab: { label: 'Canvas', icon: CANVAS_TAB_ICON, layout: 'full' },
-    railItem: { label: 'Canvas', icon: CANVAS_RAIL_ICON, position: 'top' },
+    tab: { label: 'Canvas', title: 'Canvas', icon: CANVAS_TAB_ICON, layout: 'full' },
+    railItem: { label: 'Canvas', title: 'Canvas', icon: CANVAS_RAIL_ICON, position: 'top' },
     commands: [
       { id: 'add-agent-view', title: 'Add Agent View' },
       { id: 'add-file-view', title: 'Add File View' },

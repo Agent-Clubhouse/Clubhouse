@@ -5,6 +5,7 @@ import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterVie
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
+import { TerminalCanvasView } from './TerminalCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { AnchorCanvasView } from './AnchorCanvasView';
@@ -579,9 +580,10 @@ export function CanvasWorkspace({
             </div>
             <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
               {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'file' && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {(zoomedView.type === 'file' || zoomedView.type === 'legacy-file') && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {(zoomedView.type === 'terminal' || zoomedView.type === 'legacy-terminal') && <TerminalCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'anchor' && <AnchorCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
             </div>
           </div>

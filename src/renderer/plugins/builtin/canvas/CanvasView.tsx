@@ -294,12 +294,14 @@ export function CanvasViewComponent({
       case 'agent':
         return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'file':
+      case 'legacy-file':
         return <FileCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'browser':
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
       case 'git-diff':
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'terminal':
+      case 'legacy-terminal':
         return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'anchor':
         return <AnchorCanvasView view={view as AnchorCanvasViewType} onUpdate={onUpdate} />;

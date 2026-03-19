@@ -58,6 +58,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const paneTree = store((s) => s.paneTree);
   const focusedPaneId = store((s) => s.focusedPaneId);
   const loaded = store((s) => s.loaded);
+
+  // Dynamic title: show active hub name
+  const activeHub = hubs.find((h) => h.id === activeHubId);
+  useEffect(() => {
+    if (activeHub?.name) {
+      api.window.setTitle(activeHub.name);
+    } else {
+      api.window.resetTitle();
+    }
+  }, [api, activeHub?.name]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load persisted state
@@ -223,7 +233,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }
 
   const hubPopout = findHubPopout(activeHubId);
-  const activeHub = hubs.find((h) => h.id === activeHubId);
 
   return React.createElement('div', { className: 'flex flex-col h-full w-full' },
     React.createElement(HubTabBar, {
