@@ -57,6 +57,21 @@ export function CanvasWorkspace({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
 
+  // ── Auto-focus container so keyboard events (arrow-key panning) work ──
+  useEffect(() => {
+    containerRef.current?.focus();
+  }, []);
+
+  // When selection is cleared, reclaim focus so arrow keys pan the canvas
+  // and no keyboard events leak to previously-selected widgets.
+  const prevSelectedRef = useRef(selectedViewId);
+  useEffect(() => {
+    if (prevSelectedRef.current !== null && selectedViewId === null) {
+      containerRef.current?.focus();
+    }
+    prevSelectedRef.current = selectedViewId;
+  }, [selectedViewId]);
+
   // ── Attention system ───────────────────────────────────────────
   const attentionMap = useCanvasAttention(views, api);
 
@@ -80,8 +95,9 @@ export function CanvasWorkspace({
     // Only start pan on middle-click or left-click on empty space
     if (e.button === 1 || (e.button === 0 && e.target === e.currentTarget)) {
       e.preventDefault();
-      // Clicking empty space deselects any selected widget
+      // Clicking empty space deselects any selected widget and reclaims focus
       onSelectView(null);
+      containerRef.current?.focus();
       setIsPanning(true);
       panStartRef.current = {
         x: e.clientX,
