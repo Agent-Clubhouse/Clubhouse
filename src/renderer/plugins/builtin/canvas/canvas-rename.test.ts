@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { CanvasView, AgentCanvasView, AnchorCanvasView, FileCanvasView, BrowserCanvasView } from './canvas-types';
+import type { CanvasView, AgentCanvasView, AnchorCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 
