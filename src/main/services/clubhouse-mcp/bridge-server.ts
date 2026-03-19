@@ -66,10 +66,12 @@ function parseRoute(url: string): { agentId: string; action: string } | null {
 function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
   const expectedNonce = getAgentNonce(agentId);
   const receivedNonce = req.headers['x-clubhouse-nonce'] as string | undefined;
-  if (expectedNonce && receivedNonce !== expectedNonce) {
-    appLog('core:mcp', 'warn', 'Rejected MCP request with invalid nonce', {
-      meta: { agentId },
-    });
+  if (!expectedNonce || receivedNonce !== expectedNonce) {
+    if (!expectedNonce) {
+      appLog('core:mcp', 'warn', 'Rejected MCP request — no nonce registered for agent', { meta: { agentId } });
+    } else {
+      appLog('core:mcp', 'warn', 'Rejected MCP request with invalid nonce', { meta: { agentId } });
+    }
     return false;
   }
   return true;

@@ -48,6 +48,14 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
 /** Initialize listener for binding changes from main process. */
 export function initMcpBindingListener(): () => void {
   return window.clubhouse.mcpBinding.onBindingsChanged((bindings) => {
-    useMcpBindingStore.setState({ bindings: bindings as McpBindingEntry[] });
+    const validated = (bindings || []).filter(
+      (b): b is McpBindingEntry =>
+        b != null &&
+        typeof b.agentId === 'string' &&
+        typeof b.targetId === 'string' &&
+        typeof b.label === 'string' &&
+        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal'),
+    );
+    useMcpBindingStore.setState({ bindings: validated });
   });
 }

@@ -69,6 +69,12 @@ async function ensureDebuggerAttached(wc: Electron.WebContents): Promise<void> {
 
     wc.debugger.on('detach', () => {
       attachedDebuggers.delete(wcId);
+      consoleBuffers.delete(wcId);
+    });
+
+    wc.on('destroyed', () => {
+      attachedDebuggers.delete(wcId);
+      consoleBuffers.delete(wcId);
     });
   } catch (err) {
     appLog('core:mcp', 'error', 'Failed to attach debugger', {
@@ -134,6 +140,10 @@ export function registerBrowserTools(): void {
     try {
       const image = await wc.capturePage();
       const png = image.toPNG();
+      const MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024; // 5MB
+      if (png.length > MAX_SCREENSHOT_SIZE) {
+        return errorResult(`Screenshot too large (${(png.length / 1024 / 1024).toFixed(1)}MB, max 5MB). Try reducing the page size.`);
+      }
       return {
         content: [{
           type: 'image',
@@ -155,7 +165,7 @@ export function registerBrowserTools(): void {
         limit: { type: 'number', description: 'Number of entries to return (default 50).' },
       },
     },
-  }, async (targetId) => {
+  }, async (targetId, _agentId, args) => {
     const wcId = webviewRegistry.get(targetId);
     if (wcId === undefined) return errorResult('Browser widget not found');
 
@@ -164,7 +174,7 @@ export function registerBrowserTools(): void {
 
     await ensureDebuggerAttached(wc);
     const buffer = consoleBuffers.get(wcId) || [];
-    const limit = 50;
+    const limit = Math.min(Math.max(Math.floor((args.limit as number) || 50), 1), 500);
     const entries = buffer.slice(-limit);
     return textResult(JSON.stringify(entries, null, 2));
   });
@@ -335,7 +345,7 @@ export function registerBrowserTools(): void {
       },
     },
   }, async (targetId, _agentId, args) => {
-    const depth = (args.depth as number) || 5;
+    const depth = Math.min(Math.max(Math.floor((args.depth as number) || 5), 1), 10);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found');
 

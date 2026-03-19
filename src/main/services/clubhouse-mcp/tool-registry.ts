@@ -47,7 +47,7 @@ export function buildToolName(targetKind: BindingTargetKind, targetId: string, s
 
 /** Parse a tool name back into its components. Returns null if format doesn't match. */
 export function parseToolName(name: string): { targetKind: string; targetId: string; suffix: string } | null {
-  const match = name.match(/^(browser|agent|terminal)__(.+?)__([a-zA-Z_]+)$/);
+  const match = name.match(/^(browser|agent|terminal)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
   if (!match) return null;
   return { targetKind: match[1], targetId: match[2], suffix: match[3] };
 }

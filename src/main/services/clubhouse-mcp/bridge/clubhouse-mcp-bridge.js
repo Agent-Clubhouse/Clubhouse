@@ -74,6 +74,21 @@ function postJson(path, body) {
 
 // --- SSE listener for tool list change notifications ---
 
+let sseRetryCount = 0;
+const SSE_MAX_RETRIES = 10;
+const SSE_BASE_DELAY = 1000;
+const SSE_MAX_DELAY = 30000;
+
+function scheduleSSERetry() {
+  if (sseRetryCount >= SSE_MAX_RETRIES) {
+    process.stderr.write('clubhouse-mcp-bridge: max SSE reconnection attempts reached, giving up\n');
+    return;
+  }
+  const delay = Math.min(SSE_BASE_DELAY * Math.pow(2, sseRetryCount), SSE_MAX_DELAY);
+  sseRetryCount++;
+  setTimeout(startSSE, delay);
+}
+
 function startSSE() {
   const req = http.request(
     {
@@ -87,6 +102,8 @@ function startSSE() {
       },
     },
     (res) => {
+      // Successful connection — reset retry counter
+      sseRetryCount = 0;
       let buffer = '';
       res.on('data', (chunk) => {
         buffer += chunk;
@@ -110,18 +127,18 @@ function startSSE() {
         }
       });
       res.on('end', () => {
-        // SSE connection closed — try to reconnect after 1s
-        setTimeout(startSSE, 1000);
+        // SSE connection closed — try to reconnect with backoff
+        scheduleSSERetry();
       });
       res.on('error', () => {
-        setTimeout(startSSE, 1000);
+        scheduleSSERetry();
       });
     },
   );
 
   req.on('error', () => {
-    // Server not ready yet — retry
-    setTimeout(startSSE, 1000);
+    // Server not ready yet — retry with backoff
+    scheduleSSERetry();
   });
   req.end();
 }

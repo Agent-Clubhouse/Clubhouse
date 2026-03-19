@@ -5,6 +5,8 @@
 
 import * as fsp from 'fs/promises';
 import * as path from 'path';
+import { existsSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { appLog } from '../log-service';
 import { pathExists } from '../fs-utils';
 import * as experimentalSettings from '../experimental-settings';
@@ -20,6 +22,21 @@ const DEFAULT_CONVENTIONS: SettingsConventions = {
   mcpConfigFile: '.mcp.json',
 };
 
+let bridgeScriptValidated = false;
+
+function validateBridgeScript(): void {
+  if (bridgeScriptValidated) return;
+  const scriptPath = getBridgeScriptPath();
+  if (!existsSync(scriptPath)) {
+    appLog('core:mcp', 'error', 'Bridge script not found', { meta: { path: scriptPath } });
+    throw new Error(`MCP bridge script not found at ${scriptPath}`);
+  }
+  bridgeScriptValidated = true;
+}
+
+/** Serialize concurrent config writes to prevent read-modify-write races. */
+let injectionLock: Promise<void> = Promise.resolve();
+
 /**
  * Inject the Clubhouse MCP server entry into the agent's MCP config.
  * The bridge script path is resolved relative to the app bundle.
@@ -31,10 +48,31 @@ export async function injectClubhouseMcp(
   nonce: string,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
+  // Queue behind any in-flight injection
+  const previousLock = injectionLock;
+  let releaseLock: () => void;
+  injectionLock = new Promise((resolve) => { releaseLock = resolve; });
+  await previousLock;
+  try {
+    await injectClubhouseMcpImpl(cwd, agentId, mcpPort, nonce, conventions);
+  } finally {
+    releaseLock!();
+  }
+}
+
+async function injectClubhouseMcpImpl(
+  cwd: string,
+  agentId: string,
+  mcpPort: number,
+  nonce: string,
+  conventions?: Partial<SettingsConventions>,
+): Promise<void> {
   const expSettings = experimentalSettings.getSettings();
   if (!expSettings.clubhouseMcp) {
     return; // Feature not enabled
   }
+
+  validateBridgeScript();
 
   const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
 
@@ -71,12 +109,14 @@ export async function injectClubhouseMcp(
     },
   };
 
-  // Write config back
+  // Write config atomically (write to temp, then rename)
   const dir = path.dirname(mcpConfigPath);
   if (!(await pathExists(dir))) {
     await fsp.mkdir(dir, { recursive: true });
   }
-  await fsp.writeFile(mcpConfigPath, JSON.stringify(config, null, 2), 'utf-8');
+  const tmpPath = mcpConfigPath + '.tmp.' + randomUUID().slice(0, 8);
+  await fsp.writeFile(tmpPath, JSON.stringify(config, null, 2), 'utf-8');
+  await fsp.rename(tmpPath, mcpConfigPath);
 
   appLog('core:mcp', 'info', 'Injected Clubhouse MCP into config', {
     meta: { agentId, configPath: mcpConfigPath },
