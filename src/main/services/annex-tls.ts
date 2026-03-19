@@ -2,8 +2,8 @@
  * Annex V2 mTLS Transport (#861)
  *
  * Generates self-signed X.509 certificates for mutual TLS authentication
- * between Clubhouse instances. Uses ECDSA P-256 for TLS certificates (broader
- * Node.js TLS stack support) while identity/fingerprinting still uses Ed25519.
+ * between Clubhouse instances. Uses RSA-2048 for TLS certificates via
+ * node-forge, while identity/fingerprinting still uses Ed25519.
  *
  * The TLS certificate's CN is set to the instance's Ed25519 fingerprint,
  * binding the TLS identity to the Annex identity.
@@ -11,9 +11,9 @@
  * Certificate and key are stored alongside the identity in annex-identity.json.
  */
 import * as tls from 'tls';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import forge from 'node-forge';
 import { app } from 'electron';
 import { appLog } from './log-service';
 import type { AnnexIdentity } from './annex-identity';
@@ -23,9 +23,9 @@ import type { AnnexIdentity } from './annex-identity';
 // ---------------------------------------------------------------------------
 
 export interface TlsCertificateInfo {
-  /** PEM-encoded ECDSA P-256 certificate */
+  /** PEM-encoded certificate */
   certPem: string;
-  /** PEM-encoded ECDSA P-256 private key */
+  /** PEM-encoded private key */
   keyPem: string;
   /** When the cert was generated (ISO string) */
   generatedAt: string;
@@ -45,173 +45,37 @@ const CERT_VALIDITY_DAYS = 3650; // 10 years
 let cachedCert: TlsCertificateInfo | null = null;
 
 // ---------------------------------------------------------------------------
-// Self-signed certificate generation using native Node.js crypto
+// Self-signed certificate generation via node-forge
 // ---------------------------------------------------------------------------
 
 /**
- * Generate a self-signed X.509 certificate using ECDSA P-256.
+ * Generate a self-signed X.509 certificate using RSA-2048.
  * The CN is set to the Ed25519 fingerprint for identity binding.
  */
 function generateSelfSignedCert(fingerprint: string): TlsCertificateInfo {
-  // Generate ECDSA P-256 keypair for TLS
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', {
-    namedCurve: 'prime256v1',
-  });
+  const keys = forge.pki.rsa.generateKeyPair(2048);
 
-  // Create self-signed certificate
-  // Node.js 20+ has crypto.X509Certificate but not cert generation.
-  // We use the built-in createCertificate approach via a CSR.
-  const cert = generateX509(publicKey, privateKey, fingerprint);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = forge.util.bytesToHex(forge.random.getBytesSync(16));
 
-  const certPem = cert;
-  const keyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+  const now = new Date();
+  const expires = new Date(now);
+  expires.setDate(expires.getDate() + CERT_VALIDITY_DAYS);
+  cert.validity.notBefore = now;
+  cert.validity.notAfter = expires;
+
+  const attrs = [{ name: 'commonName', value: fingerprint }];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs); // self-signed
+
+  cert.sign(keys.privateKey, forge.md.sha256.create());
 
   return {
-    certPem,
-    keyPem,
-    generatedAt: new Date().toISOString(),
+    certPem: forge.pki.certificateToPem(cert),
+    keyPem: forge.pki.privateKeyToPem(keys.privateKey),
+    generatedAt: now.toISOString(),
   };
-}
-
-/**
- * Generate a self-signed X.509 certificate in PEM format.
- * Uses raw ASN.1/DER construction since Node.js doesn't have a native cert
- * generation API. The cert is minimal: just enough for mTLS.
- */
-function generateX509(
-  publicKey: crypto.KeyObject,
-  privateKey: crypto.KeyObject,
-  cn: string,
-): string {
-  // Encode the subject/issuer DN (just CN)
-  const cnUtf8 = Buffer.from(cn, 'utf-8');
-  const cnAttr = asn1Sequence([
-    asn1Set([
-      asn1Sequence([
-        asn1Oid([2, 5, 4, 3]), // OID for CN
-        asn1Utf8String(cnUtf8),
-      ]),
-    ]),
-  ]);
-
-  // Serial number (random 16 bytes)
-  const serial = crypto.randomBytes(16);
-  serial[0] &= 0x7f; // Ensure positive
-
-  // Validity
-  const notBefore = new Date();
-  const notAfter = new Date();
-  notAfter.setDate(notAfter.getDate() + CERT_VALIDITY_DAYS);
-
-  // Get the public key in DER/SPKI format
-  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
-
-  // Build the TBS (To Be Signed) certificate
-  const tbs = asn1Sequence([
-    asn1Explicit(0, asn1Integer(Buffer.from([0x02]))), // Version 3 (v3 = 2)
-    asn1Integer(serial),
-    // Signature algorithm: ECDSA with SHA-256
-    asn1Sequence([asn1Oid([1, 2, 840, 10045, 4, 3, 2])]),
-    cnAttr, // Issuer
-    // Validity
-    asn1Sequence([
-      asn1UtcTime(notBefore),
-      asn1UtcTime(notAfter),
-    ]),
-    cnAttr, // Subject (self-signed, same as issuer)
-    Buffer.from(spkiDer), // SubjectPublicKeyInfo
-  ]);
-
-  // Sign the TBS
-  const signer = crypto.createSign('SHA256');
-  signer.update(tbs);
-  const signature = signer.sign(privateKey);
-
-  // Build the full certificate
-  const cert = asn1Sequence([
-    tbs,
-    // Signature algorithm
-    asn1Sequence([asn1Oid([1, 2, 840, 10045, 4, 3, 2])]),
-    asn1BitString(signature),
-  ]);
-
-  // Convert to PEM
-  const base64 = cert.toString('base64');
-  const lines = base64.match(/.{1,64}/g) || [];
-  return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`;
-}
-
-// ---------------------------------------------------------------------------
-// ASN.1 DER encoding helpers
-// ---------------------------------------------------------------------------
-
-function asn1Length(length: number): Buffer {
-  if (length < 0x80) return Buffer.from([length]);
-  if (length < 0x100) return Buffer.from([0x81, length]);
-  return Buffer.from([0x82, (length >> 8) & 0xff, length & 0xff]);
-}
-
-function asn1Wrap(tag: number, content: Buffer): Buffer {
-  const len = asn1Length(content.length);
-  return Buffer.concat([Buffer.from([tag]), len, content]);
-}
-
-function asn1Sequence(items: Buffer[]): Buffer {
-  return asn1Wrap(0x30, Buffer.concat(items));
-}
-
-function asn1Set(items: Buffer[]): Buffer {
-  return asn1Wrap(0x31, Buffer.concat(items));
-}
-
-function asn1Integer(value: Buffer): Buffer {
-  // Ensure positive by prepending 0x00 if high bit set
-  if (value[0] & 0x80) {
-    value = Buffer.concat([Buffer.from([0x00]), value]);
-  }
-  return asn1Wrap(0x02, value);
-}
-
-function asn1BitString(content: Buffer): Buffer {
-  // Prepend 0x00 (no unused bits)
-  return asn1Wrap(0x03, Buffer.concat([Buffer.from([0x00]), content]));
-}
-
-function asn1Utf8String(content: Buffer): Buffer {
-  return asn1Wrap(0x0c, content);
-}
-
-function asn1Oid(components: number[]): Buffer {
-  const bytes: number[] = [];
-  // First two components are encoded as 40*first + second
-  bytes.push(40 * components[0] + components[1]);
-  for (let i = 2; i < components.length; i++) {
-    let value = components[i];
-    if (value < 128) {
-      bytes.push(value);
-    } else {
-      const encoded: number[] = [];
-      encoded.push(value & 0x7f);
-      value >>= 7;
-      while (value > 0) {
-        encoded.push((value & 0x7f) | 0x80);
-        value >>= 7;
-      }
-      encoded.reverse();
-      bytes.push(...encoded);
-    }
-  }
-  return asn1Wrap(0x06, Buffer.from(bytes));
-}
-
-function asn1UtcTime(date: Date): Buffer {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const str = `${pad(date.getUTCFullYear() % 100)}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
-  return asn1Wrap(0x17, Buffer.from(str, 'ascii'));
-}
-
-function asn1Explicit(tag: number, content: Buffer): Buffer {
-  return asn1Wrap(0xa0 | tag, content);
 }
 
 // ---------------------------------------------------------------------------

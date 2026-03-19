@@ -62,8 +62,8 @@ describe('annex-tls', () => {
       const cert = getOrCreateCert(identity);
       expect(cert.certPem).toContain('-----BEGIN CERTIFICATE-----');
       expect(cert.certPem).toContain('-----END CERTIFICATE-----');
-      expect(cert.keyPem).toContain('-----BEGIN PRIVATE KEY-----');
-      expect(cert.keyPem).toContain('-----END PRIVATE KEY-----');
+      expect(cert.keyPem).toContain('PRIVATE KEY-----');
+      expect(cert.keyPem).toContain('-----END');
     });
 
     it('should persist and reload across cache resets', () => {
@@ -91,6 +91,19 @@ describe('annex-tls', () => {
       const cert = getOrCreateCert(identity);
       const x509 = new crypto.X509Certificate(cert.certPem);
       expect(x509.subject).toContain(`CN=${identity.fingerprint}`);
+    });
+
+    it('should produce valid certs across 20 generations with different fingerprints', () => {
+      // Regression test: hand-rolled ASN.1 was flaky due to encoding edge cases.
+      // Generate many certs to ensure node-forge produces consistently valid output.
+      for (let i = 0; i < 20; i++) {
+        resetForTests();
+        const id = makeTestIdentity();
+        (app as any).__setUserDataPath(fs.mkdtempSync(path.join(tmpDir, `iter-${i}-`)));
+        const cert = getOrCreateCert(id);
+        const x509 = new crypto.X509Certificate(cert.certPem);
+        expect(x509.subject).toContain(`CN=${id.fingerprint}`);
+      }
     });
   });
 
