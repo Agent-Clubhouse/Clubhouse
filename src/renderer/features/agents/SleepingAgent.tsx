@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Agent } from '../../../shared/types';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { useAgentStore } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
+import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
 import { SleepingMascot } from './SleepingMascots';
 import { SessionPickerDialog } from './SessionPickerDialog';
 import { SessionNamePromptDialog } from './SessionNamePromptDialog';
@@ -10,6 +12,9 @@ import { SessionNamePromptDialog } from './SessionNamePromptDialog';
 export function SleepingAgent({ agent }: { agent: Agent }) {
   const { spawnDurableAgent, sessionNamePromptFor, setSessionNamePrompt } = useAgentStore();
   const { projects } = useProjectStore();
+  const sendAgentWake = useAnnexClientStore((s) => s.sendAgentWake);
+  const isRemote = isRemoteAgentId(agent.id);
+  const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agent.id) : null, [agent.id, isRemote]);
   // Use the agent's own project, not the globally-active project
   const agentProject = projects.find((p) => p.id === agent.projectId);
   const colorInfo = AGENT_COLORS.find((c) => c.id === agent.color);
@@ -19,15 +24,24 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleWake = useCallback(async () => {
+    if (isRemote && remoteParts) {
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake up');
+      return;
+    }
     if (!agentProject) return;
     const configs = await window.clubhouse.agent.listDurable(agentProject.path);
     const config = configs.find((c: any) => c.id === agent.id);
     if (config) {
       await spawnDurableAgent(agentProject.id, agentProject.path, config, false);
     }
-  }, [agentProject, agent.id, spawnDurableAgent]);
+  }, [agentProject, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
 
   const handleWakeAndResume = useCallback(async () => {
+    if (isRemote && remoteParts) {
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake and resume');
+      setDropdownOpen(false);
+      return;
+    }
     if (!agentProject) return;
     setDropdownOpen(false);
     const configs = await window.clubhouse.agent.listDurable(agentProject.path);
@@ -35,7 +49,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
     if (config) {
       await spawnDurableAgent(agentProject.id, agentProject.path, config, true);
     }
-  }, [agentProject, agent.id, spawnDurableAgent]);
+  }, [agentProject, agent.id, spawnDurableAgent, isRemote, remoteParts, sendAgentWake]);
 
   const handleBrowseSessions = useCallback(() => {
     setDropdownOpen(false);
