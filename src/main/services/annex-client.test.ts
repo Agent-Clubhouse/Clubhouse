@@ -70,7 +70,8 @@ vi.mock('./annex-peers', () => ({
 
 vi.mock('./annex-settings', () => ({
   getSettings: vi.fn().mockReturnValue({
-    enabled: true,
+    enableServer: true,
+    enableClient: true,
     deviceName: 'Test Mac',
     alias: 'Test Mac',
     icon: 'computer',
@@ -658,6 +659,144 @@ describe('annex-client', () => {
       vi.mocked(WsMock).mockClear();
       annexClient.retry('PP:QQ:RR:SS');
       expect(WsMock).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Directional peer role filtering
+  // -------------------------------------------------------------------------
+
+  describe('directional peer roles', () => {
+    it('does not auto-connect to peers with role "controller"', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'CC:CC:CC:CC',
+        alias: 'Controller Machine',
+        icon: 'laptop',
+        color: 'blue',
+        publicKey: 'controller-pub-key',
+      });
+
+      // This peer paired with us as a controller (we are their satellite)
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'CC:CC:CC:CC',
+        alias: 'Controller Machine',
+        icon: 'laptop',
+        color: 'blue',
+        publicKey: 'controller-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+        role: 'controller', // This peer controls us, we should NOT connect to it as a satellite
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Should NOT create a satellite entry or connect
+      expect(annexClient.getSatellites()).toHaveLength(0);
+      expect(WsMock).not.toHaveBeenCalled();
+    });
+
+    it('auto-connects to peers with role "satellite"', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'SS:SS:SS:SS',
+        alias: 'Satellite Machine',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'satellite-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'SS:SS:SS:SS',
+        alias: 'Satellite Machine',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'satellite-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+        role: 'satellite',
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Should create satellite and attempt connection
+      expect(annexClient.getSatellites()).toHaveLength(1);
+      expect(WsMock).toHaveBeenCalled();
+    });
+
+    it('auto-connects to legacy peers without role (backward compat)', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'LL:LL:LL:LL',
+        alias: 'Legacy Machine',
+        icon: 'computer',
+        color: 'indigo',
+        publicKey: 'legacy-pub-key',
+      });
+
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'LL:LL:LL:LL',
+        alias: 'Legacy Machine',
+        icon: 'computer',
+        color: 'indigo',
+        publicKey: 'legacy-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+        // No role field — legacy peer
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Should connect (backward compat: no role = satellite)
+      expect(annexClient.getSatellites()).toHaveLength(1);
+      expect(WsMock).toHaveBeenCalled();
+    });
+
+    it('pairWithService stores peer with role "satellite"', async () => {
+      mockHttpGetIdentity({
+        fingerprint: 'NEW:PEER',
+        alias: 'New Satellite',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'new-pub-key',
+      });
+
+      const discovered = annexClient.getDiscoveredServices();
+      // We need to first discover the service
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Now pair with the discovered service
+      const discoveredAfter = annexClient.getDiscoveredServices();
+      if (discoveredAfter.length > 0) {
+        // Mock HTTP POST for pairing
+        const http = await import('http');
+        vi.spyOn(http, 'request').mockImplementation(((_opts: any, cb: any) => {
+          const res = {
+            statusCode: 200,
+            on: (event: string, handler: any) => {
+              if (event === 'data') handler(JSON.stringify({ token: 'test-token' }));
+              if (event === 'end') handler();
+            },
+          };
+          cb(res);
+          return { on: vi.fn(), setTimeout: vi.fn(), write: vi.fn(), end: vi.fn() };
+        }) as any);
+
+        await annexClient.pairWithService(discoveredAfter[0].fingerprint, '123456');
+
+        expect(annexPeers.addPeer).toHaveBeenCalledWith(
+          expect.objectContaining({
+            role: 'satellite',
+          }),
+        );
+      }
     });
   });
 });
