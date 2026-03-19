@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
@@ -344,7 +345,7 @@ export function CanvasViewComponent({
     >
       {/* Title bar — drag handle */}
       <div
-        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"
+        className="group/titlebar flex items-center gap-1.5 px-2.5 py-1.5 bg-ctp-mantle border-b border-surface-0 cursor-grab active:cursor-grabbing flex-shrink-0 rounded-t-lg"
         onMouseDown={handleDragStart}
         data-testid="canvas-view-titlebar"
       >
@@ -354,7 +355,17 @@ export function CanvasViewComponent({
         <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none">
           {formatViewType(view.type === 'plugin' ? (view as PluginCanvasViewType).pluginWidgetType.split(':').pop() || '' : view.type)}
         </span>
-        <span className="text-xs text-ctp-subtext0 truncate flex-1">{view.displayName || view.title}</span>
+        <InlineRename
+          value={view.displayName || view.title}
+          onCommit={(newName) => {
+            const updates: Partial<CanvasView> = { displayName: newName };
+            if (view.type === 'anchor') {
+              (updates as Partial<AnchorCanvasViewType>).label = newName;
+              updates.title = newName;
+            }
+            onUpdate(updates);
+          }}
+        />
         {projectContext && (
           <span className="text-[10px] text-ctp-overlay0 truncate flex-shrink-0">({projectContext})</span>
         )}
