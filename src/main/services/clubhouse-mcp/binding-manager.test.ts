@@ -147,5 +147,63 @@ describe('BindingManager', () => {
       bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });
       expect(goodListener).toHaveBeenCalled();
     });
+
+    it('supports multiple listeners simultaneously', () => {
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
+      const listener3 = vi.fn();
+      bindingManager.onChange(listener1);
+      bindingManager.onChange(listener2);
+      bindingManager.onChange(listener3);
+
+      bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });
+      expect(listener1).toHaveBeenCalledTimes(1);
+      expect(listener2).toHaveBeenCalledTimes(1);
+      expect(listener3).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('complex scenarios', () => {
+    it('handles bind + unbind + rebind cycle', () => {
+      bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });
+      expect(bindingManager.getBindingsForAgent('agent-1')).toHaveLength(1);
+
+      bindingManager.unbind('agent-1', 'w1');
+      expect(bindingManager.getBindingsForAgent('agent-1')).toHaveLength(0);
+
+      bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });
+      expect(bindingManager.getBindingsForAgent('agent-1')).toHaveLength(1);
+    });
+
+    it('handles unbindTarget with no matching bindings', () => {
+      bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+
+      bindingManager.unbindTarget('nonexistent');
+      expect(listener).not.toHaveBeenCalled();
+      expect(bindingManager.getBindingsForAgent('agent-1')).toHaveLength(1);
+    });
+
+    it('multiple agents bound to same target', () => {
+      bindingManager.bind('agent-1', { targetId: 'shared', targetKind: 'browser', label: 'B' });
+      bindingManager.bind('agent-2', { targetId: 'shared', targetKind: 'browser', label: 'B' });
+      bindingManager.bind('agent-3', { targetId: 'shared', targetKind: 'browser', label: 'B' });
+
+      expect(bindingManager.getAllBindings()).toHaveLength(3);
+
+      bindingManager.unbindTarget('shared');
+      expect(bindingManager.getAllBindings()).toHaveLength(0);
+    });
+
+    it('mixed target kinds per agent', () => {
+      bindingManager.bind('agent-1', { targetId: 'browser-1', targetKind: 'browser', label: 'Browser' });
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent' });
+      bindingManager.bind('agent-1', { targetId: 'term-1', targetKind: 'terminal', label: 'Terminal' });
+
+      const bindings = bindingManager.getBindingsForAgent('agent-1');
+      expect(bindings).toHaveLength(3);
+      expect(bindings.map(b => b.targetKind).sort()).toEqual(['agent', 'browser', 'terminal']);
+    });
   });
 });

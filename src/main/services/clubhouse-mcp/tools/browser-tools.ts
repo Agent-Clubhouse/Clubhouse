@@ -101,6 +101,13 @@ function errorResult(text: string): McpToolResult {
   return { content: [{ type: 'text', text }], isError: true };
 }
 
+/** For testing: clear all internal state. */
+export function _resetForTesting(): void {
+  webviewRegistry.clear();
+  attachedDebuggers.clear();
+  consoleBuffers.clear();
+}
+
 /** Register all browser widget tool templates. */
 export function registerBrowserTools(): void {
   // browser__<id>__navigate

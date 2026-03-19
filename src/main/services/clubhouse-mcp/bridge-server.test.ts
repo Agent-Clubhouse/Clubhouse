@@ -149,6 +149,38 @@ describe('BridgeServer', () => {
     expect(statusCode).toBe(403);
   });
 
+  it('rejects requests when agent has no registered nonce (nonce bypass fix)', async () => {
+    mockGetAgentNonce.mockReturnValue(undefined); // Agent not in registry
+    const { statusCode } = await makeRequest(port, 'POST', '/mcp/unknown-agent', {
+      jsonrpc: '2.0',
+      id: 10,
+      method: 'tools/list',
+    });
+    // Without nonce header and without expected nonce — should still be 403
+    expect(statusCode).toBe(403);
+  });
+
+  it('rejects requests with no nonce header even when agent has one', async () => {
+    mockGetAgentNonce.mockReturnValue('valid-nonce');
+    const { statusCode } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/list',
+    }); // No nonce header
+    expect(statusCode).toBe(403);
+  });
+
+  it('accepts requests when nonce matches exactly', async () => {
+    mockGetAgentNonce.mockReturnValue('exact-nonce');
+    const { statusCode, body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      id: 12,
+      method: 'tools/list',
+    }, 'exact-nonce');
+    expect(statusCode).toBe(200);
+    expect(body.result).toBeDefined();
+  });
+
   it('returns 404 for unknown routes', async () => {
     const { statusCode } = await makeRequest(port, 'POST', '/unknown', {}, 'test-nonce');
     expect(statusCode).toBe(404);
@@ -178,6 +210,64 @@ describe('BridgeServer', () => {
   it('stop resets port', () => {
     bridgeServer.stop();
     expect(bridgeServer.getPort()).toBe(0);
+  });
+
+  it('returns 405 for non-POST non-GET requests', async () => {
+    const { statusCode } = await makeRequest(port, 'PUT', '/mcp/agent-1', {}, 'test-nonce');
+    expect(statusCode).toBe(405);
+  });
+
+  it('returns 405 for DELETE requests', async () => {
+    const { statusCode } = await makeRequest(port, 'DELETE', '/mcp/agent-1', {}, 'test-nonce');
+    expect(statusCode).toBe(405);
+  });
+
+  it('handles notifications/initialized without error', async () => {
+    const { statusCode } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+    }, 'test-nonce');
+    expect(statusCode).toBe(200);
+  });
+
+  it('returns missing tool name error for tools/call without name', async () => {
+    const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: {},
+    }, 'test-nonce');
+    expect(body.error.code).toBe(-32602);
+    expect(body.error.message).toContain('Missing tool name');
+  });
+
+  it('handles tools/call with failing handler', async () => {
+    registerToolTemplate('agent', 'fail_tool', {
+      description: 'Fails',
+      inputSchema: { type: 'object' },
+    }, vi.fn().mockRejectedValue(new Error('handler exploded')));
+
+    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+
+    const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
+      jsonrpc: '2.0',
+      id: 21,
+      method: 'tools/call',
+      params: { name: 'agent__agent_2__fail_tool', arguments: {} },
+    }, 'test-nonce');
+
+    expect(body.error.code).toBe(-32000);
+    expect(body.error.message).toContain('handler exploded');
+  });
+
+  it('returns 404 for /mcp/ with no agent ID', async () => {
+    const { statusCode } = await makeRequest(port, 'POST', '/mcp/', {}, 'test-nonce');
+    expect(statusCode).toBe(404);
+  });
+
+  it('waitReady rejects when server not started', async () => {
+    bridgeServer.stop();
+    await expect(bridgeServer.waitReady()).rejects.toThrow('not started');
   });
 
   describe('SSE events', () => {

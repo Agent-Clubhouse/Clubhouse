@@ -160,5 +160,59 @@ describe('AgentTools', () => {
       const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
       expect(result.content[0].text).toBe('No output available');
     });
+
+    it('handles single-line buffer', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockPtyGetBuffer.mockReturnValue('only one line');
+
+      const result = await callTool('agent-1', 'agent__agent_2__read_output', { lines: 5 });
+      expect(result.content[0].text).toBe('only one line');
+    });
+
+    it('handles empty string buffer', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockPtyGetBuffer.mockReturnValue('');
+
+      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      expect(result.isError).toBeFalsy();
+    });
+  });
+
+  describe('send_message error handling', () => {
+    it('handles PTY write failure', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockPtyWrite.mockImplementation(() => { throw new Error('PTY write failed'); });
+
+      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('PTY write failed');
+    });
+
+    it('handles structured manager failure', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
+      mockStructuredSendMessage.mockRejectedValue(new Error('Structured send failed'));
+
+      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Structured send failed');
+    });
+  });
+
+  describe('multi-agent bindings', () => {
+    it('agent can send messages to multiple bound agents', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      bindingManager.bind('agent-1', { targetId: 'agent-3', targetKind: 'agent', label: 'Agent 3' });
+
+      const tools = getScopedToolList('agent-1');
+      // 3 tools for agent-2 + 3 tools for agent-3 = 6
+      expect(tools).toHaveLength(6);
+
+      const r1 = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'to-2' });
+      const r2 = await callTool('agent-1', 'agent__agent_3__send_message', { message: 'to-3' });
+      expect(r1.isError).toBeFalsy();
+      expect(r2.isError).toBeFalsy();
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', 'to-2\n');
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-3', 'to-3\n');
+    });
   });
 });

@@ -90,6 +90,67 @@ describe('MCP Injection', () => {
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
       expect(content.mcpServers.clubhouse.command).toBe('node');
     });
+
+    it('uses custom conventions for config file path', async () => {
+      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+        mcpConfigFile: 'custom-mcp.json',
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, 'custom-mcp.json'), 'utf-8'));
+      expect(content.mcpServers.clubhouse).toBeDefined();
+    });
+
+    it('handles malformed existing JSON gracefully', async () => {
+      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      await fsp.writeFile(path.join(tmpDir, '.mcp.json'), 'not valid json!!!', 'utf-8');
+
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers.clubhouse).toBeDefined();
+    });
+
+    it('serializes concurrent injections (no clobbering)', async () => {
+      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+
+      // Run 3 injections concurrently
+      await Promise.all([
+        injectClubhouseMcp(tmpDir, 'agent-A', 10001, 'nonce-a'),
+        injectClubhouseMcp(tmpDir, 'agent-B', 10002, 'nonce-b'),
+        injectClubhouseMcp(tmpDir, 'agent-C', 10003, 'nonce-c'),
+      ]);
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      // Because of the mutex, the last writer wins, and only one entry
+      // should exist — but the file should be valid JSON, not corrupted
+      expect(content.mcpServers).toBeDefined();
+      expect(content.mcpServers.clubhouse).toBeDefined();
+      // The clubhouse entry should be valid (from the last injection in serial order)
+      expect(content.mcpServers.clubhouse.command).toBe('node');
+    });
+
+    it('creates parent directory if it does not exist', async () => {
+      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      const nestedDir = path.join(tmpDir, 'nested', 'deep');
+
+      await injectClubhouseMcp(nestedDir, 'agent-1', 12345, 'nonce-1', {
+        mcpConfigFile: '.mcp.json',
+      });
+
+      // Should NOT throw — directory was created
+      const content = JSON.parse(await fsp.readFile(path.join(nestedDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers.clubhouse).toBeDefined();
+    });
+
+    it('no temp files left behind after injection', async () => {
+      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
+
+      const files = await fsp.readdir(tmpDir);
+      const tmpFiles = files.filter(f => f.includes('.tmp.'));
+      expect(tmpFiles).toHaveLength(0);
+    });
   });
 
   describe('isClubhouseMcpEntry', () => {

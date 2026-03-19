@@ -40,6 +40,22 @@ describe('ToolRegistry', () => {
       expect(parseToolName('unknown__id__action')).toBeNull();
       expect(parseToolName('')).toBeNull();
     });
+
+    it('rejects tool names with special characters in target ID', () => {
+      // After fix: targetId must match [a-zA-Z0-9_]+ only
+      expect(parseToolName('agent__my.agent.1__send_message')).toBeNull();
+      expect(parseToolName('browser__widget/1__navigate')).toBeNull();
+      expect(parseToolName('agent__id-with-dashes__send_message')).toBeNull();
+      expect(parseToolName('agent__id with spaces__send_message')).toBeNull();
+    });
+
+    it('parses terminal tool names', () => {
+      expect(parseToolName('terminal__term_1__run_command')).toEqual({
+        targetKind: 'terminal',
+        targetId: 'term_1',
+        suffix: 'run_command',
+      });
+    });
   });
 
   describe('registerToolTemplate + getScopedToolList', () => {
@@ -136,6 +152,39 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-1', 'agent__agent_2__nonexistent', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool action');
+    });
+
+    it('passes original targetId (not sanitized) to handler', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      // Bind with a targetId that gets sanitized (dot → underscore)
+      bindingManager.bind('agent-1', { targetId: 'agent.2', targetKind: 'agent', label: 'Agent 2' });
+
+      // Tool name uses sanitized version
+      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hi' });
+      expect(result.isError).toBeFalsy();
+      // Handler receives the ORIGINAL targetId (with dot), not the sanitized one
+      expect(handler).toHaveBeenCalledWith('agent.2', 'agent-1', { message: 'hi' });
+    });
+
+    it('isolates tools across different agents', async () => {
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: { type: 'object' },
+      }, vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] }));
+
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+      // agent-3 is NOT bound to agent-2
+
+      const result = await callTool('agent-3', 'agent__agent_2__send_message', {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No binding');
     });
   });
 });
