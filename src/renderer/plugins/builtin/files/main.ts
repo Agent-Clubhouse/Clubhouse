@@ -5,6 +5,7 @@ import { disposeAllModels } from './MonacoEditor';
 import { FileTree } from './FileTree';
 import { FileViewer } from './FileViewer';
 import { SearchPanel } from './SearchPanel';
+import { FileViewerCanvasWidget } from './FileViewerCanvasWidget';
 
 export function activate(ctx: PluginContext, api: PluginAPI): void {
   // Refresh file tree command
@@ -79,6 +80,20 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
       },
       'Meta+Shift+[',
     ),
+  );
+
+  // Register canvas widget for file viewing
+  ctx.subscriptions.push(
+    api.canvas.registerWidgetType({
+      id: 'file-viewer',
+      component: FileViewerCanvasWidget,
+      generateDisplayName: (metadata) => {
+        if (metadata.filePath && typeof metadata.filePath === 'string') {
+          return metadata.filePath.split('/').pop() || 'File Viewer';
+        }
+        return 'File Viewer';
+      },
+    }),
   );
 }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore }
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import { terminalState, makeSessionId } from './state';
 import type { TerminalTarget } from './state';
+import { TerminalCanvasWidget } from './TerminalCanvasWidget';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -10,6 +11,21 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
     // Fired from the header button — the MainPanel listens via a shared ref
   });
   ctx.subscriptions.push(disposable);
+
+  // Register canvas widget for terminal
+  ctx.subscriptions.push(
+    api.canvas.registerWidgetType({
+      id: 'shell',
+      component: TerminalCanvasWidget,
+      generateDisplayName: (metadata) => {
+        if (metadata.cwd && typeof metadata.cwd === 'string') {
+          const segments = metadata.cwd.replace(/\/+$/, '').split('/');
+          return segments[segments.length - 1] || 'Terminal';
+        }
+        return 'Terminal';
+      },
+    }),
+  );
 }
 
 export function deactivate(): void {
