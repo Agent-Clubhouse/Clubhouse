@@ -200,11 +200,16 @@ async function spawnPtyAgent(
   }
 
   // Snapshot MCP config before injection so we can restore on exit
-  const mcpConfigPath = configPipeline.getHooksConfigPath(provider, params.cwd)
-    ? undefined // hooks config already snapshotted above
-    : undefined;
+  // Only snapshot when the experimental MCP feature is enabled
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+  let mcpEnabled = false;
+  try {
+    const { getSettings } = await import('./experimental-settings');
+    mcpEnabled = !!getSettings().clubhouseMcp;
+  } catch { /* not available */ }
+  if (mcpEnabled) {
+    configPipeline.snapshotFile(params.agentId, mcpJsonPath);
+  }
 
   // Run hook server setup, MCP bridge setup, and command building in parallel.
   let mcpPort = 0;

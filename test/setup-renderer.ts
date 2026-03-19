@@ -323,6 +323,14 @@ vi.stubGlobal('clubhouse', {
     onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,
   },
+  mcpBinding: {
+    getBindings: async () => [],
+    bind: asyncNoop,
+    unbind: asyncNoop,
+    registerWebview: asyncNoop,
+    unregisterWebview: asyncNoop,
+    onBindingsChanged: () => noop,
+  },
   window: {
     createPopout: asyncNoop,
     closePopout: asyncNoop,
