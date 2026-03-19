@@ -3,7 +3,7 @@
  * based on an agent's current bindings.
  */
 
-import type { McpToolDefinition, McpToolResult, McpToolHandler, RegisteredTool, BindingTargetKind } from './types';
+import type { McpToolDefinition, McpToolResult, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 
 /**
