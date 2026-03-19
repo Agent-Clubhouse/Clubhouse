@@ -23,6 +23,7 @@ import {
   DEFAULT_VIEW_HEIGHT,
   DEFAULT_ANCHOR_WIDTH,
   DEFAULT_ANCHOR_HEIGHT,
+  ANCHOR_HEIGHT,
   MIN_ZOOM,
   MAX_ZOOM,
   CANVAS_SIZE,
@@ -214,11 +215,12 @@ export function updateViewPosition(views: CanvasView[], viewId: string, position
 }
 
 export function updateViewSize(views: CanvasView[], viewId: string, size: Size): CanvasView[] {
-  return views.map((v) =>
-    v.id === viewId
-      ? { ...v, size: { width: Math.max(MIN_VIEW_WIDTH, size.width), height: Math.max(MIN_VIEW_HEIGHT, size.height) } }
-      : v
-  );
+  return views.map((v) => {
+    if (v.id !== viewId) return v;
+    // Anchors have a fixed height — only width is user-adjustable
+    const height = v.type === 'anchor' ? ANCHOR_HEIGHT : Math.max(MIN_VIEW_HEIGHT, size.height);
+    return { ...v, size: { width: Math.max(MIN_VIEW_WIDTH, size.width), height } };
+  });
 }
 
 export function updateViewTitle(views: CanvasView[], viewId: string, title: string): CanvasView[] {

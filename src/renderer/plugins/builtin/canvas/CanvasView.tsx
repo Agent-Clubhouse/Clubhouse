@@ -1,14 +1,13 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { InlineRename } from './InlineRename';
-import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
+import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { TerminalCanvasView } from './TerminalCanvasView';
-import { AnchorCanvasView } from './AnchorCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -105,6 +104,7 @@ export function CanvasViewComponent({
 }: CanvasViewComponentProps) {
   const [dragPos, setDragPos] = useState<Position | null>(null);
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const [anchorHovered, setAnchorHovered] = useState(false);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
@@ -247,6 +247,12 @@ export function CanvasViewComponent({
         newY = ref.startY + dy;
       }
 
+      // Anchors have a fixed height — only horizontal resize allowed
+      if (view.type === 'anchor') {
+        newH = ANCHOR_HEIGHT;
+        newY = ref.startY;
+      }
+
       // Enforce minimum size — clamp position if needed
       if (newW < MIN_VIEW_WIDTH) {
         if (dir === 'w' || dir === 'sw' || dir === 'nw') {
@@ -254,7 +260,7 @@ export function CanvasViewComponent({
         }
         newW = MIN_VIEW_WIDTH;
       }
-      if (newH < MIN_VIEW_HEIGHT) {
+      if (view.type !== 'anchor' && newH < MIN_VIEW_HEIGHT) {
         if (dir === 'n' || dir === 'ne' || dir === 'nw') {
           newY = ref.startY + ref.startH - MIN_VIEW_HEIGHT;
         }
@@ -303,8 +309,6 @@ export function CanvasViewComponent({
       case 'terminal':
       case 'legacy-terminal':
         return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
-      case 'anchor':
-        return <AnchorCanvasView view={view as AnchorCanvasViewType} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
@@ -338,6 +342,135 @@ export function CanvasViewComponent({
     : isMultiSelected
       ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
       : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+
+  // ── Compact anchor strip ──────────────────────────────────────
+  if (view.type === 'anchor') {
+    const anchorView = view as AnchorCanvasViewType;
+    const isCollapsedVisually = !!anchorView.autoCollapse && !anchorHovered && dragPos === null;
+    const visualWidth = isCollapsedVisually ? ANCHOR_HEIGHT : currentSize.width;
+
+    return (
+      <div
+        className={`absolute flex items-center bg-ctp-mantle border border-surface-0 rounded-lg select-none group/titlebar overflow-hidden ${attentionClass}`}
+        style={{
+          left: currentPos.x,
+          top: currentPos.y,
+          width: visualWidth,
+          height: ANCHOR_HEIGHT,
+          zIndex: view.zIndex,
+          transition: dragPos ? undefined : 'width 150ms ease',
+          ...(!attention && { boxShadow: selectionShadow }),
+        }}
+        onMouseDown={(e) => { e.stopPropagation(); onSelect(); }}
+        onMouseEnter={() => setAnchorHovered(true)}
+        onMouseLeave={() => setAnchorHovered(false)}
+        data-testid={`canvas-view-${view.id}`}
+        data-attention={attention?.level ?? undefined}
+        data-selected={isSelected ? 'true' : undefined}
+        data-collapsed={isCollapsedVisually ? 'true' : undefined}
+      >
+        {/* Anchor icon — always visible, acts as drag handle */}
+        <div
+          className="w-[50px] h-[50px] flex items-center justify-center flex-shrink-0 cursor-grab active:cursor-grabbing"
+          onMouseDown={handleDragStart}
+          data-testid="canvas-view-titlebar"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-ctp-blue"
+          >
+            <circle cx="12" cy="5" r="3" />
+            <line x1="12" y1="8" x2="12" y2="22" />
+            <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
+          </svg>
+        </div>
+
+        {/* Expanded content — hidden when collapsed */}
+        {!isCollapsedVisually && (
+          <>
+            <span className="text-[10px] text-ctp-overlay1 bg-surface-0 rounded px-1.5 py-0.5 font-medium leading-none flex-shrink-0">
+              Anchor
+            </span>
+
+            <div
+              className="flex-1 min-w-0 px-1.5 cursor-grab active:cursor-grabbing"
+              onMouseDown={handleDragStart}
+            >
+              <InlineRename
+                value={view.displayName || view.title}
+                onCommit={(newName) => {
+                  onUpdate({
+                    displayName: newName,
+                    label: newName,
+                    title: newName,
+                  } as Partial<AnchorCanvasViewType>);
+                }}
+              />
+            </div>
+
+            <div className="flex items-center gap-0.5 flex-shrink-0 pr-2">
+              <button
+                className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                  anchorView.autoCollapse
+                    ? 'text-ctp-blue bg-ctp-blue/10'
+                    : 'text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdate({ autoCollapse: !anchorView.autoCollapse } as Partial<AnchorCanvasViewType>);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title={anchorView.autoCollapse ? 'Stay expanded' : 'Auto-collapse when not hovered'}
+                data-testid="canvas-anchor-collapse-toggle"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <polyline points="4 7 9 12 4 17" />
+                  <polyline points="20 7 15 12 20 17" />
+                </svg>
+              </button>
+              <button
+                className="w-5 h-5 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                onMouseDown={(e) => e.stopPropagation()}
+                title="Remove anchor"
+                data-testid="canvas-view-close"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Horizontal resize handles only (hidden when collapsed) */}
+        {!isCollapsedVisually && (
+          <>
+            <div
+              className="absolute left-0 top-[6px] bottom-[6px] pointer-events-auto"
+              style={{ width: EDGE_SIZE, cursor: 'ew-resize', zIndex: 10 }}
+              onMouseDown={(e) => handleResizeStart('w', e)}
+              data-testid="canvas-view-resize-w"
+            />
+            <div
+              className="absolute right-0 top-[6px] bottom-[6px] pointer-events-auto"
+              style={{ width: EDGE_SIZE, cursor: 'ew-resize', zIndex: 10 }}
+              onMouseDown={(e) => handleResizeStart('e', e)}
+              data-testid="canvas-view-resize-e"
+            />
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -378,12 +511,7 @@ export function CanvasViewComponent({
         <InlineRename
           value={view.displayName || view.title}
           onCommit={(newName) => {
-            const updates: Partial<CanvasView> = { displayName: newName };
-            if (view.type === 'anchor') {
-              (updates as Partial<AnchorCanvasViewType>).label = newName;
-              updates.title = newName;
-            }
-            onUpdate(updates);
+            onUpdate({ displayName: newName });
           }}
         />
         {projectContext && (

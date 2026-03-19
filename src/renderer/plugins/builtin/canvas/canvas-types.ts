@@ -80,6 +80,8 @@ export interface AnchorCanvasView extends CanvasViewBase {
   type: 'anchor';
   /** User-defined anchor label — stored in displayName for search/navigation. */
   label: string;
+  /** When true, the anchor collapses to just its icon on mouse-leave and expands on hover. */
+  autoCollapse?: boolean;
 }
 
 export interface PluginCanvasView extends CanvasViewBase {
@@ -150,7 +152,9 @@ export const MIN_VIEW_HEIGHT = 150;
 export const DEFAULT_VIEW_WIDTH = 480;
 export const DEFAULT_VIEW_HEIGHT = 480;
 export const DEFAULT_ANCHOR_WIDTH = 240;
-export const DEFAULT_ANCHOR_HEIGHT = 160;
+export const DEFAULT_ANCHOR_HEIGHT = 50;
+/** Anchors have a fixed height — they cannot be resized vertically. */
+export const ANCHOR_HEIGHT = 50;
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 2.0;
 export const CANVAS_SIZE = 20000;
