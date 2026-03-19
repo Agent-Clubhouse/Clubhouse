@@ -117,7 +117,9 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             data-testid={`canvas-context-menu-${widget.qualifiedType}`}
           >
             <span className="w-4 text-center font-mono text-ctp-overlay0">
-              {widget.declaration.icon || '+'}
+              {widget.declaration.icon
+                ? <span dangerouslySetInnerHTML={{ __html: widget.declaration.icon }} />
+                : '+'}
             </span>
             Add {widget.declaration.label}
           </button>
@@ -135,7 +137,9 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
                 data-testid={`canvas-context-menu-${widget.qualifiedType}`}
               >
                 <span className="w-4 text-center font-mono text-ctp-overlay0">
-                  {widget.declaration.icon || '+'}
+                  {widget.declaration.icon
+                    ? <span dangerouslySetInnerHTML={{ __html: widget.declaration.icon }} />
+                    : '+'}
                 </span>
                 Add {widget.declaration.label}
               </button>
