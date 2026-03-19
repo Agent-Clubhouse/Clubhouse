@@ -7,6 +7,8 @@ import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
 import { manifest as browserManifest } from './browser/manifest';
 import * as browserModule from './browser/main';
+import { manifest as gitManifest } from './git/manifest';
+import * as gitModule from './git/main';
 import { manifest as canvasManifest } from './canvas/manifest';
 import * as canvasModule from './canvas/main';
 import { manifest as sessionsManifest } from './sessions/manifest';
@@ -25,7 +27,7 @@ export interface ExperimentalFlags {
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git'];
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -33,6 +35,7 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
+    { manifest: gitManifest, module: gitModule },
   ];
 
   if (experimentalFlags.canvas) {
