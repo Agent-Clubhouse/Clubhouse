@@ -132,12 +132,13 @@ describe('annex-settings', () => {
       expect(result.enabled).toBeUndefined();
     });
 
-    it('does not override explicit enableServer/enableClient when legacy enabled is present', async () => {
+    it('enabled field always overrides enableServer/enableClient when present', async () => {
+      // When legacy `enabled` is present, it takes precedence and is then stripped
       vi.mocked(fs.readFileSync).mockReturnValue(
         JSON.stringify({ enabled: true, enableServer: false, enableClient: true }),
       );
       const result = getSettings();
-      expect(result.enableServer).toBe(false);
+      expect(result.enableServer).toBe(true);
       expect(result.enableClient).toBe(true);
       expect(result.enabled).toBeUndefined();
     });
@@ -146,8 +147,9 @@ describe('annex-settings', () => {
       await saveSettings({ enabled: true, enableServer: true, enableClient: false, deviceName: 'Strip Test' } as any);
       const written = JSON.parse(vi.mocked(fs.promises.writeFile).mock.calls[0][1] as string);
       expect(written.enabled).toBeUndefined();
+      // enabled: true overrides both to true during migration
       expect(written.enableServer).toBe(true);
-      expect(written.enableClient).toBe(false);
+      expect(written.enableClient).toBe(true);
     });
 
     it('can enable server without client', async () => {

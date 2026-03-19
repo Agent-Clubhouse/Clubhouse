@@ -17,8 +17,9 @@ function migrateSettings(settings: AnnexSettings): AnnexSettings {
   if (settings.enabled !== undefined) {
     const migrated = { ...settings };
     // Legacy `enabled: true` → enable both server and client (preserves old behavior)
-    if (migrated.enableServer === undefined) migrated.enableServer = !!settings.enabled;
-    if (migrated.enableClient === undefined) migrated.enableClient = !!settings.enabled;
+    // Always apply: the store defaults would have set these to false already
+    migrated.enableServer = !!settings.enabled;
+    migrated.enableClient = !!settings.enabled;
     delete migrated.enabled;
     return migrated;
   }

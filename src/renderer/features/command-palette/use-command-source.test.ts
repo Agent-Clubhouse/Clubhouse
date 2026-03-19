@@ -74,7 +74,7 @@ vi.mock('../../stores/keyboardShortcutsStore', () => ({
 }));
 
 const annexState = {
-  settings: { enabled: false, deviceName: '' },
+  settings: { enableServer: false, enableClient: false, deviceName: '' },
   status: { advertising: false, port: 0, pin: '', connectedCount: 0 },
   saveSettings: mockSaveAnnexSettings,
 };
@@ -184,7 +184,7 @@ describe('useCommandSource', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     uiStoreState.explorerTab = 'agents';
-    annexState.settings = { enabled: false, deviceName: '' };
+    annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     annexState.status = { advertising: false, port: 0, pin: '', connectedCount: 0 };
     projectStoreState.activeProjectId = 'p1';
     projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
@@ -202,36 +202,37 @@ describe('useCommandSource', () => {
     mockGetExperimentalSettings.mockResolvedValueOnce({});
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    expect(findItem(result.current, 'action:toggle-annex')).toBeUndefined();
+    expect(findItem(result.current, 'action:toggle-annex-server')).toBeUndefined();
+    expect(findItem(result.current, 'action:toggle-annex-client')).toBeUndefined();
     expect(findItem(result.current, 'action:annex-show-pin')).toBeUndefined();
   });
 
-  it('includes toggle annex action when experimental flag is on', async () => {
-    annexState.settings = { enabled: false, deviceName: '' };
+  it('includes toggle annex server action when experimental flag is on', async () => {
+    annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex');
+    const item = findItem(result.current, 'action:toggle-annex-server');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Enable Annex');
+    expect(item.label).toBe('Enable Annex Server');
     expect(item.category).toBe('Actions');
   });
 
-  it('includes toggle annex action with Disable label when enabled', async () => {
-    annexState.settings = { enabled: true, deviceName: 'Mac' };
+  it('includes toggle annex server action with Disable label when enableServer is true', async () => {
+    annexState.settings = { enableServer: true, enableClient: false, deviceName: 'Mac' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex');
+    const item = findItem(result.current, 'action:toggle-annex-server');
     expect(item).toBeDefined();
-    expect(item.label).toBe('Disable Annex');
+    expect(item.label).toBe('Disable Annex Server');
   });
 
-  it('toggle annex calls saveSettings with toggled enabled', async () => {
-    annexState.settings = { enabled: false, deviceName: '' };
+  it('toggle annex server calls saveSettings with toggled enableServer', async () => {
+    annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
-    const item = findItem(result.current, 'action:toggle-annex');
+    const item = findItem(result.current, 'action:toggle-annex-server');
     item.execute();
-    expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enabled: true, deviceName: '' });
+    expect(mockSaveAnnexSettings).toHaveBeenCalledWith({ enableServer: true, enableClient: false, deviceName: '' });
   });
 
   it('includes show annex PIN action when experimental flag is on', async () => {
@@ -244,7 +245,7 @@ describe('useCommandSource', () => {
   });
 
   it('show annex PIN includes PIN in detail when enabled', async () => {
-    annexState.settings = { enabled: true, deviceName: '' };
+    annexState.settings = { enableServer: true, enableClient: false, deviceName: '' };
     annexState.status = { advertising: true, port: 5353, pin: '1234', connectedCount: 0 };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
@@ -253,7 +254,7 @@ describe('useCommandSource', () => {
   });
 
   it('show annex PIN has no detail when annex is disabled', async () => {
-    annexState.settings = { enabled: false, deviceName: '' };
+    annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     const { result } = renderHook(() => useCommandSource());
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     const item = findItem(result.current, 'action:annex-show-pin');

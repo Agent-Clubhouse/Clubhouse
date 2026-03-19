@@ -729,7 +729,7 @@ const api = {
   annex: {
     getSettings: () =>
       ipcRenderer.invoke(IPC.ANNEX.GET_SETTINGS),
-    saveSettings: (settings: { enabled: boolean; deviceName: string; alias: string; icon: string; color: string }) =>
+    saveSettings: (settings: { enableServer: boolean; enableClient: boolean; deviceName: string; alias: string; icon: string; color: string; autoReconnect: boolean; enabled?: boolean }) =>
       ipcRenderer.invoke(IPC.ANNEX.SAVE_SETTINGS, settings),
     getStatus: () =>
       ipcRenderer.invoke(IPC.ANNEX.GET_STATUS),

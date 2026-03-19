@@ -767,7 +767,6 @@ describe('annex-client', () => {
         publicKey: 'new-pub-key',
       });
 
-      const discovered = annexClient.getDiscoveredServices();
       // We need to first discover the service
       annexClient.startClient();
       await bonjourFindCallback!(makeService());

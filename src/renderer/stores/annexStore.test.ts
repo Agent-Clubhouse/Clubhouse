@@ -22,7 +22,7 @@ function getState() {
   return useAnnexStore.getState();
 }
 
-const DEFAULT_SETTINGS: AnnexSettings = { enabled: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo', autoReconnect: true };
+const DEFAULT_SETTINGS: AnnexSettings = { enableServer: false, enableClient: false, deviceName: '', alias: '', icon: 'computer', color: 'indigo', autoReconnect: true };
 const DEFAULT_STATUS: AnnexStatus = { advertising: false, port: 0, pin: '', connectedCount: 0, fingerprint: '', alias: '', icon: 'computer', color: 'indigo' };
 
 // ---------- tests ----------
@@ -49,7 +49,7 @@ describe('annexStore', () => {
   // ---- loadSettings ----
   describe('loadSettings', () => {
     it('loads both settings and status from IPC', async () => {
-      const settings: AnnexSettings = { enabled: true, deviceName: 'laptop' };
+      const settings: AnnexSettings = { enableServer: true, enableClient: false, deviceName: 'laptop' };
       const status: AnnexStatus = { advertising: true, port: 8080, pin: '1234', connectedCount: 2 };
       mockAnnex.getSettings.mockResolvedValueOnce(settings);
       mockAnnex.getStatus.mockResolvedValueOnce(status);
@@ -83,7 +83,7 @@ describe('annexStore', () => {
   // ---- saveSettings ----
   describe('saveSettings', () => {
     it('optimistically updates settings in state', async () => {
-      const settings: AnnexSettings = { enabled: true, deviceName: 'tablet' };
+      const settings: AnnexSettings = { enableServer: true, enableClient: false, deviceName: 'tablet' };
 
       await getState().saveSettings(settings);
 

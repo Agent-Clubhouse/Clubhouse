@@ -2,18 +2,23 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useRemoteProjectStore, namespacedAgentId, parseNamespacedId, isRemoteAgentId, isRemoteProjectId } from './remoteProjectStore';
 import type { SatelliteSnapshot } from '../../shared/types';
 
-// Mock plugin store
-vi.mock('../plugins/plugin-store', () => ({
-  usePluginStore: {
-    getState: vi.fn().mockReturnValue({
-      plugins: {
-        hub: { manifest: { id: 'hub', version: '1.0.0' } },
-        terminal: { manifest: { id: 'terminal', version: '1.0.0' } },
-        files: { manifest: { id: 'files', version: '1.0.0' } },
-      },
-    }),
+// Mock plugin store — need to provide a zustand-compatible getState
+const mockPluginStoreState = {
+  plugins: {
+    hub: { manifest: { id: 'hub', version: '1.0.0' } },
+    terminal: { manifest: { id: 'terminal', version: '1.0.0' } },
+    files: { manifest: { id: 'files', version: '1.0.0' } },
   },
-}));
+};
+
+vi.mock('../plugins/plugin-store', () => {
+  const store = () => mockPluginStoreState;
+  store.getState = () => mockPluginStoreState;
+  store.setState = vi.fn();
+  store.subscribe = vi.fn();
+  store.destroy = vi.fn();
+  return { usePluginStore: store };
+});
 
 function makeSnapshot(overrides: Partial<SatelliteSnapshot> = {}): SatelliteSnapshot {
   return {
