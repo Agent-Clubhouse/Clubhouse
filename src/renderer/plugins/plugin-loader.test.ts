@@ -1713,6 +1713,84 @@ describe('plugin-loader', () => {
     });
   });
 
+  // ── initializePluginSystem: app-scoped activation ───────────────────
+
+  describe('initializePluginSystem() app-scoped activation', () => {
+    it('activates app-scoped community pack plugins during init', async () => {
+      const packManifest = makeManifest({
+        id: 'my-theme',
+        scope: 'app',
+        kind: 'pack',
+        engine: { api: 0.7 },
+        permissions: [],
+        contributes: {
+          themes: [{
+            id: 'dark',
+            name: 'My Dark Theme',
+            type: 'dark' as const,
+            colors: {} as Record<string, string>,
+            hljs: {} as Record<string, string>,
+            terminal: {} as Record<string, string>,
+          }],
+        },
+      });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: packManifest, pluginPath: '/plugins/my-theme', fromMarketplace: false },
+      ]);
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'external-plugins-enabled') return true;
+        if (req.key === 'app-enabled') return ['my-theme'];
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      const state = usePluginStore.getState();
+      expect(state.plugins['my-theme']).toBeDefined();
+      expect(state.plugins['my-theme'].status).toBe('activated');
+      expect(registerTheme).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'plugin:my-theme:dark' }),
+      );
+    });
+
+    it('activates app-scoped built-in plugins during init', async () => {
+      const appManifest = makeManifest({ id: 'app-builtin', scope: 'app' });
+      const mod: PluginModule = { activate: vi.fn() };
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest: appManifest, module: mod }]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(new Set(['app-builtin']));
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().plugins['app-builtin'].status).toBe('activated');
+      expect(mod.activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('activates dual-scoped built-in plugins at app level during init', async () => {
+      const dualManifest = makeManifest({ id: 'dual-builtin', scope: 'dual' });
+      const mod: PluginModule = { activate: vi.fn() };
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest: dualManifest, module: mod }]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(new Set(['dual-builtin']));
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().plugins['dual-builtin'].status).toBe('activated');
+      expect(mod.activate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not activate project-scoped plugins during init', async () => {
+      const projManifest = makeManifest({ id: 'proj-builtin', scope: 'project' });
+      const mod: PluginModule = { activate: vi.fn() };
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([{ manifest: projManifest, module: mod }]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(new Set(['proj-builtin']));
+
+      await initializePluginSystem();
+
+      expect(usePluginStore.getState().plugins['proj-builtin'].status).toBe('registered');
+      expect(mod.activate).not.toHaveBeenCalled();
+    });
+  });
+
   // ── refreshCommunityPlugins ─────────────────────────────────────────
 
   describe('refreshCommunityPlugins()', () => {
@@ -1820,6 +1898,65 @@ describe('plugin-loader', () => {
       // Should NOT activate project-scoped plugins at app level
       expect(result.activated).toEqual([]);
       expect(usePluginStore.getState().plugins['proj-plug'].status).toBe('registered');
+    });
+
+    it('re-registers pack themes when refreshing already-active pack plugins', async () => {
+      const oldThemes = [{
+        id: 'dark',
+        name: 'Old Dark',
+        type: 'dark' as const,
+        colors: {} as Record<string, string>,
+        hljs: {} as Record<string, string>,
+        terminal: {} as Record<string, string>,
+      }];
+      const newThemes = [{
+        id: 'dark',
+        name: 'New Dark',
+        type: 'dark' as const,
+        colors: {} as Record<string, string>,
+        hljs: {} as Record<string, string>,
+        terminal: {} as Record<string, string>,
+      }];
+
+      // Pre-register an activated pack plugin with old themes
+      usePluginStore.getState().registerPlugin(
+        makeManifest({
+          id: 'theme-pack',
+          scope: 'app',
+          kind: 'pack',
+          engine: { api: 0.7 },
+          permissions: [],
+          contributes: { themes: oldThemes },
+        }),
+        'community', '/plugins/theme-pack', 'activated',
+      );
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      // Disk now has updated themes
+      mockPlugin.discoverCommunity.mockResolvedValue([{
+        manifest: makeManifest({
+          id: 'theme-pack',
+          scope: 'app',
+          kind: 'pack',
+          engine: { api: 0.7 },
+          permissions: [],
+          contributes: { themes: newThemes },
+        }),
+        pluginPath: '/plugins/theme-pack',
+        fromMarketplace: false,
+      }]);
+
+      vi.mocked(registerTheme).mockClear();
+      vi.mocked(unregisterTheme).mockClear();
+
+      await refreshCommunityPlugins();
+
+      // Should unregister old themes and register new ones
+      expect(unregisterTheme).toHaveBeenCalledWith('plugin:theme-pack:dark');
+      expect(registerTheme).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'plugin:theme-pack:dark', name: 'New Dark' }),
+      );
+      expect(usePluginStore.getState().plugins['theme-pack'].status).toBe('activated');
     });
 
     it('handles mix of new, existing, and incompatible plugins', async () => {
