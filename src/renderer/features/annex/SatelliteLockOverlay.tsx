@@ -96,6 +96,12 @@ export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisab
             <span className="text-xs text-white/80">
               {lockState.controllerAlias} connected (paused)
             </span>
+            <button
+              onClick={onPause}
+              className="text-xs text-white/60 hover:text-white transition-colors ml-1 cursor-pointer"
+            >
+              Resume
+            </button>
           </div>
         </div>
       )}

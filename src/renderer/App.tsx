@@ -154,7 +154,10 @@ export function App() {
     lockUnlock();
   };
   const handleLockPause = () => {
+    const nextPaused = !lockPaused;
     lockTogglePause();
+    // Notify controllers so they can show a paused state
+    window.clubhouse.annex.notifyPause?.(nextPaused);
   };
   const handleLockDisableAndDisconnect = () => {
     window.clubhouse.annex.disableAndDisconnect();

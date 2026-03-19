@@ -801,6 +801,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX.DISCONNECT_CONTROLLER, fingerprint),
     disableAndDisconnect: () =>
       ipcRenderer.invoke(IPC.ANNEX.DISABLE_AND_DISCONNECT),
+    notifyPause: (paused: boolean) =>
+      ipcRenderer.invoke(IPC.ANNEX.NOTIFY_PAUSE, paused),
     purgeServerConfig: () =>
       ipcRenderer.invoke(IPC.ANNEX.PURGE_SERVER_CONFIG),
   },

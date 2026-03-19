@@ -303,6 +303,7 @@ vi.stubGlobal('clubhouse', {
     onLockStateChanged: () => noop,
     disconnectController: asyncNoop,
     disableAndDisconnect: asyncNoop,
+    notifyPause: asyncNoop,
     purgeServerConfig: asyncNoop,
   },
   annexClient: {

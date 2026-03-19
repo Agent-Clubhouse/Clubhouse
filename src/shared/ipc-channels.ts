@@ -284,6 +284,7 @@ export const IPC = {
     PAIRING_LOCKED: 'annex:pairing-locked',
     PEERS_CHANGED: 'annex:peers-changed',
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
+    NOTIFY_PAUSE: 'annex:notify-pause',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
     DISABLE_AND_DISCONNECT: 'annex:disable-and-disconnect',
     PURGE_SERVER_CONFIG: 'annex:purge-server-config',

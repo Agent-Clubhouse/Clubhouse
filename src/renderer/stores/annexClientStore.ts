@@ -50,6 +50,8 @@ export interface DiscoveredService {
 interface AnnexClientStoreState {
   satellites: SatelliteConnection[];
   discoveredServices: DiscoveredService[];
+  /** Track which satellites have paused remote control */
+  satellitePaused: Record<string, boolean>;
   loadSatellites: () => Promise<void>;
   loadDiscovered: () => Promise<void>;
   pairWith: (fingerprint: string, pin: string) => Promise<{ success: boolean; error?: string }>;
@@ -70,6 +72,7 @@ interface AnnexClientStoreState {
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   satellites: [],
   discoveredServices: [],
+  satellitePaused: {},
 
   loadSatellites: async () => {
     try {
@@ -262,6 +265,14 @@ export function initAnnexClientListener(): () => void {
       if (agentId) {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
       }
+    } else if (type === 'session:paused') {
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: true },
+      }));
+    } else if (type === 'session:resumed') {
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: false },
+      }));
     }
   });
 

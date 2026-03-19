@@ -10,7 +10,7 @@ import * as annexTls from '../services/annex-tls';
 import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, objectArg, stringArg } from './validation';
+import { withValidatedArgs, objectArg, stringArg, booleanArg } from './validation';
 
 function broadcastStatusChanged(): void {
   const status = annexServer.getStatus();
@@ -103,6 +103,13 @@ export function registerAnnexHandlers(): void {
     (_event, fingerprint) => {
       // Disconnect a specific controller WebSocket by fingerprint
       annexServer.disconnectPeer(fingerprint);
+    },
+  ));
+
+  ipcMain.handle(IPC.ANNEX.NOTIFY_PAUSE, withValidatedArgs(
+    [booleanArg()],
+    (_event, paused) => {
+      annexServer.notifySessionPause(paused);
     },
   ));
 
