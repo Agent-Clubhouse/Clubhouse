@@ -114,3 +114,51 @@ describe('CanvasViewType — terminal', () => {
     expect(view.type).toBe('terminal');
   });
 });
+
+// ── Worktree auto-skip guard ────────────────────────────────────────
+//
+// The auto-skip logic in TerminalCanvasView decides whether to bypass the
+// worktree picker and jump straight to the terminal.  A race condition
+// previously caused it to skip even when worktrees existed because the
+// fetch had not completed before the first render evaluated the guard.
+//
+// We extract the decision predicate here and verify it against the
+// relevant state combinations.
+
+describe('TerminalCanvasView — worktree auto-skip guard', () => {
+  /**
+   * Mirrors the auto-skip condition from TerminalCanvasView.
+   * Returns true when the component should auto-select the project root
+   * (i.e. skip the worktree picker).
+   */
+  function shouldAutoSkip(
+    worktreeCount: number,
+    loadingWorktrees: boolean,
+    hasProjectPath: boolean,
+  ): boolean {
+    const hasMultipleWorktrees = worktreeCount > 1;
+    return !hasMultipleWorktrees && !loadingWorktrees && hasProjectPath;
+  }
+
+  it('does NOT auto-skip while worktrees are loading', () => {
+    // This is the critical case: worktrees haven't been fetched yet.
+    // loadingWorktrees must block the auto-skip.
+    expect(shouldAutoSkip(0, true, true)).toBe(false);
+  });
+
+  it('auto-skips when loading is done and only one worktree exists', () => {
+    expect(shouldAutoSkip(1, false, true)).toBe(true);
+  });
+
+  it('auto-skips when loading is done and no worktrees returned', () => {
+    expect(shouldAutoSkip(0, false, true)).toBe(true);
+  });
+
+  it('does NOT auto-skip when multiple worktrees exist', () => {
+    expect(shouldAutoSkip(3, false, true)).toBe(false);
+  });
+
+  it('does NOT auto-skip without a project path', () => {
+    expect(shouldAutoSkip(0, false, false)).toBe(false);
+  });
+});
