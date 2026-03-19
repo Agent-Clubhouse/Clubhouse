@@ -70,6 +70,8 @@ interface CanvasViewComponentProps {
   isZoomed?: boolean;
   isSelected?: boolean;
   isMultiSelected?: boolean;
+  /** When true, hide this view because it's part of a multi-drag (non-primary). */
+  multiDragHidden?: boolean;
   attention?: CanvasViewAttention | null;
   onClose: () => void;
   onFocus: () => void;
@@ -90,6 +92,7 @@ export function CanvasViewComponent({
   isZoomed,
   isSelected,
   isMultiSelected,
+  multiDragHidden,
   attention,
   onClose,
   onFocus,
@@ -107,6 +110,14 @@ export function CanvasViewComponent({
   const [anchorHovered, setAnchorHovered] = useState(false);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
+
+  // Refs for stable drag handler closures — avoids effect re-registration on
+  // every render which could create a window where the mouseup handler is missing.
+  const onDragEndRef = useRef(onDragEnd);
+  onDragEndRef.current = onDragEnd;
+  const dragPosRef = useRef<Position | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   const currentPos = resizeState?.position ?? dragPos ?? view.position;
   const currentSize = resizeState?.size ?? view.size;
@@ -163,27 +174,37 @@ export function CanvasViewComponent({
       startX: view.position.x,
       startY: view.position.y,
     };
+    dragPosRef.current = view.position;
     setDragPos(view.position);
     // Notify parent for multi-drag coordination
     onMultiDragStart(view.id, e.clientX, e.clientY);
   }, [view.position, onFocus, onMultiDragStart, view.id]);
 
+  // Use `isDragging` boolean so the effect only registers/unregisters when
+  // drag starts or ends — not on every mouse move or parent re-render.
+  // Handlers read current values from refs to avoid stale closures.
+  const isDragging = dragPos !== null;
+
   useEffect(() => {
-    if (dragPos === null) return;
+    if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = (e.clientX - dragStartRef.current.mouseX) / zoom;
-      const dy = (e.clientY - dragStartRef.current.mouseY) / zoom;
-      setDragPos({
+      const dx = (e.clientX - dragStartRef.current.mouseX) / zoomRef.current;
+      const dy = (e.clientY - dragStartRef.current.mouseY) / zoomRef.current;
+      const newPos = {
         x: dragStartRef.current.startX + dx,
         y: dragStartRef.current.startY + dy,
-      });
+      };
+      dragPosRef.current = newPos;
+      setDragPos(newPos);
     };
 
     const handleMouseUp = () => {
-      if (dragPos) {
-        onDragEnd(dragPos);
+      const pos = dragPosRef.current;
+      if (pos) {
+        onDragEndRef.current(pos);
       }
+      dragPosRef.current = null;
       setDragPos(null);
     };
 
@@ -193,7 +214,7 @@ export function CanvasViewComponent({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragPos, zoom, onDragEnd]);
+  }, [isDragging]);
 
   // ── Resize (multi-directional) ─────────────────────────────────
 
@@ -360,6 +381,7 @@ export function CanvasViewComponent({
           zIndex: view.zIndex,
           transition: dragPos ? undefined : 'width 150ms ease',
           ...(!attention && { boxShadow: selectionShadow }),
+          ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
         }}
         onMouseDown={(e) => {
           e.stopPropagation();
@@ -490,6 +512,7 @@ export function CanvasViewComponent({
         height: currentSize.height,
         zIndex: view.zIndex,
         ...(!attention && { boxShadow: selectionShadow }),
+        ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
       }}
       onMouseDown={(e) => {
         e.stopPropagation();
