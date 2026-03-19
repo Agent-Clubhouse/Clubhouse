@@ -120,6 +120,9 @@ vi.stubGlobal('clubhouse', {
     stash: asyncNoop,
     stashPop: asyncNoop,
     listWorktrees: async () => [],
+    log: async () => [],
+    showCommit: async () => ({ hash: '', files: [] }),
+    commitDiff: async () => ({ original: '', modified: '' }),
   },
   agentSettings: {
     readInstructions: async () => '',

@@ -13,7 +13,7 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function GitCanvasWidget({ widgetId, api, metadata, onUpdateMetadata }: CanvasWidgetComponentProps) {
+export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMetadata }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 

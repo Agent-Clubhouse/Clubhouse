@@ -131,11 +131,6 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     fetchGitInfo();
   }, [projectPath, fetchGitInfo]);
 
-  const handleDiscard = useCallback(async (filePath: string, isUntracked: boolean) => {
-    await window.clubhouse.git.discard(projectPath, filePath, isUntracked);
-    fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
-
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
     const result = await window.clubhouse.git.commit(projectPath, commitMessage);
