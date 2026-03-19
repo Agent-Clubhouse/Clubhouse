@@ -154,11 +154,14 @@ export function stripClubhouseMcp(config: Record<string, unknown>): Record<strin
 }
 
 /**
- * Resolve the bridge script path. The script lives alongside the compiled
- * main process code in production, or in the source tree during development.
+ * Resolve the bridge script path. The script is copied to the webpack output
+ * during build. In production it is unpacked from the asar archive so that
+ * it can be spawned as a child process by `node`.
  */
 function getBridgeScriptPath(): string {
-  // In production, __dirname is inside the asar archive or compiled output
-  // The bridge script is copied to the same directory during build
-  return path.join(__dirname, 'bridge', 'clubhouse-mcp-bridge.js');
+  // __dirname points inside the asar in production (e.g. .../app.asar/.webpack/main).
+  // The bridge script is asar-unpacked so it can be executed by node as a child process.
+  // Replace 'app.asar' with 'app.asar.unpacked' to get the real filesystem path.
+  const asarPath = path.join(__dirname, 'bridge', 'clubhouse-mcp-bridge.js');
+  return asarPath.replace('app.asar', 'app.asar.unpacked');
 }

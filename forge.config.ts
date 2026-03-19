@@ -61,7 +61,7 @@ const config: ForgeConfig = {
         }
       : {}),
     asar: {
-      unpack: '{**/node_modules/node-pty/**/*.node,**/node_modules/node-pty/**/spawn-helper}',
+      unpack: '{**/node_modules/node-pty/**/*.node,**/node_modules/node-pty/**/spawn-helper,**/.webpack/main/bridge/clubhouse-mcp-bridge.js}',
     },
     afterCopy: [
       (buildPath: string, _electronVersion: string, _platform: string, _arch: string, callback: (err?: Error) => void) => {
