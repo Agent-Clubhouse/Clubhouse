@@ -116,20 +116,24 @@ export function App() {
             }
             await handleProjectSwitch(prevId, activeProjectId, '__remote__');
           } else {
+            // Load persisted per-project plugin config. The storageRead may
+            // fail (first launch, corrupt data, IPC error) — that's fine, we
+            // fall back to an empty list. But loadProjectPluginConfig MUST run
+            // unconditionally so built-in project plugins are always enabled.
+            let saved: string[] | undefined;
             try {
-              const saved = await window.clubhouse.plugin.storageRead({
+              saved = await window.clubhouse.plugin.storageRead({
                 pluginId: '_system',
                 scope: 'global',
                 key: `project-enabled-${activeProjectId}`,
               }) as string[] | undefined;
-              // Merge built-in project-scoped plugins so they're always enabled
-              let expFlags = {};
-              try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
-              const builtinIds = getBuiltinProjectPluginIds(expFlags);
-              const base = Array.isArray(saved) ? saved : [];
-              const merged = [...new Set([...base, ...builtinIds])];
-              usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
-            } catch { /* no saved config */ }
+            } catch { /* no saved config — will use builtin defaults */ }
+            let expFlags = {};
+            try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+            const builtinIds = getBuiltinProjectPluginIds(expFlags);
+            const base = Array.isArray(saved) ? saved : [];
+            const merged = [...new Set([...base, ...builtinIds])];
+            usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
             await handleProjectSwitch(prevId, activeProjectId, project!.path);
           }
         })().catch((err) => {

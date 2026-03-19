@@ -582,6 +582,32 @@ describe('App.tsx – project switch handling', () => {
     ts.forEachChild(appFn.body!, visit);
     expect(found, 'Project plugin config loading should have error handling').toBe(true);
   });
+
+  it('loadProjectPluginConfig must not be inside the storageRead try-catch', () => {
+    // loadProjectPluginConfig MUST run unconditionally so built-in project
+    // plugins are always enabled. Previously it was inside a try-catch that
+    // also wrapped storageRead — if storageRead threw, loadProjectPluginConfig
+    // was skipped and no project plugins were activated.
+    let loadInsideTryCatch = false;
+    function visit(node: ts.Node) {
+      if (loadInsideTryCatch) return;
+      // Look for try statements whose block contains BOTH storageRead and loadProjectPluginConfig
+      if (ts.isTryStatement(node) && node.tryBlock) {
+        const hasStorageRead = containsIdentifier(node.tryBlock, 'storageRead');
+        const hasLoadConfig = containsIdentifier(node.tryBlock, 'loadProjectPluginConfig');
+        if (hasStorageRead && hasLoadConfig) {
+          loadInsideTryCatch = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    ts.forEachChild(appFn.body!, visit);
+    expect(
+      loadInsideTryCatch,
+      'loadProjectPluginConfig must NOT be in the same try block as storageRead — a storageRead failure would skip plugin activation',
+    ).toBe(false);
+  });
 });
 
 // ─── 7. Import Verification ───────────────────────────────────────────────
