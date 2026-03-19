@@ -13,6 +13,15 @@ import { registerTheme, unregisterTheme } from '../themes';
 
 const activeContexts = new Map<string, PluginContext>();
 
+// ── Plugin system ready gate ─────────────────────────────────────────
+// Resolves when initializePluginSystem() completes (including safe mode).
+// Consumers (e.g. project switch in App.tsx) should await this before
+// attempting to activate project-scoped plugins.
+let _pluginSystemReadyResolve: () => void;
+export let pluginSystemReady: Promise<void> = new Promise<void>((resolve) => {
+  _pluginSystemReadyResolve = resolve;
+});
+
 // ── Pack plugin helpers ───────────────────────────────────────────────
 
 /** Build a namespaced theme ID for a plugin-contributed theme. */
@@ -65,6 +74,7 @@ export async function initializePluginSystem(): Promise<void> {
     rendererLog('core:plugins', 'warn', 'Safe mode active — no plugins will be loaded', {
       meta: { attempt: marker.attempt, lastEnabledPlugins: marker.lastEnabledPlugins },
     });
+    _pluginSystemReadyResolve();
     return;
   }
 
@@ -174,6 +184,8 @@ export async function initializePluginSystem(): Promise<void> {
   rendererLog('core:plugins', 'info', 'Plugin system initialized', {
     meta: { pluginCount, activeCount, appEnabled: state.appEnabled },
   });
+
+  _pluginSystemReadyResolve();
 }
 
 export async function activatePlugin(
@@ -708,7 +720,108 @@ export async function discoverNewPlugins(): Promise<string[]> {
   return newPluginIds;
 }
 
+export interface RefreshResult {
+  /** Plugin IDs that were newly discovered. */
+  discovered: string[];
+  /** Plugin IDs that were re-registered with an updated manifest. */
+  refreshed: string[];
+  /** Plugin IDs that were activated (were enabled but not active). */
+  activated: string[];
+  /** Plugin IDs whose API version is no longer supported. */
+  incompatible: string[];
+}
+
+/**
+ * Refresh ALL community plugins from disk — not just new ones.
+ *
+ * Re-discovers every community plugin, updates manifests for already-
+ * registered plugins, and activates any that are in the enabled list
+ * but not currently active (e.g. after an app update or failed init).
+ *
+ * Plugins whose API version is no longer supported are flagged as
+ * incompatible with an explicit error message rather than silently
+ * dropped.
+ */
+export async function refreshCommunityPlugins(): Promise<RefreshResult> {
+  const store = usePluginStore.getState();
+  const result: RefreshResult = { discovered: [], refreshed: [], activated: [], incompatible: [] };
+
+  if (!store.externalPluginsEnabled) return result;
+
+  const communityPlugins = await window.clubhouse.plugin.discoverCommunity();
+
+  for (const { manifest: rawManifest, pluginPath, fromMarketplace } of communityPlugins) {
+    const id = (rawManifest as Record<string, unknown>)?.id as string | undefined;
+    if (!id) continue;
+
+    const source = fromMarketplace ? 'marketplace' as const : 'community' as const;
+    const validation = validateManifest(rawManifest);
+    const existing = store.plugins[id];
+
+    if (validation.valid && validation.manifest) {
+      // Preserve activated status for plugins that are already running
+      const isActive = existing?.status === 'activated';
+      store.registerPlugin(validation.manifest, source, pluginPath, isActive ? 'activated' : 'registered');
+      window.clubhouse.plugin.refreshManifestFromDisk(validation.manifest.id);
+
+      if (existing) {
+        result.refreshed.push(id);
+      } else {
+        result.discovered.push(id);
+        rendererLog('core:plugins', 'info', `Discovered new plugin: ${id}`, {
+          meta: { pluginPath, source },
+        });
+      }
+
+      // Activate if the plugin is in app-enabled but not yet active
+      const appEnabled = usePluginStore.getState().appEnabled;
+      if (appEnabled.includes(id) && !isActive) {
+        const scope = validation.manifest.scope;
+        if (scope === 'app' || scope === 'dual') {
+          await activatePlugin(id);
+          if (usePluginStore.getState().plugins[id]?.status === 'activated') {
+            result.activated.push(id);
+          }
+        }
+      }
+    } else {
+      // Plugin is incompatible — register with error details
+      const partialManifest: PluginManifest = {
+        id,
+        name: (rawManifest as Record<string, unknown>)?.name as string || 'Unknown Plugin',
+        version: (rawManifest as Record<string, unknown>)?.version as string || '0.0.0',
+        engine: { api: 0 },
+        scope: 'project',
+      };
+      store.registerPlugin(partialManifest, source, pluginPath, 'incompatible', validation.errors.join('; '));
+      result.incompatible.push(id);
+
+      if (existing && existing.status !== 'incompatible') {
+        // Plugin was previously working — this is a newly broken plugin
+        rendererLog('core:plugins', 'warn', `Plugin "${id}" is now incompatible`, {
+          meta: { pluginId: id, pluginPath, errors: validation.errors },
+        });
+      }
+    }
+  }
+
+  if (result.discovered.length || result.activated.length || result.incompatible.length) {
+    rendererLog('core:plugins', 'info', 'Community plugins refreshed', {
+      meta: { ...result },
+    });
+  }
+
+  return result;
+}
+
 /** @internal — only for tests */
 export function _resetActiveContexts(): void {
   activeContexts.clear();
+}
+
+/** @internal — only for tests */
+export function _resetPluginSystemReady(): void {
+  pluginSystemReady = new Promise<void>((resolve) => {
+    _pluginSystemReadyResolve = resolve;
+  });
 }
