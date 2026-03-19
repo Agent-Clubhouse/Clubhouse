@@ -24,6 +24,7 @@ export function useTerminalFit(
   fitAddonRef: RefObject<FitAddon | null>,
   containerRef: RefObject<HTMLDivElement | null>,
   focused?: boolean,
+  onResize?: (sessionId: string, cols: number, rows: number) => void,
 ): void {
   // Reactive resize: ResizeObserver + visibility + window focus
   useEffect(() => {
@@ -40,6 +41,8 @@ export function useTerminalFit(
      * against measuring stale layout after wake-from-sleep or when the
      * container is hidden (e.g. behind a zoom overlay).
      */
+    const doResize = onResize ?? window.clubhouse.pty.resize;
+
     const fitAndResize = (sendResize: boolean) => {
       requestAnimationFrame(() => {
         if (!fitAddonRef.current || !terminalRef.current) return;
@@ -47,7 +50,7 @@ export function useTerminalFit(
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
         fitAddonRef.current.fit();
         if (sendResize) {
-          window.clubhouse.pty.resize(
+          doResize(
             sessionId,
             terminalRef.current.cols,
             terminalRef.current.rows,
@@ -82,7 +85,7 @@ export function useTerminalFit(
       window.removeEventListener('focus', onWindowFocus);
       if (wakeTimer) clearTimeout(wakeTimer);
     };
-  }, [sessionId]);
+  }, [sessionId, onResize]);
 
   // Pane-level focus: re-fit, resize PTY, and focus the xterm instance.
   // This fires when the user clicks a hub pane or switches to the agents tab,
@@ -90,15 +93,16 @@ export function useTerminalFit(
   useEffect(() => {
     if (!focused) return;
     if (terminalRef.current) terminalRef.current.focus();
+    const doResize = onResize ?? window.clubhouse.pty.resize;
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
         fitAddonRef.current.fit();
-        window.clubhouse.pty.resize(
+        doResize(
           sessionId,
           terminalRef.current.cols,
           terminalRef.current.rows,
         );
       }
     });
-  }, [focused, sessionId]);
+  }, [focused, sessionId, onResize]);
 }

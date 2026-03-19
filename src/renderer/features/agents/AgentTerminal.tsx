@@ -9,6 +9,7 @@ import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectSt
 import { attachClipboardHandlers } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit } from '../terminal/useTerminalFit';
+import { ptyResize } from '../../services/project-proxy';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
@@ -29,7 +30,6 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const isRemote = isRemoteAgentId(agentId);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agentId) : null, [agentId, isRemote]);
   const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
-  const sendPtyResize = useAnnexClientStore((s) => s.sendPtyResize);
   const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
@@ -45,7 +45,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
         fitAddonRef.current.fit();
-        window.clubhouse.pty.resize(agentId, terminalRef.current.cols, terminalRef.current.rows);
+        ptyResize(agentId, terminalRef.current.cols, terminalRef.current.rows);
       }
     });
   }, [agentId, clearResuming]);
@@ -72,11 +72,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     // Initial fit, replay buffered output, and focus
     requestAnimationFrame(() => {
       fitAddon.fit();
-      if (!isRemote) {
-        window.clubhouse.pty.resize(agentId, term.cols, term.rows);
-      } else if (remoteParts) {
-        sendPtyResize(remoteParts.satelliteId, remoteParts.agentId, term.cols, term.rows);
-      }
+      ptyResize(agentId, term.cols, term.rows);
       term.focus();
 
       if (!isRemote) {
@@ -157,10 +153,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, isRemote, remoteParts, sendPtyInput, sendPtyResize, requestPtyBuffer]);
+  }, [agentId, isRemote, remoteParts, sendPtyInput, requestPtyBuffer]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
-  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused);
+  // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
+  useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize);
 
   // Resume settle detection: watch PTY data and clear resuming after silence
   useEffect(() => {
