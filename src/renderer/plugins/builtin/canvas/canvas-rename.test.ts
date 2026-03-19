@@ -10,6 +10,7 @@ const TYPE_LABELS: Record<string, string> = {
   file: 'Files',
   browser: 'Browser',
   'git-diff': 'Git Diff',
+  'legacy-git-diff': 'Git Diff (Legacy)',
   anchor: 'Anchor',
   plugin: 'Plugin',
 };
@@ -29,7 +30,7 @@ function buildSearchableText(view: CanvasView): string {
   if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
   if (view.type === 'file' && view.filePath) parts.push(view.filePath);
   if (view.type === 'browser') parts.push(view.url);
-  if (view.type === 'git-diff' && view.filePath) parts.push(view.filePath);
+  if ((view.type === 'git-diff' || view.type === 'legacy-git-diff') && view.filePath) parts.push(view.filePath);
   if (view.type === 'anchor') parts.push(view.label);
   if (view.type === 'plugin') parts.push(view.pluginWidgetType);
 

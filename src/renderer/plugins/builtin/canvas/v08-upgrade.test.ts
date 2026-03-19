@@ -6,6 +6,7 @@ import { validateManifest } from '../../manifest-validator';
 import { manifest as hubManifest } from '../hub/manifest';
 import { manifest as terminalManifest } from '../terminal/manifest';
 import { manifest as filesManifest } from '../files/manifest';
+import { manifest as gitManifest } from '../git/manifest';
 import { manifest as canvasManifest } from './manifest';
 import { manifest as sessionsManifest } from '../sessions/manifest';
 import {
@@ -14,7 +15,7 @@ import {
   createViewCounter,
   queryViews,
 } from './canvas-operations';
-import type { CanvasView, FileCanvasView } from './canvas-types';
+import type { CanvasView, FileCanvasView, GitDiffCanvasView } from './canvas-types';
 
 describe('v0.8 plugin API upgrade', () => {
   // ── All manifests validate at v0.8 ──────────────────────────────────
@@ -24,6 +25,7 @@ describe('v0.8 plugin API upgrade', () => {
       { name: 'hub', manifest: hubManifest },
       { name: 'terminal', manifest: terminalManifest },
       { name: 'files', manifest: filesManifest },
+      { name: 'git', manifest: gitManifest },
       { name: 'canvas', manifest: canvasManifest },
       { name: 'sessions', manifest: sessionsManifest },
     ];
@@ -86,12 +88,24 @@ describe('v0.8 plugin API upgrade', () => {
       expect(widgets![0].defaultSize).toEqual({ width: 560, height: 480 });
     });
 
+    it('git declares a "git-status" canvas widget', () => {
+      const widgets = gitManifest.contributes?.canvasWidgets;
+      expect(widgets).toHaveLength(1);
+      expect(widgets![0].id).toBe('git-status');
+      expect(widgets![0].label).toBe('Git Status');
+      expect(widgets![0].metadataKeys).toEqual(['projectId', 'worktreePath']);
+    });
+
     it('terminal has canvas permission', () => {
       expect(terminalManifest.permissions).toContain('canvas');
     });
 
     it('files has canvas permission', () => {
       expect(filesManifest.permissions).toContain('canvas');
+    });
+
+    it('git has canvas permission', () => {
+      expect(gitManifest.permissions).toContain('canvas');
     });
   });
 
@@ -124,6 +138,17 @@ describe('v0.8 plugin API upgrade', () => {
     it('createView("legacy-terminal") returns legacy-terminal type', () => {
       const view = createView('legacy-terminal', { x: 0, y: 0 }, 0, counter);
       expect(view.type).toBe('legacy-terminal');
+    });
+
+    it('createView("git-diff") returns legacy-git-diff type', () => {
+      const view = createView('git-diff', { x: 0, y: 0 }, 0, counter);
+      expect(view.type).toBe('legacy-git-diff');
+      expect(view.title).toBe('Git Diff (Legacy)');
+    });
+
+    it('createView("legacy-git-diff") returns legacy-git-diff type', () => {
+      const view = createView('legacy-git-diff', { x: 0, y: 0 }, 0, counter);
+      expect(view.type).toBe('legacy-git-diff');
     });
 
     it('agent views are not affected by legacy changes', () => {
@@ -199,18 +224,20 @@ describe('v0.8 plugin API upgrade', () => {
   // ── Saved canvas migration ──────────────────────────────────────────
 
   describe('saved canvas migration', () => {
-    it('migrates file→legacy-file and terminal→legacy-terminal in view data', () => {
+    it('migrates file→legacy-file, terminal→legacy-terminal, and git-diff→legacy-git-diff in view data', () => {
       // Simulates the migration logic from canvas-store.ts loadCanvas
       const savedViews = [
         { id: 'cv_1', type: 'file', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'Files', zIndex: 0 },
         { id: 'cv_2', type: 'terminal', position: { x: 500, y: 0 }, size: { width: 480, height: 480 }, title: 'Terminal', zIndex: 1 },
         { id: 'cv_3', type: 'agent', position: { x: 1000, y: 0 }, size: { width: 480, height: 480 }, title: 'Agent', zIndex: 2 },
+        { id: 'cv_4', type: 'git-diff', position: { x: 1500, y: 0 }, size: { width: 480, height: 480 }, title: 'Git Diff', zIndex: 3 },
       ];
 
       const migratedViews = savedViews.map((v: any) => {
         let type = v.type;
         if (type === 'file') type = 'legacy-file';
         if (type === 'terminal') type = 'legacy-terminal';
+        if (type === 'git-diff') type = 'legacy-git-diff';
         return {
           ...v,
           type,
@@ -222,6 +249,7 @@ describe('v0.8 plugin API upgrade', () => {
       expect(migratedViews[0].type).toBe('legacy-file');
       expect(migratedViews[1].type).toBe('legacy-terminal');
       expect(migratedViews[2].type).toBe('agent'); // unchanged
+      expect(migratedViews[3].type).toBe('legacy-git-diff');
     });
   });
 });

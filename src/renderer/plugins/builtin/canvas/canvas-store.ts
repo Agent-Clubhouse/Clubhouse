@@ -163,6 +163,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               let type = v.type;
               if (type === 'file') type = 'legacy-file';
               if (type === 'terminal') type = 'legacy-terminal';
+              if (type === 'git-diff') type = 'legacy-git-diff';
               return {
                 ...v,
                 type,

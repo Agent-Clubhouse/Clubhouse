@@ -76,23 +76,23 @@ describe('Canvas title bar — buildProjectContext', () => {
     expect(buildProjectContext(view, projects)).toBeNull();
   });
 
-  it('returns project::worktree for git-diff view with worktreePath', () => {
+  it('returns project::worktree for legacy-git-diff view with worktreePath', () => {
     const view = makeView({
-      type: 'git-diff',
+      type: 'legacy-git-diff',
       projectId: 'p1',
       worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir',
     });
     expect(buildProjectContext(view, projects)).toBe('Clubhouse::curious-tapir');
   });
 
-  it('returns just project name for git-diff view without worktreePath', () => {
-    const view = makeView({ type: 'git-diff', projectId: 'p1' });
+  it('returns just project name for legacy-git-diff view without worktreePath', () => {
+    const view = makeView({ type: 'legacy-git-diff', projectId: 'p1' });
     expect(buildProjectContext(view, projects)).toBe('Clubhouse');
   });
 
   it('handles worktreePath with trailing slash', () => {
     const view = makeView({
-      type: 'git-diff',
+      type: 'legacy-git-diff',
       projectId: 'p1',
       worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir/',
     });

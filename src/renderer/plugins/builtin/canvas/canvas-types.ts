@@ -8,7 +8,7 @@ import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
  * plugin:terminal:shell) instead. Legacy types remain for backward compatibility
  * with saved canvases.
  */
-export type CanvasViewType = 'agent' | 'file' | 'legacy-file' | 'browser' | 'git-diff' | 'terminal' | 'legacy-terminal' | 'anchor' | 'plugin';
+export type CanvasViewType = 'agent' | 'file' | 'legacy-file' | 'browser' | 'git-diff' | 'legacy-git-diff' | 'terminal' | 'legacy-terminal' | 'anchor' | 'plugin';
 
 export interface Position {
   x: number;
@@ -59,7 +59,7 @@ export interface BrowserCanvasView extends CanvasViewBase {
 }
 
 export interface GitDiffCanvasView extends CanvasViewBase {
-  type: 'git-diff';
+  type: 'git-diff' | 'legacy-git-diff';
   /** Project ID whose repo to diff. */
   projectId?: string;
   /** Worktree directory path (when diffing an agent worktree instead of the main repo). */

@@ -65,9 +65,9 @@ describe('canvas plugin widget support', () => {
       expect(view.metadata).toEqual({});
     });
 
-    it('creates git-diff view with metadata', () => {
+    it('creates legacy-git-diff view with metadata', () => {
       const view = createView('git-diff', { x: 0, y: 0 }, 0, counter);
-      expect(view.displayName).toBe('Git Diff');
+      expect(view.displayName).toBe('Git Diff (Legacy)');
       expect(view.metadata).toEqual({});
     });
 

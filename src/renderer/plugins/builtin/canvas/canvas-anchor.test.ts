@@ -16,6 +16,7 @@ const TYPE_LABELS: Record<string, string> = {
   file: 'Files',
   browser: 'Browser',
   'git-diff': 'Git Diff',
+  'legacy-git-diff': 'Git Diff (Legacy)',
   anchor: 'Anchor',
   plugin: 'Plugin',
 };

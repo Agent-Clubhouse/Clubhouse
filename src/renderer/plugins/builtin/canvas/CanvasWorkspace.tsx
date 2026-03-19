@@ -626,7 +626,7 @@ export function CanvasWorkspace({
               {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {(zoomedView.type === 'file' || zoomedView.type === 'legacy-file') && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {(zoomedView.type === 'git-diff' || zoomedView.type === 'legacy-git-diff') && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {(zoomedView.type === 'terminal' || zoomedView.type === 'legacy-terminal') && <TerminalCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
             </div>
           </div>

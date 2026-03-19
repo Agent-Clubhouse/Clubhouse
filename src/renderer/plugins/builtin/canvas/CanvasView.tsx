@@ -27,7 +27,7 @@ export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): 
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
 
-  const worktreePath = (view.type === 'git-diff') ? (view as GitDiffCanvasViewType).worktreePath : undefined;
+  const worktreePath = (view.type === 'git-diff' || view.type === 'legacy-git-diff') ? (view as GitDiffCanvasViewType).worktreePath : undefined;
   if (worktreePath) {
     // Extract short worktree name from path (last non-empty segment)
     const segments = worktreePath.replace(/\/+$/, '').split('/');
@@ -337,6 +337,7 @@ export function CanvasViewComponent({
       case 'browser':
         return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
       case 'git-diff':
+      case 'legacy-git-diff':
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'terminal':
       case 'legacy-terminal':

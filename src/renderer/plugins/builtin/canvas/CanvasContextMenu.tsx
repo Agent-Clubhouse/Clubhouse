@@ -31,7 +31,6 @@ const ANCHOR_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
 const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
   { type: 'agent', label: 'Add Agent View', icon: AGENT_ICON },
   { type: 'browser', label: 'Add Browser View', icon: BROWSER_VIEW_ICON },
-  { type: 'git-diff', label: 'Add Git Diff View', icon: GIT_DIFF_ICON },
   { type: 'anchor', label: 'Add Anchor', icon: ANCHOR_ICON },
 ];
 
@@ -40,12 +39,14 @@ const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }
 const PROMOTED_PLUGIN_TYPES = new Set([
   'plugin:files:file-viewer',
   'plugin:terminal:shell',
+  'plugin:git:git-status',
 ]);
 
 /** Deprecated built-in view types that use the legacy rendering path. */
 const LEGACY_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }> = [
   { type: 'legacy-file', label: 'Add File View (Legacy)', icon: '#' },
   { type: 'legacy-terminal', label: 'Add Terminal View (Legacy)', icon: '$' },
+  { type: 'legacy-git-diff', label: 'Add Git Diff View (Legacy)', icon: '±' },
 ];
 
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {

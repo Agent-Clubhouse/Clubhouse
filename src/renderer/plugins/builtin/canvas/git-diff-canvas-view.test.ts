@@ -6,13 +6,13 @@ import { statusInfo, GIT_POLL_INTERVAL_MS } from './GitDiffCanvasView';
 
 // ── createView('git-diff') ──────────────────────────────────────────
 
-describe('createView — git-diff type', () => {
-  it('creates a git-diff view with correct defaults', () => {
+describe('createView — git-diff type (now legacy)', () => {
+  it('creates a legacy-git-diff view with correct defaults', () => {
     const counter = createViewCounter(0);
     const view = createView('git-diff', { x: 100, y: 200 }, 5, counter);
 
-    expect(view.type).toBe('git-diff');
-    expect(view.title).toBe('Git Diff');
+    expect(view.type).toBe('legacy-git-diff');
+    expect(view.title).toBe('Git Diff (Legacy)');
     expect(view.zIndex).toBe(5);
     // Position gets snapped to grid (20px)
     expect(view.position.x).toBe(100);

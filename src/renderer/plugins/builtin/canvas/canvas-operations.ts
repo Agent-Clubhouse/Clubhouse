@@ -110,9 +110,10 @@ export function createView(
       const displayName = deduplicateDisplayName('Browser', existingDisplayNames);
       return { ...base, type: 'browser', title: 'Browser', displayName, metadata: {}, url: 'https://' } satisfies BrowserCanvasView;
     }
-    case 'git-diff': {
-      const displayName = deduplicateDisplayName('Git Diff', existingDisplayNames);
-      return { ...base, type: 'git-diff', title: 'Git Diff', displayName, metadata: {} } satisfies GitDiffCanvasView;
+    case 'git-diff':
+    case 'legacy-git-diff': {
+      const displayName = deduplicateDisplayName('Git Diff (Legacy)', existingDisplayNames);
+      return { ...base, type: 'legacy-git-diff', title: 'Git Diff (Legacy)', displayName, metadata: {} } satisfies GitDiffCanvasView;
     }
     case 'terminal':
     case 'legacy-terminal': {

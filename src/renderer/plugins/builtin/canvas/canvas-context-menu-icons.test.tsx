@@ -43,7 +43,7 @@ describe('CanvasContextMenu plugin widget icons', () => {
   it('renders built-in item SVG icons as HTML elements, not plain text', () => {
     render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
 
-    const builtinTypes = ['agent', 'browser', 'git-diff', 'anchor'];
+    const builtinTypes = ['agent', 'browser', 'anchor'];
     for (const type of builtinTypes) {
       const button = screen.getByTestId(`canvas-context-menu-${type}`);
       const svgElement = button.querySelector('svg');
