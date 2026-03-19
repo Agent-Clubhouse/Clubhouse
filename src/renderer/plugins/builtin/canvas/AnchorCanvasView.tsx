@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React from 'react';
 import type { AnchorCanvasView as AnchorCanvasViewType, CanvasView } from './canvas-types';
 
 interface AnchorCanvasViewProps {
@@ -6,38 +6,7 @@ interface AnchorCanvasViewProps {
   onUpdate: (updates: Partial<CanvasView>) => void;
 }
 
-export function AnchorCanvasView({ view, onUpdate }: AnchorCanvasViewProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState(view.label);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [isEditing]);
-
-  const handleCommit = useCallback(() => {
-    const trimmed = editValue.trim();
-    if (trimmed && trimmed !== view.label) {
-      onUpdate({ label: trimmed, displayName: trimmed, title: trimmed } as Partial<AnchorCanvasViewType>);
-    } else {
-      setEditValue(view.label);
-    }
-    setIsEditing(false);
-  }, [editValue, view.label, onUpdate]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleCommit();
-    } else if (e.key === 'Escape') {
-      setEditValue(view.label);
-      setIsEditing(false);
-    }
-  }, [handleCommit, view.label]);
-
+export function AnchorCanvasView({ view }: AnchorCanvasViewProps) {
   return (
     <div
       className="flex flex-col items-center justify-center h-full gap-2 px-4 select-none"
@@ -60,28 +29,13 @@ export function AnchorCanvasView({ view, onUpdate }: AnchorCanvasViewProps) {
         <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
       </svg>
 
-      {/* Editable label */}
-      {isEditing ? (
-        <input
-          ref={inputRef}
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={handleCommit}
-          onKeyDown={handleKeyDown}
-          className="text-center text-sm font-medium text-ctp-text bg-surface-0 border border-ctp-blue/40 rounded px-2 py-0.5 outline-none w-full max-w-[200px]"
-          data-testid="anchor-label-input"
-        />
-      ) : (
-        <button
-          className="text-center text-sm font-medium text-ctp-subtext1 hover:text-ctp-text transition-colors cursor-text px-2 py-0.5 rounded hover:bg-surface-0 truncate max-w-full"
-          onClick={() => { setEditValue(view.label); setIsEditing(true); }}
-          title="Click to rename anchor"
-          data-testid="anchor-label-display"
-        >
-          {view.label}
-        </button>
-      )}
+      {/* Label (rename via title bar edit button) */}
+      <span
+        className="text-center text-sm font-medium text-ctp-subtext1 px-2 py-0.5 truncate max-w-full"
+        data-testid="anchor-label-display"
+      >
+        {view.label}
+      </span>
     </div>
   );
 }
