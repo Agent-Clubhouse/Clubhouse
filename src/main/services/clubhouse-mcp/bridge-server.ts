@@ -54,13 +54,13 @@ function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<
   });
 }
 
-/** Parse route: /mcp/:agentId/:action */
+/** Parse route: /mcp/:agentId or /mcp/:agentId/:action */
 function parseRoute(url: string): { agentId: string; action: string } | null {
   if (!url.startsWith('/mcp/')) return null;
   const rest = url.slice('/mcp/'.length);
   const parts = rest.split('/');
-  if (parts.length < 2) return null;
-  return { agentId: parts[0], action: parts.slice(1).join('/') };
+  if (parts.length < 1 || !parts[0]) return null;
+  return { agentId: parts[0], action: parts.length > 1 ? parts.slice(1).join('/') : '' };
 }
 
 function validateNonce(agentId: string, req: http.IncomingMessage): boolean {
@@ -227,7 +227,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   try {
     rpcRequest = JSON.parse(body);
   } catch {
-    jsonResponse(res, 400, jsonRpcError(null, -32700, 'Parse error'));
+    jsonResponse(res, 200, jsonRpcError(null, -32700, 'Parse error'));
     return;
   }
 
