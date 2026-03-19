@@ -46,14 +46,13 @@ vi.mock('./annex-event-bus', () => ({
 }));
 
 // Mock pty-headless-terminal
-const mockHeadlessTerminal = {
+vi.mock('./pty-headless-terminal', () => ({
   feedData: vi.fn(),
   resize: vi.fn(),
   serialize: vi.fn().mockReturnValue(''),
   dispose: vi.fn(),
   disposeAll: vi.fn(),
-};
-vi.mock('./pty-headless-terminal', () => mockHeadlessTerminal);
+}));
 
 // Mock fs for validateSpawnCwd — default to making all paths look like valid directories
 const mockRealpathSync = vi.fn((p: string) => p);
@@ -74,6 +73,7 @@ vi.mock('fs', async (importOriginal) => {
 import { getBuffer, getSerializedBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import * as headlessTerminal from './pty-headless-terminal';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -102,14 +102,14 @@ describe('pty-manager', () => {
 
   describe('getSerializedBuffer', () => {
     it('returns serialized headless terminal content when available', () => {
-      mockHeadlessTerminal.serialize.mockReturnValue('serialized output');
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('serialized output');
       spawnAndActivate('agent_ser');
       expect(getSerializedBuffer('agent_ser')).toBe('serialized output');
-      mockHeadlessTerminal.serialize.mockReturnValue('');
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
     });
 
     it('falls back to raw buffer when headless terminal returns empty', () => {
-      mockHeadlessTerminal.serialize.mockReturnValue('');
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
       spawnAndActivate('agent_fallback');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('raw data');
@@ -117,7 +117,7 @@ describe('pty-manager', () => {
     });
 
     it('returns empty string for unknown agent', () => {
-      mockHeadlessTerminal.serialize.mockReturnValue('');
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
       expect(getSerializedBuffer('nonexistent')).toBe('');
     });
   });
@@ -127,26 +127,26 @@ describe('pty-manager', () => {
       spawnAndActivate('agent_hl');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
-      expect(mockHeadlessTerminal.feedData).toHaveBeenCalledWith('agent_hl', 'hello');
+      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello');
     });
 
     it('resizes headless terminal on pty resize', () => {
       spawnAndActivate('agent_hlr');
       resize('agent_hlr', 100, 50);
-      expect(mockHeadlessTerminal.resize).toHaveBeenCalledWith('agent_hlr', 100, 50);
+      expect(vi.mocked(headlessTerminal).resize).toHaveBeenCalledWith('agent_hlr', 100, 50);
     });
 
     it('disposes headless terminal on PTY exit', () => {
       spawnAndActivate('agent_hle');
       const onExitCb = mockProcess.onExit.mock.calls[0][0];
       onExitCb({ exitCode: 0 });
-      expect(mockHeadlessTerminal.dispose).toHaveBeenCalledWith('agent_hle');
+      expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hle');
     });
 
     it('disposes headless terminal on kill', () => {
       spawnAndActivate('agent_hlk');
       kill('agent_hlk');
-      expect(mockHeadlessTerminal.dispose).toHaveBeenCalledWith('agent_hlk');
+      expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hlk');
     });
   });
 

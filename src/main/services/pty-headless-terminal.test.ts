@@ -1,32 +1,42 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const mockSerialize = vi.fn().mockReturnValue('');
-const mockDispose = vi.fn();
+const mockTerminalDispose = vi.fn();
+const mockSerializerDispose = vi.fn();
 const mockWrite = vi.fn();
 const mockResize = vi.fn();
 const mockLoadAddon = vi.fn();
 
-vi.mock('@xterm/headless', () => ({
-  Terminal: vi.fn().mockImplementation(() => ({
-    write: mockWrite,
-    resize: mockResize,
-    loadAddon: mockLoadAddon,
-    dispose: mockDispose,
-  })),
-}));
+vi.mock('@xterm/headless', () => {
+  return {
+    Terminal: class MockTerminal {
+      write = mockWrite;
+      resize = mockResize;
+      loadAddon = mockLoadAddon;
+      dispose = mockTerminalDispose;
+    },
+  };
+});
 
-vi.mock('@xterm/addon-serialize', () => ({
-  SerializeAddon: vi.fn().mockImplementation(() => ({
-    serialize: mockSerialize,
-    dispose: mockDispose,
-  })),
-}));
+vi.mock('@xterm/addon-serialize', () => {
+  return {
+    SerializeAddon: class MockSerializeAddon {
+      serialize = mockSerialize;
+      dispose = mockSerializerDispose;
+    },
+  };
+});
 
 import { feedData, resize, serialize, dispose, disposeAll } from './pty-headless-terminal';
 
 describe('pty-headless-terminal', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockSerialize.mockClear().mockReturnValue('');
+    mockTerminalDispose.mockClear();
+    mockSerializerDispose.mockClear();
+    mockWrite.mockClear();
+    mockResize.mockClear();
+    mockLoadAddon.mockClear();
     // Clean up any sessions from previous tests
     disposeAll();
   });
@@ -34,12 +44,15 @@ describe('pty-headless-terminal', () => {
   describe('feedData', () => {
     it('creates a headless terminal on first data feed', () => {
       feedData('agent-1', 'hello');
+      expect(mockLoadAddon).toHaveBeenCalled();
       expect(mockWrite).toHaveBeenCalledWith('hello');
     });
 
     it('reuses existing terminal on subsequent feeds', () => {
       feedData('agent-1', 'a');
       feedData('agent-1', 'b');
+      // loadAddon called only once (on creation)
+      expect(mockLoadAddon).toHaveBeenCalledTimes(1);
       expect(mockWrite).toHaveBeenCalledTimes(2);
     });
   });
@@ -71,17 +84,18 @@ describe('pty-headless-terminal', () => {
   });
 
   describe('dispose', () => {
-    it('disposes terminal and removes session', () => {
+    it('disposes terminal and serializer and removes session', () => {
       feedData('agent-d', 'data');
       dispose('agent-d');
-      expect(mockDispose).toHaveBeenCalled();
+      expect(mockTerminalDispose).toHaveBeenCalled();
+      expect(mockSerializerDispose).toHaveBeenCalled();
       // After dispose, serialize should return empty
       expect(serialize('agent-d')).toBe('');
     });
 
     it('does nothing for unknown agent', () => {
       dispose('unknown');
-      expect(mockDispose).not.toHaveBeenCalled();
+      expect(mockTerminalDispose).not.toHaveBeenCalled();
     });
   });
 });
