@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { formatViewType, buildProjectContext } from './CanvasView';
 import type { CanvasView } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
@@ -165,5 +167,27 @@ describe('Canvas title bar — plugin widget type extraction', () => {
 
   it('returns empty string for trailing colon', () => {
     expect(extractPluginWidgetType('a:b:')).toBe('');
+  });
+});
+
+// ── Registry subscription for plugin views ────────────────────────
+
+describe('Canvas view — plugin widget registry subscription', () => {
+  // CanvasView must subscribe to onRegistryChange so that plugin-type
+  // views re-render when their providing plugin activates. Without this,
+  // plugin views rendered before the plugin is activated show a permanent
+  // "not available" error.
+  const source = readFileSync(join(__dirname, 'CanvasView.tsx'), 'utf-8');
+
+  it('imports onRegistryChange from canvas-widget-registry', () => {
+    expect(source).toContain('onRegistryChange');
+  });
+
+  it('subscribes to registry changes for plugin views', () => {
+    // The component should call onRegistryChange inside a useEffect,
+    // gated on view.type === "plugin" to avoid unnecessary subscriptions
+    // for non-plugin views.
+    expect(source).toMatch(/onRegistryChange\s*\(/);
+    expect(source).toContain("view.type !== 'plugin'");
   });
 });

@@ -10,7 +10,7 @@ import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { TerminalCanvasView } from './TerminalCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, onRegistryChange } from '../../canvas-widget-registry';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -119,6 +119,15 @@ export function CanvasViewComponent({
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const [anchorHovered, setAnchorHovered] = useState(false);
   const [linkDropdownOpen, setLinkDropdownOpen] = useState(false);
+
+  // Subscribe to canvas widget registry changes so plugin views re-render
+  // when their providing plugin activates (e.g. after project switch).
+  const [, setRegistryTick] = useState(0);
+  useEffect(() => {
+    if (view.type !== 'plugin') return;
+    const disposable = onRegistryChange(() => setRegistryTick((n) => n + 1));
+    return () => disposable.dispose();
+  }, [view.type]);
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
