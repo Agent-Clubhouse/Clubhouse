@@ -61,8 +61,8 @@ test('Phase 2: Dual-instance launch, enable, pair, connect', async () => {
   await satellite.window.evaluate(async () => {
     const w = window as any;
     const settings = await w.clubhouse.annex.getSettings();
-    if (!settings.enabled) {
-      await w.clubhouse.annex.saveSettings({ ...settings, enabled: true });
+    if (!settings.enableServer || !settings.enableClient) {
+      await w.clubhouse.annex.saveSettings({ ...settings, enableServer: true, enableClient: true });
     }
   });
   // Poll for server to start advertising (may take a few seconds on CI)

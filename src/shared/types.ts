@@ -447,7 +447,12 @@ export interface ExperimentalSettings {
 // --- Annex (LAN monitoring) types ---
 
 export interface AnnexSettings {
-  enabled: boolean;
+  /** @deprecated Use enableServer/enableClient instead. Kept for backward compat migration. */
+  enabled?: boolean;
+  /** Allow remote control of this machine (run annex server + mDNS advertisement) */
+  enableServer: boolean;
+  /** Connect to and control satellites (run annex client + Bonjour discovery) */
+  enableClient: boolean;
   deviceName: string;
   /** Display alias for this instance (defaults to os.hostname()) */
   alias: string;

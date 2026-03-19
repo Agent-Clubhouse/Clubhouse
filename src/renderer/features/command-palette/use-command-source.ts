@@ -449,12 +449,22 @@ export function useCommandSource(): CommandItem[] {
     // Annex actions (only when experimental flag is enabled)
     if (annexExperimentalEnabled) {
       items.push({
-        id: 'action:toggle-annex',
-        label: annexSettings.enabled ? 'Disable Annex' : 'Enable Annex',
+        id: 'action:toggle-annex-server',
+        label: annexSettings.enableServer ? 'Disable Annex Server' : 'Enable Annex Server',
         category: 'Actions',
-        keywords: ['annex', 'companion', 'ios', 'network'],
+        keywords: ['annex', 'server', 'companion', 'ios', 'network', 'remote', 'control'],
         execute: () => {
-          useAnnexStore.getState().saveSettings({ ...annexSettings, enabled: !annexSettings.enabled });
+          useAnnexStore.getState().saveSettings({ ...annexSettings, enableServer: !annexSettings.enableServer });
+        },
+      });
+
+      items.push({
+        id: 'action:toggle-annex-client',
+        label: annexSettings.enableClient ? 'Disable Annex Client' : 'Enable Annex Client',
+        category: 'Actions',
+        keywords: ['annex', 'client', 'satellite', 'connect', 'network', 'discover'],
+        execute: () => {
+          useAnnexStore.getState().saveSettings({ ...annexSettings, enableClient: !annexSettings.enableClient });
         },
       });
 
@@ -463,7 +473,7 @@ export function useCommandSource(): CommandItem[] {
         label: 'Show Annex PIN',
         category: 'Actions',
         keywords: ['annex', 'pairing', 'pin', 'companion'],
-        detail: annexSettings.enabled && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
+        detail: annexSettings.enableServer && annexStatus.pin ? `PIN: ${annexStatus.pin}` : undefined,
         execute: () => {
           const uiState = useUIStore.getState();
           if (uiState.explorerTab !== 'settings') {

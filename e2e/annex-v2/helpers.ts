@@ -81,8 +81,8 @@ export async function enableAnnexViaPreload(page: Page): Promise<void> {
 
   await page.evaluate(async () => {
     const settings = await (window as any).clubhouse.annex.getSettings();
-    if (!settings.enabled) {
-      await (window as any).clubhouse.annex.saveSettings({ ...settings, enabled: true });
+    if (!settings.enableServer || !settings.enableClient) {
+      await (window as any).clubhouse.annex.saveSettings({ ...settings, enableServer: true, enableClient: true });
     }
   });
   // Poll for server to start advertising (may take a few seconds on CI)

@@ -33,9 +33,10 @@ export function registerAnnexHandlers(): void {
     const previous = annexSettings.getSettings();
     await annexSettings.saveSettings(settings);
 
-    // Only start/stop server if experimental flag is on
+    // Only start/stop if experimental flag is on
     if (expSettings.annex) {
-      if (settings.enabled && !previous.enabled) {
+      // Server toggle (independent of client)
+      if (settings.enableServer && !previous.enableServer) {
         try {
           annexServer.start();
           appLog('core:annex', 'info', 'Annex server started via settings');
@@ -44,16 +45,16 @@ export function registerAnnexHandlers(): void {
             meta: { error: err instanceof Error ? err.message : String(err) },
           });
         }
-      } else if (!settings.enabled && previous.enabled) {
+      } else if (!settings.enableServer && previous.enableServer) {
         annexServer.stop();
         appLog('core:annex', 'info', 'Annex server stopped via settings');
       }
 
-      // Start/stop client discovery alongside the server
-      if (settings.enabled && !previous.enabled) {
+      // Client toggle (independent of server)
+      if (settings.enableClient && !previous.enableClient) {
         annexClient.startClient();
         appLog('core:annex', 'info', 'Annex client started via settings');
-      } else if (!settings.enabled && previous.enabled) {
+      } else if (!settings.enableClient && previous.enableClient) {
         annexClient.stopClient();
         appLog('core:annex', 'info', 'Annex client stopped via settings');
       }
@@ -107,7 +108,8 @@ export function registerAnnexHandlers(): void {
 
   ipcMain.handle(IPC.ANNEX.DISABLE_AND_DISCONNECT, async () => {
     annexServer.stop();
-    await annexSettings.saveSettings({ ...annexSettings.getSettings(), enabled: false });
+    annexClient.stopClient();
+    await annexSettings.saveSettings({ ...annexSettings.getSettings(), enableServer: false, enableClient: false });
     broadcastStatusChanged();
   });
 
@@ -126,7 +128,8 @@ export function registerAnnexHandlers(): void {
 
     // Reset settings to defaults (disabled)
     await annexSettings.saveSettings({
-      enabled: false,
+      enableServer: false,
+      enableClient: false,
       deviceName: annexSettings.getSettings().deviceName, // keep device name
       alias: annexSettings.getSettings().alias, // keep alias
       icon: 'computer',
@@ -140,7 +143,7 @@ export function registerAnnexHandlers(): void {
   });
 }
 
-/** Conditionally start Annex if settings say enabled AND experimental flag is on. */
+/** Conditionally start Annex server if enableServer is on AND experimental flag is on. */
 export function maybeStartAnnex(): void {
   const expSettings = experimentalSettings.getSettings();
   if (!expSettings.annex) {
@@ -148,7 +151,7 @@ export function maybeStartAnnex(): void {
   }
 
   const settings = annexSettings.getSettings();
-  if (settings.enabled) {
+  if (settings.enableServer) {
     try {
       annexServer.start();
       appLog('core:annex', 'info', 'Annex server auto-started on launch');
@@ -160,10 +163,13 @@ export function maybeStartAnnex(): void {
   }
 }
 
-/** Conditionally start the Annex Bonjour client for discovering satellites. */
+/** Conditionally start the Annex Bonjour client if enableClient is on AND experimental flag is on. */
 export function maybeStartAnnexClient(): void {
   const expSettings = experimentalSettings.getSettings();
   if (!expSettings.annex) return;
+
+  const settings = annexSettings.getSettings();
+  if (!settings.enableClient) return;
 
   try {
     annexClient.startClient();

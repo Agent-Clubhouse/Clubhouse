@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import type { AnnexSettings, AnnexStatus } from '../../shared/types';
 
 const DEFAULT_SETTINGS: AnnexSettings = {
-  enabled: false,
+  enableServer: false,
+  enableClient: false,
   deviceName: '',
   alias: '',
   icon: 'computer',

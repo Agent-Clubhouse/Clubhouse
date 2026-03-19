@@ -19,40 +19,56 @@ export function AnnexSettingsView() {
 
   // Poll status while server is enabled but not yet advertising (catches missed broadcasts)
   useEffect(() => {
-    if (!settings.enabled || status.advertising) return;
+    if (!settings.enableServer || status.advertising) return;
     const interval = setInterval(loadStatus, 2000);
     return () => clearInterval(interval);
-  }, [settings.enabled, status.advertising, loadStatus]);
+  }, [settings.enableServer, status.advertising, loadStatus]);
 
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-1">Annex Server</h2>
+        <h2 className="text-lg font-semibold text-ctp-text mb-1">Annex</h2>
         <p className="text-sm text-ctp-subtext0 mb-6">
-          Allow other Clubhouse instances and the iOS companion app to connect to this machine.
+          Control other Clubhouse instances on your network, or allow this machine to be controlled remotely.
         </p>
 
-        {/* Enable toggle */}
+        {/* Enable Server toggle */}
         <div className="flex items-center justify-between py-3 border-b border-surface-0">
           <div>
-            <div className="text-sm text-ctp-text font-medium">Enable Annex server</div>
+            <div className="text-sm text-ctp-text font-medium">Allow remote control</div>
             <div className="text-xs text-ctp-subtext0 mt-0.5">
-              Start a local network server for remote control and monitoring
+              Start a local network server so other instances can control this machine
             </div>
           </div>
-          <div data-testid="annex-toggle">
+          <div data-testid="annex-server-toggle">
             <Toggle
-              checked={settings.enabled}
-              onChange={(v) => saveSettings({ ...settings, enabled: v })}
+              checked={settings.enableServer}
+              onChange={(v) => saveSettings({ ...settings, enableServer: v })}
             />
           </div>
         </div>
 
-        {settings.enabled && (
+        {/* Enable Client toggle */}
+        <div className="flex items-center justify-between py-3 border-b border-surface-0">
+          <div>
+            <div className="text-sm text-ctp-text font-medium">Connect to satellites</div>
+            <div className="text-xs text-ctp-subtext0 mt-0.5">
+              Discover and control other Clubhouse instances on the network
+            </div>
+          </div>
+          <div data-testid="annex-client-toggle">
+            <Toggle
+              checked={settings.enableClient}
+              onChange={(v) => saveSettings({ ...settings, enableClient: v })}
+            />
+          </div>
+        </div>
+
+        {settings.enableServer && (
           <>
             {/* Status */}
             <div className="py-3 border-b border-surface-0">
-              <div className="text-sm text-ctp-text font-medium">Status</div>
+              <div className="text-sm text-ctp-text font-medium">Server Status</div>
               <div className="text-xs text-ctp-subtext0 mt-0.5">
                 {status.advertising
                   ? `Advertising on port ${status.port}`
@@ -86,8 +102,12 @@ export function AnnexSettingsView() {
                 Regenerate
               </button>
             </div>
+          </>
+        )}
 
-            {/* Device name */}
+        {/* Device name (shown when either toggle is on) */}
+        {(settings.enableServer || settings.enableClient) && (
+          <>
             <div className="py-3 border-b border-surface-0">
               <div className="text-sm text-ctp-text font-medium mb-2">Device name</div>
               <input
@@ -114,7 +134,7 @@ export function AnnexSettingsView() {
 
         {/* Purge server config */}
         <div className="mt-6 py-3 border-t border-surface-0">
-          <div className="text-sm text-ctp-text font-medium mb-1">Reset Annex Server</div>
+          <div className="text-sm text-ctp-text font-medium mb-1">Reset Annex</div>
           <div className="text-xs text-ctp-subtext0 mb-3">
             Stop the server and delete all Annex identity, certificates, and paired devices.
             You will need to re-pair all devices after this.
