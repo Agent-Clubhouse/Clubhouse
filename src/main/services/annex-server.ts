@@ -960,7 +960,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const bufferMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/buffer$/);
   if (method === 'GET' && bufferMatch) {
     const agentId = decodeURIComponent(bufferMatch[1]);
-    const buffer = ptyManager.getBuffer(agentId);
+    const buffer = ptyManager.getSerializedBuffer(agentId);
     res.writeHead(200, {
       'Content-Type': 'text/plain; charset=utf-8',
       'Content-Length': Buffer.byteLength(buffer),

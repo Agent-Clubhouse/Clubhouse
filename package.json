@@ -72,6 +72,8 @@
     "@monaco-editor/react": "^4.7.0",
     "@types/ws": "^8.18.1",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^6.0.0",
     "adm-zip": "^0.5.16",
     "bonjour-service": "^1.3.0",
