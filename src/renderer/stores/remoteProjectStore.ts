@@ -105,6 +105,9 @@ interface RemoteProjectStoreState {
   /** Update a remote agent's run state (running/sleeping). */
   updateRemoteAgentRunState: (satelliteId: string, agentId: string, status: 'running' | 'sleeping') => void;
 
+  /** Upsert a remote agent (add if new, update run state if exists). */
+  upsertRemoteAgent: (satelliteId: string, agent: Partial<Agent> & { id: string }) => void;
+
   /** Get all remote projects (flattened). */
   getAllRemoteProjects: () => RemoteProject[];
 }
@@ -314,6 +317,45 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteAgents: {
           ...state.remoteAgents,
           [nsId]: { ...agent, status },
+        },
+      };
+    });
+  },
+
+  upsertRemoteAgent: (satelliteId, agent) => {
+    const nsId = namespacedAgentId(satelliteId, agent.id);
+    set((state) => {
+      const existing = state.remoteAgents[nsId];
+      if (existing) {
+        // Update existing agent's run state
+        return {
+          remoteAgents: {
+            ...state.remoteAgents,
+            [nsId]: { ...existing, status: agent.status || existing.status },
+          },
+        };
+      }
+      // Add new agent — namespace its projectId
+      const nsProjId = agent.projectId
+        ? `remote:${satelliteId}:${agent.projectId}`
+        : '';
+      const newAgent: Agent = {
+        id: nsId,
+        projectId: nsProjId,
+        name: agent.name || agent.id,
+        kind: agent.kind || 'quick',
+        status: agent.status || 'running',
+        color: agent.color || '',
+        mission: agent.mission,
+        model: agent.model,
+        orchestrator: agent.orchestrator,
+        freeAgentMode: agent.freeAgentMode,
+        parentAgentId: agent.parentAgentId,
+      };
+      return {
+        remoteAgents: {
+          ...state.remoteAgents,
+          [nsId]: newAgent,
         },
       };
     });

@@ -1558,6 +1558,11 @@ export function broadcastThemeChanged(): void {
   broadcastWs({ type: 'theme:changed', payload: getThemeColors() });
 }
 
+/** Broadcast session pause/resume to all connected WS clients. */
+export function notifySessionPause(paused: boolean): void {
+  broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
+}
+
 export function regeneratePin(): void {
   currentPin = generatePin();
   sessionTokens.clear();
