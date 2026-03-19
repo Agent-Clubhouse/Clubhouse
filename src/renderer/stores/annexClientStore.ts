@@ -64,6 +64,7 @@ interface AnnexClientStoreState {
   sendAgentSpawn: (satelliteId: string, params: unknown) => Promise<void>;
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
   sendAgentWake: (satelliteId: string, agentId: string, message: string) => Promise<void>;
+  requestPtyBuffer: (satelliteId: string, agentId: string) => Promise<string>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
@@ -160,6 +161,14 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     try {
       await window.clubhouse.annexClient.agentWake(satelliteId, agentId, message);
     } catch { /* ignore */ }
+  },
+
+  requestPtyBuffer: async (satelliteId, agentId) => {
+    try {
+      return await window.clubhouse.annexClient.ptyGetBuffer(satelliteId, agentId);
+    } catch {
+      return '';
+    }
   },
 }));
 

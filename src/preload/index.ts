@@ -825,6 +825,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
     agentWake: (satelliteId: string, agentId: string, message: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WAKE, satelliteId, agentId, message),
+    ptyGetBuffer: (satelliteId: string, agentId: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_GET_BUFFER, satelliteId, agentId),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
