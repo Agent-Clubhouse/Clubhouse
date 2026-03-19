@@ -17,7 +17,11 @@ export function TitleBar() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
-  const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
+  const activePluginId = explorerTab.startsWith('plugin:app:')
+    ? explorerTab.slice('plugin:app:'.length)
+    : explorerTab.startsWith('plugin:')
+      ? explorerTab.slice('plugin:'.length)
+      : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
   const dynamicTitle = usePluginStore((s) => activePluginId ? s.pluginTitles[activePluginId] : undefined);
 
