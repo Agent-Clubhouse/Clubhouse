@@ -166,7 +166,9 @@ export function createTlsClientOptions(identity: AnnexIdentity): tls.ConnectionO
 export function extractPeerFingerprint(socket: tls.TLSSocket): string | null {
   const cert = socket.getPeerCertificate();
   if (!cert || !cert.subject) return null;
-  return cert.subject.CN || null;
+  const cn = cert.subject.CN;
+  if (!cn) return null;
+  return Array.isArray(cn) ? cn[0] : cn;
 }
 
 /**
