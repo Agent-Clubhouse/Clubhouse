@@ -20,6 +20,7 @@ import { resolveOrchestrator } from '../services/agent-system';
 import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
+import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
@@ -312,6 +313,9 @@ export function registerAppHandlers(): void {
       if (previousEnabled && !nowEnabled && projectPath) {
         await disableExclusions(projectPath);
       }
+
+      // Clubhouse Mode affects MCP fallback — lazily start bridge if needed
+      onMcpSettingsChanged();
     },
   ));
 

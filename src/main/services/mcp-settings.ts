@@ -8,7 +8,7 @@
  */
 
 import { createSettingsStore } from './settings-store';
-import { isClubhouseModeEnabled } from './clubhouse-mode-settings';
+import { isClubhouseModeEnabled, getSettings as getClubhouseModeSettings } from './clubhouse-mode-settings';
 import type { McpSettings } from '../../shared/types';
 
 const store = createSettingsStore<McpSettings>('mcp-settings.json', {
@@ -38,4 +38,35 @@ export function isMcpEnabled(projectPath?: string, agentOverride?: boolean): boo
 
   // Final fallback: inherit from clubhouse mode
   return isClubhouseModeEnabled(projectPath);
+}
+
+/**
+ * Check whether MCP is enabled for ANY project. Used at app startup to decide
+ * whether the bridge server and IPC handlers should be initialized — before a
+ * specific project path is known.
+ *
+ * Returns true if the global MCP toggle is on, any MCP project override is
+ * true, the global Clubhouse Mode toggle is on, or any Clubhouse Mode project
+ * override is true.
+ */
+export function isMcpEnabledForAny(): boolean {
+  const mcpSettings = getSettings();
+  if (mcpSettings.enabled) return true;
+
+  if (mcpSettings.projectOverrides) {
+    for (const enabled of Object.values(mcpSettings.projectOverrides)) {
+      if (enabled) return true;
+    }
+  }
+
+  const cmSettings = getClubhouseModeSettings();
+  if (cmSettings.enabled) return true;
+
+  if (cmSettings.projectOverrides) {
+    for (const enabled of Object.values(cmSettings.projectOverrides)) {
+      if (enabled) return true;
+    }
+  }
+
+  return false;
 }

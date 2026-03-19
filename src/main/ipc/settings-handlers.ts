@@ -14,6 +14,7 @@
  */
 import { createManagedSettings } from '../services/managed-settings';
 import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS } from '../../shared/settings-definitions';
+import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
 export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS };
 
@@ -25,7 +26,9 @@ export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
 
 export const editorSettings = createManagedSettings(EDITOR_SETTINGS);
 
-export const mcpSettings = createManagedSettings(MCP_SETTINGS);
+export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
+  onSave: () => onMcpSettingsChanged(),
+});
 
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.
