@@ -141,6 +141,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [viewport, setViewport] = useState<Viewport>({ panX: 0, panY: 0, zoom: 1 });
   const [zoomedViewId, setZoomedViewId] = useState<string | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const [selectedViewIds, setSelectedViewIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,6 +271,24 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     sendMutation({ type: 'zoomView', viewId });
   }, [sendMutation]);
 
+  const handleMoveViews = useCallback((positions: Map<string, Position>) => {
+    // Forward each move as individual mutations
+    for (const [viewId, position] of positions) {
+      sendMutation({ type: 'moveView', viewId, position });
+    }
+  }, [sendMutation]);
+
+  const handleToggleSelectView = useCallback((viewId: string) => {
+    setSelectedViewIds((prev) =>
+      prev.includes(viewId) ? prev.filter((id) => id !== viewId) : [...prev, viewId]
+    );
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedViewIds([]);
+    setSelectedViewId(null);
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────
 
   if (loading) {
@@ -295,17 +314,22 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         viewport={viewport}
         zoomedViewId={zoomedViewId}
         selectedViewId={selectedViewId}
+        selectedViewIds={selectedViewIds}
         api={api}
         onViewportChange={handleViewportChange}
         onAddView={handleAddView}
         onAddPluginView={handleAddPluginView}
         onRemoveView={handleRemoveView}
         onMoveView={handleMoveView}
+        onMoveViews={handleMoveViews}
         onResizeView={handleResizeView}
         onFocusView={handleFocusView}
         onUpdateView={handleUpdateView}
         onZoomView={handleZoomView}
         onSelectView={setSelectedViewId}
+        onToggleSelectView={handleToggleSelectView}
+        onSetSelectedViewIds={setSelectedViewIds}
+        onClearSelection={handleClearSelection}
       />
     </div>
   );

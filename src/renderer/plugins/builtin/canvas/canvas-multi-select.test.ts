@@ -132,7 +132,6 @@ describe('computeTiledPositions', () => {
 
     // Column 0 max width: max(300, 300) = 300
     // Column 1 offset: 300 + GRID_SIZE = 320
-    const pos1 = result.get('v1')!;
     const pos2 = result.get('v2')!;
     expect(pos2.x).toBe(snapPosition({ x: 300 + GRID_SIZE, y: 0 }).x);
   });

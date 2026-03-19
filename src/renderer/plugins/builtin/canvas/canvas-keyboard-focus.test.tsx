@@ -3,7 +3,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { CanvasViewComponent } from './CanvasView';
-import type { CanvasView, Viewport, Position, Size } from './canvas-types';
+import type { CanvasView, Viewport } from './canvas-types';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
 // ── Fixtures ────────────────────────────────────────────────────────────

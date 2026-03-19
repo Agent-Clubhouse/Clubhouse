@@ -470,7 +470,6 @@ export function CanvasWorkspace({
         }}
       >
         {views.map((view) => {
-          const isBeingMultiDragged = multiDrag && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId;
           return (
             <CanvasViewComponent
               key={view.id}
