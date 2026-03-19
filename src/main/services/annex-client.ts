@@ -725,6 +725,22 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
   }
 }
 
+/**
+ * Forget all satellites: disconnect all, remove all peers, clear all state.
+ * Used for purging all client-side annex config.
+ */
+export function forgetAllSatellites(): void {
+  appLog('core:annex-client', 'info', 'Forgetting all satellites');
+  for (const sat of satellites.values()) {
+    disconnectSatellite(sat);
+  }
+  satellites.clear();
+  annexPeers.removeAllPeers();
+  discoveredServices.clear();
+  broadcastSatellitesChanged();
+  broadcastDiscoveredChanged();
+}
+
 export function scan(): void {
   // Clear discovered services on rescan so stale entries are dropped
   discoveredServices.clear();

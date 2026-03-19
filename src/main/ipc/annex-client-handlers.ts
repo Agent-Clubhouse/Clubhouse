@@ -98,4 +98,9 @@ export function registerAnnexClientHandlers(): void {
       annexClient.forgetSatellite(fingerprint);
     },
   ));
+
+  // Forget all satellites (disconnect all + remove all peers + clear state)
+  ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES, () => {
+    annexClient.forgetAllSatellites();
+  });
 }

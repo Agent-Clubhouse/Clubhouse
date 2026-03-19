@@ -801,6 +801,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX.DISCONNECT_CONTROLLER, fingerprint),
     disableAndDisconnect: () =>
       ipcRenderer.invoke(IPC.ANNEX.DISABLE_AND_DISCONNECT),
+    purgeServerConfig: () =>
+      ipcRenderer.invoke(IPC.ANNEX.PURGE_SERVER_CONFIG),
   },
   annexClient: {
     getSatellites: () =>
@@ -823,6 +825,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
+    forgetAllSatellites: () =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES),
     getDiscovered: () =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GET_DISCOVERED),
     pairWith: (fingerprint: string, pin: string) =>

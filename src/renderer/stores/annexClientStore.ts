@@ -56,6 +56,7 @@ interface AnnexClientStoreState {
   connect: (fingerprint: string, bearerToken?: string) => Promise<void>;
   disconnect: (fingerprint: string) => Promise<void>;
   forgetSatellite: (fingerprint: string) => Promise<void>;
+  forgetAllSatellites: () => Promise<void>;
   retry: (fingerprint: string) => Promise<void>;
   scan: () => Promise<void>;
   sendPtyInput: (satelliteId: string, agentId: string, data: string) => Promise<void>;
@@ -109,6 +110,12 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   forgetSatellite: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.forgetSatellite(fingerprint);
+    } catch { /* ignore */ }
+  },
+
+  forgetAllSatellites: async () => {
+    try {
+      await window.clubhouse.annexClient.forgetAllSatellites();
     } catch { /* ignore */ }
   },
 

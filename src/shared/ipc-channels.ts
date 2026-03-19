@@ -304,5 +304,6 @@ export const IPC = {
     AGENT_SPAWN: 'annex-client:agent-spawn',
     AGENT_KILL: 'annex-client:agent-kill',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
+    FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
   },
 } as const;

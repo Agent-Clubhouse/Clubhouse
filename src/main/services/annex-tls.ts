@@ -172,6 +172,21 @@ export function extractPeerFingerprint(socket: tls.TLSSocket): string | null {
 }
 
 /**
+ * Delete the persisted TLS certificate file and clear the cache.
+ * After this, a new cert will be generated on next getOrCreateCert().
+ */
+export function deleteCert(): void {
+  cachedCert = null;
+  try {
+    const certPath = path.join(app.getPath('userData'), TLS_CERT_FILENAME);
+    fs.unlinkSync(certPath);
+    appLog('core:annex', 'info', 'Annex TLS certificate deleted');
+  } catch {
+    // File may not exist
+  }
+}
+
+/**
  * Reset cached cert (for testing only).
  */
 export function resetForTests(): void {
