@@ -55,7 +55,12 @@ const agentView: AgentCanvasView = {
   type: 'agent',
   title: 'Agent',
   displayName: 'My Agent',
-  metadata: { agentName: 'curious-tapir' },
+  metadata: {
+    agentName: 'curious-tapir',
+    projectName: 'Clubhouse',
+    orchestrator: 'claude-code',
+    model: 'claude-sonnet-4-5-20250514',
+  },
   agentId: 'agent_123',
 };
 
@@ -123,6 +128,21 @@ describe('canvas search — buildSearchableText', () => {
   it('includes metadata values in searchable text', () => {
     const text = buildSearchableText(agentView);
     expect(text).toContain('curious-tapir');
+  });
+
+  it('includes projectName in searchable text for agent views', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('clubhouse');
+  });
+
+  it('includes orchestrator in searchable text for agent views', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('claude-code');
+  });
+
+  it('includes model in searchable text for agent views', () => {
+    const text = buildSearchableText(agentView);
+    expect(text).toContain('claude-sonnet-4-5-20250514');
   });
 
   it('includes filePath for file views', () => {
@@ -215,5 +235,29 @@ describe('canvas search — filterViews', () => {
     const result = filterViews(allViews, 'readme');
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('cv_4');
+  });
+
+  it('filters agent by project name', () => {
+    const result = filterViews(allViews, 'clubhouse');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
+  });
+
+  it('filters agent by orchestrator', () => {
+    const result = filterViews(allViews, 'claude-code');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
+  });
+
+  it('filters agent by model name', () => {
+    const result = filterViews(allViews, 'sonnet');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
+  });
+
+  it('combines project name + agent name for precise search', () => {
+    const result = filterViews(allViews, 'clubhouse curious');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('cv_1');
   });
 });

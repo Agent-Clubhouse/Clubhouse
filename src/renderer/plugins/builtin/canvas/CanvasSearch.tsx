@@ -45,6 +45,8 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  /** Tracks whether the user has started cycling through results via Enter. */
+  const [cycling, setCycling] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -58,9 +60,10 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     });
   }, [views, query]);
 
-  // Reset selected index when results change
+  // Reset selected index and cycling state when query or results change
   useEffect(() => {
     setSelectedIndex(0);
+    setCycling(false);
   }, [filteredViews.length, query]);
 
   // Focus input when opened
@@ -83,6 +86,7 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setQuery('');
+        setCycling(false);
         focusWorkspace();
       }
     };
@@ -106,10 +110,12 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  /** Navigate to a result and close search (used by click). */
   const handleSelect = useCallback((viewId: string) => {
     onSelectView(viewId);
     setIsOpen(false);
     setQuery('');
+    setCycling(false);
     focusWorkspace();
   }, [onSelectView, focusWorkspace]);
 
@@ -122,20 +128,30 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
       setSelectedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (filteredViews[selectedIndex]) {
-        handleSelect(filteredViews[selectedIndex].id);
+      if (filteredViews.length === 0) return;
+      if (filteredViews.length === 1) {
+        // Only one match — navigate and close
+        handleSelect(filteredViews[0].id);
+        return;
       }
+      // Multiple matches: navigate to current, then advance for next Enter
+      const current = filteredViews[selectedIndex];
+      if (current) onSelectView(current.id);
+      setCycling(true);
+      setSelectedIndex((i) => (i + 1) % filteredViews.length);
     } else if (e.key === 'Escape') {
       setIsOpen(false);
       setQuery('');
+      setCycling(false);
       focusWorkspace();
     }
-  }, [filteredViews, selectedIndex, handleSelect, focusWorkspace]);
+  }, [filteredViews, selectedIndex, handleSelect, onSelectView, focusWorkspace]);
 
   const handleToggle = useCallback(() => {
     setIsOpen((prev) => {
       if (prev) {
         setQuery('');
+        setCycling(false);
         focusWorkspace();
       }
       return !prev;
@@ -182,6 +198,12 @@ export function CanvasSearch({ views, onSelectView }: CanvasSearchProps) {
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
         </div>
+        {/* Match counter — shown when cycling through multiple results */}
+        {cycling && query.trim() && filteredViews.length > 1 && (
+          <span className="text-[10px] text-ctp-overlay0 tabular-nums whitespace-nowrap" data-testid="canvas-search-match-count">
+            {((selectedIndex - 1 + filteredViews.length) % filteredViews.length) + 1} / {filteredViews.length}
+          </span>
+        )}
         <button
           onClick={handleToggle}
           className={btnClass}

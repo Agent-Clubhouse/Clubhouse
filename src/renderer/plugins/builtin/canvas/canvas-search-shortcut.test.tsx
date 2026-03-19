@@ -33,15 +33,46 @@ const views: CanvasView[] = [
   } as CanvasView,
 ];
 
+/** Three agent views sharing the "agent" type for cycling tests. */
+const multiAgentViews: CanvasView[] = [
+  {
+    ...baseView,
+    id: 'cv_a1',
+    type: 'agent',
+    title: 'Agent',
+    displayName: 'Agent',
+    metadata: { agentName: 'alpha' },
+    agentId: 'agent_a1',
+  } as CanvasView,
+  {
+    ...baseView,
+    id: 'cv_a2',
+    type: 'agent',
+    title: 'Agent',
+    displayName: 'Agent (2)',
+    metadata: { agentName: 'beta' },
+    agentId: 'agent_a2',
+  } as CanvasView,
+  {
+    ...baseView,
+    id: 'cv_a3',
+    type: 'agent',
+    title: 'Agent',
+    displayName: 'Agent (3)',
+    metadata: { agentName: 'gamma' },
+    agentId: 'agent_a3',
+  } as CanvasView,
+];
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /** Wrap CanvasSearch inside DOM that mirrors the real canvas panel structure. */
-function renderWithCanvasPanel(onSelectView = vi.fn()) {
+function renderWithCanvasPanel(onSelectView = vi.fn(), viewList = views) {
   return render(
     <div data-testid="canvas-panel">
       <div data-testid="canvas-workspace" tabIndex={-1}>
         <div data-testid="canvas-controls">
-          <CanvasSearch views={views} onSelectView={onSelectView} />
+          <CanvasSearch views={viewList} onSelectView={onSelectView} />
         </div>
       </div>
     </div>,
@@ -206,5 +237,102 @@ describe('canvas search — Cmd/Ctrl+F shortcut', () => {
     // Should NOT open because there's no canvas-panel ancestor
     expect(screen.getByTestId('canvas-search-toggle')).toBeInTheDocument();
     expect(screen.queryByTestId('canvas-search-input')).not.toBeInTheDocument();
+  });
+});
+
+describe('canvas search — Enter-to-cycle through multiple matches', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function openSearchAndType(onSelectView: ReturnType<typeof vi.fn>, query: string) {
+    renderWithCanvasPanel(onSelectView, multiAgentViews);
+    const workspace = screen.getByTestId('canvas-workspace');
+    act(() => workspace.focus());
+    pressMetaF();
+    const input = screen.getByTestId('canvas-search-input');
+    fireEvent.change(input, { target: { value: query } });
+    return input;
+  }
+
+  it('navigates to first match on Enter, then cycles on subsequent presses', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'agent');
+
+    // First Enter: navigate to first match (cv_a1)
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelectView).toHaveBeenCalledTimes(1);
+    expect(onSelectView).toHaveBeenCalledWith('cv_a1');
+
+    // Second Enter: navigate to second match (cv_a2)
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelectView).toHaveBeenCalledTimes(2);
+    expect(onSelectView).toHaveBeenCalledWith('cv_a2');
+
+    // Third Enter: navigate to third match (cv_a3)
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelectView).toHaveBeenCalledTimes(3);
+    expect(onSelectView).toHaveBeenCalledWith('cv_a3');
+  });
+
+  it('wraps around after the last match', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'agent');
+
+    // Cycle through all 3 matches
+    fireEvent.keyDown(input, { key: 'Enter' }); // cv_a1
+    fireEvent.keyDown(input, { key: 'Enter' }); // cv_a2
+    fireEvent.keyDown(input, { key: 'Enter' }); // cv_a3
+
+    // Fourth Enter should wrap back to first
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSelectView).toHaveBeenCalledTimes(4);
+    expect(onSelectView).toHaveBeenLastCalledWith('cv_a1');
+  });
+
+  it('does not close search when cycling with multiple matches', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'agent');
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Search should still be open
+    expect(screen.getByTestId('canvas-search-input')).toBeInTheDocument();
+    expect(screen.getByTestId('canvas-search-results')).toBeInTheDocument();
+  });
+
+  it('closes search on Enter when there is exactly one match', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'alpha');
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSelectView).toHaveBeenCalledWith('cv_a1');
+    // Search should be closed
+    expect(screen.getByTestId('canvas-search-toggle')).toBeInTheDocument();
+    expect(screen.queryByTestId('canvas-search-input')).not.toBeInTheDocument();
+  });
+
+  it('shows match counter when cycling', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'agent');
+
+    // No counter before first Enter
+    expect(screen.queryByTestId('canvas-search-match-count')).not.toBeInTheDocument();
+
+    // First Enter: should show "1 / 3"
+    fireEvent.keyDown(input, { key: 'Enter' });
+    const counter = screen.getByTestId('canvas-search-match-count');
+    expect(counter.textContent).toContain('1');
+    expect(counter.textContent).toContain('3');
+  });
+
+  it('does nothing on Enter when no results match', () => {
+    const onSelectView = vi.fn();
+    const input = openSearchAndType(onSelectView, 'nonexistent');
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onSelectView).not.toHaveBeenCalled();
   });
 });

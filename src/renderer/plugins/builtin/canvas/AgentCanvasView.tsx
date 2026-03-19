@@ -35,13 +35,43 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
   );
 
   const handlePickAgent = useCallback((agent: AgentInfo) => {
+    const project = projects.find((p) => p.id === agent.projectId);
     onUpdate({
       agentId: agent.id,
       projectId: agent.projectId,
       title: agent.name || agent.id,
-      metadata: { agentId: agent.id, projectId: agent.projectId ?? null, agentName: agent.name ?? null },
+      metadata: {
+        agentId: agent.id,
+        projectId: agent.projectId ?? null,
+        agentName: agent.name ?? null,
+        projectName: project?.name ?? null,
+        orchestrator: agent.orchestrator ?? null,
+        model: agent.model ?? null,
+      },
     } as Partial<AgentCanvasViewType>);
-  }, [onUpdate]);
+  }, [onUpdate, projects]);
+
+  // Keep metadata in sync when the assigned agent's searchable properties change
+  useEffect(() => {
+    if (!assignedAgent) return;
+    const project = projects.find((p) => p.id === assignedAgent.projectId);
+    const prev = view.metadata;
+    const next = {
+      agentId: assignedAgent.id,
+      projectId: assignedAgent.projectId ?? null,
+      agentName: assignedAgent.name ?? null,
+      projectName: project?.name ?? null,
+      orchestrator: assignedAgent.orchestrator ?? null,
+      model: assignedAgent.model ?? null,
+    };
+    // Only update if something actually changed to avoid loops
+    const changed = Object.keys(next).some(
+      (k) => prev[k] !== next[k as keyof typeof next],
+    );
+    if (changed) {
+      onUpdate({ metadata: next } as Partial<AgentCanvasViewType>);
+    }
+  }, [assignedAgent, projects, view.metadata, onUpdate]);
 
   const handleBackToProjects = useCallback(() => {
     setSelectedProjectId(null);
