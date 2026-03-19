@@ -17,6 +17,9 @@ const mockAnnexClient = {
   ptyResize: vi.fn(),
   agentSpawn: vi.fn(),
   agentKill: vi.fn(),
+  agentWake: vi.fn(),
+  forgetSatellite: vi.fn(),
+  forgetAllSatellites: vi.fn(),
   onSatellitesChanged: vi.fn(() => vi.fn()),
   onDiscoveredChanged: vi.fn(() => vi.fn()),
   onSatelliteEvent: vi.fn(() => vi.fn()),
@@ -185,6 +188,130 @@ describe('annexClientStore', () => {
       expect(unsubSatellites).toHaveBeenCalled();
       expect(unsubDiscovered).toHaveBeenCalled();
       expect(unsubEvents).toHaveBeenCalled();
+    });
+
+    it('forwards pty:data events to satellitePtyDataBus', async () => {
+      const { satellitePtyDataBus } = await import('./annexClientStore');
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+
+      const received: any[] = [];
+      const unsub = satellitePtyDataBus.on((satId, agentId, data) => {
+        received.push({ satId, agentId, data });
+      });
+
+      eventCallback!({ satelliteId: 'sat-1', type: 'pty:data', payload: { agentId: 'agent-1', data: 'hello world' } });
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toEqual({ satId: 'sat-1', agentId: 'agent-1', data: 'hello world' });
+      unsub();
+    });
+
+    it('forwards agent:woken events to updateRemoteAgentRunState', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentRunState');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'agent:woken', payload: { agentId: 'agent-1' } });
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', 'running');
+      spy.mockRestore();
+    });
+
+    it('forwards pty:exit events to updateRemoteAgentRunState as sleeping', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentRunState');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'pty:exit', payload: { agentId: 'agent-1', exitCode: 0 } });
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', 'sleeping');
+      spy.mockRestore();
+    });
+
+    it('forwards hook:event events to updateRemoteAgentStatus', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      const hookEvent = { state: 'working', message: 'Running Bash' };
+      eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: hookEvent } });
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', hookEvent);
+      spy.mockRestore();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // sendAgentWake
+  // -------------------------------------------------------------------------
+
+  describe('sendAgentWake', () => {
+    it('delegates to IPC agentWake', async () => {
+      await getState().sendAgentWake('sat-1', 'agent-1', 'Wake up');
+      expect(mockAnnexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-1', 'Wake up');
+    });
+
+    it('swallows IPC errors', async () => {
+      mockAnnexClient.agentWake.mockRejectedValueOnce(new Error('IPC failed'));
+      await expect(getState().sendAgentWake('sat-1', 'agent-1', 'Wake up')).resolves.toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // satellitePtyDataBus
+  // -------------------------------------------------------------------------
+
+  describe('satellitePtyDataBus', () => {
+    it('emits to all registered listeners', async () => {
+      const { satellitePtyDataBus } = await import('./annexClientStore');
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
+
+      const unsub1 = satellitePtyDataBus.on(listener1);
+      const unsub2 = satellitePtyDataBus.on(listener2);
+
+      satellitePtyDataBus.emit('sat-1', 'agent-1', 'hello');
+
+      expect(listener1).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello');
+      expect(listener2).toHaveBeenCalledWith('sat-1', 'agent-1', 'hello');
+
+      unsub1();
+      unsub2();
+    });
+
+    it('unsubscribe stops listener from receiving', async () => {
+      const { satellitePtyDataBus } = await import('./annexClientStore');
+      const listener = vi.fn();
+      const unsub = satellitePtyDataBus.on(listener);
+
+      unsub();
+      satellitePtyDataBus.emit('sat-1', 'agent-1', 'hello');
+
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 });
