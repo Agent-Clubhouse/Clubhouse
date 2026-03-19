@@ -9,7 +9,7 @@ import { useAgentStore } from './stores/agentStore';
 import { useUIStore } from './stores/uiStore';
 import { useQuickAgentStore } from './stores/quickAgentStore';
 import { usePluginStore } from './plugins/plugin-store';
-import { handleProjectSwitch, getBuiltinProjectPluginIds } from './plugins/plugin-loader';
+import { handleProjectSwitch, getBuiltinProjectPluginIds, pluginSystemReady } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
 import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
@@ -90,6 +90,12 @@ export function App() {
       if (project) {
         // Load project plugin config then activate
         (async () => {
+          // Wait for the plugin system to finish initializing before
+          // attempting to load project-scoped plugins. Without this gate,
+          // a project switch that fires before init completes would see an
+          // empty plugin registry and silently skip community plugins.
+          await pluginSystemReady;
+
           try {
             const saved = await window.clubhouse.plugin.storageRead({
               pluginId: '_system',

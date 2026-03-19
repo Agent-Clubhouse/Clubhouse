@@ -1,0 +1,153 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createCanvasStore } from './canvas-store';
+import { snapPosition } from './canvas-operations';
+import type { Position } from './canvas-types';
+
+// ── Helper ───────────────────────────────────────────────────────────
+
+function makeStore() {
+  const store = createCanvasStore();
+  const id1 = store.getState().addView('agent', { x: 100, y: 100 });
+  const id2 = store.getState().addView('file', { x: 400, y: 100 });
+  const id3 = store.getState().addView('browser', { x: 100, y: 400 });
+  return { store, id1, id2, id3 };
+}
+
+// ── Multi-drag: relative position preservation ───────────────────────
+
+describe('multi-drag relative position preservation', () => {
+  let store: ReturnType<typeof createCanvasStore>;
+  let id1: string, id2: string, id3: string;
+
+  beforeEach(() => {
+    ({ store, id1, id2, id3 } = makeStore());
+  });
+
+  it('moveViews applies a uniform delta to all selected views', () => {
+    const views = store.getState().views;
+    const v1 = views.find((v) => v.id === id1)!;
+    const v2 = views.find((v) => v.id === id2)!;
+
+    // Simulate a drag delta of (60, 40)
+    const dx = 60;
+    const dy = 40;
+    const positions = new Map<string, Position>();
+    positions.set(id1, snapPosition({ x: v1.position.x + dx, y: v1.position.y + dy }));
+    positions.set(id2, snapPosition({ x: v2.position.x + dx, y: v2.position.y + dy }));
+
+    store.getState().moveViews(positions);
+
+    const after = store.getState().views;
+    const a1 = after.find((v) => v.id === id1)!;
+    const a2 = after.find((v) => v.id === id2)!;
+    const a3 = after.find((v) => v.id === id3)!;
+
+    // Both selected views moved by the snapped delta
+    expect(a1.position).toEqual(snapPosition({ x: 100 + dx, y: 100 + dy }));
+    expect(a2.position).toEqual(snapPosition({ x: 400 + dx, y: 100 + dy }));
+
+    // Unselected view unchanged
+    expect(a3.position).toEqual({ x: 100, y: 400 });
+  });
+
+  it('preserves relative distance between views after move', () => {
+    const views = store.getState().views;
+    const v1 = views.find((v) => v.id === id1)!;
+    const v2 = views.find((v) => v.id === id2)!;
+
+    const relativeX = v2.position.x - v1.position.x;
+    const relativeY = v2.position.y - v1.position.y;
+
+    const dx = 200;
+    const dy = 100;
+    const positions = new Map<string, Position>();
+    positions.set(id1, snapPosition({ x: v1.position.x + dx, y: v1.position.y + dy }));
+    positions.set(id2, snapPosition({ x: v2.position.x + dx, y: v2.position.y + dy }));
+
+    store.getState().moveViews(positions);
+
+    const after = store.getState().views;
+    const a1 = after.find((v) => v.id === id1)!;
+    const a2 = after.find((v) => v.id === id2)!;
+
+    const newRelativeX = a2.position.x - a1.position.x;
+    const newRelativeY = a2.position.y - a1.position.y;
+
+    expect(newRelativeX).toBe(relativeX);
+    expect(newRelativeY).toBe(relativeY);
+  });
+});
+
+// ── Multi-drag: selection clearing after drop ────────────────────────
+
+describe('multi-drag selection clearing', () => {
+  let store: ReturnType<typeof createCanvasStore>;
+  let id1: string, id2: string;
+
+  beforeEach(() => {
+    ({ store, id1, id2 } = makeStore());
+  });
+
+  it('clearSelection empties selectedViewIds after moveViews', () => {
+    // Simulate multi-select
+    store.getState().setSelectedViewIds([id1, id2]);
+    expect(store.getState().selectedViewIds).toEqual([id1, id2]);
+
+    // Simulate drop: move views then clear selection (as workspace handler does)
+    const positions = new Map<string, Position>();
+    positions.set(id1, { x: 200, y: 200 });
+    positions.set(id2, { x: 500, y: 200 });
+    store.getState().moveViews(positions);
+    store.getState().clearSelection();
+
+    expect(store.getState().selectedViewIds).toEqual([]);
+    expect(store.getState().selectedViewId).toBeNull();
+  });
+
+  it('clearSelection also clears focused selectedViewId', () => {
+    store.getState().selectView(id1);
+    store.getState().setSelectedViewIds([id1, id2]);
+    expect(store.getState().selectedViewId).toBe(id1);
+
+    store.getState().clearSelection();
+    expect(store.getState().selectedViewId).toBeNull();
+  });
+});
+
+// ── multiDragHidden computation ──────────────────────────────────────
+
+describe('multiDragHidden logic', () => {
+  /**
+   * Mirrors the computation in CanvasWorkspace:
+   *   multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId
+   */
+  function isMultiDragHidden(
+    multiDragActive: boolean,
+    dragViewId: string | null,
+    selectedViewIds: string[],
+    viewId: string,
+  ): boolean {
+    return multiDragActive && selectedViewIds.includes(viewId) && viewId !== dragViewId;
+  }
+
+  it('returns false when no multi-drag is active', () => {
+    expect(isMultiDragHidden(false, null, ['v1', 'v2'], 'v1')).toBe(false);
+  });
+
+  it('returns false for the primary drag view', () => {
+    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v1')).toBe(false);
+  });
+
+  it('returns true for non-primary selected views during multi-drag', () => {
+    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v2')).toBe(true);
+  });
+
+  it('returns false for views not in the selection', () => {
+    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2'], 'v3')).toBe(false);
+  });
+
+  it('returns true for all non-primary views in a 3-item selection', () => {
+    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2', 'v3'], 'v2')).toBe(true);
+    expect(isMultiDragHidden(true, 'v1', ['v1', 'v2', 'v3'], 'v3')).toBe(true);
+  });
+});

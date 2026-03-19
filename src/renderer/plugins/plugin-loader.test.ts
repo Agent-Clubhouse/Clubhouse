@@ -68,10 +68,13 @@ import {
   getActiveContext,
   getBuiltinProjectPluginIds,
   discoverNewPlugins,
+  refreshCommunityPlugins,
+  pluginSystemReady,
   hotReloadPlugin,
   approvePluginPermissions,
   rejectPluginPermissions,
   _resetActiveContexts,
+  _resetPluginSystemReady,
 } from './plugin-loader';
 import { dynamicImportModule } from './dynamic-import';
 import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
@@ -109,6 +112,7 @@ describe('plugin-loader', () => {
     vi.clearAllMocks();
     resetPluginStore();
     _resetActiveContexts();
+    _resetPluginSystemReady();
     mockPlugin.startupMarkerRead.mockResolvedValue(null);
     mockPlugin.startupMarkerWrite.mockResolvedValue(undefined);
     mockPlugin.startupMarkerClear.mockResolvedValue(undefined);
@@ -1675,6 +1679,180 @@ describe('plugin-loader', () => {
       expect(entry.status).toBe('disabled');
       expect(entry.error).toContain('not approved');
       expect(entry.pendingPermissions).toBeUndefined();
+    });
+  });
+
+  // ── pluginSystemReady ───────────────────────────────────────────────
+
+  describe('pluginSystemReady', () => {
+    it('resolves after initializePluginSystem completes', async () => {
+      let resolved = false;
+      // Read the current promise BEFORE calling init
+      const readyPromise = pluginSystemReady;
+      readyPromise.then(() => { resolved = true; });
+
+      // Not resolved yet
+      await Promise.resolve(); // flush microtasks
+      expect(resolved).toBe(false);
+
+      await initializePluginSystem();
+
+      // Now it should resolve
+      await readyPromise;
+      expect(resolved).toBe(true);
+    });
+
+    it('resolves in safe mode', async () => {
+      mockPlugin.startupMarkerRead.mockResolvedValue({ timestamp: Date.now(), attempt: 3, lastEnabledPlugins: [] });
+
+      await initializePluginSystem();
+
+      // Should resolve without hanging
+      await pluginSystemReady;
+      expect(usePluginStore.getState().safeModeActive).toBe(true);
+    });
+  });
+
+  // ── refreshCommunityPlugins ─────────────────────────────────────────
+
+  describe('refreshCommunityPlugins()', () => {
+    const mockDynamicImport = dynamicImportModule as ReturnType<typeof vi.fn>;
+
+    it('returns empty result when external plugins are disabled', async () => {
+      usePluginStore.setState({ externalPluginsEnabled: false });
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result).toEqual({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+      expect(mockPlugin.discoverCommunity).not.toHaveBeenCalled();
+    });
+
+    it('discovers new plugins', async () => {
+      usePluginStore.setState({ externalPluginsEnabled: true });
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'new-plug' }), pluginPath: '/plugins/new-plug', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result.discovered).toEqual(['new-plug']);
+      expect(result.refreshed).toEqual([]);
+      expect(usePluginStore.getState().plugins['new-plug']).toBeDefined();
+      expect(usePluginStore.getState().plugins['new-plug'].status).toBe('registered');
+    });
+
+    it('refreshes existing plugins without re-activating them unnecessarily', async () => {
+      // Pre-register a plugin as activated
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'existing-plug', scope: 'app', version: '1.0.0' }),
+        'community', '/plugins/existing-plug', 'activated',
+      );
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'existing-plug', scope: 'app', version: '1.1.0' }), pluginPath: '/plugins/existing-plug', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result.refreshed).toEqual(['existing-plug']);
+      expect(result.activated).toEqual([]);
+      // Manifest should be updated
+      expect(usePluginStore.getState().plugins['existing-plug'].manifest.version).toBe('1.1.0');
+      // Status should remain activated
+      expect(usePluginStore.getState().plugins['existing-plug'].status).toBe('activated');
+    });
+
+    it('activates enabled-but-not-active plugins', async () => {
+      const mod = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // Plugin is registered but not activated, and is in app-enabled
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'stale-plug', scope: 'app' }),
+        'community', '/plugins/stale-plug', 'registered',
+      );
+      usePluginStore.getState().enableApp('stale-plug');
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'stale-plug', scope: 'app' }), pluginPath: '/plugins/stale-plug', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result.activated).toEqual(['stale-plug']);
+      expect(usePluginStore.getState().plugins['stale-plug'].status).toBe('activated');
+    });
+
+    it('reports incompatible plugins', async () => {
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'was-ok', scope: 'app' }),
+        'community', '/plugins/was-ok', 'activated',
+      );
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      // The plugin's manifest is now invalid (missing required fields)
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: { id: 'was-ok' }, pluginPath: '/plugins/was-ok', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result.incompatible).toEqual(['was-ok']);
+      expect(usePluginStore.getState().plugins['was-ok'].status).toBe('incompatible');
+    });
+
+    it('does not activate project-scoped plugins at app level', async () => {
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'proj-plug', scope: 'project' }),
+        'community', '/plugins/proj-plug', 'registered',
+      );
+      usePluginStore.getState().enableApp('proj-plug');
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'proj-plug', scope: 'project' }), pluginPath: '/plugins/proj-plug', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      // Should NOT activate project-scoped plugins at app level
+      expect(result.activated).toEqual([]);
+      expect(usePluginStore.getState().plugins['proj-plug'].status).toBe('registered');
+    });
+
+    it('handles mix of new, existing, and incompatible plugins', async () => {
+      const mod = { activate: vi.fn() };
+      mockDynamicImport.mockResolvedValue(mod);
+
+      // One existing active plugin
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'active-plug', scope: 'app' }),
+        'community', '/plugins/active-plug', 'activated',
+      );
+      // One enabled-but-not-active plugin
+      usePluginStore.getState().registerPlugin(
+        makeManifest({ id: 'dormant-plug', scope: 'app' }),
+        'community', '/plugins/dormant-plug', 'registered',
+      );
+      usePluginStore.getState().enableApp('dormant-plug');
+      usePluginStore.setState({ externalPluginsEnabled: true });
+
+      mockPlugin.discoverCommunity.mockResolvedValue([
+        { manifest: makeManifest({ id: 'active-plug', scope: 'app' }), pluginPath: '/plugins/active-plug', fromMarketplace: false },
+        { manifest: makeManifest({ id: 'dormant-plug', scope: 'app' }), pluginPath: '/plugins/dormant-plug', fromMarketplace: false },
+        { manifest: makeManifest({ id: 'brand-new', scope: 'app' }), pluginPath: '/plugins/brand-new', fromMarketplace: false },
+        { manifest: { id: 'broken' }, pluginPath: '/plugins/broken', fromMarketplace: false },
+      ]);
+
+      const result = await refreshCommunityPlugins();
+
+      expect(result.refreshed).toContain('active-plug');
+      expect(result.refreshed).toContain('dormant-plug');
+      expect(result.discovered).toEqual(['brand-new']);
+      expect(result.activated).toEqual(['dormant-plug']);
+      expect(result.incompatible).toEqual(['broken']);
     });
   });
 });

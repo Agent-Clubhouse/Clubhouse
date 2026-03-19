@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect, computeTiledPositions } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
@@ -242,22 +242,22 @@ export function CanvasWorkspace({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      // Compute the drop point from the primary view's final position
-      const primaryView = views.find((v) => v.id === multiDrag.dragViewId);
-      if (primaryView) {
-        const dx = (e.clientX - multiDrag.startMouseX) / viewport.zoom;
-        const dy = (e.clientY - multiDrag.startMouseY) / viewport.zoom;
-        const dropOrigin: Position = {
-          x: primaryView.position.x + dx,
-          y: primaryView.position.y + dy,
-        };
-
-        const selectedViews = views.filter((v) => selectedViewIds.includes(v.id));
-        const tiledPositions = computeTiledPositions(selectedViews, snapPosition(dropOrigin));
-        onMoveViews(tiledPositions);
+      // Move all selected views by the same delta (preserves relative layout)
+      const dx = (e.clientX - multiDrag.startMouseX) / viewport.zoom;
+      const dy = (e.clientY - multiDrag.startMouseY) / viewport.zoom;
+      const positions = new Map<string, Position>();
+      for (const v of views) {
+        if (selectedViewIds.includes(v.id)) {
+          positions.set(v.id, snapPosition({ x: v.position.x + dx, y: v.position.y + dy }));
+        }
+      }
+      if (positions.size > 0) {
+        onMoveViews(positions);
       }
       setMultiDrag(null);
       setMultiDragDelta({ dx: 0, dy: 0 });
+      // End the selection so the user gets a clean slate after the drop
+      onClearSelection();
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -266,7 +266,7 @@ export function CanvasWorkspace({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [multiDrag, viewport.zoom, views, selectedViewIds, onMoveViews]);
+  }, [multiDrag, viewport.zoom, views, selectedViewIds, onMoveViews, onClearSelection]);
 
   // ── Zoom via Ctrl+wheel ────────────────────────────────────────
 
@@ -479,6 +479,7 @@ export function CanvasWorkspace({
               isZoomed={zoomedViewId === view.id}
               isSelected={selectedViewId === view.id}
               isMultiSelected={selectedViewIds.includes(view.id)}
+              multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
               attention={attentionMap.get(view.id) ?? null}
               onClose={() => onRemoveView(view.id)}
               onFocus={() => onFocusView(view.id)}

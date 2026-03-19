@@ -214,10 +214,10 @@ describe('canvas keyboard focus', () => {
   });
 });
 
-// ── Tests: widget content pointer-events isolation ───────────────────────
+// ── Tests: widget content pointer-events ─────────────────────────────────
 
-describe('canvas view pointer-events isolation', () => {
-  function renderView(isSelected: boolean) {
+describe('canvas view pointer-events', () => {
+  function renderView(isSelected: boolean, overrides: Partial<Parameters<typeof CanvasViewComponent>[0]> = {}) {
     return render(
       <CanvasViewComponent
         view={baseView}
@@ -234,17 +234,18 @@ describe('canvas view pointer-events isolation', () => {
         onDragEnd={vi.fn()}
         onResizeEnd={vi.fn()}
         onUpdate={vi.fn()}
+        {...overrides}
       />,
     );
   }
 
-  it('blocks pointer-events on content area when widget is not selected', () => {
+  it('does NOT block pointer-events on content area when widget is not selected', () => {
     renderView(false);
     const viewEl = screen.getByTestId(`canvas-view-${baseView.id}`);
-    // The content wrapper is the div after the title bar
     const contentWrapper = viewEl.querySelector('.flex-1.min-h-0.overflow-hidden.rounded-b-lg') as HTMLElement;
     expect(contentWrapper).not.toBeNull();
-    expect(contentWrapper.style.pointerEvents).toBe('none');
+    // pointer-events should not be set — content is interactive on first click
+    expect(contentWrapper.style.pointerEvents).toBe('');
   });
 
   it('allows pointer-events on content area when widget is selected', () => {
@@ -252,33 +253,24 @@ describe('canvas view pointer-events isolation', () => {
     const viewEl = screen.getByTestId(`canvas-view-${baseView.id}`);
     const contentWrapper = viewEl.querySelector('.flex-1.min-h-0.overflow-hidden.rounded-b-lg') as HTMLElement;
     expect(contentWrapper).not.toBeNull();
-    // When selected, pointer-events should not be set (defaults to auto)
     expect(contentWrapper.style.pointerEvents).toBe('');
   });
 
-  it('clicking an unselected widget calls onSelect but not content handlers', () => {
+  it('clicking an unselected widget calls onSelect', () => {
     const onSelect = vi.fn();
-    render(
-      <CanvasViewComponent
-        view={baseView}
-        api={stubApi()}
-        zoom={1}
-        isSelected={false}
-        onClose={vi.fn()}
-        onFocus={vi.fn()}
-        onSelect={onSelect}
-        onToggleSelect={vi.fn()}
-        onCenterView={vi.fn()}
-        onZoomView={vi.fn()}
-        onDragStart={vi.fn()}
-        onDragEnd={vi.fn()}
-        onResizeEnd={vi.fn()}
-        onUpdate={vi.fn()}
-      />,
-    );
+    renderView(false, { onSelect });
 
     const viewEl = screen.getByTestId(`canvas-view-${baseView.id}`);
     fireEvent.mouseDown(viewEl, { button: 0 });
     expect(onSelect).toHaveBeenCalled();
+  });
+
+  it('first click on content area of unselected widget is not blocked', () => {
+    renderView(false);
+    const viewEl = screen.getByTestId(`canvas-view-${baseView.id}`);
+    const contentWrapper = viewEl.querySelector('.flex-1.min-h-0.overflow-hidden.rounded-b-lg') as HTMLElement;
+    expect(contentWrapper).not.toBeNull();
+    // Pointer events are never blocked, so interactive elements receive the first click
+    expect(window.getComputedStyle(contentWrapper).pointerEvents).not.toBe('none');
   });
 });

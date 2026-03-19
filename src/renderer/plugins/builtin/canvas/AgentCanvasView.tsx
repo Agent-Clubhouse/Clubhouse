@@ -36,10 +36,12 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
 
   const handlePickAgent = useCallback((agent: AgentInfo) => {
     const project = projects.find((p) => p.id === agent.projectId);
+    const name = agent.name || agent.id;
     onUpdate({
       agentId: agent.id,
       projectId: agent.projectId,
-      title: agent.name || agent.id,
+      title: name,
+      displayName: name,
       metadata: {
         agentId: agent.id,
         projectId: agent.projectId ?? null,

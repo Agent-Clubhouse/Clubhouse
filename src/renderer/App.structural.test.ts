@@ -598,6 +598,10 @@ describe('App.tsx – required imports', () => {
   it('should import handleProjectSwitch from plugin-loader', () => {
     expect(appImports.has('handleProjectSwitch'), 'Missing import: handleProjectSwitch').toBe(true);
   });
+
+  it('should import pluginSystemReady from plugin-loader', () => {
+    expect(appImports.has('pluginSystemReady'), 'Missing import: pluginSystemReady — project switch must await plugin init to prevent race condition').toBe(true);
+  });
 });
 
 describe('app-event-bridge.ts – required imports', () => {
