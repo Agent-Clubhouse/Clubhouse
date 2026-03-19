@@ -64,6 +64,8 @@ vi.mock('./annex-peers', () => ({
   getPeer: vi.fn().mockReturnValue(undefined),
   addPeer: vi.fn(),
   updateLastSeen: vi.fn(),
+  removePeer: vi.fn(),
+  removeAllPeers: vi.fn(),
 }));
 
 vi.mock('./annex-settings', () => ({
@@ -301,7 +303,7 @@ describe('annex-client', () => {
   });
 
   describe('discovery — paired services', () => {
-    it('adds paired services to satellites', async () => {
+    it('adds paired services to satellites and auto-connects', async () => {
       mockHttpGetIdentity({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
@@ -327,8 +329,10 @@ describe('annex-client', () => {
       expect(annexClient.getSatellites()[0]).toMatchObject({
         fingerprint: 'PP:QQ:RR:SS',
         alias: 'Paired Mac',
-        state: 'discovering',
       });
+      // State is 'connecting' or 'disconnected' (mock WS error fires synchronously)
+      // The key assertion is that it's no longer stuck in 'discovering'
+      expect(['connecting', 'disconnected']).toContain(annexClient.getSatellites()[0].state);
       expect(annexClient.getDiscoveredServices()).toHaveLength(0);
     });
 
@@ -506,6 +510,154 @@ describe('annex-client', () => {
   describe('getSatellites', () => {
     it('returns empty array initially', () => {
       expect(annexClient.getSatellites()).toEqual([]);
+    });
+  });
+
+  // ---- forgetSatellite ----
+
+  describe('forgetSatellite', () => {
+    it('disconnects, removes peer, and clears satellite from state', async () => {
+      // Set up a paired satellite via discovery
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      expect(annexClient.getSatellites()).toHaveLength(1);
+
+      // Now forget
+      annexClient.forgetSatellite('PP:QQ:RR:SS');
+
+      expect(annexClient.getSatellites()).toHaveLength(0);
+      expect(annexPeers.removePeer).toHaveBeenCalledWith('PP:QQ:RR:SS');
+    });
+
+    it('is a no-op for unknown fingerprints', () => {
+      annexClient.forgetSatellite('unknown:fingerprint');
+      expect(annexPeers.removePeer).toHaveBeenCalledWith('unknown:fingerprint');
+      expect(annexClient.getSatellites()).toHaveLength(0);
+    });
+  });
+
+  // ---- forgetAllSatellites ----
+
+  describe('forgetAllSatellites', () => {
+    it('disconnects all, removes all peers, and clears all state', async () => {
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      expect(annexClient.getSatellites()).toHaveLength(1);
+
+      annexClient.forgetAllSatellites();
+
+      expect(annexClient.getSatellites()).toHaveLength(0);
+      expect(annexClient.getDiscoveredServices()).toHaveLength(0);
+      expect(annexPeers.removeAllPeers).toHaveBeenCalled();
+    });
+  });
+
+  // ---- mTLS reconnection (no bearer token required) ----
+
+  describe('mTLS reconnection', () => {
+    it('attempts connection for discovered paired satellite without bearer token', async () => {
+      // Track if WebSocket was constructed (= connection attempted)
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(WsMock).mockClear();
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Key assertion: WebSocket constructor was called (connection was attempted)
+      // even though there's no bearer token — mTLS handles auth
+      expect(WsMock).toHaveBeenCalled();
+      const wsUrl = vi.mocked(WsMock).mock.calls[0][0] as string;
+      // URL should NOT contain token param (no bearer token)
+      expect(wsUrl).not.toContain('token=');
+      expect(wsUrl).toContain('wss://');
+    });
+
+    it('retry works without bearer token', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+
+      // Force disconnect
+      annexClient.disconnect('PP:QQ:RR:SS');
+      expect(annexClient.getSatellites()[0].state).toBe('disconnected');
+
+      // Retry should attempt connection again (WebSocket constructor called again)
+      vi.mocked(WsMock).mockClear();
+      annexClient.retry('PP:QQ:RR:SS');
+      expect(WsMock).toHaveBeenCalled();
     });
   });
 });

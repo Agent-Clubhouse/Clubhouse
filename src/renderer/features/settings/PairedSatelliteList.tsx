@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { SatelliteConnection } from '../../stores/annexClientStore';
 import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
@@ -33,6 +34,8 @@ function stateLabel(state: SatelliteConnection['state']): string {
 export function PairedSatelliteList({ satellites }: Props) {
   const disconnect = useAnnexClientStore((s) => s.disconnect);
   const retry = useAnnexClientStore((s) => s.retry);
+  const forgetSatellite = useAnnexClientStore((s) => s.forgetSatellite);
+  const [confirmForget, setConfirmForget] = useState<string | null>(null);
 
   // Sort: connected first, then alphabetical
   const sorted = [...satellites].sort((a, b) => {
@@ -84,6 +87,35 @@ export function PairedSatelliteList({ satellites }: Props) {
                   transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
               >
                 Disconnect
+              </button>
+            )}
+            {confirmForget === sat.fingerprint ? (
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    forgetSatellite(sat.fingerprint);
+                    setConfirmForget(null);
+                  }}
+                  className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-700
+                    transition-colors cursor-pointer text-white font-medium"
+                >
+                  Confirm
+                </button>
+                <button
+                  onClick={() => setConfirmForget(null)}
+                  className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
+                    transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmForget(sat.fingerprint)}
+                className="px-2 py-1 text-xs rounded bg-surface-1 hover:bg-surface-2
+                  transition-colors cursor-pointer text-ctp-error hover:text-red-400"
+              >
+                Forget
               </button>
             )}
           </div>

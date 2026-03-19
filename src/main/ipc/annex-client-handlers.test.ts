@@ -18,6 +18,8 @@ vi.mock('../services/annex-client', () => ({
   retry: vi.fn(),
   scan: vi.fn(),
   sendToSatellite: vi.fn(() => true),
+  forgetSatellite: vi.fn(),
+  forgetAllSatellites: vi.fn(),
 }));
 
 import { ipcMain } from 'electron';
@@ -49,6 +51,8 @@ describe('annex-client-handlers', () => {
     expect(handlers.has(IPC.ANNEX_CLIENT.PTY_RESIZE)).toBe(true);
     expect(handlers.has(IPC.ANNEX_CLIENT.AGENT_SPAWN)).toBe(true);
     expect(handlers.has(IPC.ANNEX_CLIENT.AGENT_KILL)).toBe(true);
+    expect(handlers.has(IPC.ANNEX_CLIENT.FORGET_SATELLITE)).toBe(true);
+    expect(handlers.has(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES)).toBe(true);
   });
 
   it('GET_SATELLITES delegates to annexClient.getSatellites', () => {
@@ -95,6 +99,20 @@ describe('annex-client-handlers', () => {
 
   // --- Input validation ---
 
+  it('FORGET_SATELLITE delegates to annexClient.forgetSatellite', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
+    handler({}, 'fp:aa:bb');
+    expect(annexClient.forgetSatellite).toHaveBeenCalledWith('fp:aa:bb');
+  });
+
+  it('FORGET_ALL_SATELLITES delegates to annexClient.forgetAllSatellites', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES)!;
+    handler({});
+    expect(annexClient.forgetAllSatellites).toHaveBeenCalled();
+  });
+
+  // --- Input validation ---
+
   it('rejects non-string fingerprint for PAIR_WITH', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!;
     expect(() => handler({}, 123, '456')).toThrow();
@@ -103,5 +121,10 @@ describe('annex-client-handlers', () => {
   it('rejects non-string pin for PAIR_WITH', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PAIR_WITH)!;
     expect(() => handler({}, 'fp', 123)).toThrow();
+  });
+
+  it('rejects non-string fingerprint for FORGET_SATELLITE', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
+    expect(() => handler({}, 123)).toThrow();
   });
 });

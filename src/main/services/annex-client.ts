@@ -132,8 +132,12 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
 }
 
 function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error?: string): void {
+  const prev = sat.state;
   sat.state = state;
   if (error !== undefined) sat.lastError = error;
+  appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
+  });
   broadcastSatellitesChanged();
 }
 
@@ -197,9 +201,15 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
 
   try {
     const res = await httpGet(host, pPort, '/api/v1/identity');
-    if (res.status !== 200) return null;
+    if (res.status !== 200) {
+      appLog('core:annex-client', 'warn', 'Identity request failed', { meta: { host, port: pPort, status: res.status } });
+      return null;
+    }
     const identity = JSON.parse(res.body);
-    if (!identity.fingerprint) return null;
+    if (!identity.fingerprint) {
+      appLog('core:annex-client', 'warn', 'Identity response missing fingerprint', { meta: { host, port: pPort } });
+      return null;
+    }
     return {
       fingerprint: identity.fingerprint,
       alias: identity.alias || 'Unknown',
@@ -207,7 +217,10 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
       color: identity.color || 'indigo',
       publicKey: identity.publicKey || '',
     };
-  } catch {
+  } catch (err) {
+    appLog('core:annex-client', 'warn', 'Identity request error', {
+      meta: { host, port: pPort, error: err instanceof Error ? err.message : String(err) },
+    });
     return null;
   }
 }
@@ -216,32 +229,20 @@ async function connectToSatellite(sat: SatelliteConnectionInternal): Promise<voi
   setState(sat, 'connecting');
 
   const identity = annexIdentity.getOrCreateIdentity();
-  const settings = annexSettings.getSettings();
 
-  // If we don't have a bearer token, pair first
-  if (!sat.bearerToken) {
-    try {
-      // We need the PIN — for now, auto-pairing requires pre-existing peer relationship
-      // (pairing was done through the wizard). Check if we already have a token from wizard pairing.
-      appLog('core:annex-client', 'warn', 'No bearer token for satellite, cannot auto-connect', {
-        meta: { fingerprint: sat.fingerprint },
-      });
-      setState(sat, 'disconnected', 'Not paired — use the pairing wizard');
-      return;
-    } catch (err) {
-      setState(sat, 'disconnected', err instanceof Error ? err.message : 'Pairing failed');
-      return;
-    }
-  }
-
-  // Connect via WebSocket
+  // Connect via WebSocket using mTLS (preferred) with optional bearer token fallback
   try {
     const tlsOptions = annexTls.createTlsClientOptions(identity);
-    const protocol = sat.mainPort ? 'wss' : 'ws';
-    const wsUrl = `${protocol}://${sat.host}:${sat.mainPort}/ws?token=${encodeURIComponent(sat.bearerToken)}`;
+    // Build URL: use bearer token if available (e.g. fresh pairing), otherwise mTLS handles auth
+    const tokenParam = sat.bearerToken ? `?token=${encodeURIComponent(sat.bearerToken)}` : '';
+    const wsUrl = `wss://${sat.host}:${sat.mainPort}/ws${tokenParam}`;
+
+    appLog('core:annex-client', 'info', 'Connecting to satellite', {
+      meta: { fingerprint: sat.fingerprint, host: sat.host, port: sat.mainPort, hasBearerToken: !!sat.bearerToken },
+    });
 
     const ws = new WebSocket(wsUrl, {
-      ...(protocol === 'wss' ? tlsOptions : {}),
+      ...tlsOptions,
       handshakeTimeout: 10_000,
     });
 
@@ -370,20 +371,29 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
-  if (!settings.autoReconnect) return;
+  if (!settings.autoReconnect) {
+    appLog('core:annex-client', 'info', 'Auto-reconnect disabled, not scheduling', { meta: { fingerprint: sat.fingerprint } });
+    return;
+  }
 
   // Exponential backoff: 1s, 2s, 4s, 8s, 30s cap
   const delay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
   sat.reconnectAttempt++;
+  appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias },
+  });
 
   sat.reconnectTimer = setTimeout(() => {
-    if (sat.state === 'disconnected' && sat.bearerToken) {
+    if (sat.state === 'disconnected') {
       connectToSatellite(sat);
     }
   }, delay);
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
+  appLog('core:annex-client', 'info', 'Disconnecting satellite', {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
+  });
   stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
@@ -430,13 +440,15 @@ function startDiscovery(): void {
         // Skip if we already have this satellite
         if (satellites.has(fingerprint)) {
           const sat = satellites.get(fingerprint)!;
-          if (host !== sat.host || mainPort !== sat.mainPort) {
+          const hostChanged = host !== sat.host || mainPort !== sat.mainPort;
+          if (hostChanged) {
             sat.host = host;
             sat.mainPort = mainPort;
             sat.pairingPort = pairingPort;
-            if (sat.state === 'disconnected' && sat.bearerToken) {
-              connectToSatellite(sat);
-            }
+          }
+          // Auto-reconnect if disconnected (mTLS handles auth — no bearer token needed)
+          if (sat.state === 'disconnected' && sat.host && sat.mainPort) {
+            connectToSatellite(sat);
           }
           return;
         }
@@ -470,6 +482,11 @@ function startDiscovery(): void {
         appLog('core:annex-client', 'info', 'Discovered paired satellite', {
           meta: { fingerprint, alias: peer.alias, host, port: mainPort },
         });
+
+        // Auto-connect using mTLS (no bearer token needed for paired peers)
+        if (host && mainPort) {
+          connectToSatellite(sat);
+        }
         return;
       }
 
@@ -588,9 +605,24 @@ export function disconnect(fingerprint: string): void {
   if (sat) disconnectSatellite(sat);
 }
 
+/**
+ * Permanently forget a satellite: disconnect, remove peer, and clear from memory.
+ * After this, the satellite must be re-paired to connect again.
+ */
+export function forgetSatellite(fingerprint: string): void {
+  appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
+  const sat = satellites.get(fingerprint);
+  if (sat) {
+    disconnectSatellite(sat);
+    satellites.delete(fingerprint);
+  }
+  annexPeers.removePeer(fingerprint);
+  broadcastSatellitesChanged();
+}
+
 export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
-  if (sat && sat.state === 'disconnected' && sat.bearerToken) {
+  if (sat && sat.state === 'disconnected') {
     sat.reconnectAttempt = 0;
     connectToSatellite(sat);
   }
@@ -693,6 +725,22 @@ export async function pairWithService(fingerprint: string, pin: string): Promise
   }
 }
 
+/**
+ * Forget all satellites: disconnect all, remove all peers, clear all state.
+ * Used for purging all client-side annex config.
+ */
+export function forgetAllSatellites(): void {
+  appLog('core:annex-client', 'info', 'Forgetting all satellites');
+  for (const sat of satellites.values()) {
+    disconnectSatellite(sat);
+  }
+  satellites.clear();
+  annexPeers.removeAllPeers();
+  discoveredServices.clear();
+  broadcastSatellitesChanged();
+  broadcastDiscoveredChanged();
+}
+
 export function scan(): void {
   // Clear discovered services on rescan so stale entries are dropped
   discoveredServices.clear();
@@ -706,7 +754,7 @@ export function scan(): void {
  */
 export function resumeAllConnections(): void {
   for (const sat of satellites.values()) {
-    if (sat.state === 'disconnected' && sat.bearerToken) {
+    if (sat.state === 'disconnected') {
       sat.reconnectAttempt = 0; // Reset backoff on resume
       connectToSatellite(sat);
     }

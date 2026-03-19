@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAnnexStore } from '../../stores/annexStore';
 import { Toggle } from '../../components/Toggle';
 import { AnnexIdentitySection } from './AnnexIdentitySection';
@@ -9,10 +9,20 @@ export function AnnexSettingsView() {
   const saveSettings = useAnnexStore((s) => s.saveSettings);
   const loadSettings = useAnnexStore((s) => s.loadSettings);
   const regeneratePin = useAnnexStore((s) => s.regeneratePin);
+  const purgeServerConfig = useAnnexStore((s) => s.purgeServerConfig);
+  const loadStatus = useAnnexStore((s) => s.loadStatus);
+  const [confirmPurge, setConfirmPurge] = useState(false);
 
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  // Poll status while server is enabled but not yet advertising (catches missed broadcasts)
+  useEffect(() => {
+    if (!settings.enabled || status.advertising) return;
+    const interval = setInterval(loadStatus, 2000);
+    return () => clearInterval(interval);
+  }, [settings.enabled, status.advertising, loadStatus]);
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -101,6 +111,44 @@ export function AnnexSettingsView() {
             </div>
           </>
         )}
+
+        {/* Purge server config */}
+        <div className="mt-6 py-3 border-t border-surface-0">
+          <div className="text-sm text-ctp-text font-medium mb-1">Reset Annex Server</div>
+          <div className="text-xs text-ctp-subtext0 mb-3">
+            Stop the server and delete all Annex identity, certificates, and paired devices.
+            You will need to re-pair all devices after this.
+          </div>
+          {confirmPurge ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  purgeServerConfig();
+                  setConfirmPurge(false);
+                }}
+                className="px-3 py-1.5 text-xs rounded bg-red-600 hover:bg-red-700
+                  transition-colors cursor-pointer text-white font-medium"
+              >
+                Confirm Reset
+              </button>
+              <button
+                onClick={() => setConfirmPurge(false)}
+                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmPurge(true)}
+              className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                transition-colors cursor-pointer text-ctp-error hover:text-red-400"
+            >
+              Purge All Annex Config
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

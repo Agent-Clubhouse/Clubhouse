@@ -28,6 +28,7 @@ interface AnnexStoreState {
   saveSettings: (settings: AnnexSettings) => Promise<void>;
   loadStatus: () => Promise<void>;
   regeneratePin: () => Promise<void>;
+  purgeServerConfig: () => Promise<void>;
 }
 
 export const useAnnexStore = create<AnnexStoreState>((set) => ({
@@ -72,6 +73,15 @@ export const useAnnexStore = create<AnnexStoreState>((set) => ({
     try {
       const status = await window.clubhouse.annex.regeneratePin();
       set({ status: status || DEFAULT_STATUS });
+    } catch {
+      // Error handled in main
+    }
+  },
+
+  purgeServerConfig: async () => {
+    try {
+      await window.clubhouse.annex.purgeServerConfig();
+      set({ settings: DEFAULT_SETTINGS, status: DEFAULT_STATUS });
     } catch {
       // Error handled in main
     }

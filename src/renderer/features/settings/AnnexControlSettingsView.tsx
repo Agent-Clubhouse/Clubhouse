@@ -7,7 +7,9 @@ export function AnnexControlSettingsView() {
   const satellites = useAnnexClientStore((s) => s.satellites);
   const loadSatellites = useAnnexClientStore((s) => s.loadSatellites);
   const scan = useAnnexClientStore((s) => s.scan);
+  const forgetAllSatellites = useAnnexClientStore((s) => s.forgetAllSatellites);
   const [showPairing, setShowPairing] = useState(false);
+  const [confirmPurge, setConfirmPurge] = useState(false);
 
   useEffect(() => {
     loadSatellites();
@@ -53,6 +55,43 @@ export function AnnexControlSettingsView() {
 
           {showPairing && (
             <PairingWizard onClose={() => setShowPairing(false)} />
+          )}
+        </div>
+
+        {/* Purge control config */}
+        <div className="mt-6 py-3 border-t border-surface-0">
+          <div className="text-sm text-ctp-text font-medium mb-1">Reset Annex Control</div>
+          <div className="text-xs text-ctp-subtext0 mb-3">
+            Disconnect and forget all paired satellites. You will need to re-pair each device.
+          </div>
+          {confirmPurge ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  forgetAllSatellites();
+                  setConfirmPurge(false);
+                }}
+                className="px-3 py-1.5 text-xs rounded bg-red-600 hover:bg-red-700
+                  transition-colors cursor-pointer text-white font-medium"
+              >
+                Confirm Reset
+              </button>
+              <button
+                onClick={() => setConfirmPurge(false)}
+                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                  transition-colors cursor-pointer text-ctp-subtext1 hover:text-ctp-text"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmPurge(true)}
+              className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                transition-colors cursor-pointer text-ctp-error hover:text-red-400"
+            >
+              Forget All Satellites
+            </button>
           )}
         </div>
       </div>

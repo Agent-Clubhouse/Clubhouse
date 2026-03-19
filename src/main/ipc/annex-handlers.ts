@@ -5,6 +5,8 @@ import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import * as annexClient from '../services/annex-client';
 import * as annexPeers from '../services/annex-peers';
+import * as annexIdentity from '../services/annex-identity';
+import * as annexTls from '../services/annex-tls';
 import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -107,6 +109,34 @@ export function registerAnnexHandlers(): void {
     annexServer.stop();
     await annexSettings.saveSettings({ ...annexSettings.getSettings(), enabled: false });
     broadcastStatusChanged();
+  });
+
+  // Purge all server-side annex config: stop server, delete identity, TLS cert, peers, reset settings
+  ipcMain.handle(IPC.ANNEX.PURGE_SERVER_CONFIG, async () => {
+    appLog('core:annex', 'info', 'Purging all Annex server configuration');
+
+    // Stop everything first
+    annexServer.stop();
+    annexClient.stopClient();
+
+    // Delete persisted files
+    annexIdentity.deleteIdentity();
+    annexTls.deleteCert();
+    annexPeers.removeAllPeers();
+
+    // Reset settings to defaults (disabled)
+    await annexSettings.saveSettings({
+      enabled: false,
+      deviceName: annexSettings.getSettings().deviceName, // keep device name
+      alias: annexSettings.getSettings().alias, // keep alias
+      icon: 'computer',
+      color: 'indigo',
+      autoReconnect: true,
+    });
+
+    broadcastStatusChanged();
+    broadcastPeersChanged();
+    appLog('core:annex', 'info', 'Annex server configuration purged');
   });
 }
 

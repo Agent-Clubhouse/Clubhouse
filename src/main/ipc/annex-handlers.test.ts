@@ -35,6 +35,14 @@ vi.mock('../services/annex-peers', () => ({
   unlockPairing: vi.fn(),
 }));
 
+vi.mock('../services/annex-identity', () => ({
+  deleteIdentity: vi.fn(),
+}));
+
+vi.mock('../services/annex-tls', () => ({
+  deleteCert: vi.fn(),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -49,6 +57,9 @@ import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from '.
 import * as annexSettings from '../services/annex-settings';
 import * as annexServer from '../services/annex-server';
 import * as annexClient from '../services/annex-client';
+import * as annexPeers from '../services/annex-peers';
+import * as annexIdentity from '../services/annex-identity';
+import * as annexTls from '../services/annex-tls';
 import * as experimentalSettings from '../services/experimental-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -70,6 +81,7 @@ describe('annex-handlers', () => {
     expect(handlers.has(IPC.ANNEX.SAVE_SETTINGS)).toBe(true);
     expect(handlers.has(IPC.ANNEX.GET_STATUS)).toBe(true);
     expect(handlers.has(IPC.ANNEX.REGENERATE_PIN)).toBe(true);
+    expect(handlers.has(IPC.ANNEX.PURGE_SERVER_CONFIG)).toBe(true);
   });
 
   it('GET_SETTINGS delegates to annexSettings.getSettings', async () => {
@@ -164,6 +176,34 @@ describe('annex-handlers', () => {
   it('rejects null for SAVE_SETTINGS', () => {
     const handler = handlers.get(IPC.ANNEX.SAVE_SETTINGS)!;
     expect(() => handler({}, null)).toThrow('must be an object');
+  });
+
+  // --- PURGE_SERVER_CONFIG ---
+
+  it('PURGE_SERVER_CONFIG stops server, deletes identity/tls/peers, and resets settings', async () => {
+    vi.mocked(annexSettings.getSettings).mockReturnValue({
+      enabled: true,
+      deviceName: 'My Mac',
+      alias: 'My Mac',
+      icon: 'laptop',
+      color: 'blue',
+      autoReconnect: true,
+    });
+
+    const handler = handlers.get(IPC.ANNEX.PURGE_SERVER_CONFIG)!;
+    await handler({});
+
+    expect(annexServer.stop).toHaveBeenCalled();
+    expect(annexClient.stopClient).toHaveBeenCalled();
+    expect(annexIdentity.deleteIdentity).toHaveBeenCalled();
+    expect(annexTls.deleteCert).toHaveBeenCalled();
+    expect(annexPeers.removeAllPeers).toHaveBeenCalled();
+    expect(annexSettings.saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.STATUS_CHANGED, expect.anything());
+    expect(broadcastToAllWindows).toHaveBeenCalledWith(IPC.ANNEX.PEERS_CHANGED, expect.anything());
+    expect(appLog).toHaveBeenCalledWith('core:annex', 'info', expect.stringContaining('purged'));
   });
 });
 

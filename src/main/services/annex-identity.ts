@@ -167,6 +167,20 @@ export function getPublicIdentity(): { publicKey: string; fingerprint: string } 
 }
 
 /**
+ * Delete the persisted identity file and clear the cache.
+ * After this, a new identity will be generated on next getOrCreateIdentity().
+ */
+export function deleteIdentity(): void {
+  cachedIdentity = null;
+  try {
+    fs.unlinkSync(getIdentityPath());
+    appLog('core:annex', 'info', 'Annex identity deleted');
+  } catch {
+    // File may not exist
+  }
+}
+
+/**
  * Reset cached identity (for testing only).
  */
 export function resetForTests(): void {

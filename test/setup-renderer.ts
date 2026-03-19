@@ -303,6 +303,7 @@ vi.stubGlobal('clubhouse', {
     onLockStateChanged: () => noop,
     disconnectController: asyncNoop,
     disableAndDisconnect: asyncNoop,
+    purgeServerConfig: asyncNoop,
   },
   annexClient: {
     getSatellites: async () => [],
@@ -316,6 +317,8 @@ vi.stubGlobal('clubhouse', {
     ptyResize: asyncNoop,
     agentSpawn: asyncNoop,
     agentKill: asyncNoop,
+    forgetSatellite: asyncNoop,
+    forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
     onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,

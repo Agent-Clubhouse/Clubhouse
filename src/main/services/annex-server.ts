@@ -1231,11 +1231,18 @@ export function start(): void {
       // Fall back to bearer token auth
       const token = urlObj.searchParams.get('token');
       if (!isValidToken(token || undefined)) {
+        appLog('core:annex', 'warn', 'WebSocket upgrade rejected — unauthorized', {
+          meta: { remoteAddress: req.socket.remoteAddress, hasToken: !!token },
+        });
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
     }
+
+    appLog('core:annex', 'info', 'WebSocket upgrade accepted', {
+      meta: { authType, peerFingerprint: peerFingerprintForWs || 'none', remoteAddress: req.socket.remoteAddress },
+    });
 
     wss!.handleUpgrade(req, socket, head, (ws) => {
       wsAuthTypes.set(ws, authType);
@@ -1271,7 +1278,10 @@ export function start(): void {
     });
 
     // Broadcast unlock when mTLS controller disconnects
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
+      appLog('core:annex', 'info', 'WebSocket client disconnected', {
+        meta: { authType, code, reason: reason?.toString() || '' },
+      });
       if (authType === 'mtls') {
         // Check if any other mTLS connections are still open
         const hasMtlsClient = Array.from(wss?.clients || []).some(
@@ -1369,6 +1379,9 @@ export function start(): void {
       appLog('core:annex', 'info', 'mDNS service published (v2)', {
         meta: { name: settings.deviceName, mainPort: serverPort, pairingPort },
       });
+
+      // Broadcast updated status to renderer so UI reflects "Advertising" instead of "Starting..."
+      broadcastToAllWindows(IPC.ANNEX.STATUS_CHANGED, getStatus());
     } catch (err) {
       appLog('core:annex', 'error', 'Failed to publish mDNS', {
         meta: { error: err instanceof Error ? err.message : String(err) },
