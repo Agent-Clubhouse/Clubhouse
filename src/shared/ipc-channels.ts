@@ -303,6 +303,7 @@ export const IPC = {
     PTY_RESIZE: 'annex-client:pty-resize',
     AGENT_SPAWN: 'annex-client:agent-spawn',
     AGENT_KILL: 'annex-client:agent-kill',
+    AGENT_WAKE: 'annex-client:agent-wake',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
   },

@@ -7,7 +7,7 @@
 import { useState, useCallback } from 'react';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import type { SatelliteConnection } from '../stores/annexClientStore';
-import type { RemoteProject } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, type RemoteProject } from '../stores/remoteProjectStore';
 
 interface Props {
   satellite: SatelliteConnection;
@@ -81,6 +81,7 @@ function SatelliteDivider({ satellite, collapsed, onToggle, expanded, onRetry }:
 }
 
 export function SatelliteSection({ satellite, projects, activeProjectId, expanded, onSelectProject }: Props) {
+  const remoteProjectIcons = useRemoteProjectStore((s) => s.remoteProjectIcons);
   const storageKey = `satellite-collapsed-${satellite.id}`;
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(storageKey) === 'true'; } catch { return false; }
@@ -121,12 +122,23 @@ export function SatelliteSection({ satellite, projects, activeProjectId, expande
             }
           `}
         >
-          <div
-            className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-bold shrink-0"
-            style={{ backgroundColor: getColorHex(satellite.color) + '80' }}
-          >
-            {p.name.slice(0, 2).toUpperCase()}
-          </div>
+          {(() => {
+            const iconDataUrl = remoteProjectIcons[p.id];
+            const label = p.displayName || p.name;
+            const letter = label.charAt(0).toUpperCase();
+            return (
+              <div
+                className="w-6 h-6 rounded flex items-center justify-center text-white text-[10px] font-bold shrink-0 overflow-hidden"
+                style={{ backgroundColor: iconDataUrl ? undefined : getColorHex(satellite.color) + '80' }}
+              >
+                {iconDataUrl ? (
+                  <img src={iconDataUrl} alt={label} className="w-full h-full object-cover" />
+                ) : (
+                  letter
+                )}
+              </div>
+            );
+          })()}
           {expanded && (
             <span className={`text-xs truncate ${
               activeProjectId === p.id ? 'text-ctp-text' : 'text-ctp-subtext0'

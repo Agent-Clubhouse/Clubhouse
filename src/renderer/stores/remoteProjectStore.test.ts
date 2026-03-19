@@ -241,4 +241,94 @@ describe('remoteProjectStore', () => {
       expect(all).toHaveLength(2);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // updateRemoteAgentStatus
+  // -------------------------------------------------------------------------
+
+  describe('updateRemoteAgentStatus', () => {
+    it('stores detailed status keyed by namespaced ID', () => {
+      useRemoteProjectStore.getState().updateRemoteAgentStatus('sat-1', 'agent-1', {
+        state: 'needs_permission',
+        message: 'Bash: rm -rf /',
+      } as any);
+
+      const status = useRemoteProjectStore.getState().remoteAgentDetailedStatus;
+      expect(status['remote:sat-1:agent-1']).toBeDefined();
+      expect(status['remote:sat-1:agent-1'].state).toBe('needs_permission');
+      expect(status['remote:sat-1:agent-1'].message).toBe('Bash: rm -rf /');
+    });
+
+    it('overwrites previous status for the same agent', () => {
+      const store = useRemoteProjectStore.getState();
+      store.updateRemoteAgentStatus('sat-1', 'agent-1', { state: 'working', message: 'Reading file' } as any);
+      store.updateRemoteAgentStatus('sat-1', 'agent-1', { state: 'needs_permission', message: 'Bash' } as any);
+
+      const status = useRemoteProjectStore.getState().remoteAgentDetailedStatus;
+      expect(status['remote:sat-1:agent-1'].state).toBe('needs_permission');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // updateRemoteAgentRunState
+  // -------------------------------------------------------------------------
+
+  describe('updateRemoteAgentRunState', () => {
+    it('updates agent status from sleeping to running', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        agents: {
+          'proj-1': [
+            { id: 'agent-1', name: 'mega-camel', kind: 'durable', status: 'sleeping', projectId: 'proj-1', color: 'blue' } as any,
+          ],
+        },
+      }));
+
+      // Verify initial state
+      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('sleeping');
+
+      // Update to running
+      useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'running');
+
+      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('running');
+    });
+
+    it('updates agent status from running to sleeping', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
+
+      // agent-1 starts as 'running' in makeSnapshot
+      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('running');
+
+      useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'sleeping');
+
+      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('sleeping');
+    });
+
+    it('is a no-op for unknown agent IDs', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
+      const agentsBefore = useRemoteProjectStore.getState().remoteAgents;
+
+      useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'nonexistent', 'running');
+
+      const agentsAfter = useRemoteProjectStore.getState().remoteAgents;
+      expect(agentsAfter).toEqual(agentsBefore);
+    });
+
+    it('preserves other agent fields when updating status', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
+
+      const before = useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'];
+
+      useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'sleeping');
+
+      const after = useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'];
+      expect(after.name).toBe(before.name);
+      expect(after.kind).toBe(before.kind);
+      expect(after.color).toBe(before.color);
+      expect(after.status).toBe('sleeping'); // Only status changed
+    });
+  });
 });

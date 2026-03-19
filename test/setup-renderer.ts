@@ -317,6 +317,7 @@ vi.stubGlobal('clubhouse', {
     ptyResize: asyncNoop,
     agentSpawn: asyncNoop,
     agentKill: asyncNoop,
+    agentWake: asyncNoop,
     forgetSatellite: asyncNoop,
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
