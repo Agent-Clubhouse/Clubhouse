@@ -69,7 +69,9 @@ jobs:
       - name: Build app
         run: npx electron-forge package
       - name: Run E2E tests (excluding Annex dual-instance)
-        run: npx playwright test --ignore-glob='**/annex-v2/**'
+        run: npx playwright test --config=playwright.config.ts
+        env:
+          PLAYWRIGHT_IGNORE_ANNEX: '1'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
