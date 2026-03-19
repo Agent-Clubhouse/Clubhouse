@@ -203,8 +203,14 @@ async function spawnPtyAgent(
   // Snapshot MCP config before injection so we can restore on exit
   // Only snapshot when the MCP feature is enabled
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  const agentConfig = params.kind === 'durable' ? getDurableConfig(params.agentId) : undefined;
-  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentConfig?.mcpOverride);
+  let agentMcpOverride: boolean | undefined;
+  if (params.kind === 'durable') {
+    try {
+      const agentConfig = await getDurableConfig(params.projectPath, params.agentId);
+      agentMcpOverride = agentConfig?.mcpOverride;
+    } catch { /* config not available */ }
+  }
+  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
   if (mcpEnabledForSpawn) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }

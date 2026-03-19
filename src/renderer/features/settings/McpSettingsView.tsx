@@ -13,19 +13,24 @@ export function McpSettingsView() {
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
-  const overrides = useMemo(() => projectOverrides ?? {}, [projectOverrides]);
+  const overrides = useMemo(
+    () => (projectOverrides ?? {}) as Record<string, boolean>,
+    [projectOverrides],
+  );
 
   const handleGlobalToggle = (value: boolean) => {
     saveSettings({ enabled: value });
   };
 
   const handleProjectToggle = (projectPath: string, value: boolean) => {
-    saveSettings({ projectOverrides: { ...overrides, [projectPath]: value } });
+    const updated: Record<string, boolean> = { ...overrides, [projectPath]: value };
+    saveSettings({ projectOverrides: updated });
   };
 
   const handleClearOverride = (projectPath: string) => {
-    const { [projectPath]: _, ...rest } = overrides;
-    saveSettings({ projectOverrides: Object.keys(rest).length > 0 ? rest : undefined });
+    const updated: Record<string, boolean> = { ...overrides };
+    delete updated[projectPath];
+    saveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined });
   };
 
   if (!loaded) return null;
@@ -61,7 +66,7 @@ export function McpSettingsView() {
               </div>
             </div>
             <Toggle
-              checked={enabled}
+              checked={!!enabled}
               onChange={handleGlobalToggle}
             />
           </div>

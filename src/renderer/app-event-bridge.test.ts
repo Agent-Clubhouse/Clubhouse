@@ -68,6 +68,18 @@ vi.stubGlobal('window', {
     agentSettings: {
       computeConfigDiff: vi.fn(),
     },
+    mcpBinding: {
+      getBindings: vi.fn(async () => []),
+      bind: vi.fn(),
+      unbind: vi.fn(),
+      registerWebview: vi.fn(),
+      unregisterWebview: vi.fn(),
+      onBindingsChanged: vi.fn(() => vi.fn()),
+    },
+    settings: {
+      get: vi.fn(async () => null),
+      save: vi.fn(),
+    },
   },
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),

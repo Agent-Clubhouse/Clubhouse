@@ -103,7 +103,7 @@ export function CanvasWorkspace({
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
   // ── MCP wiring state ──────────────────────────────────────────
-  const mcpEnabled = useMcpSettingsStore((s) => s.enabled);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
   const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
