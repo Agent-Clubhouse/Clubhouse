@@ -5,6 +5,8 @@ import { manifest as terminalManifest } from './terminal/manifest';
 import * as terminalModule from './terminal/main';
 import { manifest as filesManifest } from './files/manifest';
 import * as filesModule from './files/main';
+import { manifest as browserManifest } from './browser/manifest';
+import * as browserModule from './browser/main';
 import { manifest as canvasManifest } from './canvas/manifest';
 import * as canvasModule from './canvas/main';
 import { manifest as sessionsManifest } from './sessions/manifest';
@@ -23,13 +25,14 @@ export interface ExperimentalFlags {
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser'];
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
     { manifest: hubManifest, module: hubModule },
     { manifest: terminalManifest, module: terminalModule },
     { manifest: filesManifest, module: filesModule },
+    { manifest: browserManifest, module: browserModule },
   ];
 
   if (experimentalFlags.canvas) {
