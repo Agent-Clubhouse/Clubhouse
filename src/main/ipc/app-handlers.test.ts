@@ -115,6 +115,10 @@ vi.mock('../services/annex-server', () => ({
   broadcastThemeChanged: vi.fn(),
 }));
 
+vi.mock('./mcp-binding-handlers', () => ({
+  onMcpSettingsChanged: vi.fn(),
+}));
+
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAppHandlers } from './app-handlers';

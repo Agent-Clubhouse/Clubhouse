@@ -10,7 +10,7 @@ import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
-import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId } from '../../stores/remoteProjectStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -72,7 +72,7 @@ export function AgentList() {
   const { options: MODEL_OPTIONS } = useModelOptions();
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
-  const isRemote = activeProjectId?.startsWith('remote:') ?? false;
+  const isRemote = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
   const agents = isRemote ? remoteAgents : localAgents;
   const activeProject = useMemo(() => {
     if (!activeProjectId) return undefined;

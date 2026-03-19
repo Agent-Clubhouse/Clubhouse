@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
-import { isMcpEnabled } from '../services/mcp-settings';
+import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
@@ -16,10 +16,15 @@ function broadcastBindingsChanged(): void {
   broadcastToAllWindows(IPC.MCP_BINDING.BINDINGS_CHANGED, bindingManager.getAllBindings());
 }
 
+let handlersRegistered = false;
+
 export function registerMcpBindingHandlers(): void {
-  if (!isMcpEnabled()) {
-    return; // Feature not enabled — don't register any handlers
+  if (handlersRegistered) return; // Already registered — idempotent
+  if (!isMcpEnabledForAny()) {
+    return; // Feature not enabled for any project — don't register handlers
   }
+
+  handlersRegistered = true;
 
   // Register tool templates
   registerAgentTools();
@@ -69,15 +74,32 @@ export function registerMcpBindingHandlers(): void {
   ));
 }
 
-/** Conditionally start the MCP bridge server if MCP is enabled. */
+let bridgeStarted = false;
+
+/** Conditionally start the MCP bridge server if MCP is enabled for any project. */
 export function maybeStartMcpBridge(): void {
-  if (!isMcpEnabled()) {
+  if (bridgeStarted) return; // Already started — idempotent
+  if (!isMcpEnabledForAny()) {
     return;
   }
 
+  bridgeStarted = true;
+
   bridgeServer.start().catch((err) => {
+    bridgeStarted = false; // Allow retry on failure
     appLog('core:mcp', 'error', 'Failed to start MCP bridge server', {
       meta: { error: err instanceof Error ? err.message : String(err) },
     });
   });
+}
+
+/**
+ * Called when MCP or Clubhouse Mode settings change. If MCP becomes enabled
+ * for any project, lazily start the bridge and register handlers without
+ * requiring an app restart.
+ */
+export function onMcpSettingsChanged(): void {
+  if (!isMcpEnabledForAny()) return;
+  registerMcpBindingHandlers();
+  maybeStartMcpBridge();
 }

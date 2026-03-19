@@ -40,6 +40,19 @@ describe('CanvasContextMenu plugin widget icons', () => {
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([]);
   });
 
+  it('renders built-in item SVG icons as HTML elements, not plain text', () => {
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    const builtinTypes = ['agent', 'browser', 'git-diff', 'anchor'];
+    for (const type of builtinTypes) {
+      const button = screen.getByTestId(`canvas-context-menu-${type}`);
+      const svgElement = button.querySelector('svg');
+      expect(svgElement, `${type} should render an SVG icon`).not.toBeNull();
+      expect(svgElement!.getAttribute('width')).toBe('18');
+      expect(button.textContent).not.toContain('<svg');
+    }
+  });
+
   it('renders promoted plugin widget SVG icon as HTML, not raw text', () => {
     // plugin:files:file-viewer and plugin:terminal:shell are "promoted" widgets
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([

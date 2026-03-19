@@ -58,24 +58,36 @@ describe('remoteProjectStore', () => {
   // -------------------------------------------------------------------------
 
   describe('namespacedAgentId', () => {
-    it('produces remote:satelliteId:agentId format', () => {
-      expect(namespacedAgentId('sat-1', 'agent-1')).toBe('remote:sat-1:agent-1');
+    it('produces remote||satelliteId||agentId format', () => {
+      expect(namespacedAgentId('sat-1', 'agent-1')).toBe('remote||sat-1||agent-1');
     });
   });
 
   describe('parseNamespacedId', () => {
     it('parses valid namespaced ID', () => {
-      expect(parseNamespacedId('remote:sat-1:agent-1')).toEqual({ satelliteId: 'sat-1', agentId: 'agent-1' });
+      expect(parseNamespacedId('remote||sat-1||agent-1')).toEqual({ satelliteId: 'sat-1', agentId: 'agent-1' });
+    });
+
+    it('correctly parses fingerprints with colons as satelliteId', () => {
+      const fp = '09:3f:0e:f6:61:95:a4:57:ab:15:b5:df:c2:0b:87:f0';
+      const agentId = 'durable_1773808108862_xcde48';
+      const nsId = namespacedAgentId(fp, agentId);
+      const parsed = parseNamespacedId(nsId);
+      expect(parsed).toEqual({ satelliteId: fp, agentId });
     });
 
     it('returns null for non-namespaced ID', () => {
       expect(parseNamespacedId('agent-1')).toBeNull();
     });
+
+    it('returns null for old colon-separated format', () => {
+      expect(parseNamespacedId('remote:sat-1:agent-1')).toBeNull();
+    });
   });
 
   describe('isRemoteAgentId', () => {
     it('returns true for remote IDs', () => {
-      expect(isRemoteAgentId('remote:sat:agent')).toBe(true);
+      expect(isRemoteAgentId('remote||sat||agent')).toBe(true);
     });
     it('returns false for local IDs', () => {
       expect(isRemoteAgentId('agent-1')).toBe(false);
@@ -84,7 +96,7 @@ describe('remoteProjectStore', () => {
 
   describe('isRemoteProjectId', () => {
     it('returns true for remote project IDs', () => {
-      expect(isRemoteProjectId('remote:sat:proj')).toBe(true);
+      expect(isRemoteProjectId('remote||sat||proj')).toBe(true);
     });
     it('returns false for local project IDs', () => {
       expect(isRemoteProjectId('proj-1')).toBe(false);
@@ -102,7 +114,7 @@ describe('remoteProjectStore', () => {
 
       const projects = useRemoteProjectStore.getState().satelliteProjects['sat-1'];
       expect(projects).toHaveLength(1);
-      expect(projects[0].id).toBe('remote:sat-1:proj-1');
+      expect(projects[0].id).toBe('remote||sat-1||proj-1');
       expect(projects[0].remote).toBe(true);
       expect(projects[0].satelliteId).toBe('sat-1');
       expect(projects[0].satelliteName).toBe('My Satellite');
@@ -115,9 +127,9 @@ describe('remoteProjectStore', () => {
 
       const agents = useRemoteProjectStore.getState().remoteAgents;
       expect(Object.keys(agents)).toHaveLength(2);
-      expect(agents['remote:sat-1:agent-1']).toBeDefined();
-      expect(agents['remote:sat-1:agent-1'].projectId).toBe('remote:sat-1:proj-1');
-      expect(agents['remote:sat-1:agent-2'].projectId).toBe('remote:sat-1:proj-1');
+      expect(agents['remote||sat-1||agent-1']).toBeDefined();
+      expect(agents['remote||sat-1||agent-1'].projectId).toBe('remote||sat-1||proj-1');
+      expect(agents['remote||sat-1||agent-2'].projectId).toBe('remote||sat-1||proj-1');
     });
 
     it('computes plugin match state from snapshot plugins', () => {
@@ -144,7 +156,7 @@ describe('remoteProjectStore', () => {
       }));
 
       const icons = useRemoteProjectStore.getState().remoteProjectIcons;
-      expect(icons['remote:sat-1:proj-1']).toBe('data:image/png;base64,abc123');
+      expect(icons['remote||sat-1||proj-1']).toBe('data:image/png;base64,abc123');
     });
 
     it('stores agent icon data URLs with namespaced keys', () => {
@@ -154,7 +166,7 @@ describe('remoteProjectStore', () => {
       }));
 
       const icons = useRemoteProjectStore.getState().remoteAgentIcons;
-      expect(icons['remote:sat-1:agent-1']).toBe('data:image/png;base64,xyz789');
+      expect(icons['remote||sat-1||agent-1']).toBe('data:image/png;base64,xyz789');
     });
 
     it('replaces previous satellite data on re-snapshot', () => {
@@ -174,9 +186,9 @@ describe('remoteProjectStore', () => {
       }));
       const agents = useRemoteProjectStore.getState().remoteAgents;
       expect(Object.keys(agents)).toHaveLength(1);
-      expect(agents['remote:sat-1:agent-3']).toBeDefined();
+      expect(agents['remote||sat-1||agent-3']).toBeDefined();
       // Old agents should be gone
-      expect(agents['remote:sat-1:agent-1']).toBeUndefined();
+      expect(agents['remote||sat-1||agent-1']).toBeUndefined();
     });
 
     it('keeps other satellites data when updating one', () => {
@@ -195,8 +207,8 @@ describe('remoteProjectStore', () => {
       const state = useRemoteProjectStore.getState();
       expect(state.satelliteProjects['sat-1']).toHaveLength(1);
       expect(state.satelliteProjects['sat-2']).toHaveLength(1);
-      expect(state.remoteAgents['remote:sat-1:agent-1']).toBeDefined();
-      expect(state.remoteAgents['remote:sat-2:agent-x']).toBeDefined();
+      expect(state.remoteAgents['remote||sat-1||agent-1']).toBeDefined();
+      expect(state.remoteAgents['remote||sat-2||agent-x']).toBeDefined();
     });
   });
 
@@ -254,9 +266,9 @@ describe('remoteProjectStore', () => {
       } as any);
 
       const status = useRemoteProjectStore.getState().remoteAgentDetailedStatus;
-      expect(status['remote:sat-1:agent-1']).toBeDefined();
-      expect(status['remote:sat-1:agent-1'].state).toBe('needs_permission');
-      expect(status['remote:sat-1:agent-1'].message).toBe('Bash: rm -rf /');
+      expect(status['remote||sat-1||agent-1']).toBeDefined();
+      expect(status['remote||sat-1||agent-1'].state).toBe('needs_permission');
+      expect(status['remote||sat-1||agent-1'].message).toBe('Bash: rm -rf /');
     });
 
     it('overwrites previous status for the same agent', () => {
@@ -265,7 +277,7 @@ describe('remoteProjectStore', () => {
       store.updateRemoteAgentStatus('sat-1', 'agent-1', { state: 'needs_permission', message: 'Bash' } as any);
 
       const status = useRemoteProjectStore.getState().remoteAgentDetailedStatus;
-      expect(status['remote:sat-1:agent-1'].state).toBe('needs_permission');
+      expect(status['remote||sat-1||agent-1'].state).toBe('needs_permission');
     });
   });
 
@@ -285,12 +297,12 @@ describe('remoteProjectStore', () => {
       }));
 
       // Verify initial state
-      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('sleeping');
+      expect(useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'].status).toBe('sleeping');
 
       // Update to running
       useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'running');
 
-      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('running');
+      expect(useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'].status).toBe('running');
     });
 
     it('updates agent status from running to sleeping', () => {
@@ -298,11 +310,11 @@ describe('remoteProjectStore', () => {
       store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
 
       // agent-1 starts as 'running' in makeSnapshot
-      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('running');
+      expect(useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'].status).toBe('running');
 
       useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'sleeping');
 
-      expect(useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'].status).toBe('sleeping');
+      expect(useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'].status).toBe('sleeping');
     });
 
     it('is a no-op for unknown agent IDs', () => {
@@ -320,11 +332,11 @@ describe('remoteProjectStore', () => {
       const store = useRemoteProjectStore.getState();
       store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
 
-      const before = useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'];
+      const before = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'];
 
       useRemoteProjectStore.getState().updateRemoteAgentRunState('sat-1', 'agent-1', 'sleeping');
 
-      const after = useRemoteProjectStore.getState().remoteAgents['remote:sat-1:agent-1'];
+      const after = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||agent-1'];
       expect(after.name).toBe(before.name);
       expect(after.kind).toBe(before.kind);
       expect(after.color).toBe(before.color);
