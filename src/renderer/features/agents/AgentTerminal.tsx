@@ -60,6 +60,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.3,
+      scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'bar',
       allowProposedApi: true,

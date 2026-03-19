@@ -27,7 +27,7 @@ interface ManagedSession {
   onExitCallback?: (agentId: string, exitCode: number, buffer?: string) => void;
 }
 
-const MAX_BUFFER_SIZE = 512 * 1024; // 512KB per agent
+const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB per agent
 
 /**
  * Sensitive directory prefixes that should never be used as a PTY cwd.
