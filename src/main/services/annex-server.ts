@@ -263,13 +263,14 @@ function getOrchestratorsMap(): Record<string, { displayName: string; shortName:
 // Agent mapping (Issue 1 — defaults + runtime status)
 // ---------------------------------------------------------------------------
 
-function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number]) {
+function mapDurableAgent(d: Awaited<ReturnType<typeof agentConfig.listDurable>>[number], projectId: string) {
   const agentId = d.id;
   const isRunning = ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId);
   const status = isRunning ? 'running' : 'sleeping';
 
   return {
     id: d.id,
+    projectId,
     name: d.name,
     kind: 'durable' as const,
     color: d.color,
@@ -295,7 +296,7 @@ async function buildSnapshot(): Promise<object> {
 
   for (const proj of projects) {
     const durables = await agentConfig.listDurable(proj.path);
-    agents[proj.id] = durables.map(mapDurableAgent);
+    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
     quickAgents[proj.id] = [];
   }
 
@@ -909,7 +910,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
     const durables = await agentConfig.listDurable(project.path);
-    sendJson(res, 200, durables.map(mapDurableAgent));
+    sendJson(res, 200, durables.map((d) => mapDurableAgent(d, projectId)));
     return;
   }
 
