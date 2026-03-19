@@ -29,13 +29,15 @@ import { GettingStartedSettingsView } from '../features/settings/GettingStartedS
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const settingsSubPage = useUIStore((s) => s.settingsSubPage);
   const settingsContext = useUIStore((s) => s.settingsContext);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
-  const agents = useAgentStore((s) => s.agents);
+  const localAgents = useAgentStore((s) => s.agents);
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const agentSettingsOpenFor = useAgentStore((s) => s.agentSettingsOpenFor);
   const selectedCompletedId = useQuickAgentStore((s) => s.selectedCompletedId);
   const completedAgentsMap = useQuickAgentStore((s) => s.completedAgents);
@@ -43,6 +45,8 @@ export function MainContentView() {
   const dismissCompleted = useQuickAgentStore((s) => s.dismissCompleted);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const { findAgentPopout } = usePopouts();
+  const isRemoteProject = activeProjectId?.startsWith('remote:') ?? false;
+  const agents = isRemoteProject ? { ...localAgents, ...remoteAgents } : localAgents;
 
   // Track whether the agent terminal should receive focus.
   // Must transition false→true to trigger AgentTerminal's focus useEffect,

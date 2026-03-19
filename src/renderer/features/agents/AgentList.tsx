@@ -10,6 +10,7 @@ import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
+import { useRemoteProjectStore } from '../../stores/remoteProjectStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -56,7 +57,8 @@ export function useProjectAgentBuckets(
 }
 
 export function AgentList() {
-  const agents = useAgentStore((s) => s.agents);
+  const localAgents = useAgentStore((s) => s.agents);
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
   const setActiveAgent = useAgentStore((s) => s.setActiveAgent);
   const spawnQuickAgent = useAgentStore((s) => s.spawnQuickAgent);
@@ -66,10 +68,23 @@ export function AgentList() {
   const reorderAgents = useAgentStore((s) => s.reorderAgents);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
   const { options: MODEL_OPTIONS } = useModelOptions();
   const allOrchestrators = useOrchestratorStore((s) => s.allOrchestrators);
 
-  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const isRemote = activeProjectId?.startsWith('remote:') ?? false;
+  const agents = isRemote ? remoteAgents : localAgents;
+  const activeProject = useMemo(() => {
+    if (!activeProjectId) return undefined;
+    if (isRemote) {
+      for (const rps of Object.values(satelliteProjects)) {
+        const found = rps.find((p) => p.id === activeProjectId);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    return projects.find((p) => p.id === activeProjectId);
+  }, [activeProjectId, isRemote, projects, satelliteProjects]);
   const { effectiveOrchestrators: enabledOrchestrators, activeProfile, isOrchestratorInProfile } = useEffectiveOrchestrators(activeProject?.path);
   const allCompleted = useQuickAgentStore((s) => s.completedAgents);
   const completedAgents = useMemo(

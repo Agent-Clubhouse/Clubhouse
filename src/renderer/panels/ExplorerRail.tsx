@@ -1,6 +1,7 @@
 import { ReactNode, useState, useRef, useCallback, useMemo } from 'react';
 import { useUIStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
@@ -166,7 +167,18 @@ export function ExplorerRail() {
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const activeProject = projects.find((p) => p.id === activeProjectId);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const activeProject = useMemo(() => {
+    if (!activeProjectId) return undefined;
+    if (activeProjectId.startsWith('remote:')) {
+      for (const rps of Object.values(satelliteProjects)) {
+        const found = rps.find((p) => p.id === activeProjectId);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    return projects.find((p) => p.id === activeProjectId);
+  }, [activeProjectId, projects, satelliteProjects]);
   const allPlugins = usePluginStore((s) => s.plugins);
   const enabledPluginIds = usePluginStore(
     (s) => (activeProjectId ? s.projectEnabled[activeProjectId] : undefined) ?? EMPTY_STRING_ARRAY,
