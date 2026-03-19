@@ -28,8 +28,8 @@ export function AnnexControlSettingsView() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowPairing((v) => !v)}
-                className="px-3 py-1.5 text-xs rounded bg-ctp-blue text-ctp-base font-medium
-                  hover:bg-ctp-blue/80 transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2
+                  transition-colors cursor-pointer text-ctp-text font-medium border border-ctp-blue"
               >
                 {showPairing ? 'Cancel' : 'Add Satellite'}
               </button>
