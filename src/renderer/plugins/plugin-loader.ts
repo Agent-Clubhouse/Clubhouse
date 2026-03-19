@@ -161,15 +161,19 @@ export async function initializePluginSystem(): Promise<void> {
     // No saved config — auto-enabled builtins remain
   }
 
-  // Activate app-scoped and dual-scoped plugins that are in appEnabled
-  const appEnabled = usePluginStore.getState().appEnabled;
+  // Activate app-scoped and dual-scoped plugins that are in appEnabled.
+  // Re-read the store to get the CURRENT state — the `store` reference
+  // captured at the top of this function is stale after all the
+  // registerPlugin / loadAppPluginConfig calls above.
+  const currentState = usePluginStore.getState();
+  const appEnabled = currentState.appEnabled;
 
   // Write startup marker *before* activation so a crash during init
   // will trigger safe mode on the next launch.
   await window.clubhouse.plugin.startupMarkerWrite(appEnabled);
 
   for (const pluginId of appEnabled) {
-    const entry = store.plugins[pluginId];
+    const entry = currentState.plugins[pluginId];
     if (entry && (entry.manifest.scope === 'app' || entry.manifest.scope === 'dual')) {
       await activatePlugin(pluginId);
     }
@@ -771,6 +775,18 @@ export async function refreshCommunityPlugins(): Promise<RefreshResult> {
         rendererLog('core:plugins', 'info', `Discovered new plugin: ${id}`, {
           meta: { pluginPath, source },
         });
+      }
+
+      // For already-active pack plugins, re-register themes so the
+      // theme registry reflects any manifest changes (new colors, added/
+      // removed themes).  The registry is separate from the store, so
+      // just preserving the 'activated' status above is not enough.
+      if (isActive && validation.manifest.kind === 'pack' && validation.manifest.contributes?.themes) {
+        // Unregister old themes first (safe even if they weren't registered)
+        if (existing?.manifest.contributes?.themes) {
+          unregisterPackThemes(id, existing.manifest.contributes.themes);
+        }
+        registerPackThemes(id, validation.manifest.contributes.themes);
       }
 
       // Activate if the plugin is in app-enabled but not yet active
