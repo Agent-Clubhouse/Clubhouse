@@ -1022,7 +1022,6 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.WINDOW.POPOUTS_CHANGED, listener); };
     },
   },
-};
 
   mcpBinding: {
     getBindings: () =>

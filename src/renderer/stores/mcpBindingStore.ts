@@ -48,6 +48,6 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
 /** Initialize listener for binding changes from main process. */
 export function initMcpBindingListener(): () => void {
   return window.clubhouse.mcpBinding.onBindingsChanged((bindings) => {
-    useMcpBindingStore.setState({ bindings });
+    useMcpBindingStore.setState({ bindings: bindings as McpBindingEntry[] });
   });
 }
