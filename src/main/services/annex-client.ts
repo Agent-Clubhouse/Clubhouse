@@ -654,6 +654,36 @@ export function sendToSatellite(fingerprint: string, message: Record<string, unk
   }
 }
 
+/**
+ * Fetch the PTY output buffer for a remote agent from its satellite via HTTPS REST.
+ * Uses the existing mTLS credentials for authentication.
+ */
+export function requestPtyBuffer(fingerprint: string, agentId: string): Promise<string> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') {
+    return Promise.resolve('');
+  }
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+
+  return new Promise<string>((resolve) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
+    const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume(); // drain
+        resolve('');
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    });
+    req.on('error', () => resolve(''));
+    req.on('timeout', () => { req.destroy(); resolve(''); });
+  });
+}
+
 export function getDiscoveredServices(): DiscoveredService[] {
   return Array.from(discoveredServices.values());
 }

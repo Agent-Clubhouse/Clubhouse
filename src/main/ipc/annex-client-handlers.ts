@@ -102,6 +102,14 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // Fetch PTY buffer for a remote agent from its satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.PTY_GET_BUFFER, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, satelliteId, agentId) => {
+      return annexClient.requestPtyBuffer(satelliteId, agentId);
+    },
+  ));
+
   // Permanently forget a satellite (disconnect + remove peer + clear state)
   ipcMain.handle(IPC.ANNEX_CLIENT.FORGET_SATELLITE, withValidatedArgs(
     [stringArg()],

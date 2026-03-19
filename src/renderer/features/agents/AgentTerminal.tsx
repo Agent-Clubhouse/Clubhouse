@@ -30,6 +30,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agentId) : null, [agentId, isRemote]);
   const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
   const sendPtyResize = useAnnexClientStore((s) => s.sendPtyResize);
+  const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
@@ -85,9 +86,13 @@ export function AgentTerminal({ agentId, focused }: Props) {
           if (buf) term.write(buf);
           bufferReplayed = true;
         });
-      } else {
-        // Remote agents don't have a local buffer — mark as ready immediately
-        bufferReplayed = true;
+      } else if (remoteParts) {
+        // Remote agents: fetch buffer from satellite via HTTPS REST
+        requestPtyBuffer(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
+          if (terminalRef.current !== term) return;
+          if (buf) term.write(buf);
+          bufferReplayed = true;
+        });
       }
     });
 
@@ -152,7 +157,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, isRemote, remoteParts, sendPtyInput, sendPtyResize]);
+  }, [agentId, isRemote, remoteParts, sendPtyInput, sendPtyResize, requestPtyBuffer]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused);

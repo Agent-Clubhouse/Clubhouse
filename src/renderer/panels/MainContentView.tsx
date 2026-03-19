@@ -30,7 +30,8 @@ import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShor
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { McpSettingsView } from '../features/settings/McpSettingsView';
-import { useRemoteProjectStore, isRemoteProjectId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function MainContentView() {
   const explorerTab = useUIStore((s) => s.explorerTab);
@@ -48,6 +49,7 @@ export function MainContentView() {
   const { findAgentPopout } = usePopouts();
   const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
   const agents = isRemoteProject ? { ...localAgents, ...remoteAgents } : localAgents;
+  const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
 
   // Track whether the agent terminal should receive focus.
   // Must transition false→true to trigger AgentTerminal's focus useEffect,
@@ -144,9 +146,27 @@ export function MainContentView() {
       return <HeadlessAgentView agent={activeAgent} />;
     }
 
+    // Check if viewing a remote agent whose satellite has paused
+    const remoteParts = activeAgentId ? parseNamespacedId(activeAgentId) : null;
+    const isSatellitePaused = remoteParts ? satellitePaused[remoteParts.satelliteId] : false;
+
     return (
-      <div className="h-full bg-ctp-base" data-testid="agent-terminal-view">
+      <div className="relative h-full bg-ctp-base" data-testid="agent-terminal-view">
         <AgentTerminal agentId={activeAgentId!} focused={terminalFocused} />
+        {isSatellitePaused && (
+          <div className="absolute inset-0 flex items-center justify-center bg-ctp-base/80 z-10">
+            <div className="text-center">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-surface-2 flex items-center justify-center">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-ctp-subtext0">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+              </div>
+              <p className="text-sm text-ctp-subtext0 font-medium">Session paused by remote</p>
+              <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -50,6 +50,8 @@ export interface DiscoveredService {
 interface AnnexClientStoreState {
   satellites: SatelliteConnection[];
   discoveredServices: DiscoveredService[];
+  /** Track which satellites have paused remote control */
+  satellitePaused: Record<string, boolean>;
   loadSatellites: () => Promise<void>;
   loadDiscovered: () => Promise<void>;
   pairWith: (fingerprint: string, pin: string) => Promise<{ success: boolean; error?: string }>;
@@ -64,11 +66,13 @@ interface AnnexClientStoreState {
   sendAgentSpawn: (satelliteId: string, params: unknown) => Promise<void>;
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
   sendAgentWake: (satelliteId: string, agentId: string, message: string) => Promise<void>;
+  requestPtyBuffer: (satelliteId: string, agentId: string) => Promise<string>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   satellites: [],
   discoveredServices: [],
+  satellitePaused: {},
 
   loadSatellites: async () => {
     try {
@@ -161,6 +165,14 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
       await window.clubhouse.annexClient.agentWake(satelliteId, agentId, message);
     } catch { /* ignore */ }
   },
+
+  requestPtyBuffer: async (satelliteId, agentId) => {
+    try {
+      return await window.clubhouse.annexClient.ptyGetBuffer(satelliteId, agentId);
+    } catch {
+      return '';
+    }
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -215,12 +227,36 @@ export function initAnnexClientListener(): () => void {
           satelliteId, p.agentId, p.event as import('../../shared/types').AgentDetailedStatus,
         );
       }
-    } else if (type === 'agent:woken' || type === 'agent:spawned') {
-      // Agent started running — update status to 'running'
+    } else if (type === 'agent:woken') {
+      // Existing agent woken — update status to 'running'
       const p = payload as { agentId?: string; id?: string };
       const agentId = p.agentId || p.id;
       if (agentId) {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'running');
+      }
+    } else if (type === 'agent:spawned') {
+      // New or existing agent spawned — upsert into remote agents
+      const p = payload as {
+        id?: string; agentId?: string; name?: string; kind?: string;
+        status?: string; projectId?: string; prompt?: string;
+        model?: string; orchestrator?: string; freeAgentMode?: boolean;
+        parentAgentId?: string;
+      };
+      const agentId = p.id || p.agentId;
+      if (agentId) {
+        useRemoteProjectStore.getState().upsertRemoteAgent(satelliteId, {
+          id: agentId,
+          name: p.name || agentId,
+          kind: (p.kind || 'quick') as import('../../shared/types').AgentKind,
+          status: (p.status === 'starting' ? 'running' : p.status || 'running') as import('../../shared/types').AgentStatus,
+          projectId: p.projectId || '',
+          color: '',
+          mission: p.prompt,
+          model: p.model,
+          orchestrator: p.orchestrator as import('../../shared/types').OrchestratorId | undefined,
+          freeAgentMode: p.freeAgentMode,
+          parentAgentId: p.parentAgentId,
+        });
       }
     } else if (type === 'pty:exit' || type === 'agent:completed') {
       // Agent stopped — update status to 'sleeping'
@@ -229,6 +265,14 @@ export function initAnnexClientListener(): () => void {
       if (agentId) {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
       }
+    } else if (type === 'session:paused') {
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: true },
+      }));
+    } else if (type === 'session:resumed') {
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: false },
+      }));
     }
   });
 
