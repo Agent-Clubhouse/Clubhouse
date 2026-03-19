@@ -24,7 +24,7 @@ jobs:
       release_message: ${{ steps.meta.outputs.release_message }}
       release_notes: ${{ steps.meta.outputs.release_notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -127,10 +127,10 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - name: Run update script integration tests
@@ -155,11 +155,11 @@ jobs:
       sha256_x64: ${{ steps.hash.outputs.sha256_x64 }}
       size_x64: ${{ steps.hash.outputs.size_x64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -224,7 +224,7 @@ jobs:
           cp "$DMG_PATH" "dist/Clubhouse-${VERSION}-darwin-${ARCH}.dmg"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-darwin-${{ matrix.arch }}
           path: dist/
@@ -247,11 +247,11 @@ jobs:
       sha256_win_arm64: ${{ steps.hash.outputs.sha256_win_arm64 }}
       size_win_arm64: ${{ steps.hash.outputs.size_win_arm64 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -261,14 +261,14 @@ jobs:
         run: npx electron-forge make --arch=${{ matrix.arch }}
 
       - name: Authenticate to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Sign Windows executables
-        uses: azure/trusted-signing-action@v0
+        uses: azure/trusted-signing-action@v1
         with:
           endpoint: https://wus2.codesigning.azure.net/
           trusted-signing-account-name: Clubhouse-Win-Signing
@@ -329,7 +329,7 @@ jobs:
           }
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-win32-${{ matrix.arch }}
           path: dist/
@@ -342,7 +342,7 @@ jobs:
     environment: release
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true
@@ -420,7 +420,7 @@ jobs:
           cat "artifacts/${MANIFEST_NAME}"
 
       - name: Authenticate to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
