@@ -314,7 +314,9 @@ export function registerAgentHandlers(): void {
           const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
+          // Pass profileEnv so the provider resolves the correct config directory
+          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
           if (!rawEvents) return null;
           const events = normalizeSessionEvents(rawEvents);
           return paginateEvents(events, offset, limit);
@@ -338,7 +340,9 @@ export function registerAgentHandlers(): void {
           const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
           if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
-          const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
+          // Pass profileEnv so the provider resolves the correct config directory
+          const profileEnv = await agentSystem.resolveProfileEnv(projectPath, provider.id);
+          const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
           if (!rawEvents) return null;
           const events = normalizeSessionEvents(rawEvents);
           return buildSessionSummary(events, provider.id);

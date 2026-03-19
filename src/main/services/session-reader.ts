@@ -126,6 +126,86 @@ export function normalizeSessionEvents(rawEvents: StreamJsonEvent[]): SessionEve
       });
       continue;
     }
+
+    // Raw conversation format: role-based messages (no top-level 'type', uses 'role' instead)
+    // Claude Code may store sessions in this format directly.
+    const rawRole = (raw as any).role as string | undefined;
+    if (rawRole === 'user' || rawRole === 'human') {
+      const content = (raw as any).content;
+      let text = '';
+      if (Array.isArray(content)) {
+        text = content
+          .filter((b: any) => b.type === 'text' && b.text)
+          .map((b: any) => b.text)
+          .join('\n');
+      } else if (typeof content === 'string') {
+        text = content;
+      }
+      events.push({
+        id: randomUUID(),
+        timestamp: ts,
+        type: 'user_message',
+        text: text || '[user message]',
+      });
+      continue;
+    }
+
+    if (rawRole === 'assistant') {
+      const content = (raw as any).content;
+      const usage = (raw as any).usage as { input_tokens?: number; output_tokens?: number } | undefined;
+      const model = (raw as any).model as string | undefined;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text' && block.text) {
+            events.push({
+              id: randomUUID(),
+              timestamp: ts,
+              type: 'assistant_message',
+              text: block.text,
+              usage: usage ? {
+                inputTokens: usage.input_tokens ?? 0,
+                outputTokens: usage.output_tokens ?? 0,
+              } : undefined,
+              model,
+            });
+          }
+          if (block.type === 'tool_use' && block.name) {
+            const filePath = (block.name === 'Write' || block.name === 'Edit')
+              ? (block.input?.file_path as string | undefined)
+              : undefined;
+            events.push({
+              id: randomUUID(),
+              timestamp: ts,
+              type: 'tool_use',
+              toolName: block.name,
+              toolInput: block.input,
+              filePath,
+            });
+          }
+          if (block.type === 'tool_result') {
+            const resultText = typeof block.content === 'string'
+              ? block.content
+              : block.text;
+            events.push({
+              id: randomUUID(),
+              timestamp: ts,
+              type: 'tool_result',
+              text: resultText ? String(resultText).slice(0, 500) : undefined,
+              toolName: block.tool_use_id,
+            });
+          }
+        }
+      } else if (typeof content === 'string') {
+        events.push({
+          id: randomUUID(),
+          timestamp: ts,
+          type: 'assistant_message',
+          text: content,
+          model,
+        });
+      }
+      continue;
+    }
   }
 
   return events;
