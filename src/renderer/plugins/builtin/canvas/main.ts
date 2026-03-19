@@ -92,6 +92,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const viewport = store((s) => s.viewport);
   const zoomedViewId = store((s) => s.zoomedViewId);
   const selectedViewId = store((s) => s.selectedViewId);
+  const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
@@ -196,6 +197,22 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().selectView(viewId);
   }, [store]);
 
+  const handleMoveViews = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    store.getState().moveViews(positions);
+  }, [store]);
+
+  const handleToggleSelectView = useCallback((viewId: string) => {
+    store.getState().toggleSelectView(viewId);
+  }, [store]);
+
+  const handleSetSelectedViewIds = useCallback((ids: string[]) => {
+    store.getState().setSelectedViewIds(ids);
+  }, [store]);
+
+  const handleClearSelection = useCallback(() => {
+    store.getState().clearSelection();
+  }, [store]);
+
   if (!loaded) {
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
@@ -229,17 +246,22 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             viewport,
             zoomedViewId,
             selectedViewId,
+            selectedViewIds,
             api,
             onViewportChange: handleViewportChange,
             onAddView: handleAddView,
             onAddPluginView: handleAddPluginView,
             onRemoveView: handleRemoveView,
             onMoveView: handleMoveView,
+            onMoveViews: handleMoveViews,
             onResizeView: handleResizeView,
             onFocusView: handleFocusView,
             onUpdateView: handleUpdateView,
             onZoomView: handleZoomView,
             onSelectView: handleSelectView,
+            onToggleSelectView: handleToggleSelectView,
+            onSetSelectedViewIds: handleSetSelectedViewIds,
+            onClearSelection: handleClearSelection,
           }),
         ),
   );

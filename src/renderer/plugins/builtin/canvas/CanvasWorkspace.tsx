@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
-import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas } from './canvas-operations';
+import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect, computeTiledPositions } from './canvas-operations';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
@@ -17,22 +17,47 @@ import type { PluginAPI } from '../../../../shared/plugin-types';
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
 
+/** Number of ghost cards shown behind the primary in the drag stack. */
+const STACK_GHOST_COUNT = 3;
+/** Pixel offset between stacked ghost cards. */
+const STACK_OFFSET = 4;
+
+interface SelectionRect {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
+interface MultiDragState {
+  /** The view the user grabbed (drives the mouse tracking). */
+  dragViewId: string;
+  /** Screen-space mouse at drag start. */
+  startMouseX: number;
+  startMouseY: number;
+}
+
 interface CanvasWorkspaceProps {
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
   selectedViewId: string | null;
+  selectedViewIds: string[];
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
   onAddPluginView: (pluginId: string, qualifiedType: string, label: string, position: Position, defaultSize?: { width: number; height: number }) => void;
   onRemoveView: (viewId: string) => void;
   onMoveView: (viewId: string, position: Position) => void;
+  onMoveViews: (positions: Map<string, Position>) => void;
   onResizeView: (viewId: string, size: Size) => void;
   onFocusView: (viewId: string) => void;
   onUpdateView: (viewId: string, updates: Partial<CanvasView>) => void;
   onZoomView: (viewId: string | null) => void;
   onSelectView: (viewId: string | null) => void;
+  onToggleSelectView: (viewId: string) => void;
+  onSetSelectedViewIds: (ids: string[]) => void;
+  onClearSelection: () => void;
 }
 
 export function CanvasWorkspace({
@@ -40,23 +65,35 @@ export function CanvasWorkspace({
   viewport,
   zoomedViewId,
   selectedViewId,
+  selectedViewIds,
   api,
   onViewportChange,
   onAddView,
   onAddPluginView,
   onRemoveView,
   onMoveView,
+  onMoveViews,
   onResizeView,
   onFocusView,
   onUpdateView,
   onZoomView,
   onSelectView,
+  onToggleSelectView,
+  onSetSelectedViewIds,
+  onClearSelection,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
   const [containerSize, setContainerSize] = useState<Size>({ width: 0, height: 0 });
+
+  // ── Selection rectangle (lasso) ──────────────────────────────
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
+
+  // ── Multi-drag state ─────────────────────────────────────────
+  const [multiDrag, setMultiDrag] = useState<MultiDragState | null>(null);
+  const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
   // ── Auto-focus container so keyboard events (arrow-key panning) work ──
   useEffect(() => {
@@ -90,24 +127,76 @@ export function CanvasWorkspace({
 
   const offScreenIndicators = computeOffScreenIndicators(views, attentionMap, viewport, containerSize);
 
-  // ── Pan via mouse drag on empty space ──────────────────────────
+  // ── Pan via middle-click drag ───────────────────────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only start pan on middle-click or left-click on empty space
-    if (e.button === 1 || (e.button === 0 && e.target === e.currentTarget)) {
+    const isEmptySpace = e.target === e.currentTarget;
+
+    // Middle-click: always pan
+    if (e.button === 1) {
       e.preventDefault();
-      // Clicking empty space deselects any selected widget and reclaims focus
       onSelectView(null);
       containerRef.current?.focus();
       setIsPanning(true);
-      panStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        panX: viewport.panX,
-        panY: viewport.panY,
-      };
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX: viewport.panX, panY: viewport.panY };
+      return;
     }
-  }, [viewport.panX, viewport.panY, onSelectView]);
+
+    // Left-click on empty space: start selection rectangle (lasso)
+    if (e.button === 0 && isEmptySpace) {
+      e.preventDefault();
+      // Clear keyboard-focus selection; preserve multi-selection only if Cmd/Ctrl held
+      onSelectView(null);
+      if (!e.metaKey && !e.ctrlKey) {
+        onClearSelection();
+      }
+      containerRef.current?.focus();
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
+      setSelectionRect({ startX: canvasPos.x, startY: canvasPos.y, currentX: canvasPos.x, currentY: canvasPos.y });
+    }
+  }, [viewport, onSelectView, onClearSelection]);
+
+  // ── Selection rectangle mouse tracking ──────────────────────────
+
+  useEffect(() => {
+    if (!selectionRect) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
+      setSelectionRect((prev) => prev ? { ...prev, currentX: canvasPos.x, currentY: canvasPos.y } : null);
+    };
+
+    const handleMouseUp = () => {
+      if (selectionRect) {
+        // Compute which views are fully contained in the selection rect
+        const rectObj = {
+          x: Math.min(selectionRect.startX, selectionRect.currentX),
+          y: Math.min(selectionRect.startY, selectionRect.currentY),
+          width: Math.abs(selectionRect.currentX - selectionRect.startX),
+          height: Math.abs(selectionRect.currentY - selectionRect.startY),
+        };
+        const contained = views.filter((v) => isViewFullyInRect(v, rectObj)).map((v) => v.id);
+        if (contained.length > 0) {
+          onSetSelectedViewIds(contained);
+        }
+      }
+      setSelectionRect(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [selectionRect, viewport, views, onSetSelectedViewIds]);
+
+  // ── Pan effect (middle-click) ────────────────────────────────────
 
   useEffect(() => {
     if (!isPanning) return;
@@ -134,6 +223,51 @@ export function CanvasWorkspace({
     };
   }, [isPanning, viewport.zoom, onViewportChange]);
 
+  // ── Multi-drag tracking ──────────────────────────────────────────
+
+  const handleViewMultiDragStart = useCallback((viewId: string, mouseX: number, mouseY: number) => {
+    if (selectedViewIds.length > 1 && selectedViewIds.includes(viewId)) {
+      setMultiDrag({ dragViewId: viewId, startMouseX: mouseX, startMouseY: mouseY });
+      setMultiDragDelta({ dx: 0, dy: 0 });
+    }
+  }, [selectedViewIds]);
+
+  useEffect(() => {
+    if (!multiDrag) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = (e.clientX - multiDrag.startMouseX) / viewport.zoom;
+      const dy = (e.clientY - multiDrag.startMouseY) / viewport.zoom;
+      setMultiDragDelta({ dx, dy });
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // Compute the drop point from the primary view's final position
+      const primaryView = views.find((v) => v.id === multiDrag.dragViewId);
+      if (primaryView) {
+        const dx = (e.clientX - multiDrag.startMouseX) / viewport.zoom;
+        const dy = (e.clientY - multiDrag.startMouseY) / viewport.zoom;
+        const dropOrigin: Position = {
+          x: primaryView.position.x + dx,
+          y: primaryView.position.y + dy,
+        };
+
+        const selectedViews = views.filter((v) => selectedViewIds.includes(v.id));
+        const tiledPositions = computeTiledPositions(selectedViews, snapPosition(dropOrigin));
+        onMoveViews(tiledPositions);
+      }
+      setMultiDrag(null);
+      setMultiDragDelta({ dx: 0, dy: 0 });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [multiDrag, viewport.zoom, views, selectedViewIds, onMoveViews]);
+
   // ── Zoom via Ctrl+wheel ────────────────────────────────────────
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -159,12 +293,14 @@ export function CanvasWorkspace({
   // ── Keyboard: arrow keys pan when nothing is selected ─────────
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    // Escape always deselects
-    if (e.key === 'Escape' && selectedViewId) {
-      e.preventDefault();
-      onSelectView(null);
-      containerRef.current?.focus();
-      return;
+    // Escape always deselects (both single and multi)
+    if (e.key === 'Escape') {
+      if (selectedViewId || selectedViewIds.length > 0) {
+        e.preventDefault();
+        onClearSelection();
+        containerRef.current?.focus();
+        return;
+      }
     }
 
     // When a widget is selected, let keyboard events pass through to it
@@ -178,8 +314,6 @@ export function CanvasWorkspace({
       case 'ArrowRight': dx = -ARROW_PAN_STEP; break;
       case 'ArrowUp':    dy = ARROW_PAN_STEP; break;
       case 'ArrowDown':  dy = -ARROW_PAN_STEP; break;
-      // Escape deselects (redundant since selectedViewId is null, but good for clarity)
-      case 'Escape':     onSelectView(null); return;
       default: return;
     }
 
@@ -189,7 +323,7 @@ export function CanvasWorkspace({
       panY: viewport.panY + dy,
       zoom: viewport.zoom,
     });
-  }, [selectedViewId, viewport, onViewportChange, onSelectView]);
+  }, [selectedViewId, selectedViewIds, viewport, onViewportChange, onClearSelection]);
 
   // ── Context menu ───────────────────────────────────────────────
 
@@ -293,9 +427,13 @@ export function CanvasWorkspace({
   // ── View drag handlers ─────────────────────────────────────────
 
   const handleViewDragEnd = useCallback((viewId: string, position: Position) => {
+    // If this was a multi-drag, the multi-drag mouseUp handler already moved all views
+    if (multiDrag && multiDrag.dragViewId === viewId) {
+      return;
+    }
     const snapped = snapPosition(position);
     onMoveView(viewId, snapped);
-  }, [onMoveView]);
+  }, [onMoveView, multiDrag]);
 
   const handleViewResizeEnd = useCallback((viewId: string, size: Size, position: Position) => {
     const snapped = snapSize(size);
@@ -331,25 +469,87 @@ export function CanvasWorkspace({
           left: 0,
         }}
       >
-        {views.map((view) => (
-          <CanvasViewComponent
-            key={view.id}
-            view={view}
-            api={api}
-            zoom={viewport.zoom}
-            isZoomed={zoomedViewId === view.id}
-            isSelected={selectedViewId === view.id}
-            attention={attentionMap.get(view.id) ?? null}
-            onClose={() => onRemoveView(view.id)}
-            onFocus={() => onFocusView(view.id)}
-            onSelect={() => onSelectView(view.id)}
-            onCenterView={() => handleCenterView(view.id)}
-            onZoomView={() => handleToggleZoomView(view.id)}
-            onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
-            onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
-            onUpdate={(updates) => onUpdateView(view.id, updates)}
+        {views.map((view) => {
+          const isBeingMultiDragged = multiDrag && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId;
+          return (
+            <CanvasViewComponent
+              key={view.id}
+              view={view}
+              api={api}
+              zoom={viewport.zoom}
+              isZoomed={zoomedViewId === view.id}
+              isSelected={selectedViewId === view.id}
+              isMultiSelected={selectedViewIds.includes(view.id)}
+              attention={attentionMap.get(view.id) ?? null}
+              onClose={() => onRemoveView(view.id)}
+              onFocus={() => onFocusView(view.id)}
+              onSelect={() => {
+                onClearSelection();
+                onSelectView(view.id);
+              }}
+              onToggleSelect={() => onToggleSelectView(view.id)}
+              onCenterView={() => handleCenterView(view.id)}
+              onZoomView={() => handleToggleZoomView(view.id)}
+              onDragStart={handleViewMultiDragStart}
+              onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
+              onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
+              onUpdate={(updates) => onUpdateView(view.id, updates)}
+            />
+          );
+        })}
+
+        {/* Selection rectangle (lasso) */}
+        {selectionRect && (
+          <div
+            className="absolute border-2 border-ctp-blue/60 bg-ctp-blue/10 rounded-sm pointer-events-none"
+            style={{
+              left: Math.min(selectionRect.startX, selectionRect.currentX),
+              top: Math.min(selectionRect.startY, selectionRect.currentY),
+              width: Math.abs(selectionRect.currentX - selectionRect.startX),
+              height: Math.abs(selectionRect.currentY - selectionRect.startY),
+              zIndex: 99998,
+            }}
+            data-testid="canvas-selection-rect"
           />
-        ))}
+        )}
+
+        {/* Multi-drag stack visual */}
+        {multiDrag && selectedViewIds.length > 1 && (() => {
+          const primaryView = views.find((v) => v.id === multiDrag.dragViewId);
+          if (!primaryView) return null;
+          const stackX = primaryView.position.x + multiDragDelta.dx;
+          const stackY = primaryView.position.y + multiDragDelta.dy;
+          const ghostCount = Math.min(STACK_GHOST_COUNT, selectedViewIds.length - 1);
+
+          return (
+            <div
+              className="absolute pointer-events-none"
+              style={{ left: stackX, top: stackY, zIndex: 99997 }}
+              data-testid="canvas-multi-drag-stack"
+            >
+              {/* Ghost cards stacked behind */}
+              {Array.from({ length: ghostCount }, (_, i) => (
+                <div
+                  key={i}
+                  className="absolute bg-ctp-mantle border border-surface-2 rounded-lg opacity-40"
+                  style={{
+                    left: (i + 1) * STACK_OFFSET,
+                    top: (i + 1) * STACK_OFFSET,
+                    width: primaryView.size.width,
+                    height: primaryView.size.height,
+                  }}
+                />
+              ))}
+              {/* Count badge */}
+              <div
+                className="absolute -top-3 -right-3 bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
+                style={{ zIndex: 1 }}
+              >
+                {selectedViewIds.length}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Zoomed view overlay */}

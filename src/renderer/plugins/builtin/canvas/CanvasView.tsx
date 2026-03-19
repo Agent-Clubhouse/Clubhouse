@@ -69,12 +69,15 @@ interface CanvasViewComponentProps {
   zoom: number;
   isZoomed?: boolean;
   isSelected?: boolean;
+  isMultiSelected?: boolean;
   attention?: CanvasViewAttention | null;
   onClose: () => void;
   onFocus: () => void;
   onSelect: () => void;
+  onToggleSelect: () => void;
   onCenterView: () => void;
   onZoomView: () => void;
+  onDragStart: (viewId: string, mouseX: number, mouseY: number) => void;
   onDragEnd: (position: Position) => void;
   onResizeEnd: (size: Size, position: Position) => void;
   onUpdate: (updates: Partial<CanvasView>) => void;
@@ -86,12 +89,15 @@ export function CanvasViewComponent({
   zoom,
   isZoomed,
   isSelected,
+  isMultiSelected,
   attention,
   onClose,
   onFocus,
   onSelect,
+  onToggleSelect,
   onCenterView,
   onZoomView,
+  onDragStart: onMultiDragStart,
   onDragEnd,
   onResizeEnd,
   onUpdate,
@@ -157,7 +163,9 @@ export function CanvasViewComponent({
       startY: view.position.y,
     };
     setDragPos(view.position);
-  }, [view.position, onFocus]);
+    // Notify parent for multi-drag coordination
+    onMultiDragStart(view.id, e.clientX, e.clientY);
+  }, [view.position, onFocus, onMultiDragStart, view.id]);
 
   useEffect(() => {
     if (dragPos === null) return;
@@ -324,7 +332,9 @@ export function CanvasViewComponent({
   // ── Selection highlight ─────────────────────────────────────────
   const selectionShadow = isSelected
     ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-    : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+    : isMultiSelected
+      ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+      : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
 
   return (
     <div
@@ -337,10 +347,18 @@ export function CanvasViewComponent({
         zIndex: view.zIndex,
         ...(!attention && { boxShadow: selectionShadow }),
       }}
-      onMouseDown={(e) => { e.stopPropagation(); onSelect(); }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        if (e.metaKey || e.ctrlKey) {
+          onToggleSelect();
+        } else if (!isMultiSelected) {
+          onSelect();
+        }
+      }}
       data-testid={`canvas-view-${view.id}`}
       data-attention={attention?.level ?? undefined}
       data-selected={isSelected ? 'true' : undefined}
+      data-multi-selected={isMultiSelected ? 'true' : undefined}
     >
       {/* Title bar — drag handle */}
       <div

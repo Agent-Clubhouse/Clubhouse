@@ -413,6 +413,82 @@ export function canvasToScreen(
   };
 }
 
+// ── Multi-select helpers ─────────────────────────────────────────────
+
+/**
+ * Check whether a view is fully contained within the given rectangle.
+ * Both the view and the rect are in canvas-space coordinates.
+ */
+export function isViewFullyInRect(
+  view: CanvasView,
+  rect: { x: number; y: number; width: number; height: number },
+): boolean {
+  // Normalise rect so width/height are positive (drag can go any direction)
+  const rx = rect.width >= 0 ? rect.x : rect.x + rect.width;
+  const ry = rect.height >= 0 ? rect.y : rect.y + rect.height;
+  const rw = Math.abs(rect.width);
+  const rh = Math.abs(rect.height);
+
+  return (
+    view.position.x >= rx &&
+    view.position.y >= ry &&
+    view.position.x + view.size.width <= rx + rw &&
+    view.position.y + view.size.height <= ry + rh
+  );
+}
+
+/**
+ * Compute tiled positions for a set of views dropped at an origin point.
+ * Arranges views in a grid (columns = ceil(sqrt(N))), snapped to grid,
+ * with a configurable gap between them.
+ */
+export function computeTiledPositions(
+  views: CanvasView[],
+  origin: Position,
+  gap: number = GRID_SIZE,
+): Map<string, Position> {
+  if (views.length === 0) return new Map();
+  if (views.length === 1) {
+    return new Map([[views[0].id, snapPosition(origin)]]);
+  }
+
+  const cols = Math.ceil(Math.sqrt(views.length));
+  const result = new Map<string, Position>();
+
+  // Pre-compute max width per column and max height per row for neat alignment
+  const colWidths: number[] = new Array(cols).fill(0);
+  const rowCount = Math.ceil(views.length / cols);
+  const rowHeights: number[] = new Array(rowCount).fill(0);
+
+  for (let i = 0; i < views.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    colWidths[col] = Math.max(colWidths[col], views[i].size.width);
+    rowHeights[row] = Math.max(rowHeights[row], views[i].size.height);
+  }
+
+  // Compute cumulative offsets
+  const colOffsets: number[] = [0];
+  for (let c = 1; c < cols; c++) {
+    colOffsets[c] = colOffsets[c - 1] + colWidths[c - 1] + gap;
+  }
+  const rowOffsets: number[] = [0];
+  for (let r = 1; r < rowCount; r++) {
+    rowOffsets[r] = rowOffsets[r - 1] + rowHeights[r - 1] + gap;
+  }
+
+  for (let i = 0; i < views.length; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    result.set(views[i].id, snapPosition({
+      x: origin.x + colOffsets[col],
+      y: origin.y + rowOffsets[row],
+    }));
+  }
+
+  return result;
+}
+
 // ── Canvas instance helpers ──────────────────────────────────────────
 
 export interface CanvasCounter {

@@ -14,6 +14,7 @@ import {
   updateViewTitle as updateViewTitleOp,
   bringToFront as bringToFrontOp,
   clampViewport,
+  clampPosition,
   queryViews as queryViewsOp,
   createCanvasCounter,
   generateCanvasId,
@@ -66,6 +67,13 @@ export interface CanvasState {
 
   // Selection (which view receives keyboard/scroll events)
   selectView: (viewId: string | null) => void;
+
+  // Multi-selection (group operations: lasso, Cmd+click)
+  selectedViewIds: string[];
+  toggleSelectView: (viewId: string) => void;
+  setSelectedViewIds: (ids: string[]) => void;
+  clearSelection: () => void;
+  moveViews: (positions: Map<string, Position>) => void;
 
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
@@ -133,6 +141,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     viewport: initialCanvas.viewport,
     zoomedViewId: null,
     selectedViewId: null,
+    selectedViewIds: [],
     loaded: false,
 
     activeCanvas: () => {
@@ -352,6 +361,34 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           nextZIndex: result.nextZIndex,
         };
       }));
+    },
+
+    // ── Multi-selection ──────────────────────────────────────────
+
+    toggleSelectView: (viewId) => {
+      const { selectedViewIds } = get();
+      if (selectedViewIds.includes(viewId)) {
+        set({ selectedViewIds: selectedViewIds.filter((id) => id !== viewId) });
+      } else {
+        set({ selectedViewIds: [...selectedViewIds, viewId] });
+      }
+    },
+
+    setSelectedViewIds: (ids) => {
+      set({ selectedViewIds: ids });
+    },
+
+    clearSelection: () => {
+      set({ selectedViewIds: [], selectedViewId: null });
+    },
+
+    moveViews: (positions) => {
+      set(updateActiveCanvas(get(), (canvas) => ({
+        views: canvas.views.map((v) => {
+          const newPos = positions.get(v.id);
+          return newPos ? { ...v, position: clampPosition(newPos) } : v;
+        }),
+      })));
     },
   }));
 }
