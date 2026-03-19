@@ -64,6 +64,12 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   });
   ctx.subscriptions.push(addTerminalCmd);
 
+  const addAnchorCmd = api.commands.register('add-anchor-view', () => {
+    const store = getStore();
+    store.getState().addView('anchor', { x: 250, y: 250 });
+  });
+  ctx.subscriptions.push(addAnchorCmd);
+
   const resetCmd = api.commands.register('reset-viewport', () => {
     const store = getStore();
     store.getState().setViewport({ panX: 0, panY: 0, zoom: 1 });
