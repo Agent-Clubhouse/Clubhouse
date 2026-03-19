@@ -310,9 +310,9 @@ export function registerAgentHandlers(): void {
       [stringArg(), stringArg(), stringArg(), numberArg({ integer: true, min: 0 }), numberArg({ integer: true, min: 1 }), stringArg({ optional: true })],
       async (_event, projectPath, agentId, sessionId, offset, limit, orchestrator) => {
         try {
-          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-          if (!isSessionCapable(provider)) return null;
           const config = await agentConfig.getDurableConfig(projectPath, agentId);
+          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
+          if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
           const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
           if (!rawEvents) return null;
@@ -334,9 +334,9 @@ export function registerAgentHandlers(): void {
       [stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
       async (_event, projectPath, agentId, sessionId, orchestrator) => {
         try {
-          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator);
-          if (!isSessionCapable(provider)) return null;
           const config = await agentConfig.getDurableConfig(projectPath, agentId);
+          const provider = await agentSystem.resolveOrchestrator(projectPath, orchestrator || config?.orchestrator);
+          if (!isSessionCapable(provider)) return null;
           const cwd = config?.worktreePath || projectPath;
           const rawEvents = await provider.readSessionTranscript(sessionId, cwd);
           if (!rawEvents) return null;

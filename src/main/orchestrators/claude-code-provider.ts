@@ -371,10 +371,13 @@ export class ClaudeCodeProvider extends BaseProvider implements HookCapable, Hea
 
     if (!projectDir) return null;
 
-    // Search for JSONL file in common locations
+    // Search for JSONL/JSON file in common locations
+    // listSessions discovers both .json and .jsonl, so we must search both here too
     const searchPaths = [
       path.join(projectDir, 'sessions', `${sessionId}.jsonl`),
       path.join(projectDir, `${sessionId}.jsonl`),
+      path.join(projectDir, 'sessions', `${sessionId}.json`),
+      path.join(projectDir, `${sessionId}.json`),
     ];
 
     let jsonlPath: string | null = null;
