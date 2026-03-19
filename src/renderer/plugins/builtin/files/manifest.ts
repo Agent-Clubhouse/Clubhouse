@@ -8,11 +8,20 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Project file browser with Monaco editor, markdown preview, and image display.',
   author: 'Clubhouse',
-  engine: { api: 0.6 },
+  engine: { api: 0.8 },
   scope: 'project',
-  permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage'],
+  permissions: ['files', 'files.watch', 'git', 'commands', 'notifications', 'storage', 'canvas'],
   contributes: {
-    tab: { label: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
+    tab: { label: 'Files', title: 'Files', icon: FOLDER_ICON, layout: 'sidebar-content' },
+    canvasWidgets: [
+      {
+        id: 'file-viewer',
+        label: 'File Viewer',
+        icon: FOLDER_ICON,
+        defaultSize: { width: 560, height: 480 },
+        metadataKeys: ['projectId', 'filePath'],
+      },
+    ],
     commands: [
       { id: 'refresh', title: 'Refresh File Tree', defaultBinding: 'Meta+Shift+R' },
       { id: 'search', title: 'Search Across Files', defaultBinding: 'Meta+Shift+F' },

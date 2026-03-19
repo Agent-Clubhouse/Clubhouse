@@ -8,11 +8,11 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   description: 'Browse and replay historical agent conversation sessions.',
   author: 'Clubhouse',
-  engine: { api: 0.6 },
+  engine: { api: 0.8 },
   scope: 'project',
   permissions: ['agents', 'commands'],
   contributes: {
-    tab: { label: 'Sessions', icon: SESSIONS_ICON, layout: 'sidebar-content' },
+    tab: { label: 'Sessions', title: 'Sessions', icon: SESSIONS_ICON, layout: 'sidebar-content' },
     commands: [],
     help: {
       topics: [
