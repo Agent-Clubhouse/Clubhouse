@@ -205,6 +205,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     ? 'Terminal \u2014 Project'
     : `Terminal \u2014 ${target.label}`;
 
+  // Dynamic title: show target context
+  useEffect(() => {
+    if (target.kind === 'project') {
+      api.window.setTitle('Terminal');
+    } else {
+      api.window.setTitle(`Terminal \u2014 ${target.label}`);
+    }
+    return () => api.window.resetTitle();
+  }, [api, target.kind, target.label]);
+
   const statusLabel =
     status === 'starting' ? 'Starting...' :
     status === 'running' ? 'Running' :

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import { fileState } from './state';
 import { disposeAllModels } from './MonacoEditor';
@@ -103,7 +103,32 @@ function SidebarWrapper({ api }: { api: PluginAPI }) {
 }
 
 export const SidebarPanel = SidebarWrapper;
-export const MainPanel = FileViewer;
+
+/** Wrapper around FileViewer that sets dynamic title based on active file tab. */
+function FilesMainPanel({ api }: { api: PluginAPI }) {
+  const [activeFileName, setActiveFileName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const update = () => {
+      const tab = fileState.getActiveTab();
+      setActiveFileName(tab?.filePath?.split('/').pop() ?? null);
+    };
+    update();
+    return fileState.subscribe(update);
+  }, []);
+
+  useEffect(() => {
+    if (activeFileName) {
+      api.window.setTitle(activeFileName);
+    } else {
+      api.window.resetTitle();
+    }
+  }, [api, activeFileName]);
+
+  return React.createElement(FileViewer, { api });
+}
+
+export const MainPanel = FilesMainPanel;
 
 // Compile-time type assertion
 const _: PluginModule = { activate, deactivate, MainPanel, SidebarPanel };

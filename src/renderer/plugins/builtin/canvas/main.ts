@@ -93,6 +93,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const zoomedViewId = store((s) => s.zoomedViewId);
   const selectedViewId = store((s) => s.selectedViewId);
   const loaded = store((s) => s.loaded);
+
+  // Dynamic title: show active canvas tab name
+  const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
+  useEffect(() => {
+    if (activeCanvasName) {
+      api.window.setTitle(activeCanvasName);
+    } else {
+      api.window.resetTitle();
+    }
+  }, [api, activeCanvasName]);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 

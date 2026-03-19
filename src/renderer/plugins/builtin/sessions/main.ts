@@ -357,6 +357,18 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     if (item) item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [playback.currentEventIndex, playback.playing]);
 
+  // Dynamic title: show agent name + session label when viewing
+  useEffect(() => {
+    if (selectedAgent?.agentName && selectedSessionId) {
+      api.window.setTitle(`${selectedAgent.agentName} \u2014 ${selectedSessionId.slice(0, 8)}`);
+    } else if (selectedAgent?.agentName) {
+      api.window.setTitle(selectedAgent.agentName);
+    } else {
+      api.window.resetTitle();
+    }
+    return () => api.window.resetTitle();
+  }, [api, selectedAgent?.agentName, selectedSessionId]);
+
   // No selection state
   if (!selectedAgent || !selectedSessionId) {
     return React.createElement('div', {
