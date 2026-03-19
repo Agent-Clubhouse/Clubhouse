@@ -132,8 +132,12 @@ function toPublicConnection(s: SatelliteConnectionInternal): SatelliteConnection
 }
 
 function setState(sat: SatelliteConnectionInternal, state: SatelliteState, error?: string): void {
+  const prev = sat.state;
   sat.state = state;
   if (error !== undefined) sat.lastError = error;
+  appLog('core:annex-client', error ? 'warn' : 'info', `Satellite state: ${prev} → ${state}`, {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias, ...(error ? { error } : {}) },
+  });
   broadcastSatellitesChanged();
 }
 
@@ -197,9 +201,15 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
 
   try {
     const res = await httpGet(host, pPort, '/api/v1/identity');
-    if (res.status !== 200) return null;
+    if (res.status !== 200) {
+      appLog('core:annex-client', 'warn', 'Identity request failed', { meta: { host, port: pPort, status: res.status } });
+      return null;
+    }
     const identity = JSON.parse(res.body);
-    if (!identity.fingerprint) return null;
+    if (!identity.fingerprint) {
+      appLog('core:annex-client', 'warn', 'Identity response missing fingerprint', { meta: { host, port: pPort } });
+      return null;
+    }
     return {
       fingerprint: identity.fingerprint,
       alias: identity.alias || 'Unknown',
@@ -207,7 +217,10 @@ async function identifyService(service: RemoteService): Promise<RemoteIdentity |
       color: identity.color || 'indigo',
       publicKey: identity.publicKey || '',
     };
-  } catch {
+  } catch (err) {
+    appLog('core:annex-client', 'warn', 'Identity request error', {
+      meta: { host, port: pPort, error: err instanceof Error ? err.message : String(err) },
+    });
     return null;
   }
 }
@@ -358,11 +371,17 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
 
   // Check if auto-reconnect is enabled
   const settings = annexSettings.getSettings();
-  if (!settings.autoReconnect) return;
+  if (!settings.autoReconnect) {
+    appLog('core:annex-client', 'info', 'Auto-reconnect disabled, not scheduling', { meta: { fingerprint: sat.fingerprint } });
+    return;
+  }
 
   // Exponential backoff: 1s, 2s, 4s, 8s, 30s cap
   const delay = Math.min(1000 * Math.pow(2, sat.reconnectAttempt), 30_000);
   sat.reconnectAttempt++;
+  appLog('core:annex-client', 'info', `Scheduling reconnect in ${delay}ms (attempt ${sat.reconnectAttempt})`, {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias },
+  });
 
   sat.reconnectTimer = setTimeout(() => {
     if (sat.state === 'disconnected') {
@@ -372,6 +391,9 @@ function scheduleReconnect(sat: SatelliteConnectionInternal): void {
 }
 
 function disconnectSatellite(sat: SatelliteConnectionInternal): void {
+  appLog('core:annex-client', 'info', 'Disconnecting satellite', {
+    meta: { fingerprint: sat.fingerprint, alias: sat.alias, previousState: sat.state },
+  });
   stopHeartbeat(sat);
   if (sat.reconnectTimer) {
     clearTimeout(sat.reconnectTimer);
