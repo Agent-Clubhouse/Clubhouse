@@ -2,7 +2,7 @@
 import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
 /** Built-in canvas view types. Plugin widget types use the 'plugin' discriminant. */
-export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'terminal' | 'plugin';
+export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'terminal' | 'anchor' | 'plugin';
 
 export interface Position {
   x: number;
@@ -70,6 +70,12 @@ export interface TerminalCanvasView extends CanvasViewBase {
   cwd?: string;
 }
 
+export interface AnchorCanvasView extends CanvasViewBase {
+  type: 'anchor';
+  /** User-defined anchor label — stored in displayName for search/navigation. */
+  label: string;
+}
+
 export interface PluginCanvasView extends CanvasViewBase {
   type: 'plugin';
   /** Fully-qualified plugin widget type: "plugin:{pluginId}:{widgetId}". */
@@ -78,7 +84,7 @@ export interface PluginCanvasView extends CanvasViewBase {
   pluginId: string;
 }
 
-export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | TerminalCanvasView | PluginCanvasView;
+export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | TerminalCanvasView | AnchorCanvasView | PluginCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
@@ -137,6 +143,8 @@ export const MIN_VIEW_WIDTH = 200;
 export const MIN_VIEW_HEIGHT = 150;
 export const DEFAULT_VIEW_WIDTH = 480;
 export const DEFAULT_VIEW_HEIGHT = 480;
+export const DEFAULT_ANCHOR_WIDTH = 240;
+export const DEFAULT_ANCHOR_HEIGHT = 160;
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 2.0;
 export const CANVAS_SIZE = 20000;

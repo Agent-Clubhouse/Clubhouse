@@ -22,6 +22,7 @@ describe('canvas main', () => {
 
     expect(registerFn).toHaveBeenCalledWith('add-agent-view', expect.any(Function));
     expect(registerFn).toHaveBeenCalledWith('add-file-view', expect.any(Function));
+    expect(registerFn).toHaveBeenCalledWith('add-anchor-view', expect.any(Function));
     expect(registerFn).toHaveBeenCalledWith('reset-viewport', expect.any(Function));
   });
 
@@ -31,7 +32,7 @@ describe('canvas main', () => {
 
     canvasModule.activate(ctx, api);
 
-    expect(ctx.subscriptions).toHaveLength(6);
+    expect(ctx.subscriptions).toHaveLength(7);
     for (const sub of ctx.subscriptions) {
       expect(typeof sub.dispose).toBe('function');
     }

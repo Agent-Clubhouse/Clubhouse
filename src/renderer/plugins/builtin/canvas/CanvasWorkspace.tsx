@@ -7,6 +7,7 @@ import { AgentCanvasView } from './AgentCanvasView';
 import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
+import { AnchorCanvasView } from './AnchorCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
@@ -382,6 +383,7 @@ export function CanvasWorkspace({
               {zoomedView.type === 'file' && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
               {zoomedView.type === 'git-diff' && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'anchor' && <AnchorCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
             </div>
           </div>
         </div>

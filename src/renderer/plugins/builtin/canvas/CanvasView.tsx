@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
@@ -7,6 +7,7 @@ import { FileCanvasView } from './FileCanvasView';
 import { BrowserCanvasView } from './BrowserCanvasView';
 import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { TerminalCanvasView } from './TerminalCanvasView';
+import { AnchorCanvasView } from './AnchorCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
@@ -291,6 +292,8 @@ export function CanvasViewComponent({
         return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'terminal':
         return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
+      case 'anchor':
+        return <AnchorCanvasView view={view as AnchorCanvasViewType} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);

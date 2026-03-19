@@ -1,7 +1,47 @@
-import React from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import type { CanvasView, CanvasViewAttention } from './canvas-types';
 import { CanvasSearch } from './CanvasSearch';
 import { useAttentionCycler } from './canvas-attention';
+
+/** Hook for cycling through anchor views on the canvas. */
+export function useAnchorCycler(
+  views: CanvasView[],
+  onNavigate: (viewId: string) => void,
+): {
+  count: number;
+  currentIndex: number;
+  goNext: () => void;
+  goPrev: () => void;
+} {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const anchorIds = useMemo(
+    () => views.filter((v) => v.type === 'anchor').map((v) => v.id),
+    [views],
+  );
+  const count = anchorIds.length;
+
+  const goNext = useCallback(() => {
+    if (count === 0) return;
+    const next = (currentIndex + 1) % count;
+    setCurrentIndex(next);
+    onNavigate(anchorIds[next]);
+  }, [count, currentIndex, anchorIds, onNavigate]);
+
+  const goPrev = useCallback(() => {
+    if (count === 0) return;
+    const prev = (currentIndex - 1 + count) % count;
+    setCurrentIndex(prev);
+    onNavigate(anchorIds[prev]);
+  }, [count, currentIndex, anchorIds, onNavigate]);
+
+  // Reset index when out of bounds
+  const safeIndex = count > 0 ? Math.min(currentIndex, count - 1) : 0;
+  if (safeIndex !== currentIndex && count > 0) {
+    setCurrentIndex(safeIndex);
+  }
+
+  return { count, currentIndex: safeIndex, goNext, goPrev };
+}
 
 interface CanvasControlsProps {
   zoom: number;
@@ -20,6 +60,7 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
   const zoomPercent = Math.round(zoom * 100);
   const effectiveMap = attentionMap ?? new Map();
   const { count, goNext, goPrev } = useAttentionCycler(effectiveMap, onSelectView);
+  const { count: anchorCount, goNext: anchorNext, goPrev: anchorPrev } = useAnchorCycler(views, onSelectView);
 
   const btnClass = 'w-6 h-6 flex items-center justify-center rounded text-ctp-subtext0 hover:bg-surface-1 hover:text-ctp-text transition-colors';
 
@@ -68,6 +109,49 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               className="w-5 h-5 flex items-center justify-center rounded text-yellow-400 hover:bg-yellow-500/20 transition-colors"
               title="Next attention item"
               data-testid="canvas-attention-next"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+          <div className="w-px h-4 bg-surface-0 mx-0.5" />
+        </>
+      )}
+
+      {/* Anchor cycling */}
+      {anchorCount > 0 && (
+        <>
+          <div className="flex items-center gap-0.5" data-testid="canvas-anchor-cycler">
+            <button
+              onClick={anchorPrev}
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-blue hover:bg-ctp-blue/20 transition-colors"
+              title="Previous anchor"
+              data-testid="canvas-anchor-prev"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <div
+              className="flex items-center gap-1 px-1"
+              title={`${anchorCount} anchor${anchorCount !== 1 ? 's' : ''}`}
+            >
+              {/* Anchor icon */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-ctp-blue" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="5" r="3" />
+                <line x1="12" y1="8" x2="12" y2="22" />
+                <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
+              </svg>
+              <span className="text-[10px] font-mono text-ctp-blue min-w-[2ch] text-center">
+                {anchorCount}
+              </span>
+            </div>
+            <button
+              onClick={anchorNext}
+              className="w-5 h-5 flex items-center justify-center rounded text-ctp-blue hover:bg-ctp-blue/20 transition-colors"
+              title="Next anchor"
+              data-testid="canvas-anchor-next"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 18 15 12 9 6" />

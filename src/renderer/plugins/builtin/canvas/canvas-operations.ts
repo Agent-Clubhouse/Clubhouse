@@ -8,6 +8,7 @@ import type {
   BrowserCanvasView,
   GitDiffCanvasView,
   TerminalCanvasView,
+  AnchorCanvasView,
   PluginCanvasView,
   Position,
   Size,
@@ -20,6 +21,8 @@ import {
   MIN_VIEW_HEIGHT,
   DEFAULT_VIEW_WIDTH,
   DEFAULT_VIEW_HEIGHT,
+  DEFAULT_ANCHOR_WIDTH,
+  DEFAULT_ANCHOR_HEIGHT,
   MIN_ZOOM,
   MAX_ZOOM,
   CANVAS_SIZE,
@@ -112,6 +115,18 @@ export function createView(
     case 'terminal': {
       const displayName = deduplicateDisplayName('Terminal', existingDisplayNames);
       return { ...base, type: 'terminal', title: 'Terminal', displayName, metadata: {} } satisfies TerminalCanvasView;
+    }
+    case 'anchor': {
+      const displayName = deduplicateDisplayName('Anchor', existingDisplayNames);
+      return {
+        ...base,
+        type: 'anchor',
+        title: 'Anchor',
+        displayName,
+        metadata: {},
+        label: displayName,
+        size: { width: DEFAULT_ANCHOR_WIDTH, height: DEFAULT_ANCHOR_HEIGHT },
+      } satisfies AnchorCanvasView;
     }
     case 'plugin':
       // Plugin views are created via createPluginView instead
