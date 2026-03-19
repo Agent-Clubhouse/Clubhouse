@@ -424,13 +424,16 @@ export function CanvasViewComponent({
         </div>
       </div>
 
-      {/* Content area — only stop wheel propagation when this view is selected,
-          so unselected views let scroll events pan the canvas.
+      {/* Content area — block pointer events when not selected so keyboard
+          focus can't leak into widget internals (terminals, inputs).  Only
+          stop wheel propagation when this view is selected, so unselected
+          views let scroll events pan the canvas.
           When the view is zoomed, the overlay renders a full-size copy of the
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
       <div
         className="flex-1 min-h-0 overflow-hidden rounded-b-lg"
+        style={isSelected ? undefined : { pointerEvents: 'none' }}
         onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
       >
         {!isZoomed && renderContent()}
