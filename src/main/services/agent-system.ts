@@ -19,6 +19,7 @@ import { agentRegistry, resolveOrchestrator, untrackAgent, readProjectOrchestrat
 import { waitReady as waitMcpBridgeReady } from './clubhouse-mcp/bridge-server';
 import { injectClubhouseMcp } from './clubhouse-mcp/injection';
 import { bindingManager } from './clubhouse-mcp/binding-manager';
+import { isMcpEnabled } from './mcp-settings';
 
 // Re-export registry functions for backward compatibility
 export { getAgentProjectPath, getAgentOrchestrator, getAgentNonce, untrackAgent, resolveOrchestrator } from './agent-registry';
@@ -200,14 +201,17 @@ async function spawnPtyAgent(
   }
 
   // Snapshot MCP config before injection so we can restore on exit
-  // Only snapshot when the experimental MCP feature is enabled
+  // Only snapshot when the MCP feature is enabled
   const mcpJsonPath = path.join(params.cwd, provider.conventions.mcpConfigFile || '.mcp.json');
-  let mcpEnabled = false;
-  try {
-    const { getSettings } = await import('./experimental-settings');
-    mcpEnabled = !!getSettings().clubhouseMcp;
-  } catch { /* not available */ }
-  if (mcpEnabled) {
+  let agentMcpOverride: boolean | undefined;
+  if (params.kind === 'durable') {
+    try {
+      const agentConfig = await getDurableConfig(params.projectPath, params.agentId);
+      agentMcpOverride = agentConfig?.mcpOverride;
+    } catch { /* config not available */ }
+  }
+  const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
+  if (mcpEnabledForSpawn) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 

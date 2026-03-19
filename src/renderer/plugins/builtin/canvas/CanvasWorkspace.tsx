@@ -12,6 +12,13 @@ import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
 import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attention';
+import { WireOverlay } from './WireOverlay';
+import { WireDragOverlay } from './WireDragOverlay';
+import { WireConfigPopover } from './WireConfigPopover';
+import { useWiring } from './useWiring';
+import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import type { AgentCanvasView as AgentCanvasViewType } from './canvas-types';
 import type { PluginAPI } from '../../../../shared/plugin-types';
 
 /** Pixels to pan per arrow key press (2 grid units). */
@@ -95,6 +102,25 @@ export function CanvasWorkspace({
   const [multiDrag, setMultiDrag] = useState<MultiDragState | null>(null);
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
+  // ── MCP wiring state ──────────────────────────────────────────
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  const mcpBindings = useMcpBindingStore((s) => s.bindings);
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
+  const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
+
+  const handleWireClick = useCallback((binding: McpBindingEntry, event: React.MouseEvent) => {
+    setWirePopover({ binding, x: event.clientX, y: event.clientY });
+  }, []);
+
+  const handleWirePopoverClose = useCallback(() => {
+    setWirePopover(null);
+  }, []);
+
+  // Load MCP settings on mount
+  useEffect(() => {
+    useMcpSettingsStore.getState().loadSettings();
+  }, []);
+
   // ── Auto-focus container so keyboard events (arrow-key panning) work ──
   useEffect(() => {
     containerRef.current?.focus();
@@ -130,6 +156,9 @@ export function CanvasWorkspace({
   // ── Pan via middle-click drag ───────────────────────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Suppress pan/select during wire drag
+    if (isWireDragging) return;
+
     const isEmptySpace = e.target === e.currentTarget;
 
     // Middle-click: always pan
@@ -157,7 +186,7 @@ export function CanvasWorkspace({
       const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewport);
       setSelectionRect({ startX: canvasPos.x, startY: canvasPos.y, currentX: canvasPos.x, currentY: canvasPos.y });
     }
-  }, [viewport, onSelectView, onClearSelection]);
+  }, [viewport, onSelectView, onClearSelection, isWireDragging]);
 
   // ── Selection rectangle mouse tracking ──────────────────────────
 
@@ -469,6 +498,15 @@ export function CanvasWorkspace({
           left: 0,
         }}
       >
+        {/* MCP wire overlay — rendered BEFORE views (z-order: behind) */}
+        {mcpEnabled && (
+          <WireOverlay
+            views={views}
+            bindings={mcpBindings}
+            onWireClick={handleWireClick}
+          />
+        )}
+
         {views.map((view) => {
           return (
             <CanvasViewComponent
@@ -481,6 +519,9 @@ export function CanvasWorkspace({
               isMultiSelected={selectedViewIds.includes(view.id)}
               multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
               attention={attentionMap.get(view.id) ?? null}
+              allViews={views}
+              mcpEnabled={mcpEnabled}
+              onStartWireDrag={startWireDrag}
               onClose={() => onRemoveView(view.id)}
               onFocus={() => onFocusView(view.id)}
               onSelect={() => {
@@ -512,6 +553,9 @@ export function CanvasWorkspace({
             data-testid="canvas-selection-rect"
           />
         )}
+
+        {/* Wire drag overlay (high z-index, inside transform container) */}
+        {wireDrag && <WireDragOverlay wireDrag={wireDrag} views={views} />}
 
         {/* Multi-drag stack visual */}
         {multiDrag && selectedViewIds.length > 1 && (() => {
@@ -616,6 +660,16 @@ export function CanvasWorkspace({
           y={contextMenu.y}
           onSelect={handleContextMenuAction}
           onDismiss={handleDismissContextMenu}
+        />
+      )}
+
+      {/* Wire config popover (screen-space, outside transform container) */}
+      {wirePopover && (
+        <WireConfigPopover
+          binding={wirePopover.binding}
+          x={wirePopover.x}
+          y={wirePopover.y}
+          onClose={handleWirePopoverClose}
         />
       )}
     </div>

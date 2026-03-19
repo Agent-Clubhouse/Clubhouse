@@ -71,6 +71,7 @@ function SettingsCategoryNav() {
             {navButton('Plugins', 'plugins')}
             {showAnnex && navButton('Annex Server', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
+            {showExperimental && navButton('Clubhouse MCP', 'mcp')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}

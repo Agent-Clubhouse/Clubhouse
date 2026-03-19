@@ -29,6 +29,7 @@ import { GettingStartedSettingsView } from '../features/settings/GettingStartedS
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
+import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 
 export function MainContentView() {
@@ -167,6 +168,7 @@ export function MainContentView() {
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
     if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
+    if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
     if (settingsSubPage === 'about') return <AboutSettingsView />;
     return <ProjectSettings projectId={projectId} />;

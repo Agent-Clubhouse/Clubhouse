@@ -7,9 +7,9 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/clubhouse-test' },
 }));
 
-const mockGetSettings = vi.fn();
-vi.mock('../experimental-settings', () => ({
-  getSettings: () => mockGetSettings(),
+const mockIsMcpEnabled = vi.fn();
+vi.mock('../mcp-settings', () => ({
+  isMcpEnabled: () => mockIsMcpEnabled(),
 }));
 
 vi.mock('../log-service', () => ({
@@ -42,14 +42,14 @@ describe('MCP Injection', () => {
 
   describe('injectClubhouseMcp', () => {
     it('does nothing when feature is disabled', async () => {
-      mockGetSettings.mockReturnValue({});
+      mockIsMcpEnabled.mockReturnValue(false);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
       // .mcp.json should not exist
       await expect(fsp.access(path.join(tmpDir, '.mcp.json'))).rejects.toThrow();
     });
 
     it('creates .mcp.json with clubhouse entry when feature is enabled', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
 
       const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
@@ -61,7 +61,7 @@ describe('MCP Injection', () => {
     });
 
     it('preserves existing MCP servers', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       const existing = {
         mcpServers: {
           'my-server': { command: 'my-cmd', args: ['--flag'] },
@@ -77,7 +77,7 @@ describe('MCP Injection', () => {
     });
 
     it('overwrites existing clubhouse entry', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       const existing = {
         mcpServers: {
           clubhouse: { command: 'old', args: [] },
@@ -92,7 +92,7 @@ describe('MCP Injection', () => {
     });
 
     it('uses custom conventions for config file path', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
         mcpConfigFile: 'custom-mcp.json',
       });
@@ -102,7 +102,7 @@ describe('MCP Injection', () => {
     });
 
     it('handles malformed existing JSON gracefully', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       await fsp.writeFile(path.join(tmpDir, '.mcp.json'), 'not valid json!!!', 'utf-8');
 
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
@@ -112,7 +112,7 @@ describe('MCP Injection', () => {
     });
 
     it('serializes concurrent injections (no clobbering)', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
 
       // Run 3 injections concurrently
       await Promise.all([
@@ -131,7 +131,7 @@ describe('MCP Injection', () => {
     });
 
     it('creates parent directory if it does not exist', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       const nestedDir = path.join(tmpDir, 'nested', 'deep');
 
       await injectClubhouseMcp(nestedDir, 'agent-1', 12345, 'nonce-1', {
@@ -144,7 +144,7 @@ describe('MCP Injection', () => {
     });
 
     it('no temp files left behind after injection', async () => {
-      mockGetSettings.mockReturnValue({ clubhouseMcp: true });
+      mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
 
       const files = await fsp.readdir(tmpDir);

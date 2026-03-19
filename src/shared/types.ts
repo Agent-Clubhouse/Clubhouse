@@ -189,6 +189,8 @@ export interface DurableAgentConfig {
   sessionHistory?: SessionInfo[];
   /** MCP IDs to inject via launch wrapper (when unset, falls back to project defaultMcps) */
   mcpIds?: string[];
+  /** Per-agent override for the Clubhouse MCP bridge feature. */
+  mcpOverride?: boolean;
 }
 
 /** Maps an orchestrator ID to its wrapper subcommand */
@@ -426,7 +428,14 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental';
+export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp';
+
+// --- MCP settings ---
+
+export interface McpSettings {
+  enabled: boolean;
+  projectOverrides?: Record<string, boolean>;
+}
 
 // --- Editor settings ---
 

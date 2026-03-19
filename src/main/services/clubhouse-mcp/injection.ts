@@ -9,7 +9,7 @@ import { existsSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { appLog } from '../log-service';
 import { pathExists } from '../fs-utils';
-import * as experimentalSettings from '../experimental-settings';
+import { isMcpEnabled } from '../mcp-settings';
 import type { McpServerDef } from '../../../shared/types';
 
 interface SettingsConventions {
@@ -67,8 +67,7 @@ async function injectClubhouseMcpImpl(
   nonce: string,
   conventions?: Partial<SettingsConventions>,
 ): Promise<void> {
-  const expSettings = experimentalSettings.getSettings();
-  if (!expSettings.clubhouseMcp) {
+  if (!isMcpEnabled()) {
     return; // Feature not enabled
   }
 

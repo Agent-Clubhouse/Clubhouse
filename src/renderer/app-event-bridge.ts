@@ -31,6 +31,7 @@ import { useSessionSettingsStore } from './stores/sessionSettingsStore';
 import { initAnnexListener } from './stores/annexStore';
 import { initAnnexClientListener } from './stores/annexClientStore';
 import { useLockStore } from './stores/lockStore';
+import { initMcpBindingListener, useMcpBindingStore } from './stores/mcpBindingStore';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -578,6 +579,10 @@ export function initAppEventBridge(): () => void {
   cleanups.push(initAnnexListener());
   cleanups.push(initAnnexClientListener());
   cleanups.push(initAnnexLockStateListener());
+
+  // MCP binding listener — load initial bindings and subscribe to changes
+  useMcpBindingStore.getState().loadBindings();
+  cleanups.push(initMcpBindingListener());
 
   return () => {
     for (const cleanup of cleanups) {
