@@ -798,4 +798,254 @@ describe('annex-client', () => {
       }
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Bug fix: sendToSatellite returns { sent, error } (1c)
+  // -------------------------------------------------------------------------
+
+  describe('sendToSatellite error reporting', () => {
+    it('returns { sent: false, error: "not_connected" } when WS is not open', () => {
+      // No satellites connected
+      const result = annexClient.sendToSatellite('nonexistent', { type: 'test' });
+      expect(result).toEqual({ sent: false, error: 'not_connected' });
+    });
+
+    it('returns { sent: false, error } when ws.send() throws', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      // Set up a paired satellite
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      // Mock WebSocket instance to have OPEN state but throw on send
+      let wsInstance: any = null;
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        wsInstance = this;
+        this.readyState = 1; // WebSocket.OPEN
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.send = vi.fn().mockImplementation(() => { throw new Error('connection reset'); });
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((r) => setTimeout(r, 50));
+
+      const result = annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'pty:input', payload: { data: 'test' } });
+      expect(result.sent).toBe(false);
+      expect(result.error).toContain('send_failed');
+      expect(result.error).toContain('connection reset');
+    });
+
+    it('returns { sent: true } on successful send (backward-compat truthy check)', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((r) => setTimeout(r, 50));
+
+      const result = annexClient.sendToSatellite('PP:QQ:RR:SS', { type: 'test' });
+      expect(result.sent).toBe(true);
+      expect(result.error).toBeUndefined();
+      // Backward compat: truthy check still works
+      expect(!!result).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Bug fix: malformed JSON from satellite logs warning (1d client)
+  // -------------------------------------------------------------------------
+
+  describe('malformed JSON from satellite', () => {
+    it('logs warning with preview when satellite sends invalid JSON', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+      const { appLog } = await import('./log-service');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let messageHandler: ((data: any) => void) | null = null;
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') setTimeout(cb, 0);
+          if (event === 'message') messageHandler = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      annexClient.startClient();
+      await bonjourFindCallback!(makeService());
+      await new Promise((r) => setTimeout(r, 50));
+
+      vi.mocked(appLog).mockClear();
+
+      // Simulate receiving malformed JSON
+      if (messageHandler) {
+        messageHandler(Buffer.from('not valid json!!!'));
+      }
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:annex-client', 'warn', 'Malformed JSON from satellite',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            fingerprint: 'PP:QQ:RR:SS',
+            preview: expect.stringContaining('not valid json'),
+          }),
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Bug fix: heartbeat ping failure transitions state (1e)
+  // -------------------------------------------------------------------------
+
+  describe('heartbeat ping failure', () => {
+    it('transitions to disconnected and schedules reconnect on ping throw', async () => {
+      const { WebSocket: WsMock } = await import('ws');
+
+      mockHttpGetIdentity({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+      });
+      vi.mocked(annexPeers.isPairedPeer).mockReturnValue(true);
+      vi.mocked(annexPeers.getPeer).mockReturnValue({
+        fingerprint: 'PP:QQ:RR:SS',
+        alias: 'Paired Mac',
+        icon: 'server',
+        color: 'green',
+        publicKey: 'paired-pub-key',
+        pairedAt: '2024-01-01',
+        lastSeen: '2024-01-01',
+      });
+
+      let openCb: (() => void) | null = null;
+      let wsInstance: any = null;
+
+      vi.mocked(WsMock).mockImplementation(function (this: any) {
+        wsInstance = this;
+        this.readyState = 1;
+        this.on = vi.fn().mockImplementation((event: string, cb: any) => {
+          if (event === 'open') openCb = cb;
+          return this;
+        });
+        this.send = vi.fn();
+        this.ping = vi.fn();
+        this.close = vi.fn();
+        this.terminate = vi.fn();
+        this.removeListener = vi.fn();
+        return this;
+      } as any);
+
+      // Use fake timers from the start so the heartbeat interval is faked
+      vi.useFakeTimers();
+
+      annexClient.startClient();
+      // bonjourFindCallback is set synchronously by startClient's Bonjour mock
+      await bonjourFindCallback!(makeService());
+
+      // Flush microtasks to let async discovery complete
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Trigger open callback to transition to 'connected' and start heartbeat
+      expect(openCb).not.toBeNull();
+      openCb!();
+
+      // Verify state is now 'connected'
+      const stateAfterOpen = annexClient.getSatellites()[0]?.state;
+      expect(stateAfterOpen).toBe('connected');
+
+      // Now make ping throw
+      wsInstance.ping = vi.fn().mockImplementation(() => { throw new Error('socket closed'); });
+
+      // Advance timers to trigger exactly one heartbeat (30s interval)
+      // Don't advance further — reconnect timer (1s) would transition back to 'connecting'
+      vi.advanceTimersByTime(30_000);
+
+      const satsAfter = annexClient.getSatellites();
+      expect(satsAfter[0].state).toBe('disconnected');
+      expect(satsAfter[0].lastError).toBe('Heartbeat ping failed');
+
+      vi.useRealTimers();
+    });
+  });
 });
