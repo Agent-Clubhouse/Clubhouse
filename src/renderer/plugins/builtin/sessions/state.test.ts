@@ -173,4 +173,80 @@ describe('sessionsState', () => {
     sessionsState.setSelectedSession('s2');
     expect(listener).not.toHaveBeenCalled();
   });
+
+  // ── Session list persistence (Bug 5 fix) ─────────────────────────
+
+  it('sessionLists starts empty', () => {
+    expect(sessionsState.sessionLists).toEqual({});
+  });
+
+  it('setSessionList stores sessions for an agent and notifies', () => {
+    const listener = vi.fn();
+    sessionsState.subscribe(listener);
+    const sessions = [{ sessionId: 's1', startedAt: '2026-01-01T00:00:00Z', lastActiveAt: '2026-01-01T01:00:00Z' }];
+    sessionsState.setSessionList('agent-1', sessions);
+    expect(sessionsState.sessionLists['agent-1']).toEqual(sessions);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('setSessionList produces a new object reference', () => {
+    const before = sessionsState.sessionLists;
+    sessionsState.setSessionList('agent-1', []);
+    expect(sessionsState.sessionLists).not.toBe(before);
+  });
+
+  it('loadingAgents starts empty', () => {
+    expect(sessionsState.loadingAgents.size).toBe(0);
+  });
+
+  it('setLoadingAgent adds/removes and notifies', () => {
+    const listener = vi.fn();
+    sessionsState.subscribe(listener);
+    sessionsState.setLoadingAgent('a1', true);
+    expect(sessionsState.loadingAgents.has('a1')).toBe(true);
+    sessionsState.setLoadingAgent('a1', false);
+    expect(sessionsState.loadingAgents.has('a1')).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetchedAgents starts empty', () => {
+    expect(sessionsState.fetchedAgents.size).toBe(0);
+  });
+
+  it('markFetched adds agent without notifying listeners', () => {
+    const listener = vi.fn();
+    sessionsState.subscribe(listener);
+    sessionsState.markFetched('a1');
+    expect(sessionsState.fetchedAgents.has('a1')).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('reset clears session lists, loading, and fetched state', () => {
+    sessionsState.setSessionList('a1', [{ sessionId: 's1', startedAt: '', lastActiveAt: '' }]);
+    sessionsState.setLoadingAgent('a2', true);
+    sessionsState.markFetched('a1');
+
+    sessionsState.reset();
+
+    expect(sessionsState.sessionLists).toEqual({});
+    expect(sessionsState.loadingAgents.size).toBe(0);
+    expect(sessionsState.fetchedAgents.size).toBe(0);
+  });
+
+  it('sessionLists survive across subscribe/unsubscribe cycles (simulating unmount/remount)', () => {
+    // Simulate first mount: load sessions
+    const sessions = [{ sessionId: 's1', startedAt: '2026-01-01T00:00:00Z', lastActiveAt: '2026-01-01T01:00:00Z' }];
+    sessionsState.setSessionList('agent-1', sessions);
+    sessionsState.markFetched('agent-1');
+    sessionsState.toggleExpandedAgent('agent-1');
+
+    // Simulate unmount: unsubscribe listener
+    const unsub = sessionsState.subscribe(vi.fn());
+    unsub();
+
+    // Simulate remount: session data should still be there
+    expect(sessionsState.sessionLists['agent-1']).toEqual(sessions);
+    expect(sessionsState.fetchedAgents.has('agent-1')).toBe(true);
+    expect(sessionsState.expandedAgents.has('agent-1')).toBe(true);
+  });
 });

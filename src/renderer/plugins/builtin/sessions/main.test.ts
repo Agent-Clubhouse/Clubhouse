@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import React from 'react';
 import { activate, deactivate, MainPanel, SidebarPanel } from './main';
 import { sessionsState } from './state';
@@ -9,7 +9,6 @@ import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { createMockContext, createMockAPI } from '../../testing';
 import type { PluginAPI, PluginContext, AgentInfo, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
 import type { SessionEvent, SessionSummary, SessionTranscriptPage } from '../../../../shared/session-types';
-import { AGENT_COLORS } from '../../../../shared/name-generator';
 
 // ── IntersectionObserver polyfill for jsdom ──────────────────────────
 if (typeof globalThis.IntersectionObserver === 'undefined') {
@@ -21,14 +20,6 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-/** Convert hex color to rgb() string as jsdom normalises inline styles */
-function hexToRgb(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgb(${r}, ${g}, ${b})`;
-}
 
 // ── Test fixtures ───────────────────────────────────────────────────
 
@@ -220,78 +211,27 @@ describe('SidebarPanel', () => {
     expect(screen.getByText('curious-tapir')).toBeDefined();
   });
 
-  it('renders agent avatar with correct color hex (not raw color ID)', () => {
-    const agent = makeDurableAgent({ color: 'violet' });
+  it('uses AgentAvatar widget for durable agents (supports custom icons)', () => {
+    const agent = makeDurableAgent({ icon: 'custom-photo.png' });
+    const avatarSpy = vi.fn(() => React.createElement('div', { 'data-testid': 'mock-agent-avatar' }));
     api = createMockAPI({
       agents: {
         ...api.agents,
         list: () => [agent],
         listCompleted: () => [],
       },
-    });
-    render(React.createElement(SidebarPanel, { api }));
-
-    // The avatar inner circle should use the hex value from AGENT_COLORS, not the raw "violet" string
-    const violetColor = AGENT_COLORS.find((c) => c.id === 'violet');
-    const agentRow = screen.getByTestId(`sessions-agent-${agent.id}`);
-    // Find the initials circle (the inner div with background color)
-    const initialsEl = agentRow.querySelector('[style*="background-color"]') as HTMLElement;
-    expect(initialsEl).toBeTruthy();
-    expect(initialsEl.style.backgroundColor).toBe(hexToRgb(violetColor!.hex));
-  });
-
-  it('renders agent initials from hyphenated name', () => {
-    const agent = makeDurableAgent({ name: 'curious-tapir' });
-    api = createMockAPI({
-      agents: {
-        ...api.agents,
-        list: () => [agent],
-        listCompleted: () => [],
-      },
-    });
-    render(React.createElement(SidebarPanel, { api }));
-    // "curious-tapir" → "CT"
-    expect(screen.getByText('CT')).toBeDefined();
-  });
-
-  it('renders default color for agents without a color', () => {
-    const agent = makeDurableAgent({ color: '' });
-    api = createMockAPI({
-      agents: {
-        ...api.agents,
-        list: () => [agent],
-        listCompleted: () => [],
-      },
-    });
-    render(React.createElement(SidebarPanel, { api }));
-    const agentRow = screen.getByTestId(`sessions-agent-${agent.id}`);
-    const initialsEl = agentRow.querySelector('[style*="background-color"]') as HTMLElement;
-    expect(initialsEl).toBeTruthy();
-    // Should use default #6366f1 (indigo)
-    expect(initialsEl.style.backgroundColor).toBe(hexToRgb('#6366f1'));
-  });
-
-  it('renders status ring border color based on agent status', () => {
-    const runningAgent = makeDurableAgent({ id: 'a-running', status: 'running', name: 'running-agent' });
-    const sleepingAgent = makeDurableAgent({ id: 'a-sleeping', status: 'sleeping', name: 'sleeping-agent' });
-    api = createMockAPI({
-      agents: {
-        ...api.agents,
-        list: () => [runningAgent, sleepingAgent],
-        listCompleted: () => [],
+      widgets: {
+        ...api.widgets,
+        AgentAvatar: avatarSpy as any,
       },
     });
     render(React.createElement(SidebarPanel, { api }));
 
-    // Running agent should have green border
-    const runningRow = screen.getByTestId('sessions-agent-a-running');
-    const runningRing = runningRow.querySelector('[style*="border-color"]') as HTMLElement;
-    expect(runningRing.style.borderColor).toBe('rgb(34, 197, 94)');
-
-    // Sleeping agent should have grey border
-    const sleepingRow = screen.getByTestId('sessions-agent-a-sleeping');
-    const sleepingRing = sleepingRow.querySelector('[style*="border-color"]') as HTMLElement;
-    expect(sleepingRing.style.borderColor).toBe('rgb(108, 112, 134)');
+    // AgentAvatar should be called with the agent's ID, sm size, and status ring
+    expect(avatarSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: agent.id, size: 'sm', showStatusRing: true }),
+      expect.anything(),
+    );
   });
 
   it('shows status label for different statuses', () => {
@@ -484,27 +424,29 @@ describe('SidebarPanel', () => {
     });
   });
 
-  it('each AGENT_COLORS entry maps to correct hex in avatar', () => {
-    // Regression: ensure all color IDs resolve correctly, not as CSS color names
-    const agents = AGENT_COLORS.map((c) =>
-      makeDurableAgent({ id: `agent-${c.id}`, name: `test-${c.id}`, color: c.id }),
-    );
+  it('renders AgentAvatar for each durable agent', () => {
+    const agents = [
+      makeDurableAgent({ id: 'a1', name: 'alpha-agent' }),
+      makeDurableAgent({ id: 'a2', name: 'beta-agent' }),
+    ];
+    const avatarSpy = vi.fn(() => React.createElement('div', { 'data-testid': 'mock-avatar' }));
     api = createMockAPI({
       agents: {
         ...api.agents,
         list: () => agents,
         listCompleted: () => [],
       },
+      widgets: {
+        ...api.widgets,
+        AgentAvatar: avatarSpy as any,
+      },
     });
     render(React.createElement(SidebarPanel, { api }));
 
-    for (const c of AGENT_COLORS) {
-      const row = screen.getByTestId(`sessions-agent-agent-${c.id}`);
-      const initialsEl = row.querySelector('[style*="background-color"]') as HTMLElement;
-      expect(initialsEl).toBeTruthy();
-      // The style should contain the hex value (as rgb), not the color name
-      expect(initialsEl.style.backgroundColor).toBe(hexToRgb(c.hex));
-    }
+    // Should be called once per durable agent
+    expect(avatarSpy).toHaveBeenCalledTimes(2);
+    expect(avatarSpy).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a1' }), expect.anything());
+    expect(avatarSpy).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a2' }), expect.anything());
   });
 
   it('renders multiple durable agents in order', () => {
@@ -1057,6 +999,166 @@ describe('MainPanel', () => {
     await waitFor(() => {
       expect(setTitle).toHaveBeenCalledWith('TestAgent \u2014 abcdef12');
     });
+  });
+});
+
+// ── Session list persistence across navigation (Bug 5) ──────────────
+
+describe('SidebarPanel session persistence', () => {
+  let api: PluginAPI;
+
+  beforeEach(() => {
+    sessionsState.reset();
+    api = createMockAPI();
+  });
+
+  afterEach(() => {
+    sessionsState.reset();
+  });
+
+  it('session lists survive unmount/remount (Bug 5 regression)', async () => {
+    const agent = makeDurableAgent();
+    const sessions = [
+      makeSessionEntry({ sessionId: 'sess-001', friendlyName: 'Bug fix session' }),
+    ];
+    const listSessionsMock = vi.fn().mockResolvedValue(sessions);
+
+    api = createMockAPI({
+      agents: {
+        ...api.agents,
+        list: () => [agent],
+        listCompleted: () => [],
+        listSessions: listSessionsMock,
+      },
+    });
+
+    // First mount: expand agent and load sessions
+    const { unmount } = render(React.createElement(SidebarPanel, { api }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`sessions-agent-${agent.id}`));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Bug fix session')).toBeDefined();
+    });
+
+    // Unmount (simulates navigating away)
+    unmount();
+
+    // Remount (simulates navigating back) — sessions should be preserved
+    render(React.createElement(SidebarPanel, { api }));
+
+    // Session data should still be visible without needing another fetch
+    await waitFor(() => {
+      expect(screen.getByText('Bug fix session')).toBeDefined();
+    });
+
+    // Should NOT have re-fetched since agent was already loaded
+    expect(listSessionsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('auto-fetches sessions for agents expanded before mount', async () => {
+    const agent = makeDurableAgent();
+    const sessions = [makeSessionEntry({ sessionId: 'sess-new' })];
+    const listSessionsMock = vi.fn().mockResolvedValue(sessions);
+
+    // Pre-expand agent in module-level state (simulates previous interaction)
+    sessionsState.toggleExpandedAgent(agent.id);
+
+    api = createMockAPI({
+      agents: {
+        ...api.agents,
+        list: () => [agent],
+        listCompleted: () => [],
+        listSessions: listSessionsMock,
+      },
+    });
+
+    render(React.createElement(SidebarPanel, { api }));
+
+    // Should auto-fetch sessions for the already-expanded agent
+    await waitFor(() => {
+      expect(listSessionsMock).toHaveBeenCalledWith(agent.id);
+    });
+  });
+});
+
+// ── Quick agent detail view (Bug 3) ─────────────────────────────────
+
+describe('MainPanel completed quick agent', () => {
+  let api: PluginAPI;
+
+  beforeEach(() => {
+    sessionsState.reset();
+    api = createMockAPI();
+  });
+
+  afterEach(() => {
+    sessionsState.reset();
+  });
+
+  it('shows completed agent details when quick agent is selected (Bug 3 fix)', () => {
+    const completed = makeCompletedAgent({
+      name: 'quick-fixer',
+      mission: 'Fix the login bug',
+      summary: 'Fixed auth token refresh',
+      filesModified: ['/src/auth.ts'],
+      exitCode: 0,
+    });
+
+    api = createMockAPI({
+      agents: {
+        ...api.agents,
+        listCompleted: () => [completed],
+      },
+    });
+
+    // Select a quick agent with no session
+    sessionsState.setSelectedAgent({
+      agentId: completed.id,
+      agentName: completed.name,
+      kind: 'quick',
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    // Should show the completed agent card, not "Select an agent and session"
+    expect(screen.getByTestId('completed-agent-card')).toBeDefined();
+    expect(screen.getByText('Fix the login bug')).toBeDefined();
+    expect(screen.getByText('Fixed auth token refresh')).toBeDefined();
+    expect(screen.getByText('/src/auth.ts')).toBeDefined();
+  });
+
+  it('shows "Agent details not available" for missing completed agent', () => {
+    api = createMockAPI({
+      agents: {
+        ...api.agents,
+        listCompleted: () => [],
+      },
+    });
+
+    sessionsState.setSelectedAgent({
+      agentId: 'nonexistent',
+      agentName: 'Ghost',
+      kind: 'quick',
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    expect(screen.getByText('Agent details not available')).toBeDefined();
+  });
+
+  it('shows "Select a session" for durable agent without session', () => {
+    sessionsState.setSelectedAgent({
+      agentId: 'agent-1',
+      agentName: 'Alpha',
+      kind: 'durable',
+    });
+
+    render(React.createElement(MainPanel, { api }));
+
+    expect(screen.getByText('Select a session to view details')).toBeDefined();
   });
 });
 

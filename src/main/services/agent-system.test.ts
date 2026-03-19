@@ -770,6 +770,80 @@ describe('agent-system', () => {
       expect(getAgentNonce('agent-1')).toBeUndefined();
     });
 
+    it('PTY onExit records session entry for durable agents even without SessionCapable (Bug 2 fix)', async () => {
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      onExitCallback('agent-1', 0);
+
+      // addSessionEntry should be called even for non-session-capable providers
+      // with a generated UUID when extractSessionId isn't available
+      await vi.waitFor(() => {
+        expect(mockAddSessionEntry).toHaveBeenCalledWith(
+          '/project',
+          'agent-1',
+          expect.objectContaining({
+            sessionId: expect.any(String),
+            startedAt: expect.any(String),
+            lastActiveAt: expect.any(String),
+          }),
+        );
+      });
+    });
+
+    it('PTY onExit uses provider extractSessionId when available', async () => {
+      // Make provider session-capable
+      mockProvider.extractSessionId = vi.fn(() => 'provider-session-123');
+      mockProvider.listSessions = vi.fn(async () => []);
+      mockProvider.readSessionTranscript = vi.fn(async () => null);
+      mockProvider.getCapabilities.mockReturnValue({
+        headless: true, structuredOutput: false, hooks: true,
+        sessionResume: true, permissions: false, structuredMode: false,
+      });
+
+      await spawnAgent({
+        agentId: 'agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'durable',
+      });
+
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      // Pass buffer so extractSessionId can be called
+      onExitCallback('agent-1', 0, 'Session ID: provider-session-123');
+
+      await vi.waitFor(() => {
+        expect(mockAddSessionEntry).toHaveBeenCalledWith(
+          '/project',
+          'agent-1',
+          expect.objectContaining({
+            sessionId: 'provider-session-123',
+          }),
+        );
+      });
+    });
+
+    it('PTY onExit does NOT record session entry for quick agents', async () => {
+      await spawnAgent({
+        agentId: 'agent-quick',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+      });
+
+      const onExitCallback = mockPtySpawn.mock.calls[0][5];
+      onExitCallback('agent-quick', 0);
+
+      // Give time for any async operations
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockAddSessionEntry).not.toHaveBeenCalled();
+    });
+
     it('headless onExit callback calls untrackAgent to clean up tracking state', async () => {
       mockGetSpawnMode.mockReturnValue('headless');
       mockProvider.buildHeadlessCommand = vi.fn(() =>
