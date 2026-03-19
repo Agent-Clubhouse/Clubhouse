@@ -1,8 +1,21 @@
 import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, AgentInfo, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
 import type { SessionEvent, SessionSummary } from '../../../../shared/session-types';
+import { AGENT_COLORS } from '../../../../shared/name-generator';
 import { sessionsState } from './state';
 import type { PlaybackState } from './state';
+
+// ── Color helpers ────────────────────────────────────────────────────
+
+function resolveAgentColorHex(colorId: string | undefined): string {
+  if (!colorId) return '#6366f1'; // default indigo
+  const found = AGENT_COLORS.find((c) => c.id === colorId);
+  return found?.hex || '#6366f1';
+}
+
+function getAgentInitials(name: string): string {
+  return name.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+}
 
 // ── Lifecycle ──────────────────────────────────────────────────────────
 
@@ -85,6 +98,9 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   const [sessionLists, setSessionLists] = useState<Record<string, SessionListEntry[]>>({});
   const [loadingAgents, setLoadingAgents] = useState<Set<string>>(new Set());
 
+  // Use a ref to track which agents have been fetched, so closures don't go stale
+  const fetchedRef = useRef<Set<string>>(new Set());
+
   const refreshAgents = useCallback(() => {
     const all = api.agents.list();
     setDurableAgents(all.filter((a) => a.kind === 'durable'));
@@ -97,9 +113,15 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     return () => sub.dispose();
   }, [api, refreshAgents]);
 
+  // Reset fetched tracking when component mounts (e.g. after plugin re-enable)
+  useEffect(() => {
+    fetchedRef.current = new Set();
+  }, []);
+
   // Load sessions when an agent is expanded
   const loadSessions = useCallback(async (agentId: string) => {
-    if (sessionLists[agentId]) return; // Already loaded
+    if (fetchedRef.current.has(agentId)) return;
+    fetchedRef.current.add(agentId);
     setLoadingAgents((prev) => new Set(prev).add(agentId));
     try {
       const sessions = await api.agents.listSessions(agentId);
@@ -112,7 +134,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       next.delete(agentId);
       return next;
     });
-  }, [api, sessionLists]);
+  }, [api]);
 
   const handleAgentClick = useCallback((agent: AgentInfo) => {
     const wasExpanded = expandedAgents.has(agent.id);
@@ -160,65 +182,98 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     React.createElement('div', { className: 'flex-1 overflow-y-auto py-1' },
 
       // Durable agents
-      durableAgents.map((agent) => React.createElement(React.Fragment, { key: agent.id },
-        // Agent row
-        React.createElement('button', {
-          className: `w-full text-left px-3 py-2.5 text-sm cursor-pointer transition-colors ${
-            selectedAgent?.agentId === agent.id
-              ? 'bg-surface-1 text-ctp-text font-medium'
-              : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
-          }`,
-          onClick: () => handleAgentClick(agent),
-        },
-          React.createElement('div', { className: 'flex items-center gap-2' },
-            React.createElement('span', {
-              className: 'w-2 h-2 rounded-full flex-shrink-0',
-              style: { backgroundColor: agent.color || '#89b4fa' },
-            }),
-            React.createElement('span', { className: 'truncate flex-1' }, agent.name),
-            React.createElement('span', {
-              className: 'text-[10px] text-ctp-overlay0 flex-shrink-0 transition-transform',
-              style: { transform: expandedAgents.has(agent.id) ? 'rotate(90deg)' : 'none' },
-            }, '\u25B8'),
-          ),
-        ),
+      durableAgents.map((agent) => {
+        const colorHex = resolveAgentColorHex(agent.color);
+        const initials = getAgentInitials(agent.name);
+        const isSelected = selectedAgent?.agentId === agent.id;
+        const isExpanded = expandedAgents.has(agent.id);
 
-        // Session list (expanded)
-        expandedAgents.has(agent.id) && React.createElement('div', {
-          className: 'pl-7 bg-ctp-crust',
-        },
-          loadingAgents.has(agent.id)
-            ? React.createElement('div', {
-              className: 'py-2 text-xs text-ctp-overlay0',
-            }, 'Loading...')
-            : (sessionLists[agent.id] || []).length === 0
-              ? React.createElement('div', {
-                className: 'py-2 text-xs text-ctp-overlay0',
-              }, 'No sessions')
-              : (sessionLists[agent.id] || []).map((session, idx) => React.createElement('button', {
-                  key: session.sessionId,
-                  className: `w-full text-left px-2 py-1.5 text-xs cursor-pointer transition-colors ${
-                    selectedSessionId === session.sessionId
-                      ? 'bg-surface-1 text-ctp-text'
-                      : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
-                  }`,
-                  onClick: () => handleSessionClick(agent, session),
+        return React.createElement(React.Fragment, { key: agent.id },
+          // Agent row — matches AgentListItem visual layout
+          React.createElement('button', {
+            className: `w-full text-left px-3 py-2.5 cursor-pointer transition-colors ${
+              isSelected
+                ? 'bg-surface-1'
+                : 'hover:bg-surface-0'
+            }`,
+            onClick: () => handleAgentClick(agent),
+            'data-testid': `sessions-agent-${agent.id}`,
+          },
+            React.createElement('div', { className: 'flex items-center gap-3' },
+              // Avatar circle with initials
+              React.createElement('div', { className: 'relative flex-shrink-0' },
+                React.createElement('div', {
+                  className: 'w-8 h-8 rounded-full flex items-center justify-center border-2',
+                  style: {
+                    borderColor: agent.status === 'running' ? '#22c55e'
+                      : agent.status === 'error' ? '#f87171'
+                      : '#6c7086',
+                  },
                 },
-                  React.createElement('div', { className: 'flex items-center justify-between gap-1' },
-                    React.createElement('span', { className: 'truncate' },
-                      session.friendlyName || `Session ${session.sessionId.slice(0, 8)}...`
-                    ),
-                    React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 flex-shrink-0' },
-                      formatRelativeTime(session.lastActiveAt),
-                    ),
-                  ),
-                  idx === 0 && React.createElement('span', {
-                    className: 'text-[9px] text-ctp-info',
-                  }, 'latest'),
+                  React.createElement('div', {
+                    className: 'w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white',
+                    style: { backgroundColor: colorHex },
+                  }, initials),
                 ),
               ),
-        ),
-      )),
+
+              // Name + status
+              React.createElement('div', { className: 'flex-1 min-w-0' },
+                React.createElement('span', {
+                  className: 'text-sm text-ctp-text truncate font-medium block',
+                }, agent.name),
+                React.createElement('span', {
+                  className: 'text-xs text-ctp-subtext0 truncate block',
+                }, agent.status === 'running' ? 'Running' : agent.status === 'error' ? 'Error' : 'Sleeping'),
+              ),
+
+              // Expand indicator
+              React.createElement('span', {
+                className: 'text-[10px] text-ctp-overlay0 flex-shrink-0 transition-transform',
+                style: { transform: isExpanded ? 'rotate(90deg)' : 'none' },
+              }, '\u25B8'),
+            ),
+          ),
+
+          // Session list (expanded)
+          isExpanded && React.createElement('div', {
+            className: 'pl-14 pr-3 bg-ctp-crust',
+            'data-testid': `sessions-list-${agent.id}`,
+          },
+            loadingAgents.has(agent.id)
+              ? React.createElement('div', {
+                className: 'py-2 text-xs text-ctp-overlay0',
+              }, 'Loading sessions...')
+              : (sessionLists[agent.id] || []).length === 0
+                ? React.createElement('div', {
+                  className: 'py-2 text-xs text-ctp-overlay0',
+                }, 'No sessions')
+                : (sessionLists[agent.id] || []).map((session, idx) => React.createElement('button', {
+                    key: session.sessionId,
+                    className: `w-full text-left px-2 py-1.5 text-xs cursor-pointer transition-colors rounded ${
+                      selectedSessionId === session.sessionId
+                        ? 'bg-surface-1 text-ctp-text'
+                        : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
+                    }`,
+                    onClick: () => handleSessionClick(agent, session),
+                    'data-testid': `session-entry-${session.sessionId}`,
+                  },
+                    React.createElement('div', { className: 'flex items-center justify-between gap-1' },
+                      React.createElement('span', { className: 'truncate' },
+                        session.friendlyName || `Session ${session.sessionId.slice(0, 8)}...`
+                      ),
+                      React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 flex-shrink-0' },
+                        formatRelativeTime(session.lastActiveAt),
+                      ),
+                    ),
+                    idx === 0 && React.createElement('span', {
+                      className: 'text-[9px] text-ctp-blue',
+                    }, 'latest'),
+                  ),
+                ),
+          ),
+        );
+      }),
 
       // Divider + completed agents
       completedAgents.length > 0 && React.createElement(React.Fragment, null,
@@ -230,17 +285,29 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
         }, 'Completed'),
         completedAgents.map((completed) => React.createElement('button', {
           key: completed.id,
-          className: `w-full text-left px-3 py-2 text-sm cursor-pointer transition-colors ${
+          className: `w-full text-left px-3 py-2 cursor-pointer transition-colors ${
             selectedAgent?.agentId === completed.id
-              ? 'bg-surface-1 text-ctp-text'
-              : 'text-ctp-subtext1 hover:bg-surface-0 hover:text-ctp-text'
+              ? 'bg-surface-1'
+              : 'hover:bg-surface-0'
           }`,
           onClick: () => handleCompletedClick(completed),
+          'data-testid': `sessions-completed-${completed.id}`,
         },
-          React.createElement('div', { className: 'flex items-center justify-between gap-2' },
-            React.createElement('span', { className: 'truncate' }, completed.name),
-            React.createElement('span', { className: 'text-[10px] text-ctp-overlay0 flex-shrink-0' },
-              formatRelativeTime(new Date(completed.completedAt).toISOString()),
+          React.createElement('div', { className: 'flex items-center gap-3' },
+            // Quick agent avatar (lightning icon)
+            React.createElement('div', {
+              className: 'w-8 h-8 rounded-full flex items-center justify-center border-2 flex-shrink-0',
+              style: { borderColor: '#6c7086' },
+            },
+              React.createElement('div', {
+                className: 'w-6 h-6 rounded-full flex items-center justify-center bg-ctp-surface2 text-ctp-subtext0 text-[10px]',
+              }, '\u26A1'),
+            ),
+            React.createElement('div', { className: 'flex-1 min-w-0' },
+              React.createElement('span', { className: 'text-sm text-ctp-text truncate font-medium block' }, completed.name),
+              React.createElement('span', { className: 'text-xs text-ctp-subtext0 truncate block' },
+                formatRelativeTime(new Date(completed.completedAt).toISOString()),
+              ),
             ),
           ),
         )),
