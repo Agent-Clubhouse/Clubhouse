@@ -286,6 +286,7 @@ export const IPC = {
     LOCK_STATE_CHANGED: 'annex:lock-state-changed',
     DISCONNECT_CONTROLLER: 'annex:disconnect-controller',
     DISABLE_AND_DISCONNECT: 'annex:disable-and-disconnect',
+    PURGE_SERVER_CONFIG: 'annex:purge-server-config',
   },
   ANNEX_CLIENT: {
     GET_SATELLITES: 'annex-client:get-satellites',
@@ -302,5 +303,6 @@ export const IPC = {
     PTY_RESIZE: 'annex-client:pty-resize',
     AGENT_SPAWN: 'annex-client:agent-spawn',
     AGENT_KILL: 'annex-client:agent-kill',
+    FORGET_SATELLITE: 'annex-client:forget-satellite',
   },
 } as const;

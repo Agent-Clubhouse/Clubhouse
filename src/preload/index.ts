@@ -821,6 +821,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SPAWN, satelliteId, params),
     agentKill: (satelliteId: string, agentId: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
+    forgetSatellite: (fingerprint: string) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     getDiscovered: () =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.GET_DISCOVERED),
     pairWith: (fingerprint: string, pin: string) =>

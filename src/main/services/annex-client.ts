@@ -605,6 +605,21 @@ export function disconnect(fingerprint: string): void {
   if (sat) disconnectSatellite(sat);
 }
 
+/**
+ * Permanently forget a satellite: disconnect, remove peer, and clear from memory.
+ * After this, the satellite must be re-paired to connect again.
+ */
+export function forgetSatellite(fingerprint: string): void {
+  appLog('core:annex-client', 'info', 'Forgetting satellite', { meta: { fingerprint } });
+  const sat = satellites.get(fingerprint);
+  if (sat) {
+    disconnectSatellite(sat);
+    satellites.delete(fingerprint);
+  }
+  annexPeers.removePeer(fingerprint);
+  broadcastSatellitesChanged();
+}
+
 export function retry(fingerprint: string): void {
   const sat = satellites.get(fingerprint);
   if (sat && sat.state === 'disconnected') {
