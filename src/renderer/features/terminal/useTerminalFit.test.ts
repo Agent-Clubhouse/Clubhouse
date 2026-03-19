@@ -275,6 +275,73 @@ describe('useTerminalFit', () => {
     });
   });
 
+  describe('onResize callback', () => {
+    it('uses custom onResize callback instead of window.clubhouse.pty.resize', () => {
+      const customResize = vi.fn();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, customResize),
+      );
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      resizeObserverCallbacks[0]();
+
+      expect(customResize).toHaveBeenCalledWith('s1', 80, 24);
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
+    it('uses custom onResize on visibility change', () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const customResize = vi.fn();
+      renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, customResize),
+      );
+
+      mockResize.mockClear();
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      visibilityListeners[0]();
+      vi.advanceTimersByTime(150);
+
+      expect(customResize).toHaveBeenCalledWith('s1', 80, 24);
+      expect(mockResize).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('uses custom onResize on pane focus', () => {
+      const customResize = vi.fn();
+      const { rerender } = renderHook(
+        ({ focused }) =>
+          useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused, customResize),
+        { initialProps: { focused: false } },
+      );
+
+      mockResize.mockClear();
+
+      rerender({ focused: true });
+
+      expect(customResize).toHaveBeenCalledWith('s1', 80, 24);
+      expect(mockResize).not.toHaveBeenCalled();
+    });
+
+    it('falls back to window.clubhouse.pty.resize when onResize is undefined', () => {
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() =>
+        useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, false, undefined),
+      );
+
+      mockFit.mockClear();
+      mockResize.mockClear();
+
+      resizeObserverCallbacks[0]();
+
+      expect(mockResize).toHaveBeenCalledWith('s1', 80, 24);
+    });
+  });
+
   describe('zero-dimension guard', () => {
     it('skips fit and resize when container has zero width', () => {
       const zeroWidthEl = document.createElement('div');
