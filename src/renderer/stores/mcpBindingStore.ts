@@ -12,6 +12,8 @@ interface McpBindingStoreState {
   loadBindings: () => Promise<void>;
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string }) => Promise<void>;
   unbind: (agentId: string, targetId: string) => Promise<void>;
+  registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
+  unregisterWebview: (widgetId: string) => Promise<void>;
 }
 
 export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
@@ -42,6 +44,22 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
         (b) => !(b.agentId === agentId && b.targetId === targetId),
       ),
     }));
+  },
+
+  registerWebview: async (widgetId, webContentsId) => {
+    try {
+      await window.clubhouse.mcpBinding.registerWebview(widgetId, String(webContentsId));
+    } catch {
+      // MCP not enabled — ignore
+    }
+  },
+
+  unregisterWebview: async (widgetId) => {
+    try {
+      await window.clubhouse.mcpBinding.unregisterWebview(widgetId);
+    } catch {
+      // MCP not enabled — ignore
+    }
   },
 }));
 

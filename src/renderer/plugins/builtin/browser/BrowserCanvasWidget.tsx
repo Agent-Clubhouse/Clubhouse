@@ -6,6 +6,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import { validateUrl, normalizeAddress } from './url-validation';
 import type { ProtocolSettings } from './url-validation';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -16,7 +17,7 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function BrowserCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
+export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 
@@ -26,6 +27,28 @@ export function BrowserCanvasWidget({ widgetId: _widgetId, api, metadata, onUpda
   const [addressBar, setAddressBar] = useState(url || '');
   const [error, setError] = useState<string | null>(null);
   const webviewRef = useRef<HTMLWebViewElement>(null);
+
+  const registerWebview = useMcpBindingStore((s) => s.registerWebview);
+  const unregisterWebview = useMcpBindingStore((s) => s.unregisterWebview);
+
+  // Register the webview with the MCP bridge when it becomes ready
+  useEffect(() => {
+    const wv = webviewRef.current as any;
+    if (!wv) return;
+
+    const handleDomReady = () => {
+      const wcId = wv.getWebContentsId?.();
+      if (wcId != null) {
+        registerWebview(widgetId, wcId);
+      }
+    };
+
+    wv.addEventListener('dom-ready', handleDomReady);
+    return () => {
+      wv.removeEventListener('dom-ready', handleDomReady);
+      unregisterWebview(widgetId);
+    };
+  }, [widgetId, registerWebview, unregisterWebview]);
 
   const protocolSettings: ProtocolSettings = {
     allowLocalhost: api.settings.get<boolean>('allowLocalhost') ?? false,
