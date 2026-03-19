@@ -3,7 +3,7 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
-import { activatePlugin, deactivatePlugin, discoverNewPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
+import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
@@ -915,14 +915,25 @@ export function PluginListSettings() {
     setScanning(true);
     setScanResult(null);
     try {
-      const newIds = await discoverNewPlugins();
-      if (newIds.length === 0) {
-        setScanResult('No new plugins found.');
+      const result = await refreshCommunityPlugins();
+      const parts: string[] = [];
+      if (result.discovered.length > 0) {
+        parts.push(`${result.discovered.length} new plugin(s) found`);
+      }
+      if (result.activated.length > 0) {
+        parts.push(`${result.activated.length} plugin(s) activated`);
+      }
+      if (result.incompatible.length > 0) {
+        parts.push(`${result.incompatible.length} plugin(s) incompatible with this version`);
+      }
+      if (parts.length === 0) {
+        const refreshCount = result.refreshed.length;
+        setScanResult(refreshCount > 0 ? `${refreshCount} plugin(s) up to date.` : 'No plugins found.');
       } else {
-        setScanResult(`Found ${newIds.length} new plugin(s): ${newIds.join(', ')}`);
+        setScanResult(parts.join(', ') + '.');
       }
     } catch {
-      setScanResult('Failed to scan for new plugins.');
+      setScanResult('Failed to scan for plugins.');
     } finally {
       setScanning(false);
     }

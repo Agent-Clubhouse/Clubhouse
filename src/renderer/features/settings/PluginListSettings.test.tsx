@@ -7,11 +7,11 @@ import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 
 // Mock plugin-loader to avoid side effects
-const mockDiscoverNewPlugins = vi.fn(async () => [] as string[]);
+const mockRefreshCommunityPlugins = vi.fn(async () => ({ discovered: [] as string[], refreshed: [] as string[], activated: [] as string[], incompatible: [] as string[] }));
 vi.mock('../../plugins/plugin-loader', () => ({
   activatePlugin: vi.fn(async () => {}),
   deactivatePlugin: vi.fn(async () => {}),
-  discoverNewPlugins: (...args: unknown[]) => mockDiscoverNewPlugins(...args),
+  refreshCommunityPlugins: (...args: unknown[]) => mockRefreshCommunityPlugins(...args),
 }));
 
 // Mock the marketplace dialog to avoid nested async fetching
@@ -164,8 +164,8 @@ describe('PluginListSettings', () => {
     expect(screen.getByText('Reload Local Plugins')).toBeInTheDocument();
   });
 
-  it('calls discoverNewPlugins when scan button is clicked', async () => {
-    mockDiscoverNewPlugins.mockResolvedValue(['new-plug-1']);
+  it('calls refreshCommunityPlugins when scan button is clicked', async () => {
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: ['new-plug-1'], refreshed: [], activated: [], incompatible: [] });
     usePluginStore.setState({
       externalPluginsEnabled: true,
     } as any);
@@ -173,11 +173,11 @@ describe('PluginListSettings', () => {
 
     fireEvent.click(screen.getByTestId('scan-plugins-button'));
 
-    await screen.findByText(/Found 1 new plugin/);
+    await screen.findByText(/1 new plugin\(s\) found/);
   });
 
-  it('shows no new plugins message when scan finds nothing', async () => {
-    mockDiscoverNewPlugins.mockResolvedValue([]);
+  it('shows up-to-date message when refresh finds only existing plugins', async () => {
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: ['existing-plug'], activated: [], incompatible: [] });
     usePluginStore.setState({
       externalPluginsEnabled: true,
     } as any);
@@ -185,7 +185,43 @@ describe('PluginListSettings', () => {
 
     fireEvent.click(screen.getByTestId('scan-plugins-button'));
 
-    await screen.findByText('No new plugins found.');
+    await screen.findByText('1 plugin(s) up to date.');
+  });
+
+  it('shows no plugins message when nothing found', async () => {
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: [] });
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+
+    fireEvent.click(screen.getByTestId('scan-plugins-button'));
+
+    await screen.findByText('No plugins found.');
+  });
+
+  it('shows activated count when plugins are reactivated', async () => {
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: ['plug-a'], activated: ['plug-a'], incompatible: [] });
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+
+    fireEvent.click(screen.getByTestId('scan-plugins-button'));
+
+    await screen.findByText(/1 plugin\(s\) activated/);
+  });
+
+  it('shows incompatible count when plugins fail validation', async () => {
+    mockRefreshCommunityPlugins.mockResolvedValue({ discovered: [], refreshed: [], activated: [], incompatible: ['bad-plug'] });
+    usePluginStore.setState({
+      externalPluginsEnabled: true,
+    } as any);
+    render(<PluginListSettings />);
+
+    fireEvent.click(screen.getByTestId('scan-plugins-button'));
+
+    await screen.findByText(/1 plugin\(s\) incompatible/);
   });
 
   describe('check for updates UI', () => {
