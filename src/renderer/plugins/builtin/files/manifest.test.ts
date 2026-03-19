@@ -40,7 +40,7 @@ describe('files plugin manifest', () => {
     expect(fileViewer.id).toBe('file-viewer');
     expect(fileViewer.label).toBe('File Viewer');
     expect(fileViewer.defaultSize).toEqual({ width: 560, height: 480 });
-    expect(fileViewer.metadataKeys).toEqual(['projectId', 'filePath']);
+    expect(fileViewer.metadataKeys).toEqual(['projectId', 'filePath', 'rootPath']);
   });
 
   it('contributes help topics', () => {
