@@ -19,7 +19,7 @@ export const manifest: PluginManifest = {
         label: 'File Viewer',
         icon: FOLDER_ICON,
         defaultSize: { width: 560, height: 480 },
-        metadataKeys: ['projectId', 'filePath'],
+        metadataKeys: ['projectId', 'filePath', 'rootPath'],
       },
     ],
     commands: [

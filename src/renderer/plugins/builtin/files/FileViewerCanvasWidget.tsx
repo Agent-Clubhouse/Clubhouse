@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { CanvasWidgetComponentProps, PluginAPI } from '../../../../shared/plugin-types';
+import type { GitWorktreeEntry } from '../../../../shared/types';
 import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
 import { CanvasFileTree } from '../canvas/CanvasFileTree';
 import { ReadOnlyMonacoEditor } from '../canvas/ReadOnlyMonacoEditor';
@@ -42,6 +43,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(() => api.settings.get<boolean>('showHiddenFiles') ?? true);
   const [readOnly, setReadOnly] = useState(true);
+  const [worktrees, setWorktrees] = useState<GitWorktreeEntry[]>([]);
 
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
   const filePath = metadata.filePath as string | undefined;
@@ -50,6 +52,21 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
     () => projectId ? projects.find((p) => p.id === projectId) : null,
     [projects, projectId],
   );
+
+  // Root path: worktree path from metadata, falling back to project path
+  const rootPath = (metadata.rootPath as string) || activeProject?.path || '';
+  const hasMultipleWorktrees = worktrees.length > 1;
+
+  // Fetch git worktrees when project is selected
+  useEffect(() => {
+    if (!activeProject?.path) {
+      setWorktrees([]);
+      return;
+    }
+    window.clubhouse.git.listWorktrees(activeProject.path)
+      .then((wts: GitWorktreeEntry[]) => setWorktrees(wts))
+      .catch(() => setWorktrees([]));
+  }, [activeProject?.path]);
 
   useEffect(() => {
     const sub = api.settings.onChange((key: string) => {
@@ -66,13 +83,13 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
       return;
     }
     setFileContent(null);
-    readProjectFile(api, isAppMode, activeProject.path, filePath)
+    readProjectFile(api, isAppMode, rootPath, filePath)
       .then(setFileContent)
       .catch(() => setFileContent('Error reading file'));
-  }, [api, filePath, projectId, activeProject, isAppMode]);
+  }, [api, filePath, projectId, activeProject, isAppMode, rootPath]);
 
   const handleSelectProject = useCallback((pid: string) => {
-    onUpdateMetadata({ projectId: pid, filePath: null });
+    onUpdateMetadata({ projectId: pid, filePath: null, rootPath: null });
     setFileContent(null);
   }, [onUpdateMetadata]);
 
@@ -83,20 +100,25 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const handleSave = useCallback(async (content: string) => {
     if (!filePath || !activeProject) return;
     if (isAppMode) {
-      await window.clubhouse.file.write(`${activeProject.path}/${filePath}`, content);
+      await window.clubhouse.file.write(`${rootPath}/${filePath}`, content);
     } else {
       await api.project.writeFile(filePath, content);
     }
     setFileContent(content);
-  }, [api, isAppMode, activeProject, filePath]);
+  }, [api, isAppMode, rootPath, activeProject, filePath]);
 
   const handleBackToProjects = useCallback(() => {
-    onUpdateMetadata({ projectId: null, filePath: null });
+    onUpdateMetadata({ projectId: null, filePath: null, rootPath: null });
     setFileContent(null);
   }, [onUpdateMetadata]);
 
-  const fullFilePath = activeProject && filePath
-    ? `${activeProject.path}/${filePath}`
+  const handleSelectWorktree = useCallback((wtPath: string) => {
+    onUpdateMetadata({ rootPath: wtPath, filePath: null });
+    setFileContent(null);
+  }, [onUpdateMetadata]);
+
+  const fullFilePath = rootPath && filePath
+    ? `${rootPath}/${filePath}`
     : null;
 
   const handleShowInFolder = useCallback(() => {
@@ -160,6 +182,24 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         <span className="truncate font-medium text-ctp-subtext1">
           {activeProject?.name || 'Project'}
         </span>
+        {hasMultipleWorktrees && (
+          <>
+            <span className="text-ctp-overlay0 mx-0.5">/</span>
+            <select
+              className="text-[10px] bg-ctp-surface0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
+              value={rootPath}
+              onChange={(e) => handleSelectWorktree(e.target.value)}
+              title="Switch worktree root"
+            >
+              {worktrees.map((wt) => (
+                <option key={wt.path} value={wt.path}>
+                  {wt.isBare ? '/ (main)' : wt.label}
+                  {wt.branch ? ` [${wt.branch}]` : ''}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         {filePath && (
           <>
             <span className="text-ctp-overlay0 mx-0.5">/</span>
@@ -212,7 +252,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         <ResizableSidebar defaultWidth={180} minWidth={120} maxWidth={400} className="overflow-hidden flex flex-col bg-ctp-mantle/30">
           <CanvasFileTree
             api={api}
-            projectPath={activeProject?.path || ''}
+            projectPath={rootPath}
             isAppMode={isAppMode}
             selectedPath={filePath || null}
             showHidden={showHidden}
