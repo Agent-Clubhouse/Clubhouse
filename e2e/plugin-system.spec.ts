@@ -309,8 +309,8 @@ test.describe('Plugin Settings', () => {
     const count = await versionLabels.count();
     expect(count).toBeGreaterThanOrEqual(3);
 
-    // API version badge (API 0.6) — built-in plugins upgraded to v0.6
-    const apiLabels = window.locator('text=API 0.6');
+    // API version badge (API 0.8) — built-in plugins upgraded to v0.8
+    const apiLabels = window.locator('text=API 0.8');
     await expect(apiLabels.first()).toBeVisible({ timeout: 5_000 });
     const apiCount = await apiLabels.count();
     expect(apiCount).toBeGreaterThanOrEqual(3);
