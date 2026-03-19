@@ -36,9 +36,10 @@ export function TerminalCanvasView({ view, api, onUpdate }: TerminalCanvasViewPr
     [projects, activeProjectId],
   );
 
-  // Worktree state
+  // Worktree state — initialise loading as true so the auto-skip check
+  // cannot fire before the worktree fetch effect has completed.
   const [worktrees, setWorktrees] = useState<GitWorktreeEntry[]>([]);
-  const [loadingWorktrees, setLoadingWorktrees] = useState(false);
+  const [loadingWorktrees, setLoadingWorktrees] = useState(true);
 
   // Terminal state
   const [status, setStatus] = useState<TerminalStatus>('starting');
@@ -120,6 +121,10 @@ export function TerminalCanvasView({ view, api, onUpdate }: TerminalCanvasViewPr
 
   const handleSelectProject = useCallback((projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
+    // Reset worktree state so the auto-skip cannot fire before the fetch
+    // effect runs for the newly selected project.
+    setWorktrees([]);
+    setLoadingWorktrees(true);
     onUpdate({
       projectId,
       cwd: undefined,
