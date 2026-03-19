@@ -147,12 +147,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
-            // Migrate views from pre-metadata format: backfill displayName and metadata
-            const migratedViews = s.views.map((v: any) => ({
-              ...v,
-              metadata: v.metadata ?? {},
-              displayName: v.displayName ?? v.title ?? v.type ?? '',
-            })) as CanvasView[];
+            // Migrate views from pre-metadata format: backfill displayName and metadata.
+            // Also migrate 'file'→'legacy-file' and 'terminal'→'legacy-terminal' for
+            // views saved before the v0.8 plugin widget migration.
+            const migratedViews = s.views.map((v: any) => {
+              let type = v.type;
+              if (type === 'file') type = 'legacy-file';
+              if (type === 'terminal') type = 'legacy-terminal';
+              return {
+                ...v,
+                type,
+                metadata: v.metadata ?? {},
+                displayName: v.displayName ?? v.title ?? v.type ?? '',
+              };
+            }) as CanvasView[];
             syncCounterToViews(migratedViews, viewCounter);
             return {
               id: s.id,

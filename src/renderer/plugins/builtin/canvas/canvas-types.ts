@@ -1,8 +1,14 @@
 // ── Canvas data model ─────────────────────────────────────────────────
 import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
-/** Built-in canvas view types. Plugin widget types use the 'plugin' discriminant. */
-export type CanvasViewType = 'agent' | 'file' | 'browser' | 'git-diff' | 'terminal' | 'anchor' | 'plugin';
+/**
+ * Built-in canvas view types. Plugin widget types use the 'plugin' discriminant.
+ * 'legacy-file' and 'legacy-terminal' are deprecated aliases for 'file' and 'terminal' —
+ * new canvas views should use plugin-provided widgets (plugin:files:file-viewer,
+ * plugin:terminal:shell) instead. Legacy types remain for backward compatibility
+ * with saved canvases.
+ */
+export type CanvasViewType = 'agent' | 'file' | 'legacy-file' | 'browser' | 'git-diff' | 'terminal' | 'legacy-terminal' | 'anchor' | 'plugin';
 
 export interface Position {
   x: number;
@@ -42,7 +48,7 @@ export interface AgentCanvasView extends CanvasViewBase {
 }
 
 export interface FileCanvasView extends CanvasViewBase {
-  type: 'file';
+  type: 'file' | 'legacy-file';
   projectId?: string;
   filePath?: string;
 }
@@ -63,7 +69,7 @@ export interface GitDiffCanvasView extends CanvasViewBase {
 }
 
 export interface TerminalCanvasView extends CanvasViewBase {
-  type: 'terminal';
+  type: 'terminal' | 'legacy-terminal';
   /** Project ID to open the terminal in. */
   projectId?: string;
   /** Working directory path (project root or a worktree path). */
