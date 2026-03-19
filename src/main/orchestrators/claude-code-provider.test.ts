@@ -548,6 +548,122 @@ describe('ClaudeCodeProvider', () => {
     });
   });
 
+  describe('readSessionTranscript file format support', () => {
+    const customConfigDir = '/test/config';
+    const projectsDir = path.join(customConfigDir, 'projects');
+    const profileEnv = { CLAUDE_CONFIG_DIR: customConfigDir };
+
+    function encodeCwd(cwd: string): string {
+      return path.resolve(cwd).replace(/[/\\]/g, '-');
+    }
+
+    function setupProjectDir() {
+      const encoded = encodeCwd('/my/project');
+      const projectDir = path.join(projectsDir, encoded);
+      return { encoded, projectDir };
+    }
+
+    it('reads .jsonl session file from sessions/ subdirectory', async () => {
+      const { projectDir } = setupProjectDir();
+      const sessionsDir = path.join(projectDir, 'sessions');
+      const jsonlPath = path.join(sessionsDir, 'test-session.jsonl');
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        if (s === jsonlPath) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+        if (String(p) === jsonlPath) return '{"type":"user","message":"hello"}\n';
+        throw new Error('ENOENT');
+      });
+
+      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(result).not.toBeNull();
+      expect(result).toHaveLength(1);
+      expect(result![0].type).toBe('user');
+    });
+
+    it('falls back to .json session file when .jsonl is not found', async () => {
+      const { projectDir } = setupProjectDir();
+      const sessionsDir = path.join(projectDir, 'sessions');
+      const jsonlPath = path.join(sessionsDir, 'test-session.jsonl');
+      const jsonPath = path.join(sessionsDir, 'test-session.json');
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        // .jsonl does NOT exist
+        if (s === jsonlPath) return false;
+        // .json DOES exist
+        if (s === jsonPath) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+        if (String(p) === jsonPath) return '{"type":"user","message":"from json"}\n';
+        throw new Error('ENOENT');
+      });
+
+      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(result).not.toBeNull();
+      expect(result).toHaveLength(1);
+      expect(result![0].message).toBe('from json');
+    });
+
+    it('prefers .jsonl over .json when both exist', async () => {
+      const { projectDir } = setupProjectDir();
+      const sessionsDir = path.join(projectDir, 'sessions');
+      const jsonlPath = path.join(sessionsDir, 'test-session.jsonl');
+      const jsonPath = path.join(sessionsDir, 'test-session.json');
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        if (s === jsonlPath) return true;
+        if (s === jsonPath) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+        if (String(p) === jsonlPath) return '{"type":"user","message":"from jsonl"}\n';
+        if (String(p) === jsonPath) return '{"type":"user","message":"from json"}\n';
+        throw new Error('ENOENT');
+      });
+
+      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(result).not.toBeNull();
+      expect(result![0].message).toBe('from jsonl');
+    });
+
+    it('reads .json from project root when sessions/ dir has no match', async () => {
+      const { projectDir } = setupProjectDir();
+      const jsonPath = path.join(projectDir, 'test-session.json');
+
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        const s = String(p);
+        if (isClaudePath(s)) return true;
+        if (s === projectsDir) return true;
+        if (s === projectDir) return true;
+        if (s === jsonPath) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p) => {
+        if (String(p) === jsonPath) return '{"type":"system","message":"root json"}\n';
+        throw new Error('ENOENT');
+      });
+
+      const result = await provider.readSessionTranscript('test-session', '/my/project', profileEnv);
+      expect(result).not.toBeNull();
+      expect(result![0].message).toBe('root json');
+    });
+  });
+
   describe('extractSessionId', () => {
     it('extracts UUID from "session: <uuid>" pattern', () => {
       const buffer = 'some output\nsession: a1b2c3d4-e5f6-7890-abcd-ef1234567890\nmore output';
