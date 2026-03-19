@@ -16,6 +16,7 @@ import * as themeService from './theme-service';
 import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
+import * as pluginManifestRegistry from './plugin-manifest-registry';
 import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent } from './agent-system';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -324,6 +325,15 @@ async function buildSnapshot(): Promise<object> {
     }
   }
 
+  // Collect installed plugin summaries for remote plugin matching
+  const plugins = pluginManifestRegistry.listAllManifests().map((m) => ({
+    id: m.id,
+    name: m.name,
+    version: m.version,
+    scope: m.scope,
+    contributes: m.contributes,
+  }));
+
   return {
     protocolVersion: 2,
     projects,
@@ -334,6 +344,7 @@ async function buildSnapshot(): Promise<object> {
     orchestrators: getOrchestratorsMap(),
     pendingPermissions: permissionQueue.listPending(),
     lastSeq: eventReplay.getLastSeq(),
+    plugins,
   };
 }
 

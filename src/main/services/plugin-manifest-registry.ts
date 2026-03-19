@@ -155,6 +155,14 @@ export function getAllowedCommands(pluginId: string): string[] {
   return trustedManifests.get(pluginId)?.allowedCommands ?? [];
 }
 
+/**
+ * List all registered manifests (built-in + community).
+ * Used by the annex snapshot to advertise installed plugins.
+ */
+export function listAllManifests(): PluginManifest[] {
+  return Array.from(trustedManifests.values());
+}
+
 export function unregisterManifest(pluginId: string): boolean {
   return trustedManifests.delete(pluginId);
 }

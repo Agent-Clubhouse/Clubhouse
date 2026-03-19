@@ -6,11 +6,13 @@
  * to prevent collisions with local agents.
  */
 import { create } from 'zustand';
+import { usePluginStore } from '../plugins/plugin-store';
 import type {
   Project,
   Agent,
   AgentDetailedStatus,
   SatelliteSnapshot,
+  SnapshotPluginSummary,
 } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +43,11 @@ export function parseNamespacedId(id: string): { satelliteId: string; agentId: s
 
 /** Check if an agent ID is a remote (namespaced) ID. */
 export function isRemoteAgentId(id: string): boolean {
+  return id.startsWith('remote:');
+}
+
+/** Check if a project ID is a remote (namespaced) ID. */
+export function isRemoteProjectId(id: string): boolean {
   return id.startsWith('remote:');
 }
 
@@ -76,9 +83,53 @@ interface RemoteProjectStoreState {
 
 export interface PluginMatchResult {
   id: string;
+  name: string;
   status: 'matched' | 'missing' | 'version_mismatch';
   localVersion?: string;
   remoteVersion?: string;
+  scope?: string;
+  contributes?: unknown;
+}
+
+/**
+ * Compare satellite plugins against locally installed plugins.
+ */
+function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): PluginMatchResult[] {
+  const localPlugins = usePluginStore.getState().plugins;
+
+  return remotePlugins.map((remote) => {
+    const local = localPlugins[remote.id];
+    if (!local) {
+      return {
+        id: remote.id,
+        name: remote.name,
+        status: 'missing' as const,
+        remoteVersion: remote.version,
+        scope: remote.scope,
+        contributes: remote.contributes,
+      };
+    }
+    if (local.manifest.version !== remote.version) {
+      return {
+        id: remote.id,
+        name: remote.name,
+        status: 'version_mismatch' as const,
+        localVersion: local.manifest.version,
+        remoteVersion: remote.version,
+        scope: remote.scope,
+        contributes: remote.contributes,
+      };
+    }
+    return {
+      id: remote.id,
+      name: remote.name,
+      status: 'matched' as const,
+      localVersion: local.manifest.version,
+      remoteVersion: remote.version,
+      scope: remote.scope,
+      contributes: remote.contributes,
+    };
+  });
 }
 
 export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) => ({
@@ -101,7 +152,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     // Map agents with namespaced IDs
     const newAgents: Record<string, Agent> = {};
     const agents = snapshot.agents || {};
-    for (const [projectId, projectAgents] of Object.entries(agents)) {
+    for (const [_projectId, projectAgents] of Object.entries(agents)) {
       for (const agent of projectAgents as Agent[]) {
         const nsId = namespacedAgentId(satelliteId, agent.id);
         newAgents[nsId] = {
@@ -111,6 +162,11 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         };
       }
     }
+
+    // Compute plugin match state
+    const pluginMatches = snapshot.plugins
+      ? computePluginMatchState(snapshot.plugins)
+      : [];
 
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
@@ -131,6 +187,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...filteredAgents,
           ...newAgents,
         },
+        pluginMatchState: {
+          ...state.pluginMatchState,
+          [satelliteId]: pluginMatches,
+        },
       };
     });
   },
@@ -149,10 +209,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         }
       }
 
+      const newPluginMatch = { ...state.pluginMatchState };
+      delete newPluginMatch[satelliteId];
+
       return {
         satelliteProjects: newProjects,
         remoteAgents: newAgents,
         remoteAgentDetailedStatus: newStatuses,
+        pluginMatchState: newPluginMatch,
       };
     });
   },

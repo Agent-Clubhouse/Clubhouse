@@ -526,6 +526,15 @@ export interface SatelliteConnection {
   lastError: string | null;
 }
 
+/** Summary of an installed plugin sent in the satellite snapshot. */
+export interface SnapshotPluginSummary {
+  id: string;
+  name: string;
+  version: string;
+  scope: 'project' | 'app' | 'dual';
+  contributes?: unknown;
+}
+
 export interface SatelliteSnapshot {
   projects: Project[];
   agents: Record<string, Agent[]>;
@@ -534,7 +543,7 @@ export interface SatelliteSnapshot {
   orchestrators: unknown;
   pendingPermissions: unknown[];
   lastSeq: number;
-  plugins?: unknown[];
+  plugins?: SnapshotPluginSummary[];
   agentsMeta?: unknown;
   protocolVersion?: number;
 }
