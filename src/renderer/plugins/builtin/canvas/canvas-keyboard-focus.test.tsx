@@ -53,23 +53,29 @@ function renderWorkspace(overrides: {
   selectedViewId?: string | null;
   onViewportChange?: (v: Viewport) => void;
   onSelectView?: (id: string | null) => void;
+  onClearSelection?: () => void;
 } = {}) {
   const props = {
     views: overrides.views ?? [],
     viewport: overrides.viewport ?? defaultViewport,
     zoomedViewId: null,
     selectedViewId: overrides.selectedViewId ?? null,
+    selectedViewIds: [] as string[],
     api: stubApi(),
     onViewportChange: overrides.onViewportChange ?? vi.fn(),
     onAddView: vi.fn(),
     onAddPluginView: vi.fn(),
     onRemoveView: vi.fn(),
     onMoveView: vi.fn(),
+    onMoveViews: vi.fn(),
     onResizeView: vi.fn(),
     onFocusView: vi.fn(),
     onUpdateView: vi.fn(),
     onZoomView: vi.fn(),
     onSelectView: overrides.onSelectView ?? vi.fn(),
+    onToggleSelectView: vi.fn(),
+    onSetSelectedViewIds: vi.fn(),
+    onClearSelection: overrides.onClearSelection ?? vi.fn(),
   };
   return render(<CanvasWorkspace {...props} />);
 }
@@ -114,26 +120,28 @@ describe('canvas keyboard focus', () => {
   });
 
   it('Escape deselects and returns focus to the workspace', () => {
-    const onSelectView = vi.fn();
+    const onClearSelection = vi.fn();
     renderWorkspace({
       views: [baseView],
       selectedViewId: baseView.id,
-      onSelectView,
+      onClearSelection,
     });
     const ws = screen.getByTestId('canvas-workspace');
 
     fireEvent.keyDown(ws, { key: 'Escape' });
 
-    expect(onSelectView).toHaveBeenCalledWith(null);
+    expect(onClearSelection).toHaveBeenCalled();
     expect(document.activeElement).toBe(ws);
   });
 
   it('clicking empty canvas space deselects and focuses the workspace', () => {
     const onSelectView = vi.fn();
+    const onClearSelection = vi.fn();
     renderWorkspace({
       views: [baseView],
       selectedViewId: baseView.id,
       onSelectView,
+      onClearSelection,
     });
     const ws = screen.getByTestId('canvas-workspace');
 
@@ -141,10 +149,19 @@ describe('canvas keyboard focus', () => {
     fireEvent.mouseDown(ws, { button: 0 });
 
     expect(onSelectView).toHaveBeenCalledWith(null);
+    expect(onClearSelection).toHaveBeenCalled();
     expect(document.activeElement).toBe(ws);
   });
 
   it('workspace regains focus when selectedViewId transitions to null', () => {
+    const multiSelectProps = {
+      selectedViewIds: [] as string[],
+      onMoveViews: vi.fn(),
+      onToggleSelectView: vi.fn(),
+      onSetSelectedViewIds: vi.fn(),
+      onClearSelection: vi.fn(),
+    };
+
     const { rerender } = render(
       <CanvasWorkspace
         views={[baseView]}
@@ -162,6 +179,7 @@ describe('canvas keyboard focus', () => {
         onUpdateView={vi.fn()}
         onZoomView={vi.fn()}
         onSelectView={vi.fn()}
+        {...multiSelectProps}
       />,
     );
 
@@ -188,6 +206,7 @@ describe('canvas keyboard focus', () => {
         onUpdateView={vi.fn()}
         onZoomView={vi.fn()}
         onSelectView={vi.fn()}
+        {...multiSelectProps}
       />,
     );
 
@@ -208,8 +227,10 @@ describe('canvas view pointer-events isolation', () => {
         onClose={vi.fn()}
         onFocus={vi.fn()}
         onSelect={vi.fn()}
+        onToggleSelect={vi.fn()}
         onCenterView={vi.fn()}
         onZoomView={vi.fn()}
+        onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
         onResizeEnd={vi.fn()}
         onUpdate={vi.fn()}
@@ -246,8 +267,10 @@ describe('canvas view pointer-events isolation', () => {
         onClose={vi.fn()}
         onFocus={vi.fn()}
         onSelect={onSelect}
+        onToggleSelect={vi.fn()}
         onCenterView={vi.fn()}
         onZoomView={vi.fn()}
+        onDragStart={vi.fn()}
         onDragEnd={vi.fn()}
         onResizeEnd={vi.fn()}
         onUpdate={vi.fn()}
