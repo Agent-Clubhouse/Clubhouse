@@ -348,6 +348,8 @@ vi.stubGlobal('clubhouse', {
     delete: async () => false,
     getBulletinDigest: async () => [],
     getTopicMessages: async () => [],
+    postBulletinMessage: asyncNoop,
+    sendShoulderTap: asyncNoop,
     onChanged: () => noop,
   },
   mcpBinding: {
