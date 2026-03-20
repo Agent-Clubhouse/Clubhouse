@@ -19,6 +19,7 @@ vi.mock('electron', () => ({
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '0'),
+  execFile: vi.fn(),
 }));
 
 vi.mock('../services/notification-service', () => ({
@@ -109,6 +110,20 @@ vi.mock('../services/materialization-service', () => ({
 
 vi.mock('../services/agent-system', () => ({
   resolveOrchestrator: vi.fn(async () => ({})),
+  spawnAgent: vi.fn(async () => {}),
+}));
+
+vi.mock('../services/pty-manager', () => ({
+  write: vi.fn(),
+  kill: vi.fn(),
+  getBuffer: vi.fn(() => ''),
+  getLastActivity: vi.fn(() => null),
+}));
+
+vi.mock('../services/restart-session-service', () => ({
+  getLiveAgentsForUpdate: vi.fn(() => []),
+  loadPendingResume: vi.fn(async () => null),
+  captureSessionState: vi.fn(async () => {}),
 }));
 
 vi.mock('../services/annex-server', () => ({
@@ -167,6 +182,11 @@ describe('app-handlers', () => {
       IPC.APP.SET_DOCK_BADGE,
       IPC.APP.GET_UPDATE_SETTINGS, IPC.APP.SAVE_UPDATE_SETTINGS,
       IPC.APP.CHECK_FOR_UPDATES, IPC.APP.GET_UPDATE_STATUS, IPC.APP.APPLY_UPDATE,
+      IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE,
+      IPC.APP.GET_PENDING_RESUMES,
+      IPC.APP.RESUME_MANUAL_AGENT,
+      IPC.APP.RESOLVE_WORKING_AGENT,
+      IPC.APP.CONFIRM_UPDATE_RESTART,
       IPC.APP.GET_PENDING_RELEASE_NOTES, IPC.APP.CLEAR_PENDING_RELEASE_NOTES,
       IPC.APP.GET_VERSION_HISTORY,
       IPC.APP.GET_CLUBHOUSE_MODE_SETTINGS, IPC.APP.SAVE_CLUBHOUSE_MODE_SETTINGS,
