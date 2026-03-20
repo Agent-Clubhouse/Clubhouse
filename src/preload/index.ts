@@ -1051,6 +1051,28 @@ const api = {
     },
   },
 
+  groupProject: {
+    list: (): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.LIST),
+    create: (name: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
+    update: (id: string, fields: { name?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
+    getBulletinDigest: (id: string, since?: string): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
+    getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),
+    onChanged: (callback: (projects: unknown[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
+      ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);
+      return () => { ipcRenderer.removeListener(IPC.GROUP_PROJECT.CHANGED, listener); };
+    },
+  },
+
   mcpBinding: {
     getBindings: () =>
       ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),

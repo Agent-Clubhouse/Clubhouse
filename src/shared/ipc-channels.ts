@@ -320,6 +320,16 @@ export const IPC = {
     SESSION_TRANSCRIPT: 'annex-client:session-transcript',
     SESSION_SUMMARY: 'annex-client:session-summary',
   },
+  GROUP_PROJECT: {
+    CREATE: 'group-project:create',
+    GET: 'group-project:get',
+    LIST: 'group-project:list',
+    UPDATE: 'group-project:update',
+    DELETE: 'group-project:delete',
+    GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
+    GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
+    CHANGED: 'group-project:changed',
+  },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
     BIND: 'mcp-binding:bind',
