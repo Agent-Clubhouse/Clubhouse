@@ -41,13 +41,14 @@ export function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-/** Generate a short 4-character hash of a string for uniqueness in tool names. */
+/** Generate a short 4-character hash of a string for uniqueness in tool names (FNV-1a). */
 export function shortHash(input: string): string {
-  let hash = 0;
+  let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < input.length; i++) {
-    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV prime
   }
-  return Math.abs(hash).toString(36).padStart(4, '0').slice(0, 4);
+  return (hash >>> 0).toString(36).padStart(4, '0').slice(0, 4);
 }
 
 /**
