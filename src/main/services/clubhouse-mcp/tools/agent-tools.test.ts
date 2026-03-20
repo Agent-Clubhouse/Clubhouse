@@ -30,10 +30,25 @@ vi.mock('../../log-service', () => ({
 }));
 
 import { registerAgentTools } from './agent-tools';
-import { getScopedToolList, callTool, _resetForTesting as resetTools } from '../tool-registry';
+import { getScopedToolList, callTool, buildToolName, buildToolKey, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
+import type { McpBinding } from '../types';
+
+function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
+  return { label: 'Test', ...overrides };
+}
+
+function agentToolName(binding: McpBinding, suffix: string): string {
+  return buildToolName(binding, suffix);
+}
 
 describe('AgentTools', () => {
+  const sourceBinding = makeBinding({
+    agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+    label: 'Agent 2', agentName: 'mega-camel', targetName: 'scrappy-robin',
+    projectName: 'myapp',
+  });
+
   beforeEach(() => {
     resetTools();
     bindingManager._resetForTesting();
@@ -43,66 +58,137 @@ describe('AgentTools', () => {
     mockStructuredSendMessage.mockReset();
 
     registerAgentTools();
-    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+    bindingManager.bind('agent-1', {
+      targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      agentName: 'mega-camel', targetName: 'scrappy-robin', projectName: 'myapp',
+    });
   });
 
   describe('tool registration', () => {
     it('registers send_message, get_status, read_output, and check_connectivity tools', () => {
       const tools = getScopedToolList('agent-1');
       expect(tools).toHaveLength(4);
-      const names = tools.map(t => t.name);
-      expect(names).toContain('agent__agent_2__send_message');
-      expect(names).toContain('agent__agent_2__get_status');
-      expect(names).toContain('agent__agent_2__read_output');
-      expect(names).toContain('agent__agent_2__check_connectivity');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('send_message');
+      expect(suffixes).toContain('get_status');
+      expect(suffixes).toContain('read_output');
+      expect(suffixes).toContain('check_connectivity');
+    });
+
+    it('generates clubhouse-prefixed tool names with project and agent name', () => {
+      const tools = getScopedToolList('agent-1');
+      for (const tool of tools) {
+        expect(tool.name).toMatch(/^clubhouse__myapp_scrappy_robin_[a-z0-9]+__/);
+      }
     });
   });
 
   describe('send_message', () => {
-    it('sends tagged message to PTY agent with \\r', async () => {
+    const sendToolName = agentToolName(sourceBinding, 'send_message');
+
+    it('sends tagged message with sender identification', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello', task_id: 'test123' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello', task_id: 'test123' });
       expect(result.isError).toBeFalsy();
-      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', '[TASK:test123] hello\r');
-      expect(result.content[0].text).toContain('task_id=test123');
+      const writeCall = mockPtyWrite.mock.calls[0];
+      expect(writeCall[0]).toBe('agent-2');
+      // Message should contain FROM tag with sender identity
+      expect(writeCall[1]).toContain('[TASK:test123]');
+      expect(writeCall[1]).toContain('[FROM:mega-camel@myapp]');
+      expect(writeCall[1]).toContain('hello');
+      expect(writeCall[1]).toMatch(/\r$/);
+    });
+
+    it('includes sender name without project when project not set', async () => {
+      bindingManager._resetForTesting();
+      resetTools();
+      registerAgentTools();
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        agentName: 'mega-camel', targetName: 'scrappy-robin',
+      });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'scrappy-robin',
+      }), 'send_message');
+
+      const result = await callTool('agent-1', toolName, { message: 'hello', task_id: 'x1' });
+      expect(result.isError).toBeFalsy();
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:mega-camel]');
+    });
+
+    it('includes bidirectional reply instructions when reverse binding exists', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // Create reverse binding: agent-2 → agent-1
+      bindingManager.bind('agent-2', {
+        targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
+        agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',
+      });
+
+      const result = await callTool('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
+      expect(result.isError).toBeFalsy();
+
+      const written = mockPtyWrite.mock.calls[0][1];
+      // Should contain reply instructions
+      expect(written).toContain('Reply to mega-camel via tool');
+      expect(written).toContain('clubhouse__');
+      expect(written).toContain('task_id="bidir1"');
+      // Result should indicate bidirectional
+      expect(result.content[0].text).toContain('Bidirectional');
+      expect(result.content[0].text).toContain('scrappy-robin');
+    });
+
+    it('does not include reply instructions when unidirectional', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // No reverse binding
+
+      const result = await callTool('agent-1', sendToolName, { message: 'do something', task_id: 'uni1' });
+      expect(result.isError).toBeFalsy();
+
+      const written = mockPtyWrite.mock.calls[0][1];
+      expect(written).not.toContain('Reply to');
+      // Result should indicate poll
+      expect(result.content[0].text).toContain('poll read_output');
     });
 
     it('auto-generates task_id when not provided', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
       // Should have auto-generated a task_id starting with t_
       expect(result.content[0].text).toMatch(/task_id=t_/);
-      // PTY write should contain the tagged message with \r
+      // PTY write should contain the tagged message with FROM and \r
       const writeCall = mockPtyWrite.mock.calls[0];
-      expect(writeCall[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] hello\r$/);
+      expect(writeCall[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] \[FROM:mega-camel@myapp\] hello\r$/);
     });
 
     it('sends tagged message to structured agent', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello', task_id: 'abc' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello', task_id: 'abc' });
       expect(result.isError).toBeFalsy();
-      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', '[TASK:abc] hello');
-      expect(result.content[0].text).toContain('task_id=abc');
+      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:abc]'));
+      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', expect.stringContaining('[FROM:mega-camel@myapp]'));
     });
 
     it('returns error when agent not running', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('not running');
     });
 
     it('returns error for headless runtime', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'headless' });
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('does not support input');
     });
 
     it('returns error when message is missing', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', {});
+      const result = await callTool('agent-1', sendToolName, {});
       expect(result.isError).toBe(true);
     });
   });
@@ -110,7 +196,8 @@ describe('AgentTools', () => {
   describe('get_status', () => {
     it('returns running status for active agent', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', 'agent__agent_2__get_status', {});
+      const toolName = agentToolName(sourceBinding, 'get_status');
+      const result = await callTool('agent-1', toolName, {});
       expect(result.isError).toBeFalsy();
       const status = JSON.parse(result.content[0].text!);
       expect(status.running).toBe(true);
@@ -119,18 +206,21 @@ describe('AgentTools', () => {
 
     it('returns not running for inactive agent', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
-      const result = await callTool('agent-1', 'agent__agent_2__get_status', {});
+      const toolName = agentToolName(sourceBinding, 'get_status');
+      const result = await callTool('agent-1', toolName, {});
       const status = JSON.parse(result.content[0].text!);
       expect(status.running).toBe(false);
     });
   });
 
   describe('read_output', () => {
+    const readToolName = agentToolName(sourceBinding, 'read_output');
+
     it('reads last N lines from PTY buffer', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       mockPtyGetBuffer.mockReturnValue('line1\nline2\nline3\nline4\nline5');
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', { lines: 3 });
+      const result = await callTool('agent-1', readToolName, { lines: 3 });
       expect(result.isError).toBeFalsy();
       expect(result.content[0].text).toBe('line3\nline4\nline5');
     });
@@ -140,7 +230,7 @@ describe('AgentTools', () => {
       const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join('\n');
       mockPtyGetBuffer.mockReturnValue(lines);
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      const result = await callTool('agent-1', readToolName, {});
       const outputLines = result.content[0].text!.split('\n');
       expect(outputLines).toHaveLength(50);
     });
@@ -150,20 +240,20 @@ describe('AgentTools', () => {
       const lines = Array.from({ length: 1000 }, (_, i) => `line${i}`).join('\n');
       mockPtyGetBuffer.mockReturnValue(lines);
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', { lines: 999 });
+      const result = await callTool('agent-1', readToolName, { lines: 999 });
       const outputLines = result.content[0].text!.split('\n');
       expect(outputLines).toHaveLength(500);
     });
 
     it('returns error for non-PTY agents', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      const result = await callTool('agent-1', readToolName, {});
       expect(result.isError).toBe(true);
     });
 
     it('returns error when agent not running', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      const result = await callTool('agent-1', readToolName, {});
       expect(result.isError).toBe(true);
     });
 
@@ -171,7 +261,7 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       mockPtyGetBuffer.mockReturnValue(null);
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      const result = await callTool('agent-1', readToolName, {});
       expect(result.content[0].text).toBe('No output available');
     });
 
@@ -179,7 +269,7 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       mockPtyGetBuffer.mockReturnValue('only one line');
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', { lines: 5 });
+      const result = await callTool('agent-1', readToolName, { lines: 5 });
       expect(result.content[0].text).toBe('only one line');
     });
 
@@ -187,17 +277,19 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       mockPtyGetBuffer.mockReturnValue('');
 
-      const result = await callTool('agent-1', 'agent__agent_2__read_output', {});
+      const result = await callTool('agent-1', readToolName, {});
       expect(result.isError).toBeFalsy();
     });
   });
 
   describe('send_message error handling', () => {
+    const sendToolName = agentToolName(sourceBinding, 'send_message');
+
     it('handles PTY write failure', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       mockPtyWrite.mockImplementation(() => { throw new Error('PTY write failed'); });
 
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('PTY write failed');
     });
@@ -206,7 +298,7 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
       mockStructuredSendMessage.mockRejectedValue(new Error('Structured send failed'));
 
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Structured send failed');
     });
@@ -215,25 +307,36 @@ describe('AgentTools', () => {
   describe('multi-agent bindings', () => {
     it('agent can send messages to multiple bound agents', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      bindingManager.bind('agent-1', { targetId: 'agent-3', targetKind: 'agent', label: 'Agent 3' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-3', targetKind: 'agent', label: 'Agent 3',
+        targetName: 'faithful-urchin', projectName: 'myapp',
+      });
 
       const tools = getScopedToolList('agent-1');
       // 4 tools for agent-2 + 4 tools for agent-3 = 8
       expect(tools).toHaveLength(8);
 
-      const r1 = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'to-2', task_id: 'x1' });
-      const r2 = await callTool('agent-1', 'agent__agent_3__send_message', { message: 'to-3', task_id: 'x2' });
+      const sendToolAgent2 = agentToolName(sourceBinding, 'send_message');
+      const sendToolAgent3 = agentToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-3', targetKind: 'agent',
+        targetName: 'faithful-urchin', projectName: 'myapp',
+      }), 'send_message');
+
+      const r1 = await callTool('agent-1', sendToolAgent2, { message: 'to-2', task_id: 'x1' });
+      const r2 = await callTool('agent-1', sendToolAgent3, { message: 'to-3', task_id: 'x2' });
       expect(r1.isError).toBeFalsy();
       expect(r2.isError).toBeFalsy();
-      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', '[TASK:x1] to-2\r');
-      expect(mockPtyWrite).toHaveBeenCalledWith('agent-3', '[TASK:x2] to-3\r');
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:x1]'));
+      expect(mockPtyWrite).toHaveBeenCalledWith('agent-3', expect.stringContaining('[TASK:x2]'));
     });
   });
 
   describe('check_connectivity', () => {
+    const connectToolName = agentToolName(sourceBinding, 'check_connectivity');
+
     it('returns unidirectional when no reverse binding exists', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', 'agent__agent_2__check_connectivity', {});
+      const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBeFalsy();
       const data = JSON.parse(result.content[0].text!);
       expect(data.direction).toBe('unidirectional');
@@ -243,18 +346,35 @@ describe('AgentTools', () => {
     it('returns bidirectional when reverse binding exists', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
       // Create the reverse binding: agent-2 → agent-1
-      bindingManager.bind('agent-2', { targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' });
+      bindingManager.bind('agent-2', {
+        targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
+        agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',
+      });
 
-      const result = await callTool('agent-1', 'agent__agent_2__check_connectivity', {});
+      const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBeFalsy();
       const data = JSON.parse(result.content[0].text!);
       expect(data.direction).toBe('bidirectional');
       expect(data.guidance).toContain('send messages back to you directly');
     });
 
+    it('includes reply tool name when bidirectional', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      bindingManager.bind('agent-2', {
+        targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
+        agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',
+      });
+
+      const result = await callTool('agent-1', connectToolName, {});
+      const data = JSON.parse(result.content[0].text!);
+      expect(data.replyTool).toBeDefined();
+      expect(data.replyTool).toMatch(/^clubhouse__/);
+      expect(data.replyTool).toContain('send_message');
+    });
+
     it('returns error when target agent not running', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
-      const result = await callTool('agent-1', 'agent__agent_2__check_connectivity', {});
+      const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('not running');
     });

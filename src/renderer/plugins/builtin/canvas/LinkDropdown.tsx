@@ -62,17 +62,26 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
     [bindings, agentId],
   );
 
-  const isBound = (targetId: string) => agentBindings.some((b) => b.targetId === targetId);
+  const resolveTargetId = (target: CanvasView) =>
+    target.type === 'agent' ? (target as AgentCanvasViewType).agentId ?? target.id : target.id;
+
+  const isBound = (target: CanvasView) => agentBindings.some((b) => b.targetId === resolveTargetId(target));
 
   const handleToggle = async (target: CanvasView) => {
     if (!agentId) return;
-    if (isBound(target.id)) {
-      await unbind(agentId, target.id);
+    if (isBound(target)) {
+      await unbind(agentId, resolveTargetId(target));
     } else {
+      const projectName = (target.metadata?.projectName as string)
+        || (agentView.metadata?.projectName as string)
+        || undefined;
       await bind(agentId, {
-        targetId: target.id,
+        targetId: resolveTargetId(target),
         targetKind: targetKind(target),
         label: targetLabel(target),
+        agentName: agentView.displayName || agentView.title,
+        targetName: target.displayName || target.title,
+        projectName,
       });
     }
   };
@@ -95,7 +104,7 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
       ) : (
         <div className="py-1 max-h-48 overflow-y-auto">
           {targets.map((target) => {
-            const bound = isBound(target.id);
+            const bound = isBound(target);
             return (
               <button
                 key={target.id}

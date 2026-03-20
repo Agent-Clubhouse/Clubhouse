@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { registerToolTemplate, getScopedToolList, callTool, buildToolName, parseToolName, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, sanitizeId, shortHash, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import type { McpBinding } from './types';
+
+function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
+  return { label: 'Test', ...overrides };
+}
 
 describe('ToolRegistry', () => {
   beforeEach(() => {
@@ -8,30 +13,99 @@ describe('ToolRegistry', () => {
     bindingManager._resetForTesting();
   });
 
-  describe('buildToolName', () => {
-    it('builds correct tool name', () => {
-      expect(buildToolName('agent', 'my-agent-1', 'send_message')).toBe('agent__my_agent_1__send_message');
+  describe('shortHash', () => {
+    it('returns a 4-character string', () => {
+      const h = shortHash('durable_1771825997699_05on03');
+      expect(h).toHaveLength(4);
+      expect(h).toMatch(/^[a-z0-9]+$/);
     });
 
-    it('sanitizes special characters in target ID', () => {
-      expect(buildToolName('browser', 'widget.123/test', 'navigate')).toBe('browser__widget_123_test__navigate');
+    it('is deterministic', () => {
+      expect(shortHash('abc')).toBe(shortHash('abc'));
+    });
+
+    it('differs for different inputs', () => {
+      expect(shortHash('agent-1')).not.toBe(shortHash('agent-2'));
+    });
+  });
+
+  describe('buildToolKey', () => {
+    it('builds key with project, name, and hash for agent targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'scrappy-robin', projectName: 'myapp',
+      });
+      const key = buildToolKey(binding);
+      expect(key).toBe(`myapp_scrappy_robin_${shortHash('agent-2')}`);
+    });
+
+    it('falls back to label when targetName not set', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'agent-2', targetKind: 'agent',
+        label: 'Agent 2',
+      });
+      const key = buildToolKey(binding);
+      expect(key).toBe(`project_Agent_2_${shortHash('agent-2')}`);
+    });
+
+    it('falls back to targetId when no name or label', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'agent-2', targetKind: 'agent',
+        label: '',
+      });
+      const key = buildToolKey(binding);
+      expect(key).toBe(`project_agent_2_${shortHash('agent-2')}`);
+    });
+
+    it('uses sanitized targetId for non-agent targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'widget.123', targetKind: 'browser',
+      });
+      expect(buildToolKey(binding)).toBe('widget_123');
+    });
+  });
+
+  describe('buildToolName', () => {
+    it('builds clubhouse-prefixed name for agent targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'scrappy-robin', projectName: 'myapp',
+      });
+      const name = buildToolName(binding, 'send_message');
+      expect(name).toBe(`clubhouse__myapp_scrappy_robin_${shortHash('agent-2')}__send_message`);
+    });
+
+    it('uses targetKind prefix for non-agent targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'widget-1', targetKind: 'browser',
+      });
+      const name = buildToolName(binding, 'navigate');
+      expect(name).toBe('browser__widget_1__navigate');
     });
   });
 
   describe('parseToolName', () => {
-    it('parses valid tool names', () => {
-      expect(parseToolName('agent__my_agent_1__send_message')).toEqual({
-        targetKind: 'agent',
-        targetId: 'my_agent_1',
+    it('parses clubhouse-prefixed tool names', () => {
+      expect(parseToolName('clubhouse__myapp_scrappy_robin_a3f2__send_message')).toEqual({
+        prefix: 'clubhouse',
+        toolKey: 'myapp_scrappy_robin_a3f2',
         suffix: 'send_message',
       });
     });
 
     it('parses browser tool names', () => {
       expect(parseToolName('browser__widget_1__navigate')).toEqual({
-        targetKind: 'browser',
-        targetId: 'widget_1',
+        prefix: 'browser',
+        toolKey: 'widget_1',
         suffix: 'navigate',
+      });
+    });
+
+    it('parses terminal tool names', () => {
+      expect(parseToolName('terminal__term_1__run_command')).toEqual({
+        prefix: 'terminal',
+        toolKey: 'term_1',
+        suffix: 'run_command',
       });
     });
 
@@ -41,20 +115,23 @@ describe('ToolRegistry', () => {
       expect(parseToolName('')).toBeNull();
     });
 
-    it('rejects tool names with special characters in target ID', () => {
-      // After fix: targetId must match [a-zA-Z0-9_]+ only
-      expect(parseToolName('agent__my.agent.1__send_message')).toBeNull();
+    it('rejects tool names with special characters in tool key', () => {
+      expect(parseToolName('clubhouse__my.agent.1__send_message')).toBeNull();
       expect(parseToolName('browser__widget/1__navigate')).toBeNull();
-      expect(parseToolName('agent__id-with-dashes__send_message')).toBeNull();
-      expect(parseToolName('agent__id with spaces__send_message')).toBeNull();
+      expect(parseToolName('clubhouse__id-with-dashes__send_message')).toBeNull();
     });
 
-    it('parses terminal tool names', () => {
-      expect(parseToolName('terminal__term_1__run_command')).toEqual({
-        targetKind: 'terminal',
-        targetId: 'term_1',
-        suffix: 'run_command',
+    it('round-trips through buildToolName for agent targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'durable_123', targetKind: 'agent',
+        targetName: 'faithful-urchin', projectName: 'webapp',
       });
+      const name = buildToolName(binding, 'send_message');
+      const parsed = parseToolName(name);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.prefix).toBe('clubhouse');
+      expect(parsed!.toolKey).toBe(buildToolKey(binding));
+      expect(parsed!.suffix).toBe('send_message');
     });
   });
 
@@ -64,7 +141,7 @@ describe('ToolRegistry', () => {
       expect(getScopedToolList('agent-1')).toHaveLength(0);
     });
 
-    it('returns tools for bound targets', () => {
+    it('returns tools for bound targets with human-readable names', () => {
       registerToolTemplate('agent', 'send_message', {
         description: 'Send message',
         inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] },
@@ -75,12 +152,19 @@ describe('ToolRegistry', () => {
         inputSchema: { type: 'object' },
       }, vi.fn());
 
-      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'scrappy-robin', projectName: 'myapp',
+      });
 
       const tools = getScopedToolList('agent-1');
       expect(tools).toHaveLength(2);
-      expect(tools[0].name).toBe('agent__agent_2__send_message');
-      expect(tools[1].name).toBe('agent__agent_2__get_status');
+      const expectedKey = buildToolKey(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'scrappy-robin', projectName: 'myapp',
+      }));
+      expect(tools[0].name).toBe(`clubhouse__${expectedKey}__send_message`);
+      expect(tools[1].name).toBe(`clubhouse__${expectedKey}__get_status`);
     });
 
     it('scopes tools to correct target kind', () => {
@@ -93,6 +177,7 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       expect(tools).toHaveLength(1);
       expect(tools[0].name).toContain('send_message');
+      expect(tools[0].name).toMatch(/^clubhouse__/);
     });
 
     it('generates tools for multiple bindings', () => {
@@ -116,9 +201,17 @@ describe('ToolRegistry', () => {
         inputSchema: { type: 'object' },
       }, handler);
 
-      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
 
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hello' });
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'robin', projectName: 'app',
+      }), 'send_message');
+
+      const result = await callTool('agent-1', toolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
       expect(handler).toHaveBeenCalledWith('agent-2', 'agent-1', { message: 'hello' });
     });
@@ -136,7 +229,7 @@ describe('ToolRegistry', () => {
       }, vi.fn());
 
       // No binding for agent-1 → agent-2
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', {});
+      const result = await callTool('agent-1', 'clubhouse__project_Agent_2_xxxx__send_message', {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No binding');
     });
@@ -147,9 +240,17 @@ describe('ToolRegistry', () => {
         inputSchema: { type: 'object' },
       }, vi.fn());
 
-      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
 
-      const result = await callTool('agent-1', 'agent__agent_2__nonexistent', {});
+      const key = buildToolKey(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'robin', projectName: 'app',
+      }));
+
+      const result = await callTool('agent-1', `clubhouse__${key}__nonexistent`, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Unknown tool action');
     });
@@ -164,10 +265,17 @@ describe('ToolRegistry', () => {
       }, handler);
 
       // Bind with a targetId that gets sanitized (dot → underscore)
-      bindingManager.bind('agent-1', { targetId: 'agent.2', targetKind: 'agent', label: 'Agent 2' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent.2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
 
-      // Tool name uses sanitized version
-      const result = await callTool('agent-1', 'agent__agent_2__send_message', { message: 'hi' });
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent.2', targetKind: 'agent',
+        targetName: 'robin', projectName: 'app',
+      }), 'send_message');
+
+      const result = await callTool('agent-1', toolName, { message: 'hi' });
       expect(result.isError).toBeFalsy();
       // Handler receives the ORIGINAL targetId (with dot), not the sanitized one
       expect(handler).toHaveBeenCalledWith('agent.2', 'agent-1', { message: 'hi' });
@@ -182,9 +290,29 @@ describe('ToolRegistry', () => {
       bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
       // agent-3 is NOT bound to agent-2
 
-      const result = await callTool('agent-3', 'agent__agent_2__send_message', {});
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2',
+      }), 'send_message');
+
+      const result = await callTool('agent-3', toolName, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No binding');
+    });
+
+    it('works with browser tool names', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'navigated' }],
+      });
+      registerToolTemplate('browser', 'navigate', {
+        description: 'Nav',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+
+      const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'http://test' });
+      expect(result.isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledWith('widget-1', 'agent-1', { url: 'http://test' });
     });
   });
 });

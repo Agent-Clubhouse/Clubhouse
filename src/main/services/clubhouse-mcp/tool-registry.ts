@@ -3,7 +3,7 @@
  * based on an agent's current bindings.
  */
 
-import type { McpToolDefinition, McpToolResult, BindingTargetKind } from './types';
+import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 import { appLog } from '../log-service';
 
@@ -20,7 +20,7 @@ const toolTemplates = new Map<BindingTargetKind, Array<{
 /**
  * Register a tool template for a target kind.
  * When an agent is bound to a target of this kind, a tool will be generated
- * with the name pattern: `{targetKind}__{targetId}__{nameSuffix}`.
+ * using a human-readable name pattern.
  */
 export function registerToolTemplate(
   targetKind: BindingTargetKind,
@@ -37,20 +37,50 @@ export function registerToolTemplate(
 }
 
 /** Sanitize an ID for use in tool names (replace non-alphanumeric with underscores). */
-function sanitizeId(id: string): string {
+export function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-/** Build the tool name from target kind, target ID, and suffix. */
-export function buildToolName(targetKind: BindingTargetKind, targetId: string, suffix: string): string {
-  return `${targetKind}__${sanitizeId(targetId)}__${suffix}`;
+/** Generate a short 4-character hash of a string for uniqueness in tool names (FNV-1a). */
+export function shortHash(input: string): string {
+  let hash = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV prime
+  }
+  return (hash >>> 0).toString(36).padStart(4, '0').slice(0, 4);
+}
+
+/**
+ * Build a tool key (the middle segment of a tool name) from a binding.
+ * For agent targets: `<project>_<targetName>_<hash>`
+ * For other targets: sanitized targetId.
+ */
+export function buildToolKey(binding: McpBinding): string {
+  if (binding.targetKind === 'agent') {
+    const project = sanitizeId(binding.projectName || 'project');
+    const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
+    const hash = shortHash(binding.targetId);
+    return `${project}_${name}_${hash}`;
+  }
+  return sanitizeId(binding.targetId);
+}
+
+/**
+ * Build the full tool name from a binding and action suffix.
+ * Agent targets: `clubhouse__<project>_<name>_<hash>__<suffix>`
+ * Other targets: `<targetKind>__<sanitizedId>__<suffix>`
+ */
+export function buildToolName(binding: McpBinding, suffix: string): string {
+  const prefix = binding.targetKind === 'agent' ? 'clubhouse' : binding.targetKind;
+  return `${prefix}__${buildToolKey(binding)}__${suffix}`;
 }
 
 /** Parse a tool name back into its components. Returns null if format doesn't match. */
-export function parseToolName(name: string): { targetKind: string; targetId: string; suffix: string } | null {
-  const match = name.match(/^(browser|agent|terminal)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
+export function parseToolName(name: string): { prefix: string; toolKey: string; suffix: string } | null {
+  const match = name.match(/^(clubhouse|browser|terminal)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
   if (!match) return null;
-  return { targetKind: match[1], targetId: match[2], suffix: match[3] };
+  return { prefix: match[1], toolKey: match[2], suffix: match[3] };
 }
 
 /**
@@ -67,7 +97,7 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     for (const template of templates) {
       tools.push({
         ...template.definition,
-        name: buildToolName(binding.targetKind, binding.targetId, template.nameSuffix),
+        name: buildToolName(binding, template.nameSuffix),
       });
     }
   }
@@ -96,17 +126,20 @@ export async function callTool(
 
   // Verify the agent has this binding
   const bindings = bindingManager.getBindingsForAgent(agentId);
-  const binding = bindings.find(b => sanitizeId(b.targetId) === parsed.targetId);
+  const binding = bindings.find(b => {
+    const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse' : b.targetKind;
+    return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
+  });
   if (!binding) {
     appLog('core:mcp', 'warn', 'Tool call: no binding matches target', {
       meta: {
         agentId,
-        parsedTarget: parsed.targetId,
-        availableBindings: bindings.map(b => ({ targetId: b.targetId, sanitized: sanitizeId(b.targetId), targetKind: b.targetKind })),
+        parsedToolKey: parsed.toolKey,
+        availableBindings: bindings.map(b => ({ targetId: b.targetId, toolKey: buildToolKey(b), targetKind: b.targetKind })),
       },
     });
     return {
-      content: [{ type: 'text', text: `No binding found for target: ${parsed.targetId}` }],
+      content: [{ type: 'text', text: `No binding found for target: ${parsed.toolKey}` }],
       isError: true,
     };
   }

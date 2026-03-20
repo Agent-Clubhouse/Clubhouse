@@ -2,7 +2,7 @@
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
 
-import { registerToolTemplate } from '../tool-registry';
+import { registerToolTemplate, buildToolName, buildToolKey } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
@@ -12,7 +12,7 @@ import { appLog } from '../../log-service';
 
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
-  // agent__<targetId>__send_message
+  // clubhouse__<project>_<name>_<hash>__send_message
   registerToolTemplate(
     'agent',
     'send_message',
@@ -21,15 +21,16 @@ export function registerAgentTools(): void {
         'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
         'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
         'and may be in the middle of other work. There is no inline response.\n\n' +
+        'Your identity (name and project) is automatically included in the message so the target ' +
+        'knows who sent the request. If the connection is bidirectional, reply instructions ' +
+        '(including the exact tool name to respond back) are also appended automatically.\n\n' +
         'To get a response:\n' +
-        '1. Use check_connectivity to determine if the link is bidirectional or unidirectional.\n' +
-        '2. Include a task_id so the target can tag its reply (e.g. "TASK_RESULT:<task_id>: …").\n' +
+        '1. Include a task_id so the target can tag its reply (e.g. "TASK_RESULT:<task_id>: …").\n' +
+        '2. If BIDIRECTIONAL: the target agent can send_message back to you directly with the task_id. ' +
+        'Reply instructions are included in the message automatically.\n' +
         '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
-        'unrelated content — filter by the marker. Allow time for the agent to process.\n' +
-        '4. If BIDIRECTIONAL: the target agent can send_message back to you directly with the task_id. ' +
-        'You may still poll read_output as a fallback.\n\n' +
-        'Instruct the target agent to prefix its answer with "TASK_RESULT:<task_id>: " so you can ' +
-        'locate it in the output stream.',
+        'unrelated content — filter by the marker. Allow time for the agent to process.\n\n' +
+        'Use check_connectivity to determine the link direction if unsure.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -63,22 +64,49 @@ export function registerAgentTools(): void {
         });
         return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
       }
+
+      // Resolve sender identity from the binding
+      const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
+      const senderName = sourceBinding?.agentName || agentId;
+      const senderProject = sourceBinding?.projectName;
+      const senderLabel = senderProject ? `${senderName}@${senderProject}` : senderName;
+      const targetName = sourceBinding?.targetName || targetId;
+
+      // Check if the target has a reverse binding back to the caller
+      const reverseBindings = bindingManager.getBindingsForAgent(targetId);
+      const reverseBinding = reverseBindings.find(b => b.targetId === agentId);
+      const isBidirectional = !!reverseBinding;
+
       appLog('core:mcp', 'info', 'send_message: target resolved', {
-        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime, taskId },
+        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime, taskId, senderLabel, isBidirectional },
       });
 
-      const taggedMessage = `[TASK:${taskId}] ${message}`;
+      // Build the tagged message with sender identification
+      let taggedMessage = `[TASK:${taskId}] [FROM:${senderLabel}] ${message}`;
+
+      // If bidirectional, append reply instructions so the target knows how to respond
+      if (isBidirectional && reverseBinding) {
+        const replyToolName = buildToolName(reverseBinding, 'send_message');
+        taggedMessage += `\n\n---\nReply to ${senderName} via tool "${replyToolName}" with task_id="${taskId}". ` +
+          `Prefix your response with TASK_RESULT:${taskId}.`;
+      }
 
       try {
         if (reg.runtime === 'pty') {
           ptyManager.write(targetId, taggedMessage + '\r');
-          return { content: [{ type: 'text', text: `Message sent. task_id=${taskId} — look for TASK_RESULT:${taskId} in output.` }] };
         } else if (reg.runtime === 'structured') {
           await structuredManager.sendMessage(targetId, taggedMessage);
-          return { content: [{ type: 'text', text: `Message sent. task_id=${taskId} — look for TASK_RESULT:${taskId} in response.` }] };
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
+
+        const resultText = isBidirectional
+          ? `Message sent to ${targetName}. task_id=${taskId}. ` +
+            `Bidirectional — ${targetName} can reply directly via send_message.`
+          : `Message sent to ${targetName}. task_id=${taskId} — ` +
+            `poll read_output for TASK_RESULT:${taskId}.`;
+
+        return { content: [{ type: 'text', text: resultText }] };
       } catch (err) {
         appLog('core:mcp', 'error', 'Failed to send message to agent', {
           meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
@@ -88,7 +116,7 @@ export function registerAgentTools(): void {
     },
   );
 
-  // agent__<targetId>__get_status
+  // clubhouse__<project>_<name>_<hash>__get_status
   registerToolTemplate(
     'agent',
     'get_status',
@@ -116,7 +144,7 @@ export function registerAgentTools(): void {
     },
   );
 
-  // agent__<targetId>__read_output
+  // clubhouse__<project>_<name>_<hash>__read_output
   registerToolTemplate(
     'agent',
     'read_output',
@@ -172,7 +200,7 @@ export function registerAgentTools(): void {
     },
   );
 
-  // agent__<targetId>__check_connectivity
+  // clubhouse__<project>_<name>_<hash>__check_connectivity
   registerToolTemplate(
     'agent',
     'check_connectivity',
@@ -202,14 +230,21 @@ export function registerAgentTools(): void {
 
       // Check if the target has a binding back to the caller
       const reverseBindings = bindingManager.getBindingsForAgent(targetId);
-      const hasBidirectional = reverseBindings.some(b => b.targetId === agentId);
+      const reverseBinding = reverseBindings.find(b => b.targetId === agentId);
+      const hasBidirectional = !!reverseBinding;
 
       const direction = hasBidirectional ? 'bidirectional' : 'unidirectional';
 
+      let replyToolName: string | undefined;
+      if (hasBidirectional && reverseBinding) {
+        replyToolName = buildToolName(reverseBinding, 'send_message');
+      }
+
       const guidance = hasBidirectional
-        ? 'The target agent can send messages back to you directly via send_message. ' +
-          'Include a task_id in your message and the target can respond with a message tagged ' +
-          'TASK_RESULT:<task_id>. You may also poll read_output as a fallback.'
+        ? `The target agent can send messages back to you directly via send_message. ` +
+          `Include a task_id in your message and the target can respond with a message tagged ` +
+          `TASK_RESULT:<task_id>. You may also poll read_output as a fallback.` +
+          (replyToolName ? ` The target should use tool "${replyToolName}" to reply.` : '')
         : 'The target agent CANNOT send messages back to you. You must poll read_output to find responses. ' +
           'Always include a task_id and instruct the target to print "TASK_RESULT:<task_id>: <answer>" ' +
           'in its output. Poll read_output periodically and search for your task_id marker. ' +
@@ -219,10 +254,15 @@ export function registerAgentTools(): void {
         meta: { sourceAgent: agentId, targetAgent: targetId, direction },
       });
 
+      const result: Record<string, unknown> = { direction, target: targetId, guidance };
+      if (replyToolName) {
+        result.replyTool = replyToolName;
+      }
+
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({ direction, target: targetId, guidance }, null, 2),
+          text: JSON.stringify(result, null, 2),
         }],
       };
     },

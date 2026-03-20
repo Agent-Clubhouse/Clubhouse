@@ -25,7 +25,8 @@ vi.mock('../log-service', () => ({
 
 import * as bridgeServer from './bridge-server';
 import { bindingManager } from './binding-manager';
-import { registerToolTemplate, _resetForTesting as resetTools } from './tool-registry';
+import { registerToolTemplate, buildToolName, _resetForTesting as resetTools } from './tool-registry';
+import type { McpBinding } from './types';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -104,7 +105,10 @@ describe('BridgeServer', () => {
       inputSchema: { type: 'object', properties: { message: { type: 'string' } } },
     }, vi.fn());
 
-    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+    bindingManager.bind('agent-1', {
+      targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      targetName: 'scrappy-robin', projectName: 'myapp',
+    });
 
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
       jsonrpc: '2.0',
@@ -113,7 +117,11 @@ describe('BridgeServer', () => {
     }, 'test-nonce');
 
     expect(body.result.tools).toHaveLength(1);
-    expect(body.result.tools[0].name).toBe('agent__agent_2__send_message');
+    const expectedName = buildToolName(
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' },
+      'send_message',
+    );
+    expect(body.result.tools[0].name).toBe(expectedName);
   });
 
   it('handles tools/call', async () => {
@@ -125,13 +133,21 @@ describe('BridgeServer', () => {
       inputSchema: { type: 'object' },
     }, handler);
 
-    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+    bindingManager.bind('agent-1', {
+      targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      targetName: 'scrappy-robin', projectName: 'myapp',
+    });
+
+    const toolName = buildToolName(
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2', targetName: 'scrappy-robin', projectName: 'myapp' },
+      'send_message',
+    );
 
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
-      params: { name: 'agent__agent_2__send_message', arguments: { message: 'hi' } },
+      params: { name: toolName, arguments: { message: 'hi' } },
     }, 'test-nonce');
 
     expect(body.result.content[0].text).toBe('sent');
@@ -247,13 +263,21 @@ describe('BridgeServer', () => {
       inputSchema: { type: 'object' },
     }, vi.fn().mockRejectedValue(new Error('handler exploded')));
 
-    bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'A2' });
+    bindingManager.bind('agent-1', {
+      targetId: 'agent-2', targetKind: 'agent', label: 'A2',
+      targetName: 'robin', projectName: 'app',
+    });
+
+    const toolName = buildToolName(
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+      'fail_tool',
+    );
 
     const { body } = await makeRequest(port, 'POST', '/mcp/agent-1', {
       jsonrpc: '2.0',
       id: 21,
       method: 'tools/call',
-      params: { name: 'agent__agent_2__fail_tool', arguments: {} },
+      params: { name: toolName, arguments: {} },
     }, 'test-nonce');
 
     expect(body.error.code).toBe(-32000);

@@ -15,6 +15,8 @@ export interface McpBinding {
   agentName?: string;
   /** Human-readable name of the target (e.g. "faithful-urchin" for agents). */
   targetName?: string;
+  /** Human-readable project name (e.g. "my-frontend-app"). */
+  projectName?: string;
 }
 
 /** MCP JSON-RPC request envelope. */
