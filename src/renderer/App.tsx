@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { RailSection } from './components/RailSection';
 import { ProjectPanelLayout } from './components/ProjectPanelLayout';
@@ -44,6 +44,25 @@ export function App() {
   const lockControllerFingerprint = useLockStore((s) => s.controllerFingerprint);
   const lockTogglePause = useLockStore((s) => s.togglePause);
   const lockUnlock = useLockStore((s) => s.unlock);
+
+  // ── Banner area height measurement (for positioning the pause floatie) ──
+  const bannerObserverRef = useRef<ResizeObserver | null>(null);
+  const [bannerHeight, setBannerHeight] = useState(0);
+  const bannerRef = useCallback((node: HTMLDivElement | null) => {
+    if (bannerObserverRef.current) {
+      bannerObserverRef.current.disconnect();
+      bannerObserverRef.current = null;
+    }
+    if (!node) {
+      setBannerHeight(0);
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      setBannerHeight(entry.contentRect.height);
+    });
+    observer.observe(node);
+    bannerObserverRef.current = observer;
+  }, []);
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
@@ -187,6 +206,7 @@ export function App() {
       onDisconnect={handleLockDisconnect}
       onPause={handleLockPause}
       onDisableAndDisconnect={handleLockDisableAndDisconnect}
+      bannerOffset={bannerHeight}
     />
   );
 
@@ -195,9 +215,11 @@ export function App() {
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
         <TitleBar />
-        <PermissionViolationBanner />
-        <UpdateBanner />
-        <PluginUpdateBanner />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <PluginUpdateBanner />
+        </div>
         <RailSection>
           <Dashboard />
         </RailSection>
@@ -217,9 +239,11 @@ export function App() {
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
         <TitleBar />
-        <PermissionViolationBanner />
-        <UpdateBanner />
-        <PluginUpdateBanner />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <PluginUpdateBanner />
+        </div>
         <RailSection>
           <PluginContentView pluginId={appPluginId} mode="app" />
         </RailSection>
@@ -238,9 +262,11 @@ export function App() {
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
         <TitleBar />
-        <PermissionViolationBanner />
-        <UpdateBanner />
-        <PluginUpdateBanner />
+        <div ref={bannerRef}>
+          <PermissionViolationBanner />
+          <UpdateBanner />
+          <PluginUpdateBanner />
+        </div>
         <RailSection>
           <HelpView />
         </RailSection>
@@ -258,10 +284,12 @@ export function App() {
     <div className="h-screen w-screen overflow-hidden text-ctp-text flex flex-col">
       {lockOverlay}
       <TitleBar />
-      <PermissionViolationBanner />
-      <UpdateBanner />
-      <PluginUpdateBanner />
-      <GitBanner />
+      <div ref={bannerRef}>
+        <PermissionViolationBanner />
+        <UpdateBanner />
+        <PluginUpdateBanner />
+        <GitBanner />
+      </div>
       <RailSection>
         <ProjectPanelLayout />
       </RailSection>

@@ -20,6 +20,8 @@ interface Props {
   onDisconnect: () => void;
   onPause: () => void;
   onDisableAndDisconnect: () => void;
+  /** Pixel offset from the top to account for visible banners above. */
+  bannerOffset?: number;
 }
 
 function getColorHex(colorId: string): string {
@@ -27,7 +29,7 @@ function getColorHex(colorId: string): string {
   return color?.hex || '#6366f1';
 }
 
-export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisableAndDisconnect }: Props) {
+export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisableAndDisconnect, bannerOffset = 0 }: Props) {
   if (!lockState.locked) return null;
 
   const colorHex = getColorHex(lockState.controllerColor);
@@ -87,7 +89,11 @@ export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisab
       )}
 
       {lockState.paused && (
-        <div className="fixed top-12 right-4 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div
+          className="fixed right-4 pointer-events-auto transition-[top] duration-200 ease-in-out"
+          data-testid="satellite-pause-floatie"
+          style={{ top: `${48 + bannerOffset}px`, WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
             <div
               className="w-3 h-3 rounded-full"
