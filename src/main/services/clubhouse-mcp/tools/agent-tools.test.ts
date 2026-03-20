@@ -29,6 +29,11 @@ vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+const mockGetProvider = vi.fn();
+vi.mock('../../../orchestrators', () => ({
+  getProvider: (id: string) => mockGetProvider(id),
+}));
+
 import { registerAgentTools } from './agent-tools';
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
@@ -71,9 +76,15 @@ describe('AgentTools', () => {
     mockPtyWrite.mockReset();
     mockPtyGetBuffer.mockReset();
     mockStructuredSendMessage.mockReset();
+    mockGetProvider.mockReset();
 
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
+
+    // Default provider mock — returns Claude Code timing (200/200/200)
+    mockGetProvider.mockReturnValue({
+      getPasteSubmitTiming: () => ({ initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 }),
+    });
 
     registerAgentTools();
     bindingManager.bind('agent-1', {
@@ -109,7 +120,7 @@ describe('AgentTools', () => {
     const sendToolName = agentToolName(sourceBinding, 'send_message');
 
     it('sends single-line message without bracketed paste', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'test123' });
       expect(result.isError).toBeFalsy();
 
@@ -128,7 +139,7 @@ describe('AgentTools', () => {
     });
 
     it('wraps multi-line message in bracketed paste sequences', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, {
         message: 'line one\nline two\nline three',
         task_id: 'ml1',
@@ -147,7 +158,7 @@ describe('AgentTools', () => {
     });
 
     it('uses bracketed paste for bidirectional messages (reply instructions contain newlines)', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Create reverse binding: agent-2 → agent-1
       bindingManager.bind('agent-2', {
         targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
@@ -171,7 +182,7 @@ describe('AgentTools', () => {
     });
 
     it('does not include reply instructions when unidirectional', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
 
       const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'uni1' });
       expect(result.isError).toBeFalsy();
@@ -184,7 +195,7 @@ describe('AgentTools', () => {
     });
 
     it('sends delayed \\r and retries with second \\r when buffer does not grow (force_submit=true)', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Buffer stays empty → first \r doesn't trigger processing → retry
       mockPtyGetBuffer.mockReturnValue('');
       await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'fs1' });
@@ -196,7 +207,7 @@ describe('AgentTools', () => {
     });
 
     it('skips second \\r when first Enter triggers processing (buffer grows)', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Simulate buffer growing after first \r
       let callCount = 0;
       mockPtyGetBuffer.mockImplementation(() => {
@@ -211,7 +222,7 @@ describe('AgentTools', () => {
     });
 
     it('skips delayed \\r when force_submit=false', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, {
         message: 'hello',
         task_id: 'nosubmit',
@@ -228,7 +239,7 @@ describe('AgentTools', () => {
     });
 
     it('skips delayed \\r for multi-line when force_submit=false', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, {
         message: 'line1\nline2',
         task_id: 'mlnosubmit',
@@ -243,8 +254,56 @@ describe('AgentTools', () => {
       expect(written.endsWith('\x1b[201~')).toBe(true);
     });
 
+    it('uses provider-specific paste timing for copilot-cli agents', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
+      mockGetProvider.mockReturnValue({
+        getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 }),
+      });
+
+      // Buffer stays empty → retry path
+      mockPtyGetBuffer.mockReturnValue('');
+      const promise = callTool('agent-1', sendToolName, { message: 'hello', task_id: 'cop1' });
+
+      // After 400ms only the message write should have happened (no Enter yet)
+      await vi.advanceTimersByTimeAsync(400);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+
+      // At 500ms the first Enter fires
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+
+      // At 900ms (not yet 1000ms) no second Enter yet
+      await vi.advanceTimersByTimeAsync(400);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+
+      // At 1000ms the second Enter fires
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('\r');
+
+      // Drain the final check delay
+      await vi.advanceTimersByTimeAsync(300);
+      await promise;
+    });
+
+    it('falls back to default timing when provider not found', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'unknown-cli' });
+      mockGetProvider.mockReturnValue(undefined);
+
+      mockPtyGetBuffer.mockReturnValue('');
+      const promise = callTool('agent-1', sendToolName, { message: 'hello', task_id: 'fb1' });
+
+      // Falls back to 200/200/200 — total 600ms
+      await vi.advanceTimersByTimeAsync(600);
+      await promise;
+
+      // message + 2x \r (retry because buffer didn't grow)
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+    });
+
     it('performs post-send buffer checks for delivery heuristic', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Simulate buffer NOT growing after first \r, then growing after second
       let callCount = 0;
       mockPtyGetBuffer.mockImplementation(() => {
@@ -268,7 +327,7 @@ describe('AgentTools', () => {
         targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
         agentName: 'mega-camel', targetName: 'scrappy-robin',
       });
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
 
       const toolName = buildToolName(makeBinding({
         agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
@@ -281,7 +340,7 @@ describe('AgentTools', () => {
     });
 
     it('auto-generates task_id when not provided', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
       // Should have auto-generated a task_id starting with t_
@@ -292,7 +351,7 @@ describe('AgentTools', () => {
     });
 
     it('sends tagged message to structured agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', sendToolName, { message: 'hello', task_id: 'abc' });
       expect(result.isError).toBeFalsy();
       expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:abc]'));
@@ -307,14 +366,14 @@ describe('AgentTools', () => {
     });
 
     it('returns error for headless runtime', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('does not support input');
     });
 
     it('returns error when message is missing', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', sendToolName, {});
       expect(result.isError).toBe(true);
     });
@@ -322,7 +381,7 @@ describe('AgentTools', () => {
 
   describe('get_status', () => {
     it('returns running status for active agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const toolName = agentToolName(sourceBinding, 'get_status');
       const result = await callTool('agent-1', toolName, {});
       expect(result.isError).toBeFalsy();
@@ -344,7 +403,7 @@ describe('AgentTools', () => {
     const readToolName = agentToolName(sourceBinding, 'read_output');
 
     it('reads last N lines from PTY buffer', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyGetBuffer.mockReturnValue('line1\nline2\nline3\nline4\nline5');
 
       const result = await callTool('agent-1', readToolName, { lines: 3 });
@@ -353,7 +412,7 @@ describe('AgentTools', () => {
     });
 
     it('defaults to 50 lines', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const lines = Array.from({ length: 100 }, (_, i) => `line${i}`).join('\n');
       mockPtyGetBuffer.mockReturnValue(lines);
 
@@ -363,7 +422,7 @@ describe('AgentTools', () => {
     });
 
     it('caps at 500 lines', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const lines = Array.from({ length: 1000 }, (_, i) => `line${i}`).join('\n');
       mockPtyGetBuffer.mockReturnValue(lines);
 
@@ -373,7 +432,7 @@ describe('AgentTools', () => {
     });
 
     it('returns error for non-PTY agents', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', readToolName, {});
       expect(result.isError).toBe(true);
     });
@@ -385,7 +444,7 @@ describe('AgentTools', () => {
     });
 
     it('handles empty buffer', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyGetBuffer.mockReturnValue(null);
 
       const result = await callTool('agent-1', readToolName, {});
@@ -393,7 +452,7 @@ describe('AgentTools', () => {
     });
 
     it('handles single-line buffer', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyGetBuffer.mockReturnValue('only one line');
 
       const result = await callTool('agent-1', readToolName, { lines: 5 });
@@ -401,7 +460,7 @@ describe('AgentTools', () => {
     });
 
     it('handles empty string buffer', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyGetBuffer.mockReturnValue('');
 
       const result = await callTool('agent-1', readToolName, {});
@@ -413,7 +472,7 @@ describe('AgentTools', () => {
     const sendToolName = agentToolName(sourceBinding, 'send_message');
 
     it('handles PTY write failure', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       mockPtyWrite.mockImplementation(() => { throw new Error('PTY write failed'); });
 
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
@@ -422,7 +481,7 @@ describe('AgentTools', () => {
     });
 
     it('handles structured manager failure', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
       mockStructuredSendMessage.mockRejectedValue(new Error('Structured send failed'));
 
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
@@ -433,7 +492,7 @@ describe('AgentTools', () => {
 
   describe('multi-agent bindings', () => {
     it('agent can send messages to multiple bound agents', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       bindingManager.bind('agent-1', {
         targetId: 'agent-3', targetKind: 'agent', label: 'Agent 3',
         targetName: 'faithful-urchin', projectName: 'myapp',
@@ -462,7 +521,7 @@ describe('AgentTools', () => {
     const connectToolName = agentToolName(sourceBinding, 'check_connectivity');
 
     it('returns unidirectional when no reverse binding exists', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBeFalsy();
       const data = JSON.parse(result.content[0].text!);
@@ -471,7 +530,7 @@ describe('AgentTools', () => {
     });
 
     it('returns bidirectional when reverse binding exists', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Create the reverse binding: agent-2 → agent-1
       bindingManager.bind('agent-2', {
         targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
@@ -486,7 +545,7 @@ describe('AgentTools', () => {
     });
 
     it('includes reply tool name when bidirectional', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       bindingManager.bind('agent-2', {
         targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
         agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',

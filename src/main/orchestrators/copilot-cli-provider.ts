@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   OrchestratorConventions,
   ProviderCapabilities,
+  PasteSubmitTiming,
   SpawnOpts,
   SpawnCommandResult,
   HeadlessOpts,
@@ -97,6 +98,17 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     args: ['--help'],
     parser: (help: string) => parseModelChoicesFromHelp(help, COPILOT_MODEL_CHOICES_PATTERN),
   };
+
+  // ── Paste timing ────────────────────────────────────────────────────────
+
+  /**
+   * Copilot CLI processes bracketed paste more slowly than Claude Code.
+   * Use longer delays to give it time to render the paste preview before
+   * sending Enter keystrokes.
+   */
+  override getPasteSubmitTiming(): PasteSubmitTiming {
+    return { initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 };
+  }
 
   // ── Core interface ──────────────────────────────────────────────────────
 
