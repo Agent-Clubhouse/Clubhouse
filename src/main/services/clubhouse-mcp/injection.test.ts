@@ -16,6 +16,14 @@ vi.mock('../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    existsSync: vi.fn(() => true),
+  };
+});
+
 vi.mock('../fs-utils', () => ({
   pathExists: vi.fn(async (p: string) => {
     try {
