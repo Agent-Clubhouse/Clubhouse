@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/clubhouse-test' },
@@ -42,6 +42,18 @@ function agentToolName(binding: McpBinding, suffix: string): string {
   return buildToolName(binding, suffix);
 }
 
+/**
+ * Helper: call send_message and advance fake timers so the delayed \r
+ * and post-send buffer check resolve. Must be called within a fake-timer
+ * context (vi.useFakeTimers).
+ */
+async function sendMessage(agentId: string, toolName: string, args: Record<string, unknown>) {
+  const promise = callTool(agentId, toolName, args);
+  // 100ms for the delayed \r, then 200ms for the buffer check
+  await vi.advanceTimersByTimeAsync(300);
+  return promise;
+}
+
 describe('AgentTools', () => {
   const sourceBinding = makeBinding({
     agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
@@ -50,6 +62,7 @@ describe('AgentTools', () => {
   });
 
   beforeEach(() => {
+    vi.useFakeTimers();
     resetTools();
     bindingManager._resetForTesting();
     mockAgentRegistryGet.mockReset();
@@ -57,11 +70,18 @@ describe('AgentTools', () => {
     mockPtyGetBuffer.mockReset();
     mockStructuredSendMessage.mockReset();
 
+    // Default buffer mock for post-send heuristic
+    mockPtyGetBuffer.mockReturnValue('');
+
     registerAgentTools();
     bindingManager.bind('agent-1', {
       targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
       agentName: 'mega-camel', targetName: 'scrappy-robin', projectName: 'myapp',
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('tool registration', () => {
@@ -86,17 +106,138 @@ describe('AgentTools', () => {
   describe('send_message', () => {
     const sendToolName = agentToolName(sourceBinding, 'send_message');
 
-    it('sends tagged message with sender identification', async () => {
+    it('sends single-line message without bracketed paste', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', sendToolName, { message: 'hello', task_id: 'test123' });
+      const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'test123' });
       expect(result.isError).toBeFalsy();
-      const writeCall = mockPtyWrite.mock.calls[0];
-      expect(writeCall[0]).toBe('agent-2');
-      // Message should contain FROM tag with sender identity
-      expect(writeCall[1]).toContain('[TASK:test123]');
-      expect(writeCall[1]).toContain('[FROM:mega-camel@myapp]');
-      expect(writeCall[1]).toContain('hello');
-      expect(writeCall[1]).toMatch(/\r$/);
+
+      // First write: message without bracketed paste (single-line)
+      const firstWrite = mockPtyWrite.mock.calls[0];
+      expect(firstWrite[0]).toBe('agent-2');
+      expect(firstWrite[1]).toContain('[TASK:test123]');
+      expect(firstWrite[1]).toContain('[FROM:mega-camel@myapp]');
+      expect(firstWrite[1]).toContain('hello');
+      expect(firstWrite[1]).not.toContain('\x1b[200~');
+
+      // Second write: delayed \r submit
+      const secondWrite = mockPtyWrite.mock.calls[1];
+      expect(secondWrite[0]).toBe('agent-2');
+      expect(secondWrite[1]).toBe('\r');
+    });
+
+    it('wraps multi-line message in bracketed paste sequences', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      const result = await sendMessage('agent-1', sendToolName, {
+        message: 'line one\nline two\nline three',
+        task_id: 'ml1',
+      });
+      expect(result.isError).toBeFalsy();
+
+      // First write: bracketed paste wrapping
+      const firstWrite = mockPtyWrite.mock.calls[0][1];
+      expect(firstWrite).toMatch(/^\x1b\[200~/);
+      expect(firstWrite).toMatch(/\x1b\[201~$/);
+      expect(firstWrite).toContain('[TASK:ml1]');
+      expect(firstWrite).toContain('line one\nline two\nline three');
+
+      // Second write: delayed \r submit
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+    });
+
+    it('uses bracketed paste for bidirectional messages (reply instructions contain newlines)', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // Create reverse binding: agent-2 → agent-1
+      bindingManager.bind('agent-2', {
+        targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
+        agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',
+      });
+
+      const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
+      expect(result.isError).toBeFalsy();
+
+      const firstWrite = mockPtyWrite.mock.calls[0][1];
+      // Bidirectional appends \n\n---\n... so it should use bracketed paste
+      expect(firstWrite).toMatch(/^\x1b\[200~/);
+      expect(firstWrite).toMatch(/\x1b\[201~$/);
+      expect(firstWrite).toContain('Reply to mega-camel via tool');
+      expect(firstWrite).toContain('clubhouse__');
+      expect(firstWrite).toContain('task_id="bidir1"');
+
+      // Result should indicate bidirectional
+      expect(result.content[0].text).toContain('Bidirectional');
+      expect(result.content[0].text).toContain('scrappy-robin');
+    });
+
+    it('does not include reply instructions when unidirectional', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+
+      const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'uni1' });
+      expect(result.isError).toBeFalsy();
+
+      const firstWrite = mockPtyWrite.mock.calls[0][1];
+      expect(firstWrite).not.toContain('Reply to');
+      // Single-line unidirectional — no bracketed paste
+      expect(firstWrite).not.toContain('\x1b[200~');
+      expect(result.content[0].text).toContain('poll read_output');
+    });
+
+    it('sends delayed \\r for submission by default (force_submit=true)', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'fs1' });
+
+      // Should have 2 writes: message + delayed \r
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+    });
+
+    it('skips delayed \\r when force_submit=false', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      const result = await sendMessage('agent-1', sendToolName, {
+        message: 'hello',
+        task_id: 'nosubmit',
+        force_submit: false,
+      });
+      expect(result.isError).toBeFalsy();
+
+      // Only 1 write: the message itself, no \r
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+      expect(mockPtyWrite.mock.calls[0][1]).not.toContain('\r');
+
+      // Result should note force_submit=false
+      expect(result.content[0].text).toContain('force_submit=false');
+    });
+
+    it('skips delayed \\r for multi-line when force_submit=false', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      const result = await sendMessage('agent-1', sendToolName, {
+        message: 'line1\nline2',
+        task_id: 'mlnosubmit',
+        force_submit: false,
+      });
+      expect(result.isError).toBeFalsy();
+
+      // Only 1 write: bracketed paste, no \r
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+      const written = mockPtyWrite.mock.calls[0][1];
+      expect(written).toMatch(/^\x1b\[200~/);
+      expect(written).toMatch(/\x1b\[201~$/);
+    });
+
+    it('performs post-send buffer check for delivery heuristic', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // Simulate buffer growing after submit (agent processed the message)
+      let callCount = 0;
+      mockPtyGetBuffer.mockImplementation(() => {
+        callCount++;
+        // First call (before submit): short buffer
+        // Second call (after submit): longer buffer
+        return callCount <= 1 ? 'short' : 'short + agent processed message output';
+      });
+
+      const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'buf1' });
+      expect(result.isError).toBeFalsy();
+      // getBuffer should have been called twice (before and after submit)
+      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(2);
     });
 
     it('includes sender name without project when project not set', async () => {
@@ -114,54 +255,20 @@ describe('AgentTools', () => {
         targetName: 'scrappy-robin',
       }), 'send_message');
 
-      const result = await callTool('agent-1', toolName, { message: 'hello', task_id: 'x1' });
+      const result = await sendMessage('agent-1', toolName, { message: 'hello', task_id: 'x1' });
       expect(result.isError).toBeFalsy();
       expect(mockPtyWrite.mock.calls[0][1]).toContain('[FROM:mega-camel]');
     });
 
-    it('includes bidirectional reply instructions when reverse binding exists', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      // Create reverse binding: agent-2 → agent-1
-      bindingManager.bind('agent-2', {
-        targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1',
-        agentName: 'scrappy-robin', targetName: 'mega-camel', projectName: 'myapp',
-      });
-
-      const result = await callTool('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
-      expect(result.isError).toBeFalsy();
-
-      const written = mockPtyWrite.mock.calls[0][1];
-      // Should contain reply instructions
-      expect(written).toContain('Reply to mega-camel via tool');
-      expect(written).toContain('clubhouse__');
-      expect(written).toContain('task_id="bidir1"');
-      // Result should indicate bidirectional
-      expect(result.content[0].text).toContain('Bidirectional');
-      expect(result.content[0].text).toContain('scrappy-robin');
-    });
-
-    it('does not include reply instructions when unidirectional', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      // No reverse binding
-
-      const result = await callTool('agent-1', sendToolName, { message: 'do something', task_id: 'uni1' });
-      expect(result.isError).toBeFalsy();
-
-      const written = mockPtyWrite.mock.calls[0][1];
-      expect(written).not.toContain('Reply to');
-      // Result should indicate poll
-      expect(result.content[0].text).toContain('poll read_output');
-    });
-
     it('auto-generates task_id when not provided', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      const result = await callTool('agent-1', sendToolName, { message: 'hello' });
+      const result = await sendMessage('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBeFalsy();
       // Should have auto-generated a task_id starting with t_
       expect(result.content[0].text).toMatch(/task_id=t_/);
-      // PTY write should contain the tagged message with FROM and \r
-      const writeCall = mockPtyWrite.mock.calls[0];
-      expect(writeCall[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] \[FROM:mega-camel@myapp\] hello\r$/);
+      // First write should contain the tagged message with FROM (no \r — that's the second write)
+      const firstWrite = mockPtyWrite.mock.calls[0];
+      expect(firstWrite[1]).toMatch(/^\[TASK:t_[a-z0-9]+\] \[FROM:mega-camel@myapp\] hello$/);
     });
 
     it('sends tagged message to structured agent', async () => {
@@ -322,8 +429,8 @@ describe('AgentTools', () => {
         targetName: 'faithful-urchin', projectName: 'myapp',
       }), 'send_message');
 
-      const r1 = await callTool('agent-1', sendToolAgent2, { message: 'to-2', task_id: 'x1' });
-      const r2 = await callTool('agent-1', sendToolAgent3, { message: 'to-3', task_id: 'x2' });
+      const r1 = await sendMessage('agent-1', sendToolAgent2, { message: 'to-2', task_id: 'x1' });
+      const r2 = await sendMessage('agent-1', sendToolAgent3, { message: 'to-3', task_id: 'x2' });
       expect(r1.isError).toBeFalsy();
       expect(r2.isError).toBeFalsy();
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:x1]'));
