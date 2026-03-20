@@ -29,33 +29,9 @@ import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } fro
 
 // ── ID generation ────────────────────────────────────────────────────
 
-export interface ViewCounter {
-  value: number;
-}
-
-export function createViewCounter(initial = 0): ViewCounter {
-  return { value: initial };
-}
-
-const defaultCounter: ViewCounter = { value: 0 };
-
-export function generateViewId(counter: ViewCounter = defaultCounter): string {
-  return `cv_${++counter.value}`;
-}
-
-export function resetViewCounter(value = 0, counter: ViewCounter = defaultCounter): void {
-  counter.value = value;
-}
-
-/** Ensure counter is above any existing view ID to prevent collisions */
-export function syncCounterToViews(views: CanvasView[], counter: ViewCounter = defaultCounter): void {
-  const max = views.reduce((m, v) => {
-    const match = v.id.match(/_(\d+)$/);
-    return match ? Math.max(m, parseInt(match[1], 10)) : m;
-  }, 0);
-  if (max >= counter.value) {
-    counter.value = max;
-  }
+/** Generate a stable, random view ID that won't be recycled across sessions. */
+export function generateViewId(): string {
+  return `cv_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
 }
 
 // ── Grid snapping ────────────────────────────────────────────────────
@@ -81,12 +57,11 @@ export function createView(
   type: CanvasViewType,
   position: Position,
   nextZIndex: number,
-  counter: ViewCounter = defaultCounter,
   existingDisplayNames: string[] = [],
 ): CanvasView {
   const snappedPos = snapPosition(position);
   const base = {
-    id: generateViewId(counter),
+    id: generateViewId(),
     position: snappedPos,
     size: { width: DEFAULT_VIEW_WIDTH, height: DEFAULT_VIEW_HEIGHT },
     zIndex: nextZIndex,
@@ -121,7 +96,6 @@ export function createPluginView(
   label: string,
   position: Position,
   nextZIndex: number,
-  counter: ViewCounter = defaultCounter,
   existingDisplayNames: string[] = [],
   metadata: CanvasWidgetMetadata = {},
   defaultSize?: { width: number; height: number },
@@ -129,7 +103,7 @@ export function createPluginView(
   const snappedPos = snapPosition(position);
   const displayName = deduplicateDisplayName(label, existingDisplayNames);
   return {
-    id: generateViewId(counter),
+    id: generateViewId(),
     type: 'plugin',
     position: snappedPos,
     size: defaultSize
@@ -473,24 +447,7 @@ export function computeTiledPositions(
 
 // ── Canvas instance helpers ──────────────────────────────────────────
 
-export interface CanvasCounter {
-  value: number;
-}
-
-export function createCanvasCounter(initial = 0): CanvasCounter {
-  return { value: initial };
-}
-
-export function generateCanvasId(counter: CanvasCounter): string {
-  return `canvas_${++counter.value}`;
-}
-
-export function syncCounterToInstances(instances: CanvasInstance[], counter: CanvasCounter): void {
-  const max = instances.reduce((m, inst) => {
-    const match = inst.id.match(/_(\d+)$/);
-    return match ? Math.max(m, parseInt(match[1], 10)) : m;
-  }, 0);
-  if (max >= counter.value) {
-    counter.value = max;
-  }
+/** Generate a stable, random canvas instance ID. */
+export function generateCanvasId(): string {
+  return `canvas_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
 }
