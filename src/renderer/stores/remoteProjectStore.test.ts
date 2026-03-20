@@ -5,9 +5,10 @@ import type { SatelliteSnapshot } from '../../shared/types';
 // Mock plugin store — need to provide a zustand-compatible getState
 const mockPluginStoreState = {
   plugins: {
-    hub: { manifest: { id: 'hub', version: '1.0.0' } },
-    terminal: { manifest: { id: 'terminal', version: '1.0.0' } },
-    files: { manifest: { id: 'files', version: '1.0.0' } },
+    hub: { manifest: { id: 'hub', version: '1.0.0' }, source: 'builtin' },
+    terminal: { manifest: { id: 'terminal', version: '1.0.0' }, source: 'builtin' },
+    files: { manifest: { id: 'files', version: '1.0.0' }, source: 'builtin' },
+    'community-plugin': { manifest: { id: 'community-plugin', version: '1.0.0' }, source: 'community' },
   },
 };
 
@@ -231,6 +232,44 @@ describe('remoteProjectStore', () => {
       // Second snapshot without agentsMeta
       store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
       expect(useRemoteProjectStore.getState().remoteAgentDetailedStatus['remote||sat-1||agent-1']).toBeUndefined();
+    });
+
+    it('tracks source field as builtin for built-in plugins', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'dual' },
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState[0].source).toBe('builtin');
+    });
+
+    it('tracks source field as community for 3P plugins', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'community-plugin', name: 'Community Plugin', version: '1.0.0', scope: 'project' },
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState[0].status).toBe('matched');
+      expect(matchState[0].source).toBe('community');
+    });
+
+    it('does not set source for missing plugins', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'unknown-plugin', name: 'Unknown', version: '1.0.0', scope: 'project' },
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState[0].status).toBe('missing');
+      expect(matchState[0].source).toBeUndefined();
     });
 
     it('keeps other satellites data when updating one', () => {

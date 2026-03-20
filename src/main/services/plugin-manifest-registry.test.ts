@@ -148,6 +148,10 @@ describe('plugin-manifest-registry', () => {
     expect(getManifest('hub')).toBeDefined();
     expect(getManifest('terminal')).toBeDefined();
     expect(getManifest('files')).toBeDefined();
+    expect(getManifest('browser')).toBeDefined();
+    expect(getManifest('git')).toBeDefined();
+    expect(getManifest('canvas')).toBeDefined();
+    expect(getManifest('sessions')).toBeDefined();
   });
 
   it('loads validated community manifests from disk when external plugins are enabled', async () => {
