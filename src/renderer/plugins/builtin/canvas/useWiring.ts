@@ -106,12 +106,16 @@ export function useWiring(
         const resolvedTargetId = kind === 'agent'
           ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
           : hitView.id;
+        const projectName = (hitView.metadata?.projectName as string)
+          || (wireDrag.sourceView.metadata?.projectName as string)
+          || undefined;
         bind(wireDrag.sourceView.agentId, {
           targetId: resolvedTargetId,
           targetKind: kind,
           label: hitView.displayName || hitView.title,
           agentName: wireDrag.sourceView.displayName || wireDrag.sourceView.title,
           targetName: hitView.displayName || hitView.title,
+          projectName,
         });
       }
 

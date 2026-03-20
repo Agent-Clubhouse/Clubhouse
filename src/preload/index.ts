@@ -1044,7 +1044,7 @@ const api = {
   mcpBinding: {
     getBindings: () =>
       ipcRenderer.invoke(IPC.MCP_BINDING.GET_BINDINGS),
-    bind: (agentId: string, target: { targetId: string; targetKind: string; label: string }) =>
+    bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.BIND, agentId, target),
     unbind: (agentId: string, targetId: string) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.UNBIND, agentId, targetId),
