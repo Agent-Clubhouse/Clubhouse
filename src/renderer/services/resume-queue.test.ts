@@ -3,15 +3,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock the agent store
 const mockSetResumeStatus = vi.fn();
 const mockAgents: Record<string, { status: string }> = {};
+const mockSetState = vi.fn();
 
-vi.mock('../stores/agentStore', () => ({
-  useAgentStore: {
+vi.mock('../stores/agentStore', () => {
+  // References to outer const are safe here because vi.mock hoists the
+  // factory but the const declarations are also hoisted (as undefined)
+  // and then assigned before first use in tests.
+  return {
+    useAgentStore: {
+      getState: () => ({
+        agents: mockAgents,
+        setResumeStatus: mockSetResumeStatus,
+        clearResumingAgents: vi.fn(),
+      }),
+      setState: (...args: unknown[]) => mockSetState(...args),
+      subscribe: vi.fn().mockReturnValue(vi.fn()),
+    },
+  };
+});
+
+vi.mock('../stores/projectStore', () => ({
+  useProjectStore: {
     getState: () => ({
-      agents: mockAgents,
-      setResumeStatus: mockSetResumeStatus,
-      clearResumingAgents: vi.fn(),
+      projects: [{ id: 'proj-1', path: '/projects/test', name: 'Test' }],
     }),
-    subscribe: vi.fn().mockReturnValue(vi.fn()), // returns unsubscribe
   },
 }));
 

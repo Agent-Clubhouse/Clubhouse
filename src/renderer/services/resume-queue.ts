@@ -1,4 +1,6 @@
 import { useAgentStore } from '../stores/agentStore';
+import { useProjectStore } from '../stores/projectStore';
+import type { Agent } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
 
@@ -40,12 +42,45 @@ async function processWorkspaceQueue(entries: RestartSessionEntry[]): Promise<vo
   }
 }
 
+/**
+ * Look up the renderer's projectId from a filesystem path.
+ * Returns the project ID or the path itself as fallback.
+ */
+function resolveProjectId(projectPath: string): string {
+  const projects = useProjectStore.getState().projects;
+  const match = projects.find((p) => p.path === projectPath);
+  return match?.id || projectPath;
+}
+
 async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
-  const store = useAgentStore.getState();
-  store.setResumeStatus(entry.agentId, 'resuming');
+  useAgentStore.getState().setResumeStatus(entry.agentId, 'resuming');
 
   try {
     const cwd = entry.worktreePath || entry.projectPath;
+    const projectId = resolveProjectId(entry.projectPath);
+
+    // Add the agent to the renderer store BEFORE calling spawnAgent.
+    // This mirrors how spawnDurableAgent works in agentLifecycleSlice —
+    // the store entry must exist so the PTY data listener and exit
+    // handler can find the agent, and so waitForAgentRunning resolves.
+    const agent: Agent = {
+      id: entry.agentId,
+      projectId,
+      name: entry.agentName,
+      kind: entry.kind,
+      status: 'running',
+      color: 'gray',
+      resuming: true,
+      orchestrator: entry.orchestrator,
+      model: entry.model,
+      mission: entry.mission,
+      worktreePath: entry.worktreePath,
+    };
+
+    useAgentStore.setState((s) => ({
+      agents: { ...s.agents, [entry.agentId]: agent },
+      agentSpawnedAt: { ...s.agentSpawnedAt, [entry.agentId]: Date.now() },
+    }));
 
     await window.clubhouse.agent.spawnAgent({
       agentId: entry.agentId,
@@ -59,8 +94,7 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       mission: entry.mission,
     });
 
-    // Wait for agent to appear as running, with timeout
-    await waitForAgentRunning(entry.agentId, RESUME_TIMEOUT_MS);
+    // Agent is already in the store as 'running' — mark resume complete
     useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
   } catch (err) {
     // If we had a specific sessionId and it failed, try --continue fallback
@@ -78,7 +112,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           model: entry.model,
           mission: entry.mission,
         });
-        await waitForAgentRunning(entry.agentId, RESUME_TIMEOUT_MS);
         useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
         return;
       } catch { /* fall through to failure */ }
@@ -86,28 +119,6 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     useAgentStore.getState().setResumeStatus(entry.agentId, 'failed');
     console.error(`Failed to resume agent ${entry.agentId}:`, err instanceof Error ? err.message : String(err));
   }
-}
-
-function waitForAgentRunning(agentId: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      unsubscribe();
-      useAgentStore.getState().setResumeStatus(agentId, 'timed_out');
-      resolve();
-    }, timeoutMs);
-
-    const check = () => {
-      const agent = useAgentStore.getState().agents[agentId];
-      if (agent?.status === 'running') {
-        clearTimeout(timeout);
-        unsubscribe();
-        resolve();
-      }
-    };
-
-    check();
-    const unsubscribe = useAgentStore.subscribe(check);
-  });
 }
 
 export async function resumeManualAgent(agentId: string, entry: RestartSessionEntry): Promise<void> {
