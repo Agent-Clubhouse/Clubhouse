@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
-import type { GroupProject, TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
+import type { TopicDigest, BulletinMessage } from '../../../../shared/group-project-types';
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
