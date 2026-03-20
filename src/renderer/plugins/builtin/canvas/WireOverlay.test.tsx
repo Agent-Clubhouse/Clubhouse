@@ -209,9 +209,9 @@ describe('WireOverlay', () => {
       <WireOverlay views={views} bindings={bindings} />,
     );
 
-    // Should have forward flow dots
+    // Should have forward flow dots (ambient mode = 2 dots)
     const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-"]');
-    expect(fwdDots.length).toBe(3);
+    expect(fwdDots.length).toBe(2);
   });
 
   it('renders wire path def in SVG defs', () => {

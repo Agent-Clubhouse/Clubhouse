@@ -32,6 +32,7 @@ import { initAnnexListener } from './stores/annexStore';
 import { initAnnexClientListener } from './stores/annexClientStore';
 import { useLockStore } from './stores/lockStore';
 import { initMcpBindingListener, useMcpBindingStore } from './stores/mcpBindingStore';
+import { initToolActivityListener } from './plugins/builtin/canvas/useWireActivity';
 
 
 // ─── IPC Listener Setup ─────────────────────────────────────────────────────
@@ -578,6 +579,7 @@ export function initAppEventBridge(): () => void {
   // MCP binding listener — load initial bindings and subscribe to changes
   useMcpBindingStore.getState().loadBindings();
   cleanups.push(initMcpBindingListener());
+  cleanups.push(initToolActivityListener());
 
   return () => {
     for (const cleanup of cleanups) {

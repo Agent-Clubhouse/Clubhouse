@@ -14,19 +14,55 @@ function renderWithSvg(element: React.ReactElement) {
 }
 
 describe('WireFlowDots', () => {
-  it('renders 3 forward dots for a unidirectional wire', () => {
+  it('renders nothing when idle', () => {
     const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" bidir={false} />,
+      <WireFlowDots wireKey="test-wire" activity="idle" />,
+    );
+    const dots = container.querySelectorAll('circle');
+    expect(dots.length).toBe(0);
+  });
+
+  it('renders 2 slow forward dots in ambient mode', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="ambient" />,
+    );
+    const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-test-wire-"]');
+    expect(fwdDots.length).toBe(2);
+    const revDots = container.querySelectorAll('[data-testid^="wire-dot-rev-test-wire-"]');
+    expect(revDots.length).toBe(0);
+
+    // Ambient uses slow 6s duration
+    const motion = fwdDots[0].querySelector('animateMotion');
+    expect(motion?.getAttribute('dur')).toBe('6s');
+  });
+
+  it('renders 3 fast forward dots in active-forward mode', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="active-forward" />,
     );
     const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-test-wire-"]');
     expect(fwdDots.length).toBe(3);
     const revDots = container.querySelectorAll('[data-testid^="wire-dot-rev-test-wire-"]');
     expect(revDots.length).toBe(0);
+
+    // Active uses fast 2s duration
+    const motion = fwdDots[0].querySelector('animateMotion');
+    expect(motion?.getAttribute('dur')).toBe('2s');
   });
 
-  it('renders 3 forward and 3 reverse dots for a bidirectional wire', () => {
+  it('renders 3 reverse dots in active-reverse mode', () => {
     const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" bidir={true} />,
+      <WireFlowDots wireKey="test-wire" activity="active-reverse" />,
+    );
+    const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-test-wire-"]');
+    expect(fwdDots.length).toBe(0);
+    const revDots = container.querySelectorAll('[data-testid^="wire-dot-rev-test-wire-"]');
+    expect(revDots.length).toBe(3);
+  });
+
+  it('renders both forward and reverse dots in active-both mode', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="active-both" />,
     );
     const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-test-wire-"]');
     expect(fwdDots.length).toBe(3);
@@ -34,20 +70,9 @@ describe('WireFlowDots', () => {
     expect(revDots.length).toBe(3);
   });
 
-  it('staggers dot animations by 1s intervals', () => {
-    const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" bidir={false} />,
-    );
-    const dots = container.querySelectorAll('[data-testid^="wire-dot-fwd-test-wire-"]');
-    const begins = Array.from(dots).map(
-      (dot) => dot.querySelector('animateMotion')?.getAttribute('begin'),
-    );
-    expect(begins).toEqual(['0s', '-1s', '-2s']);
-  });
-
   it('reverse dots use keyPoints="1;0" for backward motion', () => {
     const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" bidir={true} />,
+      <WireFlowDots wireKey="test-wire" activity="active-reverse" />,
     );
     const revDot = container.querySelector('[data-testid="wire-dot-rev-test-wire-0"]');
     const motion = revDot?.querySelector('animateMotion');
@@ -55,9 +80,27 @@ describe('WireFlowDots', () => {
     expect(motion?.getAttribute('keyTimes')).toBe('0;1');
   });
 
+  it('ambient dots have dim opacity values', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="ambient" />,
+    );
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    const anim = dot?.querySelector('animate[attributeName="opacity"]');
+    expect(anim?.getAttribute('values')).toBe('0;0.3;0.3;0');
+  });
+
+  it('active dots have bright opacity values', () => {
+    const { container } = renderWithSvg(
+      <WireFlowDots wireKey="test-wire" activity="active-forward" />,
+    );
+    const dot = container.querySelector('[data-testid="wire-dot-fwd-test-wire-0"]');
+    const anim = dot?.querySelector('animate[attributeName="opacity"]');
+    expect(anim?.getAttribute('values')).toBe('0;0.9;0.9;0');
+  });
+
   it('renders a glow filter for the wire', () => {
     const { container } = renderWithSvg(
-      <WireFlowDots wireKey="test-wire" bidir={false} />,
+      <WireFlowDots wireKey="test-wire" activity="ambient" />,
     );
     expect(container.querySelector('#wire-dot-glow-test-wire')).toBeTruthy();
   });
