@@ -14,12 +14,16 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {
   return {
     list(): AgentInfo[] {
-      const agents = useAgentStore.getState().agents;
-      return Object.values(agents)
+      const localAgents = useAgentStore.getState().agents;
+      const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
+      const allAgents = { ...localAgents, ...remoteAgents };
+      return Object.values(allAgents)
         .filter((a) => !ctx.projectId || a.projectId === ctx.projectId)
         .map((a) => ({
           id: a.id,
@@ -70,6 +74,11 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async kill(agentId: string): Promise<void> {
+      const remoteParts = parseNamespacedId(agentId);
+      if (remoteParts) {
+        await useAnnexClientStore.getState().sendAgentKill(remoteParts.satelliteId, remoteParts.agentId);
+        return;
+      }
       const agent = useAgentStore.getState().agents[agentId];
       if (!agent) return;
       const project = useProjectStore.getState().projects.find((p) => p.id === agent.projectId);
@@ -77,6 +86,17 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async resume(agentId: string, options?: { mission?: string }): Promise<void> {
+      // Check remote agents first
+      const remoteParts = parseNamespacedId(agentId);
+      if (remoteParts) {
+        await useAnnexClientStore.getState().sendAgentWake(
+          remoteParts.satelliteId,
+          remoteParts.agentId,
+          options?.mission || 'Wake up',
+        );
+        return;
+      }
+
       const agent = useAgentStore.getState().agents[agentId];
       if (!agent || agent.kind !== 'durable') {
         throw new Error('Can only resume durable agents');
@@ -167,34 +187,38 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
 
     onStatusChange(callback: (agentId: string, status: string, prevStatus: string) => void): Disposable {
       let prevStatuses: Record<string, string> = {};
-      // Snapshot current state
-      const agents = useAgentStore.getState().agents;
-      for (const [id, agent] of Object.entries(agents)) {
+      // Snapshot current state from both local and remote stores
+      const localAgents = useAgentStore.getState().agents;
+      const remoteAgents = useRemoteProjectStore.getState().remoteAgents;
+      for (const [id, agent] of Object.entries({ ...localAgents, ...remoteAgents })) {
         prevStatuses[id] = agent.status;
       }
 
-      const unsub = useAgentStore.subscribe((state) => {
-        const currentAgents = state.agents;
-        for (const [id, agent] of Object.entries(currentAgents)) {
+      function checkChanges() {
+        const current = { ...useAgentStore.getState().agents, ...useRemoteProjectStore.getState().remoteAgents };
+        for (const [id, agent] of Object.entries(current)) {
           const prev = prevStatuses[id];
           if (prev && prev !== agent.status) {
             callback(id, agent.status, prev);
           }
         }
-        // Update snapshot
         const next: Record<string, string> = {};
-        for (const [id, agent] of Object.entries(currentAgents)) {
+        for (const [id, agent] of Object.entries(current)) {
           next[id] = agent.status;
         }
         prevStatuses = next;
-      });
+      }
 
-      return { dispose: unsub };
+      const unsub1 = useAgentStore.subscribe(checkChanges);
+      const unsub2 = useRemoteProjectStore.subscribe(checkChanges);
+
+      return { dispose: () => { unsub1(); unsub2(); } };
     },
 
     onAnyChange(callback: () => void): Disposable {
-      const unsub = useAgentStore.subscribe(callback);
-      return { dispose: unsub };
+      const unsub1 = useAgentStore.subscribe(callback);
+      const unsub2 = useRemoteProjectStore.subscribe(callback);
+      return { dispose: () => { unsub1(); unsub2(); } };
     },
 
     async listSessions(agentId: string) {
