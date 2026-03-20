@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  createViewCounter,
   createView,
   updateViewSize,
 } from './canvas-operations';
@@ -57,8 +56,7 @@ function createMockStorage(data: Record<string, unknown> = {}): ScopedStorage {
 describe('anchor canvas widget', () => {
   describe('createView — anchor type', () => {
     it('creates an anchor view with correct defaults', () => {
-      const counter = createViewCounter(0);
-      const view = createView('anchor', { x: 100, y: 200 }, 5, counter);
+      const view = createView('anchor', { x: 100, y: 200 }, 5);
       expect(view.type).toBe('anchor');
       expect(view.title).toBe('Anchor');
       expect(view.displayName).toBe('Anchor');
@@ -70,25 +68,23 @@ describe('anchor canvas widget', () => {
     });
 
     it('snaps anchor position to grid', () => {
-      const counter = createViewCounter(0);
-      const view = createView('anchor', { x: 105, y: 213 }, 0, counter);
+      const view = createView('anchor', { x: 105, y: 213 }, 0);
       expect(view.position.x % GRID_SIZE).toBe(0);
       expect(view.position.y % GRID_SIZE).toBe(0);
     });
 
     it('deduplicates anchor display names', () => {
-      const counter = createViewCounter(0);
-      const v1 = createView('anchor', { x: 0, y: 0 }, 0, counter, ['Anchor']);
+      const v1 = createView('anchor', { x: 0, y: 0 }, 0, ['Anchor']);
       expect(v1.displayName).toBe('Anchor (2)');
       expect((v1 as AnchorCanvasView).label).toBe('Anchor (2)');
     });
 
-    it('generates sequential IDs for anchor views', () => {
-      const counter = createViewCounter(0);
-      const v1 = createView('anchor', { x: 0, y: 0 }, 0, counter);
-      const v2 = createView('anchor', { x: 100, y: 0 }, 1, counter);
-      expect(v1.id).toBe('cv_1');
-      expect(v2.id).toBe('cv_2');
+    it('generates unique random IDs for anchor views', () => {
+      const v1 = createView('anchor', { x: 0, y: 0 }, 0);
+      const v2 = createView('anchor', { x: 100, y: 0 }, 1);
+      expect(v1.id).toMatch(/^cv_[0-9a-f]{8}$/);
+      expect(v2.id).toMatch(/^cv_[0-9a-f]{8}$/);
+      expect(v1.id).not.toBe(v2.id);
     });
   });
 
@@ -214,30 +210,26 @@ describe('anchor canvas widget', () => {
 
   describe('compact anchor — fixed height', () => {
     it('creates anchor with height equal to ANCHOR_HEIGHT', () => {
-      const counter = createViewCounter(0);
-      const view = createView('anchor', { x: 0, y: 0 }, 0, counter);
+      const view = createView('anchor', { x: 0, y: 0 }, 0);
       expect(view.size.height).toBe(ANCHOR_HEIGHT);
       expect(view.size.height).toBe(50);
     });
 
     it('updateViewSize forces anchor height to ANCHOR_HEIGHT', () => {
-      const counter = createViewCounter(0);
-      const view = createView('anchor', { x: 0, y: 0 }, 0, counter) as AnchorCanvasView;
+      const view = createView('anchor', { x: 0, y: 0 }, 0) as AnchorCanvasView;
       const updated = updateViewSize([view], view.id, { width: 300, height: 500 });
       expect(updated[0].size.height).toBe(ANCHOR_HEIGHT);
       expect(updated[0].size.width).toBe(300);
     });
 
     it('updateViewSize still enforces MIN_VIEW_HEIGHT for non-anchor views', () => {
-      const counter = createViewCounter(0);
-      const agent = createView('agent', { x: 0, y: 0 }, 0, counter);
+      const agent = createView('agent', { x: 0, y: 0 }, 0);
       const updated = updateViewSize([agent], agent.id, { width: 300, height: 50 });
       expect(updated[0].size.height).toBe(150); // MIN_VIEW_HEIGHT
     });
 
     it('defaults autoCollapse to undefined', () => {
-      const counter = createViewCounter(0);
-      const view = createView('anchor', { x: 0, y: 0 }, 0, counter) as AnchorCanvasView;
+      const view = createView('anchor', { x: 0, y: 0 }, 0) as AnchorCanvasView;
       expect(view.autoCollapse).toBeUndefined();
     });
 

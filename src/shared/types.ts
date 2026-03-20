@@ -559,6 +559,8 @@ export interface SatelliteSnapshot {
   projectIcons?: Record<string, string>;
   /** Agent icon data URLs keyed by agent ID. */
   agentIcons?: Record<string, string>;
+  /** Per-project canvas state keyed by satellite project ID. */
+  canvasState?: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
 }
 
 // --- Auto-update types ---
@@ -942,5 +944,9 @@ export interface CanvasStateSnapshot {
   viewport: { panX: number; panY: number; zoom: number };
   nextZIndex: number;
   zoomedViewId: string | null;
+  /** Project context for annex canvas sync (absent in local-only broadcasts). */
+  projectId?: string;
+  /** Storage scope: 'global' for app mode, 'project' for project mode. */
+  scope?: string;
 }
 

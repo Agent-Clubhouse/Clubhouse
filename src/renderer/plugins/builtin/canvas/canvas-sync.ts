@@ -72,11 +72,14 @@ export function applyCanvasMutation(
 }
 
 /**
- * Broadcast the current state of a canvas instance to all pop-out windows.
+ * Broadcast the current state of a canvas instance to all pop-out windows
+ * (and, via the main process, to annex controller clients).
  */
 export function broadcastCanvasState(
   store: UseBoundStore<StoreApi<CanvasState>>,
   canvasId: string,
+  projectId?: string,
+  scope?: string,
 ): void {
   const state = store.getState();
   const canvas = state.canvases.find((c) => c.id === canvasId);
@@ -89,6 +92,8 @@ export function broadcastCanvasState(
     viewport: canvas.viewport,
     nextZIndex: canvas.nextZIndex,
     zoomedViewId: canvas.zoomedViewId,
+    projectId,
+    scope,
   };
 
   window.clubhouse.window.broadcastCanvasState(snapshot);

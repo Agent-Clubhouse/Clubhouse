@@ -439,6 +439,7 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
     case 'permission:request':
     case 'permission:response':
     case 'theme:changed':
+    case 'canvas:state':
       broadcastSatelliteEvent(sat.id, type, msg.payload);
       break;
 

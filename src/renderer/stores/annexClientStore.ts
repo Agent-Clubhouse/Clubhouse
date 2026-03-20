@@ -219,6 +219,25 @@ export const satellitePtyDataBus = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Satellite PTY Exit Bus — forwards pty:exit events to terminal plugin listeners
+// ---------------------------------------------------------------------------
+
+type PtyExitListener = (satelliteId: string, agentId: string, exitCode: number) => void;
+const ptyExitListeners = new Set<PtyExitListener>();
+
+export const satellitePtyExitBus = {
+  on(listener: PtyExitListener): () => void {
+    ptyExitListeners.add(listener);
+    return () => { ptyExitListeners.delete(listener); };
+  },
+  emit(satelliteId: string, agentId: string, exitCode: number): void {
+    for (const listener of ptyExitListeners) {
+      try { listener(satelliteId, agentId, exitCode); } catch { /* ignore */ }
+    }
+  },
+};
+
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
@@ -297,6 +316,26 @@ export function initAnnexClientListener(): () => void {
       const agentId = p.agentId || p.id;
       if (agentId) {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
+        satellitePtyExitBus.emit(satelliteId, agentId, p.exitCode ?? -1);
+      }
+    } else if (type === 'canvas:state') {
+      const p = payload as { projectId?: string; state?: unknown };
+      if (p.projectId && p.state) {
+        const nsProjId = `remote||${satelliteId}||${p.projectId}`;
+        const cs = p.state as { canvasId: string; views: unknown[]; viewport: unknown; nextZIndex: number; zoomedViewId: string | null; name: string };
+        // Update the canvas state for this remote project — store a single-canvas
+        // snapshot so the canvas plugin can hydrate from it
+        useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+          canvases: [{
+            id: cs.canvasId,
+            name: cs.name,
+            views: cs.views,
+            viewport: cs.viewport,
+            nextZIndex: cs.nextZIndex,
+            zoomedViewId: cs.zoomedViewId,
+          }],
+          activeCanvasId: cs.canvasId,
+        });
       }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({

@@ -8,6 +8,7 @@ import { setCanvasQueryProvider } from '../../plugin-api-canvas';
 import { broadcastCanvasState } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
+import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -107,31 +108,59 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { findCanvasPopout } = usePopouts();
 
-  // Load persisted state
+  // Load persisted state (or remote canvas state for annex projects)
+  const projectId = api.context.projectId;
+  const isRemote = projectId ? isRemoteProjectId(projectId) : false;
   useEffect(() => {
+    if (isRemote && projectId) {
+      const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
+      if (remoteState) {
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId);
+        return;
+      }
+    }
     store.getState().loadCanvas(storage);
-  }, [store, storage]);
+  }, [store, storage, isRemote, projectId]);
 
-  // Debounced auto-save
+  // Subscribe to live remote canvas state updates
+  useEffect(() => {
+    if (!isRemote || !projectId) return;
+    let prevState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
+    return useRemoteProjectStore.subscribe((state) => {
+      const newState = state.remoteCanvasState[projectId];
+      if (newState && newState !== prevState && store.getState().loaded) {
+        prevState = newState;
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId);
+      }
+    });
+  }, [store, isRemote, projectId]);
+
+  // Debounced auto-save (skip for remote projects — state is owned by satellite)
   const scheduleSave = useCallback(() => {
+    if (isRemote) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       store.getState().saveCanvas(storage);
     }, 500);
-  }, [store, storage]);
+  }, [store, storage, isRemote]);
 
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
   }, [canvases, views, viewport, zoomedViewId, loaded, scheduleSave]);
 
-  // Broadcast canvas state changes to pop-out windows
+  // Broadcast canvas state changes to pop-out windows and annex clients
   useEffect(() => {
     if (!loaded) return;
     // Only broadcast from the main window, not from pop-outs
     if (window.clubhouse.window.isPopout()) return;
-    broadcastCanvasState(store, activeCanvasId);
-  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded]);
+    broadcastCanvasState(
+      store,
+      activeCanvasId,
+      isAppMode ? undefined : api.context.projectId,
+      isAppMode ? 'global' : 'project',
+    );
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, api]);
 
   // ── Pop-out handler ─────────────────────────────────────────────
 

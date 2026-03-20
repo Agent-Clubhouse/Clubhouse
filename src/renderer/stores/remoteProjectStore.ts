@@ -93,6 +93,9 @@ interface RemoteProjectStoreState {
   /** Remote agent icon data URLs keyed by namespaced agent ID */
   remoteAgentIcons: Record<string, string>;
 
+  /** Remote canvas state keyed by namespaced project ID */
+  remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+
   /** Apply a satellite snapshot to the store. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
@@ -110,6 +113,9 @@ interface RemoteProjectStoreState {
 
   /** Remove a remote agent by satellite ID and original agent ID. */
   removeRemoteAgent: (satelliteId: string, agentId: string) => void;
+
+  /** Update canvas state for a remote project. */
+  updateRemoteCanvasState: (namespacedProjectId: string, state: { canvases: unknown[]; activeCanvasId: string }) => void;
 
   /** Get all remote projects (flattened). */
   getAllRemoteProjects: () => RemoteProject[];
@@ -177,6 +183,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   pluginMatchState: {},
   remoteProjectIcons: {},
   remoteAgentIcons: {},
+  remoteCanvasState: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
     // Map projects to RemoteProject
@@ -220,6 +227,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
     if (snapshot.agentIcons) {
       for (const [agentId, dataUrl] of Object.entries(snapshot.agentIcons)) {
         newAgentIcons[namespacedAgentId(satelliteId, agentId)] = dataUrl;
+      }
+    }
+
+    // Namespace canvas state by project ID
+    const newCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
+    if (snapshot.canvasState) {
+      for (const [projId, cs] of Object.entries(snapshot.canvasState)) {
+        newCanvasState[namespacedProjectId(satelliteId, projId)] = cs;
       }
     }
 
@@ -287,6 +302,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...filteredAgentIcons,
           ...newAgentIcons,
         },
+        remoteCanvasState: {
+          ...state.remoteCanvasState,
+          ...newCanvasState,
+        },
       };
     });
   },
@@ -317,6 +336,11 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         if (key.startsWith(satellitePrefix(satelliteId))) delete newAgentIcons[key];
       }
 
+      const newCanvasState = { ...state.remoteCanvasState };
+      for (const key of Object.keys(newCanvasState)) {
+        if (key.startsWith(satellitePrefix(satelliteId))) delete newCanvasState[key];
+      }
+
       return {
         satelliteProjects: newProjects,
         remoteAgents: newAgents,
@@ -324,6 +348,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         pluginMatchState: newPluginMatch,
         remoteProjectIcons: newProjectIcons,
         remoteAgentIcons: newAgentIcons,
+        remoteCanvasState: newCanvasState,
       };
     });
   },
@@ -403,6 +428,15 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteAgentDetailedStatus: newStatuses,
       };
     });
+  },
+
+  updateRemoteCanvasState: (nsProjId, canvasData) => {
+    set((state) => ({
+      remoteCanvasState: {
+        ...state.remoteCanvasState,
+        [nsProjId]: canvasData,
+      },
+    }));
   },
 
   getAllRemoteProjects: () => {
