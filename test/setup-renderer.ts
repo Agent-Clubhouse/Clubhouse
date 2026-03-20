@@ -318,6 +318,7 @@ vi.stubGlobal('clubhouse', {
     retry: asyncNoop,
     scan: asyncNoop,
     ptyInput: asyncNoop,
+    clipboardImage: asyncNoop,
     ptyResize: asyncNoop,
     agentSpawn: asyncNoop,
     agentKill: asyncNoop,

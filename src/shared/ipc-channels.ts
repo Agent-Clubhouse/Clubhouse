@@ -314,6 +314,7 @@ export const IPC = {
     FILE_TREE: 'annex-client:file-tree',
     FILE_READ: 'annex-client:file-read',
     PTY_SPAWN_SHELL: 'annex-client:pty-spawn-shell',
+    CLIPBOARD_IMAGE: 'annex-client:clipboard-image',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

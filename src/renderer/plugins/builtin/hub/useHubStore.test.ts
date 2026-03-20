@@ -426,6 +426,35 @@ describe('useHubStore', () => {
         expect((hub.paneTree as LeafPane).agentId).toBeNull();
       }
     });
+
+    it('preserves remote agent IDs when included in known set', () => {
+      // Simulates the fix in main.ts where remote agent IDs from panes
+      // are added to the known set before validation
+      const store = createHubStore('hub');
+      const id1 = store.getState().paneTree.id;
+      const remoteAgentId = 'remote||sat-1||agent-1';
+      store.getState().assignAgent(id1, remoteAgentId, 'remote||sat-1||proj-1');
+
+      // Include the remote agent ID in known set (as main.ts now does)
+      store.getState().validateAgents(new Set([remoteAgentId]));
+
+      const leaf = store.getState().paneTree as LeafPane;
+      expect(leaf.agentId).toBe(remoteAgentId);
+      expect(leaf.projectId).toBe('remote||sat-1||proj-1');
+    });
+
+    it('clears remote agent IDs when NOT in known set (satellite disconnected)', () => {
+      const store = createHubStore('hub');
+      const id1 = store.getState().paneTree.id;
+      store.getState().assignAgent(id1, 'remote||sat-1||agent-1', 'remote||sat-1||proj-1');
+
+      // Empty known set — satellite disconnected, remote agents removed
+      store.getState().validateAgents(new Set());
+
+      const leaf = store.getState().paneTree as LeafPane;
+      expect(leaf.agentId).toBeNull();
+      expect(leaf.projectId).toBeUndefined();
+    });
   });
 
   describe('removePanesByAgent', () => {

@@ -142,6 +142,17 @@ export function registerAnnexClientHandlers(): void {
     },
   ));
 
+  // Forward clipboard image to a satellite agent
+  ipcMain.handle(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    (_event, satelliteId, agentId, base64, mimeType) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'clipboard:image',
+        payload: { agentId, base64, mimeType },
+      });
+    },
+  ));
+
   // PTY proxy: spawn a shell on a satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],

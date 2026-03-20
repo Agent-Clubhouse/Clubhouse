@@ -6,7 +6,7 @@ import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClientStore';
 import { isRemoteAgentId, parseNamespacedId } from '../../stores/remoteProjectStore';
-import { attachClipboardHandlers } from '../terminal/clipboard';
+import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/clipboard';
 import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit } from '../terminal/useTerminalFit';
 import { ptyResize } from '../../services/project-proxy';
@@ -30,6 +30,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const isRemote = isRemoteAgentId(agentId);
   const remoteParts = useMemo(() => isRemote ? parseNamespacedId(agentId) : null, [agentId, isRemote]);
   const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
+  const sendClipboardImage = useAnnexClientStore((s) => s.sendClipboardImage);
   const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
@@ -202,9 +203,14 @@ export function AgentTerminal({ agentId, focused }: Props) {
         sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
       }
     };
-    const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData);
+    const handleImagePaste = (isRemote && remoteParts)
+      ? (image: ClipboardImageData) => {
+          sendClipboardImage(remoteParts.satelliteId, remoteParts.agentId, image.base64, image.mimeType);
+        }
+      : undefined;
+    const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData, handleImagePaste);
     return cleanup;
-  }, [clipboardCompat, agentId, isRemote, remoteParts, sendPtyInput]);
+  }, [clipboardCompat, agentId, isRemote, remoteParts, sendPtyInput, sendClipboardImage]);
 
   // Live-update theme on existing terminal instances
   useEffect(() => {

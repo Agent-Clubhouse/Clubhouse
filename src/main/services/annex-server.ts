@@ -1,6 +1,9 @@
 import * as http from 'http';
 import * as https from 'https';
 import * as tls from 'tls';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { randomInt, randomUUID } from 'crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as annexTls from './annex-tls';
@@ -153,6 +156,38 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
   if (structuredManager.isStructuredSession(agentId)) return 'structured';
   if (isHeadlessAgent(agentId)) return 'headless';
   return 'pty';
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard image forwarding
+// ---------------------------------------------------------------------------
+
+const CLIPBOARD_IMAGE_CLEANUP_MS = 5 * 60 * 1000; // 5 minutes
+
+function handleClipboardImage(agentId: string, base64: string, mimeType: string): void {
+  const ext = mimeType === 'image/png' ? '.png'
+    : mimeType === 'image/jpeg' ? '.jpg'
+    : mimeType === 'image/gif' ? '.gif'
+    : mimeType === 'image/webp' ? '.webp'
+    : '.png';
+  const fileName = `clipboard-paste-${randomUUID().slice(0, 8)}${ext}`;
+  const tmpDir = os.tmpdir();
+  const filePath = path.join(tmpDir, fileName);
+
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    // Inject the file path into the agent's PTY input
+    ptyManager.write(agentId, filePath);
+
+    // Schedule cleanup
+    setTimeout(() => {
+      try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+    }, CLIPBOARD_IMAGE_CLEANUP_MS);
+  } catch {
+    // Silently fail — image paste is best-effort
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1168,7 +1203,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'clipboard:image')) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
@@ -1194,6 +1229,20 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const rows = payload.rows as number;
       if (!agentId || typeof cols !== 'number' || typeof rows !== 'number') break;
       ptyManager.resize(agentId, cols, rows);
+      break;
+    }
+
+    case 'clipboard:image': {
+      const agentId = payload.agentId as string;
+      const base64 = payload.base64 as string;
+      const mimeType = payload.mimeType as string;
+      if (!agentId || !base64 || !mimeType) break;
+      // Limit to 10MB of base64 data (~7.5MB raw image)
+      if (base64.length > 10 * 1024 * 1024) {
+        ws.send(JSON.stringify({ type: 'error', payload: { message: 'clipboard:image data exceeds 10MB limit' } }));
+        break;
+      }
+      handleClipboardImage(agentId, base64, mimeType);
       break;
     }
 
@@ -1480,16 +1529,17 @@ export function start(): void {
   });
 
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {
-    detailedStatusCache.set(agentId, hookEventToDetailedStatus(event));
-    broadcastAndBuffer('hook:event', { agentId, event });
+    const detailedStatus = hookEventToDetailedStatus(event);
+    detailedStatusCache.set(agentId, detailedStatus);
+    broadcastAndBuffer('hook:event', { agentId, event, detailedStatus });
   });
 
   unsubStructuredEvent = annexEventBus.onStructuredEvent((agentId, event) => {
-    const status = structuredEventToDetailedStatus(event);
-    if (status) {
-      detailedStatusCache.set(agentId, status);
+    const detailedStatus = structuredEventToDetailedStatus(event);
+    if (detailedStatus) {
+      detailedStatusCache.set(agentId, detailedStatus);
     }
-    broadcastAndBuffer('structured:event', { agentId, event });
+    broadcastAndBuffer('structured:event', { agentId, event, detailedStatus });
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {

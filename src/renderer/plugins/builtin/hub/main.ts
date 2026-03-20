@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, PluginAgentDetailedStatus, CompletedQuickAgentInfo } from '../../../../shared/plugin-types';
 import { createHubStore } from './useHubStore';
+import { collectLeaves } from './pane-tree';
 import { PaneContainer } from './PaneContainer';
 import type { PaneComponentProps } from './PaneContainer';
 import { HubPane } from './HubPane';
@@ -10,6 +11,7 @@ import { CrossProjectAgentPicker } from './CrossProjectAgentPicker';
 import { broadcastHubState } from './hub-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
+import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 
 const PANE_PREFIX = 'hub';
 
@@ -110,7 +112,20 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const agentIds = useMemo(() => new Set(agents.map((a) => a.id)), [agents]);
 
   useEffect(() => {
-    if (loaded) store.getState().validateAgents(agentIds);
+    if (!loaded) return;
+    // Protect remote agent IDs already assigned to panes: remote agents
+    // arrive asynchronously via satellite snapshots and may not be in
+    // agentIds yet.  Without this guard the first validateAgents call
+    // would clear them before the snapshot populates the list.
+    const knownIds = new Set(agentIds);
+    for (const hub of store.getState().hubs) {
+      for (const leaf of collectLeaves(hub.paneTree)) {
+        if (leaf.agentId && isRemoteAgentId(leaf.agentId)) {
+          knownIds.add(leaf.agentId);
+        }
+      }
+    }
+    store.getState().validateAgents(knownIds);
   }, [loaded, agentIds, store]);
 
   const detailedStatuses = useMemo(() => {

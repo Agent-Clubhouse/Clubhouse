@@ -62,6 +62,7 @@ interface AnnexClientStoreState {
   retry: (fingerprint: string) => Promise<void>;
   scan: () => Promise<void>;
   sendPtyInput: (satelliteId: string, agentId: string, data: string) => Promise<void>;
+  sendClipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string) => Promise<void>;
   sendPtyResize: (satelliteId: string, agentId: string, cols: number, rows: number) => Promise<void>;
   sendAgentSpawn: (satelliteId: string, params: unknown) => Promise<void>;
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
@@ -139,6 +140,12 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   sendPtyInput: async (satelliteId, agentId, data) => {
     try {
       await window.clubhouse.annexClient.ptyInput(satelliteId, agentId, data);
+    } catch { /* ignore */ }
+  },
+
+  sendClipboardImage: async (satelliteId, agentId, base64, mimeType) => {
+    try {
+      await window.clubhouse.annexClient.clipboardImage(satelliteId, agentId, base64, mimeType);
     } catch { /* ignore */ }
   },
 
@@ -221,10 +228,18 @@ export function initAnnexClientListener(): () => void {
       satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
     } else if (type === 'hook:event') {
       // Agent detailed status update (pre_tool, post_tool, etc.)
-      const p = payload as { agentId: string; event: unknown };
-      if (p.agentId && p.event) {
+      const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      if (p.agentId && p.detailedStatus) {
         useRemoteProjectStore.getState().updateRemoteAgentStatus(
-          satelliteId, p.agentId, p.event as import('../../shared/types').AgentDetailedStatus,
+          satelliteId, p.agentId, p.detailedStatus,
+        );
+      }
+    } else if (type === 'structured:event') {
+      // Structured-mode agent status update
+      const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      if (p.agentId && p.detailedStatus) {
+        useRemoteProjectStore.getState().updateRemoteAgentStatus(
+          satelliteId, p.agentId, p.detailedStatus,
         );
       }
     } else if (type === 'agent:woken') {
