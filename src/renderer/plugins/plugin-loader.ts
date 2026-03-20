@@ -7,6 +7,7 @@ import { createPluginAPI, computeWorkspaceRoot } from './plugin-api-factory';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { removeStyles } from './plugin-styles';
 import { getBuiltinPlugins, getDefaultEnabledIds, type ExperimentalFlags } from './builtin';
+import { preRegisterFromManifest } from './canvas-widget-registry';
 import { rendererLog } from './renderer-logger';
 import { dynamicImportModule } from './dynamic-import';
 import { registerTheme, unregisterTheme } from '../themes';
@@ -99,6 +100,17 @@ export async function initializePluginSystem(): Promise<void> {
     // Only auto-enable default plugins at app level (app-level acts as availability gate for all scopes)
     if (defaults.has(manifest.id)) {
       store.enableApp(manifest.id);
+    }
+  }
+
+  // Pre-register canvas widgets from all built-in plugin manifests so they
+  // appear in the context menu immediately — before project-scoped plugins
+  // have been activated via handleProjectSwitch().
+  for (const { manifest } of builtins) {
+    if (manifest.contributes?.canvasWidgets) {
+      for (const widgetDecl of manifest.contributes.canvasWidgets) {
+        preRegisterFromManifest(manifest.id, widgetDecl);
+      }
     }
   }
 

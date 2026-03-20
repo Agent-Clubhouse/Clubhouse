@@ -120,6 +120,43 @@ export function generatePluginWidgetDisplayName(
   return entry.declaration.label;
 }
 
+/**
+ * Pre-register a canvas widget type from a plugin's manifest declaration.
+ * Uses a placeholder component that displays a loading state until the
+ * real plugin activates and overwrites the entry via registerCanvasWidgetType().
+ *
+ * This ensures that built-in plugin widgets appear in the context menu and
+ * canvas views immediately — before project-scoped plugins have activated.
+ */
+export function preRegisterFromManifest(
+  pluginId: string,
+  declaration: PluginCanvasWidgetDeclaration,
+): void {
+  const key = qualifyWidgetType(pluginId, declaration.id);
+  // Only pre-register if nothing is registered for this key yet —
+  // the real plugin may already have activated (e.g. dual-scoped plugins).
+  if (registry.has(key)) return;
+  const placeholder: RegisteredCanvasWidget = {
+    qualifiedType: key,
+    pluginId,
+    declaration,
+    descriptor: {
+      id: declaration.id,
+      component: null as unknown as React.ComponentType<any>,
+      _pending: true,
+    } as CanvasWidgetDescriptor & { _pending?: boolean },
+  };
+  registry.set(key, placeholder);
+  notifyListeners();
+}
+
+/** Check whether a registered widget is still a pending placeholder. */
+export function isWidgetPending(qualifiedType: string): boolean {
+  const entry = registry.get(qualifiedType);
+  if (!entry) return false;
+  return !!(entry.descriptor as CanvasWidgetDescriptor & { _pending?: boolean })._pending;
+}
+
 /** Reset the registry (for testing). */
 export function _resetRegistryForTesting(): void {
   registry.clear();
