@@ -6,6 +6,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { Toggle } from '../../../components/Toggle';
 
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
@@ -57,8 +58,8 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
     onClose();
   };
 
-  const handleBidirectionalToggle = async () => {
-    if (bidirectional) {
+  const handleBidirectionalToggle = async (newValue: boolean) => {
+    if (!newValue) {
       // Remove reverse binding
       await unbind(binding.targetId, binding.agentId);
     } else {
@@ -94,35 +95,18 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
       <div className="p-2 space-y-1">
         {/* Bidirectional toggle (agent-to-agent only) */}
         {isAgentToAgent && (
-          <button
-            className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded transition-colors ${
-              bidirectional
-                ? 'text-ctp-blue bg-ctp-blue/20 ring-1 ring-ctp-blue/40'
-                : 'text-ctp-overlay1 hover:bg-surface-1'
-            }`}
-            onClick={handleBidirectionalToggle}
+          <div
+            className="flex items-center gap-2 px-2 py-1.5"
             data-testid="wire-bidirectional-toggle"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-ctp-subtext0 flex-shrink-0">
               <polyline points="7 17 2 12 7 7" />
               <polyline points="17 7 22 12 17 17" />
               <line x1="2" y1="12" x2="22" y2="12" />
             </svg>
-            <span className="flex-1 text-left">Bidirectional</span>
-            {/* Toggle pill indicator */}
-            <span
-              className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors ${
-                bidirectional ? 'bg-ctp-blue' : 'bg-ctp-surface2'
-              }`}
-              data-testid="wire-bidirectional-pill"
-            >
-              <span
-                className={`inline-block h-2.5 w-2.5 rounded-full bg-white shadow-sm transform transition-transform mt-[2px] ${
-                  bidirectional ? 'translate-x-[13px]' : 'translate-x-[1px]'
-                }`}
-              />
-            </span>
-          </button>
+            <span className="flex-1 text-xs text-ctp-subtext0">Bidirectional</span>
+            <Toggle checked={bidirectional} onChange={handleBidirectionalToggle} />
+          </div>
         )}
 
         {/* Disconnect */}
