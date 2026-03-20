@@ -21,7 +21,10 @@ import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
 import * as fileService from './file-service';
-import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent } from './agent-system';
+import * as gitService from './git-service';
+import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
+import { isSessionCapable } from '../orchestrators';
+import { spawnAgent, getAvailableOrchestrators, isHeadlessAgent, listSessions, resolveOrchestrator, resolveProfileEnv } from './agent-system';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -1088,6 +1091,205 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       } else {
         sendJson(res, 500, { error: err instanceof Error ? err.message : 'read_failed' });
       }
+    }
+    return;
+  }
+
+  // --- Git endpoints (remote plugin support) ---
+
+  // GET /api/v1/projects/:id/git/info
+  const gitInfoMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/info$/);
+  if (method === 'GET' && gitInfoMatch) {
+    const projectId = decodeURIComponent(gitInfoMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    try {
+      const info = await gitService.getGitInfo(project.path);
+      sendJson(res, 200, info);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_info_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/projects/:id/git/log?limit=N&offset=N
+  const gitLogMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/log(\?.*)?$/);
+  if (method === 'GET' && gitLogMatch) {
+    const projectId = decodeURIComponent(gitLogMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    const params = new URLSearchParams(gitLogMatch[2]?.slice(1) || '');
+    const limit = parseInt(params.get('limit') || '50', 10);
+    const offset = parseInt(params.get('offset') || '0', 10);
+    try {
+      const log = await gitService.getLog(project.path, limit, offset);
+      sendJson(res, 200, log);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_log_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/projects/:id/git/diff?file=PATH&staged=BOOL
+  const gitDiffMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/diff(\?.*)?$/);
+  if (method === 'GET' && gitDiffMatch) {
+    const projectId = decodeURIComponent(gitDiffMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    const params = new URLSearchParams(gitDiffMatch[2]?.slice(1) || '');
+    const filePath = params.get('file');
+    if (!filePath) { sendJson(res, 400, { error: 'file_required' }); return; }
+    const staged = params.get('staged') === 'true';
+    try {
+      const diff = await gitService.getFileDiff(project.path, filePath, staged);
+      sendJson(res, 200, diff);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_diff_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/projects/:id/git/show-commit?hash=HASH
+  const gitShowCommitMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/show-commit(\?.*)?$/);
+  if (method === 'GET' && gitShowCommitMatch) {
+    const projectId = decodeURIComponent(gitShowCommitMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    const params = new URLSearchParams(gitShowCommitMatch[2]?.slice(1) || '');
+    const hash = params.get('hash');
+    if (!hash) { sendJson(res, 400, { error: 'hash_required' }); return; }
+    try {
+      const detail = await gitService.showCommit(project.path, hash);
+      sendJson(res, 200, detail);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_show_commit_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/projects/:id/git/commit-diff?hash=HASH&file=PATH
+  const gitCommitDiffMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/commit-diff(\?.*)?$/);
+  if (method === 'GET' && gitCommitDiffMatch) {
+    const projectId = decodeURIComponent(gitCommitDiffMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    const params = new URLSearchParams(gitCommitDiffMatch[2]?.slice(1) || '');
+    const hash = params.get('hash');
+    const filePath = params.get('file');
+    if (!hash || !filePath) { sendJson(res, 400, { error: 'hash_and_file_required' }); return; }
+    try {
+      const diff = await gitService.getCommitFileDiff(project.path, hash, filePath);
+      sendJson(res, 200, diff);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_commit_diff_failed' });
+    }
+    return;
+  }
+
+  // POST /api/v1/projects/:id/git/:operation
+  const gitOpMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/(stage|unstage|stage-all|unstage-all|commit|push|pull|checkout|stash|stash-pop)$/);
+  if (method === 'POST' && gitOpMatch) {
+    const projectId = decodeURIComponent(gitOpMatch[1]);
+    const operation = gitOpMatch[2];
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    readJsonBody(req, res, async (body) => {
+      try {
+        let result;
+        switch (operation) {
+          case 'stage': result = await gitService.stage(project.path, body.path); break;
+          case 'unstage': result = await gitService.unstage(project.path, body.path); break;
+          case 'stage-all': result = await gitService.stageAll(project.path); break;
+          case 'unstage-all': result = await gitService.unstageAll(project.path); break;
+          case 'commit': result = await gitService.commit(project.path, body.message); break;
+          case 'push': result = await gitService.push(project.path); break;
+          case 'pull': result = await gitService.pull(project.path); break;
+          case 'checkout': result = await gitService.checkout(project.path, body.branch); break;
+          case 'stash': result = await gitService.stash(project.path); break;
+          case 'stash-pop': result = await gitService.stashPop(project.path); break;
+          default: sendJson(res, 400, { error: 'unknown_operation' }); return;
+        }
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'git_operation_failed' });
+      }
+    });
+    return;
+  }
+
+  // --- Session endpoints (remote sessions plugin support) ---
+
+  // GET /api/v1/agents/:agentId/sessions?projectId=ID&orchestrator=NAME
+  const sessionsListMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions(\?.*)?$/);
+  if (method === 'GET' && sessionsListMatch) {
+    const agentId = decodeURIComponent(sessionsListMatch[1]);
+    const params = new URLSearchParams(sessionsListMatch[2]?.slice(1) || '');
+    const projectId = params.get('projectId');
+    const orchestrator = params.get('orchestrator') || undefined;
+    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    try {
+      const sessions = await listSessions(project.path, agentId, orchestrator);
+      sendJson(res, 200, sessions);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'list_sessions_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/agents/:agentId/sessions/:sessionId/transcript?projectId=ID&offset=N&limit=N&orchestrator=NAME
+  const transcriptMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/transcript(\?.*)?$/);
+  if (method === 'GET' && transcriptMatch) {
+    const agentId = decodeURIComponent(transcriptMatch[1]);
+    const sessionId = decodeURIComponent(transcriptMatch[2]);
+    const params = new URLSearchParams(transcriptMatch[3]?.slice(1) || '');
+    const projectId = params.get('projectId');
+    const orchestrator = params.get('orchestrator') || undefined;
+    const offset = parseInt(params.get('offset') || '0', 10);
+    const limit = parseInt(params.get('limit') || '100', 10);
+    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    try {
+      const config = await agentConfig.getDurableConfig(project.path, agentId);
+      const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
+      if (!isSessionCapable(provider)) { sendJson(res, 200, null); return; }
+      const cwd = config?.worktreePath || project.path;
+      const profileEnv = await resolveProfileEnv(project.path, provider.id);
+      const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+      if (!rawEvents) { sendJson(res, 200, null); return; }
+      const events = normalizeSessionEvents(rawEvents);
+      sendJson(res, 200, paginateEvents(events, offset, limit));
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'read_transcript_failed' });
+    }
+    return;
+  }
+
+  // GET /api/v1/agents/:agentId/sessions/:sessionId/summary?projectId=ID&orchestrator=NAME
+  const summaryMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/summary(\?.*)?$/);
+  if (method === 'GET' && summaryMatch) {
+    const agentId = decodeURIComponent(summaryMatch[1]);
+    const sessionId = decodeURIComponent(summaryMatch[2]);
+    const params = new URLSearchParams(summaryMatch[3]?.slice(1) || '');
+    const projectId = params.get('projectId');
+    const orchestrator = params.get('orchestrator') || undefined;
+    if (!projectId) { sendJson(res, 400, { error: 'projectId_required' }); return; }
+    const project = await findProjectById(projectId);
+    if (!project) { sendJson(res, 404, { error: 'project_not_found' }); return; }
+    try {
+      const config = await agentConfig.getDurableConfig(project.path, agentId);
+      const provider = await resolveOrchestrator(project.path, orchestrator || config?.orchestrator);
+      if (!isSessionCapable(provider)) { sendJson(res, 200, null); return; }
+      const cwd = config?.worktreePath || project.path;
+      const profileEnv = await resolveProfileEnv(project.path, provider.id);
+      const rawEvents = await provider.readSessionTranscript(sessionId, cwd, profileEnv);
+      if (!rawEvents) { sendJson(res, 200, null); return; }
+      const events = normalizeSessionEvents(rawEvents);
+      sendJson(res, 200, buildSessionSummary(events, provider.id));
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'get_summary_failed' });
     }
     return;
   }
