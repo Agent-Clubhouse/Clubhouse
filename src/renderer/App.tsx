@@ -15,6 +15,7 @@ import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
+import { ResumeBanner, ResumeBannerSession } from './features/app/ResumeBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
@@ -34,6 +35,15 @@ export function App() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
+
+  // ── Resume banner state ──────────────────────────────────────────────────
+  const resumingAgents = useAgentStore((s) => s.resumingAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const resumeSessions: ResumeBannerSession[] = Object.entries(resumingAgents).map(([agentId, status]) => ({
+    agentId,
+    agentName: agents[agentId]?.name || agentId,
+    status,
+  }));
 
   // ── Annex lock state (individual selectors to avoid reference-inequality re-render loops) ──
   const lockLocked = useLockStore((s) => s.locked);
@@ -197,6 +207,13 @@ export function App() {
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
+        <ResumeBanner
+          sessions={resumeSessions}
+          onManualResume={(agentId) => {
+            console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+          }}
+          onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+        />
         <PluginUpdateBanner />
         <RailSection>
           <Dashboard />
@@ -219,6 +236,13 @@ export function App() {
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
+        <ResumeBanner
+          sessions={resumeSessions}
+          onManualResume={(agentId) => {
+            console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+          }}
+          onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+        />
         <PluginUpdateBanner />
         <RailSection>
           <PluginContentView pluginId={appPluginId} mode="app" />
@@ -240,6 +264,13 @@ export function App() {
         <TitleBar />
         <PermissionViolationBanner />
         <UpdateBanner />
+        <ResumeBanner
+          sessions={resumeSessions}
+          onManualResume={(agentId) => {
+            console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+          }}
+          onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+        />
         <PluginUpdateBanner />
         <RailSection>
           <HelpView />
@@ -260,6 +291,13 @@ export function App() {
       <TitleBar />
       <PermissionViolationBanner />
       <UpdateBanner />
+      <ResumeBanner
+        sessions={resumeSessions}
+        onManualResume={(agentId) => {
+          console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+        }}
+        onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+      />
       <PluginUpdateBanner />
       <GitBanner />
       <RailSection>
