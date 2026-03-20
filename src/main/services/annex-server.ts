@@ -83,6 +83,7 @@ function hookEventToDetailedStatus(event: AgentHookEvent): AgentDetailedStatus {
     stop: 'idle',
     notification: 'idle',
     permission_request: 'needs_permission',
+    permission_resolved: 'idle',
   };
 
   const state = KIND_STATE_MAP[event.kind] || 'idle';
@@ -106,6 +107,9 @@ function hookEventToDetailedStatus(event: AgentHookEvent): AgentDetailedStatus {
       break;
     case 'permission_request':
       message = 'Needs permission';
+      break;
+    case 'permission_resolved':
+      message = 'Thinking';
       break;
   }
 

@@ -837,7 +837,7 @@ export interface AgentTemplateEntry {
   hasReadme: boolean;
 }
 
-export type HookEventKind = 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request';
+export type HookEventKind = 'pre_tool' | 'post_tool' | 'tool_error' | 'stop' | 'notification' | 'permission_request' | 'permission_resolved';
 
 export interface AgentHookEvent {
   kind: HookEventKind;

@@ -364,6 +364,62 @@ describe('initAppEventBridge', () => {
     expect(mockPlaySound).toHaveBeenCalledWith('agent-focus', 'proj-2');
   });
 
+  it('plays permission-granted sound on permission_resolved with allow', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+    hookCallback('a1', {
+      kind: 'permission_resolved',
+      toolName: 'Bash',
+      message: 'allow',
+      timestamp: Date.now(),
+    });
+
+    expect(mockPlaySound).toHaveBeenCalledWith('permission-granted', 'proj-1');
+  });
+
+  it('plays permission-denied sound on permission_resolved with deny', () => {
+    const agent = createAgent('a1', 'proj-1');
+    vi.mocked(useAgentStore.getState).mockReturnValue({
+      agents: { a1: agent },
+      activeAgentId: null,
+      agentDetailedStatus: {},
+      agentIcons: {},
+      updateAgentStatus: vi.fn(),
+      handleHookEvent: vi.fn(),
+      removeAgent: vi.fn(),
+      clearStaleStatuses: vi.fn(),
+      setActiveAgent: vi.fn(),
+      restoreProjectAgent: vi.fn(),
+      openConfigChangesDialog: vi.fn(),
+      setSessionNamePrompt: vi.fn(),
+    } as any);
+
+    const hookCallback = vi.mocked(window.clubhouse.agent.onHookEvent).mock.calls[0][0];
+    hookCallback('a1', {
+      kind: 'permission_resolved',
+      toolName: 'Bash',
+      message: 'deny',
+      timestamp: Date.now(),
+    });
+
+    expect(mockPlaySound).toHaveBeenCalledWith('permission-denied', 'proj-1');
+  });
+
   it('does not play agent-focus when the active agent is unchanged or cleared', () => {
     const agents = {
       a1: createAgent('a1', 'proj-1'),
