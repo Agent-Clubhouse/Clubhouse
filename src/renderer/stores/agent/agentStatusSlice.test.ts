@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createStatusSlice } from './agentStatusSlice';
 import type { AgentState, AgentStatusSlice } from './types';
-import type { AgentHookEvent, AgentDetailedStatus } from '../../../shared/types';
 
 // Minimal state that the slice needs
 function createMinimalState(overrides: Partial<AgentState> = {}): AgentState {
