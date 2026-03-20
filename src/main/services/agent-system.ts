@@ -9,7 +9,7 @@ import * as headlessSettings from './headless-settings';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as configPipeline from './config-pipeline';
 import { getDurableConfig, addSessionEntry } from './agent-config';
-import { materializeAgent } from './materialization-service';
+import { materializeAgent, cleanupStaleJsonInTomlConfigs } from './materialization-service';
 import * as profileSettings from './profile-settings';
 import { readProjectAgentDefaults, readLaunchWrapper, readDefaultMcps } from './agent-settings-service';
 import * as structuredManager from './structured-manager';
@@ -82,6 +82,18 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
   });
 
   try {
+    // Clean up stale JSON in TOML config files (e.g. Codex .codex/config.toml)
+    // This handles files created before TOML-aware guards were added.
+    if (provider.conventions.settingsFormat === 'toml') {
+      try {
+        await cleanupStaleJsonInTomlConfigs(params.cwd, provider.conventions);
+      } catch (err) {
+        appLog('core:agent', 'warn', 'TOML config cleanup failed, continuing spawn', {
+          meta: { agentId: params.agentId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+    }
+
     // Clubhouse Mode: materialize project defaults into worktree before spawn
     if (params.kind === 'durable' && clubhouseModeSettings.isClubhouseModeEnabled(params.projectPath)) {
       try {

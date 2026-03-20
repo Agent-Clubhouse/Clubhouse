@@ -67,8 +67,10 @@ vi.mock('./agent-config', () => ({
 
 // Mock materialization-service
 const mockMaterializeAgent = vi.fn();
+const mockCleanupStaleJsonInTomlConfigs = vi.fn();
 vi.mock('./materialization-service', () => ({
   materializeAgent: (...args: unknown[]) => mockMaterializeAgent(...args),
+  cleanupStaleJsonInTomlConfigs: (...args: unknown[]) => mockCleanupStaleJsonInTomlConfigs(...args),
 }));
 
 // Mock profile-settings
@@ -151,13 +153,38 @@ const mockAltProvider = {
   getProfileEnvKeys: vi.fn(() => ['OPENCODE_CONFIG_DIR']),
 };
 
+const mockCodexConventions: OrchestratorConventions = {
+  configDir: '.codex',
+  localInstructionsFile: 'AGENTS.md',
+  legacyInstructionsFile: 'AGENTS.md',
+  mcpConfigFile: '.codex/config.toml',
+  skillsDir: 'skills',
+  agentTemplatesDir: 'agents',
+  localSettingsFile: 'config.toml',
+  settingsFormat: 'toml',
+};
+
+const mockCodexProvider = {
+  ...mockProvider,
+  id: 'codex-cli',
+  displayName: 'Codex CLI',
+  shortName: 'CX',
+  conventions: mockCodexConventions,
+  getCapabilities: vi.fn(() => ({
+    headless: true, structuredOutput: false, hooks: false,
+    sessionResume: true, permissions: true, structuredMode: false,
+  })),
+  getProfileEnvKeys: vi.fn(() => ['OPENAI_API_KEY']),
+};
+
 vi.mock('../orchestrators', () => ({
   getProvider: vi.fn((id: string) => {
     if (id === 'claude-code') return mockProvider;
     if (id === 'opencode') return mockAltProvider;
+    if (id === 'codex-cli') return mockCodexProvider;
     return undefined;
   }),
-  getAllProviders: vi.fn(() => [mockProvider, mockAltProvider]),
+  getAllProviders: vi.fn(() => [mockProvider, mockAltProvider, mockCodexProvider]),
   isHookCapable: vi.fn((p: any) => p.getCapabilities().hooks && typeof p.writeHooksConfig === 'function'),
   isHeadlessCapable: vi.fn((p: any) => p.getCapabilities().headless && typeof p.buildHeadlessCommand === 'function'),
   isSessionCapable: vi.fn((p: any) => p.getCapabilities().sessionResume && typeof p.listSessions === 'function'),
@@ -685,7 +712,7 @@ describe('agent-system', () => {
   describe('getAvailableOrchestrators', () => {
     it('returns all registered providers with capabilities and runtime metadata', () => {
       const result = getAvailableOrchestrators();
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
       expect(result[0]).toMatchObject({
         id: 'claude-code',
         displayName: 'Claude Code',
@@ -699,6 +726,13 @@ describe('agent-system', () => {
         shortName: 'OC',
         capabilities: expect.any(Object),
         conventions: mockOpenCodeConventions,
+      });
+      expect(result[2]).toMatchObject({
+        id: 'codex-cli',
+        displayName: 'Codex CLI',
+        shortName: 'CX',
+        capabilities: expect.objectContaining({ hooks: false }),
+        conventions: expect.objectContaining({ configDir: '.codex' }),
       });
     });
 
@@ -1682,6 +1716,49 @@ describe('agent-system', () => {
       expect(mockCancelSession).toHaveBeenCalledWith('dual-agent');
       expect(mockHeadlessKill).not.toHaveBeenCalled();
       expect(mockPtyGracefulKill).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('TOML config cleanup', () => {
+    it('calls cleanupStaleJsonInTomlConfigs for TOML-format providers before spawn', async () => {
+      await spawnAgent({
+        agentId: 'codex-agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        orchestrator: 'codex-cli',
+      });
+
+      expect(mockCleanupStaleJsonInTomlConfigs).toHaveBeenCalledWith(
+        '/project',
+        mockCodexConventions,
+      );
+    });
+
+    it('does not call cleanupStaleJsonInTomlConfigs for JSON-format providers', async () => {
+      await spawnAgent({
+        agentId: 'claude-agent-1',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+      });
+
+      expect(mockCleanupStaleJsonInTomlConfigs).not.toHaveBeenCalled();
+    });
+
+    it('continues spawn even if cleanup fails', async () => {
+      mockCleanupStaleJsonInTomlConfigs.mockRejectedValueOnce(new Error('cleanup failed'));
+
+      await spawnAgent({
+        agentId: 'codex-agent-2',
+        projectPath: '/project',
+        cwd: '/project',
+        kind: 'quick',
+        orchestrator: 'codex-cli',
+      });
+
+      // Spawn should still proceed
+      expect(mockPtySpawn).toHaveBeenCalled();
     });
   });
 });

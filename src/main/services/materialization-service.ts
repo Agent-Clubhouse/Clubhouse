@@ -275,6 +275,11 @@ export async function materializeAgent(params: {
   const ctx = buildWildcardContext(agent, projectPath, scp, commands);
   const conv = provider.conventions;
 
+  // 0. Clean up stale JSON content in TOML config files (legacy migration)
+  if (conv.settingsFormat === 'toml') {
+    await cleanupStaleJsonInTomlConfigs(worktreePath, conv);
+  }
+
   // 1. Instructions
   if (defaults.instructions) {
     const resolved = replaceWildcards(defaults.instructions, ctx);
@@ -315,6 +320,43 @@ export async function materializeAgent(params: {
   appLog('core:materialization', 'info', `Materialized settings for agent ${agent.name}`, {
     meta: { agentName: agent.name, projectPath },
   });
+}
+
+/**
+ * Remove stale JSON content from TOML config files.
+ * Before TOML-aware guards were added, Clubhouse could write JSON to
+ * .codex/config.toml. Codex CLI's TOML parser rejects this with
+ * "invalid key-value pair, expected key". This cleanup runs during
+ * materialization to fix pre-existing corrupted files.
+ */
+export async function cleanupStaleJsonInTomlConfigs(
+  worktreePath: string,
+  conv: SettingsConventions,
+): Promise<void> {
+  const filesToCheck = [
+    path.join(worktreePath, conv.mcpConfigFile),
+    path.join(worktreePath, conv.configDir, conv.localSettingsFile),
+  ];
+
+  // Deduplicate — mcpConfigFile and configDir/localSettingsFile may resolve to the same path
+  const uniquePaths = [...new Set(filesToCheck.map((p) => path.resolve(p)))];
+
+  for (const filePath of uniquePaths) {
+    try {
+      const content = await fsp.readFile(filePath, 'utf-8');
+      const trimmed = content.trimStart();
+      if (trimmed.startsWith('{')) {
+        // File contains JSON object — remove it so the CLI can start fresh
+        // Note: we don't check for '[' because TOML section headers also start with '['
+        await fsp.unlink(filePath);
+        appLog('core:materialization', 'info', 'Removed stale JSON content from TOML config file', {
+          meta: { filePath },
+        });
+      }
+    } catch {
+      // File doesn't exist — nothing to clean up
+    }
+  }
 }
 
 /**
