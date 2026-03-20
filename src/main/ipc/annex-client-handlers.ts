@@ -62,6 +62,9 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.PTY_RESIZE, withValidatedArgs(
     [stringArg(), stringArg(), numberArg(), numberArg()],
     (_event, satelliteId, agentId, cols, rows) => {
+      // Also resize the local headless terminal cache so serialization
+      // dimensions stay correct for buffer replay on tab switch.
+      annexClient.resizeRemoteBuffer(satelliteId, agentId, cols, rows);
       return annexClient.sendToSatellite(satelliteId, {
         type: 'pty:resize',
         payload: { agentId, cols, rows },

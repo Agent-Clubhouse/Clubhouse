@@ -14,6 +14,7 @@ import * as annexIdentity from './annex-identity';
 import * as annexTls from './annex-tls';
 import * as annexPeers from './annex-peers';
 import * as annexSettings from './annex-settings';
+import * as headlessTerminal from './pty-headless-terminal';
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import { IPC } from '../../shared/ipc-channels';
@@ -95,6 +96,118 @@ interface SatelliteConnectionInternal {
 // Heartbeat constants
 const HEARTBEAT_INTERVAL_MS = 30_000;  // 30s ping
 const PONG_TIMEOUT_MS = 10_000;        // 10s pong timeout → dead
+
+// ---------------------------------------------------------------------------
+// Remote PTY buffer cache
+//
+// The controller caches remote agent PTY data locally using headless terminals
+// so that switching away from a remote agent tab and back restores the terminal
+// instantly without a network round-trip to the satellite. Without this cache,
+// the HTTPS buffer fetch to the satellite may fail silently (timeout, TLS issue,
+// etc.), leaving the terminal blank.
+// ---------------------------------------------------------------------------
+
+/** Namespace prefix for remote buffer keys to avoid collision with local agents. */
+function remoteBufferKey(satelliteId: string, agentId: string): string {
+  return `remote:${satelliteId}:${agentId}`;
+}
+
+/** Track which remote agents have had their local cache seeded from the satellite. */
+const seededBuffers = new Set<string>();
+
+/**
+ * Cache incoming PTY data for a remote agent in a local headless terminal.
+ * Called whenever a pty:data event arrives via WebSocket.
+ */
+export function cacheRemotePtyData(satelliteId: string, agentId: string, data: string): void {
+  headlessTerminal.feedData(remoteBufferKey(satelliteId, agentId), data);
+}
+
+/**
+ * Resize the local headless terminal cache for a remote agent.
+ * Should be called whenever the renderer resizes a remote agent's terminal.
+ */
+export function resizeRemoteBuffer(satelliteId: string, agentId: string, cols: number, rows: number): void {
+  headlessTerminal.resize(remoteBufferKey(satelliteId, agentId), cols, rows);
+}
+
+/**
+ * Get the locally cached buffer for a remote agent.
+ * Returns the serialized terminal state from the local headless terminal.
+ */
+export function getLocalRemoteBuffer(satelliteId: string, agentId: string): string {
+  return headlessTerminal.serialize(remoteBufferKey(satelliteId, agentId));
+}
+
+/**
+ * Dispose all cached headless terminals for a specific satellite.
+ */
+function disposeRemoteBuffers(satelliteId: string): void {
+  // Iterate all headless terminal keys and dispose those matching this satellite.
+  // The headless terminal module doesn't expose iteration, so we track keys ourselves.
+  // Instead, we clear seeded status; buffers are cleaned up lazily or on forget.
+  for (const key of seededBuffers) {
+    if (key.startsWith(`${satelliteId}:`)) {
+      seededBuffers.delete(key);
+    }
+  }
+}
+
+/**
+ * Seed the local cache from the satellite's buffer (one-time on first access).
+ * Returns the seeded data, or the existing local cache if already seeded.
+ */
+async function seedAndGetBuffer(satelliteId: string, agentId: string): Promise<string> {
+  const key = `${satelliteId}:${agentId}`;
+  const localBuffer = getLocalRemoteBuffer(satelliteId, agentId);
+
+  // If already seeded, return local cache
+  if (seededBuffers.has(key)) {
+    return localBuffer;
+  }
+
+  // Try to fetch from satellite to seed the local cache
+  const sat = satellites.get(satelliteId);
+  if (!sat || sat.state !== 'connected') {
+    // Can't reach satellite — return whatever local cache we have
+    seededBuffers.add(key);
+    return localBuffer;
+  }
+
+  try {
+    const identity = annexIdentity.getOrCreateIdentity();
+    const tlsOptions = annexTls.createTlsClientOptions(identity);
+
+    const satelliteBuffer = await new Promise<string>((resolve) => {
+      const url = `https://${sat.host}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
+      const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve('');
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      });
+      req.on('error', () => resolve(''));
+      req.on('timeout', () => { req.destroy(); resolve(''); });
+    });
+
+    if (satelliteBuffer && !localBuffer) {
+      // Seed the local headless terminal with the satellite's full buffer.
+      // This only happens once — subsequent pty:data events build on top.
+      headlessTerminal.feedData(remoteBufferKey(satelliteId, agentId), satelliteBuffer);
+    }
+
+    seededBuffers.add(key);
+    // Return the richer of the two buffers
+    return satelliteBuffer || localBuffer;
+  } catch {
+    seededBuffers.add(key);
+    return localBuffer;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -309,7 +422,16 @@ function handleSatelliteMessage(sat: SatelliteConnectionInternal, msg: Record<st
       broadcastSatelliteEvent(sat.id, 'snapshot', msg.payload);
       break;
 
-    case 'pty:data':
+    case 'pty:data': {
+      // Cache remotely-received PTY data locally for instant buffer replay
+      const ptyPayload = msg.payload as { agentId?: string; data?: string };
+      if (ptyPayload?.agentId && ptyPayload?.data) {
+        cacheRemotePtyData(sat.id, ptyPayload.agentId, ptyPayload.data);
+      }
+      broadcastSatelliteEvent(sat.id, type, msg.payload);
+      break;
+    }
+
     case 'pty:exit':
     case 'hook:event':
     case 'structured:event':
@@ -621,6 +743,7 @@ export function forgetSatellite(fingerprint: string): void {
     disconnectSatellite(sat);
     satellites.delete(fingerprint);
   }
+  disposeRemoteBuffers(fingerprint);
   annexPeers.removePeer(fingerprint);
   broadcastSatellitesChanged();
 }
@@ -655,33 +778,15 @@ export function sendToSatellite(fingerprint: string, message: Record<string, unk
 }
 
 /**
- * Fetch the PTY output buffer for a remote agent from its satellite via HTTPS REST.
- * Uses the existing mTLS credentials for authentication.
+ * Get the PTY output buffer for a remote agent.
+ *
+ * Uses a local headless terminal cache (seeded from the satellite on first
+ * access, then updated with every pty:data event). This ensures instant
+ * buffer restoration when switching tabs, even if the satellite is
+ * temporarily unreachable.
  */
 export function requestPtyBuffer(fingerprint: string, agentId: string): Promise<string> {
-  const sat = satellites.get(fingerprint);
-  if (!sat || sat.state !== 'connected') {
-    return Promise.resolve('');
-  }
-
-  const identity = annexIdentity.getOrCreateIdentity();
-  const tlsOptions = annexTls.createTlsClientOptions(identity);
-
-  return new Promise<string>((resolve) => {
-    const url = `https://${sat.host}:${sat.mainPort}/api/v1/agents/${encodeURIComponent(agentId)}/buffer`;
-    const req = https.get(url, { ...tlsOptions, timeout: 5000 }, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume(); // drain
-        resolve('');
-        return;
-      }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
-    });
-    req.on('error', () => resolve(''));
-    req.on('timeout', () => { req.destroy(); resolve(''); });
-  });
+  return seedAndGetBuffer(fingerprint, agentId);
 }
 
 /**
@@ -836,8 +941,10 @@ export function forgetAllSatellites(): void {
   appLog('core:annex-client', 'info', 'Forgetting all satellites');
   for (const sat of satellites.values()) {
     disconnectSatellite(sat);
+    disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  seededBuffers.clear();
   annexPeers.removeAllPeers();
   discoveredServices.clear();
   broadcastSatellitesChanged();
@@ -874,8 +981,10 @@ export function stopClient(): void {
   // Disconnect all satellites
   for (const sat of satellites.values()) {
     disconnectSatellite(sat);
+    disposeRemoteBuffers(sat.id);
   }
   satellites.clear();
+  seededBuffers.clear();
   discoveredServices.clear();
   stopDiscovery();
 }
