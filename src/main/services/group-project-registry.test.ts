@@ -125,13 +125,14 @@ describe('GroupProjectRegistry', () => {
   it('normalizes old entries missing description/instructions on load', async () => {
     // Write an old-format entry without description/instructions
     const fsp = await import('fs/promises');
+    const nodePath = await import('path');
     const oldData = JSON.stringify([{
       id: 'gp_old_abc',
       name: 'Legacy',
       createdAt: '2025-01-01T00:00:00.000Z',
       metadata: {},
     }]);
-    const registryFile = '/tmp/test-clubhouse/.clubhouse-dev/group-projects/registry.json';
+    const registryFile = nodePath.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json');
     (fsp.access as any).mockImplementation(async (p: string) => {
       if (p === registryFile) return;
       throw new Error('ENOENT');
