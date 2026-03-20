@@ -170,6 +170,66 @@ describe('WireOverlay', () => {
     expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
   });
 
+  it('uses viewPositions overrides for wire path computation', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    // Render without overrides
+    const { container: c1 } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+    const path1 = c1.querySelector('[data-testid="wire-path-agent-1--b1"]')?.getAttribute('d');
+
+    // Render with a moved agent view
+    const viewPositions = new Map([['a1', { x: 100, y: 100 }]]);
+    const { container: c2 } = render(
+      <WireOverlay views={views} bindings={bindings} viewPositions={viewPositions} />,
+    );
+    const path2 = c2.querySelector('[data-testid="wire-path-agent-1--b1"]')?.getAttribute('d');
+
+    // Paths should differ because agent view has a different position
+    expect(path1).not.toBe(path2);
+  });
+
+  it('renders flow dots for each wire', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    // Should have forward flow dots
+    const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-"]');
+    expect(fwdDots.length).toBe(3);
+  });
+
+  it('renders wire path def in SVG defs', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    expect(container.querySelector('#wire-path-agent-1--b1')).toBeTruthy();
+  });
+
   it('sets data-bidir attribute on bidirectional wire group', () => {
     const views: CanvasView[] = [
       makeAgentView('a1', 'agent-1', 0, 0),

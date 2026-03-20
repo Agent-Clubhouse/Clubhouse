@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { closestEdgeMidpoint, bezierPath, computeWirePath, viewRect, type Rect, type EdgeMidpoint } from './wire-utils';
+import { closestEdgeMidpoint, bezierPath, bezierPathWithOffsets, computeWirePath, viewRect, type Rect, type EdgeMidpoint } from './wire-utils';
 
 describe('closestEdgeMidpoint', () => {
   const rect: Rect = { x: 100, y: 100, width: 200, height: 100 };
@@ -78,6 +78,28 @@ describe('viewRect', () => {
   it('creates rect from position and size', () => {
     const r = viewRect({ x: 10, y: 20 }, { width: 100, height: 50 });
     expect(r).toEqual({ x: 10, y: 20, width: 100, height: 50 });
+  });
+});
+
+describe('bezierPathWithOffsets', () => {
+  it('returns same as bezierPath when offsets are zero', () => {
+    const from: EdgeMidpoint = { x: 100, y: 150, edge: 'right' };
+    const to: EdgeMidpoint = { x: 300, y: 150, edge: 'left' };
+    const withOffsets = bezierPathWithOffsets(from, to, { dx: 0, dy: 0 }, { dx: 0, dy: 0 });
+    const without = bezierPath(from, to);
+    expect(withOffsets).toBe(without);
+  });
+
+  it('applies offsets to control points only, not endpoints', () => {
+    const from: EdgeMidpoint = { x: 0, y: 0, edge: 'right' };
+    const to: EdgeMidpoint = { x: 200, y: 0, edge: 'left' };
+    const path = bezierPathWithOffsets(from, to, { dx: 5, dy: 10 }, { dx: -3, dy: 7 });
+    // Endpoints stay at (0,0) and (200,0)
+    expect(path).toMatch(/^M 0 0 C/);
+    expect(path).toMatch(/200 0$/);
+    // Control points should include offsets: right edge → cp1 (80+5, 0+10), left edge → cp2 (-80-3, 0+7)
+    expect(path).toContain('85 10');
+    expect(path).toContain('117 7');
   });
 });
 

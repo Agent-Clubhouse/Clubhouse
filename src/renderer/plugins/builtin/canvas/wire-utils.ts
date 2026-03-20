@@ -69,7 +69,7 @@ export function closestEdgeMidpoint(rect: Rect, target: Rect): EdgeMidpoint {
  */
 const CP_DISTANCE = 80;
 
-function controlPointOffset(edge: Edge): Position {
+export function controlPointOffset(edge: Edge): Position {
   switch (edge) {
     case 'top':    return { x: 0, y: -CP_DISTANCE };
     case 'bottom': return { x: 0, y: CP_DISTANCE };
@@ -106,4 +106,19 @@ export function computeWirePath(
   const from = closestEdgeMidpoint(sourceRect, targetRect);
   const to = closestEdgeMidpoint(targetRect, sourceRect);
   return { path: bezierPath(from, to), from, to };
+}
+
+/**
+ * Generate a bezier path with physics offsets applied to control points only.
+ * Endpoints stay anchored to view edges; offsets affect the curve's shape.
+ */
+export function bezierPathWithOffsets(
+  from: EdgeMidpoint,
+  to: EdgeMidpoint,
+  fromOffset: { dx: number; dy: number },
+  toOffset: { dx: number; dy: number },
+): string {
+  const cp1 = controlPointOffset(from.edge);
+  const cp2 = controlPointOffset(to.edge);
+  return `M ${from.x} ${from.y} C ${from.x + cp1.x + fromOffset.dx} ${from.y + cp1.y + fromOffset.dy}, ${to.x + cp2.x + toOffset.dx} ${to.y + cp2.y + toOffset.dy}, ${to.x} ${to.y}`;
 }
