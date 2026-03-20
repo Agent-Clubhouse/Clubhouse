@@ -2,7 +2,7 @@
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
 
-import { registerToolTemplate, buildToolName, buildToolKey } from '../tool-registry';
+import { registerToolTemplate, buildToolName } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';

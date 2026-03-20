@@ -30,7 +30,7 @@ vi.mock('../../log-service', () => ({
 }));
 
 import { registerAgentTools } from './agent-tools';
-import { getScopedToolList, callTool, buildToolName, buildToolKey, _resetForTesting as resetTools } from '../tool-registry';
+import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import type { McpBinding } from '../types';
 
@@ -134,9 +134,9 @@ describe('AgentTools', () => {
       expect(result.isError).toBeFalsy();
 
       // First write: bracketed paste wrapping
-      const firstWrite = mockPtyWrite.mock.calls[0][1];
-      expect(firstWrite).toMatch(/^\x1b\[200~/);
-      expect(firstWrite).toMatch(/\x1b\[201~$/);
+      const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
+      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
+      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
       expect(firstWrite).toContain('[TASK:ml1]');
       expect(firstWrite).toContain('line one\nline two\nline three');
 
@@ -155,10 +155,10 @@ describe('AgentTools', () => {
       const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
       expect(result.isError).toBeFalsy();
 
-      const firstWrite = mockPtyWrite.mock.calls[0][1];
+      const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
       // Bidirectional appends \n\n---\n... so it should use bracketed paste
-      expect(firstWrite).toMatch(/^\x1b\[200~/);
-      expect(firstWrite).toMatch(/\x1b\[201~$/);
+      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
+      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
       expect(firstWrite).toContain('Reply to mega-camel via tool');
       expect(firstWrite).toContain('clubhouse__');
       expect(firstWrite).toContain('task_id="bidir1"');
@@ -218,9 +218,9 @@ describe('AgentTools', () => {
 
       // Only 1 write: bracketed paste, no \r
       expect(mockPtyWrite).toHaveBeenCalledTimes(1);
-      const written = mockPtyWrite.mock.calls[0][1];
-      expect(written).toMatch(/^\x1b\[200~/);
-      expect(written).toMatch(/\x1b\[201~$/);
+      const written = mockPtyWrite.mock.calls[0][1] as string;
+      expect(written.startsWith('\x1b[200~')).toBe(true);
+      expect(written.endsWith('\x1b[201~')).toBe(true);
     });
 
     it('performs post-send buffer check for delivery heuristic', async () => {
