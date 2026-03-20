@@ -138,4 +138,15 @@ export function registerAnnexClientHandlers(): void {
       return annexClient.requestFileRead(satelliteId, projectId, path);
     },
   ));
+
+  // PTY proxy: spawn a shell on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    (_event, satelliteId, sessionId, projectId) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'pty:spawn-shell',
+        payload: { sessionId, projectId },
+      });
+    },
+  ));
 }

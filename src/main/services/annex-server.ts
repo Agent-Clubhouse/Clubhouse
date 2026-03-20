@@ -1153,7 +1153,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill')) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
@@ -1179,6 +1179,25 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const rows = payload.rows as number;
       if (!agentId || typeof cols !== 'number' || typeof rows !== 'number') break;
       ptyManager.resize(agentId, cols, rows);
+      break;
+    }
+
+    case 'pty:spawn-shell': {
+      const sessionId = payload.sessionId as string;
+      const projectId = payload.projectId as string;
+      if (!sessionId || !projectId) break;
+      findProjectById(projectId).then((project) => {
+        if (!project) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        try {
+          ptyManager.spawnShell(sessionId, project.path);
+          ws.send(JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));
+        }
+      });
       break;
     }
 

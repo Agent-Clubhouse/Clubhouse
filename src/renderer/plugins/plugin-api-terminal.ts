@@ -1,8 +1,11 @@
 import React from 'react';
 import type { PluginContext, TerminalAPI, Disposable } from '../../shared/plugin-types';
+import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
 export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
   const prefix = `plugin:${ctx.pluginId}:`;
+  const isRemote = ctx.projectId ? isRemoteProjectId(ctx.projectId) : false;
+  const remoteParts = isRemote && ctx.projectId ? parseNamespacedId(ctx.projectId) : null;
 
   function fullId(sessionId: string): string {
     return `${prefix}${sessionId}`;
@@ -24,6 +27,15 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
 
   return {
     async spawn(sessionId: string, cwd?: string): Promise<void> {
+      if (isRemote && remoteParts) {
+        // Spawn shell on the satellite via annex client
+        await window.clubhouse.annexClient.ptySpawnShell(
+          remoteParts.satelliteId,
+          fullId(sessionId),
+          remoteParts.agentId, // original project ID on satellite
+        );
+        return;
+      }
       const dir = cwd || ctx.projectPath;
       if (!dir) throw new Error('terminal.spawn requires a working directory (cwd or project context)');
       await window.clubhouse.pty.spawnShell(fullId(sessionId), dir);
