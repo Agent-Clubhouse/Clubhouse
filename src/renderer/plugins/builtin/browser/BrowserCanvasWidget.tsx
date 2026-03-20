@@ -30,6 +30,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
 
   const registerWebview = useMcpBindingStore((s) => s.registerWebview);
   const unregisterWebview = useMcpBindingStore((s) => s.unregisterWebview);
+  const isDomReady = useRef(false);
 
   const protocolSettings: ProtocolSettings = {
     allowLocalhost: api.settings.get<boolean>('allowLocalhost') ?? false,
@@ -47,7 +48,10 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
     const wv = webviewRef.current as any;
     if (!wv) return;
 
+    isDomReady.current = false;
+
     const handleDomReady = () => {
+      isDomReady.current = true;
       const wcId = wv.getWebContentsId?.();
       if (wcId != null) {
         registerWebview(widgetId, wcId);
@@ -58,13 +62,20 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
 
     // If the webview is already ready (dom-ready fired before this effect
     // ran), register immediately so we don't silently miss it.
-    const existingWcId = wv.getWebContentsId?.();
-    if (existingWcId != null) {
-      registerWebview(widgetId, existingWcId);
+    try {
+      const existingWcId = wv.getWebContentsId?.();
+      if (existingWcId != null) {
+        isDomReady.current = true;
+        registerWebview(widgetId, existingWcId);
+      }
+    } catch {
+      // getWebContentsId throws if dom-ready hasn't fired yet — the
+      // listener above will handle registration once it does.
     }
 
     return () => {
       wv.removeEventListener('dom-ready', handleDomReady);
+      isDomReady.current = false;
       unregisterWebview(widgetId);
     };
   }, [widgetId, isWebviewRendered, registerWebview, unregisterWebview]);
@@ -99,22 +110,22 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
 
   const handleBack = useCallback(() => {
     const wv = webviewRef.current as any;
-    if (wv?.goBack) wv.goBack();
+    if (wv?.goBack && isDomReady.current) wv.goBack();
   }, []);
 
   const handleForward = useCallback(() => {
     const wv = webviewRef.current as any;
-    if (wv?.goForward) wv.goForward();
+    if (wv?.goForward && isDomReady.current) wv.goForward();
   }, []);
 
   const handleReload = useCallback(() => {
     const wv = webviewRef.current as any;
-    if (wv?.reload) wv.reload();
+    if (wv?.reload && isDomReady.current) wv.reload();
   }, []);
 
   const handleDevTools = useCallback(() => {
     const wv = webviewRef.current as any;
-    if (!wv) return;
+    if (!wv || !isDomReady.current) return;
     if (wv.isDevToolsOpened?.()) {
       wv.closeDevTools?.();
     } else {
