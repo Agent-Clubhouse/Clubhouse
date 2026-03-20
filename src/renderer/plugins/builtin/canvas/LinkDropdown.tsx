@@ -5,7 +5,6 @@
 
 import React, { useMemo, useRef, useEffect } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
-import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 
 interface LinkDropdownProps {
@@ -21,7 +20,6 @@ function isValidLinkTarget(source: AgentCanvasViewType, target: CanvasView): boo
   if (target.id === source.id) return false;
   if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
-  if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card' && target.metadata?.groupProjectId) return true;
   return false;
 }
 
@@ -29,9 +27,8 @@ function targetLabel(view: CanvasView): string {
   return view.displayName || view.title;
 }
 
-function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' {
+function targetKind(view: CanvasView): 'agent' | 'browser' {
   if (view.type === 'agent') return 'agent';
-  if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card') return 'group-project';
   return 'browser';
 }
 
@@ -64,11 +61,8 @@ export function LinkDropdown({ agentView, views, onClose }: LinkDropdownProps) {
     [bindings, agentId],
   );
 
-  const resolveTargetId = (target: CanvasView) => {
-    if (target.type === 'agent') return (target as AgentCanvasViewType).agentId ?? target.id;
-    if (targetKind(target) === 'group-project') return (target.metadata?.groupProjectId as string) ?? target.id;
-    return target.id;
-  };
+  const resolveTargetId = (target: CanvasView) =>
+    target.type === 'agent' ? (target as AgentCanvasViewType).agentId ?? target.id : target.id;
 
   const isBound = (target: CanvasView) => agentBindings.some((b) => b.targetId === resolveTargetId(target));
 

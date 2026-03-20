@@ -11,7 +11,7 @@ import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, numberArg } from './validation';
 
 function broadcastChanged(): void {
   groupProjectRegistry.list().then((projects) => {
@@ -90,7 +90,7 @@ export function registerGroupProjectHandlers(): void {
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, withValidatedArgs(
-    [stringArg(), stringArg()],
+    [stringArg(), stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
     async (_event, id, topic, since, limit) => {
       const board = getBulletinBoard(id as string);
       return board.getTopicMessages(

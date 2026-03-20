@@ -10,6 +10,8 @@ import { appLog } from './log-service';
 
 /** Tracks known memberships: projectId → Set<agentId> */
 const memberships = new Map<string, Set<string>>();
+/** Cached agent names: agentId → human-readable name */
+const agentNames = new Map<string, string>();
 
 let initialized = false;
 let unsubscribe: (() => void) | null = null;
@@ -41,7 +43,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       members.delete(agentId);
       if (members.size === 0) memberships.delete(projectId);
 
-      const agentName = resolveAgentName(agentId);
+      const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
       try {
         const board = getBulletinBoard(projectId);
         await board.postMessage('system', 'system', `${agentName} left the project`);
@@ -65,6 +67,7 @@ async function syncMemberships(agentId: string): Promise<void> {
       members.add(agentId);
 
       const agentName = resolveAgentName(agentId);
+      agentNames.set(agentId, agentName);
       try {
         const board = getBulletinBoard(projectId);
         await board.postMessage('system', 'system', `${agentName} joined the project`);
@@ -91,5 +94,6 @@ export function _resetLifecycleForTesting(): void {
     unsubscribe = null;
   }
   memberships.clear();
+  agentNames.clear();
   initialized = false;
 }

@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canvas-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, bezierPathWithOffsets, viewRect } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
@@ -55,20 +55,11 @@ function resolveBindingViews(
   }
   if (!source) return null;
 
-  // Look up target by view id first, then by agentId for agent-to-agent bindings,
-  // or by metadata.groupProjectId for group-project bindings
+  // Look up target by view id first, then by agentId for agent-to-agent bindings
   let target = viewMap.get(binding.targetId);
   if (!target && binding.targetKind === 'agent') {
     for (const v of viewMap.values()) {
       if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.targetId) {
-        target = v;
-        break;
-      }
-    }
-  }
-  if (!target && binding.targetKind === 'group-project') {
-    for (const v of viewMap.values()) {
-      if (v.type === 'plugin' && v.metadata?.groupProjectId === binding.targetId) {
         target = v;
         break;
       }

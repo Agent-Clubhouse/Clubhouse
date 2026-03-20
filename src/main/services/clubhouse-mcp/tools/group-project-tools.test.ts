@@ -31,7 +31,7 @@ import { _resetForTesting as resetToolRegistry } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { _resetAllBoardsForTesting } from '../../group-project-bulletin';
 import { registerGroupProjectTools } from './group-project-tools';
-import { getScopedToolList, callTool, buildToolName, buildToolKey } from '../tool-registry';
+import { getScopedToolList, callTool, buildToolName } from '../tool-registry';
 import type { McpBinding } from '../types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string }): McpBinding {

@@ -6,7 +6,6 @@
 import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { getBulletinBoard } from '../../group-project-bulletin';
-import { groupProjectRegistry } from '../../group-project-registry';
 import type { McpToolResult } from '../types';
 
 /** Register all group-project tool templates. */

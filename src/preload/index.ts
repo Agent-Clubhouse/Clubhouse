@@ -1087,7 +1087,7 @@ const api = {
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;
-      targetKind: 'browser' | 'agent' | 'terminal';
+      targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
       label: string;
     }>) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, bindings: any) => callback(bindings);
