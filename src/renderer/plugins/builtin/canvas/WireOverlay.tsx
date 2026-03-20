@@ -18,6 +18,14 @@ const WIRE_GLOW_KEYFRAMES = `
 }
 `;
 
+/** Check whether a reverse binding exists (agent→target has a matching target→agent). */
+function isBidirectional(binding: McpBindingEntry, allBindings: McpBindingEntry[]): boolean {
+  if (binding.targetKind !== 'agent') return false;
+  return allBindings.some(
+    (b) => b.agentId === binding.targetId && b.targetId === binding.agentId,
+  );
+}
+
 interface WireOverlayProps {
   views: CanvasView[];
   bindings: McpBindingEntry[];
@@ -44,7 +52,16 @@ function resolveBindingViews(
   }
   if (!source) return null;
 
-  const target = viewMap.get(binding.targetId);
+  // Look up target by view id first, then by agentId for agent-to-agent bindings
+  let target = viewMap.get(binding.targetId);
+  if (!target && binding.targetKind === 'agent') {
+    for (const v of viewMap.values()) {
+      if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.targetId) {
+        target = v;
+        break;
+      }
+    }
+  }
   if (!target) return null;
 
   return { source, target };
@@ -63,13 +80,25 @@ export const WireOverlay = React.memo(function WireOverlay({
   }, [views]);
 
   const wires = useMemo(() => {
+    // Track already-rendered pairs so bidirectional bindings only emit one wire
+    const rendered = new Set<string>();
     const result: Array<{
       key: string;
       path: string;
       binding: McpBindingEntry;
+      bidir: boolean;
     }> = [];
 
     for (const binding of bindings) {
+      const bidir = isBidirectional(binding, bindings);
+
+      // For bidirectional pairs, only render the first direction we encounter
+      if (bidir) {
+        const pairKey = [binding.agentId, binding.targetId].sort().join('--');
+        if (rendered.has(pairKey)) continue;
+        rendered.add(pairKey);
+      }
+
       const resolved = resolveBindingViews(binding, viewMap);
       if (!resolved) continue;
 
@@ -85,6 +114,7 @@ export const WireOverlay = React.memo(function WireOverlay({
         key: `${binding.agentId}--${binding.targetId}`,
         path,
         binding,
+        bidir,
       });
     }
 
@@ -99,8 +129,34 @@ export const WireOverlay = React.memo(function WireOverlay({
       style={{ width: 1, height: 1, zIndex: 0 }}
     >
       <style>{WIRE_GLOW_KEYFRAMES}</style>
-      {wires.map(({ key, path, binding }) => (
-        <g key={key}>
+      <defs>
+        {/* Forward arrowhead (at target end) */}
+        <marker
+          id="wire-arrow-fwd"
+          markerWidth="8"
+          markerHeight="8"
+          refX="7"
+          refY="4"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke="var(--ctp-blue, #89b4fa)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </marker>
+        {/* Reverse arrowhead (at source end, for bidirectional) */}
+        <marker
+          id="wire-arrow-rev"
+          markerWidth="8"
+          markerHeight="8"
+          refX="1"
+          refY="4"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke="var(--ctp-blue, #89b4fa)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </marker>
+      </defs>
+      {wires.map(({ key, path, binding, bidir }) => (
+        <g key={key} data-testid={`wire-group-${key}`} data-bidir={bidir ? 'true' : undefined}>
           {/* Invisible thick hitbox for click interaction */}
           <path
             d={path}
@@ -118,6 +174,8 @@ export const WireOverlay = React.memo(function WireOverlay({
             stroke="var(--ctp-blue, #89b4fa)"
             strokeWidth={2}
             strokeLinecap="round"
+            markerEnd="url(#wire-arrow-fwd)"
+            markerStart={bidir ? 'url(#wire-arrow-rev)' : undefined}
             style={{
               pointerEvents: 'none',
               animation: 'wire-pulse 3s ease-in-out infinite',

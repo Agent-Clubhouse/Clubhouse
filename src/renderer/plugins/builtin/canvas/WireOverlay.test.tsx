@@ -111,4 +111,80 @@ describe('WireOverlay', () => {
       expect.anything(),
     );
   });
+
+  it('renders arrowhead markers in defs', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    expect(container.querySelector('#wire-arrow-fwd')).toBeTruthy();
+    expect(container.querySelector('#wire-arrow-rev')).toBeTruthy();
+  });
+
+  it('applies forward arrowhead to unidirectional wire', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]');
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
+    expect(pathEl?.getAttribute('marker-start')).toBeNull();
+  });
+
+  it('applies both arrowheads for bidirectional agent-to-agent wire', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+      { agentId: 'agent-2', targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    // Bidirectional pair should only render one wire path
+    const paths = container.querySelectorAll('[data-testid^="wire-path-"]');
+    expect(paths.length).toBe(1);
+
+    const pathEl = paths[0];
+    expect(pathEl?.getAttribute('marker-end')).toBe('url(#wire-arrow-fwd)');
+    expect(pathEl?.getAttribute('marker-start')).toBe('url(#wire-arrow-rev)');
+  });
+
+  it('sets data-bidir attribute on bidirectional wire group', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+      { agentId: 'agent-2', targetId: 'agent-1', targetKind: 'agent', label: 'Agent 1' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-bidir')).toBe('true');
+  });
 });
