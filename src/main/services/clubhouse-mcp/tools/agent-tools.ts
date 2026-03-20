@@ -36,8 +36,14 @@ export function registerAgentTools(): void {
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {
+        appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
+          meta: { sourceAgent: agentId, targetAgent: targetId },
+        });
         return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
       }
+      appLog('core:mcp', 'info', 'send_message: target resolved', {
+        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
+      });
 
       try {
         if (reg.runtime === 'pty') {
@@ -69,7 +75,7 @@ export function registerAgentTools(): void {
         properties: {},
       },
     },
-    async (targetId, _agentId, _args): Promise<McpToolResult> => {
+    async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       const running = !!reg;
 
@@ -77,6 +83,10 @@ export function registerAgentTools(): void {
         running,
         runtime: reg?.runtime || null,
       };
+
+      appLog('core:mcp', 'info', 'get_status: resolved', {
+        meta: { sourceAgent: agentId, targetAgent: targetId, running, runtime: reg?.runtime },
+      });
 
       return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
     },
@@ -98,9 +108,12 @@ export function registerAgentTools(): void {
         },
       },
     },
-    async (targetId, _agentId, args): Promise<McpToolResult> => {
+    async (targetId, agentId, args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
+        appLog('core:mcp', 'warn', 'read_output: target agent not found in registry', {
+          meta: { sourceAgent: agentId, targetAgent: targetId },
+        });
         return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
       }
 

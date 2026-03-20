@@ -42,11 +42,17 @@ export function registerMcpBindingHandlers(): void {
   });
 
   ipcMain.handle(IPC.MCP_BINDING.BIND, withValidatedArgs(
-    [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string }>()],
+    [stringArg(), objectArg<{ targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string }>()],
     (_event, agentId, target) => {
-      bindingManager.bind(agentId as string, target as { targetId: string; targetKind: 'browser' | 'agent' | 'terminal'; label: string });
+      bindingManager.bind(agentId as string, target as { targetId: string; targetKind: 'browser' | 'agent' | 'terminal'; label: string; agentName?: string; targetName?: string });
       appLog('core:mcp', 'info', 'Binding created', {
-        meta: { agentId, targetId: target.targetId, targetKind: target.targetKind },
+        meta: {
+          agentId,
+          agentName: target.agentName,
+          targetId: target.targetId,
+          targetName: target.targetName,
+          targetKind: target.targetKind,
+        },
       });
     },
   ));

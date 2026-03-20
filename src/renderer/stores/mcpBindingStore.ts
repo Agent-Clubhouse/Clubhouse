@@ -5,12 +5,16 @@ export interface McpBindingEntry {
   targetId: string;
   targetKind: 'browser' | 'agent' | 'terminal';
   label: string;
+  /** Human-readable name of the source agent (e.g. "scrappy-robin"). */
+  agentName?: string;
+  /** Human-readable name of the target (e.g. "faithful-urchin" for agents). */
+  targetName?: string;
 }
 
 interface McpBindingStoreState {
   bindings: McpBindingEntry[];
   loadBindings: () => Promise<void>;
-  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string }) => Promise<void>;
+  bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string }) => Promise<void>;
   unbind: (agentId: string, targetId: string) => Promise<void>;
   registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
   unregisterWebview: (widgetId: string) => Promise<void>;

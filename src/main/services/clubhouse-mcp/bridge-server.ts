@@ -111,8 +111,8 @@ function handleInitialize(id: number | string | null): JsonRpcResponse {
 /** Handle tools/list request. */
 function handleToolsList(agentId: string, id: number | string | null): JsonRpcResponse {
   const tools = getScopedToolList(agentId);
-  appLog('core:mcp', 'debug', 'Tools list requested', {
-    meta: { agentId, toolCount: tools.length },
+  appLog('core:mcp', 'info', 'Tools list requested', {
+    meta: { agentId, toolCount: tools.length, toolNames: tools.map(t => t.name) },
   });
   return jsonRpcSuccess(id, { tools });
 }
@@ -130,18 +130,25 @@ async function handleToolsCall(
     return jsonRpcError(id, -32602, 'Missing tool name');
   }
 
-  appLog('core:mcp', 'debug', 'Tool call', {
-    meta: { agentId, toolName },
+  appLog('core:mcp', 'info', 'Tool call', {
+    meta: { agentId, toolName, args: Object.keys(args) },
   });
 
   try {
     const result = await callTool(agentId, toolName, args);
-    appLog('core:mcp', 'debug', 'Tool call completed', {
-      meta: { agentId, toolName, isError: result.isError || false },
+    const errorText = result.isError
+      ? result.content?.find(c => c.type === 'text')?.text
+      : undefined;
+    appLog('core:mcp', result.isError ? 'warn' : 'info', `Tool call ${result.isError ? 'returned error' : 'completed'}`, {
+      meta: {
+        agentId,
+        toolName,
+        ...(errorText ? { errorDetail: errorText } : {}),
+      },
     });
     return jsonRpcSuccess(id, result);
   } catch (err) {
-    appLog('core:mcp', 'error', 'Tool call failed', {
+    appLog('core:mcp', 'error', 'Tool call threw exception', {
       meta: { agentId, toolName, error: err instanceof Error ? err.message : String(err) },
     });
     return jsonRpcError(id, -32000, err instanceof Error ? err.message : String(err));

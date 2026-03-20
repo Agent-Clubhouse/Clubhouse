@@ -99,10 +99,19 @@ export function useWiring(
       const hitView = hitTestViews(canvasPos, viewsRef.current);
 
       if (hitView && isValidWireTarget(wireDrag.sourceView, hitView) && wireDrag.sourceView.agentId) {
+        const kind = targetKind(hitView);
+        // For agent targets, use the real agent ID (durable_*/quick_*) not the
+        // canvas view ID (cv_*). Canvas view IDs are ephemeral, tab-scoped, and
+        // not resolvable by the main process agent registry.
+        const resolvedTargetId = kind === 'agent'
+          ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
+          : hitView.id;
         bind(wireDrag.sourceView.agentId, {
-          targetId: hitView.id,
-          targetKind: targetKind(hitView),
+          targetId: resolvedTargetId,
+          targetKind: kind,
           label: hitView.displayName || hitView.title,
+          agentName: wireDrag.sourceView.displayName || wireDrag.sourceView.title,
+          targetName: hitView.displayName || hitView.title,
         });
       }
 

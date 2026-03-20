@@ -13,7 +13,7 @@ class BindingManager {
   private listeners = new Set<BindingChangeListener>();
 
   /** Add a binding for an agent. */
-  bind(agentId: string, target: { targetId: string; targetKind: BindingTargetKind; label: string }): void {
+  bind(agentId: string, target: { targetId: string; targetKind: BindingTargetKind; label: string; agentName?: string; targetName?: string }): void {
     let agentBindings = this.bindings.get(agentId);
     if (!agentBindings) {
       agentBindings = [];

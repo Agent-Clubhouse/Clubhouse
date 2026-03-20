@@ -11,6 +11,10 @@ export interface McpBinding {
   targetId: string;
   targetKind: BindingTargetKind;
   label: string;
+  /** Human-readable name of the source agent (e.g. "scrappy-robin"). */
+  agentName?: string;
+  /** Human-readable name of the target (e.g. "faithful-urchin" for agents). */
+  targetName?: string;
 }
 
 /** MCP JSON-RPC request envelope. */

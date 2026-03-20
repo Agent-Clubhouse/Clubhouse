@@ -5,6 +5,7 @@
 
 import type { McpToolDefinition, McpToolResult, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
+import { appLog } from '../log-service';
 
 /**
  * Tool templates keyed by targetKind.
@@ -84,6 +85,9 @@ export async function callTool(
 ): Promise<McpToolResult> {
   const parsed = parseToolName(toolName);
   if (!parsed) {
+    appLog('core:mcp', 'warn', 'Tool call: failed to parse tool name', {
+      meta: { agentId, toolName },
+    });
     return {
       content: [{ type: 'text', text: `Unknown tool: ${toolName}` }],
       isError: true,
@@ -94,6 +98,13 @@ export async function callTool(
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const binding = bindings.find(b => sanitizeId(b.targetId) === parsed.targetId);
   if (!binding) {
+    appLog('core:mcp', 'warn', 'Tool call: no binding matches target', {
+      meta: {
+        agentId,
+        parsedTarget: parsed.targetId,
+        availableBindings: bindings.map(b => ({ targetId: b.targetId, sanitized: sanitizeId(b.targetId), targetKind: b.targetKind })),
+      },
+    });
     return {
       content: [{ type: 'text', text: `No binding found for target: ${parsed.targetId}` }],
       isError: true,
