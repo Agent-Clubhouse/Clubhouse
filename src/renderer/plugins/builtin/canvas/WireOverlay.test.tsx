@@ -33,6 +33,21 @@ function makePluginView(id: string, x = 300, y = 0): PluginCanvasView {
   };
 }
 
+function makeGroupProjectView(id: string, groupProjectId: string, x = 300, y = 0): PluginCanvasView {
+  return {
+    id,
+    type: 'plugin',
+    pluginWidgetType: 'plugin:group-project:group-project-card',
+    pluginId: 'group-project',
+    position: { x, y },
+    size: { width: 200, height: 200 },
+    title: `Group Project ${id}`,
+    displayName: `Group Project ${id}`,
+    zIndex: 1,
+    metadata: { groupProjectId },
+  };
+}
+
 describe('WireOverlay', () => {
   it('renders nothing when bindings array is empty', () => {
     const { container } = render(
@@ -228,6 +243,60 @@ describe('WireOverlay', () => {
     );
 
     expect(container.querySelector('#wire-path-agent-1--b1')).toBeTruthy();
+  });
+
+  it('renders a wire to a group-project plugin view', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeGroupProjectView('gp-view-1', 'gp_abc123', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'gp_abc123', targetKind: 'group-project', label: 'My Project' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toBeTruthy();
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--gp_abc123"]');
+    expect(pathEl).toBeTruthy();
+    expect(pathEl?.getAttribute('d')).toContain('M');
+    expect(pathEl?.getAttribute('d')).toContain('C');
+  });
+
+  it('renders flow dots for group-project wire', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeGroupProjectView('gp-view-1', 'gp_abc123', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'gp_abc123', targetKind: 'group-project', label: 'My Project' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const fwdDots = container.querySelectorAll('[data-testid^="wire-dot-fwd-"]');
+    expect(fwdDots.length).toBe(2);
+  });
+
+  it('skips group-project binding when no matching view exists', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeGroupProjectView('gp-view-1', 'gp_other', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'gp_nonexistent', targetKind: 'group-project', label: 'Missing' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    expect(container.querySelector('svg')).toBeNull();
   });
 
   it('sets data-bidir attribute on bidirectional wire group', () => {
