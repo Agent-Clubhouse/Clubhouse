@@ -1,13 +1,9 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, FileCanvasView as FileCanvasViewType, GitDiffCanvasView as GitDiffCanvasViewType, TerminalCanvasView as TerminalCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, AnchorCanvasView as AnchorCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Size } from './canvas-types';
 import { InlineRename } from './InlineRename';
 import { MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, ANCHOR_HEIGHT } from './canvas-types';
 import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
-import { FileCanvasView } from './FileCanvasView';
-import { BrowserCanvasView } from './BrowserCanvasView';
-import { GitDiffCanvasView } from './GitDiffCanvasView';
-import { TerminalCanvasView } from './TerminalCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
 import { getRegisteredWidgetType, onRegistryChange } from '../../canvas-widget-registry';
@@ -20,21 +16,12 @@ export function formatViewType(raw: string): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' ');
 }
 
-/** Build a project context label for the title bar, e.g. "(Clubhouse)" or "(Clubhouse::worktree)". */
+/** Build a project context label for the title bar, e.g. "(Clubhouse)". */
 export function buildProjectContext(view: CanvasView, projects: ProjectInfo[]): string | null {
-  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType | FileCanvasViewType | GitDiffCanvasViewType | TerminalCanvasViewType).projectId : undefined;
+  const projectId = ('projectId' in view) ? (view as AgentCanvasViewType).projectId : undefined;
   if (!projectId) return null;
   const project = projects.find((p) => p.id === projectId);
   if (!project) return null;
-
-  const worktreePath = (view.type === 'git-diff' || view.type === 'legacy-git-diff') ? (view as GitDiffCanvasViewType).worktreePath : undefined;
-  if (worktreePath) {
-    // Extract short worktree name from path (last non-empty segment)
-    const segments = worktreePath.replace(/\/+$/, '').split('/');
-    const wtName = segments[segments.length - 1] || worktreePath;
-    return `${project.name}::${wtName}`;
-  }
-
   return project.name;
 }
 
@@ -340,24 +327,13 @@ export function CanvasViewComponent({
     switch (view.type) {
       case 'agent':
         return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} />;
-      case 'file':
-      case 'legacy-file':
-        return <FileCanvasView view={view} api={api} onUpdate={onUpdate} />;
-      case 'browser':
-        return <BrowserCanvasView view={view} onUpdate={onUpdate} />;
-      case 'git-diff':
-      case 'legacy-git-diff':
-        return <GitDiffCanvasView view={view} api={api} onUpdate={onUpdate} />;
-      case 'terminal':
-      case 'legacy-terminal':
-        return <TerminalCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
         if (!registered) {
           return (
             <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
-              Widget type "{pluginView.pluginWidgetType}" is not available.
+              Widget type &quot;{pluginView.pluginWidgetType}&quot; is not available.
               The providing plugin may be disabled or uninstalled.
             </div>
           );

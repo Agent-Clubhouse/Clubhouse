@@ -4,10 +4,6 @@ import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
-import { FileCanvasView } from './FileCanvasView';
-import { TerminalCanvasView } from './TerminalCanvasView';
-import { BrowserCanvasView } from './BrowserCanvasView';
-import { GitDiffCanvasView } from './GitDiffCanvasView';
 import { CanvasControls } from './CanvasControls';
 import { CanvasContextMenu, type ContextMenuSelection } from './CanvasContextMenu';
 import { CanvasAttentionIndicators } from './CanvasAttentionIndicators';
@@ -18,8 +14,9 @@ import { WireConfigPopover } from './WireConfigPopover';
 import { useWiring } from './useWiring';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
-import type { AgentCanvasView as AgentCanvasViewType } from './canvas-types';
-import type { PluginAPI } from '../../../../shared/plugin-types';
+import type { AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
+import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
+import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
@@ -624,10 +621,21 @@ export function CanvasWorkspace({
             </div>
             <div className="flex-1 min-h-0 overflow-auto" onWheel={(e) => e.stopPropagation()}>
               {zoomedView.type === 'agent' && <AgentCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {(zoomedView.type === 'file' || zoomedView.type === 'legacy-file') && <FileCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {zoomedView.type === 'browser' && <BrowserCanvasView view={zoomedView as any} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {(zoomedView.type === 'git-diff' || zoomedView.type === 'legacy-git-diff') && <GitDiffCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
-              {(zoomedView.type === 'terminal' || zoomedView.type === 'legacy-terminal') && <TerminalCanvasView view={zoomedView as any} api={api} onUpdate={(u: Partial<CanvasView>) => onUpdateView(zoomedView.id, u)} />}
+              {zoomedView.type === 'plugin' && (() => {
+                const pluginView = zoomedView as PluginCanvasViewType;
+                const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
+                if (!registered) return null;
+                const Component = registered.descriptor.component;
+                return (
+                  <Component
+                    widgetId={zoomedView.id}
+                    api={api}
+                    metadata={zoomedView.metadata}
+                    onUpdateMetadata={(updates: CanvasWidgetMetadata) => onUpdateView(zoomedView.id, { metadata: { ...zoomedView.metadata, ...updates } })}
+                    size={zoomedView.size}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>

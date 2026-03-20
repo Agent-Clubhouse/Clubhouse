@@ -156,26 +156,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const savedInstances = await storage.read(STORAGE_KEY_INSTANCES) as CanvasInstanceData[] | null;
         if (savedInstances && Array.isArray(savedInstances) && savedInstances.length > 0) {
           const canvases: CanvasInstance[] = savedInstances.map((s): CanvasInstance => {
-            // Migrate views from pre-metadata format: backfill displayName and metadata.
-            // Also migrate 'file'→'legacy-file' and 'terminal'→'legacy-terminal' for
-            // views saved before the v0.8 plugin widget migration.
-            const migratedViews = s.views.map((v: any) => {
-              let type = v.type;
-              if (type === 'file') type = 'legacy-file';
-              if (type === 'terminal') type = 'legacy-terminal';
-              if (type === 'git-diff') type = 'legacy-git-diff';
-              return {
+            // Backfill displayName and metadata for views saved in older formats.
+            // Filter out legacy view types that no longer exist (browser, file,
+            // legacy-file, terminal, legacy-terminal, git-diff, legacy-git-diff) —
+            // these have been replaced by plugin-provided widgets.
+            const REMOVED_TYPES = new Set(['browser', 'file', 'legacy-file', 'terminal', 'legacy-terminal', 'git-diff', 'legacy-git-diff']);
+            const restoredViews = s.views
+              .filter((v: any) => !REMOVED_TYPES.has(v.type))
+              .map((v: any) => ({
                 ...v,
-                type,
                 metadata: v.metadata ?? {},
                 displayName: v.displayName ?? v.title ?? v.type ?? '',
-              };
-            }) as CanvasView[];
-            syncCounterToViews(migratedViews, viewCounter);
+              })) as CanvasView[];
+            syncCounterToViews(restoredViews, viewCounter);
             return {
               id: s.id,
               name: s.name,
-              views: migratedViews,
+              views: restoredViews,
               viewport: clampViewport(s.viewport),
               nextZIndex: s.nextZIndex,
               zoomedViewId: s.zoomedViewId ?? null,

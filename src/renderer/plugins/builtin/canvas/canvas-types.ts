@@ -3,12 +3,10 @@ import type { CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 
 /**
  * Built-in canvas view types. Plugin widget types use the 'plugin' discriminant.
- * 'legacy-file' and 'legacy-terminal' are deprecated aliases for 'file' and 'terminal' —
- * new canvas views should use plugin-provided widgets (plugin:files:file-viewer,
- * plugin:terminal:shell) instead. Legacy types remain for backward compatibility
- * with saved canvases.
+ * Browser, file, terminal, and git views are provided by their respective plugins
+ * via the widget API (type: 'plugin').
  */
-export type CanvasViewType = 'agent' | 'file' | 'legacy-file' | 'browser' | 'git-diff' | 'legacy-git-diff' | 'terminal' | 'legacy-terminal' | 'anchor' | 'plugin';
+export type CanvasViewType = 'agent' | 'anchor' | 'plugin';
 
 export interface Position {
   x: number;
@@ -47,35 +45,6 @@ export interface AgentCanvasView extends CanvasViewBase {
   projectId?: string;
 }
 
-export interface FileCanvasView extends CanvasViewBase {
-  type: 'file' | 'legacy-file';
-  projectId?: string;
-  filePath?: string;
-}
-
-export interface BrowserCanvasView extends CanvasViewBase {
-  type: 'browser';
-  url: string;
-}
-
-export interface GitDiffCanvasView extends CanvasViewBase {
-  type: 'git-diff' | 'legacy-git-diff';
-  /** Project ID whose repo to diff. */
-  projectId?: string;
-  /** Worktree directory path (when diffing an agent worktree instead of the main repo). */
-  worktreePath?: string;
-  /** Relative file path currently being diffed. */
-  filePath?: string;
-}
-
-export interface TerminalCanvasView extends CanvasViewBase {
-  type: 'terminal' | 'legacy-terminal';
-  /** Project ID to open the terminal in. */
-  projectId?: string;
-  /** Working directory path (project root or a worktree path). */
-  cwd?: string;
-}
-
 export interface AnchorCanvasView extends CanvasViewBase {
   type: 'anchor';
   /** User-defined anchor label — stored in displayName for search/navigation. */
@@ -92,7 +61,7 @@ export interface PluginCanvasView extends CanvasViewBase {
   pluginId: string;
 }
 
-export type CanvasView = AgentCanvasView | FileCanvasView | BrowserCanvasView | GitDiffCanvasView | TerminalCanvasView | AnchorCanvasView | PluginCanvasView;
+export type CanvasView = AgentCanvasView | AnchorCanvasView | PluginCanvasView;
 
 // ── Canvas instance (one per tab) ────────────────────────────────────
 
