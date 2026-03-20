@@ -4,8 +4,6 @@ import { generateHubName } from '../../../../shared/name-generator';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import {
-  createViewCounter,
-  syncCounterToViews,
   createView as createViewOp,
   createPluginView as createPluginViewOp,
   removeView as removeViewOp,
@@ -16,11 +14,7 @@ import {
   clampViewport,
   clampPosition,
   queryViews as queryViewsOp,
-  createCanvasCounter,
   generateCanvasId,
-  syncCounterToInstances,
-  type ViewCounter,
-  type CanvasCounter,
 } from './canvas-operations';
 
 // ── Store state ──────────────────────────────────────────────────────
@@ -90,9 +84,9 @@ const STORAGE_KEY_ACTIVE = 'canvas-active-id';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-function createCanvasInstance(canvasCounter: CanvasCounter, _viewCounter: ViewCounter): CanvasInstance {
+function createCanvasInstance(): CanvasInstance {
   return {
-    id: generateCanvasId(canvasCounter),
+    id: generateCanvasId(),
     name: generateHubName(),
     views: [],
     viewport: { panX: 0, panY: 0, zoom: 1 },
@@ -130,9 +124,7 @@ function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): P
 // ── Store factory ────────────────────────────────────────────────────
 
 export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
-  const viewCounter = createViewCounter();
-  const canvasCounter = createCanvasCounter();
-  const initialCanvas = createCanvasInstance(canvasCounter, viewCounter);
+  const initialCanvas = createCanvasInstance();
 
   return create<CanvasState>((set, get) => ({
     canvases: [initialCanvas],
@@ -168,7 +160,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
                 metadata: v.metadata ?? {},
                 displayName: v.displayName ?? v.title ?? v.type ?? '',
               })) as CanvasView[];
-            syncCounterToViews(restoredViews, viewCounter);
             return {
               id: s.id,
               name: s.name,
@@ -179,8 +170,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               selectedViewId: null,
             };
           });
-          syncCounterToInstances(canvases, canvasCounter);
-
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
           const activeCanvasId = (savedActive && canvases.find((c) => c.id === savedActive))
             ? savedActive
@@ -191,10 +180,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         }
 
         // Fresh start
-        const canvas = createCanvasInstance(canvasCounter, viewCounter);
+        const canvas = createCanvasInstance();
         set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
       } catch {
-        const canvas = createCanvasInstance(canvasCounter, viewCounter);
+        const canvas = createCanvasInstance();
         set({ canvases: [canvas], activeCanvasId: canvas.id, loaded: true, ...syncDerivedState([canvas], canvas.id) });
       }
     },
@@ -215,7 +204,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     // ── Canvas tab management ────────────────────────────────────
 
     addCanvas: () => {
-      const canvas = createCanvasInstance(canvasCounter, viewCounter);
+      const canvas = createCanvasInstance();
       const canvases = [...get().canvases, canvas];
       set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
       return canvas.id;
@@ -224,7 +213,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     removeCanvas: (canvasId) => {
       const { canvases, activeCanvasId } = get();
       if (canvases.length <= 1) {
-        const fresh = createCanvasInstance(canvasCounter, viewCounter);
+        const fresh = createCanvasInstance();
         set({ canvases: [fresh], activeCanvasId: fresh.id, ...syncDerivedState([fresh], fresh.id) });
         return;
       }
@@ -251,7 +240,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       let newViewId = '';
       set(updateActiveCanvas(get(), (canvas) => {
         const existingNames = canvas.views.map((v) => v.displayName);
-        const view = createViewOp(type, position, canvas.nextZIndex, viewCounter, existingNames);
+        const view = createViewOp(type, position, canvas.nextZIndex, existingNames);
         newViewId = view.id;
         return {
           views: [...canvas.views, view],
@@ -267,7 +256,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const existingNames = canvas.views.map((v) => v.displayName);
         const view = createPluginViewOp(
           pluginId, pluginWidgetType, label, position,
-          canvas.nextZIndex, viewCounter, existingNames, metadata ?? {}, defaultSize,
+          canvas.nextZIndex, existingNames, metadata ?? {}, defaultSize,
         );
         newViewId = view.id;
         return {
