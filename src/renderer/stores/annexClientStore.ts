@@ -68,6 +68,12 @@ interface AnnexClientStoreState {
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
   sendAgentWake: (satelliteId: string, agentId: string, options?: { resume?: boolean; mission?: string }) => Promise<void>;
   requestPtyBuffer: (satelliteId: string, agentId: string) => Promise<string>;
+  sendAgentCreateDurable: (satelliteId: string, projectId: string, params: {
+    name: string; color: string; model?: string; useWorktree?: boolean;
+    orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
+  }) => Promise<unknown>;
+  sendAgentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string) => Promise<unknown>;
+  requestWorktreeStatus: (satelliteId: string, projectId: string, agentId: string) => Promise<unknown>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
@@ -179,6 +185,18 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
     } catch {
       return '';
     }
+  },
+
+  sendAgentCreateDurable: async (satelliteId, projectId, params) => {
+    return window.clubhouse.annexClient.agentCreateDurable(satelliteId, projectId, params);
+  },
+
+  sendAgentDeleteDurable: async (satelliteId, projectId, agentId, mode) => {
+    return window.clubhouse.annexClient.agentDeleteDurable(satelliteId, projectId, agentId, mode);
+  },
+
+  requestWorktreeStatus: async (satelliteId, projectId, agentId) => {
+    return window.clubhouse.annexClient.agentWorktreeStatus(satelliteId, projectId, agentId);
   },
 }));
 

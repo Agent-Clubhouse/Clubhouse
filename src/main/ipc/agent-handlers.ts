@@ -12,6 +12,7 @@ import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
+import { broadcastSnapshotRefresh } from '../services/annex-server';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
@@ -29,7 +30,9 @@ export function registerAgentHandlers(): void {
     withValidatedArgs(
       [stringArg(), stringArg(), stringArg(), stringArg({ optional: true }), booleanArg({ optional: true }), stringArg({ optional: true }), booleanArg({ optional: true }), arrayArg(stringArg(), { optional: true })],
       async (_event, projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds) => {
-        return agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds);
+        const config = await agentConfig.createDurable(projectPath, name, color, model, useWorktree, orchestrator, freeAgentMode, mcpIds);
+        broadcastSnapshotRefresh();
+        return config;
       },
     ),
   );
@@ -37,7 +40,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_DURABLE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.deleteDurable(projectPath, agentId);
+      const result = await agentConfig.deleteDurable(projectPath, agentId);
+      broadcastSnapshotRefresh();
+      return result;
     },
   ));
 
@@ -131,14 +136,18 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.DELETE_COMMIT_PUSH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.deleteCommitAndPush(projectPath, agentId);
+      const result = await agentConfig.deleteCommitAndPush(projectPath, agentId);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
     },
   ));
 
   ipcMain.handle(IPC.AGENT.DELETE_CLEANUP_BRANCH, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.deleteWithCleanupBranch(projectPath, agentId);
+      const result = await agentConfig.deleteWithCleanupBranch(projectPath, agentId);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
     },
   ));
 
@@ -157,21 +166,27 @@ export function registerAgentHandlers(): void {
         return { ok: false, message: 'cancelled' };
       }
 
-      return agentConfig.deleteSaveAsPatch(projectPath, agentId, result.filePath);
+      const deleteResult = await agentConfig.deleteSaveAsPatch(projectPath, agentId, result.filePath);
+      if (deleteResult.ok) broadcastSnapshotRefresh();
+      return deleteResult;
     },
   ));
 
   ipcMain.handle(IPC.AGENT.DELETE_FORCE, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.deleteForce(projectPath, agentId);
+      const result = await agentConfig.deleteForce(projectPath, agentId);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
     },
   ));
 
   ipcMain.handle(IPC.AGENT.DELETE_UNREGISTER, withValidatedArgs(
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
-      return agentConfig.deleteUnregister(projectPath, agentId);
+      const result = await agentConfig.deleteUnregister(projectPath, agentId);
+      if (result.ok) broadcastSnapshotRefresh();
+      return result;
     },
   ));
 

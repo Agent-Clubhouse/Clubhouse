@@ -108,6 +108,9 @@ interface RemoteProjectStoreState {
   /** Upsert a remote agent (add if new, update run state if exists). */
   upsertRemoteAgent: (satelliteId: string, agent: Partial<Agent> & { id: string }) => void;
 
+  /** Remove a remote agent by satellite ID and original agent ID. */
+  removeRemoteAgent: (satelliteId: string, agentId: string) => void;
+
   /** Get all remote projects (flattened). */
   getAllRemoteProjects: () => RemoteProject[];
 }
@@ -384,6 +387,20 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...state.remoteAgents,
           [nsId]: newAgent,
         },
+      };
+    });
+  },
+
+  removeRemoteAgent: (satelliteId, agentId) => {
+    const nsId = namespacedAgentId(satelliteId, agentId);
+    set((state) => {
+      const newAgents = { ...state.remoteAgents };
+      delete newAgents[nsId];
+      const newStatuses = { ...state.remoteAgentDetailedStatus };
+      delete newStatuses[nsId];
+      return {
+        remoteAgents: newAgents,
+        remoteAgentDetailedStatus: newStatuses,
       };
     });
   },

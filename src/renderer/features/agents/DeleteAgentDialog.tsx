@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAgentStore, DeleteMode } from '../../stores/agentStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useRemoteProjectStore, isRemoteAgentId, parseNamespacedId, isRemoteProjectId } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import { WorktreeStatus } from '../../../shared/types';
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -55,27 +57,45 @@ const DIRTY_OPTIONS: OptionCard[] = [
 
 export function DeleteAgentDialog() {
   const { deleteDialogAgent, closeDeleteDialog, executeDelete, agents } = useAgentStore();
+  const remoteAgents = useRemoteProjectStore((s) => s.remoteAgents);
   const { projects, activeProjectId } = useProjectStore();
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const sendAgentDeleteDurable = useAnnexClientStore((s) => s.sendAgentDeleteDurable);
+  const requestWorktreeStatus = useAnnexClientStore((s) => s.requestWorktreeStatus);
+
+  const isRemote = deleteDialogAgent ? isRemoteAgentId(deleteDialogAgent) : false;
+  const remoteParts = deleteDialogAgent && isRemote ? parseNamespacedId(deleteDialogAgent) : null;
+  const remoteProjectParts = activeProjectId && isRemoteProjectId(activeProjectId) ? parseNamespacedId(activeProjectId) : null;
 
   const [status, setStatus] = useState<WorktreeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [executing, setExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const agent = deleteDialogAgent ? agents[deleteDialogAgent] : null;
+  const agent = deleteDialogAgent
+    ? (isRemote ? remoteAgents[deleteDialogAgent] : agents[deleteDialogAgent])
+    : null;
 
   const fetchStatus = useCallback(async () => {
-    if (!deleteDialogAgent || !activeProject) return;
+    if (!deleteDialogAgent) return;
     setLoading(true);
     try {
-      const s = await window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent);
-      setStatus(s);
+      if (isRemote && remoteParts && remoteProjectParts) {
+        const s = await requestWorktreeStatus(
+          remoteParts.satelliteId,
+          remoteProjectParts.agentId, // original project ID
+          remoteParts.agentId,         // original agent ID
+        );
+        setStatus(s as WorktreeStatus);
+      } else if (activeProject) {
+        const s = await window.clubhouse.agent.getWorktreeStatus(activeProject.path, deleteDialogAgent);
+        setStatus(s);
+      }
     } catch {
       setStatus(null);
     }
     setLoading(false);
-  }, [deleteDialogAgent, activeProject]);
+  }, [deleteDialogAgent, activeProject, isRemote, remoteParts, remoteProjectParts, requestWorktreeStatus]);
 
   useEffect(() => {
     fetchStatus();
@@ -89,15 +109,31 @@ export function DeleteAgentDialog() {
     return () => window.removeEventListener('keydown', handleKey);
   }, [closeDeleteDialog]);
 
-  if (!agent || !activeProject) return null;
+  if (!agent || (!activeProject && !isRemote)) return null;
 
   const handleExecute = async (mode: DeleteMode) => {
     setExecuting(true);
     setError(null);
     try {
-      const result = await executeDelete(mode, activeProject.path);
-      if (!result.ok && result.message !== 'cancelled') {
-        setError(result.message);
+      if (isRemote && remoteParts && remoteProjectParts) {
+        const result = await sendAgentDeleteDurable(
+          remoteParts.satelliteId,
+          remoteProjectParts.agentId, // original project ID
+          remoteParts.agentId,         // original agent ID
+          mode,
+        ) as { ok: boolean; message: string };
+        if (result.ok) {
+          // Remove from local remote agents store and close dialog
+          useRemoteProjectStore.getState().removeRemoteAgent(remoteParts.satelliteId, remoteParts.agentId);
+          closeDeleteDialog();
+        } else if (result.message !== 'cancelled') {
+          setError(result.message);
+        }
+      } else if (activeProject) {
+        const result = await executeDelete(mode, activeProject.path);
+        if (!result.ok && result.message !== 'cancelled') {
+          setError(result.message);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -266,9 +302,9 @@ export function DeleteAgentDialog() {
                 </div>
               )}
 
-              {/* Option cards */}
+              {/* Option cards — save-patch requires local file dialog, unavailable for remote */}
               <div className="space-y-1.5">
-                {DIRTY_OPTIONS.map((opt) => (
+                {DIRTY_OPTIONS.filter((opt) => !isRemote || opt.mode !== 'save-patch').map((opt) => (
                   <button
                     key={opt.mode}
                     onClick={() => handleExecute(opt.mode)}

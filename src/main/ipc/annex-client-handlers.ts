@@ -195,4 +195,31 @@ export function registerAnnexClientHandlers(): void {
       return annexClient.requestSessionSummary(satelliteId, agentId, sessionId, projectId, orchestrator);
     },
   ));
+
+  // Proxy IPC: create a durable agent on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_CREATE_DURABLE, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg()],
+    async (_event, satelliteId, projectId, params) => {
+      return annexClient.requestCreateDurable(satelliteId, projectId, params as {
+        name: string; color: string; model?: string; useWorktree?: boolean;
+        orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
+      });
+    },
+  ));
+
+  // Proxy IPC: delete a durable agent on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, projectId, agentId, mode) => {
+      return annexClient.requestDeleteDurable(satelliteId, projectId, agentId, mode);
+    },
+  ));
+
+  // Proxy IPC: get worktree status for a remote agent
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, satelliteId, projectId, agentId) => {
+      return annexClient.requestWorktreeStatus(satelliteId, projectId, agentId);
+    },
+  ));
 }

@@ -319,6 +319,9 @@ export const IPC = {
     SESSION_LIST: 'annex-client:session-list',
     SESSION_TRANSCRIPT: 'annex-client:session-transcript',
     SESSION_SUMMARY: 'annex-client:session-summary',
+    AGENT_CREATE_DURABLE: 'annex-client:agent-create-durable',
+    AGENT_DELETE_DURABLE: 'annex-client:agent-delete-durable',
+    AGENT_WORKTREE_STATUS: 'annex-client:agent-worktree-status',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

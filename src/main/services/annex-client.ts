@@ -1005,6 +1005,46 @@ export async function requestSessionSummary(
     `/api/v1/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}/summary?${qs.toString()}`);
 }
 
+// ---------------------------------------------------------------------------
+// Durable agent remote proxy (REST)
+// ---------------------------------------------------------------------------
+
+export async function requestCreateDurable(
+  fingerprint: string,
+  projectId: string,
+  params: {
+    name: string;
+    color: string;
+    model?: string;
+    useWorktree?: boolean;
+    orchestrator?: string;
+    freeAgentMode?: boolean;
+    mcpIds?: string[];
+  },
+): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'POST',
+    `/api/v1/projects/${encodeURIComponent(projectId)}/agents/durable`, params);
+}
+
+export async function requestDeleteDurable(
+  fingerprint: string,
+  projectId: string,
+  agentId: string,
+  mode: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'POST',
+    `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/delete`, { mode });
+}
+
+export async function requestWorktreeStatus(
+  fingerprint: string,
+  projectId: string,
+  agentId: string,
+): Promise<unknown> {
+  return satelliteHttpsRequest(fingerprint, 'GET',
+    `/api/v1/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/worktree-status`);
+}
+
 /**
  * Pair with a discovered (unpaired) service by fingerprint and PIN.
  * On success, adds the peer, removes it from discovered, creates a satellite,

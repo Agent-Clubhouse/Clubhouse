@@ -1350,6 +1350,106 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // POST /api/v1/projects/:id/agents/durable — create a durable agent
+  const durableCreateMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/);
+  if (method === 'POST' && durableCreateMatch) {
+    const projectId = decodeURIComponent(durableCreateMatch[1]);
+    const project = await findProjectById(projectId);
+    if (!project) {
+      sendJson(res, 404, { error: 'project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const name = body.name as string;
+      const color = body.color as string;
+      if (!name || !color) {
+        sendJson(res, 400, { error: 'name and color are required' });
+        return;
+      }
+      try {
+        const config = await agentConfig.createDurable(
+          project.path,
+          name,
+          color,
+          body.model as string | undefined,
+          body.useWorktree !== false,
+          body.orchestrator as string | undefined,
+          body.freeAgentMode as boolean | undefined,
+          body.mcpIds as string[] | undefined,
+        );
+        // Broadcast snapshot refresh so controllers see the new agent
+        broadcastSnapshotRefresh();
+        sendJson(res, 201, config);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'create_failed' });
+      }
+    });
+    return;
+  }
+
+  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent
+  const durableDeleteMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/);
+  if (method === 'POST' && durableDeleteMatch) {
+    const projectId = decodeURIComponent(durableDeleteMatch[1]);
+    const agentId = decodeURIComponent(durableDeleteMatch[2]);
+    const project = await findProjectById(projectId);
+    if (!project) {
+      sendJson(res, 404, { error: 'project_not_found' });
+      return;
+    }
+    readJsonBody(req, res, async (body) => {
+      const mode = (body.mode as string) || 'force';
+      // Kill the agent if it's running
+      if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+        ptyManager.gracefulKill(agentId);
+      }
+      try {
+        let result: { ok: boolean; message: string };
+        switch (mode) {
+          case 'commit-push':
+            result = await agentConfig.deleteCommitAndPush(project.path, agentId);
+            break;
+          case 'cleanup-branch':
+            result = await agentConfig.deleteWithCleanupBranch(project.path, agentId);
+            break;
+          case 'force':
+            result = await agentConfig.deleteForce(project.path, agentId);
+            break;
+          case 'unregister':
+            result = await agentConfig.deleteUnregister(project.path, agentId);
+            break;
+          default:
+            result = await agentConfig.deleteForce(project.path, agentId);
+        }
+        // Broadcast snapshot refresh so controllers see the removal
+        broadcastSnapshotRefresh();
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : 'delete_failed' });
+      }
+    });
+    return;
+  }
+
+  // GET /api/v1/projects/:id/agents/:agentId/worktree-status
+  const worktreeStatusMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/worktree-status$/);
+  if (method === 'GET' && worktreeStatusMatch) {
+    const projectId = decodeURIComponent(worktreeStatusMatch[1]);
+    const agentId = decodeURIComponent(worktreeStatusMatch[2]);
+    const project = await findProjectById(projectId);
+    if (!project) {
+      sendJson(res, 404, { error: 'project_not_found' });
+      return;
+    }
+    try {
+      const status = await agentConfig.getWorktreeStatus(project.path, agentId);
+      sendJson(res, 200, status);
+    } catch (err) {
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'status_failed' });
+    }
+    return;
+  }
+
   sendJson(res, 404, { error: 'not_found' });
 }
 
@@ -1923,6 +2023,21 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
     pairingPort,
     tlsEnabled: !!tlsServer,
   };
+}
+
+/**
+ * Broadcast a fresh snapshot to all connected WS clients.
+ * Call after durable agent config changes (create, delete, rename) so
+ * controllers see the update without needing to reconnect.
+ */
+export function broadcastSnapshotRefresh(): void {
+  buildSnapshot().then((snapshot) => {
+    broadcastWs({ type: 'snapshot', payload: snapshot });
+  }).catch((err) => {
+    appLog('core:annex', 'warn', 'broadcastSnapshotRefresh failed', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 }
 
 /** Broadcast theme change to all connected WS clients. */

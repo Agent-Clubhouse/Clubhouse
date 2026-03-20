@@ -10,7 +10,8 @@ import { QuickAgentGhostCompact } from './QuickAgentGhost';
 import { useModelOptions } from '../../hooks/useModelOptions';
 import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useEffectiveOrchestrators } from '../../hooks/useEffectiveOrchestrators';
-import { useRemoteProjectStore, isRemoteProjectId } from '../../stores/remoteProjectStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../../stores/annexClientStore';
 import type { Agent, CompletedQuickAgent } from '../../../shared/types';
 
 const EMPTY_COMPLETED: CompletedQuickAgent[] = [];
@@ -278,10 +279,34 @@ export function AgentList() {
   const registerCreatingAgent = useAgentStore((s) => s.registerCreatingAgent);
   const removeAgent = useAgentStore((s) => s.removeAgent);
 
+  const sendAgentCreateDurable = useAnnexClientStore((s) => s.sendAgentCreateDurable);
+
   const handleCreateDurable = async (name: string, color: string, model: string, useWorktree: boolean, orchestrator?: string, freeAgentMode?: boolean, mcpIds?: string[]) => {
     if (!activeProject) return;
     setShowDialog(false);
 
+    if (isRemote && activeProjectId) {
+      // Remote project — proxy create to satellite via REST
+      const remoteParts = parseNamespacedId(activeProjectId);
+      if (!remoteParts) return;
+      try {
+        await sendAgentCreateDurable(remoteParts.satelliteId, remoteParts.agentId, {
+          name,
+          color,
+          model: model !== 'default' ? model : undefined,
+          useWorktree,
+          orchestrator,
+          freeAgentMode,
+          mcpIds,
+        });
+        // Snapshot refresh is broadcast by the satellite — controller will update automatically
+      } catch (err) {
+        console.error('Failed to create remote durable agent:', err);
+      }
+      return;
+    }
+
+    // Local project — create locally
     // Show agent in 'creating' state immediately while worktree is set up
     const tempId = useWorktree
       ? registerCreatingAgent(activeProject.id, name, color, orchestrator, freeAgentMode)

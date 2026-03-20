@@ -851,6 +851,15 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.SESSION_TRANSCRIPT, satelliteId, agentId, sessionId, projectId, offset, limit, orchestrator),
     sessionSummary: (satelliteId: string, agentId: string, sessionId: string, projectId: string, orchestrator?: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.SESSION_SUMMARY, satelliteId, agentId, sessionId, projectId, orchestrator),
+    agentCreateDurable: (satelliteId: string, projectId: string, params: {
+      name: string; color: string; model?: string; useWorktree?: boolean;
+      orchestrator?: string; freeAgentMode?: boolean; mcpIds?: string[];
+    }): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_CREATE_DURABLE, satelliteId, projectId, params),
+    agentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode),
+    agentWorktreeStatus: (satelliteId: string, projectId: string, agentId: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
