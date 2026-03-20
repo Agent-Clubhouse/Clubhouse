@@ -97,8 +97,8 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
           <button
             className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded transition-colors ${
               bidirectional
-                ? 'text-ctp-blue bg-ctp-blue/10 hover:bg-ctp-blue/20'
-                : 'text-ctp-text hover:bg-surface-1'
+                ? 'text-ctp-blue bg-ctp-blue/20 ring-1 ring-ctp-blue/40'
+                : 'text-ctp-overlay1 hover:bg-surface-1'
             }`}
             onClick={handleBidirectionalToggle}
             data-testid="wire-bidirectional-toggle"
@@ -108,7 +108,20 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
               <polyline points="17 7 22 12 17 17" />
               <line x1="2" y1="12" x2="22" y2="12" />
             </svg>
-            Bidirectional
+            <span className="flex-1 text-left">Bidirectional</span>
+            {/* Toggle pill indicator */}
+            <span
+              className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors ${
+                bidirectional ? 'bg-ctp-blue' : 'bg-ctp-surface2'
+              }`}
+              data-testid="wire-bidirectional-pill"
+            >
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full bg-white shadow-sm transform transition-transform mt-[2px] ${
+                  bidirectional ? 'translate-x-[13px]' : 'translate-x-[1px]'
+                }`}
+              />
+            </span>
           </button>
         )}
 

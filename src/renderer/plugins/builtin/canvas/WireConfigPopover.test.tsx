@@ -58,4 +58,47 @@ describe('WireConfigPopover', () => {
     );
     expect(getByTestId('wire-bidirectional-toggle')).toBeTruthy();
   });
+
+  it('renders toggle pill with inactive styling when not bidirectional', () => {
+    useMcpBindingStore.setState({ bindings: [agentBinding] });
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+    const pill = getByTestId('wire-bidirectional-pill');
+    expect(pill).toBeTruthy();
+    expect(pill.className).toContain('bg-ctp-surface2');
+    expect(pill.className).not.toContain('bg-ctp-blue');
+  });
+
+  it('renders toggle pill with active styling when bidirectional', () => {
+    const reverseBinding: McpBindingEntry = {
+      agentId: 'agent-2',
+      targetId: 'agent-1',
+      targetKind: 'agent',
+      label: 'Agent 1',
+    };
+    useMcpBindingStore.setState({ bindings: [agentBinding, reverseBinding] });
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+    const pill = getByTestId('wire-bidirectional-pill');
+    expect(pill).toBeTruthy();
+    expect(pill.className).toContain('bg-ctp-blue');
+  });
+
+  it('shows ring highlight on toggle button when bidirectional', () => {
+    const reverseBinding: McpBindingEntry = {
+      agentId: 'agent-2',
+      targetId: 'agent-1',
+      targetKind: 'agent',
+      label: 'Agent 1',
+    };
+    useMcpBindingStore.setState({ bindings: [agentBinding, reverseBinding] });
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+    const toggle = getByTestId('wire-bidirectional-toggle');
+    expect(toggle.className).toContain('ring-1');
+    expect(toggle.className).toContain('ring-ctp-blue/40');
+  });
 });
