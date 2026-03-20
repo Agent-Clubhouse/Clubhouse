@@ -9,6 +9,7 @@ import type {
   ProjectInfo,
 } from '../../shared/plugin-types';
 import { useProjectStore } from '../stores/projectStore';
+import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
 export function createProjectAPI(ctx: PluginContext): ProjectAPI {
   const { projectPath, projectId } = ctx;
@@ -71,9 +72,46 @@ export function createProjectsAPI(): ProjectsAPI {
 }
 
 export function createGitAPI(ctx: PluginContext): GitAPI {
-  const { projectPath } = ctx;
+  const { projectPath, projectId } = ctx;
   if (!projectPath) {
     throw new Error('GitAPI requires projectPath');
+  }
+
+  // Remote project: proxy git operations through annex client
+  if (projectId && isRemoteProjectId(projectId)) {
+    const parsed = parseNamespacedId(projectId);
+    if (!parsed) throw new Error('Invalid remote project ID');
+    const { satelliteId, agentId: origProjectId } = parsed;
+    const gitOp = (operation: string, extra?: Record<string, unknown>) =>
+      window.clubhouse.annexClient.gitOperation(satelliteId, origProjectId, { operation, ...extra });
+
+    return {
+      async status(): Promise<GitStatus[]> {
+        const info = await gitOp('info') as any;
+        return (info.status || []).map((s: { path: string; status: string; staged: boolean }) => ({
+          path: s.path,
+          status: s.status,
+          staged: s.staged,
+        }));
+      },
+      async log(limit = 20): Promise<GitCommit[]> {
+        const info = await gitOp('info') as any;
+        return (info.log || []).slice(0, limit).map((e: { hash: string; shortHash: string; subject: string; author: string; date: string }) => ({
+          hash: e.hash,
+          shortHash: e.shortHash,
+          subject: e.subject,
+          author: e.author,
+          date: e.date,
+        }));
+      },
+      async currentBranch(): Promise<string> {
+        const info = await gitOp('info') as any;
+        return info.branch;
+      },
+      async diff(filePath: string, staged = false): Promise<string> {
+        return gitOp('diff', { file: filePath, staged }) as Promise<string>;
+      },
+    };
   }
 
   return {

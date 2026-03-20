@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo, useSyncExternalStore } from 'react';
 import type { PluginContext, PluginAPI, PluginModule } from '../../../../shared/plugin-types';
 import type { GitInfo, GitLogEntry, GitStatusFile } from '../../../../shared/types';
 import { gitState } from './state';
 import { GitCanvasWidget } from './GitCanvasWidget';
+import { createGitOps } from './remote-git';
 
 const GIT_POLL_INTERVAL_MS = 3000;
 
@@ -81,21 +82,23 @@ function useGitState() {
 export function SidebarPanel({ api }: { api: PluginAPI }) {
   const { gitInfo, commitLog, commitMessage, expandedSections } = useGitState();
   const projectPath = api.context.projectPath || '';
+  const projectId = api.context.projectId;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const git = useMemo(() => createGitOps(projectPath, projectId), [projectPath, projectId]);
 
   const fetchGitInfo = useCallback(() => {
-    if (!projectPath || document.hidden) return;
-    window.clubhouse.git.info(projectPath).then((info: GitInfo) => {
+    if ((!projectPath && !projectId) || document.hidden) return;
+    git.info().then((info: GitInfo) => {
       gitState.setGitInfo(info);
     }).catch(() => {});
-  }, [projectPath]);
+  }, [git, projectPath, projectId]);
 
   const fetchLog = useCallback(() => {
-    if (!projectPath) return;
-    window.clubhouse.git.log(projectPath, 50, 0).then((log: GitLogEntry[]) => {
+    if (!projectPath && !projectId) return;
+    git.log(50, 0).then((log: GitLogEntry[]) => {
       gitState.setCommitLog(log);
     }).catch(() => {});
-  }, [projectPath]);
+  }, [git, projectPath, projectId]);
 
   // Initial fetch + polling
   useEffect(() => {
@@ -112,45 +115,45 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 
   // File actions
   const handleStage = useCallback(async (filePath: string) => {
-    await window.clubhouse.git.stage(projectPath, filePath);
+    await git.stage(filePath);
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handleUnstage = useCallback(async (filePath: string) => {
-    await window.clubhouse.git.unstage(projectPath, filePath);
+    await git.unstage(filePath);
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handleStageAll = useCallback(async () => {
-    await window.clubhouse.git.stageAll(projectPath);
+    await git.stageAll();
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handleUnstageAll = useCallback(async () => {
-    await window.clubhouse.git.unstageAll(projectPath);
+    await git.unstageAll();
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handleCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
-    const result = await window.clubhouse.git.commit(projectPath, commitMessage);
+    const result = await git.commit(commitMessage);
     if (result.ok) {
       gitState.setCommitMessage('');
       fetchGitInfo();
       fetchLog();
     }
-  }, [projectPath, commitMessage, fetchGitInfo, fetchLog]);
+  }, [git, commitMessage, fetchGitInfo, fetchLog]);
 
   const handlePush = useCallback(async () => {
-    await window.clubhouse.git.push(projectPath);
+    await git.push();
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handlePull = useCallback(async () => {
-    await window.clubhouse.git.pull(projectPath);
+    await git.pull();
     fetchGitInfo();
     fetchLog();
-  }, [projectPath, fetchGitInfo, fetchLog]);
+  }, [git, fetchGitInfo, fetchLog]);
 
   const handleSelectFile = useCallback((filePath: string) => {
     gitState.setSelectedCommit(null);
@@ -161,28 +164,28 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
     gitState.setSelectedFile(null);
     gitState.setSelectedCommit(hash);
     try {
-      const detail = await window.clubhouse.git.showCommit(projectPath, hash);
+      const detail = await git.showCommit(hash);
       gitState.setSelectedCommitFiles(detail.files);
     } catch {
       gitState.setSelectedCommitFiles([]);
     }
-  }, [projectPath]);
+  }, [git]);
 
   const handleCheckout = useCallback(async (branch: string) => {
-    await window.clubhouse.git.checkout(projectPath, branch);
+    await git.checkout(branch);
     fetchGitInfo();
     fetchLog();
-  }, [projectPath, fetchGitInfo, fetchLog]);
+  }, [git, fetchGitInfo, fetchLog]);
 
   const handleStash = useCallback(async () => {
-    await window.clubhouse.git.stash(projectPath);
+    await git.stash();
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   const handleStashPop = useCallback(async () => {
-    await window.clubhouse.git.stashPop(projectPath);
+    await git.stashPop();
     fetchGitInfo();
-  }, [projectPath, fetchGitInfo]);
+  }, [git, fetchGitInfo]);
 
   if (!gitInfo) {
     return h('div', { className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs' }, 'Loading git status...');
@@ -297,6 +300,8 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
 export function MainPanel({ api }: { api: PluginAPI }) {
   const { gitInfo, selectedFile, selectedCommit, selectedCommitFiles } = useGitState();
   const projectPath = api.context.projectPath || '';
+  const projectId = api.context.projectId;
+  const git = useMemo(() => createGitOps(projectPath, projectId), [projectPath, projectId]);
   const [diffData, setDiffData] = useState<{ original: string; modified: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -315,30 +320,30 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   // Fetch diff when file selected from working changes
   useEffect(() => {
-    if (!selectedFile || !projectPath) {
+    if (!selectedFile || (!projectPath && !projectId)) {
       setDiffData(null);
       return;
     }
     setLoading(true);
     const file = gitInfo?.status.find((f) => f.path === selectedFile);
     const staged = file?.staged ?? false;
-    window.clubhouse.git.diff(projectPath, selectedFile, staged)
+    git.diff(selectedFile, staged)
       .then((data: { original: string; modified: string }) => { setDiffData(data); setLoading(false); })
       .catch(() => { setDiffData(null); setLoading(false); });
-  }, [selectedFile, projectPath, gitInfo]);
+  }, [selectedFile, git, projectPath, projectId, gitInfo]);
 
   // Fetch diff when file selected from commit detail
   const [commitFilePath, setCommitFilePath] = useState<string | null>(null);
   useEffect(() => {
-    if (!selectedCommit || !commitFilePath || !projectPath) {
+    if (!selectedCommit || !commitFilePath || (!projectPath && !projectId)) {
       if (selectedCommit && !commitFilePath) setDiffData(null);
       return;
     }
     setLoading(true);
-    window.clubhouse.git.commitDiff(projectPath, selectedCommit, commitFilePath)
+    git.commitDiff(selectedCommit, commitFilePath)
       .then((data: { original: string; modified: string }) => { setDiffData(data); setLoading(false); })
       .catch(() => { setDiffData(null); setLoading(false); });
-  }, [selectedCommit, commitFilePath, projectPath]);
+  }, [selectedCommit, commitFilePath, git, projectPath, projectId]);
 
   // Reset commit file when commit changes
   useEffect(() => {

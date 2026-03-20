@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitInfo } from '../../../../shared/types';
+import { createGitOps } from './remote-git';
 
 const GIT_POLL_INTERVAL_MS = 3000;
 
@@ -27,39 +28,42 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
 
   const effectivePath = worktreePath || activeProject?.path;
   const [gitInfo, setGitInfo] = useState<GitInfo | null>(null);
+  const git = useMemo(
+    () => effectivePath ? createGitOps(effectivePath, projectId) : null,
+    [effectivePath, projectId],
+  );
 
   // Poll git info
   useEffect(() => {
-    if (!effectivePath) return;
+    if (!git) return;
     const fetch = () => {
       if (document.hidden) return;
-      window.clubhouse.git.info(effectivePath).then((info: GitInfo) => setGitInfo(info)).catch(() => {});
+      git.info().then((info: GitInfo) => setGitInfo(info)).catch(() => {});
     };
     fetch();
     const id = setInterval(fetch, GIT_POLL_INTERVAL_MS);
     const onVis = () => { if (!document.hidden) fetch(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
-  }, [effectivePath]);
+  }, [git]);
 
   const handleStageAll = useCallback(async () => {
-    if (!effectivePath) return;
-    await window.clubhouse.git.stageAll(effectivePath);
-  }, [effectivePath]);
+    if (!git) return;
+    await git.stageAll();
+  }, [git]);
 
   const handleCommit = useCallback(async () => {
-    if (!effectivePath || !gitInfo) return;
-    // Quick commit only works if there are staged files
+    if (!git || !gitInfo) return;
     const staged = gitInfo.status.filter((f) => f.staged);
     if (staged.length === 0) return;
     const message = `Update ${staged.length} file${staged.length > 1 ? 's' : ''}`;
-    await window.clubhouse.git.commit(effectivePath, message);
-  }, [effectivePath, gitInfo]);
+    await git.commit(message);
+  }, [git, gitInfo]);
 
   const handlePush = useCallback(async () => {
-    if (!effectivePath) return;
-    await window.clubhouse.git.push(effectivePath);
-  }, [effectivePath]);
+    if (!git) return;
+    await git.push();
+  }, [git]);
 
   const handleSelectProject = useCallback((pid: string) => {
     onUpdateMetadata({ projectId: pid, worktreePath: null });
