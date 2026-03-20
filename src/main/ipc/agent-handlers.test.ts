@@ -31,6 +31,10 @@ vi.mock('../services/agent-config', () => ({
   deleteUnregister: vi.fn(() => ({ ok: true })),
 }));
 
+vi.mock('../services/annex-server', () => ({
+  broadcastSnapshotRefresh: vi.fn(),
+}));
+
 vi.mock('../services/agent-system', () => ({
   spawnAgent: vi.fn(async () => {}),
   killAgent: vi.fn(async () => {}),
