@@ -105,7 +105,7 @@ describe('canvas-sync', () => {
       const initialZIndex = store.getState().views[0].zIndex;
 
       // Add another view
-      store.getState().addView('file', { x: 300, y: 300 });
+      store.getState().addView('agent', { x: 300, y: 300 });
 
       applyCanvasMutation(store, canvasId, { type: 'focusView', viewId });
 

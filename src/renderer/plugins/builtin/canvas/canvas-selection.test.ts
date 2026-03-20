@@ -27,7 +27,7 @@ describe('canvas selection', () => {
 
   it('selecting a view brings it to front (increases zIndex)', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 100, y: 0 });
+    const id2 = store.getState().addView('agent', { x: 100, y: 0 });
 
     const z1Before = store.getState().views.find((v) => v.id === id1)!.zIndex;
     store.getState().selectView(id1);
@@ -50,7 +50,7 @@ describe('canvas selection', () => {
 
   it('preserves selection when a different view is removed', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 100, y: 0 });
+    const id2 = store.getState().addView('agent', { x: 100, y: 0 });
 
     store.getState().selectView(id1);
     store.getState().removeView(id2);
