@@ -116,6 +116,8 @@ export interface PluginMatchResult {
   id: string;
   name: string;
   status: 'matched' | 'missing' | 'version_mismatch';
+  /** Source of the locally matched plugin (builtin vs community/marketplace). */
+  source?: 'builtin' | 'community' | 'marketplace';
   localVersion?: string;
   remoteVersion?: string;
   scope?: string;
@@ -145,6 +147,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
         id: remote.id,
         name: remote.name,
         status: 'version_mismatch' as const,
+        source: local.source,
         localVersion: local.manifest.version,
         remoteVersion: remote.version,
         scope: remote.scope,
@@ -155,6 +158,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
       id: remote.id,
       name: remote.name,
       status: 'matched' as const,
+      source: local.source,
       localVersion: local.manifest.version,
       remoteVersion: remote.version,
       scope: remote.scope,

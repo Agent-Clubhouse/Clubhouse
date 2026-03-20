@@ -218,7 +218,11 @@ export function ExplorerRail() {
         })
         .map((p) => {
           const contributes = p.contributes as { tab: { label: string; icon?: string } };
-          const isAvailable = p.status === 'matched';
+          // Built-in plugins with matching versions are fully available;
+          // 3P (community/marketplace) plugins are shown but disabled since
+          // their code is not guaranteed to support remote operations.
+          const isThirdParty = p.source !== 'builtin';
+          const isAvailable = p.status === 'matched' && !isThirdParty;
           return {
             id: `plugin:${p.id}`,
             label: contributes.tab.label,
@@ -226,11 +230,13 @@ export function ExplorerRail() {
               ? <span className={isAvailable ? '' : 'opacity-40'} dangerouslySetInnerHTML={{ __html: contributes.tab.icon }} />
               : <span className={isAvailable ? '' : 'opacity-40'}>{PLUGIN_FALLBACK_ICON}</span>,
             disabled: !isAvailable,
-            disabledReason: p.status === 'missing'
-              ? `${p.name} is not installed on this machine`
-              : p.status === 'version_mismatch'
-                ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
-                : undefined,
+            disabledReason: isThirdParty
+              ? `${p.name} is not available for remote control`
+              : p.status === 'missing'
+                ? `${p.name} is not installed on this machine`
+                : p.status === 'version_mismatch'
+                  ? `${p.name} version mismatch (local: ${p.localVersion}, remote: ${p.remoteVersion})`
+                  : undefined,
           };
         });
     }
