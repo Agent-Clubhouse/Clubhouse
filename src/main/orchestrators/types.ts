@@ -1,5 +1,6 @@
 import type { StructuredEvent } from '../../shared/structured-events';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
+import type { McpServerDef } from '../../shared/types';
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
@@ -177,7 +178,7 @@ export interface OrchestratorProvider {
    * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
    * Receives a pre-built server definition to avoid transitive electron imports.
    */
-  buildMcpArgs?(serverDef: Record<string, unknown>): string[];
+  buildMcpArgs?(serverDef: McpServerDef): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────
