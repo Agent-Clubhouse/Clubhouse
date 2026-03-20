@@ -78,6 +78,8 @@ jobs:
         run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts
         env:
           PLAYWRIGHT_IGNORE_ANNEX: '1'
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -110,6 +112,9 @@ jobs:
       - name: Run Annex E2E tests (Linux — requires virtual display)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npx playwright test e2e/annex-v2/
+        env:
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
