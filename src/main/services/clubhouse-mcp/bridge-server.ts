@@ -6,8 +6,10 @@
 import * as http from 'http';
 import { appLog } from '../log-service';
 import { getAgentNonce } from '../agent-registry';
-import { getScopedToolList, callTool } from './tool-registry';
+import { getScopedToolList, callTool, parseToolName, buildToolKey } from './tool-registry';
 import { bindingManager } from './binding-manager';
+import { broadcastToAllWindows } from '../../util/ipc-broadcast';
+import { IPC } from '../../../shared/ipc-channels';
 import type { JsonRpcRequest, JsonRpcResponse } from './types';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
@@ -146,6 +148,28 @@ async function handleToolsCall(
         ...(errorText ? { errorDetail: errorText } : {}),
       },
     });
+
+    // Broadcast tool activity for wire animation (even on error — the agent tried)
+    const parsed = parseToolName(toolName);
+    if (parsed) {
+      const bindings = bindingManager.getBindingsForAgent(agentId);
+      const binding = bindings.find(b => {
+        const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse' : b.targetKind;
+        return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
+      });
+      if (binding) {
+        // read_output pulls data FROM the target → reverse direction
+        const direction = parsed.suffix === 'read_output' ? 'reverse' : 'forward';
+        broadcastToAllWindows(IPC.MCP_BINDING.TOOL_ACTIVITY, {
+          sourceAgentId: agentId,
+          targetId: binding.targetId,
+          direction,
+          toolSuffix: parsed.suffix,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
     return jsonRpcSuccess(id, result);
   } catch (err) {
     appLog('core:mcp', 'error', 'Tool call threw exception', {

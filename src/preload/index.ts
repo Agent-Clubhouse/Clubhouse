@@ -1072,6 +1072,17 @@ const api = {
       ipcRenderer.on(IPC.MCP_BINDING.BINDINGS_CHANGED, listener);
       return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.BINDINGS_CHANGED, listener); };
     },
+    onToolActivity: (callback: (activity: {
+      sourceAgentId: string;
+      targetId: string;
+      direction: 'forward' | 'reverse';
+      toolSuffix: string;
+      timestamp: number;
+    }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, activity: any) => callback(activity);
+      ipcRenderer.on(IPC.MCP_BINDING.TOOL_ACTIVITY, listener);
+      return () => { ipcRenderer.removeListener(IPC.MCP_BINDING.TOOL_ACTIVITY, listener); };
+    },
   },
 };
 
