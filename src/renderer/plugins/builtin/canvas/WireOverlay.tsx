@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType } from './canvas-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, bezierPathWithOffsets, viewRect } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';

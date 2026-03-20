@@ -1,0 +1,56 @@
+import { create } from 'zustand';
+import type { GroupProject } from '../../shared/group-project-types';
+
+interface GroupProjectStoreState {
+  projects: GroupProject[];
+  loaded: boolean;
+  loadProjects: () => Promise<void>;
+  create: (name: string) => Promise<GroupProject>;
+  update: (id: string, fields: { name?: string }) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+}
+
+export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
+  projects: [],
+  loaded: false,
+
+  loadProjects: async () => {
+    try {
+      const projects = await window.clubhouse.groupProject.list() as GroupProject[];
+      set({ projects: projects || [], loaded: true });
+    } catch {
+      set({ loaded: true });
+    }
+  },
+
+  create: async (name) => {
+    const project = await window.clubhouse.groupProject.create(name) as GroupProject;
+    set((state) => ({ projects: [...state.projects, project] }));
+    return project;
+  },
+
+  update: async (id, fields) => {
+    await window.clubhouse.groupProject.update(id, fields);
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === id ? { ...p, ...fields } : p,
+      ),
+    }));
+  },
+
+  remove: async (id) => {
+    await window.clubhouse.groupProject.delete(id);
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+    }));
+  },
+}));
+
+/** Initialize listener for group project changes from main process. */
+export function initGroupProjectListener(): () => void {
+  return window.clubhouse.groupProject.onChanged((projects) => {
+    useGroupProjectStore.setState({
+      projects: (projects || []) as GroupProject[],
+    });
+  });
+}

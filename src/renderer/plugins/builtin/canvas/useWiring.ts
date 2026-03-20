@@ -22,11 +22,13 @@ export function isValidWireTarget(source: AgentCanvasViewType, target: CanvasVie
   if (target.id === source.id) return false;
   if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
+  if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card' && target.metadata?.groupProjectId) return true;
   return false;
 }
 
-function targetKind(view: CanvasView): 'agent' | 'browser' {
+function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' {
   if (view.type === 'agent') return 'agent';
+  if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card') return 'group-project';
   return 'browser';
 }
 
@@ -105,6 +107,8 @@ export function useWiring(
         // not resolvable by the main process agent registry.
         const resolvedTargetId = kind === 'agent'
           ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
+          : kind === 'group-project'
+          ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
           : hitView.id;
         const projectName = (hitView.metadata?.projectName as string)
           || (wireDrag.sourceView.metadata?.projectName as string)

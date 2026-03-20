@@ -337,6 +337,16 @@ vi.stubGlobal('clubhouse', {
     onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,
   },
+  groupProject: {
+    list: async () => [],
+    create: asyncNoop,
+    get: asyncNoop,
+    update: asyncNoop,
+    delete: async () => false,
+    getBulletinDigest: async () => [],
+    getTopicMessages: async () => [],
+    onChanged: () => noop,
+  },
   mcpBinding: {
     getBindings: async () => [],
     bind: asyncNoop,
