@@ -52,7 +52,16 @@ function resolveBindingViews(
   }
   if (!source) return null;
 
-  const target = viewMap.get(binding.targetId);
+  // Look up target by view id first, then by agentId for agent-to-agent bindings
+  let target = viewMap.get(binding.targetId);
+  if (!target && binding.targetKind === 'agent') {
+    for (const v of viewMap.values()) {
+      if (v.type === 'agent' && (v as AgentCanvasViewType).agentId === binding.targetId) {
+        target = v;
+        break;
+      }
+    }
+  }
   if (!target) return null;
 
   return { source, target };
