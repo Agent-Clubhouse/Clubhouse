@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { attachClipboardHandlers, readClipboard, writeClipboard, pasteIntoTerminal } from './clipboard';
+import { attachClipboardHandlers, readClipboard, readClipboardImage, writeClipboard, pasteIntoTerminal } from './clipboard';
 
 // --- Mocks ---
 
@@ -17,9 +17,10 @@ Object.defineProperty(window, 'clubhouse', {
 // navigator.clipboard is not available in jsdom — stub it
 const clipboardReadText = vi.fn<() => Promise<string>>(async () => '');
 const clipboardWriteText = vi.fn<(text: string) => Promise<void>>(async () => {});
+const clipboardRead = vi.fn<() => Promise<ClipboardItem[]>>(async () => []);
 Object.defineProperty(navigator, 'clipboard', {
   configurable: true,
-  value: { readText: clipboardReadText, writeText: clipboardWriteText },
+  value: { readText: clipboardReadText, writeText: clipboardWriteText, read: clipboardRead },
 });
 
 /** Create a minimal mock Terminal that captures the key handler and context menu behavior. */
@@ -312,6 +313,44 @@ describe('clipboard — right-click context menu', () => {
 
 // ─── Exported utility functions ──────────────────────────────────────────────
 
+describe('readClipboardImage', () => {
+  beforeEach(() => {
+    clipboardRead.mockReset();
+  });
+
+  it('reads an image from clipboard as base64', async () => {
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+    const blob = new Blob([pngBytes], { type: 'image/png' });
+    const item = { types: ['image/png'], getType: vi.fn(async () => blob) } as unknown as ClipboardItem;
+    clipboardRead.mockResolvedValue([item]);
+
+    const result = await readClipboardImage();
+    expect(result).not.toBeNull();
+    expect(result!.mimeType).toBe('image/png');
+    expect(result!.base64).toBeTruthy();
+  });
+
+  it('returns null when no image types found', async () => {
+    const item = { types: ['text/plain'], getType: vi.fn() } as unknown as ClipboardItem;
+    clipboardRead.mockResolvedValue([item]);
+
+    const result = await readClipboardImage();
+    expect(result).toBeNull();
+  });
+
+  it('returns null when clipboard.read() fails', async () => {
+    clipboardRead.mockRejectedValue(new Error('denied'));
+    const result = await readClipboardImage();
+    expect(result).toBeNull();
+  });
+
+  it('returns null when clipboard is empty', async () => {
+    clipboardRead.mockResolvedValue([]);
+    const result = await readClipboardImage();
+    expect(result).toBeNull();
+  });
+});
+
 describe('readClipboard', () => {
   beforeEach(() => {
     clipboardReadText.mockReset();
@@ -372,5 +411,36 @@ describe('pasteIntoTerminal', () => {
     pasteIntoTerminal(term as any, writeToPty);
     await flush();
     expect(writeToPty).not.toHaveBeenCalled();
+  });
+
+  it('calls onImagePaste when clipboard has image but no text', async () => {
+    clipboardReadText.mockResolvedValue('');
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]);
+    const blob = new Blob([pngBytes], { type: 'image/png' });
+    const item = { types: ['image/png'], getType: vi.fn(async () => blob) } as unknown as ClipboardItem;
+    clipboardRead.mockResolvedValue([item]);
+
+    const term = createMockTerminal();
+    const writeToPty = vi.fn();
+    const onImagePaste = vi.fn();
+    await pasteIntoTerminal(term as any, writeToPty, onImagePaste);
+    await flush();
+
+    expect(writeToPty).not.toHaveBeenCalled();
+    expect(onImagePaste).toHaveBeenCalledTimes(1);
+    expect(onImagePaste.mock.calls[0][0].mimeType).toBe('image/png');
+    expect(onImagePaste.mock.calls[0][0].base64).toBeTruthy();
+  });
+
+  it('does not call onImagePaste when text is available', async () => {
+    clipboardReadText.mockResolvedValue('some text');
+    const term = createMockTerminal();
+    const writeToPty = vi.fn();
+    const onImagePaste = vi.fn();
+    await pasteIntoTerminal(term as any, writeToPty, onImagePaste);
+    await flush();
+
+    expect(writeToPty).toHaveBeenCalledWith('some text');
+    expect(onImagePaste).not.toHaveBeenCalled();
   });
 });

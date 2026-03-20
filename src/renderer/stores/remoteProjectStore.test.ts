@@ -191,6 +191,48 @@ describe('remoteProjectStore', () => {
       expect(agents['remote||sat-1||agent-1']).toBeUndefined();
     });
 
+    it('applies agentsMeta detailed statuses from snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        agentsMeta: {
+          'agent-1': {
+            executionMode: 'pty',
+            detailedStatus: { state: 'working', message: 'Reading file', toolName: 'Read', timestamp: 1000 },
+          },
+          'agent-2': {
+            executionMode: 'pty',
+            detailedStatus: null,
+          },
+        },
+      }));
+
+      const statuses = useRemoteProjectStore.getState().remoteAgentDetailedStatus;
+      expect(statuses['remote||sat-1||agent-1']).toEqual({
+        state: 'working',
+        message: 'Reading file',
+        toolName: 'Read',
+        timestamp: 1000,
+      });
+      // agent-2 has null status — should not be stored
+      expect(statuses['remote||sat-1||agent-2']).toBeUndefined();
+    });
+
+    it('clears old detailed statuses on re-snapshot', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot({
+        agentsMeta: {
+          'agent-1': {
+            detailedStatus: { state: 'working', message: 'Writing', timestamp: 1000 },
+          },
+        },
+      }));
+      expect(useRemoteProjectStore.getState().remoteAgentDetailedStatus['remote||sat-1||agent-1']).toBeDefined();
+
+      // Second snapshot without agentsMeta
+      store.applySatelliteSnapshot('sat-1', 'My Satellite', makeSnapshot());
+      expect(useRemoteProjectStore.getState().remoteAgentDetailedStatus['remote||sat-1||agent-1']).toBeUndefined();
+    });
+
     it('keeps other satellites data when updating one', () => {
       const store = useRemoteProjectStore.getState();
 

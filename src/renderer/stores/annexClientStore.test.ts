@@ -247,7 +247,7 @@ describe('annexClientStore', () => {
       spy.mockRestore();
     });
 
-    it('forwards hook:event events to updateRemoteAgentStatus', async () => {
+    it('forwards hook:event detailedStatus to updateRemoteAgentStatus', async () => {
       const { useRemoteProjectStore } = await import('./remoteProjectStore');
       const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
 
@@ -258,10 +258,45 @@ describe('annexClientStore', () => {
       });
 
       initAnnexClientListener();
-      const hookEvent = { state: 'working', message: 'Running Bash' };
-      eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: hookEvent } });
+      const detailedStatus = { state: 'working', message: 'Running Bash', timestamp: 1000 };
+      eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: {}, detailedStatus } });
 
-      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', hookEvent);
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
+      spy.mockRestore();
+    });
+
+    it('ignores hook:event without detailedStatus', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'hook:event', payload: { agentId: 'agent-1', event: {} } });
+
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
+
+    it('forwards structured:event detailedStatus to updateRemoteAgentStatus', async () => {
+      const { useRemoteProjectStore } = await import('./remoteProjectStore');
+      const spy = vi.spyOn(useRemoteProjectStore.getState(), 'updateRemoteAgentStatus');
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      const detailedStatus = { state: 'working', message: 'Editing file', toolName: 'Edit', timestamp: 2000 };
+      eventCallback!({ satelliteId: 'sat-1', type: 'structured:event', payload: { agentId: 'agent-1', event: {}, detailedStatus } });
+
+      expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
       spy.mockRestore();
     });
   });
