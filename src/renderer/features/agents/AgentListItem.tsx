@@ -182,7 +182,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const handleWake = useCallback(async () => {
     if (agent.status === 'running') return;
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake up');
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId);
       return;
     }
     if (!activeProject) return;
@@ -196,7 +196,7 @@ export function AgentListItem({ agent, isActive, isThinking, onSelect, onSpawnQu
   const handleWakeAndResume = useCallback(async () => {
     if (agent.status === 'running') return;
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake and resume');
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: true });
       return;
     }
     if (!activeProject) return;

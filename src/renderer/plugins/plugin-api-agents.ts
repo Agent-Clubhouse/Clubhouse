@@ -92,7 +92,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         await useAnnexClientStore.getState().sendAgentWake(
           remoteParts.satelliteId,
           remoteParts.agentId,
-          options?.mission || 'Wake up',
+          options?.mission ? { mission: options.mission } : undefined,
         );
         return;
       }

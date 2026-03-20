@@ -635,10 +635,7 @@ async function handleWakeAgent(
   body: Record<string, unknown>,
 ): Promise<void> {
   const message = body.message as string | undefined;
-  if (!message) {
-    sendJson(res, 400, { error: 'missing_message' });
-    return;
-  }
+  const resume = !!body.resume;
 
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
@@ -666,6 +663,8 @@ async function handleWakeAgent(
       mission: message,
       orchestrator: config.orchestrator,
       freeAgentMode: config.freeAgentMode,
+      resume,
+      sessionId: resume ? config.lastSessionId : undefined,
     });
 
     // Broadcast agent:woken
@@ -1234,9 +1233,12 @@ function handleWsMessage(ws: WebSocket, data: string): void {
 
     case 'agent:wake': {
       const agentId = payload.agentId as string;
-      const message = payload.message as string;
-      if (!agentId || !message) break;
-      handleWakeAgentWs(ws, agentId, message, payload.model as string | undefined);
+      if (!agentId) break;
+      handleWakeAgentWs(ws, agentId, {
+        resume: !!payload.resume,
+        mission: payload.mission as string | undefined,
+        model: payload.model as string | undefined,
+      });
       break;
     }
 
@@ -1296,7 +1298,11 @@ async function handleSpawnQuickAgentWs(
 }
 
 // WS-based agent wake (mirrors HTTP handler)
-async function handleWakeAgentWs(ws: WebSocket, agentId: string, message: string, model?: string): Promise<void> {
+async function handleWakeAgentWs(
+  ws: WebSocket,
+  agentId: string,
+  options: { resume?: boolean; mission?: string; model?: string },
+): Promise<void> {
   const agentInfo = await findAgentAcrossProjects(agentId);
   if (!agentInfo) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
@@ -1307,16 +1313,18 @@ async function handleWakeAgentWs(ws: WebSocket, agentId: string, message: string
     return;
   }
   const { config, project } = agentInfo;
-  const agentModel = model || config.model;
+  const agentModel = options.model || config.model;
   const cwd = config.worktreePath || project.path;
 
   try {
     await spawnAgent({
       agentId: config.id, projectPath: project.path, cwd,
-      kind: 'durable', model: agentModel, mission: message,
+      kind: 'durable', model: agentModel, mission: options.mission,
       orchestrator: config.orchestrator, freeAgentMode: config.freeAgentMode,
+      resume: options.resume,
+      sessionId: options.resume ? config.lastSessionId : undefined,
     });
-    broadcastAndBuffer('agent:woken', { agentId: config.id, message, source: 'annex-v2' });
+    broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
     ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
   } catch (err) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));

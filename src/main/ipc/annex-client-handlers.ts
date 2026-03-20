@@ -96,11 +96,11 @@ export function registerAnnexClientHandlers(): void {
 
   // Proxy IPC: wake a sleeping agent on a satellite
   ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_WAKE, withValidatedArgs(
-    [stringArg(), stringArg(), stringArg()],
-    (_event, satelliteId, agentId, message) => {
+    [stringArg(), stringArg(), objectArg({ optional: true })],
+    (_event, satelliteId, agentId, options) => {
       return annexClient.sendToSatellite(satelliteId, {
         type: 'agent:wake',
-        payload: { agentId, message },
+        payload: { agentId, ...options },
       });
     },
   ));
