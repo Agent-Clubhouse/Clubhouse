@@ -231,6 +231,36 @@ describe('AgentTerminal', () => {
     });
   });
 
+  describe('experimental mono font', () => {
+    it('updates terminal fontFamily when experimental mono font is set', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            fonts: { mono: "'Fira Code', monospace" },
+          } as any,
+          experimentalGradients: true,
+        });
+      });
+      expect(term().options.fontFamily).toBe("'Fira Code', monospace");
+    });
+
+    it('does not update fontFamily when experimentalGradients is off', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            fonts: { mono: "'Fira Code', monospace" },
+          } as any,
+          experimentalGradients: false,
+        });
+      });
+      expect(term().options.fontFamily).toBeUndefined();
+    });
+  });
+
   describe('focus behavior', () => {
     it('focuses terminal when focused prop is true', () => {
       render(<AgentTerminal agentId="agent-1" focused={true} />);
