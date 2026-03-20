@@ -6,6 +6,7 @@ import { getShellEnvironment, getDefaultShell, cleanSpawnEnv, winQuoteArg } from
 import { appLog } from './log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import * as headlessTerminal from './pty-headless-terminal';
 import { broadcastAgentExit } from './agent-exit-broadcast';
 import { StaleSweeper } from './stale-sweeper';
 
@@ -27,7 +28,7 @@ interface ManagedSession {
   onExitCallback?: (agentId: string, exitCode: number, buffer?: string) => void;
 }
 
-const MAX_BUFFER_SIZE = 512 * 1024; // 512KB per agent
+const MAX_BUFFER_SIZE = 2 * 1024 * 1024; // 2MB per agent
 
 /**
  * Sensitive directory prefixes that should never be used as a PTY cwd.
@@ -186,6 +187,18 @@ export function getBuffer(agentId: string): string {
   return session ? getSessionBuffer(session) : '';
 }
 
+/**
+ * Get the serialized terminal state for a PTY session.
+ * Returns processed output (escape sequences applied) suitable for
+ * writing directly into a fresh xterm to reproduce the visual state.
+ * Falls back to the raw buffer if no headless terminal is available.
+ */
+export function getSerializedBuffer(agentId: string): string {
+  const serialized = headlessTerminal.serialize(agentId);
+  if (serialized) return serialized;
+  return getBuffer(agentId);
+}
+
 /** Check whether an agent has an active PTY session. */
 export function isRunning(agentId: string): boolean {
   return sessions.has(agentId);
@@ -275,6 +288,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
+    headlessTerminal.feedData(agentId, data);
     broadcastToAllWindows(IPC.PTY.DATA, agentId, data);
     annexEventBus.emitPtyData(agentId, data);
   });
@@ -289,6 +303,7 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
       meta: { agentId, exitCode, binary, lastOutput: ptyBuffer },
     });
 
+    headlessTerminal.dispose(agentId);
     cleanupSession(agentId);
     onExit?.(agentId, exitCode, fullBuffer);
     // Include last PTY output so the renderer can show diagnostics on early exit
@@ -334,6 +349,7 @@ export function spawnShell(id: string, projectPath: string): void {
 
     current.lastActivity = Date.now();
     appendToBuffer(current, data);
+    headlessTerminal.feedData(id, data);
     broadcastToAllWindows(IPC.PTY.DATA, id, data);
     annexEventBus.emitPtyData(id, data);
   });
@@ -342,6 +358,7 @@ export function spawnShell(id: string, projectPath: string): void {
     const current = sessions.get(id);
     if (!current || current.process !== proc) return;
 
+    headlessTerminal.dispose(id);
     cleanupSession(id);
     broadcastToAllWindows(IPC.PTY.EXIT, id, exitCode);
   });
@@ -368,6 +385,7 @@ export function resize(agentId: string, cols: number, rows: number): void {
   const session = sessions.get(agentId);
   if (session) {
     session.process.resize(cols, rows);
+    headlessTerminal.resize(agentId, cols, rows);
   }
   // If there's a pending command, the terminal just sent its real size — fire it now.
   if (session) {
@@ -430,6 +448,7 @@ export function kill(agentId: string): void {
   const session = sessions.get(agentId);
   if (session) {
     try { session.process.kill(); } catch { /* dead */ }
+    headlessTerminal.dispose(agentId);
     cleanupSession(agentId);
   }
 }

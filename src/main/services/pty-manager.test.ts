@@ -45,6 +45,15 @@ vi.mock('./annex-event-bus', () => ({
   emitPtyData: vi.fn(),
 }));
 
+// Mock pty-headless-terminal
+vi.mock('./pty-headless-terminal', () => ({
+  feedData: vi.fn(),
+  resize: vi.fn(),
+  serialize: vi.fn().mockReturnValue(''),
+  dispose: vi.fn(),
+  disposeAll: vi.fn(),
+}));
+
 // Mock fs for validateSpawnCwd — default to making all paths look like valid directories
 const mockRealpathSync = vi.fn((p: string) => p);
 const mockStatSync = vi.fn(() => ({ isDirectory: () => true }));
@@ -61,9 +70,10 @@ vi.mock('fs', async (importOriginal) => {
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getSerializedBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
+import * as headlessTerminal from './pty-headless-terminal';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
@@ -87,6 +97,56 @@ describe('pty-manager', () => {
   describe('getBuffer', () => {
     it('returns empty string for unknown agent', () => {
       expect(getBuffer('nonexistent')).toBe('');
+    });
+  });
+
+  describe('getSerializedBuffer', () => {
+    it('returns serialized headless terminal content when available', () => {
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('serialized output');
+      spawnAndActivate('agent_ser');
+      expect(getSerializedBuffer('agent_ser')).toBe('serialized output');
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
+    });
+
+    it('falls back to raw buffer when headless terminal returns empty', () => {
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
+      spawnAndActivate('agent_fallback');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('raw data');
+      expect(getSerializedBuffer('agent_fallback')).toBe('raw data');
+    });
+
+    it('returns empty string for unknown agent', () => {
+      vi.mocked(headlessTerminal).serialize.mockReturnValue('');
+      expect(getSerializedBuffer('nonexistent')).toBe('');
+    });
+  });
+
+  describe('headless terminal integration', () => {
+    it('feeds PTY data to headless terminal', () => {
+      spawnAndActivate('agent_hl');
+      const onDataCb = mockProcess.onData.mock.calls[0][0];
+      onDataCb('hello');
+      expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello');
+    });
+
+    it('resizes headless terminal on pty resize', () => {
+      spawnAndActivate('agent_hlr');
+      resize('agent_hlr', 100, 50);
+      expect(vi.mocked(headlessTerminal).resize).toHaveBeenCalledWith('agent_hlr', 100, 50);
+    });
+
+    it('disposes headless terminal on PTY exit', () => {
+      spawnAndActivate('agent_hle');
+      const onExitCb = mockProcess.onExit.mock.calls[0][0];
+      onExitCb({ exitCode: 0 });
+      expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hle');
+    });
+
+    it('disposes headless terminal on kill', () => {
+      spawnAndActivate('agent_hlk');
+      kill('agent_hlk');
+      expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hlk');
     });
   });
 
@@ -142,24 +202,24 @@ describe('pty-manager', () => {
       }
     });
 
-    it('evicts oldest chunks when >512KB', () => {
+    it('evicts oldest chunks when >2MB', () => {
       spawnAndActivate('agent_evict');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
-      // Write chunks that total > 512KB
-      const chunkSize = 100 * 1024; // 100KB
-      for (let i = 0; i < 6; i++) {
+      // Write chunks that total > 2MB
+      const chunkSize = 512 * 1024; // 512KB
+      for (let i = 0; i < 5; i++) {
         onDataCb('x'.repeat(chunkSize));
       }
-      // Buffer should be at most 512KB + last chunk
+      // Buffer should be at most 2MB + last chunk
       const buf = getBuffer('agent_evict');
-      expect(buf.length).toBeLessThanOrEqual(600 * 1024); // some tolerance
+      expect(buf.length).toBeLessThanOrEqual(2560 * 1024); // some tolerance
       expect(buf.length).toBeGreaterThan(0);
     });
 
     it('drops evicted chunks from a previously cached buffer', () => {
       spawnAndActivate('agent_cached_evict');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
-      const chunkSize = 128 * 1024;
+      const chunkSize = 512 * 1024; // 512KB each, 5 chunks = 2.5MB > 2MB limit
       const chunks = ['a', 'b', 'c', 'd', 'e'].map((char) => char.repeat(chunkSize));
 
       for (const chunk of chunks.slice(0, 4)) {
@@ -1226,10 +1286,11 @@ describe('pty-manager', () => {
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
 
       // Write many small chunks that will trigger eviction + compaction.
-      // Each chunk is 1KB so 512 chunks = 512KB (at limit).
-      // We need >512KB to trigger eviction, then >1000 evicted entries for compaction.
-      const chunkSize = 512; // 512 bytes
-      const numChunks = 1200; // will overflow buffer and trigger compaction
+      // Each chunk is 2KB so we need >1000 evicted entries for compaction.
+      // With 2MB limit, need >1000 chunks at 2KB (2MB) to start evicting,
+      // then 1000 more for compaction.
+      const chunkSize = 2048; // 2KB
+      const numChunks = 2100; // will overflow buffer and trigger compaction
 
       for (let i = 0; i < numChunks; i++) {
         onDataCb('x'.repeat(chunkSize));
@@ -1238,7 +1299,7 @@ describe('pty-manager', () => {
       // Buffer should still be readable and within size limit
       const buf = getBuffer('agent_compact');
       expect(buf.length).toBeGreaterThan(0);
-      expect(buf.length).toBeLessThanOrEqual(512 * 1024 + chunkSize); // MAX_BUFFER_SIZE + last chunk tolerance
+      expect(buf.length).toBeLessThanOrEqual(2 * 1024 * 1024 + chunkSize); // MAX_BUFFER_SIZE + last chunk tolerance
     });
   });
 
