@@ -55,6 +55,13 @@ describe('review manifest', () => {
     expect(setting!.default).toBe(true);
   });
 
+  it('contributes needs-attention-only boolean setting defaulting to false', () => {
+    const setting = manifest.contributes!.settings!.find((s) => s.key === 'needs-attention-only');
+    expect(setting).toBeDefined();
+    expect(setting!.type).toBe('boolean');
+    expect(setting!.default).toBe(false);
+  });
+
   it('declares required permissions', () => {
     expect(manifest.permissions).toEqual(
       expect.arrayContaining(['commands', 'agents', 'projects', 'widgets', 'navigation']),

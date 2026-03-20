@@ -3,7 +3,7 @@ import { validateBuiltinPlugin } from '../builtin-plugin-testing';
 import { manifest } from './manifest';
 import * as reviewModule from './main';
 import { createMockContext, createMockAPI } from '../../testing';
-import type { AgentInfo } from '../../../../shared/plugin-types';
+import type { AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 
 function makeAgent(overrides: Partial<AgentInfo> = {}): AgentInfo {
   return {
@@ -88,6 +88,57 @@ describe('filterAgents', () => {
 
   it('returns empty array for empty input', () => {
     const result = reviewModule.filterAgents([], true);
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe('filterNeedsAttention', () => {
+  const running = makeAgent({ id: 'a1', status: 'running' });
+  const errored = makeAgent({ id: 'a2', status: 'error' });
+  const needsPerm = makeAgent({ id: 'a3', status: 'running' });
+  const toolErr = makeAgent({ id: 'a4', status: 'running' });
+  const idle = makeAgent({ id: 'a5', status: 'running' });
+
+  function makeStatuses(entries: [string, PluginAgentDetailedStatus | null][]): Map<string, PluginAgentDetailedStatus | null> {
+    return new Map(entries);
+  }
+
+  it('filters to only error/needs_permission/tool_error agents', () => {
+    const statuses = makeStatuses([
+      ['a1', { state: 'working', message: '' }],
+      ['a2', null],
+      ['a3', { state: 'needs_permission', message: 'Needs permission' }],
+      ['a4', { state: 'tool_error', message: 'Tool error' }],
+      ['a5', { state: 'idle', message: '' }],
+    ]);
+    const result = reviewModule.filterNeedsAttention(
+      [running, errored, needsPerm, toolErr, idle],
+      statuses,
+    );
+    expect(result).toHaveLength(3);
+    expect(result.map((a) => a.id)).toEqual(['a2', 'a3', 'a4']);
+  });
+
+  it('includes agents with status "error" even without detailed status', () => {
+    const statuses = makeStatuses([
+      ['a2', null],
+    ]);
+    const result = reviewModule.filterNeedsAttention([errored], statuses);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('a2');
+  });
+
+  it('returns empty array for empty input', () => {
+    const result = reviewModule.filterNeedsAttention([], new Map());
+    expect(result).toHaveLength(0);
+  });
+
+  it('excludes agents that are working or idle', () => {
+    const statuses = makeStatuses([
+      ['a1', { state: 'working', message: '' }],
+      ['a5', { state: 'idle', message: '' }],
+    ]);
+    const result = reviewModule.filterNeedsAttention([running, idle], statuses);
     expect(result).toHaveLength(0);
   });
 });

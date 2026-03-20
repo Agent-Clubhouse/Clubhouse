@@ -30,6 +30,13 @@ export const manifest: PluginManifest = {
         description: 'Show sleeping agents in the review carousel.',
         default: true,
       },
+      {
+        key: 'needs-attention-only',
+        type: 'boolean',
+        label: 'Needs Attention Only',
+        description: 'Filter to only show agents that need attention (permission requests or errors).',
+        default: false,
+      },
     ],
     help: {
       topics: [

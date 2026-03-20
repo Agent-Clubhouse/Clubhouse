@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import type { PluginContext, PluginAPI, PluginModule, AgentInfo } from '../../../../shared/plugin-types';
+import type { PluginContext, PluginAPI, PluginModule, AgentInfo, PluginAgentDetailedStatus } from '../../../../shared/plugin-types';
 
 // ── Activate / Deactivate ──────────────────────────────────────────────
 
@@ -22,6 +22,17 @@ export function deactivate(): void {
 export function filterAgents(agents: AgentInfo[], includeSleeping: boolean): AgentInfo[] {
   if (includeSleeping) return agents;
   return agents.filter((a) => a.status !== 'sleeping');
+}
+
+export function filterNeedsAttention(
+  agents: AgentInfo[],
+  detailedStatuses: Map<string, PluginAgentDetailedStatus | null>,
+): AgentInfo[] {
+  return agents.filter((a) => {
+    if (a.status === 'error') return true;
+    const d = detailedStatuses.get(a.id);
+    return d?.state === 'needs_permission' || d?.state === 'tool_error';
+  });
 }
 
 export function resolveIndex(current: number, length: number, delta: -1 | 1): number {
@@ -61,19 +72,33 @@ function ArrowButton({ direction, onClick }: { direction: 'left' | 'right'; onCl
 function FloatingBar({
   currentIndex,
   total,
+  agentId,
   agentName,
   agentStatus,
+  detailedState,
+  AgentAvatar,
+  isRunning,
+  onSleep,
   includeSleeping,
   onToggleSleeping,
+  needsAttentionOnly,
+  onToggleNeedsAttention,
   onPrev,
   onNext,
 }: {
   currentIndex: number;
   total: number;
+  agentId: string | null;
   agentName: string;
   agentStatus: string;
+  detailedState: string | null;
+  AgentAvatar: React.ComponentType<{ agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }>;
+  isRunning: boolean;
+  onSleep: () => void;
   includeSleeping: boolean;
   onToggleSleeping: () => void;
+  needsAttentionOnly: boolean;
+  onToggleNeedsAttention: () => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -93,6 +118,8 @@ function FloatingBar({
       }, d),
     );
 
+  const statusText = detailedState ?? agentStatus;
+
   return React.createElement('div', {
     className: [
       'absolute top-3 left-1/2 -translate-x-1/2 z-20',
@@ -104,14 +131,34 @@ function FloatingBar({
     // Left arrow
     makeMiniArrow(chevronLeft, 'Previous agent', onPrev),
 
-    // Agent info
+    // Agent info with avatar
     React.createElement('span', { className: 'flex items-center gap-1.5' },
+      agentId
+        ? React.createElement(AgentAvatar, { agentId, size: 'sm', showStatusRing: true })
+        : null,
       React.createElement('span', { className: 'font-medium' }, agentName),
       React.createElement('span', { className: 'text-ctp-subtext0' },
-        `(${agentStatus})`,
+        `(${statusText})`,
       ),
       React.createElement('span', { className: 'text-ctp-subtext0' },
         `${total > 0 ? currentIndex + 1 : 0} of ${total}`,
+      ),
+    ),
+
+    // Sleep button (moon icon) — only visible when agent is running
+    isRunning && React.createElement('button', {
+      onClick: onSleep,
+      title: 'Sleep agent',
+      'aria-label': 'Sleep agent',
+      'data-testid': 'review-sleep-button',
+      className: 'p-1 rounded hover:bg-blue-500/20 text-ctp-subtext0 hover:text-blue-400 transition-colors cursor-pointer',
+    },
+      React.createElement('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24',
+        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round',
+      },
+        React.createElement('path', { d: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z' }),
       ),
     ),
 
@@ -132,6 +179,22 @@ function FloatingBar({
         className: 'accent-ctp-accent cursor-pointer',
       }),
       'Include sleeping',
+    ),
+
+    // Separator
+    React.createElement('div', { className: 'w-px h-4 bg-ctp-surface2 mx-1' }),
+
+    // Needs attention checkbox
+    React.createElement('label', {
+      className: 'flex items-center gap-1.5 text-ctp-subtext0 hover:text-ctp-text cursor-pointer transition-colors',
+    },
+      React.createElement('input', {
+        type: 'checkbox',
+        checked: needsAttentionOnly,
+        onChange: onToggleNeedsAttention,
+        className: 'accent-ctp-accent cursor-pointer',
+      }),
+      'Needs attention',
     ),
   );
 }
@@ -227,9 +290,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Settings
   const settingValue = api.settings.get<boolean>('include-sleeping');
   const [includeSleeping, setIncludeSleeping] = useState(settingValue ?? true);
+  const needsAttentionSettingValue = api.settings.get<boolean>('needs-attention-only');
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(needsAttentionSettingValue ?? false);
   useEffect(() => {
     const sub = api.settings.onChange((key, value) => {
       if (key === 'include-sleeping') setIncludeSleeping(value as boolean);
+      if (key === 'needs-attention-only') setNeedsAttentionOnly(value as boolean);
     });
     return () => sub.dispose();
   }, [api]);
@@ -241,7 +307,23 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     return agents.filter((a) => a.projectId === api.context.projectId);
   }, [api, isAppMode, agentTick]);
 
-  const agents = useMemo(() => filterAgents(allAgents, includeSleeping), [allAgents, includeSleeping]);
+  // Build detailed status map for all agents
+  const detailedStatuses = useMemo(() => {
+    const map = new Map<string, PluginAgentDetailedStatus | null>();
+    for (const a of allAgents) {
+      map.set(a.id, api.agents.getDetailedStatus(a.id));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, allAgents, agentTick]);
+
+  const agents = useMemo(() => {
+    let filtered = filterAgents(allAgents, includeSleeping);
+    if (needsAttentionOnly) {
+      filtered = filterNeedsAttention(filtered, detailedStatuses);
+    }
+    return filtered;
+  }, [allAgents, includeSleeping, needsAttentionOnly, detailedStatuses]);
 
   // Navigation state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -292,16 +374,34 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     api.settings.set('include-sleeping', next);
   }, [includeSleeping, api]);
 
+  const handleToggleNeedsAttention = useCallback(() => {
+    const next = !needsAttentionOnly;
+    setNeedsAttentionOnly(next);
+    api.settings.set('needs-attention-only', next);
+  }, [needsAttentionOnly, api]);
+
+  const handleSleep = useCallback(() => {
+    const agent = agents[currentIndex];
+    if (agent) api.agents.kill(agent.id);
+  }, [agents, currentIndex, api]);
+
   // Render
   if (agents.length === 0) {
     return React.createElement('div', { className: 'relative h-full w-full' },
       React.createElement(FloatingBar, {
         currentIndex: 0,
         total: 0,
+        agentId: null,
         agentName: '—',
         agentStatus: '',
+        detailedState: null,
+        AgentAvatar: api.widgets.AgentAvatar,
+        isRunning: false,
+        onSleep: handleSleep,
         includeSleeping,
         onToggleSleeping: handleToggleSleeping,
+        needsAttentionOnly,
+        onToggleNeedsAttention: handleToggleNeedsAttention,
         onPrev: goPrev,
         onNext: goNext,
       }),
@@ -312,6 +412,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const agent = agents[currentIndex];
   const AgentTerminal = api.widgets.AgentTerminal;
   const SleepingAgent = api.widgets.SleepingAgent;
+  const currentDetailedStatus = detailedStatuses.get(agent.id) ?? null;
+  const detailedStateLabel = currentDetailedStatus?.state === 'needs_permission'
+    ? 'Needs permission'
+    : currentDetailedStatus?.state === 'tool_error'
+      ? 'Tool error'
+      : null;
 
   const agentView = agent.status === 'sleeping'
     ? React.createElement(SleepingAgent, { agentId: agent.id })
@@ -322,10 +428,17 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     React.createElement(FloatingBar, {
       currentIndex,
       total: agents.length,
+      agentId: agent.id,
       agentName: agent.name,
       agentStatus: agent.status,
+      detailedState: detailedStateLabel,
+      AgentAvatar: api.widgets.AgentAvatar,
+      isRunning: agent.status === 'running',
+      onSleep: handleSleep,
       includeSleeping,
       onToggleSleeping: handleToggleSleeping,
+      needsAttentionOnly,
+      onToggleNeedsAttention: handleToggleNeedsAttention,
       onPrev: goPrev,
       onNext: goNext,
     }),
