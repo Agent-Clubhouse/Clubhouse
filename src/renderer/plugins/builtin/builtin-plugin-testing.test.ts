@@ -92,6 +92,16 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('all registered built-in plugins include the annex permission', () => {
+    const plugins = getBuiltinPlugins({ sessions: true });
+    for (const plugin of plugins) {
+      expect(
+        plugin.manifest.permissions,
+        `${plugin.manifest.id} should include 'annex' permission`,
+      ).toContain('annex');
+    }
+  });
+
   it('does not include the sessions plugin without experimental flag', () => {
     const plugins = getBuiltinPlugins();
     const ids = plugins.map((p) => p.manifest.id);

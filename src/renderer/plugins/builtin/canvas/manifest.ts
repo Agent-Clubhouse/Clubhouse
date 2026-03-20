@@ -14,7 +14,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'dual',
-  permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal'],
+  permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal', 'annex'],
   contributes: {
     tab: { label: 'Canvas', title: 'Canvas', icon: CANVAS_TAB_ICON, layout: 'full' },
     railItem: { label: 'Canvas', title: 'Canvas', icon: CANVAS_RAIL_ICON, position: 'top' },

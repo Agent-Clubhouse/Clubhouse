@@ -398,6 +398,7 @@ async function buildSnapshot(): Promise<object> {
     version: m.version,
     scope: m.scope,
     contributes: m.contributes,
+    annexEnabled: (m.permissions ?? []).includes('annex'),
   }));
 
   // Read per-project canvas state from plugin storage
