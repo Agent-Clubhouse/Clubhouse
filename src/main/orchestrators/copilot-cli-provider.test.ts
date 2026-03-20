@@ -601,4 +601,32 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('buildMcpArgs', () => {
+    const mockServerDef = {
+      type: 'stdio',
+      command: 'node',
+      args: ['/mock/bridge.js'],
+      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+    };
+
+    it('returns --additional-mcp-config with JSON containing clubhouse server def', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      expect(args).toHaveLength(2);
+      expect(args[0]).toBe('--additional-mcp-config');
+
+      const config = JSON.parse(args[1]);
+      expect(config.mcpServers.clubhouse).toBeDefined();
+      expect(config.mcpServers.clubhouse.type).toBe('stdio');
+      expect(config.mcpServers.clubhouse.command).toBe('node');
+      expect(config.mcpServers.clubhouse.env.CLUBHOUSE_MCP_PORT).toBe('12345');
+      expect(config.mcpServers.clubhouse.env.CLUBHOUSE_AGENT_ID).toBe('agent-1');
+      expect(config.mcpServers.clubhouse.env.CLUBHOUSE_HOOK_NONCE).toBe('nonce-1');
+    });
+
+    it('produces valid JSON that can be parsed', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      expect(() => JSON.parse(args[1])).not.toThrow();
+    });
+  });
+
 });

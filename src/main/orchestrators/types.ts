@@ -1,5 +1,6 @@
 import type { StructuredEvent } from '../../shared/structured-events';
 import type { StreamJsonEvent } from '../services/jsonl-parser';
+import type { McpServerDef } from '../../shared/types';
 
 export type OrchestratorId = 'claude-code' | (string & {});
 
@@ -170,6 +171,14 @@ export interface OrchestratorProvider {
   // Profile support
   /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
   getProfileEnvKeys(): string[];
+
+  /**
+   * Optional: return CLI args to inject MCP server config at spawn time.
+   * Used by orchestrators that don't read MCP from a project-level config file
+   * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
+   * Receives a pre-built server definition to avoid transitive electron imports.
+   */
+  buildMcpArgs?(serverDef: McpServerDef): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

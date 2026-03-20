@@ -7,6 +7,6 @@
 
 export { bindingManager } from './binding-manager';
 export * as bridgeServer from './bridge-server';
-export { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp } from './injection';
+export { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp, buildClubhouseMcpDef } from './injection';
 export { getScopedToolList, callTool, registerToolTemplate, buildToolName, parseToolName } from './tool-registry';
 export type { McpBinding, BindingTargetKind, McpToolDefinition, McpToolResult } from './types';
