@@ -356,6 +356,7 @@ vi.stubGlobal('clubhouse', {
     getBindings: async () => [],
     bind: asyncNoop,
     unbind: asyncNoop,
+    setInstructions: asyncNoop,
     registerWebview: asyncNoop,
     unregisterWebview: asyncNoop,
     onBindingsChanged: () => noop,
