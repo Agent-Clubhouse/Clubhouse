@@ -98,6 +98,18 @@ export async function loadPendingResume(): Promise<RestartSessionState | null> {
     return null;
   }
 
+  // Filter out sessions with missing project directories
+  const validSessions: RestartSessionEntry[] = [];
+  for (const session of state.sessions) {
+    const dirExists = await pathExists(session.worktreePath || session.projectPath);
+    if (dirExists) {
+      validSessions.push(session);
+    } else {
+      appLog('update:session-resume', 'warn', `Skipping resume for ${session.agentId} — directory missing: ${session.worktreePath || session.projectPath}`);
+    }
+  }
+  state.sessions = validSessions;
+
   appLog('update:session-resume', 'info', `Loaded ${state.sessions.length} pending resumes`);
   return state;
 }
