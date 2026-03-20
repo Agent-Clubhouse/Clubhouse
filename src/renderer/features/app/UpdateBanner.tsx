@@ -11,7 +11,7 @@ export function UpdateBanner() {
   const agents = useAgentStore((s) => s.agents);
   const [showGate, setShowGate] = useState(false);
   const [gateAgents, setGateAgents] = useState<UpdateGateAgent[]>([]);
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const isReady = status.state === 'ready';
   const isApplyError = status.state === 'error' && !!status.artifactUrl;

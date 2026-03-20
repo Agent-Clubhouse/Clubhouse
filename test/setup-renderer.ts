@@ -283,6 +283,12 @@ vi.stubGlobal('clubhouse', {
     restart: asyncNoop,
     getExperimentalSettings: async () => ({}),
     saveExperimentalSettings: asyncNoop,
+    getLiveAgentsForUpdate: vi.fn().mockResolvedValue([]),
+    getPendingResumes: vi.fn().mockResolvedValue(null),
+    resumeManualAgent: vi.fn().mockResolvedValue(undefined),
+    resolveWorkingAgent: vi.fn().mockResolvedValue(undefined),
+    confirmUpdateRestart: vi.fn().mockResolvedValue(undefined),
+    onResumeStatusUpdate: vi.fn().mockReturnValue(() => {}),
   },
   profile: {
     getSettings: async () => ({ profiles: [] }),
