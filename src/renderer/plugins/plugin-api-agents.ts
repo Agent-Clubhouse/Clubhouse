@@ -223,6 +223,22 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async listSessions(agentId: string) {
+      // Remote agent: proxy through annex client
+      const remoteParts = parseNamespacedId(agentId);
+      if (remoteParts) {
+        const remoteAgent = useRemoteProjectStore.getState().remoteAgents[agentId];
+        const origProjectId = remoteAgent?.projectId
+          ? (parseNamespacedId(remoteAgent.projectId)?.agentId || '')
+          : '';
+        try {
+          return await window.clubhouse.annexClient.sessionList(
+            remoteParts.satelliteId, remoteParts.agentId, origProjectId, remoteAgent?.orchestrator,
+          ) as any[];
+        } catch {
+          return [];
+        }
+      }
+
       const projectPath = ctx.projectPath;
       if (!projectPath) return [];
       const agent = useAgentStore.getState().agents[agentId];
@@ -234,12 +250,27 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async readSessionTranscript(agentId: string, sessionId: string, offset: number, limit: number) {
+      // Remote agent: proxy through annex client
+      const remoteParts = parseNamespacedId(agentId);
+      if (remoteParts) {
+        const remoteAgent = useRemoteProjectStore.getState().remoteAgents[agentId];
+        const origProjectId = remoteAgent?.projectId
+          ? (parseNamespacedId(remoteAgent.projectId)?.agentId || '')
+          : '';
+        try {
+          return await window.clubhouse.annexClient.sessionTranscript(
+            remoteParts.satelliteId, remoteParts.agentId, sessionId, origProjectId, offset, limit, remoteAgent?.orchestrator,
+          ) as import('../../shared/session-types').SessionTranscriptPage | null;
+        } catch {
+          return null;
+        }
+      }
+
       const projectPath = ctx.projectPath;
       if (!projectPath) return null;
       const agent = useAgentStore.getState().agents[agentId];
       try {
         const result = await window.clubhouse.agent.readSessionTranscript(projectPath, agentId, sessionId, offset, limit, agent?.orchestrator);
-        // Cast the IPC result to the typed SessionTranscriptPage (event types are normalized on the main process side)
         return result as import('../../shared/session-types').SessionTranscriptPage | null;
       } catch {
         return null;
@@ -247,6 +278,22 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     async getSessionSummary(agentId: string, sessionId: string) {
+      // Remote agent: proxy through annex client
+      const remoteParts = parseNamespacedId(agentId);
+      if (remoteParts) {
+        const remoteAgent = useRemoteProjectStore.getState().remoteAgents[agentId];
+        const origProjectId = remoteAgent?.projectId
+          ? (parseNamespacedId(remoteAgent.projectId)?.agentId || '')
+          : '';
+        try {
+          return await window.clubhouse.annexClient.sessionSummary(
+            remoteParts.satelliteId, remoteParts.agentId, sessionId, origProjectId, remoteAgent?.orchestrator,
+          );
+        } catch {
+          return null;
+        }
+      }
+
       const projectPath = ctx.projectPath;
       if (!projectPath) return null;
       const agent = useAgentStore.getState().agents[agentId];
