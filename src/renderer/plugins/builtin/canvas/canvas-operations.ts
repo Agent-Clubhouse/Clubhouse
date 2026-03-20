@@ -9,7 +9,6 @@ import type {
   Position,
   Size,
   Viewport,
-  CanvasInstance,
 } from './canvas-types';
 import {
   GRID_SIZE,
