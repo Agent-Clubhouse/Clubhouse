@@ -77,15 +77,18 @@
   }
 
   /* Experimental: custom UI font (applied via applyTheme when feature flag is on) */
-  .theme-font-ui {
+  .theme-font-ui,
+  .theme-font-ui * {
     font-family: var(--theme-font-ui) !important;
   }
 
-  /* Experimental: custom mono font for code elements */
+  /* Experimental: custom mono font for code elements and terminals */
   .theme-font-mono pre,
   .theme-font-mono code,
   .theme-font-mono kbd,
-  .theme-font-mono samp {
+  .theme-font-mono samp,
+  .theme-font-mono .xterm-screen,
+  .theme-font-mono .monaco-editor .view-lines {
     font-family: var(--theme-font-mono) !important;
   }
 
