@@ -1255,6 +1255,35 @@ describe('manifest-validator', () => {
     });
   });
 
+  describe('annex permission', () => {
+    it('rejects annex permission on API < 0.8', () => {
+      const result = validateManifest({
+        id: 'annex-old',
+        name: 'Annex Old',
+        version: '1.0.0',
+        engine: { api: 0.7 },
+        scope: 'project',
+        permissions: ['files', 'annex'],
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e: string) => e.includes('Annex permission requires API >= 0.8'))).toBe(true);
+    });
+
+    it('accepts annex permission on API 0.8', () => {
+      const result = validateManifest({
+        id: 'annex-new',
+        name: 'Annex New',
+        version: '1.0.0',
+        engine: { api: 0.8 },
+        scope: 'project',
+        permissions: ['files', 'annex'],
+        contributes: { help: {} },
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
+
   describe('v0.8 contributes.tab.title / railItem.title', () => {
     it('accepts tab.title on v0.8 manifest', () => {
       const result = validateManifest({

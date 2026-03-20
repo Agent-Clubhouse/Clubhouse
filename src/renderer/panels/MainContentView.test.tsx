@@ -4,6 +4,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { MainContentView } from './MainContentView';
 import type { CompletedQuickAgent } from '../../shared/types';
 
@@ -42,7 +43,10 @@ vi.mock('../features/settings/OrchestratorSettingsView', () => ({
   OrchestratorSettingsView: () => <div />,
 }));
 vi.mock('./PluginContentView', () => ({
-  PluginContentView: () => <div />,
+  PluginContentView: (props: any) => <div data-testid="plugin-content-view" data-plugin-id={props.pluginId} />,
+}));
+vi.mock('./AnnexDisabledView', () => ({
+  AnnexDisabledView: (props: any) => <div data-testid="annex-disabled-view" data-plugin-name={props.pluginName} />,
 }));
 vi.mock('../features/settings/PluginDetailSettings', () => ({
   PluginDetailSettings: () => <div />,
@@ -184,6 +188,61 @@ describe('MainContentView selectedCompleted derivation', () => {
     rerender(<MainContentView />);
     // selectedCompletedId still set but no matching record => no-active-agent
     expect(screen.getByTestId('no-active-agent')).toBeInTheDocument();
+  });
+});
+
+describe('MainContentView annex plugin gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it('shows AnnexDisabledView for non-annex-enabled plugin on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: false, scope: 'project' },
+        ],
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('annex-disabled-view')).toBeInTheDocument();
+    expect(screen.getByTestId('annex-disabled-view')).toHaveAttribute('data-plugin-name', 'My Plugin');
+    expect(screen.queryByTestId('plugin-content-view')).not.toBeInTheDocument();
+  });
+
+  it('shows PluginContentView for annex-enabled plugin on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: true, scope: 'project' },
+        ],
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('plugin-content-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('annex-disabled-view')).not.toBeInTheDocument();
+  });
+
+  it('shows PluginContentView for local (non-remote) project regardless', () => {
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: 'local-proj-1' });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('plugin-content-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('annex-disabled-view')).not.toBeInTheDocument();
   });
 });
 
