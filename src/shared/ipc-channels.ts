@@ -199,6 +199,8 @@ export const IPC = {
     GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
     RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
     CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
+    /** Dev-only: simulate update restart to test session resume flow */
+    DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',

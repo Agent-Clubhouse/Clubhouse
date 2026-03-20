@@ -395,4 +395,31 @@ export function registerAppHandlers(): void {
       await autoUpdateService.applyUpdate();
     },
   ));
+
+  // Dev-only: simulate update restart to test session resume flow.
+  // Guarded by app.isPackaged — this handler is a no-op in production builds.
+  if (!app.isPackaged) {
+    ipcMain.handle(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, withValidatedArgs(
+      [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
+      async (_event, data) => {
+        const agentNames = new Map(Object.entries(data.agentNames));
+
+        let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string }> | undefined;
+        if (data.agentMeta) {
+          agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
+        }
+
+        await captureSessionState(agentNames, agentMeta);
+
+        const { restoreAll } = await import('../services/config-pipeline');
+        const { flushAllAgentConfigs } = await import('../services/agent-config');
+        await flushAllAgentConfigs();
+        restoreAll();
+
+        // Relaunch instead of applying a real update
+        app.relaunch();
+        app.exit(0);
+      },
+    ));
+  }
 }

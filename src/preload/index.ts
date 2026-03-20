@@ -654,6 +654,13 @@ const api = {
       ipcRenderer.invoke(IPC.APP.RESOLVE_WORKING_AGENT, agentId, action),
     confirmUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
       ipcRenderer.invoke(IPC.APP.CONFIRM_UPDATE_RESTART, data),
+    devSimulateUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
+      ipcRenderer.invoke(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, data),
+    onDevSimulateUpdateRestart: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener); };
+    },
     onResumeStatusUpdate: (callback: (data: unknown) => void) => {
       const listener = (_event: unknown, data: unknown) => callback(data);
       ipcRenderer.on(IPC.APP.RESUME_STATUS_UPDATE, listener);

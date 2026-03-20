@@ -288,6 +288,8 @@ vi.stubGlobal('clubhouse', {
     resumeManualAgent: vi.fn().mockResolvedValue(undefined),
     resolveWorkingAgent: vi.fn().mockResolvedValue(undefined),
     confirmUpdateRestart: vi.fn().mockResolvedValue(undefined),
+    devSimulateUpdateRestart: vi.fn().mockResolvedValue(undefined),
+    onDevSimulateUpdateRestart: vi.fn().mockReturnValue(() => {}),
     onResumeStatusUpdate: vi.fn().mockReturnValue(() => {}),
   },
   profile: {

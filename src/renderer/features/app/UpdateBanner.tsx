@@ -10,6 +10,7 @@ export function UpdateBanner() {
   const openUpdateDownload = useUpdateStore((s) => s.openUpdateDownload);
   const agents = useAgentStore((s) => s.agents);
   const [showGate, setShowGate] = useState(false);
+  const [simulateMode, setSimulateMode] = useState(false);
   const [gateAgents, setGateAgents] = useState<UpdateGateAgent[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
@@ -44,6 +45,15 @@ export function UpdateBanner() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [showGate, refreshGateAgents]);
 
+  // Dev-only: listen for Debug > Simulate Update Restart menu
+  useEffect(() => {
+    if (!window.clubhouse.app.onDevSimulateUpdateRestart) return;
+    return window.clubhouse.app.onDevSimulateUpdateRestart(() => {
+      setSimulateMode(true);
+      setShowGate(true);
+    });
+  }, []);
+
   const handleRestart = () => {
     if (hasRunningAgents) {
       setShowGate(true);
@@ -69,7 +79,12 @@ export function UpdateBanner() {
       }
     }
     setShowGate(false);
-    await window.clubhouse.app.confirmUpdateRestart({ agentNames, agentMeta });
+    if (simulateMode) {
+      setSimulateMode(false);
+      await window.clubhouse.app.devSimulateUpdateRestart({ agentNames, agentMeta });
+    } else {
+      await window.clubhouse.app.confirmUpdateRestart({ agentNames, agentMeta });
+    }
   };
 
   const handleGateResolve = async (agentId: string, action: 'wait' | 'interrupt' | 'kill') => {
