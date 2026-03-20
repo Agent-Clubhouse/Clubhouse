@@ -102,6 +102,17 @@ export function registerGroupProjectHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, id, since, limit) => {
+      const board = getBulletinBoard(id as string);
+      return board.getAllMessages(
+        since as string | undefined,
+        limit as number | undefined,
+      );
+    },
+  ));
+
   ipcMain.handle(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, withValidatedArgs(
     [stringArg(), stringArg(), stringArg()],
     async (_event, projectId, topic, body) => {

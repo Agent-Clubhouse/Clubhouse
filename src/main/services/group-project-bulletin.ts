@@ -166,6 +166,25 @@ class BulletinBoard {
     return digests;
   }
 
+  /** Get all messages across all topics, sorted by timestamp. */
+  async getAllMessages(since?: string, limit?: number): Promise<BulletinMessage[]> {
+    await this.ensureLoaded();
+    let all: BulletinMessage[] = [];
+    for (const messages of this.topics.values()) {
+      all.push(...messages);
+    }
+    if (since) {
+      const sinceTime = new Date(since).getTime();
+      all = all.filter(m => new Date(m.timestamp).getTime() > sinceTime);
+    }
+    all.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const effectiveLimit = limit ?? 100;
+    if (all.length > effectiveLimit) {
+      all = all.slice(-effectiveLimit);
+    }
+    return all;
+  }
+
   /** Get messages from a specific topic. */
   async getTopicMessages(topic: string, since?: string, limit?: number): Promise<BulletinMessage[]> {
     await this.ensureLoaded();

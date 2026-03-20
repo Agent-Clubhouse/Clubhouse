@@ -5,6 +5,8 @@
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard } from './group-project-bulletin';
+import { groupProjectRegistry } from './group-project-registry';
+import { executeShoulderTap } from './group-project-shoulder-tap';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
 
@@ -73,6 +75,23 @@ async function syncMemberships(agentId: string): Promise<void> {
         await board.postMessage('system', 'system', `${agentName} joined the project`);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to post join event', {
+          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
+
+      // Auto-send polling instruction if polling is enabled
+      try {
+        const project = await groupProjectRegistry.get(projectId);
+        if (project?.metadata?.pollingEnabled) {
+          await executeShoulderTap({
+            projectId,
+            senderLabel: 'system',
+            targetAgentId: agentId,
+            message: '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. Use read_bulletin to check for updates.',
+          });
+        }
+      } catch (err) {
+        appLog('core:group-project', 'warn', 'Failed to send polling instruction to new agent', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
         });
       }

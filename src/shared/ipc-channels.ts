@@ -331,6 +331,7 @@ export const IPC = {
     DELETE: 'group-project:delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
+    GET_ALL_MESSAGES: 'group-project:get-all-messages',
     CHANGED: 'group-project:changed',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
     SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
