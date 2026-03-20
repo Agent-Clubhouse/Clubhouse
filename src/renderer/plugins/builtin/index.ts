@@ -27,11 +27,12 @@ export interface BuiltinPlugin {
 export interface ExperimentalFlags {
   canvas?: boolean;
   sessions?: boolean;
+  review?: boolean;
   [key: string]: boolean | undefined;
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git', 'review'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git'];
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -40,8 +41,11 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
-    { manifest: reviewManifest, module: reviewModule },
   ];
+
+  if (experimentalFlags.review) {
+    plugins.push({ manifest: reviewManifest, module: reviewModule });
+  }
 
   if (experimentalFlags.canvas) {
     plugins.push({ manifest: canvasManifest, module: canvasModule });
@@ -58,6 +62,9 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
 /** Returns the set of builtin plugin IDs that should be auto-enabled on first install. */
 export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}): ReadonlySet<string> {
   const ids = [...BASE_DEFAULT_IDS];
+  if (experimentalFlags.review) {
+    ids.push('review');
+  }
   if (experimentalFlags.canvas) {
     ids.push('canvas');
     ids.push('group-project');
