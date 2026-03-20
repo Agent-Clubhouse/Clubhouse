@@ -262,7 +262,7 @@ describe('GroupProjectTools', () => {
     bindingManager.bind('agent-1', {
       targetId: project.id,
       targetKind: 'group-project',
-      label: 'TP',
+      label: 'TapProj',
       agentName: 'robin',
       targetName: 'TapProj',
       projectName: 'myapp',
@@ -270,12 +270,12 @@ describe('GroupProjectTools', () => {
     bindingManager.bind('agent-2', {
       targetId: project.id,
       targetKind: 'group-project',
-      label: 'TP',
+      label: 'TapProj',
       agentName: 'falcon',
       targetName: 'TapProj',
     });
 
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'TP' });
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'TapProj' });
     const toolName = buildToolName(binding, 'shoulder_tap');
     const result = await callTool('agent-1', toolName, {
       message: 'Need your help',
