@@ -75,9 +75,14 @@ Written to `app.getPath('userData')/restart-session-state.json` at the moment of
 - `capturedAt`: ISO timestamp, used for staleness check (discard if > 24 hours old)
 - `appVersion`: The version that captured this state (informational)
 - `sessions[].agentId`: Unique agent identifier — the key for strict identity mapping
-- `sessions[].sessionId`: CLI-specific session ID from `DurableAgentConfig.lastSessionId` or PTY buffer extraction. Null if orchestrator doesn't support it.
+- `sessions[].sessionId`: CLI-specific session ID extracted from the **live PTY buffer** at capture time via `provider.extractSessionId()`. NOT read from `DurableAgentConfig.lastSessionId` (which may reflect a previous session — the current session's ID hasn't been persisted to disk yet because the `onExit` handler hasn't fired). Null if the orchestrator doesn't support session resume or if extraction fails.
 - `sessions[].resumeStrategy`: `"auto"` (Claude Code — has `--resume <id>`) or `"manual"` (everything else)
 - `sessions[].worktreePath`: If agent uses a worktree, resume in that directory, not the parent project
+- `sessions[].kind`: `"durable"` or `"quick"` — determines resume behavior
+- `sessions[].mission`: Original mission/prompt text (quick agents only, needed for fallback re-spawn)
+- `sessions[].model`: Model override if any (quick agents only)
+
+**Schema versioning:** If the loaded file's `version` does not match the current expected version, discard and delete. Given the file is ephemeral (< 24 hours), migration is not worth the complexity.
 
 **Lifecycle:** Written once at restart. Read once at next startup. Deleted after the resume queue is built (early delete prevents infinite restart loops on crash).
 
@@ -86,8 +91,10 @@ Written to `app.getPath('userData')/restart-session-state.json` at the moment of
 Shown in the renderer when the user triggers restart and live agents exist.
 
 **Agent classification:**
-- `working`: `PtyManager.lastActivity` within last 3 seconds, OR `AgentDetailedState === 'working'` from structured mode
+- `working`: `PtyManager.lastActivity` within last 5 seconds. This is a heuristic — an agent waiting on a long API call with no PTY output may be misclassified as idle, and a prompt redraw may make an idle agent look active. The modal UX handles both cases gracefully: a misclassified-working agent just gets a "Wait" option (harmless), and a misclassified-idle agent will auto-resume fine since it wasn't actually doing anything.
 - `idle`: everything else (waiting for input, needs permission, etc.)
+
+**Scope — PTY agents only:** This feature covers agents running in `pty` execution mode. Headless agents (`headless-manager.ts`) and structured-mode agents (`structured-manager.ts`) are excluded from the Update Gate Modal and resume flow. Rationale: headless agents are short-lived quick missions with no interactive session to resume. Structured-mode agents are API-driven and don't have a PTY buffer or user-facing prompt. If a headless/structured agent is running at update time, it will be killed — same as today. This can be revisited if these runtimes gain session persistence.
 
 **Modal layout:**
 
@@ -102,7 +109,7 @@ Will-resume section (bottom):
 **Behavior:**
 - "Restart Now" button **disabled** while any agent is unresolved `working`
 - **Wait**: keeps modal open, polls agent every 2 seconds. When it goes idle, moves to will-resume section.
-- **Interrupt & Resume**: sends Ctrl+C via PTY, waits for graceful CLI exit, captures session ID, marks for auto-resume
+- **Interrupt & Resume**: sends Ctrl+C via PTY, waits up to 10 seconds for graceful CLI exit, extracts session ID from PTY buffer. If no session ID can be extracted after interrupt, falls back to `--continue` strategy (marks `sessionId: null` but keeps `resumeStrategy: "auto"` so the resume queue will use `--continue` instead of `--resume <id>`).
 - **Kill**: hard kills the PTY process. No resume entry saved for this agent.
 - **Cancel**: closes modal, no restart
 
@@ -120,15 +127,16 @@ Processes `restart-session-state.json` entries after app relaunch.
 - **Stale state file** (> 24 hours old): ignore and delete
 - **Project directory gone**: skip agent, show warning in resume banner
 - **Session ID invalid** (`--resume <id>` fails): fall back to `--continue`. If that fails too, show "Resume failed" with option to start fresh.
-- **Quick agents**: saved with `agentId`, `projectPath`, `sessionId`, `mission`. Resume via `--resume <sessionId>` if supported, otherwise re-spawn with original mission text.
+- **Quick agents**: saved with `agentId`, `projectPath`, `sessionId`, `mission`, `model`, `orchestrator`, and `kind: "quick"` in the state file. On resume, spawn a new quick agent with `--resume <sessionId>` if supported. If resume isn't available, re-spawn with the original `mission` text. Quick agents don't have `DurableAgentConfig`, so ALL their context must come from the state file.
+- **Per-workspace resume timeout**: if a resuming agent does not reach idle state within 60 seconds, skip it and proceed to the next agent in that workspace. Show "Resume timed out" in the banner with an option to retry manually.
 
 ### 4. Main Process Changes
 
 **New file: `src/main/services/restart-session-service.ts`**
 
 Three functions:
-- `captureSessionState()`: queries AgentRegistry + PtyManager for live agents, resolves session IDs from DurableAgentConfig (durable agents) or PTY buffer extraction (quick agents), determines resumeStrategy from orchestrator capabilities, writes state file
-- `loadPendingResume()`: reads and validates state file, returns session list or null
+- `captureSessionState()`: calls `AgentRegistry.getAllRegistrations()` (new method — see below) to enumerate live agents. For each PTY agent, extracts the session ID from the **live PTY buffer** via `provider.extractSessionId(ptyManager.getBuffer(agentId))` — NOT from `DurableAgentConfig.lastSessionId`, which may reflect a previous session since the current session's `onExit` handler hasn't fired yet. Determines `resumeStrategy` from orchestrator `capabilities.sessionResume`. Writes state file.
+- `loadPendingResume()`: reads and validates state file (checks `version` matches expected, `capturedAt` within 24 hours), returns session list or null
 - `clearPendingResume()`: deletes state file
 
 **Modified: `src/main/services/auto-update-service.ts`**
@@ -139,7 +147,9 @@ Three functions:
 3. If any working → IPC to renderer → Update Gate Modal → wait for resolution
 4. All resolved → `captureSessionState()` → `app.exit(0)`
 
-`applyUpdateOnQuit()` also calls `captureSessionState()` so silent-update-on-quit preserves sessions too.
+**`applyUpdateOnQuit()` does NOT capture session state.** This path fires during normal quit (`app.quit()`), meaning the user intentionally closed the app. Resuming sessions they chose to close would be confusing. Session capture only happens in the explicit `applyUpdate()` restart path.
+
+**Pre-exit cleanup:** Since `app.exit(0)` bypasses the `before-quit` handler, the explicit restart path must run config cleanup before exiting: `configPipeline.restoreAll()` and `agentConfig.flushAllDirty()`. This ensures materialized config files (MCP, permissions, etc.) are cleaned up before the restart.
 
 **Modified: `src/main/index.ts`**
 
@@ -174,6 +184,11 @@ Two new IPC channels:
 - `ResumeStatus`: `'pending' | 'resuming' | 'resumed' | 'failed' | 'manual'`
 - Existing `spawnAgent` flow handles `resume: true` unchanged
 
+**Resume status IPC flow:**
+- Main process drives the resume queue and sends status updates to renderer via a new `IPC.APP.RESUME_STATUS_UPDATE` channel: `{ agentId, status: ResumeStatus, error?: string }`
+- Renderer `agentLifecycleSlice` listens for these events and updates `resumingAgents` state
+- `ResumeBanner` reads from `resumingAgents` to render per-agent progress
+
 **No changes to:** agent cards, terminal views, PTY rendering, settings, sidebar.
 
 ## CLI Resume Support Matrix
@@ -189,16 +204,18 @@ As orchestrators add per-session resume, update their provider's `capabilities.s
 
 ## File Inventory
 
-| Action | File |
-|---|---|
-| Create | `src/main/services/restart-session-service.ts` |
-| Create | `src/renderer/components/UpdateGateModal.tsx` |
-| Create | `src/renderer/components/ResumeBanner.tsx` |
-| Modify | `src/main/services/auto-update-service.ts` |
-| Modify | `src/main/index.ts` |
-| Modify | `src/main/ipc/agent-handlers.ts` |
-| Modify | `src/shared/ipc-channels.ts` |
-| Modify | `src/renderer/stores/agent/agentLifecycleSlice.ts` |
+| Action | File | Notes |
+|---|---|---|
+| Create | `src/main/services/restart-session-service.ts` | Core capture/load/clear logic |
+| Create | `src/renderer/components/UpdateGateModal.tsx` | Pre-restart modal with per-agent controls |
+| Create | `src/renderer/components/ResumeBanner.tsx` | Post-restart resume progress banner |
+| Modify | `src/main/services/auto-update-service.ts` | Gate in `applyUpdate()`, pre-exit cleanup |
+| Modify | `src/main/services/agent-registry.ts` | Add `getAllRegistrations()` public method |
+| Modify | `src/main/services/pty-manager.ts` | Add `getBuffer(agentId)` public accessor |
+| Modify | `src/main/index.ts` | Startup resume check |
+| Modify | `src/main/ipc/agent-handlers.ts` | New IPC channels for resume |
+| Modify | `src/shared/ipc-channels.ts` | New channel constants |
+| Modify | `src/renderer/stores/agent/agentLifecycleSlice.ts` | `resumingAgents` state + IPC listeners |
 
 ## Testing Strategy
 
