@@ -25,7 +25,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
 
   const handleWake = useCallback(async () => {
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake up');
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId);
       return;
     }
     if (!agentProject) return;
@@ -38,7 +38,7 @@ export function SleepingAgent({ agent }: { agent: Agent }) {
 
   const handleWakeAndResume = useCallback(async () => {
     if (isRemote && remoteParts) {
-      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, 'Wake and resume');
+      await sendAgentWake(remoteParts.satelliteId, remoteParts.agentId, { resume: true });
       setDropdownOpen(false);
       return;
     }

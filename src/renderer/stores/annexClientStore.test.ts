@@ -270,14 +270,24 @@ describe('annexClientStore', () => {
   // -------------------------------------------------------------------------
 
   describe('sendAgentWake', () => {
-    it('delegates to IPC agentWake', async () => {
-      await getState().sendAgentWake('sat-1', 'agent-1', 'Wake up');
-      expect(mockAnnexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-1', 'Wake up');
+    it('delegates to IPC agentWake with no options', async () => {
+      await getState().sendAgentWake('sat-1', 'agent-1');
+      expect(mockAnnexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-1', undefined);
+    });
+
+    it('delegates to IPC agentWake with resume option', async () => {
+      await getState().sendAgentWake('sat-1', 'agent-1', { resume: true });
+      expect(mockAnnexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-1', { resume: true });
+    });
+
+    it('delegates to IPC agentWake with mission option', async () => {
+      await getState().sendAgentWake('sat-1', 'agent-1', { mission: 'do something' });
+      expect(mockAnnexClient.agentWake).toHaveBeenCalledWith('sat-1', 'agent-1', { mission: 'do something' });
     });
 
     it('swallows IPC errors', async () => {
       mockAnnexClient.agentWake.mockRejectedValueOnce(new Error('IPC failed'));
-      await expect(getState().sendAgentWake('sat-1', 'agent-1', 'Wake up')).resolves.toBeUndefined();
+      await expect(getState().sendAgentWake('sat-1', 'agent-1')).resolves.toBeUndefined();
     });
   });
 

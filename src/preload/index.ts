@@ -831,8 +831,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_SPAWN, satelliteId, params),
     agentKill: (satelliteId: string, agentId: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_KILL, satelliteId, agentId),
-    agentWake: (satelliteId: string, agentId: string, message: string) =>
-      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WAKE, satelliteId, agentId, message),
+    agentWake: (satelliteId: string, agentId: string, options?: { resume?: boolean; mission?: string }) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WAKE, satelliteId, agentId, options),
     ptyGetBuffer: (satelliteId: string, agentId: string): Promise<string> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_GET_BUFFER, satelliteId, agentId),
     fileTree: (satelliteId: string, projectId: string, options?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]> =>

@@ -657,13 +657,17 @@ describe('annex-server', () => {
       expect(JSON.parse(res.body)).toEqual({ error: 'agent_not_found' });
     });
 
-    it('POST /api/v1/agents/:id/wake returns 400 without message', async () => {
+    it('POST /api/v1/agents/:id/wake wakes without a mission', async () => {
       vi.mocked(projectStore.list).mockReturnValue([
         { id: 'proj_1', name: 'test', path: '/tmp/test' },
       ]);
       vi.mocked(agentConfigModule.listDurable).mockReturnValue([
-        { id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01' } as any,
+        {
+          id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01',
+          worktreePath: '/tmp/test/.clubhouse/agents/agent-1',
+        } as any,
       ]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
 
       const { port, token } = await startAndPair();
 
@@ -672,8 +676,46 @@ describe('annex-server', () => {
         {},
         authHeaders(token),
       );
-      expect(res.status).toBe(400);
-      expect(JSON.parse(res.body)).toEqual({ error: 'missing_message' });
+      expect(res.status).toBe(200);
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'durable_1',
+          kind: 'durable',
+          mission: undefined,
+          resume: false,
+        }),
+      );
+    });
+
+    it('POST /api/v1/agents/:id/wake supports resume flag', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'test', path: '/tmp/test' },
+      ]);
+      vi.mocked(agentConfigModule.listDurable).mockReturnValue([
+        {
+          id: 'durable_1', name: 'agent-1', color: 'indigo', createdAt: '2025-01-01',
+          worktreePath: '/tmp/test/.clubhouse/agents/agent-1',
+          lastSessionId: 'session-abc',
+        } as any,
+      ]);
+      vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+
+      const { port, token } = await startAndPair();
+
+      const res = await request(
+        port, 'POST', '/api/v1/agents/durable_1/wake',
+        { resume: true },
+        authHeaders(token),
+      );
+      expect(res.status).toBe(200);
+      expect(agentSystem.spawnAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'durable_1',
+          kind: 'durable',
+          resume: true,
+          sessionId: 'session-abc',
+        }),
+      );
     });
   });
 
