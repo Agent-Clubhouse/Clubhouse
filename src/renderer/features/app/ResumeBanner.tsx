@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 export type ResumeStatus = 'pending' | 'resuming' | 'resumed' | 'failed' | 'manual' | 'timed_out';
 
 export interface ResumeBannerSession {
@@ -33,6 +35,15 @@ const STATUS_COLOR: Record<ResumeStatus, string> = {
 
 export function ResumeBanner({ sessions, onManualResume, onDismiss }: ResumeBannerProps) {
   if (sessions.length === 0) return null;
+
+  const allDone = sessions.every((s) => s.status === 'resumed' || s.status === 'failed' || s.status === 'timed_out');
+
+  // Auto-dismiss 3 seconds after all sessions are resolved
+  useEffect(() => {
+    if (!allDone) return;
+    const timer = setTimeout(onDismiss, 3000);
+    return () => clearTimeout(timer);
+  }, [allDone, onDismiss]);
 
   return (
     <div
