@@ -1,4 +1,5 @@
 import type { PluginContext, PluginManifest, FilesAPI, Disposable } from '../../shared/plugin-types';
+import type { FileNode } from '../../shared/types';
 import { hasPermission } from './plugin-api-shared';
 import { rendererLog } from './renderer-logger';
 import { usePluginStore } from './plugin-store';
@@ -140,11 +141,12 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
     return {
       dataDir: computeDataDir(ctx.pluginId, ctx.projectId),
       async readTree(relativePath = '.', options?: { includeHidden?: boolean; depth?: number }) {
-        return window.clubhouse.annexClient.fileTree(satelliteId, origProjectId, {
+        const tree = await window.clubhouse.annexClient.fileTree(satelliteId, origProjectId, {
           path: relativePath,
           depth: options?.depth,
           includeHidden: options?.includeHidden,
         });
+        return tree as FileNode[];
       },
       async readFile(relativePath: string) {
         return window.clubhouse.annexClient.fileRead(satelliteId, origProjectId, relativePath);
