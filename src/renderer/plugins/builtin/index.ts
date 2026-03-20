@@ -13,6 +13,8 @@ import { manifest as canvasManifest } from './canvas/manifest';
 import * as canvasModule from './canvas/main';
 import { manifest as sessionsManifest } from './sessions/manifest';
 import * as sessionsModule from './sessions/main';
+import { manifest as reviewManifest } from './review/manifest';
+import * as reviewModule from './review/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -27,7 +29,7 @@ export interface ExperimentalFlags {
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git', 'review'];
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -36,6 +38,7 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
+    { manifest: reviewManifest, module: reviewModule },
   ];
 
   if (experimentalFlags.canvas) {
