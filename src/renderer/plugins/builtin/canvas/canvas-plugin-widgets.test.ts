@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  createViewCounter,
   createView,
   createPluginView,
   queryViews,
@@ -37,25 +36,19 @@ describe('canvas plugin widget support', () => {
   // ── createView with displayName ─────────────────────────────────────
 
   describe('createView with displayName', () => {
-    let counter: ReturnType<typeof createViewCounter>;
-
-    beforeEach(() => {
-      counter = createViewCounter(0);
-    });
-
     it('generates displayName for agent view', () => {
-      const view = createView('agent', { x: 0, y: 0 }, 0, counter);
+      const view = createView('agent', { x: 0, y: 0 }, 0);
       expect(view.displayName).toBe('Agent');
       expect(view.metadata).toEqual({});
     });
 
     it('deduplicates when existing names are provided', () => {
-      const view = createView('agent', { x: 0, y: 0 }, 0, counter, ['Agent']);
+      const view = createView('agent', { x: 0, y: 0 }, 0, ['Agent']);
       expect(view.displayName).toBe('Agent (2)');
     });
 
     it('throws for plugin type', () => {
-      expect(() => createView('plugin', { x: 0, y: 0 }, 0, counter)).toThrow(
+      expect(() => createView('plugin', { x: 0, y: 0 }, 0)).toThrow(
         'Use createPluginView()',
       );
     });
@@ -64,16 +57,10 @@ describe('canvas plugin widget support', () => {
   // ── createPluginView ────────────────────────────────────────────────
 
   describe('createPluginView', () => {
-    let counter: ReturnType<typeof createViewCounter>;
-
-    beforeEach(() => {
-      counter = createViewCounter(0);
-    });
-
     it('creates a plugin canvas view', () => {
       const view = createPluginView(
         'my-plugin', 'plugin:my-plugin:chart', 'Chart',
-        { x: 100, y: 200 }, 0, counter,
+        { x: 100, y: 200 }, 0,
       );
 
       expect(view.type).toBe('plugin');
@@ -82,13 +69,13 @@ describe('canvas plugin widget support', () => {
       expect(view.title).toBe('Chart');
       expect(view.displayName).toBe('Chart');
       expect(view.metadata).toEqual({});
-      expect(view.id).toBe('cv_1');
+      expect(view.id).toMatch(/^cv_[0-9a-f]{8}$/);
     });
 
     it('includes metadata', () => {
       const view = createPluginView(
         'my-plugin', 'plugin:my-plugin:chart', 'Chart',
-        { x: 0, y: 0 }, 0, counter, [],
+        { x: 0, y: 0 }, 0, [],
         { dataSource: 'api', chartType: 'bar' },
       );
 
@@ -98,7 +85,7 @@ describe('canvas plugin widget support', () => {
     it('uses custom default size', () => {
       const view = createPluginView(
         'my-plugin', 'plugin:my-plugin:chart', 'Chart',
-        { x: 0, y: 0 }, 0, counter, [], {},
+        { x: 0, y: 0 }, 0, [], {},
         { width: 600, height: 400 },
       );
 
@@ -108,7 +95,7 @@ describe('canvas plugin widget support', () => {
     it('enforces minimum size', () => {
       const view = createPluginView(
         'my-plugin', 'plugin:my-plugin:chart', 'Chart',
-        { x: 0, y: 0 }, 0, counter, [], {},
+        { x: 0, y: 0 }, 0, [], {},
         { width: 50, height: 50 },
       );
 
@@ -119,7 +106,7 @@ describe('canvas plugin widget support', () => {
     it('deduplicates display name', () => {
       const view = createPluginView(
         'my-plugin', 'plugin:my-plugin:chart', 'Chart',
-        { x: 0, y: 0 }, 0, counter, ['Chart', 'Chart (2)'],
+        { x: 0, y: 0 }, 0, ['Chart', 'Chart (2)'],
       );
 
       expect(view.displayName).toBe('Chart (3)');

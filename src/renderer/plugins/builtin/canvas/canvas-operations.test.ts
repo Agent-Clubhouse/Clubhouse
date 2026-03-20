@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  createViewCounter,
   generateViewId,
-  resetViewCounter,
-  syncCounterToViews,
   snapToGrid,
   snapPosition,
   snapSize,
@@ -22,9 +19,7 @@ import {
   viewportToCenterView,
   detectOverlaps,
   reflowViews,
-  createCanvasCounter,
   generateCanvasId,
-  syncCounterToInstances,
   screenToCanvas,
   canvasToScreen,
 } from './canvas-operations';
@@ -35,36 +30,14 @@ describe('canvas-operations', () => {
   // ── ID generation ──────────────────────────────────────────────────
 
   describe('generateViewId', () => {
-    it('generates sequential IDs with a scoped counter', () => {
-      const counter = createViewCounter(0);
-      expect(generateViewId(counter)).toBe('cv_1');
-      expect(generateViewId(counter)).toBe('cv_2');
-      expect(generateViewId(counter)).toBe('cv_3');
+    it('generates IDs with cv_ prefix and 8-char hex suffix', () => {
+      const id = generateViewId();
+      expect(id).toMatch(/^cv_[0-9a-f]{8}$/);
     });
 
-    it('resets counter', () => {
-      const counter = createViewCounter(10);
-      resetViewCounter(0, counter);
-      expect(generateViewId(counter)).toBe('cv_1');
-    });
-  });
-
-  describe('syncCounterToViews', () => {
-    it('syncs counter to highest existing view ID', () => {
-      const counter = createViewCounter(0);
-      const views: CanvasView[] = [
-        { id: 'cv_5', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null },
-        { id: 'cv_10', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'B', zIndex: 1, agentId: null },
-      ];
-      syncCounterToViews(views, counter);
-      expect(counter.value).toBe(10);
-      expect(generateViewId(counter)).toBe('cv_11');
-    });
-
-    it('does not decrease counter', () => {
-      const counter = createViewCounter(20);
-      syncCounterToViews([{ id: 'cv_5', type: 'agent', position: { x: 0, y: 0 }, size: { width: 200, height: 200 }, title: 'A', zIndex: 0, agentId: null }], counter);
-      expect(counter.value).toBe(20);
+    it('generates unique IDs on each call', () => {
+      const ids = new Set(Array.from({ length: 100 }, () => generateViewId()));
+      expect(ids.size).toBe(100);
     });
   });
 
@@ -104,22 +77,16 @@ describe('canvas-operations', () => {
   // ── View CRUD ──────────────────────────────────────────────────────
 
   describe('createView', () => {
-    let counter: ReturnType<typeof createViewCounter>;
-
-    beforeEach(() => {
-      counter = createViewCounter(0);
-    });
-
-    it('creates an agent view', () => {
-      const view = createView('agent', { x: 100, y: 200 }, 0, counter);
+    it('creates an agent view with random ID', () => {
+      const view = createView('agent', { x: 100, y: 200 }, 0);
       expect(view.type).toBe('agent');
       expect(view.position).toEqual({ x: 100, y: 200 });
       expect((view as AgentCanvasView).agentId).toBeNull();
-      expect(view.id).toBe('cv_1');
+      expect(view.id).toMatch(/^cv_[0-9a-f]{8}$/);
     });
 
     it('snaps position to grid', () => {
-      const view = createView('agent', { x: 13, y: 27 }, 0, counter);
+      const view = createView('agent', { x: 13, y: 27 }, 0);
       expect(view.position.x % GRID_SIZE).toBe(0);
       expect(view.position.y % GRID_SIZE).toBe(0);
     });
@@ -393,20 +360,14 @@ describe('canvas-operations', () => {
   // ── Canvas instance helpers ────────────────────────────────────────
 
   describe('canvas instance IDs', () => {
-    it('generates sequential canvas IDs', () => {
-      const counter = createCanvasCounter(0);
-      expect(generateCanvasId(counter)).toBe('canvas_1');
-      expect(generateCanvasId(counter)).toBe('canvas_2');
+    it('generates canvas IDs with canvas_ prefix and 8-char hex suffix', () => {
+      const id = generateCanvasId();
+      expect(id).toMatch(/^canvas_[0-9a-f]{8}$/);
     });
 
-    it('syncs counter to existing instances', () => {
-      const counter = createCanvasCounter(0);
-      syncCounterToInstances(
-        [{ id: 'canvas_5', name: 'A', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0 }],
-        counter,
-      );
-      expect(counter.value).toBe(5);
-      expect(generateCanvasId(counter)).toBe('canvas_6');
+    it('generates unique canvas IDs on each call', () => {
+      const ids = new Set(Array.from({ length: 100 }, () => generateCanvasId()));
+      expect(ids.size).toBe(100);
     });
   });
 
