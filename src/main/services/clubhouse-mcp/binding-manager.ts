@@ -49,6 +49,24 @@ class BindingManager {
     this.notifyChange(agentId);
   }
 
+  /** Set custom instructions on a binding. */
+  setInstructions(agentId: string, targetId: string, instructions: Record<string, string>): void {
+    const agentBindings = this.bindings.get(agentId);
+    if (!agentBindings) return;
+
+    const binding = agentBindings.find(b => b.targetId === targetId);
+    if (!binding) return;
+
+    // Remove empty entries
+    const cleaned: Record<string, string> = {};
+    for (const [key, value] of Object.entries(instructions)) {
+      if (value.trim()) cleaned[key] = value;
+    }
+
+    binding.instructions = Object.keys(cleaned).length > 0 ? cleaned : undefined;
+    this.notifyChange(agentId);
+  }
+
   /** Remove a target from all agents (widget closed or agent exited). */
   unbindTarget(targetId: string): void {
     const affectedAgents: string[] = [];

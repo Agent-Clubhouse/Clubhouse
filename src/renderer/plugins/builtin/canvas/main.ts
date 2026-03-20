@@ -9,6 +9,7 @@ import { broadcastCanvasState } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -95,6 +96,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+  const bindings = useMcpBindingStore((s) => s.bindings);
 
   // Dynamic title: show active canvas tab name
   const activeCanvasName = canvases.find((c) => c.id === activeCanvasId)?.name;
@@ -120,6 +122,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       }
     }
     store.getState().loadCanvas(storage);
+    // Restore persisted wire connections (dormant until agents wake)
+    store.getState().loadWires(storage);
   }, [store, storage, isRemote, projectId]);
 
   // Subscribe to live remote canvas state updates
@@ -136,18 +140,21 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, isRemote, projectId]);
 
   // Debounced auto-save (skip for remote projects — state is owned by satellite)
+  const bindingsRef = useRef(bindings);
+  bindingsRef.current = bindings;
   const scheduleSave = useCallback(() => {
     if (isRemote) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       store.getState().saveCanvas(storage);
+      store.getState().saveWires(storage, bindingsRef.current);
     }, 500);
   }, [store, storage, isRemote]);
 
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, bindings, loaded, scheduleSave]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
   useEffect(() => {

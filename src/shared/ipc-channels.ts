@@ -342,6 +342,7 @@ export const IPC = {
     BINDINGS_CHANGED: 'mcp-binding:bindings-changed',
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
+    SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },

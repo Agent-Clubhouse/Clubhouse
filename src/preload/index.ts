@@ -1097,6 +1097,8 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_BINDING.REGISTER_WEBVIEW, widgetId, webContentsId),
     unregisterWebview: (widgetId: string) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
+    setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;

@@ -3,6 +3,7 @@ import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
 import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
+import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import {
   createView as createViewOp,
   createPluginView as createPluginViewOp,
@@ -28,6 +29,10 @@ export interface CanvasState {
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string) => void;
+
+  // Wire persistence
+  loadWires: (storage: ScopedStorage) => Promise<void>;
+  saveWires: (storage: ScopedStorage, bindings: McpBindingEntry[]) => Promise<void>;
 
   // Canvas tab management
   addCanvas: () => string;
@@ -82,6 +87,7 @@ export interface CanvasState {
 
 const STORAGE_KEY_INSTANCES = 'canvas-instances';
 const STORAGE_KEY_ACTIVE = 'canvas-active-id';
+const STORAGE_KEY_WIRES = 'canvas-wires';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -200,6 +206,51 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
+    },
+
+    loadWires: async (storage) => {
+      try {
+        const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
+        if (!saved || !Array.isArray(saved) || saved.length === 0) return;
+
+        // Restore each binding to the main process
+        for (const entry of saved) {
+          if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
+          try {
+            await window.clubhouse.mcpBinding.bind(entry.agentId, {
+              targetId: entry.targetId,
+              targetKind: entry.targetKind,
+              label: entry.label,
+              agentName: entry.agentName,
+              targetName: entry.targetName,
+              projectName: entry.projectName,
+            });
+            // Restore instructions if present
+            if (entry.instructions && Object.keys(entry.instructions).length > 0) {
+              await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
+            }
+          } catch {
+            // Binding restore failed (e.g. MCP not enabled) — skip
+          }
+        }
+      } catch {
+        // Storage read failed — skip wire restore
+      }
+    },
+
+    saveWires: async (storage, bindings) => {
+      // Persist all binding entries including instructions
+      const data = bindings.map((b) => ({
+        agentId: b.agentId,
+        targetId: b.targetId,
+        targetKind: b.targetKind,
+        label: b.label,
+        agentName: b.agentName,
+        targetName: b.targetName,
+        projectName: b.projectName,
+        ...(b.instructions ? { instructions: b.instructions } : {}),
+      }));
+      await storage.write(STORAGE_KEY_WIRES, data);
     },
 
     hydrateFromRemote: (canvasData, activeId) => {
