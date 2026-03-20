@@ -44,7 +44,7 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(() => { throw new Error('ENOENT'); }),
 }));
 
-// Provider that does NOT have buildHeadlessCommand (like Copilot/OpenCode)
+// Provider that does NOT have buildHeadlessCommand (like Copilot)
 const providerWithoutHeadless = {
   id: 'copilot-cli',
   displayName: 'Copilot CLI',

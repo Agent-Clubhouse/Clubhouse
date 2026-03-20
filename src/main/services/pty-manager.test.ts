@@ -429,7 +429,7 @@ describe('pty-manager', () => {
     });
 
     it('uses custom exit command', () => {
-      spawn('agent_gk_custom', '/test', '/usr/local/bin/opencode', []);
+      spawn('agent_gk_custom', '/test', '/usr/local/bin/codex', []);
       gracefulKill('agent_gk_custom', '/quit\r');
       expect(mockProcess.write).toHaveBeenCalledWith('/quit\r');
     });
@@ -651,7 +651,7 @@ describe('pty-manager', () => {
     });
 
     it('uses custom exit command', () => {
-      spawn('agent_ka_4', '/test', '/usr/local/bin/opencode', []);
+      spawn('agent_ka_4', '/test', '/usr/local/bin/codex', []);
       mockProcess.write.mockClear();
 
       killAll('/quit\r');

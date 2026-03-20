@@ -589,7 +589,7 @@ describe('CopilotCliProvider', () => {
       expect(provider.toolVerb('Grep')).toBeUndefined();
     });
 
-    it('does NOT map OpenCode tool names', () => {
+    it('does NOT map other orchestrator tool names', () => {
       expect(provider.toolVerb('bash')).toBeUndefined();
       expect(provider.toolVerb('write')).toBeUndefined();
       expect(provider.toolVerb('glob')).toBeUndefined();

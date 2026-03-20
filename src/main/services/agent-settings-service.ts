@@ -12,7 +12,7 @@ const LOG_NS = 'core:agent-settings';
  * When omitted, functions fall back to Claude Code defaults for backward compatibility.
  */
 export interface SettingsConventions {
-  configDir: string;           // e.g. '.claude', '.github', '.opencode'
+  configDir: string;           // e.g. '.claude', '.github', '.codex'
   skillsDir: string;           // e.g. 'skills'
   agentTemplatesDir: string;   // e.g. 'agents'
   mcpConfigFile: string;       // e.g. '.mcp.json', '.github/mcp.json'

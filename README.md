@@ -2,12 +2,12 @@
 
 A desktop app for managing AI coding agents across your projects. Run multiple agents side-by-side with a split-pane workspace, integrated terminals, file browsing, and a plugin system that makes it all extensible.
 
-Clubhouse wraps CLI-based coding agents (Claude Code, GitHub Copilot CLI, OpenCode) in a native Electron shell, giving you a unified interface to spawn, monitor, and manage them across all your projects simultaneously.
+Clubhouse wraps CLI-based coding agents (Claude Code, GitHub Copilot CLI, Codex CLI) in a native Electron shell, giving you a unified interface to spawn, monitor, and manage them across all your projects simultaneously.
 
 ## Key Features
 
 - **Multi-agent workspace** — Run durable (long-lived) and quick (one-shot) agents per project, view them in a split-pane Hub
-- **Orchestrator abstraction** — Swap between Claude Code, GitHub Copilot CLI, and OpenCode with a unified provider interface
+- **Orchestrator abstraction** — Swap between Claude Code, GitHub Copilot CLI, and Codex CLI with a unified provider interface
 - **Headless mode** — Run quick agents without a terminal, parsing structured JSON output for cost, duration, and transcript data
 - **Live agent status** — Hook events from running agents surface real-time tool usage, permission requests, and errors
 - **Built-in plugins** — Hub (split-pane workspace), Files (Monaco editor + file browser), Terminal (project shell), Issues (GitHub integration)
