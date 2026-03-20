@@ -210,3 +210,70 @@ describe('canvas-store', () => {
     expect(store.getState().views[0].type).toBe('agent');
   });
 });
+
+describe('hydrateFromRemote', () => {
+  let store: ReturnType<typeof createCanvasStore>;
+
+  beforeEach(() => {
+    store = createCanvasStore();
+  });
+
+  it('hydrates canvas state from remote data', () => {
+    const remoteCanvases = [{
+      id: 'remote-canvas-1',
+      name: 'Remote Canvas',
+      views: [
+        { id: 'v1', type: 'agent', position: { x: 100, y: 200 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Agent', metadata: {} },
+      ],
+      viewport: { panX: 50, panY: 50, zoom: 1.5 },
+      nextZIndex: 1,
+      zoomedViewId: null,
+    }];
+
+    store.getState().hydrateFromRemote(remoteCanvases, 'remote-canvas-1');
+
+    const state = store.getState();
+    expect(state.loaded).toBe(true);
+    expect(state.canvases).toHaveLength(1);
+    expect(state.activeCanvasId).toBe('remote-canvas-1');
+    expect(state.views).toHaveLength(1);
+    expect(state.views[0].type).toBe('agent');
+    expect(state.viewport.panX).toBe(50);
+  });
+
+  it('does nothing with empty data', () => {
+    store.getState().hydrateFromRemote([], 'nonexistent');
+    expect(store.getState().loaded).toBe(false);
+  });
+
+  it('does nothing with null data', () => {
+    store.getState().hydrateFromRemote(null as any, '');
+    expect(store.getState().loaded).toBe(false);
+  });
+
+  it('falls back to first canvas if activeCanvasId is missing', () => {
+    const remoteCanvases = [{
+      id: 'c1',
+      name: 'Canvas 1',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+    }];
+
+    store.getState().hydrateFromRemote(remoteCanvases, 'nonexistent');
+    expect(store.getState().activeCanvasId).toBe('c1');
+    expect(store.getState().loaded).toBe(true);
+  });
+
+  it('hydrates multiple canvases', () => {
+    const remoteCanvases = [
+      { id: 'c1', name: 'Canvas 1', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null },
+      { id: 'c2', name: 'Canvas 2', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null },
+    ];
+
+    store.getState().hydrateFromRemote(remoteCanvases, 'c2');
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(store.getState().activeCanvasId).toBe('c2');
+  });
+});
