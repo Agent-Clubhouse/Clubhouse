@@ -12,6 +12,7 @@ import { computeWirePath, bezierPathWithOffsets, viewRect } from './wire-utils';
 import type { EdgeMidpoint } from './wire-utils';
 import { WireFlowDots } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
+import { useWireActivity } from './useWireActivity';
 
 /** CSS animation for ambient wire glow */
 const WIRE_GLOW_KEYFRAMES = `
@@ -69,6 +70,57 @@ function resolveBindingViews(
 
   return { source, target };
 }
+
+/** Per-wire group component — allows calling useWireActivity hook per wire. */
+const WireGroup = React.memo(function WireGroup({
+  wireKey,
+  path,
+  binding,
+  bidir,
+  onWireClick,
+}: {
+  wireKey: string;
+  path: string;
+  binding: McpBindingEntry;
+  bidir: boolean;
+  onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
+}) {
+  // Always treat wires as alive for now — ambient mode.
+  // A future enhancement can check agent status from agentStore.
+  const activity = useWireActivity(wireKey, true);
+
+  return (
+    <g data-testid={`wire-group-${wireKey}`} data-bidir={bidir ? 'true' : undefined} data-activity={activity}>
+      {/* Invisible thick hitbox for click interaction */}
+      <path
+        d={path}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={8}
+        style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+        onClick={(e) => onWireClick?.(binding, e)}
+        data-testid={`wire-hitbox-${wireKey}`}
+      />
+      {/* Visible styled wire */}
+      <path
+        d={path}
+        fill="none"
+        stroke="rgb(var(--ctp-accent, 137 180 250))"
+        strokeWidth={2}
+        strokeLinecap="round"
+        markerEnd="url(#wire-arrow-fwd)"
+        markerStart={bidir ? 'url(#wire-arrow-rev)' : undefined}
+        style={{
+          pointerEvents: 'none',
+          animation: 'wire-pulse 3s ease-in-out infinite',
+        }}
+        data-testid={`wire-path-${wireKey}`}
+      />
+      {/* Flowing light dots — driven by activity state */}
+      <WireFlowDots wireKey={wireKey} activity={activity} />
+    </g>
+  );
+});
 
 export const WireOverlay = React.memo(function WireOverlay({
   views,
@@ -194,35 +246,14 @@ export const WireOverlay = React.memo(function WireOverlay({
           ? bezierPathWithOffsets(from, to, { dx: offsets.fromDx, dy: offsets.fromDy }, { dx: offsets.toDx, dy: offsets.toDy })
           : path;
         return (
-          <g key={key} data-testid={`wire-group-${key}`} data-bidir={bidir ? 'true' : undefined}>
-            {/* Invisible thick hitbox for click interaction */}
-            <path
-              d={physicsPath}
-              fill="none"
-              stroke="transparent"
-              strokeWidth={8}
-              style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-              onClick={(e) => onWireClick?.(binding, e)}
-              data-testid={`wire-hitbox-${key}`}
-            />
-            {/* Visible styled wire */}
-            <path
-              d={physicsPath}
-              fill="none"
-              stroke="rgb(var(--ctp-accent, 137 180 250))"
-              strokeWidth={2}
-              strokeLinecap="round"
-              markerEnd="url(#wire-arrow-fwd)"
-              markerStart={bidir ? 'url(#wire-arrow-rev)' : undefined}
-              style={{
-                pointerEvents: 'none',
-                animation: 'wire-pulse 3s ease-in-out infinite',
-              }}
-              data-testid={`wire-path-${key}`}
-            />
-            {/* Flowing light dots */}
-            <WireFlowDots wireKey={key} bidir={bidir} />
-          </g>
+          <WireGroup
+            key={key}
+            wireKey={key}
+            path={physicsPath}
+            binding={binding}
+            bidir={bidir}
+            onWireClick={onWireClick}
+          />
         );
       })}
     </svg>
