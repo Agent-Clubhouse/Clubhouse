@@ -10,7 +10,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'project',
-  permissions: ['agents', 'commands'],
+  permissions: ['agents', 'commands', 'widgets'],
   contributes: {
     tab: { label: 'Sessions', title: 'Sessions', icon: SESSIONS_ICON, layout: 'sidebar-content' },
     commands: [],

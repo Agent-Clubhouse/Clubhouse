@@ -27,7 +27,7 @@ describe('sessions plugin manifest', () => {
 
   it('declares required permissions', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['agents', 'commands']),
+      expect.arrayContaining(['agents', 'commands', 'widgets']),
     );
   });
 
