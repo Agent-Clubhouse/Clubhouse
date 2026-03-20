@@ -3,6 +3,7 @@
  */
 
 import { registerToolTemplate } from '../tool-registry';
+import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
 import * as structuredManager from '../../structured-manager';
@@ -16,13 +17,32 @@ export function registerAgentTools(): void {
     'agent',
     'send_message',
     {
-      description: 'Send a message to the linked agent. The message will appear as input to the agent.',
+      description:
+        'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
+        'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
+        'and may be in the middle of other work. There is no inline response.\n\n' +
+        'To get a response:\n' +
+        '1. Use check_connectivity to determine if the link is bidirectional or unidirectional.\n' +
+        '2. Include a task_id so the target can tag its reply (e.g. "TASK_RESULT:<task_id>: …").\n' +
+        '3. If UNIDIRECTIONAL: poll read_output and search for your task_id marker. Output may contain ' +
+        'unrelated content — filter by the marker. Allow time for the agent to process.\n' +
+        '4. If BIDIRECTIONAL: the target agent can send_message back to you directly with the task_id. ' +
+        'You may still poll read_output as a fallback.\n\n' +
+        'Instruct the target agent to prefix its answer with "TASK_RESULT:<task_id>: " so you can ' +
+        'locate it in the output stream.',
       inputSchema: {
         type: 'object',
         properties: {
           message: {
             type: 'string',
             description: 'The message to send to the agent.',
+          },
+          task_id: {
+            type: 'string',
+            description:
+              'Optional correlation ID. If provided, the message is prefixed with [TASK:<task_id>] ' +
+              'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
+              'If omitted, one is auto-generated and returned.',
           },
         },
         required: ['message'],
@@ -34,6 +54,8 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: 'Missing required argument: message' }], isError: true };
       }
 
+      const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
+
       const reg = agentRegistry.get(targetId);
       if (!reg) {
         appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
@@ -42,16 +64,18 @@ export function registerAgentTools(): void {
         return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
       }
       appLog('core:mcp', 'info', 'send_message: target resolved', {
-        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
+        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime, taskId },
       });
+
+      const taggedMessage = `[TASK:${taskId}] ${message}`;
 
       try {
         if (reg.runtime === 'pty') {
-          ptyManager.write(targetId, message + '\n');
-          return { content: [{ type: 'text', text: 'Message sent successfully' }] };
+          ptyManager.write(targetId, taggedMessage + '\r');
+          return { content: [{ type: 'text', text: `Message sent. task_id=${taskId} — look for TASK_RESULT:${taskId} in output.` }] };
         } else if (reg.runtime === 'structured') {
-          await structuredManager.sendMessage(targetId, message);
-          return { content: [{ type: 'text', text: 'Message sent successfully' }] };
+          await structuredManager.sendMessage(targetId, taggedMessage);
+          return { content: [{ type: 'text', text: `Message sent. task_id=${taskId} — look for TASK_RESULT:${taskId} in response.` }] };
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
@@ -97,7 +121,16 @@ export function registerAgentTools(): void {
     'agent',
     'read_output',
     {
-      description: 'Read recent output from the linked agent.',
+      description:
+        'Read recent terminal output from the linked agent.\n\n' +
+        'Use this to poll for responses after send_message. The output is a raw terminal buffer ' +
+        'and will contain ALL agent output — tool calls, reasoning, status messages, and any replies.\n\n' +
+        'To find a specific response, search the output for the TASK_RESULT:<task_id> marker you ' +
+        'requested in your send_message. The agent may not have responded yet — if you don\'t see ' +
+        'the marker, wait and poll again. Typical response times range from seconds to minutes ' +
+        'depending on task complexity.\n\n' +
+        'Tip: start with fewer lines (50) and increase if needed. The buffer is circular so very ' +
+        'old output may have been evicted.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -136,6 +169,62 @@ export function registerAgentTools(): void {
       } catch (err) {
         return { content: [{ type: 'text', text: `Failed to read output: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
       }
+    },
+  );
+
+  // agent__<targetId>__check_connectivity
+  registerToolTemplate(
+    'agent',
+    'check_connectivity',
+    {
+      description:
+        'Check whether communication with the linked agent is bidirectional or unidirectional.\n\n' +
+        'Returns a JSON object with:\n' +
+        '- direction: "bidirectional" or "unidirectional"\n' +
+        '- guidance: how to handle responses based on the direction\n\n' +
+        'BIDIRECTIONAL means the target agent also has a link back to you and can call send_message ' +
+        'to deliver responses directly into your input. You can include a task_id and the target ' +
+        'will send back a message tagged with TASK_RESULT:<task_id>.\n\n' +
+        'UNIDIRECTIONAL means the target agent cannot send messages back to you. You must poll ' +
+        'read_output to find responses. Always include a task_id in your send_message and instruct ' +
+        'the target to output "TASK_RESULT:<task_id>: <response>" so you can locate it in the ' +
+        'output buffer. The buffer contains all terminal output so filter carefully by the marker.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    async (targetId, agentId, _args): Promise<McpToolResult> => {
+      const reg = agentRegistry.get(targetId);
+      if (!reg) {
+        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+      }
+
+      // Check if the target has a binding back to the caller
+      const reverseBindings = bindingManager.getBindingsForAgent(targetId);
+      const hasBidirectional = reverseBindings.some(b => b.targetId === agentId);
+
+      const direction = hasBidirectional ? 'bidirectional' : 'unidirectional';
+
+      const guidance = hasBidirectional
+        ? 'The target agent can send messages back to you directly via send_message. ' +
+          'Include a task_id in your message and the target can respond with a message tagged ' +
+          'TASK_RESULT:<task_id>. You may also poll read_output as a fallback.'
+        : 'The target agent CANNOT send messages back to you. You must poll read_output to find responses. ' +
+          'Always include a task_id and instruct the target to print "TASK_RESULT:<task_id>: <answer>" ' +
+          'in its output. Poll read_output periodically and search for your task_id marker. ' +
+          'Allow time — the agent may be busy with other work. Output may contain unrelated content.';
+
+      appLog('core:mcp', 'info', 'check_connectivity: resolved', {
+        meta: { sourceAgent: agentId, targetAgent: targetId, direction },
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ direction, target: targetId, guidance }, null, 2),
+        }],
+      };
     },
   );
 }
