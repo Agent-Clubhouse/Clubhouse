@@ -423,14 +423,16 @@ export function registerAppHandlers(): void {
         restoreAll();
 
         // In dev mode, app.relaunch() + app.exit() kills the Forge dev server.
-        // Instead, kill all PTY sessions and reload the renderer window —
+        // Instead, kill all PTY sessions and reload all renderer windows —
         // this simulates the "restart" without killing the parent process.
         const { killAll } = await import('../services/pty-manager');
         await killAll();
 
-        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-        if (win) {
-          win.webContents.reload();
+        // Reload all windows to properly simulate app restart (including pop-outs)
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.reload();
+          }
         }
       },
     ));
