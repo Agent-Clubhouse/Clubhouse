@@ -211,7 +211,7 @@ As orchestrators add per-session resume, update their provider's `capabilities.s
 | Create | `src/renderer/components/ResumeBanner.tsx` | Post-restart resume progress banner |
 | Modify | `src/main/services/auto-update-service.ts` | Gate in `applyUpdate()`, pre-exit cleanup |
 | Modify | `src/main/services/agent-registry.ts` | Add `getAllRegistrations()` public method |
-| Modify | `src/main/services/pty-manager.ts` | Add `getBuffer(agentId)` public accessor |
+| Modify | `src/main/services/pty-manager.ts` | Add `getLastActivity(agentId)` public accessor (`getBuffer` already exists) |
 | Modify | `src/main/index.ts` | Startup resume check |
 | Modify | `src/main/ipc/agent-handlers.ts` | New IPC channels for resume |
 | Modify | `src/shared/ipc-channels.ts` | New channel constants |
