@@ -20,6 +20,7 @@ import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
+import { readKey as readPluginStorageKey } from './plugin-storage';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
@@ -399,6 +400,33 @@ async function buildSnapshot(): Promise<object> {
     contributes: m.contributes,
   }));
 
+  // Read per-project canvas state from plugin storage
+  const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
+  for (const proj of projects) {
+    try {
+      const canvases = await readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'project-local',
+        key: 'canvas-instances',
+        projectPath: proj.path,
+      });
+      const activeId = await readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'project-local',
+        key: 'canvas-active-id',
+        projectPath: proj.path,
+      });
+      if (canvases && Array.isArray(canvases) && canvases.length > 0) {
+        canvasState[proj.id] = {
+          canvases,
+          activeCanvasId: (activeId as string) || (canvases[0] as any)?.id || '',
+        };
+      }
+    } catch {
+      // Canvas data not available — skip
+    }
+  }
+
   return {
     protocolVersion: 2,
     projects,
@@ -412,6 +440,7 @@ async function buildSnapshot(): Promise<object> {
     plugins,
     projectIcons,
     agentIcons,
+    canvasState,
   };
 }
 
@@ -1928,6 +1957,11 @@ export function getStatus(): AnnexStatus & { pairingPort: number; tlsEnabled: bo
 /** Broadcast theme change to all connected WS clients. */
 export function broadcastThemeChanged(): void {
   broadcastWs({ type: 'theme:changed', payload: getThemeColors() });
+}
+
+/** Broadcast canvas state update to all connected controller clients. */
+export function broadcastCanvasStateToClients(projectId: string, state: unknown): void {
+  broadcastWs({ type: 'canvas:state', payload: { projectId, state } });
 }
 
 /** Broadcast session pause/resume to all connected WS clients. */

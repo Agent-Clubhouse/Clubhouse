@@ -397,10 +397,19 @@ export function registerWindowHandlers(): void {
     ipcMain.emit(`${IPC.WINDOW.CANVAS_STATE_RESPONSE}:${requestId}`, _event, state);
   });
 
-  // Main renderer broadcasts canvas state changes → cache + forward to popouts
+  // Main renderer broadcasts canvas state changes → cache + forward to popouts + annex
   ipcMain.on(IPC.WINDOW.CANVAS_STATE_CHANGED, (_event, state: any) => {
     if (state && state.canvasId) cachedCanvasState.set(state.canvasId, state);
     broadcastToPopouts(IPC.WINDOW.CANVAS_STATE_CHANGED, state);
+    // Forward to annex controller clients if projectId is present
+    if (state && state.projectId) {
+      try {
+        const annexServer = require('../services/annex-server');
+        annexServer.broadcastCanvasStateToClients(state.projectId, state);
+      } catch {
+        // Annex not available — ignore
+      }
+    }
   });
 
   // Pop-out sends a canvas mutation → forward to main renderer

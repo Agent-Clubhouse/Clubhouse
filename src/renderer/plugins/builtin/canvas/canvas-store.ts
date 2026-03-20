@@ -33,6 +33,7 @@ export interface CanvasState {
   // Lifecycle
   loadCanvas: (storage: ScopedStorage) => Promise<void>;
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
+  hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string) => void;
 
   // Canvas tab management
   addCanvas: () => string;
@@ -210,6 +211,32 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
+    },
+
+    hydrateFromRemote: (canvasData, activeId) => {
+      if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s): CanvasInstance => {
+        const restoredViews = (s.views || []).map((v: any) => ({
+          ...v,
+          metadata: v.metadata ?? {},
+          displayName: v.displayName ?? v.title ?? v.type ?? '',
+        })) as CanvasView[];
+        syncCounterToViews(restoredViews, viewCounter);
+        return {
+          id: s.id,
+          name: s.name,
+          views: restoredViews,
+          viewport: clampViewport(s.viewport),
+          nextZIndex: s.nextZIndex,
+          zoomedViewId: s.zoomedViewId ?? null,
+          selectedViewId: null,
+        };
+      });
+      syncCounterToInstances(canvases, canvasCounter);
+      const resolvedActive = (activeId && canvases.find((c) => c.id === activeId))
+        ? activeId
+        : canvases[0].id;
+      set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...syncDerivedState(canvases, resolvedActive) });
     },
 
     // ── Canvas tab management ────────────────────────────────────

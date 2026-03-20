@@ -300,6 +300,25 @@ export function initAnnexClientListener(): () => void {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
         satellitePtyExitBus.emit(satelliteId, agentId, p.exitCode ?? -1);
       }
+    } else if (type === 'canvas:state') {
+      const p = payload as { projectId?: string; state?: unknown };
+      if (p.projectId && p.state) {
+        const nsProjId = `remote||${satelliteId}||${p.projectId}`;
+        const cs = p.state as { canvasId: string; views: unknown[]; viewport: unknown; nextZIndex: number; zoomedViewId: string | null; name: string };
+        // Update the canvas state for this remote project — store a single-canvas
+        // snapshot so the canvas plugin can hydrate from it
+        useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+          canvases: [{
+            id: cs.canvasId,
+            name: cs.name,
+            views: cs.views,
+            viewport: cs.viewport,
+            nextZIndex: cs.nextZIndex,
+            zoomedViewId: cs.zoomedViewId,
+          }],
+          activeCanvasId: cs.canvasId,
+        });
+      }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({
         satellitePaused: { ...state.satellitePaused, [satelliteId]: true },
