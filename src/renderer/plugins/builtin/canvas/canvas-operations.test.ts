@@ -118,24 +118,6 @@ describe('canvas-operations', () => {
       expect(view.id).toBe('cv_1');
     });
 
-    it('creates a legacy-file view when asked for file type', () => {
-      const view = createView('file', { x: 0, y: 0 }, 1, counter);
-      expect(view.type).toBe('legacy-file');
-      expect(view.title).toBe('Files (Legacy)');
-    });
-
-    it('creates a legacy-terminal view when asked for terminal type', () => {
-      const view = createView('terminal', { x: 0, y: 0 }, 1, counter);
-      expect(view.type).toBe('legacy-terminal');
-      expect(view.title).toBe('Terminal (Legacy)');
-    });
-
-    it('creates a browser view', () => {
-      const view = createView('browser', { x: 0, y: 0 }, 2, counter);
-      expect(view.type).toBe('browser');
-      expect((view as any).url).toBe('https://');
-    });
-
     it('snaps position to grid', () => {
       const view = createView('agent', { x: 13, y: 27 }, 0, counter);
       expect(view.position.x % GRID_SIZE).toBe(0);

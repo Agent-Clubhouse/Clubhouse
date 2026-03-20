@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// ── Feature 1: File browser read-only toggle ────────────────────────
+// ── Feature 1: File viewer read-only toggle ─────────────────────────
 
-describe('FileCanvasView — read-only toggle', () => {
+describe('File viewer — read-only toggle', () => {
   it('defaults to read-only (checked)', () => {
     // The readOnly state defaults to true — checkbox checked = readonly
     const defaultReadOnly = true;
@@ -117,7 +117,7 @@ describe('AgentCanvasView — stop button', () => {
 
 // ── Feature 3: Git diff right-click context menu ────────────────────
 
-describe('GitDiffCanvasView — context menu actions', () => {
+describe('Git widget — context menu actions', () => {
   let gitStageMock: ReturnType<typeof vi.fn>;
   let gitUnstageMock: ReturnType<typeof vi.fn>;
   let gitDiscardMock: ReturnType<typeof vi.fn>;
@@ -195,7 +195,7 @@ describe('GitDiffCanvasView — context menu actions', () => {
   });
 });
 
-describe('GitDiffCanvasView — revert confirmation', () => {
+describe('Git widget — revert confirmation', () => {
   it('shows confirm dialog with file name from path', () => {
     const filePath = 'src/renderer/plugins/builtin/canvas/GitDiffCanvasView.tsx';
     const fileName = filePath.split('/').pop();

@@ -25,11 +25,11 @@ const views: CanvasView[] = [
   {
     ...baseView,
     id: 'cv_2',
-    type: 'file',
-    title: 'Files',
+    type: 'anchor',
+    title: 'Anchor',
     displayName: 'Source Files',
     metadata: {},
-    filePath: 'src/index.ts',
+    label: 'Source Files',
   } as CanvasView,
 ];
 

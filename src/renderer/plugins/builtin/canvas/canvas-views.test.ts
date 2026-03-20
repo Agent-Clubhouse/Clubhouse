@@ -12,9 +12,9 @@ describe('canvas manifest — new settings', () => {
   });
 });
 
-// ── FileCanvasView helper logic ───────────────────────────────────────
+// ── File viewer helper logic ───────────────────────────────────────
 
-describe('FileCanvasView — file name extraction', () => {
+describe('File viewer — file name extraction', () => {
   // The split layout extracts file name from path for the view title
   function extractFileName(filePath: string): string {
     return filePath.split('/').pop() || filePath;
@@ -37,7 +37,7 @@ describe('FileCanvasView — file name extraction', () => {
   });
 });
 
-describe('FileCanvasView — hidden files filtering', () => {
+describe('File viewer — hidden files filtering', () => {
   const entries = [
     { name: '.git', path: '.git', isDirectory: true },
     { name: '.env', path: '.env', isDirectory: false },

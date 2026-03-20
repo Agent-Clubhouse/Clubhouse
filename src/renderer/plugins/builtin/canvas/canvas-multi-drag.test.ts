@@ -8,8 +8,8 @@ import type { Position } from './canvas-types';
 function makeStore() {
   const store = createCanvasStore();
   const id1 = store.getState().addView('agent', { x: 100, y: 100 });
-  const id2 = store.getState().addView('file', { x: 400, y: 100 });
-  const id3 = store.getState().addView('browser', { x: 100, y: 400 });
+  const id2 = store.getState().addView('agent', { x: 400, y: 100 });
+  const id3 = store.getState().addView('anchor', { x: 100, y: 400 });
   return { store, id1, id2, id3 };
 }
 

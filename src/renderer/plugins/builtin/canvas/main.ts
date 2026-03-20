@@ -54,7 +54,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
 
   const addGitDiffCmd = api.commands.register('add-git-diff-view', () => {
     const store = getStore();
-    store.getState().addView('legacy-git-diff', { x: 250, y: 250 });
+    store.getState().addPluginView('git', 'plugin:git:git-status', 'Git Status', { x: 250, y: 250 });
   });
   ctx.subscriptions.push(addGitDiffCmd);
 

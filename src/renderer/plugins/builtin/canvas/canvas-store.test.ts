@@ -105,7 +105,7 @@ describe('canvas-store', () => {
   });
 
   it('moves a view', () => {
-    const viewId = store.getState().addView('file', { x: 0, y: 0 });
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
     store.getState().moveView(viewId, { x: 300, y: 400 });
     expect(store.getState().views[0].position).toEqual({ x: 300, y: 400 });
   });
@@ -124,7 +124,7 @@ describe('canvas-store', () => {
 
   it('focuses a view (brings to front)', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 200, y: 200 });
+    const id2 = store.getState().addView('agent', { x: 200, y: 200 });
 
     // id2 should have higher zIndex initially
     const z1Before = store.getState().views.find((v) => v.id === id1)!.zIndex;
@@ -139,9 +139,9 @@ describe('canvas-store', () => {
   });
 
   it('updates arbitrary view fields', () => {
-    const viewId = store.getState().addView('browser', { x: 0, y: 0 });
-    store.getState().updateView(viewId, { url: 'https://example.com' } as any);
-    expect((store.getState().views[0] as any).url).toBe('https://example.com');
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+    store.getState().updateView(viewId, { displayName: 'Custom Name' });
+    expect(store.getState().views[0].displayName).toBe('Custom Name');
   });
 
   // ── Viewport ───────────────────────────────────────────────────
@@ -201,7 +201,7 @@ describe('canvas-store', () => {
     // New canvas should have no views
     expect(store.getState().views).toHaveLength(0);
 
-    store.getState().addView('file', { x: 100, y: 100 });
+    store.getState().addView('agent', { x: 100, y: 100 });
     expect(store.getState().views).toHaveLength(1);
 
     // Switch back — should have original view

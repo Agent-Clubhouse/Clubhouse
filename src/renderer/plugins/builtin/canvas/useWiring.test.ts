@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isValidWireTarget } from './useWiring';
-import type { AgentCanvasView, PluginCanvasView, FileCanvasView, AnchorCanvasView } from './canvas-types';
+import type { AgentCanvasView, PluginCanvasView, AnchorCanvasView } from './canvas-types';
 
 function makeAgentView(id: string, agentId: string | null): AgentCanvasView {
   return {
@@ -26,19 +26,6 @@ function makeBrowserView(id: string): PluginCanvasView {
     size: { width: 200, height: 200 },
     title: `Browser ${id}`,
     displayName: `Browser ${id}`,
-    zIndex: 1,
-    metadata: {},
-  };
-}
-
-function makeFileView(id: string): FileCanvasView {
-  return {
-    id,
-    type: 'file',
-    position: { x: 0, y: 0 },
-    size: { width: 200, height: 200 },
-    title: `File ${id}`,
-    displayName: `File ${id}`,
     zIndex: 1,
     metadata: {},
   };
@@ -83,10 +70,6 @@ describe('isValidWireTarget', () => {
       pluginWidgetType: 'plugin:other:widget',
     };
     expect(isValidWireTarget(source, otherPlugin)).toBe(false);
-  });
-
-  it('rejects file views', () => {
-    expect(isValidWireTarget(source, makeFileView('f1'))).toBe(false);
   });
 
   it('rejects anchor views', () => {

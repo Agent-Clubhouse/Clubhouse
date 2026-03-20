@@ -10,12 +10,8 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 describe('Canvas title bar — formatViewType', () => {
   it('capitalises first letter of simple types', () => {
     expect(formatViewType('agent')).toBe('Agent');
-    expect(formatViewType('file')).toBe('File');
-    expect(formatViewType('browser')).toBe('Browser');
-  });
-
-  it('replaces hyphens with spaces', () => {
-    expect(formatViewType('git-diff')).toBe('Git diff');
+    expect(formatViewType('anchor')).toBe('Anchor');
+    expect(formatViewType('plugin')).toBe('Plugin');
   });
 
   it('handles plugin widget type names', () => {
@@ -58,11 +54,6 @@ describe('Canvas title bar — buildProjectContext', () => {
     expect(buildProjectContext(view, projects)).toBe('Clubhouse');
   });
 
-  it('returns project name for file view with projectId', () => {
-    const view = makeView({ type: 'file', projectId: 'p2', filePath: 'src/index.ts' });
-    expect(buildProjectContext(view, projects)).toBe('OtherApp');
-  });
-
   it('returns null when view has no projectId', () => {
     const view = makeView({ type: 'agent', agentId: 'a1' });
     expect(buildProjectContext(view, projects)).toBeNull();
@@ -73,32 +64,9 @@ describe('Canvas title bar — buildProjectContext', () => {
     expect(buildProjectContext(view, projects)).toBeNull();
   });
 
-  it('returns null for browser views (no projectId field)', () => {
-    const view = makeView({ type: 'browser', url: 'https://example.com' });
+  it('returns null for anchor views (no projectId field)', () => {
+    const view = makeView({ type: 'anchor', label: 'Test' });
     expect(buildProjectContext(view, projects)).toBeNull();
-  });
-
-  it('returns project::worktree for legacy-git-diff view with worktreePath', () => {
-    const view = makeView({
-      type: 'legacy-git-diff',
-      projectId: 'p1',
-      worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir',
-    });
-    expect(buildProjectContext(view, projects)).toBe('Clubhouse::curious-tapir');
-  });
-
-  it('returns just project name for legacy-git-diff view without worktreePath', () => {
-    const view = makeView({ type: 'legacy-git-diff', projectId: 'p1' });
-    expect(buildProjectContext(view, projects)).toBe('Clubhouse');
-  });
-
-  it('handles worktreePath with trailing slash', () => {
-    const view = makeView({
-      type: 'legacy-git-diff',
-      projectId: 'p1',
-      worktreePath: '/home/user/Clubhouse/.clubhouse/agents/curious-tapir/',
-    });
-    expect(buildProjectContext(view, projects)).toBe('Clubhouse::curious-tapir');
   });
 });
 
@@ -139,9 +107,7 @@ describe('Canvas title bar — sleep button visibility', () => {
   });
 
   it('hides sleep button for non-agent view types', () => {
-    expect(shouldShowSleepButton('file', 'running')).toBe(false);
-    expect(shouldShowSleepButton('browser', 'running')).toBe(false);
-    expect(shouldShowSleepButton('git-diff', 'running')).toBe(false);
+    expect(shouldShowSleepButton('anchor', 'running')).toBe(false);
     expect(shouldShowSleepButton('plugin', 'running')).toBe(false);
   });
 });

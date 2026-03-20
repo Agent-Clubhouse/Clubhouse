@@ -7,10 +7,6 @@ import type { ScopedStorage } from '../../../../shared/plugin-types';
 
 const TYPE_LABELS: Record<string, string> = {
   agent: 'Agent',
-  file: 'Files',
-  browser: 'Browser',
-  'git-diff': 'Git Diff',
-  'legacy-git-diff': 'Git Diff (Legacy)',
   anchor: 'Anchor',
   plugin: 'Plugin',
 };
@@ -28,9 +24,6 @@ function buildSearchableText(view: CanvasView): string {
     }
   }
   if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
-  if (view.type === 'file' && view.filePath) parts.push(view.filePath);
-  if (view.type === 'browser') parts.push(view.url);
-  if ((view.type === 'git-diff' || view.type === 'legacy-git-diff') && view.filePath) parts.push(view.filePath);
   if (view.type === 'anchor') parts.push(view.label);
   if (view.type === 'plugin') parts.push(view.pluginWidgetType);
 
@@ -111,27 +104,6 @@ describe('widget card rename — store integration', () => {
     expect(view.displayName).toBe('My Cool Agent');
   });
 
-  it('renames a file view via updateView', () => {
-    const viewId = store.getState().addView('file', { x: 0, y: 0 });
-    store.getState().updateView(viewId, { displayName: 'Config Files' });
-    const view = store.getState().views[0];
-    expect(view.displayName).toBe('Config Files');
-  });
-
-  it('renames a browser view via updateView', () => {
-    const viewId = store.getState().addView('browser', { x: 0, y: 0 });
-    store.getState().updateView(viewId, { displayName: 'API Docs' });
-    const view = store.getState().views[0];
-    expect(view.displayName).toBe('API Docs');
-  });
-
-  it('renames a terminal view via updateView', () => {
-    const viewId = store.getState().addView('terminal', { x: 0, y: 0 });
-    store.getState().updateView(viewId, { displayName: 'Build Terminal' });
-    const view = store.getState().views[0];
-    expect(view.displayName).toBe('Build Terminal');
-  });
-
   it('renames an anchor and keeps label in sync', () => {
     const viewId = store.getState().addView('anchor', { x: 0, y: 0 });
     store.getState().updateView(viewId, {
@@ -175,7 +147,7 @@ describe('widget card rename — search uses renamed value', () => {
 
   it('search finds agent by custom display name', () => {
     store.getState().addView('agent', { x: 0, y: 0 });
-    store.getState().addView('file', { x: 200, y: 0 });
+    store.getState().addView('agent', { x: 200, y: 0 });
 
     const agentId = store.getState().views[0].id;
     store.getState().updateView(agentId, { displayName: 'Deployment Bot' });
@@ -218,7 +190,7 @@ describe('widget card rename — search uses renamed value', () => {
 
   it('multi-term search works with renamed views', () => {
     store.getState().addView('agent', { x: 0, y: 0 });
-    store.getState().addView('file', { x: 200, y: 0 });
+    store.getState().addView('agent', { x: 200, y: 0 });
 
     const agentId = store.getState().views[0].id;
     store.getState().updateView(agentId, { displayName: 'Backend Worker' });
@@ -286,7 +258,7 @@ describe('widget card rename — query API uses renamed displayName', () => {
   });
 
   it('queryViews handle returns updated displayName', () => {
-    const viewId = store.getState().addView('file', { x: 0, y: 0 });
+    const viewId = store.getState().addView('agent', { x: 0, y: 0 });
     store.getState().updateView(viewId, { displayName: 'Source Code' });
 
     const results = store.getState().queryViews();

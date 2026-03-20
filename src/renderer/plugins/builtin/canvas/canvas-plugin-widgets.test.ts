@@ -49,26 +49,9 @@ describe('canvas plugin widget support', () => {
       expect(view.metadata).toEqual({});
     });
 
-    it('generates displayName for legacy-file view', () => {
-      const view = createView('file', { x: 0, y: 0 }, 0, counter);
-      expect(view.displayName).toBe('Files (Legacy)');
-    });
-
     it('deduplicates when existing names are provided', () => {
       const view = createView('agent', { x: 0, y: 0 }, 0, counter, ['Agent']);
       expect(view.displayName).toBe('Agent (2)');
-    });
-
-    it('creates browser view with metadata', () => {
-      const view = createView('browser', { x: 0, y: 0 }, 0, counter);
-      expect(view.displayName).toBe('Browser');
-      expect(view.metadata).toEqual({});
-    });
-
-    it('creates legacy-git-diff view with metadata', () => {
-      const view = createView('git-diff', { x: 0, y: 0 }, 0, counter);
-      expect(view.displayName).toBe('Git Diff (Legacy)');
-      expect(view.metadata).toEqual({});
     });
 
     it('throws for plugin type', () => {
@@ -212,7 +195,7 @@ describe('canvas plugin widget support', () => {
     });
 
     it('returns empty for no matches', () => {
-      expect(queryViews(views, { type: 'browser' })).toHaveLength(0);
+      expect(queryViews(views, { type: 'nonexistent' })).toHaveLength(0);
       expect(queryViews(views, { metadata: { agentId: 'nonexistent' } })).toHaveLength(0);
     });
 

@@ -1,14 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import type { CanvasView, AgentCanvasView, FileCanvasView, BrowserCanvasView, GitDiffCanvasView, PluginCanvasView } from './canvas-types';
+import type { CanvasView, AgentCanvasView, PluginCanvasView } from './canvas-types';
 
 // ── Inline the search logic for unit testing ─────────────────────────
 
 const TYPE_LABELS: Record<string, string> = {
   agent: 'Agent',
-  file: 'Files',
-  browser: 'Browser',
-  'git-diff': 'Git Diff',
-  'legacy-git-diff': 'Git Diff (Legacy)',
+  anchor: 'Anchor',
   plugin: 'Plugin',
 };
 
@@ -25,9 +22,7 @@ function buildSearchableText(view: CanvasView): string {
     }
   }
   if (view.type === 'agent' && view.agentId) parts.push(view.agentId);
-  if (view.type === 'file' && view.filePath) parts.push(view.filePath);
-  if (view.type === 'browser') parts.push(view.url);
-  if ((view.type === 'git-diff' || view.type === 'legacy-git-diff') && view.filePath) parts.push(view.filePath);
+  if (view.type === 'anchor') parts.push(view.label);
   if (view.type === 'plugin') parts.push(view.pluginWidgetType);
 
   return parts.join(' ').toLowerCase();
@@ -65,39 +60,20 @@ const agentView: AgentCanvasView = {
   agentId: 'agent_123',
 };
 
-const fileView: FileCanvasView = {
+const browserPluginView: PluginCanvasView = {
   ...baseView,
   id: 'cv_2',
-  type: 'file',
-  title: 'Files',
-  displayName: 'Source Files',
-  metadata: { filePath: 'src/main/index.ts' },
-  filePath: 'src/main/index.ts',
-};
-
-const browserView: BrowserCanvasView = {
-  ...baseView,
-  id: 'cv_3',
-  type: 'browser',
+  type: 'plugin',
   title: 'Browser',
   displayName: 'Docs Browser',
   metadata: { url: 'https://docs.example.com' },
-  url: 'https://docs.example.com',
+  pluginWidgetType: 'plugin:browser:webview',
+  pluginId: 'browser',
 };
 
-const diffView: GitDiffCanvasView = {
+const terminalPluginView: PluginCanvasView = {
   ...baseView,
-  id: 'cv_4',
-  type: 'git-diff',
-  title: 'Git Diff',
-  displayName: 'Main Diff',
-  metadata: { filePath: 'README.md' },
-  filePath: 'README.md',
-};
-
-const pluginView: PluginCanvasView = {
-  ...baseView,
-  id: 'cv_5',
+  id: 'cv_3',
   type: 'plugin',
   title: 'Terminal',
   displayName: 'My Terminal',
@@ -106,7 +82,7 @@ const pluginView: PluginCanvasView = {
   pluginId: 'terminal',
 };
 
-const allViews: CanvasView[] = [agentView, fileView, browserView, diffView, pluginView];
+const allViews: CanvasView[] = [agentView, browserPluginView, terminalPluginView];
 
 // ── Tests ────────────────────────────────────────────────────────────
 
@@ -119,11 +95,6 @@ describe('canvas search — buildSearchableText', () => {
   it('includes type in searchable text', () => {
     const text = buildSearchableText(agentView);
     expect(text).toContain('agent');
-  });
-
-  it('includes type label in searchable text', () => {
-    const text = buildSearchableText(diffView);
-    expect(text).toContain('git diff');
   });
 
   it('includes metadata values in searchable text', () => {
@@ -146,24 +117,14 @@ describe('canvas search — buildSearchableText', () => {
     expect(text).toContain('claude-sonnet-4-5-20250514');
   });
 
-  it('includes filePath for file views', () => {
-    const text = buildSearchableText(fileView);
-    expect(text).toContain('src/main/index.ts');
-  });
-
-  it('includes url for browser views', () => {
-    const text = buildSearchableText(browserView);
-    expect(text).toContain('docs.example.com');
-  });
-
   it('includes pluginWidgetType for plugin views', () => {
-    const text = buildSearchableText(pluginView);
+    const text = buildSearchableText(terminalPluginView);
     expect(text).toContain('plugin:terminal:shell');
   });
 
-  it('includes filePath for git-diff views', () => {
-    const text = buildSearchableText(diffView);
-    expect(text).toContain('readme.md');
+  it('includes metadata url for browser plugin views', () => {
+    const text = buildSearchableText(browserPluginView);
+    expect(text).toContain('docs.example.com');
   });
 });
 
@@ -182,7 +143,7 @@ describe('canvas search — filterViews', () => {
   it('filters by display name', () => {
     const result = filterViews(allViews, 'docs browser');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_3');
+    expect(result[0].id).toBe('cv_2');
   });
 
   it('filters by metadata value', () => {
@@ -191,28 +152,16 @@ describe('canvas search — filterViews', () => {
     expect(result[0].id).toBe('cv_1');
   });
 
-  it('supports multiple search terms (AND logic)', () => {
-    const result = filterViews(allViews, 'file src');
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_2');
-  });
-
   it('is case-insensitive', () => {
     const result = filterViews(allViews, 'BROWSER');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_3');
-  });
-
-  it('filters by git-diff type label', () => {
-    const result = filterViews(allViews, 'diff');
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_4');
+    expect(result[0].id).toBe('cv_2');
   });
 
   it('filters by plugin widget type', () => {
     const result = filterViews(allViews, 'terminal');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_5');
+    expect(result[0].id).toBe('cv_3');
   });
 
   it('returns empty array when nothing matches', () => {
@@ -223,19 +172,13 @@ describe('canvas search — filterViews', () => {
   it('matches partial strings', () => {
     const result = filterViews(allViews, 'brow');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_3');
+    expect(result[0].id).toBe('cv_2');
   });
 
-  it('matches against URL in browser views', () => {
+  it('matches against URL in metadata', () => {
     const result = filterViews(allViews, 'example.com');
     expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_3');
-  });
-
-  it('matches against file paths in metadata', () => {
-    const result = filterViews(allViews, 'readme');
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe('cv_4');
+    expect(result[0].id).toBe('cv_2');
   });
 
   it('filters agent by project name', () => {

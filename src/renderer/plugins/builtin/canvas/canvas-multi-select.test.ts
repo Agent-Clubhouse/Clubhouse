@@ -175,7 +175,7 @@ describe('canvas-store multi-select', () => {
 
   it('toggleSelectView supports multiple views', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 200, y: 0 });
+    const id2 = store.getState().addView('agent', { x: 200, y: 0 });
     store.getState().toggleSelectView(id1);
     store.getState().toggleSelectView(id2);
     expect(store.getState().selectedViewIds).toEqual([id1, id2]);
@@ -183,7 +183,7 @@ describe('canvas-store multi-select', () => {
 
   it('setSelectedViewIds replaces the selection', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 200, y: 0 });
+    const id2 = store.getState().addView('agent', { x: 200, y: 0 });
     store.getState().setSelectedViewIds([id1, id2]);
     expect(store.getState().selectedViewIds).toEqual([id1, id2]);
 
@@ -205,8 +205,8 @@ describe('canvas-store multi-select', () => {
 
   it('moveViews updates positions of multiple views', () => {
     const id1 = store.getState().addView('agent', { x: 0, y: 0 });
-    const id2 = store.getState().addView('file', { x: 200, y: 0 });
-    const id3 = store.getState().addView('browser', { x: 400, y: 0 });
+    const id2 = store.getState().addView('agent', { x: 200, y: 0 });
+    const id3 = store.getState().addView('anchor', { x: 400, y: 0 });
 
     const positions = new Map<string, { x: number; y: number }>([
       [id1, { x: 100, y: 100 }],
