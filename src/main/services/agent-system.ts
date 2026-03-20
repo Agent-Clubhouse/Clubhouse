@@ -247,7 +247,9 @@ async function spawnPtyAgent(
   let { binary, args } = spawnCmd;
   const { env } = spawnCmd;
   if (mcpPort > 0 && provider.buildMcpArgs) {
-    args = [...args, ...provider.buildMcpArgs(mcpPort, params.agentId, nonce)];
+    const { buildClubhouseMcpDef } = await import('./clubhouse-mcp/injection');
+    const serverDef = buildClubhouseMcpDef(mcpPort, params.agentId, nonce);
+    args = [...args, ...provider.buildMcpArgs(serverDef)];
   }
 
   // Apply launch wrapper transform if configured

@@ -175,8 +175,9 @@ export interface OrchestratorProvider {
    * Optional: return CLI args to inject MCP server config at spawn time.
    * Used by orchestrators that don't read MCP from a project-level config file
    * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
+   * Receives a pre-built server definition to avoid transitive electron imports.
    */
-  buildMcpArgs?(mcpPort: number, agentId: string, nonce: string): string[];
+  buildMcpArgs?(serverDef: Record<string, unknown>): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

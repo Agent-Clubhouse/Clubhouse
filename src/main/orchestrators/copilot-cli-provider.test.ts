@@ -39,19 +39,6 @@ vi.mock('../util/shell', () => ({
   getShellEnvironment: vi.fn(() => ({ PATH: `/usr/local/bin${path.delimiter}/usr/bin` })),
 }));
 
-vi.mock('../services/clubhouse-mcp/injection', () => ({
-  buildClubhouseMcpDef: vi.fn((port: number, agentId: string, nonce: string) => ({
-    type: 'stdio',
-    command: 'node',
-    args: ['/mock/bridge.js'],
-    env: {
-      CLUBHOUSE_MCP_PORT: String(port),
-      CLUBHOUSE_AGENT_ID: agentId,
-      CLUBHOUSE_HOOK_NONCE: nonce,
-    },
-  })),
-}));
-
 vi.mock('./adapters', () => ({
   AcpAdapter: class MockAcpAdapter {
     start = vi.fn();
@@ -615,8 +602,15 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('buildMcpArgs', () => {
+    const mockServerDef = {
+      type: 'stdio',
+      command: 'node',
+      args: ['/mock/bridge.js'],
+      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+    };
+
     it('returns --additional-mcp-config with JSON containing clubhouse server def', () => {
-      const args = provider.buildMcpArgs(12345, 'agent-1', 'nonce-1');
+      const args = provider.buildMcpArgs(mockServerDef);
       expect(args).toHaveLength(2);
       expect(args[0]).toBe('--additional-mcp-config');
 
@@ -630,7 +624,7 @@ describe('CopilotCliProvider', () => {
     });
 
     it('produces valid JSON that can be parsed', () => {
-      const args = provider.buildMcpArgs(9999, 'test-agent', 'test-nonce');
+      const args = provider.buildMcpArgs(mockServerDef);
       expect(() => JSON.parse(args[1])).not.toThrow();
     });
   });
