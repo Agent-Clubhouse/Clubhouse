@@ -36,10 +36,14 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
 
   bind: async (agentId, target) => {
     await window.clubhouse.mcpBinding.bind(agentId, target);
-    // Optimistic update
-    set((state) => ({
-      bindings: [...state.bindings, { agentId, ...target } as McpBindingEntry],
-    }));
+    // Optimistic update — deduplicate since main process may have already broadcast
+    set((state) => {
+      const exists = state.bindings.some(
+        (b) => b.agentId === agentId && b.targetId === target.targetId,
+      );
+      if (exists) return state;
+      return { bindings: [...state.bindings, { agentId, ...target } as McpBindingEntry] };
+    });
   },
 
   unbind: async (agentId, targetId) => {

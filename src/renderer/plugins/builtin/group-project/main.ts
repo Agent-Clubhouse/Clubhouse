@@ -8,7 +8,7 @@ export function activate(ctx: PluginContext, api: PluginAPI): void {
   // Register canvas widget
   ctx.subscriptions.push(
     api.canvas.registerWidgetType({
-      id: 'group-project-card',
+      id: 'group-project',
       component: GroupProjectCanvasWidget,
       generateDisplayName: (metadata) => {
         if (metadata.name && typeof metadata.name === 'string') {

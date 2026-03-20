@@ -53,7 +53,7 @@ describe('built-in plugin canvas widget declarations', () => {
     files: ['file-viewer'],
     git: ['git-status'],
     browser: ['webview'],
-    'group-project': ['group-project-card'],
+    'group-project': ['group-project'],
   };
 
   const allPlugins = getBuiltinPlugins({ canvas: true });
@@ -272,7 +272,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
     expect(getRegisteredWidgetType('plugin:files:file-viewer')).toBeDefined();
     expect(getRegisteredWidgetType('plugin:git:git-status')).toBeDefined();
     expect(getRegisteredWidgetType('plugin:browser:webview')).toBeDefined();
-    expect(getRegisteredWidgetType('plugin:group-project:group-project-card')).toBeDefined();
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')).toBeDefined();
 
     // All should be pending
     for (const entry of registered) {
@@ -294,7 +294,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
     expect(getRegisteredWidgetType('plugin:files:file-viewer')!.declaration.label).toBe('File Viewer');
     expect(getRegisteredWidgetType('plugin:git:git-status')!.declaration.label).toBe('Git Status');
     expect(getRegisteredWidgetType('plugin:browser:webview')!.declaration.label).toBe('Browser');
-    expect(getRegisteredWidgetType('plugin:group-project:group-project-card')!.declaration.label).toBe('Group Project');
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')!.declaration.label).toBe('Group Project');
   });
 });
 
