@@ -87,7 +87,7 @@ export function SatelliteLockOverlay({ lockState, onDisconnect, onPause, onDisab
       )}
 
       {lockState.paused && (
-        <div className="fixed top-4 right-4 pointer-events-auto">
+        <div className="fixed top-12 right-4 pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm">
             <div
               className="w-3 h-3 rounded-full"
