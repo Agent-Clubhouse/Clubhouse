@@ -658,5 +658,99 @@ describe('BrowserTools', () => {
       expect(r1.isError).toBeFalsy();
       expect(r2.isError).toBeFalsy();
     });
+
+    it('all tool errors use consistent "not found or not ready" message', async () => {
+      unregisterWebview('widget-1');
+
+      const toolNames = [
+        'browser__widget_1__navigate',
+        'browser__widget_1__screenshot',
+        'browser__widget_1__get_console',
+        'browser__widget_1__click',
+        'browser__widget_1__type',
+        'browser__widget_1__evaluate',
+        'browser__widget_1__get_page_content',
+        'browser__widget_1__get_accessibility_tree',
+      ];
+
+      for (const name of toolNames) {
+        const result = await callTool('agent-1', name, { url: 'https://x.com', selector: '#a', text: 'a', expression: '1' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toBe('Browser widget not found or not ready');
+      }
+    });
+  });
+
+  describe('late registration (widget appears after binding)', () => {
+    it('tool fails before registration, succeeds after', async () => {
+      // Simulate the bug scenario: binding exists but webview not yet registered
+      resetBrowserTools();
+      resetTools();
+      bindingManager._resetForTesting();
+      registerBrowserTools();
+      bindingManager.bind('agent-1', { targetId: 'widget-late', targetKind: 'browser', label: 'Browser' });
+
+      // Tool call before webview registration → should fail
+      const failResult = await callTool('agent-1', 'browser__widget_late__navigate', { url: 'https://example.com' });
+      expect(failResult.isError).toBe(true);
+      expect(failResult.content[0].text).toContain('not found or not ready');
+
+      // Webview registers (simulates dom-ready after URL is entered)
+      registerWebview('widget-late', 42);
+      getMockWc().loadURL.mockResolvedValue(undefined);
+
+      // Same tool call after registration → should succeed
+      const successResult = await callTool('agent-1', 'browser__widget_late__navigate', { url: 'https://example.com' });
+      expect(successResult.isError).toBeFalsy();
+      expect(successResult.content[0].text).toContain('Navigated to');
+    });
+
+    it('logs diagnostic info when widget lookup fails', async () => {
+      const { appLog } = await import('../../log-service');
+
+      // Clear previous calls
+      (appLog as ReturnType<typeof vi.fn>).mockClear();
+
+      // Unregister widget so lookup fails
+      unregisterWebview('widget-1');
+
+      await callTool('agent-1', 'browser__widget_1__navigate', { url: 'https://example.com' });
+
+      // Verify diagnostic log was emitted with registry state
+      expect(appLog).toHaveBeenCalledWith(
+        'core:mcp',
+        'warn',
+        'Widget lookup failed — not in registry',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            widgetId: 'widget-1',
+            registeredWidgets: expect.any(Array),
+          }),
+        }),
+      );
+    });
+
+    it('logs diagnostic info when webContents is destroyed', async () => {
+      const { appLog } = await import('../../log-service');
+      (appLog as ReturnType<typeof vi.fn>).mockClear();
+
+      // Register a widget pointing to a destroyed webContents (ID 999 → null)
+      registerWebview('widget-destroyed', 999);
+      bindingManager.bind('agent-1', { targetId: 'widget-destroyed', targetKind: 'browser', label: 'Destroyed' });
+
+      await callTool('agent-1', 'browser__widget_destroyed__navigate', { url: 'https://example.com' });
+
+      expect(appLog).toHaveBeenCalledWith(
+        'core:mcp',
+        'warn',
+        'Widget lookup failed — webContents destroyed',
+        expect.objectContaining({
+          meta: expect.objectContaining({
+            widgetId: 'widget-destroyed',
+            webContentsId: 999,
+          }),
+        }),
+      );
+    });
   });
 });

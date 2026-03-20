@@ -31,7 +31,18 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   const registerWebview = useMcpBindingStore((s) => s.registerWebview);
   const unregisterWebview = useMcpBindingStore((s) => s.unregisterWebview);
 
-  // Register the webview with the MCP bridge when it becomes ready
+  const protocolSettings: ProtocolSettings = {
+    allowLocalhost: api.settings.get<boolean>('allowLocalhost') ?? false,
+    allowFileProtocol: api.settings.get<boolean>('allowFileProtocol') ?? false,
+  };
+
+  // Compute whether the webview element is rendered (must be before the
+  // registration effect so it can be used as a dependency).
+  const isWebviewRendered = !!(url && validateUrl(url, protocolSettings).valid);
+
+  // Register the webview with the MCP bridge when it becomes ready.
+  // `isWebviewRendered` is a dependency so the effect re-runs when the
+  // <webview> element appears (e.g. user enters a URL after widget mount).
   useEffect(() => {
     const wv = webviewRef.current as any;
     if (!wv) return;
@@ -44,16 +55,19 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
     };
 
     wv.addEventListener('dom-ready', handleDomReady);
+
+    // If the webview is already ready (dom-ready fired before this effect
+    // ran), register immediately so we don't silently miss it.
+    const existingWcId = wv.getWebContentsId?.();
+    if (existingWcId != null) {
+      registerWebview(widgetId, existingWcId);
+    }
+
     return () => {
       wv.removeEventListener('dom-ready', handleDomReady);
       unregisterWebview(widgetId);
     };
-  }, [widgetId, registerWebview, unregisterWebview]);
-
-  const protocolSettings: ProtocolSettings = {
-    allowLocalhost: api.settings.get<boolean>('allowLocalhost') ?? false,
-    allowFileProtocol: api.settings.get<boolean>('allowFileProtocol') ?? false,
-  };
+  }, [widgetId, isWebviewRendered, registerWebview, unregisterWebview]);
 
   // Sync address bar when metadata URL changes externally
   useEffect(() => {
@@ -153,8 +167,6 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   }
 
   // Step 2: Browser view
-  const showWebview = url && validateUrl(url, protocolSettings).valid;
-
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
@@ -219,7 +231,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
 
       {/* Webview content */}
       <div className="flex-1 min-h-0 bg-white">
-        {showWebview ? (
+        {isWebviewRendered ? (
           <webview
             ref={webviewRef as any}
             src={url}
