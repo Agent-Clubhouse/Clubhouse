@@ -308,20 +308,15 @@ function initPtyExitListener(): () => void {
 function initHookEventListener(): () => void {
   const removeHookListener = window.clubhouse.agent.onHookEvent(
     (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
-      // Capture previous detailed state before handleHookEvent updates it
-      const prevState = useAgentStore.getState().agentDetailedStatus[agentId]?.state;
-
       useAgentStore.getState().handleHookEvent(agentId, event as AgentHookEvent);
       const agent = useAgentStore.getState().agents[agentId];
       if (!agent) return;
       const name = agent.name;
       useNotificationStore.getState().checkAndNotify(name, event.kind, event.toolName, agentId, agent.projectId);
 
-      // Detect permission resolution: needs_permission → something else
-      if (prevState === 'needs_permission' && event.kind !== 'permission_request') {
-        // pre_tool means permission was granted (tool is running)
-        // anything else means permission was denied or skipped
-        const soundEvent = event.kind === 'pre_tool' ? 'permission-granted' : 'permission-denied';
+      // Play sound when a permission decision is sent back to the agent
+      if (event.kind === 'permission_resolved') {
+        const soundEvent = event.message === 'allow' ? 'permission-granted' : 'permission-denied';
         useSoundStore.getState().playSound(soundEvent as SoundEvent, agent.projectId);
       }
 

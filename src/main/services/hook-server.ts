@@ -119,6 +119,18 @@ function handlePermissionRequest(
       'Content-Length': Buffer.byteLength(responseBody),
     });
     res.end(responseBody);
+
+    // Broadcast permission_resolved so the renderer clears the
+    // needs_permission status.  Without this, denied / timed-out
+    // permissions leave the agent status stuck.
+    const resolvedEvent = {
+      kind: 'permission_resolved' as const,
+      toolName,
+      message: permissionDecision, // 'allow' | 'deny' | 'ask'
+      timestamp: Date.now(),
+    };
+    broadcastToAllWindows(IPC.AGENT.HOOK_EVENT, agentId, resolvedEvent);
+    annexEventBus.emitHookEvent(agentId, resolvedEvent as any);
   }).catch((err) => {
     appLog('core:hook-server', 'error', 'Failed to send permission response', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },

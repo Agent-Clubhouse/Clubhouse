@@ -116,11 +116,12 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
       }
 
       // Guard: don't let non-actionable events overwrite a pending permission
-      // state. Only pre_tool (permission granted, tool executing) or a new
-      // permission_request should clear the needs_permission state.
+      // state. Only pre_tool (permission granted, tool executing), a new
+      // permission_request, or permission_resolved (decision sent back to
+      // the agent) should clear the needs_permission state.
       const currentState = get().agentDetailedStatus[agentId]?.state;
       if (currentState === 'needs_permission') {
-        if (event.kind !== 'pre_tool' && event.kind !== 'permission_request') {
+        if (event.kind !== 'pre_tool' && event.kind !== 'permission_request' && event.kind !== 'permission_resolved') {
           return;
         }
       }
@@ -170,6 +171,13 @@ export function createStatusSlice(set: SetAgentState, get: GetAgentState): Agent
             state: 'needs_permission',
             message: 'Needs permission',
             toolName: event.toolName,
+            timestamp: event.timestamp,
+          };
+          break;
+        case 'permission_resolved':
+          detailed = {
+            state: 'idle',
+            message: 'Thinking',
             timestamp: event.timestamp,
           };
           break;

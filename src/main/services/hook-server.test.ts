@@ -554,6 +554,89 @@ describe('hook-server', () => {
       );
     });
 
+    it('broadcasts permission_resolved after allow decision', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-resolved-allow',
+        decision: Promise.resolve('allow'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      // After decision resolves, a permission_resolved event should be broadcast
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:hook-event',
+        'agent-1',
+        expect.objectContaining({ kind: 'permission_resolved', toolName: 'Bash', message: 'allow' }),
+      );
+      expect(mockEmitHookEvent).toHaveBeenCalledWith(
+        'agent-1',
+        expect.objectContaining({ kind: 'permission_resolved', message: 'allow' }),
+      );
+    });
+
+    it('broadcasts permission_resolved after deny decision', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-resolved-deny',
+        decision: Promise.resolve('deny'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Write',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Writing file'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:hook-event',
+        'agent-1',
+        expect.objectContaining({ kind: 'permission_resolved', toolName: 'Write', message: 'deny' }),
+      );
+    });
+
+    it('broadcasts permission_resolved with "ask" on timeout', async () => {
+      mockCreatePermission.mockReturnValue({
+        requestId: 'req-resolved-timeout',
+        decision: Promise.resolve('timeout'),
+      });
+      mockResolveOrchestrator.mockResolvedValue({
+        parseHookEvent: vi.fn(() => ({
+          kind: 'permission_request',
+          toolName: 'Bash',
+          toolInput: undefined,
+          message: undefined,
+        })),
+        toolVerb: vi.fn(() => 'Running command'),
+      });
+
+      await postToServerWithBody(port, '/hook/agent-1', {
+        hook_event_name: 'PermissionRequest',
+      }, { 'X-Clubhouse-Nonce': VALID_NONCE });
+
+      expect(mockSend).toHaveBeenCalledWith(
+        'agent:hook-event',
+        'agent-1',
+        expect.objectContaining({ kind: 'permission_resolved', message: 'ask' }),
+      );
+    });
+
     it('broadcasts hook event to renderer before holding for permission', async () => {
       mockCreatePermission.mockReturnValue({
         requestId: 'req-5',
