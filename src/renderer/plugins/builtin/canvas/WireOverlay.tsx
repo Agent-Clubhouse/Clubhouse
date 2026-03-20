@@ -13,8 +13,8 @@ import { computeWirePath, viewRect } from './wire-utils';
 /** CSS animation for ambient wire glow */
 const WIRE_GLOW_KEYFRAMES = `
 @keyframes wire-pulse {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(137, 180, 250, 0.4)); }
-  50% { filter: drop-shadow(0 0 6px rgba(137, 180, 250, 0.7)); }
+  0%, 100% { filter: drop-shadow(0 0 3px rgb(var(--ctp-accent, 137 180 250) / 0.4)); }
+  50% { filter: drop-shadow(0 0 6px rgb(var(--ctp-accent, 137 180 250) / 0.7)); }
 }
 `;
 
@@ -140,7 +140,7 @@ export const WireOverlay = React.memo(function WireOverlay({
           orient="auto"
           markerUnits="userSpaceOnUse"
         >
-          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke="var(--ctp-blue, #89b4fa)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 1 1 L 7 4 L 1 7" fill="none" stroke="rgb(var(--ctp-accent, 137 180 250))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
         {/* Reverse arrowhead (at source end, for bidirectional) */}
         <marker
@@ -152,7 +152,7 @@ export const WireOverlay = React.memo(function WireOverlay({
           orient="auto"
           markerUnits="userSpaceOnUse"
         >
-          <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke="var(--ctp-blue, #89b4fa)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke="rgb(var(--ctp-accent, 137 180 250))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
       </defs>
       {wires.map(({ key, path, binding, bidir }) => (
@@ -171,7 +171,7 @@ export const WireOverlay = React.memo(function WireOverlay({
           <path
             d={path}
             fill="none"
-            stroke="var(--ctp-blue, #89b4fa)"
+            stroke="rgb(var(--ctp-accent, 137 180 250))"
             strokeWidth={2}
             strokeLinecap="round"
             markerEnd="url(#wire-arrow-fwd)"
