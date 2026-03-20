@@ -136,7 +136,7 @@ export function PairingWizard({ onClose }: PairingWizardProps) {
             <button
               onClick={handlePair}
               disabled={pairing || pin.length < 4}
-              className="px-4 py-2 text-xs rounded bg-ctp-blue text-ctp-base font-medium
+              className="px-4 py-2 text-xs rounded bg-ctp-blue text-white font-medium
                 hover:bg-ctp-blue/80 transition-colors cursor-pointer
                 disabled:opacity-50 disabled:cursor-not-allowed"
             >
