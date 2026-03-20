@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export interface McpBindingEntry {
   agentId: string;
   targetId: string;
-  targetKind: 'browser' | 'agent' | 'terminal';
+  targetKind: 'browser' | 'agent' | 'terminal' | 'group-project';
   label: string;
   /** Human-readable name of the source agent (e.g. "scrappy-robin"). */
   agentName?: string;
@@ -78,7 +78,7 @@ export function initMcpBindingListener(): () => void {
         typeof b.agentId === 'string' &&
         typeof b.targetId === 'string' &&
         typeof b.label === 'string' &&
-        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal'),
+        (b.targetKind === 'browser' || b.targetKind === 'agent' || b.targetKind === 'terminal' || b.targetKind === 'group-project'),
     );
     useMcpBindingStore.setState({ bindings: validated });
   });

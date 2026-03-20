@@ -15,6 +15,8 @@ import { manifest as sessionsManifest } from './sessions/manifest';
 import * as sessionsModule from './sessions/main';
 import { manifest as reviewManifest } from './review/manifest';
 import * as reviewModule from './review/main';
+import { manifest as groupProjectManifest } from './group-project/manifest';
+import * as groupProjectModule from './group-project/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -43,6 +45,7 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
 
   if (experimentalFlags.canvas) {
     plugins.push({ manifest: canvasManifest, module: canvasModule });
+    plugins.push({ manifest: groupProjectManifest, module: groupProjectModule });
   }
 
   if (experimentalFlags.sessions) {
@@ -57,6 +60,7 @@ export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}):
   const ids = [...BASE_DEFAULT_IDS];
   if (experimentalFlags.canvas) {
     ids.push('canvas');
+    ids.push('group-project');
   }
   if (experimentalFlags.sessions) {
     ids.push('sessions');
