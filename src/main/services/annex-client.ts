@@ -848,6 +848,163 @@ export function getDiscoveredServices(): DiscoveredService[] {
   return Array.from(discoveredServices.values());
 }
 
+// ---------------------------------------------------------------------------
+// Generic HTTPS request helper for satellite REST APIs
+// ---------------------------------------------------------------------------
+
+function satelliteHttpsRequest(
+  fingerprint: string,
+  method: 'GET' | 'POST',
+  urlPath: string,
+  body?: Record<string, unknown>,
+): Promise<unknown> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.reject(new Error('Satellite not connected'));
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const url = `https://${sat.host}:${sat.mainPort}${urlPath}`;
+
+  return new Promise<unknown>((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : undefined;
+    const options: https.RequestOptions = {
+      ...tlsOptions,
+      method,
+      timeout: 30000,
+      headers: bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : undefined,
+    };
+
+    const req = https.request(url, options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf-8');
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(JSON.parse(text)); }
+          catch { resolve(text); }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`));
+        }
+      });
+    });
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Git remote proxy (REST)
+// ---------------------------------------------------------------------------
+
+export interface GitOperationParams {
+  operation: string;
+  path?: string;
+  message?: string;
+  branch?: string;
+  hash?: string;
+  file?: string;
+  staged?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+export async function requestGitOperation(
+  fingerprint: string,
+  projectId: string,
+  params: GitOperationParams,
+): Promise<unknown> {
+  const encodedProjectId = encodeURIComponent(projectId);
+  const { operation } = params;
+
+  // Read operations via GET
+  switch (operation) {
+    case 'info':
+      return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/projects/${encodedProjectId}/git/info`);
+    case 'log': {
+      const qs = new URLSearchParams();
+      if (params.limit !== undefined) qs.set('limit', String(params.limit));
+      if (params.offset !== undefined) qs.set('offset', String(params.offset));
+      const q = qs.toString();
+      return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/projects/${encodedProjectId}/git/log${q ? `?${q}` : ''}`);
+    }
+    case 'diff': {
+      const qs = new URLSearchParams();
+      if (params.file) qs.set('file', params.file);
+      if (params.staged) qs.set('staged', 'true');
+      return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/projects/${encodedProjectId}/git/diff?${qs.toString()}`);
+    }
+    case 'show-commit': {
+      const qs = new URLSearchParams();
+      if (params.hash) qs.set('hash', params.hash);
+      return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/projects/${encodedProjectId}/git/show-commit?${qs.toString()}`);
+    }
+    case 'commit-diff': {
+      const qs = new URLSearchParams();
+      if (params.hash) qs.set('hash', params.hash);
+      if (params.file) qs.set('file', params.file);
+      return satelliteHttpsRequest(fingerprint, 'GET', `/api/v1/projects/${encodedProjectId}/git/commit-diff?${qs.toString()}`);
+    }
+    default:
+      // Write operations via POST
+      return satelliteHttpsRequest(fingerprint, 'POST', `/api/v1/projects/${encodedProjectId}/git/${operation}`, {
+        path: params.path,
+        message: params.message,
+        branch: params.branch,
+      });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Session remote proxy (REST)
+// ---------------------------------------------------------------------------
+
+export async function requestSessionList(
+  fingerprint: string,
+  agentId: string,
+  projectId: string,
+  orchestrator?: string,
+): Promise<unknown> {
+  const qs = new URLSearchParams();
+  qs.set('projectId', projectId);
+  if (orchestrator) qs.set('orchestrator', orchestrator);
+  return satelliteHttpsRequest(fingerprint, 'GET',
+    `/api/v1/agents/${encodeURIComponent(agentId)}/sessions?${qs.toString()}`);
+}
+
+export async function requestSessionTranscript(
+  fingerprint: string,
+  agentId: string,
+  sessionId: string,
+  projectId: string,
+  offset: number,
+  limit: number,
+  orchestrator?: string,
+): Promise<unknown> {
+  const qs = new URLSearchParams();
+  qs.set('projectId', projectId);
+  qs.set('offset', String(offset));
+  qs.set('limit', String(limit));
+  if (orchestrator) qs.set('orchestrator', orchestrator);
+  return satelliteHttpsRequest(fingerprint, 'GET',
+    `/api/v1/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}/transcript?${qs.toString()}`);
+}
+
+export async function requestSessionSummary(
+  fingerprint: string,
+  agentId: string,
+  sessionId: string,
+  projectId: string,
+  orchestrator?: string,
+): Promise<unknown> {
+  const qs = new URLSearchParams();
+  qs.set('projectId', projectId);
+  if (orchestrator) qs.set('orchestrator', orchestrator);
+  return satelliteHttpsRequest(fingerprint, 'GET',
+    `/api/v1/agents/${encodeURIComponent(agentId)}/sessions/${encodeURIComponent(sessionId)}/summary?${qs.toString()}`);
+}
+
 /**
  * Pair with a discovered (unpaired) service by fingerprint and PIN.
  * On success, adds the peer, removes it from discovered, creates a satellite,

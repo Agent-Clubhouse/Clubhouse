@@ -163,4 +163,36 @@ export function registerAnnexClientHandlers(): void {
       });
     },
   ));
+
+  // Git proxy: execute git operation on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.GIT_OPERATION, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg()],
+    async (_event, satelliteId, projectId, params) => {
+      return annexClient.requestGitOperation(satelliteId, projectId, params);
+    },
+  ));
+
+  // Session proxy: list sessions on satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.SESSION_LIST, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, agentId, projectId, orchestrator) => {
+      return annexClient.requestSessionList(satelliteId, agentId, projectId, orchestrator);
+    },
+  ));
+
+  // Session proxy: read session transcript from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.SESSION_TRANSCRIPT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), numberArg(), numberArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, agentId, sessionId, projectId, offset, limit, orchestrator) => {
+      return annexClient.requestSessionTranscript(satelliteId, agentId, sessionId, projectId, offset, limit, orchestrator);
+    },
+  ));
+
+  // Session proxy: get session summary from satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.SESSION_SUMMARY, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, satelliteId, agentId, sessionId, projectId, orchestrator) => {
+      return annexClient.requestSessionSummary(satelliteId, agentId, sessionId, projectId, orchestrator);
+    },
+  ));
 }

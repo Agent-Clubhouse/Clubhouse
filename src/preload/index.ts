@@ -843,6 +843,14 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, satelliteId, sessionId, projectId),
     clipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, satelliteId, agentId, base64, mimeType),
+    gitOperation: (satelliteId: string, projectId: string, params: { operation: string; [key: string]: unknown }): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.GIT_OPERATION, satelliteId, projectId, params),
+    sessionList: (satelliteId: string, agentId: string, projectId: string, orchestrator?: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.SESSION_LIST, satelliteId, agentId, projectId, orchestrator),
+    sessionTranscript: (satelliteId: string, agentId: string, sessionId: string, projectId: string, offset: number, limit: number, orchestrator?: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.SESSION_TRANSCRIPT, satelliteId, agentId, sessionId, projectId, offset, limit, orchestrator),
+    sessionSummary: (satelliteId: string, agentId: string, sessionId: string, projectId: string, orchestrator?: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.SESSION_SUMMARY, satelliteId, agentId, sessionId, projectId, orchestrator),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>

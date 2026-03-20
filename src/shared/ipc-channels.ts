@@ -315,6 +315,10 @@ export const IPC = {
     FILE_READ: 'annex-client:file-read',
     PTY_SPAWN_SHELL: 'annex-client:pty-spawn-shell',
     CLIPBOARD_IMAGE: 'annex-client:clipboard-image',
+    GIT_OPERATION: 'annex-client:git-operation',
+    SESSION_LIST: 'annex-client:session-list',
+    SESSION_TRANSCRIPT: 'annex-client:session-transcript',
+    SESSION_SUMMARY: 'annex-client:session-summary',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
