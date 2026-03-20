@@ -201,6 +201,25 @@ export const satellitePtyDataBus = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Satellite PTY Exit Bus — forwards pty:exit events to terminal plugin listeners
+// ---------------------------------------------------------------------------
+
+type PtyExitListener = (satelliteId: string, agentId: string, exitCode: number) => void;
+const ptyExitListeners = new Set<PtyExitListener>();
+
+export const satellitePtyExitBus = {
+  on(listener: PtyExitListener): () => void {
+    ptyExitListeners.add(listener);
+    return () => { ptyExitListeners.delete(listener); };
+  },
+  emit(satelliteId: string, agentId: string, exitCode: number): void {
+    for (const listener of ptyExitListeners) {
+      try { listener(satelliteId, agentId, exitCode); } catch { /* ignore */ }
+    }
+  },
+};
+
 /** Listen for satellite updates pushed from main process. */
 export function initAnnexClientListener(): () => void {
   const unsubSatellites = window.clubhouse.annexClient.onSatellitesChanged((satellites: SatelliteConnection[]) => {
@@ -279,6 +298,7 @@ export function initAnnexClientListener(): () => void {
       const agentId = p.agentId || p.id;
       if (agentId) {
         useRemoteProjectStore.getState().updateRemoteAgentRunState(satelliteId, agentId, 'sleeping');
+        satellitePtyExitBus.emit(satelliteId, agentId, p.exitCode ?? -1);
       }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({

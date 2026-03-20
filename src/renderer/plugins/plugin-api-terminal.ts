@@ -1,6 +1,7 @@
 import React from 'react';
 import type { PluginContext, TerminalAPI, Disposable } from '../../shared/plugin-types';
 import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { satellitePtyDataBus, satellitePtyExitBus } from '../stores/annexClientStore';
 
 export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
   const prefix = `plugin:${ctx.pluginId}:`;
@@ -41,19 +42,43 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
       await window.clubhouse.pty.spawnShell(fullId(sessionId), dir);
     },
     write(sessionId: string, data: string): void {
+      if (isRemote && remoteParts) {
+        window.clubhouse.annexClient.ptyInput(remoteParts.satelliteId, fullId(sessionId), data);
+        return;
+      }
       window.clubhouse.pty.write(fullId(sessionId), data);
     },
     resize(sessionId: string, cols: number, rows: number): void {
+      if (isRemote && remoteParts) {
+        window.clubhouse.annexClient.ptyResize(remoteParts.satelliteId, fullId(sessionId), cols, rows);
+        return;
+      }
       window.clubhouse.pty.resize(fullId(sessionId), cols, rows);
     },
     async kill(sessionId: string): Promise<void> {
+      if (isRemote && remoteParts) {
+        // No dedicated kill message for shell terminals over annex yet;
+        // send Ctrl+C + exit as a best-effort teardown.
+        window.clubhouse.annexClient.ptyInput(remoteParts.satelliteId, fullId(sessionId), '\x03\nexit\n');
+        return;
+      }
       await window.clubhouse.pty.kill(fullId(sessionId));
     },
     async getBuffer(sessionId: string): Promise<string> {
+      if (isRemote && remoteParts) {
+        return window.clubhouse.annexClient.ptyGetBuffer(remoteParts.satelliteId, fullId(sessionId));
+      }
       return window.clubhouse.pty.getBuffer(fullId(sessionId));
     },
     onData(sessionId: string, callback: (data: string) => void): Disposable {
       const fid = fullId(sessionId);
+      if (isRemote && remoteParts) {
+        const satId = remoteParts.satelliteId;
+        const remove = satellitePtyDataBus.on((sid, agentId, data) => {
+          if (sid === satId && agentId === fid) callback(data);
+        });
+        return { dispose: remove };
+      }
       const remove = window.clubhouse.pty.onData((id: string, data: string) => {
         if (id === fid) callback(data);
       });
@@ -61,6 +86,13 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
     },
     onExit(sessionId: string, callback: (exitCode: number) => void): Disposable {
       const fid = fullId(sessionId);
+      if (isRemote && remoteParts) {
+        const satId = remoteParts.satelliteId;
+        const remove = satellitePtyExitBus.on((sid, agentId, exitCode) => {
+          if (sid === satId && agentId === fid) callback(exitCode);
+        });
+        return { dispose: remove };
+      }
       const remove = window.clubhouse.pty.onExit((id: string, exitCode: number) => {
         if (id === fid) callback(exitCode);
       });
