@@ -16,6 +16,37 @@ export async function readClipboard(): Promise<string> {
   }
 }
 
+export interface ClipboardImageData {
+  base64: string;
+  mimeType: string;
+}
+
+/**
+ * Read an image from the system clipboard as base64.
+ * Returns null if no image is found or on failure.
+ */
+export async function readClipboardImage(): Promise<ClipboardImageData | null> {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return { base64: btoa(binary), mimeType: imageType };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Write text to the system clipboard.
  */
@@ -29,18 +60,30 @@ export async function writeClipboard(text: string): Promise<void> {
 
 /**
  * Paste clipboard text into the terminal, respecting bracketed paste mode.
+ * If no text is found but an image is available and onImagePaste is provided,
+ * the image will be forwarded via the callback.
  */
 export async function pasteIntoTerminal(
   term: Terminal,
-  writeToPty: (data: string) => void
+  writeToPty: (data: string) => void,
+  onImagePaste?: (image: ClipboardImageData) => void,
 ): Promise<void> {
   const text = await readClipboard();
-  if (!text) return;
+  if (text) {
+    const data = term.modes.bracketedPasteMode
+      ? `\x1b[200~${text}\x1b[201~`
+      : text;
+    writeToPty(data);
+    return;
+  }
 
-  const data = term.modes.bracketedPasteMode
-    ? `\x1b[200~${text}\x1b[201~`
-    : text;
-  writeToPty(data);
+  // No text — try image
+  if (onImagePaste) {
+    const image = await readClipboardImage();
+    if (image) {
+      onImagePaste(image);
+    }
+  }
 }
 
 /** Return true if the key event is a paste shortcut for this platform. */
@@ -72,7 +115,8 @@ function isCopy(e: KeyboardEvent): boolean {
 export function attachClipboardHandlers(
   term: Terminal,
   container: HTMLElement,
-  writeToPty: (data: string) => void
+  writeToPty: (data: string) => void,
+  onImagePaste?: (image: ClipboardImageData) => void,
 ): () => void {
   // --- Keyboard shortcuts ---
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -80,7 +124,7 @@ export function attachClipboardHandlers(
 
     // Paste: Cmd+V (mac) or Ctrl+V / Ctrl+Shift+V (win/linux)
     if (isPaste(e)) {
-      pasteIntoTerminal(term, writeToPty);
+      pasteIntoTerminal(term, writeToPty, onImagePaste);
       return false;
     }
 
@@ -122,7 +166,7 @@ export function attachClipboardHandlers(
       writeClipboard(term.getSelection());
       term.clearSelection();
     } else {
-      pasteIntoTerminal(term, writeToPty);
+      pasteIntoTerminal(term, writeToPty, onImagePaste);
     }
   };
   container.addEventListener('contextmenu', onContextMenu, true);

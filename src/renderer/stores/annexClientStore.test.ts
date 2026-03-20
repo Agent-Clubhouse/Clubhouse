@@ -14,6 +14,7 @@ const mockAnnexClient = {
   retry: vi.fn(),
   scan: vi.fn(),
   ptyInput: vi.fn(),
+  clipboardImage: vi.fn(),
   ptyResize: vi.fn(),
   agentSpawn: vi.fn(),
   agentKill: vi.fn(),

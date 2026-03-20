@@ -841,6 +841,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FILE_READ, satelliteId, projectId, path),
     ptySpawnShell: (satelliteId: string, sessionId: string, projectId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL, satelliteId, sessionId, projectId),
+    clipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.CLIPBOARD_IMAGE, satelliteId, agentId, base64, mimeType),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>

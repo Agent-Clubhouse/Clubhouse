@@ -62,6 +62,7 @@ interface AnnexClientStoreState {
   retry: (fingerprint: string) => Promise<void>;
   scan: () => Promise<void>;
   sendPtyInput: (satelliteId: string, agentId: string, data: string) => Promise<void>;
+  sendClipboardImage: (satelliteId: string, agentId: string, base64: string, mimeType: string) => Promise<void>;
   sendPtyResize: (satelliteId: string, agentId: string, cols: number, rows: number) => Promise<void>;
   sendAgentSpawn: (satelliteId: string, params: unknown) => Promise<void>;
   sendAgentKill: (satelliteId: string, agentId: string) => Promise<void>;
@@ -139,6 +140,12 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   sendPtyInput: async (satelliteId, agentId, data) => {
     try {
       await window.clubhouse.annexClient.ptyInput(satelliteId, agentId, data);
+    } catch { /* ignore */ }
+  },
+
+  sendClipboardImage: async (satelliteId, agentId, base64, mimeType) => {
+    try {
+      await window.clubhouse.annexClient.clipboardImage(satelliteId, agentId, base64, mimeType);
     } catch { /* ignore */ }
   },
 
