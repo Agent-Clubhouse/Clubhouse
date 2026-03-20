@@ -48,6 +48,7 @@ import { captureSessionState, loadPendingResume, clearPendingResume } from './re
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
+import { pathExists } from './fs-utils';
 
 describe('restart-session-service', () => {
   const statePath = '/tmp/test-userdata/restart-session-state.json';
@@ -163,8 +164,11 @@ describe('restart-session-service', () => {
         version: 1,
         capturedAt: new Date().toISOString(),
         appVersion: '0.38.0',
-        sessions: [{ agentId: 'darling-gazelle', resumeStrategy: 'auto', sessionId: 'abc' }],
+        sessions: [{ agentId: 'darling-gazelle', resumeStrategy: 'auto', sessionId: 'abc', projectPath: '/projects/club' }],
       }));
+
+      // pathExists must return true so directory validation doesn't filter out the session
+      vi.mocked(pathExists).mockResolvedValue(true);
 
       const result = await loadPendingResume();
       expect(result).not.toBeNull();
