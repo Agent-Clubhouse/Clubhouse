@@ -9,6 +9,7 @@ import React, { useMemo } from 'react';
 import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { computeWirePath, viewRect } from './wire-utils';
+import { WireFlowDots } from './WireFlowDots';
 
 /** CSS animation for ambient wire glow */
 const WIRE_GLOW_KEYFRAMES = `
@@ -154,6 +155,10 @@ export const WireOverlay = React.memo(function WireOverlay({
         >
           <path d="M 7 1 L 1 4 L 7 7" fill="none" stroke="rgb(var(--ctp-accent, 137 180 250))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </marker>
+        {/* Wire path definitions (referenced by flow dots via <mpath>) */}
+        {wires.map(({ key, path }) => (
+          <path key={`def-${key}`} id={`wire-path-${key}`} d={path} fill="none" />
+        ))}
       </defs>
       {wires.map(({ key, path, binding, bidir }) => (
         <g key={key} data-testid={`wire-group-${key}`} data-bidir={bidir ? 'true' : undefined}>
@@ -182,6 +187,8 @@ export const WireOverlay = React.memo(function WireOverlay({
             }}
             data-testid={`wire-path-${key}`}
           />
+          {/* Flowing light dots */}
+          <WireFlowDots wireKey={key} bidir={bidir} />
         </g>
       ))}
     </svg>
