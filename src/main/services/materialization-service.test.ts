@@ -60,6 +60,7 @@ import * as fsp from 'fs/promises';
 import { pathExists } from './fs-utils';
 import {
   buildWildcardContext,
+  cleanupStaleJsonInTomlConfigs,
   materializeAgent,
   previewMaterialization,
   ensureDefaultTemplates,
@@ -808,6 +809,72 @@ describe('materialization-service', () => {
         '/project',
         'clubhouse-mode',
       );
+    });
+  });
+
+  describe('cleanupStaleJsonInTomlConfigs', () => {
+    const tomlConventions = {
+      configDir: '.codex',
+      mcpConfigFile: '.codex/config.toml',
+      localSettingsFile: 'config.toml',
+      settingsFormat: 'toml' as const,
+      skillsDir: 'skills',
+      agentTemplatesDir: 'agents',
+    };
+
+    beforeEach(() => {
+      vi.mocked(fsp.readFile).mockReset();
+      vi.mocked(fsp.unlink).mockReset();
+      vi.mocked(fsp.unlink).mockResolvedValue(undefined);
+    });
+
+    it('removes file that starts with { (JSON object)', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"mcpServers": {}}');
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      expect(fsp.unlink).toHaveBeenCalled();
+    });
+
+    it('removes file that starts with [ (JSON array)', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('[{"test": true}]');
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      expect(fsp.unlink).toHaveBeenCalled();
+    });
+
+    it('removes file with leading whitespace before JSON', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('  \n  {"mcpServers": {}}');
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      expect(fsp.unlink).toHaveBeenCalled();
+    });
+
+    it('does not remove valid TOML content', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('[mcpServers]\nfoo = "bar"');
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      expect(fsp.unlink).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates paths when mcpConfigFile and configDir/localSettingsFile resolve to same path', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('{"stale": true}');
+
+      await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
+
+      // .codex/config.toml and .codex/config.toml are the same — should only unlink once
+      expect(fsp.unlink).toHaveBeenCalledTimes(1);
     });
   });
 });
