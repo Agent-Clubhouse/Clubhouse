@@ -912,11 +912,27 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // All endpoints on the main server require auth (mTLS or bearer token)
-  const token = extractBearerToken(req);
-  if (!isValidToken(token)) {
-    sendJson(res, 401, { error: 'unauthorized' });
-    return;
+  // All endpoints on the main server require auth (mTLS or bearer token).
+  // Check mTLS first (matching the WebSocket upgrade handler), then fall back
+  // to bearer token. Without this, REST calls from the controller using only
+  // mTLS certs (e.g. buffer fetch) would be rejected with 401.
+  let authenticated = false;
+  if (req.socket && 'getPeerCertificate' in req.socket) {
+    const peerFingerprint = annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket);
+    if (peerFingerprint) {
+      const peer = annexPeers.getPeer(peerFingerprint);
+      if (peer && (peer.role === 'controller' || !peer.role)) {
+        authenticated = true;
+        annexPeers.updateLastSeen(peerFingerprint);
+      }
+    }
+  }
+  if (!authenticated) {
+    const token = extractBearerToken(req);
+    if (!isValidToken(token)) {
+      sendJson(res, 401, { error: 'unauthorized' });
+      return;
+    }
   }
 
   // GET /api/v1/status
