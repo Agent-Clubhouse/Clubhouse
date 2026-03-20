@@ -210,7 +210,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           metadata: v.metadata ?? {},
           displayName: v.displayName ?? v.title ?? v.type ?? '',
         })) as CanvasView[];
-        syncCounterToViews(restoredViews, viewCounter);
         return {
           id: s.id,
           name: s.name,
@@ -221,7 +220,6 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           selectedViewId: null,
         };
       });
-      syncCounterToInstances(canvases, canvasCounter);
       const resolvedActive = (activeId && canvases.find((c) => c.id === activeId))
         ? activeId
         : canvases[0].id;
