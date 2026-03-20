@@ -27,7 +27,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp } from './injection';
+import { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp, buildClubhouseMcpDef } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -198,6 +198,22 @@ describe('MCP Injection', () => {
     it('returns config unchanged when no mcpServers', () => {
       const config = { someOther: 'value' };
       expect(stripClubhouseMcp(config)).toEqual(config);
+    });
+  });
+
+  describe('buildClubhouseMcpDef', () => {
+    it('returns a valid MCP server definition with type stdio', () => {
+      const def = buildClubhouseMcpDef(12345, 'agent-1', 'nonce-1');
+      expect(def.type).toBe('stdio');
+      expect(def.command).toBe('node');
+      expect(def.args).toBeDefined();
+      expect(def.args!.length).toBe(1);
+      expect(def.args![0]).toContain('clubhouse-mcp-bridge');
+      expect(def.env).toEqual({
+        CLUBHOUSE_MCP_PORT: '12345',
+        CLUBHOUSE_AGENT_ID: 'agent-1',
+        CLUBHOUSE_HOOK_NONCE: 'nonce-1',
+      });
     });
   });
 });

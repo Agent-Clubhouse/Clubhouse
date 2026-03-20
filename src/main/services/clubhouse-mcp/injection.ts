@@ -154,11 +154,28 @@ export function stripClubhouseMcp(config: Record<string, unknown>): Record<strin
 }
 
 /**
+ * Build the Clubhouse MCP server definition for use in CLI args or config files.
+ */
+export function buildClubhouseMcpDef(mcpPort: number, agentId: string, nonce: string): McpServerDef {
+  validateBridgeScript();
+  return {
+    type: 'stdio',
+    command: 'node',
+    args: [getBridgeScriptPath()],
+    env: {
+      CLUBHOUSE_MCP_PORT: String(mcpPort),
+      CLUBHOUSE_AGENT_ID: agentId,
+      CLUBHOUSE_HOOK_NONCE: nonce,
+    },
+  };
+}
+
+/**
  * Resolve the bridge script path. The script is copied to the webpack output
  * during build. In production it is unpacked from the asar archive so that
  * it can be spawned as a child process by `node`.
  */
-function getBridgeScriptPath(): string {
+export function getBridgeScriptPath(): string {
   // __dirname points inside the asar in production (e.g. .../app.asar/.webpack/main).
   // The bridge script is asar-unpacked so it can be executed by node as a child process.
   // Replace 'app.asar' with 'app.asar.unpacked' to get the real filesystem path.

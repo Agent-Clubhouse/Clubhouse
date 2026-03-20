@@ -170,6 +170,13 @@ export interface OrchestratorProvider {
   // Profile support
   /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */
   getProfileEnvKeys(): string[];
+
+  /**
+   * Optional: return CLI args to inject MCP server config at spawn time.
+   * Used by orchestrators that don't read MCP from a project-level config file
+   * (e.g. Copilot CLI uses --additional-mcp-config instead of .github/mcp.json).
+   */
+  buildMcpArgs?(mcpPort: number, agentId: string, nonce: string): string[];
 }
 
 // ── Structured Mode ─────────────────────────────────────────────────────────

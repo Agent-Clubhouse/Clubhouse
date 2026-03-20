@@ -17,6 +17,7 @@ import { BaseProvider } from './base-provider';
 import { AcpAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { isClubhouseHookEntry } from '../services/config-pipeline';
+import { buildClubhouseMcpDef } from '../services/clubhouse-mcp/injection';
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -148,6 +149,19 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     }
 
     return { binary, args };
+  }
+
+  // ── MCP CLI injection ──────────────────────────────────────────────────
+
+  /**
+   * Copilot CLI reads MCP config from ~/.copilot/mcp-config.json, not from
+   * a project-level config file. Use --additional-mcp-config to inject the
+   * Clubhouse MCP server for this session without modifying user-level config.
+   */
+  buildMcpArgs(mcpPort: number, agentId: string, nonce: string): string[] {
+    const def = buildClubhouseMcpDef(mcpPort, agentId, nonce);
+    const config = JSON.stringify({ mcpServers: { clubhouse: def } });
+    return ['--additional-mcp-config', config];
   }
 
   // ── StructuredCapable ───────────────────────────────────────────────────

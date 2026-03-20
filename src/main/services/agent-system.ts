@@ -243,9 +243,14 @@ async function spawnPtyAgent(
     }),
   ]);
 
-  // Apply launch wrapper transform if configured
+  // Inject MCP args for providers that need CLI-based MCP config (e.g. Copilot CLI)
   let { binary, args } = spawnCmd;
   const { env } = spawnCmd;
+  if (mcpPort > 0 && provider.buildMcpArgs) {
+    args = [...args, ...provider.buildMcpArgs(mcpPort, params.agentId, nonce)];
+  }
+
+  // Apply launch wrapper transform if configured
   if (wrapperConfig && wrapperConfig.orchestratorMap[provider.id]) {
     const wrapped = applyLaunchWrapper(wrapperConfig, provider.id, binary, args, mcpIds || []);
     binary = wrapped.binary;
