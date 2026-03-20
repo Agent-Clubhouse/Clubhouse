@@ -59,46 +59,32 @@ describe('WireConfigPopover', () => {
     expect(getByTestId('wire-bidirectional-toggle')).toBeTruthy();
   });
 
-  it('renders toggle pill with inactive styling when not bidirectional', () => {
-    useMcpBindingStore.setState({ bindings: [agentBinding] });
+  it('shows Set Instructions button', () => {
     const { getByTestId } = render(
-      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={vi.fn()} />,
     );
-    const pill = getByTestId('wire-bidirectional-pill');
-    expect(pill).toBeTruthy();
-    expect(pill.className).toContain('bg-ctp-surface2');
-    expect(pill.className).not.toContain('bg-ctp-blue');
+    expect(getByTestId('wire-instructions-button')).toBeTruthy();
+    expect(getByTestId('wire-instructions-button').textContent).toContain('Set Instructions');
   });
 
-  it('renders toggle pill with active styling when bidirectional', () => {
-    const reverseBinding: McpBindingEntry = {
-      agentId: 'agent-2',
-      targetId: 'agent-1',
-      targetKind: 'agent',
-      label: 'Agent 1',
+  it('shows Edit Instructions when instructions are set', () => {
+    const bindingWithInstructions: McpBindingEntry = {
+      ...browserBinding,
+      instructions: { '*': 'Do not transmit raw telemetry' },
     };
-    useMcpBindingStore.setState({ bindings: [agentBinding, reverseBinding] });
+    useMcpBindingStore.setState({ bindings: [bindingWithInstructions] });
     const { getByTestId } = render(
-      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+      <WireConfigPopover binding={bindingWithInstructions} x={100} y={200} onClose={vi.fn()} />,
     );
-    const pill = getByTestId('wire-bidirectional-pill');
-    expect(pill).toBeTruthy();
-    expect(pill.className).toContain('bg-ctp-blue');
+    expect(getByTestId('wire-instructions-button').textContent).toContain('Edit Instructions');
   });
 
-  it('shows ring highlight on toggle button when bidirectional', () => {
-    const reverseBinding: McpBindingEntry = {
-      agentId: 'agent-2',
-      targetId: 'agent-1',
-      targetKind: 'agent',
-      label: 'Agent 1',
-    };
-    useMcpBindingStore.setState({ bindings: [agentBinding, reverseBinding] });
-    const { getByTestId } = render(
-      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+  it('opens instructions dialog when Set Instructions is clicked', () => {
+    const { getByTestId, queryByTestId } = render(
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={vi.fn()} />,
     );
-    const toggle = getByTestId('wire-bidirectional-toggle');
-    expect(toggle.className).toContain('ring-1');
-    expect(toggle.className).toContain('ring-ctp-blue/40');
+    expect(queryByTestId('wire-instructions-dialog')).toBeNull();
+    fireEvent.click(getByTestId('wire-instructions-button'));
+    expect(getByTestId('wire-instructions-dialog')).toBeTruthy();
   });
 });
