@@ -22,7 +22,7 @@ describe('ResumeBanner', () => {
     );
     expect(screen.getByText(/resuming 3 sessions/i)).toBeDefined();
     expect(screen.getByText('darling-gazelle')).toBeDefined();
-    expect(screen.getByText(/tap to resume/i)).toBeDefined();
+    expect(screen.getByText(/Resume/)).toBeDefined();
   });
 
   it('calls onManualResume when tap to resume clicked', () => {
@@ -34,7 +34,7 @@ describe('ResumeBanner', () => {
         onDismiss={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText(/tap to resume/i));
+    fireEvent.click(screen.getByText(/Resume/));
     expect(onManualResume).toHaveBeenCalledWith('c');
   });
 

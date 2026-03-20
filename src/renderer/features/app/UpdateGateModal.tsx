@@ -21,23 +21,44 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onCancel}>
-      <div className="bg-ctp-mantle rounded-xl shadow-xl max-w-lg w-full mx-4 p-5" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-ctp-text text-sm font-semibold mb-3">Update Ready — Active Agents</h2>
+      <div
+        className="bg-ctp-mantle border border-surface-0 rounded-xl shadow-2xl max-w-lg w-full mx-4 p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-base font-semibold text-ctp-text mb-4">Update Ready — Active Agents</h2>
 
         {workingAgents.length > 0 && (
-          <div className="mb-3">
-            <div className="text-ctp-subtext0 text-xs mb-2">These agents are still working:</div>
+          <div className="mb-4">
+            <div className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Still working</div>
             {workingAgents.map((agent) => (
-              <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 rounded-lg px-3 py-2 mb-1">
-                <div>
-                  <span className="text-ctp-red mr-2 text-xs">●</span>
-                  <span className="text-ctp-text text-xs font-medium">{agent.agentName}</span>
-                  <span className="text-ctp-subtext0 text-xs ml-2">actively generating</span>
+              <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-ctp-red animate-pulse" />
+                  <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
+                  <span className="text-xs text-ctp-subtext0">actively generating</span>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => onResolveAgent(agent.agentId, 'wait')} className="px-2 py-0.5 text-xs rounded bg-ctp-blue/20 hover:bg-ctp-blue/30 text-ctp-blue transition-colors cursor-pointer">Wait</button>
-                  <button onClick={() => onResolveAgent(agent.agentId, 'interrupt')} className="px-2 py-0.5 text-xs rounded bg-ctp-peach/20 hover:bg-ctp-peach/30 text-ctp-peach transition-colors cursor-pointer">Interrupt & Resume</button>
-                  <button onClick={() => onResolveAgent(agent.agentId, 'kill')} className="px-2 py-0.5 text-xs rounded bg-ctp-red/20 hover:bg-ctp-red/30 text-ctp-red transition-colors cursor-pointer">Kill</button>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => onResolveAgent(agent.agentId, 'wait')}
+                    className="px-3 py-1 text-xs rounded-md bg-surface-1 border border-surface-2 text-ctp-subtext1
+                      hover:bg-surface-2 hover:text-ctp-text transition-colors cursor-pointer"
+                  >
+                    Wait
+                  </button>
+                  <button
+                    onClick={() => onResolveAgent(agent.agentId, 'interrupt')}
+                    className="px-3 py-1 text-xs rounded-md bg-ctp-peach/15 border border-ctp-peach/30 text-ctp-peach
+                      hover:bg-ctp-peach/25 transition-colors cursor-pointer font-medium"
+                  >
+                    Interrupt & Resume
+                  </button>
+                  <button
+                    onClick={() => onResolveAgent(agent.agentId, 'kill')}
+                    className="px-3 py-1 text-xs rounded-md bg-ctp-red/15 border border-ctp-red/30 text-ctp-red
+                      hover:bg-ctp-red/25 transition-colors cursor-pointer font-medium"
+                  >
+                    Kill
+                  </button>
                 </div>
               </div>
             ))}
@@ -45,32 +66,48 @@ export function UpdateGateModal({ agents, onCancel, onConfirm, onResolveAgent }:
         )}
 
         {idleAgents.length > 0 && (
-          <div className="mb-3">
-            <div className="text-ctp-subtext0 text-xs mb-2">
-              {workingAgents.length > 0 ? 'These agents will resume after restart:' : 'All agents will resume after restart:'}
+          <div className="mb-4">
+            <div className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">
+              {workingAgents.length > 0 ? 'Will resume after restart' : 'All agents will resume after restart'}
             </div>
             {idleAgents.map((agent) => (
-              <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 rounded-lg px-3 py-2 mb-1">
-                <div>
-                  <span className={`mr-2 text-xs ${agent.resumeStrategy === 'auto' ? 'text-ctp-yellow' : 'text-ctp-blue'}`}>●</span>
-                  <span className="text-ctp-text text-xs font-medium">{agent.agentName}</span>
+              <div key={agent.agentId} className="flex items-center justify-between bg-surface-0 border border-surface-2 rounded-lg px-3 py-2.5 mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full ${agent.resumeStrategy === 'auto' ? 'bg-ctp-green' : 'bg-ctp-yellow'}`} />
+                  <span className="text-sm text-ctp-text font-medium">{agent.agentName}</span>
                 </div>
-                <span className="text-ctp-subtext0 text-xs">
-                  {agent.resumeStrategy === 'auto' ? '✓ Will auto-resume' : '⚠ Manual resume after restart'}
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  agent.resumeStrategy === 'auto'
+                    ? 'bg-ctp-green/10 text-ctp-green border border-ctp-green/20'
+                    : 'bg-ctp-yellow/10 text-ctp-yellow border border-ctp-yellow/20'
+                }`}>
+                  {agent.resumeStrategy === 'auto' ? 'Auto-resume' : 'Manual resume'}
                 </span>
               </div>
             ))}
           </div>
         )}
 
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onCancel} className="px-3 py-1.5 text-xs rounded bg-surface-1 hover:bg-surface-2 text-ctp-subtext0 transition-colors cursor-pointer">Cancel</button>
+        <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-surface-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded-md bg-surface-1 text-ctp-subtext1
+              hover:bg-surface-2 hover:text-ctp-text transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
           <button
             data-testid="update-gate-restart-btn"
             onClick={onConfirm}
             disabled={hasWorking}
-            className={`px-3 py-1.5 text-xs rounded transition-colors ${hasWorking ? 'bg-ctp-info/10 text-ctp-info/40 cursor-not-allowed' : 'bg-ctp-info/20 hover:bg-ctp-info/30 text-ctp-info cursor-pointer'}`}
-          >Restart Now</button>
+            className={`px-4 py-1.5 text-xs rounded-md transition-colors font-medium ${
+              hasWorking
+                ? 'bg-surface-1 text-ctp-subtext0/40 cursor-not-allowed'
+                : 'bg-indigo-500 text-white hover:bg-indigo-600 cursor-pointer'
+            }`}
+          >
+            Restart Now
+          </button>
         </div>
       </div>
     </div>
