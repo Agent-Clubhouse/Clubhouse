@@ -44,13 +44,15 @@ function agentToolName(binding: McpBinding, suffix: string): string {
 
 /**
  * Helper: call send_message and advance fake timers so the delayed \r
- * and post-send buffer check resolve. Must be called within a fake-timer
- * context (vi.useFakeTimers).
+ * retries and buffer checks all resolve. Must be called within a
+ * fake-timer context (vi.useFakeTimers).
+ *
+ * Timeline: 200ms (1st \r) + 200ms (retry check / 2nd \r) + 200ms (final buffer check) = 600ms
  */
 async function sendMessage(agentId: string, toolName: string, args: Record<string, unknown>) {
   const promise = callTool(agentId, toolName, args);
-  // 100ms for the delayed \r, then 200ms for the buffer check
-  await vi.advanceTimersByTimeAsync(300);
+  // Advance through all three setTimeout stages
+  await vi.advanceTimersByTimeAsync(600);
   return promise;
 }
 
@@ -181,11 +183,29 @@ describe('AgentTools', () => {
       expect(result.content[0].text).toContain('poll read_output');
     });
 
-    it('sends delayed \\r for submission by default (force_submit=true)', async () => {
+    it('sends delayed \\r and retries with second \\r when buffer does not grow (force_submit=true)', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // Buffer stays empty → first \r doesn't trigger processing → retry
+      mockPtyGetBuffer.mockReturnValue('');
       await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'fs1' });
 
-      // Should have 2 writes: message + delayed \r
+      // Should have 3 writes: message + 1st \r + 2nd \r (retry)
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('\r');
+    });
+
+    it('skips second \\r when first Enter triggers processing (buffer grows)', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
+      // Simulate buffer growing after first \r
+      let callCount = 0;
+      mockPtyGetBuffer.mockImplementation(() => {
+        callCount++;
+        return callCount <= 1 ? 'short' : 'short + agent processed message output';
+      });
+      await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'fs2' });
+
+      // Should have 2 writes: message + 1st \r (no retry needed)
       expect(mockPtyWrite).toHaveBeenCalledTimes(2);
       expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
     });
@@ -223,21 +243,21 @@ describe('AgentTools', () => {
       expect(written.endsWith('\x1b[201~')).toBe(true);
     });
 
-    it('performs post-send buffer check for delivery heuristic', async () => {
+    it('performs post-send buffer checks for delivery heuristic', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty' });
-      // Simulate buffer growing after submit (agent processed the message)
+      // Simulate buffer NOT growing after first \r, then growing after second
       let callCount = 0;
       mockPtyGetBuffer.mockImplementation(() => {
         callCount++;
-        // First call (before submit): short buffer
-        // Second call (after submit): longer buffer
-        return callCount <= 1 ? 'short' : 'short + agent processed message output';
+        // Calls 1-2 (before + after first \r): same length → triggers retry
+        // Call 3 (after second \r): longer
+        return callCount <= 2 ? 'short' : 'short + agent processed message output';
       });
 
       const result = await sendMessage('agent-1', sendToolName, { message: 'hello', task_id: 'buf1' });
       expect(result.isError).toBeFalsy();
-      // getBuffer should have been called twice (before and after submit)
-      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(2);
+      // getBuffer: once before submit, once after 1st \r, once after 2nd \r
+      expect(mockPtyGetBuffer).toHaveBeenCalledTimes(3);
     });
 
     it('includes sender name without project when project not set', async () => {
