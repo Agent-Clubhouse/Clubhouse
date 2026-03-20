@@ -63,6 +63,15 @@ describe('ToolRegistry', () => {
       });
       expect(buildToolKey(binding)).toBe('widget_123');
     });
+
+    it('builds key with name and hash for group-project targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'gp_123_abc', targetKind: 'group-project',
+        targetName: 'My Project',
+      });
+      const key = buildToolKey(binding);
+      expect(key).toBe(`My_Project_${shortHash('gp_123_abc')}`);
+    });
   });
 
   describe('buildToolName', () => {
@@ -81,6 +90,15 @@ describe('ToolRegistry', () => {
       });
       const name = buildToolName(binding, 'navigate');
       expect(name).toBe('browser__widget_1__navigate');
+    });
+
+    it('uses group prefix for group-project targets', () => {
+      const binding = makeBinding({
+        agentId: 'a1', targetId: 'gp_123', targetKind: 'group-project',
+        targetName: 'My Project',
+      });
+      const name = buildToolName(binding, 'list_members');
+      expect(name).toMatch(/^group__My_Project_[a-z0-9]+__list_members$/);
     });
   });
 
@@ -106,6 +124,14 @@ describe('ToolRegistry', () => {
         prefix: 'terminal',
         toolKey: 'term_1',
         suffix: 'run_command',
+      });
+    });
+
+    it('parses group tool names', () => {
+      expect(parseToolName('group__My_Project_a3f2__list_members')).toEqual({
+        prefix: 'group',
+        toolKey: 'My_Project_a3f2',
+        suffix: 'list_members',
       });
     });
 
@@ -297,6 +323,26 @@ describe('ToolRegistry', () => {
       const result = await callTool('agent-3', toolName, {});
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No binding');
+    });
+
+    it('works with group-project tool names', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'members' }],
+      });
+      registerToolTemplate('group-project', 'list_members', {
+        description: 'List',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', { targetId: 'gp_123', targetKind: 'group-project', label: 'GP', targetName: 'My Project' });
+
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', targetName: 'My Project',
+      }), 'list_members');
+
+      const result = await callTool('agent-1', toolName, {});
+      expect(result.isError).toBeFalsy();
+      expect(handler).toHaveBeenCalledWith('gp_123', 'agent-1', {});
     });
 
     it('works with browser tool names', async () => {
