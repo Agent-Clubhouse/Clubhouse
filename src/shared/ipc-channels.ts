@@ -332,6 +332,8 @@ export const IPC = {
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
     CHANGED: 'group-project:changed',
+    POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
+    SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

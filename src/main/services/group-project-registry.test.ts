@@ -41,6 +41,8 @@ describe('GroupProjectRegistry', () => {
     const p = await groupProjectRegistry.create('Test Project');
     expect(p.id).toMatch(/^gp_\d+_[a-z0-9]+$/);
     expect(p.name).toBe('Test Project');
+    expect(p.description).toBe('');
+    expect(p.instructions).toBe('');
     expect(p.createdAt).toBeTruthy();
     expect(p.metadata).toEqual({});
   });
@@ -105,6 +107,46 @@ describe('GroupProjectRegistry', () => {
     unsub();
     await groupProjectRegistry.create('After Unsub');
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates description and instructions', async () => {
+    const p = await groupProjectRegistry.create('DescTest');
+    const updated = await groupProjectRegistry.update(p.id, {
+      description: 'A test project',
+      instructions: 'Follow the rules',
+    });
+    expect(updated!.description).toBe('A test project');
+    expect(updated!.instructions).toBe('Follow the rules');
+    const fetched = await groupProjectRegistry.get(p.id);
+    expect(fetched!.description).toBe('A test project');
+    expect(fetched!.instructions).toBe('Follow the rules');
+  });
+
+  it('normalizes old entries missing description/instructions on load', async () => {
+    // Write an old-format entry without description/instructions
+    const fsp = await import('fs/promises');
+    const nodePath = await import('path');
+    const oldData = JSON.stringify([{
+      id: 'gp_old_abc',
+      name: 'Legacy',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      metadata: {},
+    }]);
+    const registryFile = nodePath.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'registry.json');
+    (fsp.access as any).mockImplementation(async (p: string) => {
+      if (p === registryFile) return;
+      throw new Error('ENOENT');
+    });
+    (fsp.readFile as any).mockImplementation(async (p: string) => {
+      if (p === registryFile) return oldData;
+      throw new Error('ENOENT');
+    });
+
+    groupProjectRegistry._resetForTesting();
+    const project = await groupProjectRegistry.get('gp_old_abc');
+    expect(project).not.toBeNull();
+    expect(project!.description).toBe('');
+    expect(project!.instructions).toBe('');
   });
 
   it('flushes to disk', async () => {
