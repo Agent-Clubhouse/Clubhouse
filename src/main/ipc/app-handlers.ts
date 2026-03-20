@@ -21,7 +21,7 @@ import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
-import { getLiveAgentsForUpdate, loadPendingResume, captureSessionState } from '../services/restart-session-service';
+import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
 import * as ptyManager from '../services/pty-manager';
 import * as agentSystem from '../services/agent-system';
 
@@ -346,8 +346,14 @@ export function registerAppHandlers(): void {
     return getLiveAgentsForUpdate();
   });
 
-  ipcMain.handle(IPC.APP.GET_PENDING_RESUMES, () => {
-    return loadPendingResume();
+  ipcMain.handle(IPC.APP.GET_PENDING_RESUMES, async () => {
+    // Read-once: load the state, then clear the file so it won't be
+    // re-read on a subsequent call or crash-restart loop.
+    const state = await loadPendingResume();
+    if (state) {
+      await clearPendingResume();
+    }
+    return state;
   });
 
   ipcMain.handle(IPC.APP.RESUME_MANUAL_AGENT, withValidatedArgs(

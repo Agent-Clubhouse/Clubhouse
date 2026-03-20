@@ -49,8 +49,14 @@ export function UpdateBanner() {
   useEffect(() => {
     if (!window.clubhouse.app.onDevSimulateUpdateRestart) return;
     return window.clubhouse.app.onDevSimulateUpdateRestart(() => {
-      setSimulateMode(true);
-      setShowGate(true);
+      const running = Object.values(useAgentStore.getState().agents).filter((a) => a.status === 'running');
+      if (running.length > 0) {
+        setSimulateMode(true);
+        setShowGate(true);
+      } else {
+        // No agents — go straight to capture + relaunch
+        window.clubhouse.app.devSimulateUpdateRestart({ agentNames: {} });
+      }
     });
   }, []);
 
@@ -96,7 +102,17 @@ export function UpdateBanner() {
     setTimeout(refreshGateAgents, 1000);
   };
 
-  if (!shouldShow) return null;
+  // When in simulate mode, render only the gate modal (no banner needed)
+  if (!shouldShow) {
+    return showGate ? (
+      <UpdateGateModal
+        agents={gateAgents}
+        onCancel={() => { setShowGate(false); setSimulateMode(false); }}
+        onConfirm={handleGateConfirm}
+        onResolveAgent={handleGateResolve}
+      />
+    ) : null;
+  }
 
   const colorBase = useWarningStyle ? 'ctp-peach' : 'ctp-info';
 
