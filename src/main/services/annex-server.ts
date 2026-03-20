@@ -163,7 +163,6 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
 // ---------------------------------------------------------------------------
 
 const CLIPBOARD_IMAGE_CLEANUP_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_CLIPBOARD_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB base64
 
 function handleClipboardImage(agentId: string, base64: string, mimeType: string): void {
   const ext = mimeType === 'image/png' ? '.png'
