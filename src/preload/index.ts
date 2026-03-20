@@ -1075,6 +1075,10 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),
+    postBulletinMessage: (projectId: string, topic: string, body: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
+    sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, projectId, targetAgentId, message),
     onChanged: (callback: (projects: unknown[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
       ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);

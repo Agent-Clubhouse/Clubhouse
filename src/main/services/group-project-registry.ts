@@ -51,6 +51,9 @@ class GroupProjectRegistry {
       try {
         const data: GroupProject[] = JSON.parse(await fsp.readFile(rp, 'utf-8'));
         for (const p of data) {
+          // Normalize old entries missing new fields
+          if (p.description === undefined) p.description = '';
+          if (p.instructions === undefined) p.instructions = '';
           this.projects.set(p.id, p);
         }
       } catch (err) {
@@ -111,6 +114,8 @@ class GroupProjectRegistry {
     const project: GroupProject = {
       id,
       name,
+      description: '',
+      instructions: '',
       createdAt: new Date().toISOString(),
       metadata: {},
     };
@@ -129,11 +134,13 @@ class GroupProjectRegistry {
     return [...this.projects.values()];
   }
 
-  async update(id: string, fields: { name?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
+  async update(id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<GroupProject | null> {
     await this.ensureLoaded();
     const project = this.projects.get(id);
     if (!project) return null;
     if (fields.name !== undefined) project.name = fields.name;
+    if (fields.description !== undefined) project.description = fields.description;
+    if (fields.instructions !== undefined) project.instructions = fields.instructions;
     if (fields.metadata !== undefined) project.metadata = { ...project.metadata, ...fields.metadata };
     this.markDirty();
     return project;
