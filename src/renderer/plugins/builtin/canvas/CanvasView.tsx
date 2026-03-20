@@ -74,6 +74,7 @@ interface CanvasViewComponentProps {
   onCenterView: () => void;
   onZoomView: () => void;
   onDragStart: (viewId: string, mouseX: number, mouseY: number) => void;
+  onDragMove?: (viewId: string, position: Position) => void;
   onDragEnd: (position: Position) => void;
   onResizeEnd: (size: Size, position: Position) => void;
   onUpdate: (updates: Partial<CanvasView>) => void;
@@ -98,6 +99,7 @@ export function CanvasViewComponent({
   onCenterView,
   onZoomView,
   onDragStart: onMultiDragStart,
+  onDragMove,
   onDragEnd,
   onResizeEnd,
   onUpdate,
@@ -122,6 +124,8 @@ export function CanvasViewComponent({
   // every render which could create a window where the mouseup handler is missing.
   const onDragEndRef = useRef(onDragEnd);
   onDragEndRef.current = onDragEnd;
+  const onDragMoveRef = useRef(onDragMove);
+  onDragMoveRef.current = onDragMove;
   const dragPosRef = useRef<Position | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
@@ -204,6 +208,7 @@ export function CanvasViewComponent({
       };
       dragPosRef.current = newPos;
       setDragPos(newPos);
+      onDragMoveRef.current?.(view.id, newPos);
     };
 
     const handleMouseUp = () => {

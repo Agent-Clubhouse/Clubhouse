@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
@@ -98,6 +98,9 @@ export function CanvasWorkspace({
   // ── Multi-drag state ─────────────────────────────────────────
   const [multiDrag, setMultiDrag] = useState<MultiDragState | null>(null);
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+  // ── Single-view drag position tracking (for wire overlay) ─────
+  const [singleDragPos, setSingleDragPos] = useState<Map<string, Position>>(new Map());
 
   // ── MCP wiring state ──────────────────────────────────────────
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
@@ -452,7 +455,21 @@ export function CanvasWorkspace({
 
   // ── View drag handlers ─────────────────────────────────────────
 
+  const handleViewDragMove = useCallback((viewId: string, position: Position) => {
+    setSingleDragPos((prev) => {
+      const next = new Map(prev);
+      next.set(viewId, position);
+      return next;
+    });
+  }, []);
+
   const handleViewDragEnd = useCallback((viewId: string, position: Position) => {
+    // Clear single-drag tracking for this view
+    setSingleDragPos((prev) => {
+      const next = new Map(prev);
+      next.delete(viewId);
+      return next;
+    });
     // If this was a multi-drag, the multi-drag mouseUp handler already moved all views
     if (multiDrag && multiDrag.dragViewId === viewId) {
       return;
@@ -469,6 +486,27 @@ export function CanvasWorkspace({
   }, [onResizeView, onMoveView]);
 
   // ── Zoomed view ────────────────────────────────────────────────
+
+  // ── Merged view positions for wire overlay (single-drag + multi-drag) ──
+  const wireViewPositions = useMemo(() => {
+    const map = new Map<string, Position>();
+    // Single-view drag positions
+    for (const [id, pos] of singleDragPos) {
+      map.set(id, pos);
+    }
+    // Multi-drag: apply delta to all selected views
+    if (multiDrag && (multiDragDelta.dx !== 0 || multiDragDelta.dy !== 0)) {
+      for (const v of views) {
+        if (selectedViewIds.includes(v.id)) {
+          map.set(v.id, {
+            x: v.position.x + multiDragDelta.dx,
+            y: v.position.y + multiDragDelta.dy,
+          });
+        }
+      }
+    }
+    return map.size > 0 ? map : undefined;
+  }, [singleDragPos, multiDrag, multiDragDelta, views, selectedViewIds]);
 
   const zoomedView = zoomedViewId ? views.find((v) => v.id === zoomedViewId) : null;
 
@@ -500,6 +538,7 @@ export function CanvasWorkspace({
           <WireOverlay
             views={views}
             bindings={mcpBindings}
+            viewPositions={wireViewPositions}
             onWireClick={handleWireClick}
           />
         )}
@@ -529,6 +568,7 @@ export function CanvasWorkspace({
               onCenterView={() => handleCenterView(view.id)}
               onZoomView={() => handleToggleZoomView(view.id)}
               onDragStart={handleViewMultiDragStart}
+              onDragMove={handleViewDragMove}
               onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
               onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
               onUpdate={(updates) => onUpdateView(view.id, updates)}
