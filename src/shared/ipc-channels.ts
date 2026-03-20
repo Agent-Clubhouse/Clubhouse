@@ -311,6 +311,8 @@ export const IPC = {
     PTY_GET_BUFFER: 'annex-client:pty-get-buffer',
     FORGET_SATELLITE: 'annex-client:forget-satellite',
     FORGET_ALL_SATELLITES: 'annex-client:forget-all-satellites',
+    FILE_TREE: 'annex-client:file-tree',
+    FILE_READ: 'annex-client:file-read',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',

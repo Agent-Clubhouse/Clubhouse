@@ -684,6 +684,62 @@ export function requestPtyBuffer(fingerprint: string, agentId: string): Promise<
   });
 }
 
+/**
+ * Fetch a file tree from a satellite project via HTTPS REST.
+ */
+export function requestFileTree(fingerprint: string, projectId: string, options?: { path?: string; depth?: number; includeHidden?: boolean }): Promise<unknown[]> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.resolve([]);
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const params = new URLSearchParams();
+  if (options?.path) params.set('path', options.path);
+  if (options?.depth !== undefined) params.set('depth', String(options.depth));
+  if (options?.includeHidden) params.set('includeHidden', 'true');
+  const qs = params.toString() ? `?${params.toString()}` : '';
+
+  return new Promise<unknown[]>((resolve) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/tree${qs}`;
+    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); resolve([]); return; }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf-8'))); }
+        catch { resolve([]); }
+      });
+    });
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => { req.destroy(); resolve([]); });
+  });
+}
+
+/**
+ * Read a file from a satellite project via HTTPS REST.
+ */
+export function requestFileRead(fingerprint: string, projectId: string, path: string): Promise<string> {
+  const sat = satellites.get(fingerprint);
+  if (!sat || sat.state !== 'connected') return Promise.resolve('');
+
+  const identity = annexIdentity.getOrCreateIdentity();
+  const tlsOptions = annexTls.createTlsClientOptions(identity);
+  const qs = `?path=${encodeURIComponent(path)}`;
+
+  return new Promise<string>((resolve, reject) => {
+    const url = `https://${sat.host}:${sat.mainPort}/api/v1/projects/${encodeURIComponent(projectId)}/files/read${qs}`;
+    const req = https.get(url, { ...tlsOptions, timeout: 10000 }, (res) => {
+      if (res.statusCode === 404) { res.resume(); reject(new Error('File not found')); return; }
+      if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    });
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
 export function getDiscoveredServices(): DiscoveredService[] {
   return Array.from(discoveredServices.values());
 }

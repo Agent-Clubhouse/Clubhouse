@@ -2,6 +2,7 @@ import type { PluginContext, PluginManifest, FilesAPI, Disposable } from '../../
 import { hasPermission } from './plugin-api-shared';
 import { rendererLog } from './renderer-logger';
 import { usePluginStore } from './plugin-store';
+import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 
 /** Global counter for unique file watch subscription IDs. */
 let _watchIdCounter = 0;
@@ -127,6 +128,41 @@ export function createFilesAPI(ctx: PluginContext, manifest?: PluginManifest): F
   const { projectPath } = ctx;
   if (!projectPath) {
     throw new Error('FilesAPI requires projectPath');
+  }
+
+  // Remote project: proxy file operations through annex client
+  if (ctx.projectId && isRemoteProjectId(ctx.projectId)) {
+    const parsed = parseNamespacedId(ctx.projectId);
+    if (!parsed) throw new Error('Invalid remote project ID');
+    const { satelliteId, agentId: origProjectId } = parsed;
+    const notSupported = (op: string) => () => { throw new Error(`${op} is not supported for remote projects`); };
+
+    return {
+      dataDir: computeDataDir(ctx.pluginId, ctx.projectId),
+      async readTree(relativePath = '.', options?: { includeHidden?: boolean; depth?: number }) {
+        return window.clubhouse.annexClient.fileTree(satelliteId, origProjectId, {
+          path: relativePath,
+          depth: options?.depth,
+          includeHidden: options?.includeHidden,
+        });
+      },
+      async readFile(relativePath: string) {
+        return window.clubhouse.annexClient.fileRead(satelliteId, origProjectId, relativePath);
+      },
+      readBinary: notSupported('readBinary'),
+      writeFile: notSupported('writeFile'),
+      stat: notSupported('stat'),
+      rename: notSupported('rename'),
+      copy: notSupported('copy'),
+      mkdir: notSupported('mkdir'),
+      delete: notSupported('delete'),
+      showInFolder: notSupported('showInFolder'),
+      search: notSupported('search'),
+      forRoot: notSupported('forRoot') as () => FilesAPI,
+      watch(): Disposable {
+        return { dispose() {} };
+      },
+    };
   }
 
   return {
