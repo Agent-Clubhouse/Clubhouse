@@ -70,7 +70,7 @@ vi.mock('fs', async (importOriginal) => {
 // But the module has state (Maps), so we need to handle that.
 // We'll use dynamic imports or reset between tests.
 
-import { getBuffer, getSerializedBuffer, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
+import { getBuffer, getSerializedBuffer, getLastActivity, isRunning, spawn, spawnShell, resize, write, gracefulKill, kill, killAll, startStaleSweep, stopStaleSweep, validateSpawnCwd } from './pty-manager';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 import * as annexEventBus from './annex-event-bus';
 import * as headlessTerminal from './pty-headless-terminal';
@@ -1515,6 +1515,12 @@ describe('pty-manager', () => {
       const traversalPath = process.platform === 'win32' ? 'C:\\Users\\..\\Windows' : '/home/../etc';
       expect(() => spawnShell('shell_trav', traversalPath)).toThrow('restricted system directory');
       expect(isRunning('shell_trav')).toBe(false);
+    });
+  });
+
+  describe('getLastActivity', () => {
+    it('returns null for non-existent agent', () => {
+      expect(getLastActivity('nonexistent-agent')).toBeNull();
     });
   });
 });
