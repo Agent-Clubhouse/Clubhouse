@@ -12,7 +12,7 @@
  * - 'active-both'    — recent traffic in both directions
  */
 
-import { useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 /** How long activity persists after the last tool call (ms). */
 export const ACTIVITY_DECAY_MS = 4000;
@@ -67,7 +67,7 @@ export function computeActivityState(
 // ── Singleton activity store (shared across all hook consumers) ─────
 
 const activityMap = new Map<string, WireTimestamps>();
-let listeners = new Set<() => void>();
+const listeners = new Set<() => void>();
 let snapshotVersion = 0;
 
 function notifyListeners(): void {
@@ -138,7 +138,7 @@ export function _resetForTesting(): void {
  * @param alive - Whether both endpoints are alive/connected
  */
 export function useWireActivity(wireKey: string, alive: boolean = true): WireActivityState {
-  const decayTimerRef = useRef<ReturnType<typeof setInterval>>();
+  const decayTimerRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   // Subscribe to the singleton store
   useSyncExternalStore(subscribe, getSnapshot);

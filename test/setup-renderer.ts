@@ -344,6 +344,7 @@ vi.stubGlobal('clubhouse', {
     registerWebview: asyncNoop,
     unregisterWebview: asyncNoop,
     onBindingsChanged: () => noop,
+    onToolActivity: () => noop,
   },
   window: {
     createPopout: asyncNoop,
