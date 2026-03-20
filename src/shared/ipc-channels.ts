@@ -192,6 +192,13 @@ export const IPC = {
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
+    // Session resume on update
+    GET_PENDING_RESUMES: 'app:get-pending-resumes',
+    RESUME_MANUAL_AGENT: 'app:resume-manual-agent',
+    RESUME_STATUS_UPDATE: 'app:resume-status-update',
+    GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
+    RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
+    CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
