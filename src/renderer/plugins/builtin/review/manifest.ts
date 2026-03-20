@@ -31,6 +31,31 @@ export const manifest: PluginManifest = {
         default: true,
       },
     ],
+    help: {
+      topics: [
+        {
+          id: 'review-carousel',
+          title: 'Agent Review Carousel',
+          content: [
+            '## Agent Review Carousel',
+            '',
+            'The Review plugin provides a full-screen, swipe-like carousel for browsing agents one at a time.',
+            '',
+            '### Navigation',
+            '- Click the **left/right arrows** on the edges of the screen to move between agents.',
+            '- Use **Cmd+Left** / **Cmd+Right** keyboard shortcuts for quick navigation.',
+            '- Use the arrows in the **floating bar** at the top center.',
+            '',
+            '### Modes',
+            '- **Per-project** — The tab shows only agents belonging to the current project.',
+            '- **Cross-project** — The sidebar rail entry shows all agents across every project.',
+            '',
+            '### Sleeping agents',
+            'Toggle the **Include sleeping** checkbox in the floating bar to show or hide sleeping agents in the carousel.',
+          ].join('\n'),
+        },
+      ],
+    },
   },
   settingsPanel: 'declarative',
 };

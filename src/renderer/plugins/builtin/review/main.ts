@@ -172,7 +172,7 @@ function SlideContainer({
   agentId: string;
   slideDirection: SlideDirection;
   onTransitionEnd: () => void;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   // Phase 1: entering = new content slides in from the edge
   // We start off-screen, then transition to center
