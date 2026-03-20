@@ -34,8 +34,19 @@ export function unregisterWebview(widgetId: string): void {
 
 function getWebContents(widgetId: string): Electron.WebContents | null {
   const wcId = webviewRegistry.get(widgetId);
-  if (wcId === undefined) return null;
-  return webContents.fromId(wcId) || null;
+  if (wcId === undefined) {
+    appLog('core:mcp', 'warn', 'Widget lookup failed — not in registry', {
+      meta: { widgetId, registeredWidgets: Array.from(webviewRegistry.keys()) },
+    });
+    return null;
+  }
+  const wc = webContents.fromId(wcId) || null;
+  if (!wc) {
+    appLog('core:mcp', 'warn', 'Widget lookup failed — webContents destroyed', {
+      meta: { widgetId, webContentsId: wcId },
+    });
+  }
+  return wc;
 }
 
 async function ensureDebuggerAttached(wc: Electron.WebContents): Promise<void> {
@@ -173,14 +184,11 @@ export function registerBrowserTools(): void {
       },
     },
   }, async (targetId, _agentId, args) => {
-    const wcId = webviewRegistry.get(targetId);
-    if (wcId === undefined) return errorResult('Browser widget not found');
-
-    const wc = webContents.fromId(wcId);
-    if (!wc) return errorResult('Browser widget not ready');
+    const wc = getWebContents(targetId);
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     await ensureDebuggerAttached(wc);
-    const buffer = consoleBuffers.get(wcId) || [];
+    const buffer = consoleBuffers.get(wc.id) || [];
     const limit = Math.min(Math.max(Math.floor((args.limit as number) || 50), 1), 500);
     const entries = buffer.slice(-limit);
     return textResult(JSON.stringify(entries, null, 2));
@@ -199,7 +207,7 @@ export function registerBrowserTools(): void {
   }, async (targetId, _agentId, args) => {
     const selector = args.selector as string;
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found');
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     try {
       await ensureDebuggerAttached(wc);
@@ -242,7 +250,7 @@ export function registerBrowserTools(): void {
     const selector = args.selector as string;
     const text = args.text as string;
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found');
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     try {
       await ensureDebuggerAttached(wc);
@@ -282,7 +290,7 @@ export function registerBrowserTools(): void {
   }, async (targetId, _agentId, args) => {
     const expression = args.expression as string;
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found');
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     try {
       await ensureDebuggerAttached(wc);
@@ -318,7 +326,7 @@ export function registerBrowserTools(): void {
   }, async (targetId, _agentId, args) => {
     const selector = (args.selector as string) || 'body';
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found');
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     try {
       await ensureDebuggerAttached(wc);
@@ -354,7 +362,7 @@ export function registerBrowserTools(): void {
   }, async (targetId, _agentId, args) => {
     const depth = Math.min(Math.max(Math.floor((args.depth as number) || 5), 1), 10);
     const wc = getWebContents(targetId);
-    if (!wc) return errorResult('Browser widget not found');
+    if (!wc) return errorResult('Browser widget not found or not ready');
 
     try {
       await ensureDebuggerAttached(wc);
