@@ -422,9 +422,16 @@ export function registerAppHandlers(): void {
         await flushAllAgentConfigs();
         restoreAll();
 
-        // Relaunch instead of applying a real update
-        app.relaunch();
-        app.exit(0);
+        // In dev mode, app.relaunch() + app.exit() kills the Forge dev server.
+        // Instead, kill all PTY sessions and reload the renderer window —
+        // this simulates the "restart" without killing the parent process.
+        const { killAll } = await import('../services/pty-manager');
+        await killAll();
+
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+        if (win) {
+          win.webContents.reload();
+        }
       },
     ));
   }
