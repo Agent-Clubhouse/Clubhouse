@@ -94,7 +94,12 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
       mission: entry.mission,
     });
 
-    // Agent is already in the store as 'running' — mark resume complete
+    // Clear the resuming spinner overlay and mark resume complete
+    useAgentStore.setState((s) => {
+      const agent = s.agents[entry.agentId];
+      if (!agent) return s;
+      return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
+    });
     useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
   } catch (err) {
     // If we had a specific sessionId and it failed, try --continue fallback
@@ -112,10 +117,21 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
           model: entry.model,
           mission: entry.mission,
         });
+        useAgentStore.setState((s) => {
+          const agent = s.agents[entry.agentId];
+          if (!agent) return s;
+          return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
+        });
         useAgentStore.getState().setResumeStatus(entry.agentId, 'resumed');
         return;
       } catch { /* fall through to failure */ }
     }
+    // Clear resuming flag on failure too
+    useAgentStore.setState((s) => {
+      const agent = s.agents[entry.agentId];
+      if (!agent) return s;
+      return { agents: { ...s.agents, [entry.agentId]: { ...agent, resuming: undefined } } };
+    });
     useAgentStore.getState().setResumeStatus(entry.agentId, 'failed');
     console.error(`Failed to resume agent ${entry.agentId}:`, err instanceof Error ? err.message : String(err));
   }

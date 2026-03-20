@@ -36,14 +36,15 @@ const STATUS_COLOR: Record<ResumeStatus, string> = {
 export function ResumeBanner({ sessions, onManualResume, onDismiss }: ResumeBannerProps) {
   if (sessions.length === 0) return null;
 
-  const allDone = sessions.every((s) => s.status === 'resumed' || s.status === 'failed' || s.status === 'timed_out');
+  const allSucceeded = sessions.every((s) => s.status === 'resumed');
 
-  // Auto-dismiss 3 seconds after all sessions are resolved
+  // Auto-dismiss 3 seconds after ALL sessions resumed successfully.
+  // If any failed or timed out, keep the banner visible so the user can see.
   useEffect(() => {
-    if (!allDone) return;
+    if (!allSucceeded) return;
     const timer = setTimeout(onDismiss, 3000);
     return () => clearTimeout(timer);
-  }, [allDone, onDismiss]);
+  }, [allSucceeded, onDismiss]);
 
   return (
     <div
