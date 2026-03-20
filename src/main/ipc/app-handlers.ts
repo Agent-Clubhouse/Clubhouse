@@ -428,8 +428,7 @@ export function registerAppHandlers(): void {
         const { killAll } = await import('../services/pty-manager');
         await killAll();
 
-        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
-        if (win) {
+        for (const win of BrowserWindow.getAllWindows()) {
           win.webContents.reload();
         }
       },
