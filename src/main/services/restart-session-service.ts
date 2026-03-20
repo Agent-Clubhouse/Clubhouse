@@ -60,6 +60,7 @@ export async function captureSessionState(
   };
 
   const statePath = getStatePath();
+  await fsp.mkdir(path.dirname(statePath), { recursive: true });
   await fsp.writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8');
   appLog('update:session-resume', 'info', `Captured ${sessions.length} sessions for resume`, {
     meta: { sessionCount: sessions.length, agentIds: sessions.map((s) => s.agentId) },
