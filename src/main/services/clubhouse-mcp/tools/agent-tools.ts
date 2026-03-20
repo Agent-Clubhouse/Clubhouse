@@ -45,6 +45,13 @@ export function registerAgentTools(): void {
               'so the target agent knows to tag its response with TASK_RESULT:<task_id>. ' +
               'If omitted, one is auto-generated and returned.',
           },
+          force_submit: {
+            type: 'boolean',
+            description:
+              'Whether to send a delayed Enter keystroke after the message to force submission. ' +
+              'Defaults to true. Set to false to inject text into the terminal without submitting ' +
+              '(useful for building up multi-part inputs).',
+          },
         },
         required: ['message'],
       },
@@ -56,6 +63,7 @@ export function registerAgentTools(): void {
       }
 
       const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
+      const forceSubmit = args.force_submit !== false; // default true
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {
@@ -93,18 +101,57 @@ export function registerAgentTools(): void {
 
       try {
         if (reg.runtime === 'pty') {
-          ptyManager.write(targetId, taggedMessage + '\r');
+          const isMultiLine = taggedMessage.includes('\n');
+
+          appLog('core:mcp', 'info', 'send_message: writing to PTY', {
+            meta: { targetAgent: targetId, taskId, isMultiLine, forceSubmit, messageLength: taggedMessage.length },
+          });
+
+          if (isMultiLine) {
+            // Wrap in bracketed paste so the receiving CLI treats the entire
+            // multi-line payload as a single paste event rather than splitting
+            // on embedded newlines or collapsing into a preview.
+            ptyManager.write(targetId, `\x1b[200~${taggedMessage}\x1b[201~`);
+          } else {
+            ptyManager.write(targetId, taggedMessage);
+          }
+
+          if (forceSubmit) {
+            // Snapshot the buffer length before the submit keystroke so we can
+            // heuristically check whether the receiving agent processed the input.
+            const bufferBefore = ptyManager.getBuffer(targetId)?.length ?? 0;
+
+            // Send \r (Enter) after a brief delay as a *separate* write so the
+            // receiving terminal processes paste-end before seeing the submit.
+            await new Promise<void>((resolve) => {
+              setTimeout(() => {
+                ptyManager.write(targetId, '\r');
+
+                // Check buffer growth after another short delay to heuristically
+                // determine whether the agent started processing the message.
+                setTimeout(() => {
+                  const bufferAfter = ptyManager.getBuffer(targetId)?.length ?? 0;
+                  const bufferGrew = bufferAfter > bufferBefore;
+                  appLog('core:mcp', 'info', 'send_message: post-submit buffer check', {
+                    meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfter, bufferGrew },
+                  });
+                  resolve();
+                }, 200);
+              }, 100);
+            });
+          }
         } else if (reg.runtime === 'structured') {
           await structuredManager.sendMessage(targetId, taggedMessage);
         } else {
           return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
         }
 
+        const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
         const resultText = isBidirectional
           ? `Message sent to ${targetName}. task_id=${taskId}. ` +
-            `Bidirectional — ${targetName} can reply directly via send_message.`
+            `Bidirectional — ${targetName} can reply directly via send_message.${submitNote}`
           : `Message sent to ${targetName}. task_id=${taskId} — ` +
-            `poll read_output for TASK_RESULT:${taskId}.`;
+            `poll read_output for TASK_RESULT:${taskId}.${submitNote}`;
 
         return { content: [{ type: 'text', text: resultText }] };
       } catch (err) {
