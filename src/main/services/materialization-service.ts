@@ -345,8 +345,9 @@ export async function cleanupStaleJsonInTomlConfigs(
     try {
       const content = await fsp.readFile(filePath, 'utf-8');
       const trimmed = content.trimStart();
-      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        // File contains JSON — remove it so the CLI can start fresh
+      if (trimmed.startsWith('{')) {
+        // File contains JSON object — remove it so the CLI can start fresh
+        // Note: we don't check for '[' because TOML section headers also start with '['
         await fsp.unlink(filePath);
         appLog('core:materialization', 'info', 'Removed stale JSON content from TOML config file', {
           meta: { filePath },

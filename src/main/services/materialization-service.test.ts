@@ -836,12 +836,13 @@ describe('materialization-service', () => {
       expect(fsp.unlink).toHaveBeenCalled();
     });
 
-    it('removes file that starts with [ (JSON array)', async () => {
+    it('does not remove file that starts with [ (could be TOML section header)', async () => {
       vi.mocked(fsp.readFile).mockResolvedValue('[{"test": true}]');
 
       await cleanupStaleJsonInTomlConfigs('/worktree', tomlConventions);
 
-      expect(fsp.unlink).toHaveBeenCalled();
+      // '[' could be a TOML section header like [mcpServers], so we don't remove it
+      expect(fsp.unlink).not.toHaveBeenCalled();
     });
 
     it('removes file with leading whitespace before JSON', async () => {

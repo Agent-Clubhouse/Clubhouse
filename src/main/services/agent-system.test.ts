@@ -712,7 +712,7 @@ describe('agent-system', () => {
   describe('getAvailableOrchestrators', () => {
     it('returns all registered providers with capabilities and runtime metadata', () => {
       const result = getAvailableOrchestrators();
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
       expect(result[0]).toMatchObject({
         id: 'claude-code',
         displayName: 'Claude Code',
@@ -726,6 +726,13 @@ describe('agent-system', () => {
         shortName: 'OC',
         capabilities: expect.any(Object),
         conventions: mockOpenCodeConventions,
+      });
+      expect(result[2]).toMatchObject({
+        id: 'codex-cli',
+        displayName: 'Codex CLI',
+        shortName: 'CX',
+        capabilities: expect.objectContaining({ hooks: false }),
+        conventions: expect.objectContaining({ configDir: '.codex' }),
       });
     });
 
