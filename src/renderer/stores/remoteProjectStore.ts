@@ -131,6 +131,8 @@ export interface PluginMatchResult {
   remoteVersion?: string;
   scope?: string;
   contributes?: unknown;
+  /** Whether the remote plugin declares `annex` permission (defaults to false for old satellites). */
+  annexEnabled: boolean;
 }
 
 /**
@@ -140,6 +142,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
   const localPlugins = usePluginStore.getState().plugins;
 
   return remotePlugins.map((remote) => {
+    const annexEnabled = remote.annexEnabled ?? false;
     const local = localPlugins[remote.id];
     if (!local) {
       return {
@@ -149,6 +152,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
         remoteVersion: remote.version,
         scope: remote.scope,
         contributes: remote.contributes,
+        annexEnabled,
       };
     }
     if (local.manifest.version !== remote.version) {
@@ -161,6 +165,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
         remoteVersion: remote.version,
         scope: remote.scope,
         contributes: remote.contributes,
+        annexEnabled,
       };
     }
     return {
@@ -172,6 +177,7 @@ function computePluginMatchState(remotePlugins: SnapshotPluginSummary[]): Plugin
       remoteVersion: remote.version,
       scope: remote.scope,
       contributes: remote.contributes,
+      annexEnabled,
     };
   });
 }

@@ -31,6 +31,7 @@ import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
 import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { AnnexDisabledView } from './AnnexDisabledView';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function MainContentView() {
@@ -48,6 +49,7 @@ export function MainContentView() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const { findAgentPopout } = usePopouts();
   const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const agents = isRemoteProject ? { ...localAgents, ...remoteAgents } : localAgents;
   const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
 
@@ -197,6 +199,19 @@ export function MainContentView() {
   // Plugin tabs (prefixed with "plugin:")
   if (explorerTab.startsWith('plugin:')) {
     const pluginId = explorerTab.slice('plugin:'.length);
+
+    // For remote projects, check if the plugin has annex permission
+    if (isRemoteProject && activeProjectId) {
+      const parsed = parseNamespacedId(activeProjectId);
+      if (parsed) {
+        const matches = pluginMatchState[parsed.satelliteId] || [];
+        const match = matches.find((p) => p.id === pluginId);
+        if (match && !match.annexEnabled) {
+          return <AnnexDisabledView pluginName={match.name} />;
+        }
+      }
+    }
+
     return <PluginContentView pluginId={pluginId} mode="project" />;
   }
 
