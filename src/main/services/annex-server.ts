@@ -1472,16 +1472,17 @@ export function start(): void {
   });
 
   unsubHookEvent = annexEventBus.onHookEvent((agentId, event) => {
-    detailedStatusCache.set(agentId, hookEventToDetailedStatus(event));
-    broadcastAndBuffer('hook:event', { agentId, event });
+    const detailedStatus = hookEventToDetailedStatus(event);
+    detailedStatusCache.set(agentId, detailedStatus);
+    broadcastAndBuffer('hook:event', { agentId, event, detailedStatus });
   });
 
   unsubStructuredEvent = annexEventBus.onStructuredEvent((agentId, event) => {
-    const status = structuredEventToDetailedStatus(event);
-    if (status) {
-      detailedStatusCache.set(agentId, status);
+    const detailedStatus = structuredEventToDetailedStatus(event);
+    if (detailedStatus) {
+      detailedStatusCache.set(agentId, detailedStatus);
     }
-    broadcastAndBuffer('structured:event', { agentId, event });
+    broadcastAndBuffer('structured:event', { agentId, event, detailedStatus });
   });
 
   unsubPtyExit = annexEventBus.onPtyExit((agentId, exitCode) => {

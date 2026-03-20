@@ -221,10 +221,18 @@ export function initAnnexClientListener(): () => void {
       satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
     } else if (type === 'hook:event') {
       // Agent detailed status update (pre_tool, post_tool, etc.)
-      const p = payload as { agentId: string; event: unknown };
-      if (p.agentId && p.event) {
+      const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      if (p.agentId && p.detailedStatus) {
         useRemoteProjectStore.getState().updateRemoteAgentStatus(
-          satelliteId, p.agentId, p.event as import('../../shared/types').AgentDetailedStatus,
+          satelliteId, p.agentId, p.detailedStatus,
+        );
+      }
+    } else if (type === 'structured:event') {
+      // Structured-mode agent status update
+      const p = payload as { agentId: string; event: unknown; detailedStatus?: import('../../shared/types').AgentDetailedStatus };
+      if (p.agentId && p.detailedStatus) {
+        useRemoteProjectStore.getState().updateRemoteAgentStatus(
+          satelliteId, p.agentId, p.detailedStatus,
         );
       }
     } else if (type === 'agent:woken') {

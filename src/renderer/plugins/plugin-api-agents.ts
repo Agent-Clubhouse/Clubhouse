@@ -131,7 +131,8 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
     },
 
     getDetailedStatus(agentId: string): PluginAgentDetailedStatus | null {
-      const status = useAgentStore.getState().agentDetailedStatus[agentId];
+      const status = useAgentStore.getState().agentDetailedStatus[agentId]
+        || useRemoteProjectStore.getState().remoteAgentDetailedStatus[agentId];
       if (!status) return null;
       return {
         state: status.state,

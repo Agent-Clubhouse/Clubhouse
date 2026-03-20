@@ -216,6 +216,17 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       }
     }
 
+    // Extract detailed statuses from agentsMeta (snapshot includes current status for running agents)
+    const newDetailedStatuses: Record<string, AgentDetailedStatus> = {};
+    if (snapshot.agentsMeta) {
+      const meta = snapshot.agentsMeta as Record<string, { detailedStatus?: AgentDetailedStatus | null }>;
+      for (const [agentId, agentMeta] of Object.entries(meta)) {
+        if (agentMeta.detailedStatus) {
+          newDetailedStatuses[namespacedAgentId(satelliteId, agentId)] = agentMeta.detailedStatus;
+        }
+      }
+    }
+
     // Merge into store (replace this satellite's data, keep others)
     set((state) => {
       // Remove old agents for this satellite
@@ -223,6 +234,14 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       for (const key of Object.keys(filteredAgents)) {
         if (key.startsWith(satellitePrefix(satelliteId))) {
           delete filteredAgents[key];
+        }
+      }
+
+      // Remove old detailed statuses for this satellite and merge new ones
+      const filteredStatuses = { ...state.remoteAgentDetailedStatus };
+      for (const key of Object.keys(filteredStatuses)) {
+        if (key.startsWith(satellitePrefix(satelliteId))) {
+          delete filteredStatuses[key];
         }
       }
 
@@ -244,6 +263,10 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteAgents: {
           ...filteredAgents,
           ...newAgents,
+        },
+        remoteAgentDetailedStatus: {
+          ...filteredStatuses,
+          ...newDetailedStatuses,
         },
         pluginMatchState: {
           ...state.pluginMatchState,
