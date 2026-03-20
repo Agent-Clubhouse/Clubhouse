@@ -63,6 +63,11 @@ export function buildToolKey(binding: McpBinding): string {
     const hash = shortHash(binding.targetId);
     return `${project}_${name}_${hash}`;
   }
+  if (binding.targetKind === 'group-project') {
+    const name = sanitizeId(binding.targetName || binding.label || binding.targetId);
+    const hash = shortHash(binding.targetId);
+    return `${name}_${hash}`;
+  }
   return sanitizeId(binding.targetId);
 }
 
@@ -72,13 +77,15 @@ export function buildToolKey(binding: McpBinding): string {
  * Other targets: `<targetKind>__<sanitizedId>__<suffix>`
  */
 export function buildToolName(binding: McpBinding, suffix: string): string {
-  const prefix = binding.targetKind === 'agent' ? 'clubhouse' : binding.targetKind;
+  const prefix = binding.targetKind === 'agent' ? 'clubhouse'
+    : binding.targetKind === 'group-project' ? 'group'
+    : binding.targetKind;
   return `${prefix}__${buildToolKey(binding)}__${suffix}`;
 }
 
 /** Parse a tool name back into its components. Returns null if format doesn't match. */
 export function parseToolName(name: string): { prefix: string; toolKey: string; suffix: string } | null {
-  const match = name.match(/^(clubhouse|browser|terminal)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
+  const match = name.match(/^(clubhouse|browser|terminal|group)__([a-zA-Z0-9_]+)__([a-zA-Z_]+)$/);
   if (!match) return null;
   return { prefix: match[1], toolKey: match[2], suffix: match[3] };
 }
@@ -127,7 +134,9 @@ export async function callTool(
   // Verify the agent has this binding
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const binding = bindings.find(b => {
-    const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse' : b.targetKind;
+    const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
+      : b.targetKind === 'group-project' ? 'group'
+      : b.targetKind;
     return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
   });
   if (!binding) {
