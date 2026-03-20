@@ -44,7 +44,7 @@ vi.mock('../orchestrators', () => ({
   isSessionCapable: vi.fn().mockReturnValue(true),
 }));
 
-import { captureSessionState, loadPendingResume, clearPendingResume } from './restart-session-service';
+import { captureSessionState, loadPendingResume, clearPendingResume, getLiveAgentsForUpdate } from './restart-session-service';
 import { agentRegistry } from './agent-registry';
 import * as ptyManager from './pty-manager';
 import { getProvider, isSessionCapable } from '../orchestrators';
@@ -189,6 +189,135 @@ describe('restart-session-service', () => {
 
     it('does not throw when file does not exist', async () => {
       await expect(clearPendingResume()).resolves.not.toThrow();
+    });
+  });
+
+  describe('getLiveAgentsForUpdate', () => {
+    it('returns empty array when no agents are registered', () => {
+      const result = getLiveAgentsForUpdate();
+      expect(result).toEqual([]);
+    });
+
+    it('returns only PTY agents, filtering out headless and structured runtimes', () => {
+      agentRegistry.register('pty-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+      agentRegistry.register('headless-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'headless',
+      });
+      agentRegistry.register('structured-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'structured',
+      });
+
+      vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);
+
+      const result = getLiveAgentsForUpdate();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].agentId).toBe('pty-agent');
+      expect(result[0].runtime).toBe('pty');
+    });
+
+    it('classifies agent as working when lastActivity is within 5 seconds', () => {
+      agentRegistry.register('active-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      const recentActivity = Date.now() - 2000; // 2 seconds ago — within threshold
+      vi.mocked(ptyManager.getLastActivity).mockReturnValue(recentActivity);
+
+      const result = getLiveAgentsForUpdate();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].agentId).toBe('active-agent');
+      expect(result[0].isWorking).toBe(true);
+      expect(result[0].lastActivity).toBe(recentActivity);
+    });
+
+    it('classifies agent as idle when lastActivity is older than 5 seconds', () => {
+      agentRegistry.register('idle-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      const oldActivity = Date.now() - 10000; // 10 seconds ago — beyond threshold
+      vi.mocked(ptyManager.getLastActivity).mockReturnValue(oldActivity);
+
+      const result = getLiveAgentsForUpdate();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].agentId).toBe('idle-agent');
+      expect(result[0].isWorking).toBe(false);
+      expect(result[0].lastActivity).toBe(oldActivity);
+    });
+
+    it('classifies agent as idle when lastActivity is null (no PTY data yet)', () => {
+      agentRegistry.register('no-activity-agent', {
+        projectPath: '/projects/club',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+
+      vi.mocked(ptyManager.getLastActivity).mockReturnValue(null);
+
+      const result = getLiveAgentsForUpdate();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].agentId).toBe('no-activity-agent');
+      expect(result[0].isWorking).toBe(false);
+      expect(result[0].lastActivity).toBeNull();
+    });
+
+    it('handles multiple agents across different projects', () => {
+      agentRegistry.register('agent-alpha', {
+        projectPath: '/projects/alpha',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+      agentRegistry.register('agent-beta', {
+        projectPath: '/projects/beta',
+        orchestrator: 'claude-code' as const,
+        runtime: 'pty',
+      });
+      agentRegistry.register('agent-gamma-headless', {
+        projectPath: '/projects/gamma',
+        orchestrator: 'claude-code' as const,
+        runtime: 'headless',
+      });
+
+      const now = Date.now();
+      vi.mocked(ptyManager.getLastActivity).mockImplementation((agentId: string) => {
+        if (agentId === 'agent-alpha') return now - 1000; // working (1 second ago)
+        if (agentId === 'agent-beta') return now - 20000; // idle (20 seconds ago)
+        return null;
+      });
+
+      const result = getLiveAgentsForUpdate();
+
+      expect(result).toHaveLength(2);
+
+      const alpha = result.find((r) => r.agentId === 'agent-alpha');
+      const beta = result.find((r) => r.agentId === 'agent-beta');
+
+      expect(alpha).toBeDefined();
+      expect(alpha!.projectPath).toBe('/projects/alpha');
+      expect(alpha!.isWorking).toBe(true);
+
+      expect(beta).toBeDefined();
+      expect(beta!.projectPath).toBe('/projects/beta');
+      expect(beta!.isWorking).toBe(false);
+
+      // Headless agent must not appear
+      expect(result.find((r) => r.agentId === 'agent-gamma-headless')).toBeUndefined();
     });
   });
 });
