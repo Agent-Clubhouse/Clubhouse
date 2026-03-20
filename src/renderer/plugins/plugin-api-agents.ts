@@ -288,7 +288,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         try {
           return await window.clubhouse.annexClient.sessionSummary(
             remoteParts.satelliteId, remoteParts.agentId, sessionId, origProjectId, remoteAgent?.orchestrator,
-          );
+          ) as import('../../shared/session-types').SessionSummary;
         } catch {
           return null;
         }

@@ -168,7 +168,7 @@ export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GIT_OPERATION, withValidatedArgs(
     [stringArg(), stringArg(), objectArg()],
     async (_event, satelliteId, projectId, params) => {
-      return annexClient.requestGitOperation(satelliteId, projectId, params);
+      return annexClient.requestGitOperation(satelliteId, projectId, params as annexClient.GitOperationParams);
     },
   ));
 

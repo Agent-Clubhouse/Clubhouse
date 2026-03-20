@@ -1197,14 +1197,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       try {
         let result;
         switch (operation) {
-          case 'stage': result = await gitService.stage(project.path, body.path); break;
-          case 'unstage': result = await gitService.unstage(project.path, body.path); break;
+          case 'stage': result = await gitService.stage(project.path, body.path as string); break;
+          case 'unstage': result = await gitService.unstage(project.path, body.path as string); break;
           case 'stage-all': result = await gitService.stageAll(project.path); break;
           case 'unstage-all': result = await gitService.unstageAll(project.path); break;
-          case 'commit': result = await gitService.commit(project.path, body.message); break;
+          case 'commit': result = await gitService.commit(project.path, body.message as string); break;
           case 'push': result = await gitService.push(project.path); break;
           case 'pull': result = await gitService.pull(project.path); break;
-          case 'checkout': result = await gitService.checkout(project.path, body.branch); break;
+          case 'checkout': result = await gitService.checkout(project.path, body.branch as string); break;
           case 'stash': result = await gitService.stash(project.path); break;
           case 'stash-pop': result = await gitService.stashPop(project.path); break;
           default: sendJson(res, 400, { error: 'unknown_operation' }); return;
