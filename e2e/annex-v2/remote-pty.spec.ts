@@ -281,6 +281,72 @@ test('pty:input over 64KB rejected', async () => {
   }
 });
 
+test('buffer endpoint returns output after shell produces data', async () => {
+  const shellId = `buffer-shell-${Date.now()}`;
+
+  // Spawn a shell on the satellite
+  await window.evaluate(
+    async ([id, cwd]: [string, string]) => {
+      await (window as any).clubhouse.pty.spawnShell(id, cwd);
+    },
+    [shellId, SHELL_CWD] as [string, string],
+  );
+
+  const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
+  try {
+    await waitForOpen(ws, 10_000);
+    await waitForMessage(ws, 'snapshot', 10_000);
+
+    // Send a command to produce known output
+    const marker = `BUFFER_TEST_${Date.now()}`;
+    ws.send(JSON.stringify({
+      type: 'pty:input',
+      payload: { agentId: shellId, data: `echo ${marker}\n` },
+    }));
+
+    // Wait for the marker to appear in pty:data
+    await collectPtyData(ws, marker, 30_000);
+
+    // Now fetch the buffer via REST — this is what the controller uses
+    // when switching back to a remote agent tab
+    const https = await import('https');
+    const { generateTestIdentity: _unused, ...tlsUtils } = await import('./tls-test-utils');
+    const bufferData = await new Promise<string>((resolve, reject) => {
+      const url = `https://127.0.0.1:${satPort}/api/v1/agents/${encodeURIComponent(shellId)}/buffer`;
+      const req = https.get(url, {
+        cert: identity.certPem,
+        key: identity.keyPem,
+        rejectUnauthorized: false,
+        timeout: 5000,
+      }, (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`Buffer endpoint returned ${res.statusCode}`));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    });
+
+    expect(bufferData.length).toBeGreaterThan(0);
+    expect(bufferData).toContain(marker);
+    console.log(`Buffer persistence verified: marker "${marker}" found in ${bufferData.length} bytes of buffer data`);
+
+    // Cleanup
+    ws.send(JSON.stringify({
+      type: 'agent:kill',
+      payload: { agentId: shellId },
+    }));
+    await waitForMessage(ws, 'agent:kill:ack', 5_000).catch(() => {});
+  } finally {
+    ws.close();
+  }
+});
+
 test('agent:spawn with invalid projectId returns error', async () => {
   const ws = connectMtlsWs('127.0.0.1', satPort, identity, bearerToken);
   try {
