@@ -310,7 +310,6 @@ test('buffer endpoint returns output after shell produces data', async () => {
     // Now fetch the buffer via REST — this is what the controller uses
     // when switching back to a remote agent tab
     const https = await import('https');
-    const { generateTestIdentity: _unused, ...tlsUtils } = await import('./tls-test-utils');
     const bufferData = await new Promise<string>((resolve, reject) => {
       const url = `https://127.0.0.1:${satPort}/api/v1/agents/${encodeURIComponent(shellId)}/buffer`;
       const req = https.get(url, {

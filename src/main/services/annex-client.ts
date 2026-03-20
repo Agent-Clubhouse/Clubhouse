@@ -7,7 +7,6 @@
  */
 import * as https from 'https';
 import * as http from 'http';
-import * as tls from 'tls';
 import Bonjour, { Browser, Service as RemoteService } from 'bonjour-service';
 import { WebSocket } from 'ws';
 import * as annexIdentity from './annex-identity';
