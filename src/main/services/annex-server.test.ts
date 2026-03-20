@@ -28,6 +28,12 @@ vi.mock('./project-store', () => ({
 vi.mock('./agent-config', () => ({
   listDurable: vi.fn().mockReturnValue([]),
   readAgentIconData: vi.fn().mockReturnValue(null),
+  createDurable: vi.fn().mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' }),
+  deleteForce: vi.fn().mockResolvedValue({ ok: true, message: 'Force deleted' }),
+  deleteUnregister: vi.fn().mockResolvedValue({ ok: true, message: 'Removed from agents list' }),
+  deleteCommitAndPush: vi.fn().mockResolvedValue({ ok: true, message: 'Committed and pushed' }),
+  deleteWithCleanupBranch: vi.fn().mockResolvedValue({ ok: true, message: 'Cleanup branch created' }),
+  getWorktreeStatus: vi.fn().mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true }),
 }));
 
 // Mock pty-manager
@@ -231,6 +237,12 @@ describe('annex-server', () => {
     vi.mocked(annexPeers.recordSuccessfulAttempt).mockReturnValue(undefined);
     vi.mocked(projectStore.list).mockReturnValue([]);
     vi.mocked(agentConfigModule.listDurable).mockReturnValue([]);
+    vi.mocked(agentConfigModule.createDurable).mockResolvedValue({ id: 'durable_new', name: 'test-agent', color: 'indigo', createdAt: '2025-01-01' } as any);
+    vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
+    vi.mocked(agentConfigModule.deleteUnregister).mockResolvedValue({ ok: true, message: 'Removed' });
+    vi.mocked(agentConfigModule.deleteCommitAndPush).mockResolvedValue({ ok: true, message: 'Committed' });
+    vi.mocked(agentConfigModule.deleteWithCleanupBranch).mockResolvedValue({ ok: true, message: 'Cleaned' });
+    vi.mocked(agentConfigModule.getWorktreeStatus).mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true } as any);
     vi.mocked(ptyManagerModule.getBuffer).mockReturnValue('');
     vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
     vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
@@ -1296,5 +1308,135 @@ describe('annex-server', () => {
       expect(response).toContain('401');
       expect(response).not.toContain('101');
     }, 10_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // Durable agent REST endpoints (create, delete, worktree-status)
+  // -------------------------------------------------------------------------
+
+  describe('durable agent REST endpoints', () => {
+    it('POST /api/v1/projects/:id/agents/durable creates a durable agent', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.createDurable).mockResolvedValue({
+        id: 'durable_new', name: 'my-agent', color: 'emerald', createdAt: '2025-01-01',
+      } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable', {
+        name: 'my-agent', color: 'emerald', model: 'opus', useWorktree: true,
+      }, authHeaders(token));
+
+      expect(res.status).toBe(201);
+      const body = JSON.parse(res.body);
+      expect(body.id).toBe('durable_new');
+      expect(body.name).toBe('my-agent');
+      expect(agentConfigModule.createDurable).toHaveBeenCalledWith(
+        '/test/path', 'my-agent', 'emerald', 'opus', true, undefined, undefined, undefined,
+      );
+    }, 10_000);
+
+    it('POST /agents/durable returns 404 for unknown project', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/unknown/agents/durable', {
+        name: 'x', color: 'red',
+      }, authHeaders(token));
+      expect(res.status).toBe(404);
+    }, 10_000);
+
+    it('POST /agents/durable returns 400 when name/color missing', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'p1', name: 'P', path: '/p', icon: '' } as any,
+      ]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/p1/agents/durable', {}, authHeaders(token));
+      expect(res.status).toBe(400);
+    }, 10_000);
+
+    it('POST /api/v1/projects/:id/agents/:agentId/delete force-deletes an agent', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'Test Project', path: '/test/path', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.deleteForce).mockResolvedValue({ ok: true, message: 'Force deleted' });
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', {
+        mode: 'force',
+      }, authHeaders(token));
+
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.ok).toBe(true);
+      expect(agentConfigModule.deleteForce).toHaveBeenCalledWith('/test/path', 'durable_1');
+    }, 10_000);
+
+    it('POST /agents/:id/delete supports unregister mode', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.deleteUnregister).mockResolvedValue({ ok: true, message: 'Removed' });
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/proj_1/agents/durable_1/delete', {
+        mode: 'unregister',
+      }, authHeaders(token));
+
+      expect(res.status).toBe(200);
+      expect(agentConfigModule.deleteUnregister).toHaveBeenCalledWith('/p', 'durable_1');
+    }, 10_000);
+
+    it('POST /agents/:id/delete returns 404 for unknown project', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'POST', '/api/v1/projects/unknown/agents/x/delete', {
+        mode: 'force',
+      }, authHeaders(token));
+      expect(res.status).toBe(404);
+    }, 10_000);
+
+    it('GET /api/v1/projects/:id/agents/:agentId/worktree-status returns status', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([
+        { id: 'proj_1', name: 'P', path: '/p', icon: '' } as any,
+      ]);
+      vi.mocked(agentConfigModule.getWorktreeStatus).mockResolvedValue({
+        isValid: true, branch: 'test/standby',
+        uncommittedFiles: [{ path: 'foo.ts', status: 'M' }],
+        unpushedCommits: [], hasRemote: true,
+      } as any);
+
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/projects/proj_1/agents/durable_1/worktree-status', undefined, authHeaders(token));
+
+      expect(res.status).toBe(200);
+      const body = JSON.parse(res.body);
+      expect(body.isValid).toBe(true);
+      expect(body.branch).toBe('test/standby');
+      expect(body.uncommittedFiles).toHaveLength(1);
+      expect(agentConfigModule.getWorktreeStatus).toHaveBeenCalledWith('/p', 'durable_1');
+    }, 10_000);
+
+    it('GET /worktree-status returns 404 for unknown project', async () => {
+      vi.mocked(projectStore.list).mockReturnValue([]);
+      const { port, token } = await startAndPair();
+      const res = await request(port, 'GET', '/api/v1/projects/unknown/agents/x/worktree-status', undefined, authHeaders(token));
+      expect(res.status).toBe(404);
+    }, 10_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // broadcastSnapshotRefresh
+  // -------------------------------------------------------------------------
+
+  describe('broadcastSnapshotRefresh', () => {
+    it('exports broadcastSnapshotRefresh function', () => {
+      expect(typeof annexServer.broadcastSnapshotRefresh).toBe('function');
+    });
+
+    it('does not throw when called without active server', () => {
+      // Should be safe to call when no WS server is running
+      expect(() => annexServer.broadcastSnapshotRefresh()).not.toThrow();
+    });
   });
 });
