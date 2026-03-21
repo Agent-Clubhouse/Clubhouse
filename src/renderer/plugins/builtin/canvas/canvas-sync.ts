@@ -17,29 +17,36 @@ import { parseNamespacedId } from '../../../stores/remoteProjectStore';
  * Apply a mutation forwarded from a pop-out window or annex controller
  * to the correct canvas instance in the given store, then broadcast
  * the updated state.
+ *
+ * `projectId` and `scope` are included in the broadcast so that the main
+ * process can forward state changes to annex controller clients.  Without
+ * them the main-process gate (`if (state.projectId)`) silently drops the
+ * update and the controller never sees the result of the mutation.
  */
 export function applyCanvasMutation(
   store: UseBoundStore<StoreApi<CanvasState>>,
   canvasId: string,
   mutation: CanvasMutation,
+  projectId?: string,
+  scope?: string,
 ): void {
   // Handle store-level mutations (no canvas switching needed)
   switch (mutation.type) {
     case 'addCanvas':
       store.getState().addCanvas();
-      broadcastCanvasState(store, store.getState().activeCanvasId);
+      broadcastCanvasState(store, store.getState().activeCanvasId, projectId, scope);
       return;
     case 'removeCanvas':
       store.getState().removeCanvas(mutation.canvasId);
-      broadcastCanvasState(store, store.getState().activeCanvasId);
+      broadcastCanvasState(store, store.getState().activeCanvasId, projectId, scope);
       return;
     case 'renameCanvas':
       store.getState().renameCanvas(mutation.canvasId, mutation.name);
-      broadcastCanvasState(store, store.getState().activeCanvasId);
+      broadcastCanvasState(store, store.getState().activeCanvasId, projectId, scope);
       return;
     case 'setActiveCanvas':
       store.getState().setActiveCanvas(mutation.canvasId);
-      broadcastCanvasState(store, mutation.canvasId);
+      broadcastCanvasState(store, mutation.canvasId, projectId, scope);
       return;
   }
 
@@ -95,7 +102,7 @@ export function applyCanvasMutation(
   }
 
   // Broadcast updated state to pop-out windows and annex clients
-  broadcastCanvasState(store, canvasId);
+  broadcastCanvasState(store, canvasId, projectId, scope);
 }
 
 /**

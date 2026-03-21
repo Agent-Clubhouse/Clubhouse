@@ -139,12 +139,15 @@ function initWindowListeners(): (() => void)[] {
     ),
   );
 
-  // Apply canvas mutations forwarded from pop-out windows
+  // Apply canvas mutations forwarded from pop-out windows and annex controllers.
+  // projectId and scope are passed through so that broadcastCanvasState includes
+  // them in the IPC payload — the main process needs projectId to forward the
+  // resulting state to annex controller clients.
   removers.push(
     window.clubhouse.window.onCanvasMutation(
       (canvasId: string, scope: string, mutation: unknown, projectId?: string) => {
         const store = scope === 'global' ? useAppCanvasStore : getProjectCanvasStore(projectId ?? null);
-        applyCanvasMutation(store, canvasId, mutation as CanvasMutation);
+        applyCanvasMutation(store, canvasId, mutation as CanvasMutation, projectId, scope);
       },
     ),
   );
