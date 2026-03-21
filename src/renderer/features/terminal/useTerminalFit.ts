@@ -9,6 +9,36 @@ import type { FitAddon } from '@xterm/addon-fit';
 const WAKE_SETTLE_MS = 150;
 
 /**
+ * Save the terminal viewport's scroll position so it can be restored
+ * after a `fit()` call that may trigger a buffer reflow.
+ *
+ * xterm.js reflows the buffer when the column count changes during
+ * `terminal.resize()`.  This can shift the viewport — particularly
+ * when there is significant scrollback — causing the user's view to
+ * jump to the top.  We record the viewport state before `fit()` and
+ * restore it immediately after.
+ */
+function saveViewportScroll(container: HTMLElement): { scrollTop: number; atBottom: boolean } | null {
+  const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
+  if (!viewport) return null;
+  const atBottom = viewport.scrollTop >= viewport.scrollHeight - viewport.clientHeight - 5;
+  return { scrollTop: viewport.scrollTop, atBottom };
+}
+
+function restoreViewportScroll(container: HTMLElement, saved: { scrollTop: number; atBottom: boolean } | null): void {
+  if (!saved) return;
+  const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
+  if (!viewport) return;
+  if (saved.atBottom) {
+    // User was at the bottom — make sure we stay there after reflow
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+  } else {
+    // User was scrolled up — restore the previous position
+    viewport.scrollTop = saved.scrollTop;
+  }
+}
+
+/**
  * Manages terminal fit/resize with focus-awareness for multi-window correctness.
  *
  * Triggers a fit + resize on:
@@ -48,7 +78,9 @@ export function useTerminalFit(
         if (!fitAddonRef.current || !terminalRef.current) return;
         const el = containerRef.current;
         if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
+        const saved = saveViewportScroll(el);
         fitAddonRef.current.fit();
+        restoreViewportScroll(el, saved);
         if (sendResize) {
           doResize(
             sessionId,
@@ -96,7 +128,14 @@ export function useTerminalFit(
     const doResize = onResize ?? window.clubhouse.pty.resize;
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
-        fitAddonRef.current.fit();
+        const el = containerRef.current;
+        if (el) {
+          const saved = saveViewportScroll(el);
+          fitAddonRef.current.fit();
+          restoreViewportScroll(el, saved);
+        } else {
+          fitAddonRef.current.fit();
+        }
         doResize(
           sessionId,
           terminalRef.current.cols,
