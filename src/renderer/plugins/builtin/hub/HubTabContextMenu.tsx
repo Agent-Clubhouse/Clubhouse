@@ -4,7 +4,7 @@ export interface HubTabContextMenuProps {
   x: number;
   y: number;
   hubId: string;
-  onUpgradeToCanvas: (hubId: string) => void;
+  onUpgradeToCanvas?: (hubId: string) => void;
   onDuplicate: (hubId: string) => void;
   onClose: () => void;
 }
@@ -55,19 +55,23 @@ export function HubTabContextMenu({
       style={{ left: x, top: y }}
       data-testid="hub-tab-context-menu"
     >
-      <button
-        className="w-full text-left px-3 py-1.5 hover:bg-surface-1 text-ctp-text transition-colors flex items-center gap-2"
-        onClick={() => { onUpgradeToCanvas(hubId); onClose(); }}
-        data-testid="hub-ctx-upgrade-to-canvas"
-      >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="1" y="1" width="14" height="14" rx="2" />
-          <line x1="5" y1="1" x2="5" y2="15" />
-          <line x1="1" y1="5" x2="15" y2="5" />
-        </svg>
-        Upgrade to Canvas
-      </button>
-      <div className="border-t border-surface-0 my-1" />
+      {onUpgradeToCanvas && (
+        <>
+          <button
+            className="w-full text-left px-3 py-1.5 hover:bg-surface-1 text-ctp-text transition-colors flex items-center gap-2"
+            onClick={() => { onUpgradeToCanvas(hubId); onClose(); }}
+            data-testid="hub-ctx-upgrade-to-canvas"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="1" width="14" height="14" rx="2" />
+              <line x1="5" y1="1" x2="5" y2="15" />
+              <line x1="1" y1="5" x2="15" y2="5" />
+            </svg>
+            Upgrade to Canvas
+          </button>
+          <div className="border-t border-surface-0 my-1" />
+        </>
+      )}
       <button
         className="w-full text-left px-3 py-1.5 hover:bg-surface-1 text-ctp-text transition-colors flex items-center gap-2"
         onClick={() => { onDuplicate(hubId); onClose(); }}

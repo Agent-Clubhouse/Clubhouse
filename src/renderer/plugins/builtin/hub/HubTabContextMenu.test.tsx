@@ -78,4 +78,32 @@ describe('HubTabContextMenu', () => {
     expect(menu.style.left).toBe('150px');
     expect(menu.style.top).toBe('250px');
   });
+
+  it('hides Upgrade to Canvas when onUpgradeToCanvas is not provided', () => {
+    render(
+      <HubTabContextMenu
+        x={100}
+        y={200}
+        hubId="hub-1"
+        onDuplicate={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('hub-ctx-upgrade-to-canvas')).not.toBeInTheDocument();
+    expect(screen.getByTestId('hub-ctx-duplicate')).toBeInTheDocument();
+  });
+
+  it('shows only Duplicate when canvas is not enabled', () => {
+    render(
+      <HubTabContextMenu
+        x={100}
+        y={200}
+        hubId="hub-1"
+        onDuplicate={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('Upgrade to Canvas')).not.toBeInTheDocument();
+    expect(screen.getByText('Duplicate')).toBeInTheDocument();
+  });
 });

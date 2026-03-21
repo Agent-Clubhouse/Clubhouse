@@ -55,7 +55,7 @@ export function HubTabBar({
       >
         +
       </button>
-      {contextMenu && onUpgradeToCanvas && onDuplicateHub && (
+      {contextMenu && onDuplicateHub && (
         <HubTabContextMenu
           x={contextMenu.x}
           y={contextMenu.y}

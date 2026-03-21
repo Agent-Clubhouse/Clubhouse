@@ -297,4 +297,25 @@ describe('HubTabBar', () => {
     fireEvent.click(screen.getByTestId('hub-ctx-duplicate'));
     expect(onDuplicateHub).toHaveBeenCalledWith('h1');
   });
+
+  it('shows context menu with only Duplicate when canvas is not enabled', () => {
+    const onDuplicateHub = vi.fn();
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+        onDuplicateHub={onDuplicateHub}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'));
+    expect(screen.getByTestId('hub-tab-context-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-ctx-duplicate')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-ctx-upgrade-to-canvas')).not.toBeInTheDocument();
+  });
 });
