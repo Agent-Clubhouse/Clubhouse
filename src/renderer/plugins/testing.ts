@@ -63,6 +63,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       showError: noop,
       showConfirm: async () => false,
       showInput: asyncNull,
+      showApprovalDialog: asyncNull,
       openExternalUrl: asyncNoop,
     },
     commands: {
