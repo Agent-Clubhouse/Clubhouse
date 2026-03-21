@@ -462,7 +462,7 @@ export interface AgentInfo {
   id: string;
   name: string;
   kind: 'durable' | 'quick';
-  status: 'running' | 'sleeping' | 'creating' | 'error';
+  status: 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
   color: string;
   icon?: string;
   exitCode?: number;

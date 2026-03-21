@@ -306,6 +306,13 @@ function initPtyExitListener(): () => void {
   return removeExitListener;
 }
 
+function initAgentWakingListener(): () => void {
+  const removeListener = window.clubhouse.agent.onAgentWaking((agentId: string) => {
+    useAgentStore.getState().updateAgentStatus(agentId, 'waking');
+  });
+  return removeListener;
+}
+
 function initHookEventListener(): () => void {
   const removeHookListener = window.clubhouse.agent.onHookEvent(
     (agentId: string, event: { kind: string; toolName?: string; toolInput?: Record<string, unknown>; message?: string; toolVerb?: string; timestamp: number }) => {
@@ -564,6 +571,7 @@ export function initAppEventBridge(): () => void {
 
   cleanups.push(...initWindowListeners());
   cleanups.push(initPtyExitListener());
+  cleanups.push(initAgentWakingListener());
   cleanups.push(initHookEventListener());
   cleanups.push(initAnnexSpawnListener());
   cleanups.push(initAgentStateBroadcast());

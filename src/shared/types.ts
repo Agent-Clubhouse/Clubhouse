@@ -47,7 +47,7 @@ export interface Project {
   orchestrator?: OrchestratorId;
 }
 
-export type AgentStatus = 'running' | 'sleeping' | 'creating' | 'error';
+export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
 export type AgentKind = 'durable' | 'quick';
 
 export interface Agent {

@@ -190,6 +190,13 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
     },
 
+    onAgentWaking: (callback: (agentId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string) =>
+        callback(agentId);
+      ipcRenderer.on(IPC.AGENT.AGENT_WAKING, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_WAKING, listener); };
+    },
+
     listSessions: (projectPath: string, agentId: string, orchestrator?: string): Promise<Array<{
       sessionId: string;
       startedAt: string;

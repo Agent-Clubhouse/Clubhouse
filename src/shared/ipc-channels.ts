@@ -57,6 +57,7 @@ export const IPC = {
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
+    AGENT_WAKING: 'agent:agent-waking',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
