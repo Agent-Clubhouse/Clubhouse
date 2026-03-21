@@ -52,7 +52,7 @@ function ArrowButton({ direction, onClick }: { direction: 'left' | 'right'; onCl
       'absolute top-1/2 -translate-y-1/2 z-10',
       isLeft ? 'left-3' : 'right-3',
       'w-10 h-10 rounded-full',
-      'bg-ctp-surface0/80 hover:bg-ctp-surface1 backdrop-blur-sm',
+      'bg-surface-0/80 hover:bg-surface-1 backdrop-blur-sm',
       'flex items-center justify-center',
       'text-ctp-text transition-colors cursor-pointer',
     ].join(' '),
@@ -109,7 +109,7 @@ function FloatingBar({
     React.createElement('button', {
       onClick: handler,
       'aria-label': label,
-      className: 'p-1 rounded hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer',
+      className: 'p-1 rounded hover:bg-surface-1 text-ctp-subtext0 hover:text-ctp-text transition-colors cursor-pointer',
     },
       React.createElement('svg', {
         width: 14, height: 14, viewBox: '0 0 24 24',
@@ -124,7 +124,7 @@ function FloatingBar({
     className: [
       'absolute top-3 left-1/2 -translate-x-1/2 z-20',
       'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-      'bg-ctp-surface0/90 backdrop-blur-sm shadow-lg',
+      'bg-surface-0/90 backdrop-blur-sm shadow-lg',
       'text-xs text-ctp-text select-none',
     ].join(' '),
   },
@@ -166,7 +166,7 @@ function FloatingBar({
     makeMiniArrow(chevronRight, 'Next agent', onNext),
 
     // Separator
-    React.createElement('div', { className: 'w-px h-4 bg-ctp-surface2 mx-1' }),
+    React.createElement('div', { className: 'w-px h-4 bg-surface-2 mx-1' }),
 
     // Include sleeping checkbox
     React.createElement('label', {
@@ -182,7 +182,7 @@ function FloatingBar({
     ),
 
     // Separator
-    React.createElement('div', { className: 'w-px h-4 bg-ctp-surface2 mx-1' }),
+    React.createElement('div', { className: 'w-px h-4 bg-surface-2 mx-1' }),
 
     // Needs attention checkbox
     React.createElement('label', {

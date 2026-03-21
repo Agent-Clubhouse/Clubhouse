@@ -42,7 +42,7 @@ export function WhatsNewDialog() {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 pt-5 pb-3 border-b border-ctp-surface0">
+        <div className="px-6 pt-5 pb-3 border-b border-surface-0">
           <h2 className="text-lg font-semibold text-ctp-text">
             What&apos;s New in v{whatsNew.version}
           </h2>
@@ -57,7 +57,7 @@ export function WhatsNewDialog() {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-ctp-surface0 flex justify-end">
+        <div className="px-6 py-4 border-t border-surface-0 flex justify-end">
           <button
             onClick={handleDismiss}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"

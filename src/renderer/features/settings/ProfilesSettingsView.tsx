@@ -40,7 +40,7 @@ function EnvVarEditor({ entries, suggestedKeys, onChange }: EnvEditorProps) {
       {suggestedKeys.length > 0 && (
         <p className="text-[10px] text-ctp-subtext0/60">
           Suggested keys: {suggestedKeys.map((k) => (
-            <code key={k} className="bg-ctp-surface0/30 px-1 rounded mx-0.5">{k}</code>
+            <code key={k} className="bg-surface-0/30 px-1 rounded mx-0.5">{k}</code>
           ))}
         </p>
       )}

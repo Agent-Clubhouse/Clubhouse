@@ -233,7 +233,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // Step 3: Terminal view
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-2 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         <button
           className="flex items-center gap-1 px-1.5 py-0.5 rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1 transition-colors"
           onClick={handleRestart}

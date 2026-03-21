@@ -96,7 +96,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-mantle', 'data-testid': 'terminal-sidebar-panel' },
     // Header
     React.createElement('div', {
-      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0',
+      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0',
     }, 'Targets'),
     // Scrollable list
     React.createElement('div', { className: 'flex-1 overflow-y-auto py-1' },
@@ -123,7 +123,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       // Non-worktree agents section
       noWorktreeAgents.length > 0 && React.createElement(React.Fragment, null,
         React.createElement('div', {
-          className: 'mx-3 my-2 border-t border-ctp-surface0',
+          className: 'mx-3 my-2 border-t border-surface-0',
         }),
         React.createElement('div', {
           className: 'px-3 py-1 text-[10px] text-ctp-subtext0 uppercase tracking-wider',
@@ -244,14 +244,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   return React.createElement('div', { className: 'flex flex-col h-full bg-ctp-base', 'data-testid': 'terminal-main-panel' },
     // Header bar
     React.createElement('div', {
-      className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+      className: 'flex items-center justify-between px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
     },
       React.createElement('div', { className: 'flex items-center gap-2' },
         React.createElement('span', { className: 'text-xs font-medium text-ctp-text' }, contextLabel),
         React.createElement('span', { className: `text-xs ${statusColor}`, 'data-testid': 'terminal-status' }, statusLabel),
       ),
       React.createElement('button', {
-        className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+        className: 'flex items-center gap-1 px-2 py-0.5 text-xs text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
         onClick: handleRestart,
         title: 'Restart terminal',
         'data-testid': 'terminal-restart-btn',

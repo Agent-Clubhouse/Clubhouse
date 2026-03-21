@@ -1272,7 +1272,7 @@ describe('FileTree — accessibility', () => {
 
     const renameButton = screen.getByText('Rename');
     expect(renameButton.className).toContain('text-ctp-subtext1');
-    expect(renameButton.className).toContain('hover:bg-ctp-surface1');
+    expect(renameButton.className).toContain('hover:bg-surface-1');
     expect(renameButton.className).toContain('hover:text-ctp-text');
     expect(renameButton.className).toContain('rounded-sm');
     expect(renameButton.className).toContain('transition-colors');

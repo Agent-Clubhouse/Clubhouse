@@ -90,7 +90,7 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-ctp-surface0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
         autoFocus
       />
       <button
@@ -225,7 +225,7 @@ function ProjectCard({
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
             pollingEnabled
               ? 'text-ctp-green bg-ctp-green/10'
-              : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-ctp-surface0'
+              : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0'
           }`}
           title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
         >
@@ -247,7 +247,7 @@ function ProjectCard({
           {connectedAgents.map((b) => (
             <span
               key={b.agentId}
-              className="px-2 py-0.5 text-[10px] bg-ctp-surface0 text-ctp-subtext1 rounded-full"
+              className="px-2 py-0.5 text-[10px] bg-surface-0 text-ctp-subtext1 rounded-full"
             >
               {b.agentName || b.agentId}
             </span>
@@ -371,18 +371,18 @@ function ExpandedProjectView({
       />
 
       {/* 3-Pane Content */}
-      <div className="flex flex-1 min-h-0 border-t border-ctp-surface1">
+      <div className="flex flex-1 min-h-0 border-t border-surface-1">
         {/* Topic Sidebar */}
-        <div className="w-36 flex-shrink-0 border-r border-ctp-surface1 overflow-y-auto">
+        <div className="w-36 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
           <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-blue/10 text-ctp-blue">
             Topics
           </div>
           {/* All virtual topic */}
           <button
             onClick={() => handleTopicClick(ALL_TOPICS_KEY)}
-            className={`w-full text-left px-3 py-2 text-xs border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
+            className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
               selectedTopic === ALL_TOPICS_KEY
-                ? 'bg-ctp-surface0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
                 : 'text-ctp-subtext1'
             }`}
           >
@@ -395,9 +395,9 @@ function ExpandedProjectView({
             <button
               key={t.topic}
               onClick={() => handleTopicClick(t.topic)}
-              className={`w-full text-left px-3 py-2 text-xs border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
+              className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
                 selectedTopic === t.topic
-                  ? 'bg-ctp-surface0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                  ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
                   : 'text-ctp-subtext1'
               }`}
             >
@@ -416,7 +416,7 @@ function ExpandedProjectView({
         </div>
 
         {/* Message List (compact preview pane) */}
-        <div className="w-48 flex-shrink-0 border-r border-ctp-surface1 overflow-y-auto">
+        <div className="w-48 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="p-3 text-xs text-ctp-overlay0 italic">
               {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in "${selectedTopic}"`}
@@ -426,8 +426,8 @@ function ExpandedProjectView({
               <button
                 key={m.id}
                 onClick={() => setSelectedMessageId(m.id)}
-                className={`w-full text-left px-3 py-2 border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
-                  selectedMessageId === m.id ? 'bg-ctp-surface0' : ''
+                className={`w-full text-left px-3 py-2 border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+                  selectedMessageId === m.id ? 'bg-surface-0' : ''
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs">
@@ -464,7 +464,7 @@ function ExpandedProjectView({
                 )}
               </div>
               <div
-                className="border-t border-ctp-surface1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
+                className="border-t border-surface-1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
                 dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(selectedMessage.body) }}
               />
             </div>
@@ -475,7 +475,7 @@ function ExpandedProjectView({
       </div>
 
       {/* Action Bar (agent count only) */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-ctp-surface1 bg-ctp-mantle">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
         <RobotIcon size={12} />
         <span className="text-[10px] text-ctp-subtext0">
           {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''} connected
@@ -560,7 +560,7 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-ctp-surface0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           autoFocus
         />
       ) : (
@@ -591,7 +591,7 @@ function ExpandedHeader({
         className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
           pollingEnabled
             ? 'text-ctp-green bg-ctp-green/10'
-            : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-ctp-surface0'
+            : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0'
         }`}
         title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
       >
@@ -649,7 +649,7 @@ function ShoulderTapModal({
       onClick={onClose}
     >
       <div
-        className="bg-ctp-base border border-ctp-surface1 rounded-lg shadow-xl w-[90%] max-w-sm p-4 space-y-3"
+        className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-sm p-4 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -665,7 +665,7 @@ function ShoulderTapModal({
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           >
             <option value="all">Broadcast to all</option>
             {connectedAgents.map((a) => (
@@ -683,7 +683,7 @@ function ShoulderTapModal({
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
             autoFocus
           />
         </div>
@@ -737,7 +737,7 @@ function SettingsModal({
 
   return (
     <div className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50">
-      <div className="bg-ctp-base border border-ctp-surface1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
+      <div className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ctp-text">Project Settings</h3>
           <button onClick={onClose} className="text-ctp-overlay1 hover:text-ctp-text text-lg leading-none">&times;</button>
@@ -750,7 +750,7 @@ function SettingsModal({
             onChange={(e) => setDesc(e.target.value)}
             placeholder="Purpose of this group project..."
             rows={3}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
 
@@ -761,7 +761,7 @@ function SettingsModal({
             onChange={(e) => setInstr(e.target.value)}
             placeholder="Rules agents must follow..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
 
