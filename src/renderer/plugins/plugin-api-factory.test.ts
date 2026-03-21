@@ -1564,7 +1564,20 @@ describe('plugin-api-factory', () => {
           worktreePath: '.clubhouse/agents/alpha',
           model: 'claude-3',
           parentAgentId: undefined,
+          pluginMetadata: undefined,
         });
+      });
+
+      it('includes pluginMetadata when present on agent', () => {
+        useAgentStore.setState((s) => ({
+          agents: {
+            ...s.agents,
+            'agent-1': { ...s.agents['agent-1'], pluginMetadata: { boardId: 'b1', cardId: 'c1' } },
+          },
+        }));
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const alpha = api.agents.list().find((a) => a.id === 'agent-1')!;
+        expect(alpha.pluginMetadata).toEqual({ boardId: 'b1', cardId: 'c1' });
       });
 
       it('includes parentAgentId for child agents', () => {
@@ -1763,6 +1776,23 @@ describe('plugin-api-factory', () => {
         const completed = api.agents.listCompleted();
         expect(completed).toHaveLength(3);
         expect(completed.map((c) => c.name)).toEqual(['A', 'B', 'C']);
+      });
+
+      it('includes pluginMetadata in completed agents', () => {
+        useQuickAgentStore.setState({
+          completedAgents: {
+            'proj-1': [
+              {
+                id: 'q-meta', projectId: 'proj-1', name: 'Meta', mission: 'test',
+                summary: 'done', filesModified: [], exitCode: 0, completedAt: 1000,
+                pluginMetadata: { boardId: 'b1', stateId: 's2' },
+              },
+            ],
+          },
+        });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const completed = api.agents.listCompleted();
+        expect(completed[0].pluginMetadata).toEqual({ boardId: 'b1', stateId: 's2' });
       });
     });
 
@@ -2736,7 +2766,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-1');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('do stuff');
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined, undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'do stuff', undefined, undefined, undefined, undefined, undefined);
       });
 
       it('uses override projectId to resolve different project path', async () => {
@@ -2750,7 +2780,7 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-2');
         const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
         await api.agents.runQuick('task', { projectId: 'proj-2' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined, undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', 'task', undefined, undefined, undefined, undefined, undefined);
       });
 
       it('throws on unknown projectId', async () => {
@@ -2769,7 +2799,15 @@ describe('plugin-api-factory', () => {
         const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-3');
         const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
         await api.agents.runQuick('task', { model: 'opus' });
-        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus', undefined, undefined, undefined);
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'task', 'opus', undefined, undefined, undefined, undefined);
+      });
+
+      it('passes metadata option through to spawnQuickAgent', async () => {
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnQuickAgent').mockResolvedValue('qa-4');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const meta = { boardId: 'b1', cardId: 'c1', stateId: 's1' };
+        await api.agents.runQuick('implement feature', { metadata: meta });
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', 'implement feature', undefined, undefined, undefined, undefined, meta);
       });
     });
   });
