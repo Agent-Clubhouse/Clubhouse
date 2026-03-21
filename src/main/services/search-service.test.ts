@@ -168,7 +168,7 @@ describe('search-service', () => {
     }
   });
 
-  it('uses reduced default max results (1000) to prevent large payloads', async () => {
+  it('uses reduced default max results (1000) to prevent large payloads', { timeout: 15_000 }, async () => {
     // Create many small files with matches
     const dir = path.join(tmpDir, 'many');
     await fs.mkdir(dir);

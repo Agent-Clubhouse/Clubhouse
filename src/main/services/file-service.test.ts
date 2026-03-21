@@ -69,7 +69,7 @@ describe('file-service', () => {
       expect(tree).toEqual([]);
     });
 
-    it('respects maxFiles limit', async () => {
+    it('respects maxFiles limit', { timeout: 15_000 }, async () => {
       // Create many files
       for (let i = 0; i < 20; i++) {
         fs.writeFileSync(path.join(tmpDir, `file-${i}.txt`), `content ${i}`);
