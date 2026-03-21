@@ -3,6 +3,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
+import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
+import { Toggle } from '../../components/Toggle';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import type { SourceControlProvider } from '../../../shared/types';
 
@@ -26,12 +28,16 @@ function AppAgentSettings() {
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
   const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
+  const promptForName = useSessionSettingsStore((s) => s.promptForName);
+  const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
+  const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
     loadClubhouseSettings();
-  }, [loadSettings, checkAllAvailability, loadClubhouseSettings]);
+    loadSessionSettings();
+  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings]);
 
   const handleClubhouseToggle = () => {
     if (!clubhouseEnabled) {
@@ -117,6 +123,17 @@ function AppAgentSettings() {
             </p>
           </div>
         )}
+
+        {/* Session name prompt */}
+        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
+          <div>
+            <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
+            <div className="text-xs text-ctp-subtext0 mt-0.5">
+              Ask to name a session when a durable agent stops (default for all projects)
+            </div>
+          </div>
+          <Toggle checked={promptForName} onChange={setPromptForName} />
+        </div>
       </div>
 
       {/* Confirmation dialog */}

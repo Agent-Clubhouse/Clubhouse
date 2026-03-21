@@ -1,9 +1,6 @@
-import { useEffect } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { getTheme } from '../../themes';
-import { Toggle } from '../../components/Toggle';
 
 const VIEW_TOGGLES = [
   {
@@ -25,16 +22,9 @@ export function DisplaySettingsView() {
   const availableThemeIds = useThemeStore((s) => s.availableThemeIds);
   const showHome = useUIStore((s) => s.showHome);
   const setShowHome = useUIStore((s) => s.setShowHome);
-  const promptForName = useSessionSettingsStore((s) => s.promptForName);
-  const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
-  const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
   };
-
-  useEffect(() => {
-    loadSessionSettings();
-  }, [loadSessionSettings]);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
@@ -66,20 +56,6 @@ export function DisplaySettingsView() {
               </div>
             );
           })}
-        </div>
-
-        {/* Sessions */}
-        <div className="mb-6">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Sessions</h3>
-          <div className="flex items-center justify-between py-1.5">
-            <div>
-              <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">
-                Ask to name a session when a durable agent stops (default for all projects)
-              </div>
-            </div>
-            <Toggle checked={promptForName} onChange={setPromptForName} />
-          </div>
         </div>
 
         {/* Color theme */}

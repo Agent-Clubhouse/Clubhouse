@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 import { AGENT_COLORS } from '../../../shared/name-generator';
 import { ResetProjectDialog } from './ResetProjectDialog';
 import { ImageCropDialog } from '../../components/ImageCropDialog';
@@ -164,62 +163,6 @@ function AppearanceSection({ projectId }: { projectId: string }) {
               </button>
             );
           })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SessionSettingsSection({ projectPath }: { projectPath: string }) {
-  const { promptForName, projectOverrides, setProjectOverride, clearProjectOverride, loadSettings } = useSessionSettingsStore();
-  const override = projectOverrides[projectPath];
-
-  useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
-
-  // Three states: undefined (use global), true, false
-  const states: Array<{ label: string; val: boolean | undefined }> = [
-    { label: 'Global', val: undefined },
-    { label: 'On', val: true },
-    { label: 'Off', val: false },
-  ];
-
-  const handleChange = (val: boolean | undefined) => {
-    if (val === undefined) {
-      clearProjectOverride(projectPath);
-    } else {
-      setProjectOverride(projectPath, val);
-    }
-  };
-
-  return (
-    <div className="mb-6">
-      <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-3">Sessions</h3>
-      <div className="flex items-center justify-between py-1.5">
-        <div>
-          <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
-          <div className="text-xs text-ctp-subtext0 mt-0.5">
-            Ask to name a session when a durable agent stops
-            {override === undefined && (
-              <span className="ml-1 opacity-60">(global default: {promptForName ? 'on' : 'off'})</span>
-            )}
-          </div>
-        </div>
-        <div className="flex rounded-md overflow-hidden border border-surface-1">
-          {states.map(({ label, val }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => handleChange(val)}
-              className={`
-                px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors
-                ${override === val ? 'bg-ctp-accent text-white' : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'}
-              `}
-            >
-              {label}
-            </button>
-          ))}
         </div>
       </div>
     </div>
@@ -389,7 +332,6 @@ export function ProjectSettings({ projectId }: { projectId?: string }) {
         <h2 className="text-lg font-semibold text-ctp-text mb-4">Project Settings</h2>
         <NameAndPathSection projectId={project.id} />
         <AppearanceSection projectId={project.id} />
-        <SessionSettingsSection projectPath={project.path} />
         <LaunchWrapperSection projectPath={project.path} />
         <DangerZone projectId={project.id} projectPath={project.path} projectName={project.displayName || project.name} />
       </div>
