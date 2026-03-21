@@ -774,7 +774,7 @@ describe('TOML settingsFormat guard', () => {
     expect(fsp.writeFile).not.toHaveBeenCalled();
   });
 
-  it('applyAgentDefaults skips permissions and MCP JSON for TOML conventions', async () => {
+  it('applyAgentDefaults skips permissions but writes TOML MCP for TOML conventions', async () => {
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       const s = String(p);
       if (s.includes('settings.json') && !s.includes('config.toml')) {
@@ -783,7 +783,7 @@ describe('TOML settingsFormat guard', () => {
           quickOverrides: {},
           agentDefaults: {
             instructions: '# Codex Agent',
-            mcpJson: '{"mcpServers": {"test": {}}}',
+            mcpJson: '{"mcpServers": {"test": {"command": "node"}}}',
             permissions: { allow: ['shell(git:*)'] },
           },
         }));
@@ -797,8 +797,15 @@ describe('TOML settingsFormat guard', () => {
     // Instructions should still be written via the custom writer
     expect(writeInstructions).toHaveBeenCalledWith(WORKTREE, '# Codex Agent');
 
-    // No files should be written (permissions and MCP JSON both skipped)
-    expect(fsp.writeFile).not.toHaveBeenCalled();
+    // MCP config should be written as TOML (permissions still skipped)
+    const writes = vi.mocked(fsp.writeFile).mock.calls;
+    const tomlWrites = writes.filter(c => String(c[0]).includes('config.toml'));
+    expect(tomlWrites.length).toBeGreaterThan(0);
+    const content = String(tomlWrites[0][1]);
+    expect(content).toContain('[mcp_servers.test]');
+    // No permissions file should be written
+    const permWrites = writes.filter(c => String(c[0]).includes('settings.local.json'));
+    expect(permWrites).toHaveLength(0);
   });
 });
 
@@ -921,7 +928,7 @@ describe('error logging in catch blocks', () => {
 
     expect(appLog).toHaveBeenCalledWith(
       'core:agent-settings', 'warn',
-      expect.stringContaining('Skipped invalid MCP JSON'),
+      expect.stringContaining('Skipped invalid MCP config'),
       expect.objectContaining({ meta: expect.objectContaining({ error: expect.any(String) }) }),
     );
   });
