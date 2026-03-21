@@ -36,6 +36,7 @@ export interface CanvasState {
 
   // Canvas tab management
   addCanvas: () => string;
+  insertCanvas: (canvas: CanvasInstance) => void;
   removeCanvas: (canvasId: string) => void;
   renameCanvas: (canvasId: string, name: string) => void;
   setActiveCanvas: (canvasId: string) => void;
@@ -297,6 +298,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const canvases = [...get().canvases, canvas];
       set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
       return canvas.id;
+    },
+
+    insertCanvas: (canvas) => {
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
     },
 
     removeCanvas: (canvasId) => {

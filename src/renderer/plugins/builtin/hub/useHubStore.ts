@@ -16,8 +16,10 @@ import {
   findLeaf,
   syncCounterToTree,
   createPaneCounter,
+  generatePaneId,
   type PaneCounter,
 } from './pane-tree';
+import { clonePaneTree, generateDuplicateHubName } from './hub-to-canvas';
 
 // ── Hub instance — one per tab ───────────────────────────────────────
 
@@ -54,6 +56,7 @@ export interface HubState {
   removeHub: (hubId: string, prefix: string) => void;
   renameHub: (hubId: string, name: string) => void;
   setActiveHub: (hubId: string) => void;
+  duplicateHub: (hubId: string, prefix: string) => string;
 
   // Pane operations (scoped to active hub)
   splitPane: (paneId: string, direction: 'horizontal' | 'vertical', prefix: string, position?: 'before' | 'after') => void;
@@ -260,6 +263,24 @@ export function createHubStore(panePrefix: string): UseBoundStore<StoreApi<HubSt
       if (hubs.find((h) => h.id === hubId)) {
         set({ activeHubId: hubId, ...syncDerivedState(hubs, hubId) });
       }
+    },
+
+    duplicateHub: (hubId, prefix) => {
+      const { hubs } = get();
+      const source = hubs.find((h) => h.id === hubId);
+      if (!source) return '';
+      const existingNames = hubs.map((h) => h.name);
+      const clonedTree = clonePaneTree(source.paneTree, () => generatePaneId(prefix, paneCounter));
+      const newHub: HubInstance = {
+        id: generateHubId(hubCounter),
+        name: generateDuplicateHubName(source.name, existingNames),
+        paneTree: clonedTree,
+        focusedPaneId: getFirstLeafId(clonedTree),
+        zoomedPaneId: null,
+      };
+      const updated = [...hubs, newHub];
+      set({ hubs: updated, activeHubId: newHub.id, ...syncDerivedState(updated, newHub.id) });
+      return newHub.id;
     },
 
     // ── Pane operations (active hub) ───────────────────────────────
