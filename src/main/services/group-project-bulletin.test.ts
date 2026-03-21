@@ -30,6 +30,7 @@ vi.mock('./log-service', () => ({
 
 import { getBulletinBoard, destroyBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
 import * as fsp from 'fs/promises';
+import * as path from 'path';
 
 describe('BulletinBoard', () => {
   beforeEach(() => {
@@ -156,14 +157,16 @@ describe('BulletinBoard', () => {
     });
 
     it('removes the project data directory from disk', async () => {
+      // Use path.join for cross-platform compatibility (Windows uses backslashes)
+      const expectedDir = path.join('/tmp/test-clubhouse', '.clubhouse-dev', 'group-projects', 'gp_cleanup');
       // Mark the directory as existing so access() succeeds
-      store.set('/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_cleanup', '');
+      store.set(expectedDir, '');
 
       getBulletinBoard('gp_cleanup');
       await destroyBulletinBoard('gp_cleanup');
 
       expect(fsp.rm).toHaveBeenCalledWith(
-        '/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_cleanup',
+        expectedDir,
         { recursive: true, force: true },
       );
     });
