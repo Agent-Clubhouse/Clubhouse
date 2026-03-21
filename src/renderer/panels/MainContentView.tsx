@@ -32,6 +32,7 @@ import { ExperimentalSettingsView } from '../features/settings/ExperimentalSetti
 import { McpSettingsView } from '../features/settings/McpSettingsView';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { AnnexDisabledView } from './AnnexDisabledView';
+import { SatelliteDisconnectedOverlay } from './SatelliteDisconnectedOverlay';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function MainContentView() {
@@ -52,6 +53,14 @@ export function MainContentView() {
   const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
   const agents = isRemoteProject ? { ...localAgents, ...remoteAgents } : localAgents;
   const satellitePaused = useAnnexClientStore((s) => s.satellitePaused);
+  const satellites = useAnnexClientStore((s) => s.satellites);
+
+  // Determine if the active remote project's satellite is disconnected
+  const remoteParsed = activeProjectId && isRemoteProject ? parseNamespacedId(activeProjectId) : null;
+  const activeSatellite = remoteParsed
+    ? satellites.find((s) => s.id === remoteParsed.satelliteId || s.fingerprint === remoteParsed.satelliteId)
+    : null;
+  const isSatelliteDisconnected = activeSatellite ? activeSatellite.state !== 'connected' : false;
 
   // Track whether the agent terminal should receive focus.
   // Must transition false→true to trigger AgentTerminal's focus useEffect,
@@ -130,22 +139,51 @@ export function MainContentView() {
         );
       }
       return (
-        <div className="flex items-center justify-center h-full bg-ctp-base" data-testid="no-active-agent">
+        <div className="relative flex items-center justify-center h-full bg-ctp-base" data-testid="no-active-agent">
           <div className="text-center text-ctp-subtext0">
             <p className="text-lg mb-2">No active agent</p>
             <p className="text-sm">Add an agent from the sidebar to get started</p>
           </div>
+          {isSatelliteDisconnected && activeSatellite && (
+            <SatelliteDisconnectedOverlay
+              satelliteId={activeSatellite.fingerprint}
+              satelliteAlias={activeSatellite.alias}
+              satelliteState={activeSatellite.state}
+            />
+          )}
         </div>
       );
     }
 
     if (activeAgent.status === 'sleeping' || activeAgent.status === 'error') {
-      return <SleepingAgent agent={activeAgent} />;
+      return (
+        <div className="relative h-full">
+          <SleepingAgent agent={activeAgent} />
+          {isSatelliteDisconnected && activeSatellite && (
+            <SatelliteDisconnectedOverlay
+              satelliteId={activeSatellite.fingerprint}
+              satelliteAlias={activeSatellite.alias}
+              satelliteState={activeSatellite.state}
+            />
+          )}
+        </div>
+      );
     }
 
     // Headless running agents get the animated clubhouse view instead of a terminal
     if (activeAgent.headless) {
-      return <HeadlessAgentView agent={activeAgent} />;
+      return (
+        <div className="relative h-full">
+          <HeadlessAgentView agent={activeAgent} />
+          {isSatelliteDisconnected && activeSatellite && (
+            <SatelliteDisconnectedOverlay
+              satelliteId={activeSatellite.fingerprint}
+              satelliteAlias={activeSatellite.alias}
+              satelliteState={activeSatellite.state}
+            />
+          )}
+        </div>
+      );
     }
 
     // Check if viewing a remote agent whose satellite has paused
@@ -168,6 +206,13 @@ export function MainContentView() {
               <p className="text-xs text-ctp-overlay0 mt-1">The satellite has paused remote control</p>
             </div>
           </div>
+        )}
+        {isSatelliteDisconnected && activeSatellite && (
+          <SatelliteDisconnectedOverlay
+            satelliteId={activeSatellite.fingerprint}
+            satelliteAlias={activeSatellite.alias}
+            satelliteState={activeSatellite.state}
+          />
         )}
       </div>
     );
@@ -212,7 +257,18 @@ export function MainContentView() {
       }
     }
 
-    return <PluginContentView pluginId={pluginId} mode="project" />;
+    return (
+      <div className="relative h-full">
+        <PluginContentView pluginId={pluginId} mode="project" />
+        {isSatelliteDisconnected && activeSatellite && (
+          <SatelliteDisconnectedOverlay
+            satelliteId={activeSatellite.fingerprint}
+            satelliteAlias={activeSatellite.alias}
+            satelliteState={activeSatellite.state}
+          />
+        )}
+      </div>
+    );
   }
 
   return (
