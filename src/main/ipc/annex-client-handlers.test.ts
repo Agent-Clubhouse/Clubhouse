@@ -64,6 +64,7 @@ describe('annex-client-handlers', () => {
     expect(handlers.has(IPC.ANNEX_CLIENT.AGENT_KILL)).toBe(true);
     expect(handlers.has(IPC.ANNEX_CLIENT.FORGET_SATELLITE)).toBe(true);
     expect(handlers.has(IPC.ANNEX_CLIENT.FORGET_ALL_SATELLITES)).toBe(true);
+    expect(handlers.has(IPC.ANNEX_CLIENT.AGENT_REORDER)).toBe(true);
   });
 
   it('GET_SATELLITES delegates to annexClient.getSatellites', () => {
@@ -211,5 +212,14 @@ describe('annex-client-handlers', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_GET_BUFFER)!;
     await handler({}, 'sat-123', 'agent-1');
     expect(annexClient.requestPtyBuffer).toHaveBeenCalledWith('sat-123', 'agent-1');
+  });
+
+  it('AGENT_REORDER delegates to annexClient.sendToSatellite with agent:reorder', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.AGENT_REORDER)!;
+    handler({}, 'sat-123', 'proj-1', ['a2', 'a1']);
+    expect(annexClient.sendToSatellite).toHaveBeenCalledWith('sat-123', {
+      type: 'agent:reorder',
+      payload: { projectId: 'proj-1', orderedIds: ['a2', 'a1'] },
+    });
   });
 });
