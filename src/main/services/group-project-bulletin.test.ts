@@ -21,13 +21,15 @@ vi.mock('fs/promises', () => ({
   writeFile: vi.fn().mockImplementation(async (p: string, content: string) => {
     store.set(p, content);
   }),
+  rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('./log-service', () => ({
   appLog: vi.fn(),
 }));
 
-import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import { getBulletinBoard, destroyBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
+import * as fsp from 'fs/promises';
 
 describe('BulletinBoard', () => {
   beforeEach(() => {
@@ -136,5 +138,40 @@ describe('BulletinBoard', () => {
     const b1 = getBulletinBoard('gp_1');
     const b2 = getBulletinBoard('gp_2');
     expect(b1).not.toBe(b2);
+  });
+
+  // ── destroyBulletinBoard disk cleanup ─────────────────────────────
+
+  describe('destroyBulletinBoard', () => {
+    it('removes the in-memory board instance', async () => {
+      const b1 = getBulletinBoard('gp_destroy');
+      expect(b1).toBeDefined();
+
+      await destroyBulletinBoard('gp_destroy');
+
+      // Should get a fresh instance now (different object)
+      const b2 = getBulletinBoard('gp_destroy');
+      expect(b2).not.toBe(b1);
+    });
+
+    it('removes the project data directory from disk', async () => {
+      // Mark the directory as existing so access() succeeds
+      store.set('/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_cleanup', '');
+
+      getBulletinBoard('gp_cleanup');
+      await destroyBulletinBoard('gp_cleanup');
+
+      expect(fsp.rm).toHaveBeenCalledWith(
+        '/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_cleanup',
+        { recursive: true, force: true },
+      );
+    });
+
+    it('handles missing directory gracefully', async () => {
+      // Directory does not exist (access will throw ENOENT)
+      await destroyBulletinBoard('gp_nonexistent');
+      // rm should not be called since the dir doesn't exist
+      expect(fsp.rm).not.toHaveBeenCalled();
+    });
   });
 });

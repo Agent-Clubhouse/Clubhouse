@@ -31,7 +31,7 @@ function viewBindingIds(view: CanvasView): { agentId: string | null; targetIds: 
 }
 
 /** Find all bindings that reference a given view (as source or target). */
-function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[]): McpBindingEntry[] {
+export function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[]): McpBindingEntry[] {
   const { agentId, targetIds } = viewBindingIds(view);
   return bindings.filter((b) =>
     (agentId && b.agentId === agentId) ||
