@@ -93,7 +93,7 @@ describe('getBuiltinPlugins catch-all', () => {
   });
 
   it('only terminal, files, and canvas declare the annex permission', () => {
-    const plugins = getBuiltinPlugins({ sessions: true, review: true });
+    const plugins = getBuiltinPlugins({ sessions: true, review: true, canvas: true });
     const annexPlugins = plugins
       .filter((p) => p.manifest.permissions.includes('annex'))
       .map((p) => p.manifest.id)
