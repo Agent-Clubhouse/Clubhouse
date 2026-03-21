@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
@@ -154,6 +154,16 @@ export function registerAppHandlers(): void {
       await clipboardSettings.saveSettings(settings);
     },
   ));
+
+  // Read image from the system clipboard using Electron's native API.
+  // navigator.clipboard.read() is unreliable for images in Electron,
+  // so we use the main-process clipboard module directly.
+  ipcMain.handle(IPC.APP.READ_CLIPBOARD_IMAGE, () => {
+    const image = clipboard.readImage();
+    if (image.isEmpty()) return null;
+    const png = image.toPNG();
+    return { base64: png.toString('base64'), mimeType: 'image/png' };
+  });
 
   ipcMain.handle(IPC.APP.SET_DOCK_BADGE, withValidatedArgs(
     [numberArg({ integer: true, min: 0 })],

@@ -170,7 +170,7 @@ export function getAgentExecutionMode(agentId: string): AgentExecutionMode {
 // Clipboard image forwarding
 // ---------------------------------------------------------------------------
 
-const CLIPBOARD_IMAGE_CLEANUP_MS = 5 * 60 * 1000; // 5 minutes
+const CLIPBOARD_IMAGE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutes
 
 function handleClipboardImage(agentId: string, base64: string, mimeType: string): void {
   const ext = mimeType === 'image/png' ? '.png'
@@ -186,15 +186,22 @@ function handleClipboardImage(agentId: string, base64: string, mimeType: string)
     const buffer = Buffer.from(base64, 'base64');
     fs.writeFileSync(filePath, buffer);
 
-    // Inject the file path into the agent's PTY input
-    ptyManager.write(agentId, filePath);
+    appLog('core:annex-server', 'info', 'clipboard:image — wrote temp file', {
+      meta: { agentId, filePath, size: buffer.length },
+    });
 
-    // Schedule cleanup
+    // Inject the file path into the agent's PTY input using bracketed paste
+    // so the terminal treats it as pasted content (same as Cmd+V text paste).
+    ptyManager.write(agentId, `\x1b[200~${filePath}\x1b[201~`);
+
+    // Schedule cleanup (30 minutes — long enough for the agent to read the file)
     setTimeout(() => {
       try { fs.unlinkSync(filePath); } catch { /* already gone */ }
     }, CLIPBOARD_IMAGE_CLEANUP_MS);
-  } catch {
-    // Silently fail — image paste is best-effort
+  } catch (err) {
+    appLog('core:annex-server', 'error', 'clipboard:image — failed to write temp file', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
   }
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
@@ -227,19 +227,29 @@ export function AgentTerminal({ agentId, focused }: Props) {
     terminalRef.current.options.fontFamily = experimentalMonoFont;
   }, [experimentalMonoFont]);
 
+  const [remoteBanner, setRemoteBanner] = useState<string | null>(null);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showRemoteBanner = useCallback((msg: string) => {
+    setRemoteBanner(msg);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setRemoteBanner(null), 3000);
+  }, []);
+
   const handleMouseDown = useCallback(() => {
     terminalRef.current?.focus();
   }, []);
 
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
     useCallback((data: string) => {
-      if (!isRemote) {
-        window.clubhouse.pty.write(agentId, data);
-      } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+      if (isRemote) {
+        // Local file paths don't exist on the remote satellite
+        showRemoteBanner('File drop is not supported on remote agents');
+        return;
       }
+      window.clubhouse.pty.write(agentId, data);
       terminalRef.current?.focus();
-    }, [agentId, isRemote, remoteParts, sendPtyInput])
+    }, [agentId, isRemote, showRemoteBanner])
   );
 
   return (
@@ -267,7 +277,17 @@ export function AgentTerminal({ agentId, focused }: Props) {
       )}
       {isDragOver && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none z-10">
-          <span className="text-white/90 text-sm font-medium">Drop to insert path</span>
+          <span className="text-white/90 text-sm font-medium">
+            {isRemote ? 'File drop not supported on remote' : 'Drop to insert path'}
+          </span>
+        </div>
+      )}
+      {remoteBanner && (
+        <div
+          data-testid="remote-banner"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-ctp-surface0/90 text-ctp-subtext0 text-xs font-medium shadow-lg z-10 pointer-events-none"
+        >
+          {remoteBanner}
         </div>
       )}
     </div>

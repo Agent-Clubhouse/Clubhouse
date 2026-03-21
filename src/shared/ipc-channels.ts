@@ -179,6 +179,7 @@ export const IPC = {
     GET_VERSION_HISTORY: 'app:get-version-history',
     GET_CLIPBOARD_SETTINGS: 'app:get-clipboard-settings',
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
+    READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
