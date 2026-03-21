@@ -223,11 +223,9 @@ async function spawnPtyAgent(
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
-  // Only snapshot file-based MCP configs (JSON). TOML configs (e.g. Codex CLI)
-  // are not modified by injection, so snapshotting them is unnecessary and the
-  // JSON-based restore logic could corrupt them.
-  const isJsonMcpConfig = !provider.conventions.settingsFormat || provider.conventions.settingsFormat === 'json';
-  if (mcpEnabledForSpawn && isJsonMcpConfig) {
+  // Snapshot MCP config for all formats — TOML injection is now supported
+  // and the config-pipeline restore logic handles both JSON and TOML files.
+  if (mcpEnabledForSpawn) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
