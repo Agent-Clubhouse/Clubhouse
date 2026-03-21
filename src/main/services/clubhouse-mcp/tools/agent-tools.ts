@@ -32,6 +32,11 @@ function sleep(ms: number): Promise<void> {
  * (e.g. GHCP) time to process each piece of the paste rather than
  * receiving one massive write that can be mangled or truncated.
  *
+ * When chunking is active, small delays are inserted after the start
+ * marker (so the CLI can enter paste mode) and before the end marker
+ * (so the last chunk is fully ingested).  This prevents race conditions
+ * where the markers arrive before the CLI is ready.
+ *
  * When chunkSize is undefined the body is sent in a single write
  * (existing behaviour).
  */
@@ -46,10 +51,14 @@ export async function writeChunkedBracketedPaste(
   if (!chunkSize || body.length <= chunkSize) {
     ptyManager.write(agentId, body);
   } else {
+    // Delay after start marker so the CLI can enter paste mode
+    await sleep(chunkDelayMs);
     for (let offset = 0; offset < body.length; offset += chunkSize) {
       if (offset > 0) await sleep(chunkDelayMs);
       ptyManager.write(agentId, body.slice(offset, offset + chunkSize));
     }
+    // Delay before end marker so the last chunk is fully processed
+    await sleep(chunkDelayMs);
   }
 
   ptyManager.write(agentId, '\x1b[201~');

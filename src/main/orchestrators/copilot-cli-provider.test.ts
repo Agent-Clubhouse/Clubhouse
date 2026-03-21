@@ -77,6 +77,25 @@ describe('CopilotCliProvider', () => {
     });
   });
 
+  describe('getPasteSubmitTiming', () => {
+    it('returns GHCP-specific timing with extended delays', () => {
+      const timing = provider.getPasteSubmitTiming();
+      expect(timing.initialDelayMs).toBe(800);
+      expect(timing.retryDelayMs).toBe(600);
+      expect(timing.finalCheckDelayMs).toBe(400);
+      expect(timing.chunkSize).toBe(256);
+      expect(timing.chunkDelayMs).toBe(80);
+    });
+
+    it('uses longer delays than the base provider defaults', () => {
+      const timing = provider.getPasteSubmitTiming();
+      // Base provider uses 200/200/200 — GHCP needs more headroom
+      expect(timing.initialDelayMs).toBeGreaterThan(200);
+      expect(timing.retryDelayMs).toBeGreaterThan(200);
+      expect(timing.finalCheckDelayMs).toBeGreaterThan(200);
+    });
+  });
+
   describe('getCapabilities', () => {
     it('reports headless and hooks support', () => {
       const caps = provider.getCapabilities();

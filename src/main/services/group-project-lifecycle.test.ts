@@ -189,10 +189,10 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('uses orchestrator-specific paste timing for PTY injection', async () => {
-    // Simulate a Copilot CLI agent with 500ms paste timing
+    // Simulate a Copilot CLI agent with 800ms paste timing
     mockGetAgentOrchestrator.mockReturnValue('copilot-cli');
     mockGetProvider.mockReturnValue({
-      getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 }),
+      getPasteSubmitTiming: () => ({ initialDelayMs: 800, retryDelayMs: 600, finalCheckDelayMs: 400 }),
     });
 
     initGroupProjectLifecycle();
@@ -212,16 +212,16 @@ describe('GroupProjectLifecycle', () => {
     expect(welcomeCall).toBeDefined();
 
     // Enter keystroke should NOT have fired yet at 200ms (would with default 200ms timing)
-    // but should fire after 500ms
+    // but should fire after 800ms
     mockPtyWrite.mockClear();
     await new Promise(r => setTimeout(r, 200));
     const earlyEnter = mockPtyWrite.mock.calls.find(
       (c: unknown[]) => c[1] === '\r',
     );
-    // At 250ms total, the 500ms timeout hasn't fired yet
+    // At 250ms total, the 800ms timeout hasn't fired yet
     expect(earlyEnter).toBeUndefined();
 
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 700));
     const lateEnter = mockPtyWrite.mock.calls.find(
       (c: unknown[]) => c[1] === '\r',
     );

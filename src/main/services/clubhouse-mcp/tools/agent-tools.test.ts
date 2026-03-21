@@ -285,33 +285,33 @@ describe('AgentTools', () => {
     it('uses provider-specific paste timing for copilot-cli agents', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
       mockGetProvider.mockReturnValue({
-        getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 }),
+        getPasteSubmitTiming: () => ({ initialDelayMs: 800, retryDelayMs: 600, finalCheckDelayMs: 400 }),
       });
 
       // Buffer stays empty → retry path
       mockPtyGetBuffer.mockReturnValue('');
       const promise = callTool('agent-1', sendToolName, { message: 'hello', task_id: 'cop1' });
 
-      // After 400ms only the message write should have happened (no Enter yet)
-      await vi.advanceTimersByTimeAsync(400);
+      // After 700ms only the message write should have happened (no Enter yet)
+      await vi.advanceTimersByTimeAsync(700);
       expect(mockPtyWrite).toHaveBeenCalledTimes(1);
 
-      // At 500ms the first Enter fires
+      // At 800ms the first Enter fires
       await vi.advanceTimersByTimeAsync(100);
       expect(mockPtyWrite).toHaveBeenCalledTimes(2);
       expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
 
-      // At 900ms (not yet 1000ms) no second Enter yet
-      await vi.advanceTimersByTimeAsync(400);
+      // At 1300ms (not yet 1400ms) no second Enter yet
+      await vi.advanceTimersByTimeAsync(500);
       expect(mockPtyWrite).toHaveBeenCalledTimes(2);
 
-      // At 1000ms the second Enter fires
+      // At 1400ms the second Enter fires
       await vi.advanceTimersByTimeAsync(100);
       expect(mockPtyWrite).toHaveBeenCalledTimes(3);
       expect(mockPtyWrite.mock.calls[2][1]).toBe('\r');
 
       // Drain the final check delay
-      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(400);
       await promise;
     });
 
@@ -557,7 +557,8 @@ describe('AgentTools', () => {
     it('chunks body when chunkSize is set', async () => {
       const body = 'ABCDEFGHIJ'; // 10 chars
       const promise = writeChunkedBracketedPaste('agent-2', body, 4, 10);
-      // Need to advance timers for the sleep() calls between chunks
+      // Need to advance timers for the sleep() calls:
+      // 10ms after start marker + 10ms between chunk1-2 + 10ms between chunk2-3 + 10ms before end marker = 40ms
       await vi.advanceTimersByTimeAsync(100);
       await promise;
 
@@ -574,6 +575,44 @@ describe('AgentTools', () => {
       await writeChunkedBracketedPaste('agent-2', 'hi', 256);
       expect(mockPtyWrite).toHaveBeenCalledTimes(3);
       expect(mockPtyWrite.mock.calls[1][1]).toBe('hi');
+    });
+
+    it('delays after start marker and before end marker when chunking', async () => {
+      const body = 'ABCDEF'; // 6 chars, chunkSize=3 → 2 chunks
+      const chunkDelayMs = 20;
+      const promise = writeChunkedBracketedPaste('agent-2', body, 3, chunkDelayMs);
+
+      // At t=0: start marker written immediately
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+      expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
+
+      // At t=20ms: first chunk written (after post-start delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('ABC');
+
+      // At t=40ms: second chunk written (after inter-chunk delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('DEF');
+
+      // At t=60ms: end marker written (after pre-end delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(4);
+      expect(mockPtyWrite.mock.calls[3][1]).toBe('\x1b[201~');
+
+      await promise;
+    });
+
+    it('skips marker delays when body fits in single write (no chunking)', async () => {
+      // When body <= chunkSize, no extra delays should be inserted
+      const promise = writeChunkedBracketedPaste('agent-2', 'AB', 256, 50);
+      // Should complete synchronously — no sleep calls
+      await promise;
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('AB');
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('\x1b[201~');
     });
   });
 
