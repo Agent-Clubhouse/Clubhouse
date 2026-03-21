@@ -12,10 +12,12 @@ const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
 const ALL_TOPICS_KEY = '__all__';
 
-const POLLING_START_MSG =
-  '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. Use read_bulletin to check for updates.';
-const POLLING_STOP_MSG =
-  '[SYSTEM:POLLING_STOP] Stop periodic bulletin board polling.';
+function pollingStartMsg(projectName: string): string {
+  return `[SYSTEM:POLLING_START] [GROUP:${projectName}] Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. Use read_bulletin to check for updates.`;
+}
+function pollingStopMsg(projectName: string): string {
+  return `[SYSTEM:POLLING_STOP] [GROUP:${projectName}] Stop periodic bulletin board polling for "${projectName}".`;
+}
 
 /** Inject a message into an agent's PTY using bracketed paste + Enter. */
 function injectPtyMessage(agentId: string, message: string): void {
@@ -209,11 +211,12 @@ function ProjectCard({
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    const msg = newVal ? POLLING_START_MSG : POLLING_STOP_MSG;
+    const name = project?.name || groupProjectId;
+    const msg = newVal ? pollingStartMsg(name) : pollingStopMsg(name);
     for (const agent of connectedAgents) {
       injectPtyMessage(agent.agentId, msg);
     }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents]);
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -366,11 +369,12 @@ function ExpandedProjectView({
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    const msg = newVal ? POLLING_START_MSG : POLLING_STOP_MSG;
+    const name = project?.name || groupProjectId;
+    const msg = newVal ? pollingStartMsg(name) : pollingStopMsg(name);
     for (const agent of connectedAgents) {
       injectPtyMessage(agent.agentId, msg);
     }
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents]);
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
 
   return (
     <div className="flex flex-col h-full text-ctp-text">

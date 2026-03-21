@@ -93,6 +93,8 @@ describe('GroupProjectLifecycle', () => {
     expect(messages[0].sender).toBe('system');
     expect(messages[0].body).toContain('robin');
     expect(messages[0].body).toContain('joined');
+    // Should include project identifier (falls back to ID when project not in registry)
+    expect(messages[0].body).toContain('gp_123');
   });
 
   it('posts leave event when agent unbinds from group project', async () => {
@@ -116,6 +118,8 @@ describe('GroupProjectLifecycle', () => {
     expect(messages).toHaveLength(2);
     expect(messages[1].body).toContain('robin');
     expect(messages[1].body).toContain('left');
+    // Should include project identifier
+    expect(messages[1].body).toContain('gp_123');
   });
 
   it('is idempotent — does not double-post on repeated calls', async () => {
@@ -226,6 +230,60 @@ describe('GroupProjectLifecycle', () => {
       (c: unknown[]) => c[1] === '\r',
     );
     expect(lateEnter).toBeDefined();
+  });
+
+  it('includes project name in welcome message when project exists', async () => {
+    const project = await groupProjectRegistry.create('Alpha Squad');
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    await new Promise(r => setTimeout(r, 250));
+
+    // Welcome PTY message should include the project name
+    const calls = mockPtyWrite.mock.calls;
+    const welcomeCall = calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('GROUP_PROJECT_JOINED'),
+    );
+    expect(welcomeCall).toBeDefined();
+    expect(welcomeCall![1]).toContain('[GROUP:Alpha Squad]');
+    expect(welcomeCall![1]).toContain('"Alpha Squad"');
+
+    // Join bulletin message should include project name
+    const board = getBulletinBoard(project.id);
+    const messages = await board.getTopicMessages('system');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].body).toContain('Alpha Squad');
+  });
+
+  it('includes project name in polling start message', async () => {
+    const project = await groupProjectRegistry.create('Beta Team');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    await new Promise(r => setTimeout(r, 800));
+
+    const calls = mockPtyWrite.mock.calls;
+    const pollingCall = calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('POLLING_START'),
+    );
+    expect(pollingCall).toBeDefined();
+    expect(pollingCall![1]).toContain('[GROUP:Beta Team]');
+    expect(pollingCall![1]).toContain('"Beta Team"');
   });
 
   it('does not inject polling instruction when polling is disabled', async () => {

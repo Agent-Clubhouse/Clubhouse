@@ -16,14 +16,20 @@ import { getProvider } from '../orchestrators/registry';
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
 
-const WELCOME_MSG =
-  '[SYSTEM:GROUP_PROJECT_JOINED] You have been connected to a group project. ' +
-  'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
-  'post_bulletin to share updates, and list_members to see who is connected.';
+function welcomeMsg(projectName: string): string {
+  return (
+    `[SYSTEM:GROUP_PROJECT_JOINED] [GROUP:${projectName}] You have been connected to group project "${projectName}". ` +
+    'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
+    'post_bulletin to share updates, and list_members to see who is connected.'
+  );
+}
 
-const POLLING_START_MSG =
-  '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. ' +
-  'Use read_bulletin to check for updates.';
+function pollingStartMsg(projectName: string): string {
+  return (
+    `[SYSTEM:POLLING_START] [GROUP:${projectName}] Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. ` +
+    'Use read_bulletin to check for updates.'
+  );
+}
 
 /** Default delay (ms) before sending Enter after bracketed paste. */
 const DEFAULT_PASTE_DELAY_MS = 200;
@@ -100,7 +106,9 @@ async function syncMemberships(agentId: string): Promise<void> {
       const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
       try {
         const board = getBulletinBoard(projectId);
-        await board.postMessage('system', 'system', `${agentName} left the project`);
+        const proj = await groupProjectRegistry.get(projectId);
+        const projName = proj?.name || projectId;
+        await board.postMessage('system', 'system', `${agentName} left project "${projName}"`);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to post leave event', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -140,9 +148,19 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       const agentName = resolveAgentName(agentId);
       agentNames.set(agentId, agentName);
+
+      // Fetch project info for name inclusion in messages
+      let project: Awaited<ReturnType<typeof groupProjectRegistry.get>> | undefined;
+      try {
+        project = await groupProjectRegistry.get(projectId);
+      } catch {
+        // proceed with fallback name
+      }
+      const projectName = project?.name || projectId;
+
       try {
         const board = getBulletinBoard(projectId);
-        await board.postMessage('system', 'system', `${agentName} joined the project`);
+        await board.postMessage('system', 'system', `${agentName} joined project "${projectName}"`);
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to post join event', {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
@@ -150,19 +168,12 @@ async function syncMemberships(agentId: string): Promise<void> {
       }
 
       // Inject welcome message into the new agent's PTY
-      injectPtyMessage(agentId, WELCOME_MSG);
+      injectPtyMessage(agentId, welcomeMsg(projectName));
 
       // Auto-send polling instruction if polling is enabled
-      try {
-        const project = await groupProjectRegistry.get(projectId);
-        if (project?.metadata?.pollingEnabled) {
-          // Small delay so the welcome message is processed first
-          setTimeout(() => injectPtyMessage(agentId, POLLING_START_MSG), 500);
-        }
-      } catch (err) {
-        appLog('core:group-project', 'warn', 'Failed to send polling instruction to new agent', {
-          meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
-        });
+      if (project?.metadata?.pollingEnabled) {
+        // Small delay so the welcome message is processed first
+        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName)), 500);
       }
     }
   }
