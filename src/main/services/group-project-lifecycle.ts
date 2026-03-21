@@ -18,7 +18,7 @@ const REJOIN_DEBOUNCE_MS = 30_000;
 
 function welcomeMsg(projectName: string): string {
   return (
-    `[SYSTEM:GROUP_PROJECT_JOINED] [GROUP:${projectName}] You have been connected to group project "${projectName}". ` +
+    `Group Project notification: You have been connected to group project "${projectName}". ` +
     'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
     'post_bulletin to share updates, and list_members to see who is connected.'
   );
@@ -26,7 +26,7 @@ function welcomeMsg(projectName: string): string {
 
 function pollingStartMsg(projectName: string): string {
   return (
-    `[SYSTEM:POLLING_START] [GROUP:${projectName}] Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. ` +
+    `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. ` +
     'Use read_bulletin to check for updates.'
   );
 }

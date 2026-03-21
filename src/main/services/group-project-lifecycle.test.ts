@@ -156,7 +156,7 @@ describe('GroupProjectLifecycle', () => {
     expect(mockPtyWrite).toHaveBeenCalled();
     const calls = mockPtyWrite.mock.calls;
     const welcomeCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('GROUP_PROJECT_JOINED'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
     expect(welcomeCall).toBeDefined();
     expect(welcomeCall![0]).toBe('agent-1');
@@ -186,7 +186,7 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('POLLING_START'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![0]).toBe('agent-1');
@@ -211,7 +211,7 @@ describe('GroupProjectLifecycle', () => {
     // Welcome message should fire immediately (bracketed paste)
     await new Promise(r => setTimeout(r, 50));
     const welcomeCall = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('GROUP_PROJECT_JOINED'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
     expect(welcomeCall).toBeDefined();
 
@@ -249,7 +249,7 @@ describe('GroupProjectLifecycle', () => {
     // Welcome PTY message should include the project name
     const calls = mockPtyWrite.mock.calls;
     const welcomeCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('GROUP_PROJECT_JOINED'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
     expect(welcomeCall).toBeDefined();
     expect(welcomeCall![1]).toContain('[GROUP:Alpha Squad]');
@@ -279,7 +279,7 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('POLLING_START'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![1]).toContain('[GROUP:Beta Team]');
@@ -300,7 +300,7 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('POLLING_START'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
     );
     expect(pollingCall).toBeUndefined();
   });

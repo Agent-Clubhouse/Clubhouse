@@ -99,7 +99,7 @@ describe('executeShoulderTap', () => {
     const firstCall = mockPtyWrite.mock.calls[0];
     expect(firstCall[0]).toBe('agent-1');
     expect(firstCall[1]).toContain('\x1b[200~');
-    expect(firstCall[1]).toContain('[SHOULDER-TAP]');
+    expect(firstCall[1]).toContain('Group Project notification');
     expect(firstCall[1]).toContain('Please check the config file');
     expect(firstCall[1]).toContain('RESPONSE INSTRUCTIONS');
     expect(firstCall[1]).toContain('\x1b[201~');
@@ -137,7 +137,7 @@ describe('executeShoulderTap', () => {
     });
 
     expect(result.delivered).toHaveLength(1);
-    expect(mockStructuredSend).toHaveBeenCalledWith('agent-s', expect.stringContaining('[SHOULDER-TAP]'));
+    expect(mockStructuredSend).toHaveBeenCalledWith('agent-s', expect.stringContaining('Group Project notification'));
 
     agentRegistry.untrack('agent-s');
   });

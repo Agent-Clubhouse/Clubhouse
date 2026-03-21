@@ -13,10 +13,10 @@ const POLL_INTERVAL_MS = 5000;
 const ALL_TOPICS_KEY = '__all__';
 
 function pollingStartMsg(projectName: string): string {
-  return `[SYSTEM:POLLING_START] [GROUP:${projectName}] Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. Use read_bulletin to check for updates.`;
+  return `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. Use read_bulletin to check for updates.`;
 }
 function pollingStopMsg(projectName: string): string {
-  return `[SYSTEM:POLLING_STOP] [GROUP:${projectName}] Stop periodic bulletin board polling for "${projectName}".`;
+  return `Group Project notification: Stop periodic bulletin board polling for "${projectName}".`;
 }
 
 /** Inject a message into an agent's PTY using bracketed paste + Enter. */
