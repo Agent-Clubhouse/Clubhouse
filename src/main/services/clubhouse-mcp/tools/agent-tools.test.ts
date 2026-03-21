@@ -5,6 +5,15 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
+const mockMkdir = vi.fn().mockResolvedValue(undefined);
+const mockWriteFile = vi.fn().mockResolvedValue(undefined);
+const mockUnlink = vi.fn().mockResolvedValue(undefined);
+vi.mock('fs/promises', () => ({
+  mkdir: (...args: unknown[]) => mockMkdir(...args),
+  writeFile: (...args: unknown[]) => mockWriteFile(...args),
+  unlink: (...args: unknown[]) => mockUnlink(...args),
+}));
+
 const mockAgentRegistryGet = vi.fn();
 vi.mock('../../agent-registry', () => ({
   agentRegistry: {
@@ -25,6 +34,16 @@ vi.mock('../../structured-manager', () => ({
   sendMessage: (...args: unknown[]) => mockStructuredSendMessage(...args),
 }));
 
+const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../agent-system', () => ({
+  spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
+}));
+
+const mockGetDurableConfig = vi.fn();
+vi.mock('../../agent-config', () => ({
+  getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
+}));
+
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -34,7 +53,7 @@ vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => mockGetProvider(id),
 }));
 
-import { registerAgentTools } from './agent-tools';
+import { registerAgentTools, writeChunkedBracketedPaste } from './agent-tools';
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import type { McpBinding } from '../types';
@@ -77,6 +96,11 @@ describe('AgentTools', () => {
     mockPtyGetBuffer.mockReset();
     mockStructuredSendMessage.mockReset();
     mockGetProvider.mockReset();
+    mockMkdir.mockReset().mockResolvedValue(undefined);
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockUnlink.mockReset().mockResolvedValue(undefined);
+    mockSpawnAgent.mockReset().mockResolvedValue(undefined);
+    mockGetDurableConfig.mockReset();
 
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
@@ -98,14 +122,16 @@ describe('AgentTools', () => {
   });
 
   describe('tool registration', () => {
-    it('registers send_message, get_status, read_output, and check_connectivity tools', () => {
+    it('registers all agent-to-agent tools', () => {
       const tools = getScopedToolList('agent-1');
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(6);
       const suffixes = tools.map(t => t.name.split('__').pop());
       expect(suffixes).toContain('send_message');
       expect(suffixes).toContain('get_status');
       expect(suffixes).toContain('read_output');
       expect(suffixes).toContain('check_connectivity');
+      expect(suffixes).toContain('send_file');
+      expect(suffixes).toContain('wake');
     });
 
     it('generates clubhouse-prefixed tool names with project and agent name', () => {
@@ -138,7 +164,7 @@ describe('AgentTools', () => {
       expect(secondWrite[1]).toBe('\r');
     });
 
-    it('wraps multi-line message in bracketed paste sequences', async () => {
+    it('wraps multi-line message in chunked bracketed paste', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, {
         message: 'line one\nline two\nline three',
@@ -146,18 +172,19 @@ describe('AgentTools', () => {
       });
       expect(result.isError).toBeFalsy();
 
-      // First write: bracketed paste wrapping
-      const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
-      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
-      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
-      expect(firstWrite).toContain('[TASK:ml1]');
-      expect(firstWrite).toContain('line one\nline two\nline three');
+      // Chunked paste: start marker, body (single chunk for default provider), end marker
+      const writes = mockPtyWrite.mock.calls.map(c => c[1]);
+      expect(writes[0]).toBe('\x1b[200~');
+      // Body contains the full tagged message (no chunkSize → single write)
+      expect(writes[1]).toContain('[TASK:ml1]');
+      expect(writes[1]).toContain('line one\nline two\nline three');
+      expect(writes[2]).toBe('\x1b[201~');
 
-      // Second write: delayed \r submit
-      expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+      // Then delayed \r submit
+      expect(writes[3]).toBe('\r');
     });
 
-    it('uses bracketed paste for bidirectional messages (reply instructions contain newlines)', async () => {
+    it('uses chunked bracketed paste for bidirectional messages (reply instructions contain newlines)', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Create reverse binding: agent-2 → agent-1
       bindingManager.bind('agent-2', {
@@ -168,13 +195,13 @@ describe('AgentTools', () => {
       const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
       expect(result.isError).toBeFalsy();
 
-      const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
-      // Bidirectional appends \n\n---\n... so it should use bracketed paste
-      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
-      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
-      expect(firstWrite).toContain('Reply to mega-camel via tool');
-      expect(firstWrite).toContain('clubhouse__');
-      expect(firstWrite).toContain('task_id="bidir1"');
+      const writes = mockPtyWrite.mock.calls.map(c => c[1]);
+      // Chunked: start marker, body, end marker
+      expect(writes[0]).toBe('\x1b[200~');
+      expect(writes[1]).toContain('Reply to mega-camel via tool');
+      expect(writes[1]).toContain('clubhouse__');
+      expect(writes[1]).toContain('task_id="bidir1"');
+      expect(writes[2]).toBe('\x1b[201~');
 
       // Result should indicate bidirectional
       expect(result.content[0].text).toContain('Bidirectional');
@@ -247,11 +274,12 @@ describe('AgentTools', () => {
       });
       expect(result.isError).toBeFalsy();
 
-      // Only 1 write: bracketed paste, no \r
-      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
-      const written = mockPtyWrite.mock.calls[0][1] as string;
-      expect(written.startsWith('\x1b[200~')).toBe(true);
-      expect(written.endsWith('\x1b[201~')).toBe(true);
+      // 3 writes: start marker, body, end marker — no \r
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      const writes = mockPtyWrite.mock.calls.map(c => c[1]);
+      expect(writes[0]).toBe('\x1b[200~');
+      expect(writes[1]).toContain('line1\nline2');
+      expect(writes[2]).toBe('\x1b[201~');
     });
 
     it('uses provider-specific paste timing for copilot-cli agents', async () => {
@@ -499,8 +527,8 @@ describe('AgentTools', () => {
       });
 
       const tools = getScopedToolList('agent-1');
-      // 4 tools for agent-2 + 4 tools for agent-3 = 8
-      expect(tools).toHaveLength(8);
+      // 6 tools for agent-2 + 6 tools for agent-3 = 12
+      expect(tools).toHaveLength(12);
 
       const sendToolAgent2 = agentToolName(sourceBinding, 'send_message');
       const sendToolAgent3 = agentToolName(makeBinding({
@@ -514,6 +542,226 @@ describe('AgentTools', () => {
       expect(r2.isError).toBeFalsy();
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:x1]'));
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-3', expect.stringContaining('[TASK:x2]'));
+    });
+  });
+
+  describe('writeChunkedBracketedPaste', () => {
+    it('sends start, body, end in single write when no chunkSize', async () => {
+      await writeChunkedBracketedPaste('agent-2', 'hello\nworld');
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('hello\nworld');
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('\x1b[201~');
+    });
+
+    it('chunks body when chunkSize is set', async () => {
+      const body = 'ABCDEFGHIJ'; // 10 chars
+      const promise = writeChunkedBracketedPaste('agent-2', body, 4, 10);
+      // Need to advance timers for the sleep() calls between chunks
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
+
+      // start + 3 body chunks (4+4+2) + end = 5 writes
+      expect(mockPtyWrite).toHaveBeenCalledTimes(5);
+      expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('ABCD');
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('EFGH');
+      expect(mockPtyWrite.mock.calls[3][1]).toBe('IJ');
+      expect(mockPtyWrite.mock.calls[4][1]).toBe('\x1b[201~');
+    });
+
+    it('sends body as single write when it fits in one chunk', async () => {
+      await writeChunkedBracketedPaste('agent-2', 'hi', 256);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('hi');
+    });
+  });
+
+  describe('send_file', () => {
+    const sendFileToolName = agentToolName(sourceBinding, 'send_file');
+
+    it('writes content to temp file and sends single-line PTY notification', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const promise = callTool('agent-1', sendFileToolName, {
+        content: 'multi\nline\ncontent',
+        task_id: 'sf1',
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      const result = await promise;
+
+      expect(result.isError).toBeFalsy();
+      expect(mockMkdir).toHaveBeenCalled();
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('sf1-sf1.md'),
+        'multi\nline\ncontent',
+        'utf-8',
+      );
+
+      // PTY write: single-line notification + Enter
+      const writes = mockPtyWrite.mock.calls.map(c => c[1]);
+      expect(writes[0]).toContain('[TASK:sf1]');
+      expect(writes[0]).toContain('File delivered');
+      expect(writes[0]).not.toContain('\n');
+      expect(writes[1]).toBe('\r');
+
+      expect(result.content[0].text).toContain('File delivered');
+      expect(result.content[0].text).toContain('task_id=sf1');
+    });
+
+    it('sends to structured agent', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+      const result = await callTool('agent-1', sendFileToolName, {
+        content: 'data',
+        task_id: 'sf2',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(mockStructuredSendMessage).toHaveBeenCalledWith(
+        'agent-2',
+        expect.stringContaining('File delivered'),
+      );
+    });
+
+    it('returns error when agent not running', async () => {
+      mockAgentRegistryGet.mockReturnValue(undefined);
+      const result = await callTool('agent-1', sendFileToolName, { content: 'test' });
+      expect(result.isError).toBe(true);
+    });
+
+    it('returns error when content is missing', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const result = await callTool('agent-1', sendFileToolName, {});
+      expect(result.isError).toBe(true);
+    });
+
+    it('uses custom filename when provided', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const promise = callTool('agent-1', sendFileToolName, {
+        content: '{}',
+        task_id: 'sf3',
+        filename: 'data.json',
+      });
+      await vi.advanceTimersByTimeAsync(200);
+      await promise;
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('sf3-data.json'),
+        '{}',
+        'utf-8',
+      );
+    });
+  });
+
+  describe('wake', () => {
+    const wakeToolName = agentToolName(sourceBinding, 'wake');
+
+    it('returns already running when target agent is active', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' });
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('already running');
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
+    });
+
+    it('spawns sleeping agent using durable config', async () => {
+      // Target agent not running, calling agent is running
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined; // agent-2 is sleeping
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2',
+        name: 'scrappy-robin',
+        color: 'blue',
+        worktreePath: '/project/.clubhouse/agents/scrappy-robin',
+        model: 'claude-sonnet-4.5',
+        orchestrator: 'claude-code',
+        createdAt: '2025-01-01',
+      });
+
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('woken up successfully');
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-2',
+        projectPath: '/project',
+        cwd: '/project/.clubhouse/agents/scrappy-robin',
+        kind: 'durable',
+        model: 'claude-sonnet-4.5',
+        resume: false,
+      }));
+    });
+
+    it('spawns with resume=true and passes lastSessionId', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2',
+        name: 'scrappy-robin',
+        color: 'blue',
+        createdAt: '2025-01-01',
+        lastSessionId: 'session-abc-123',
+      });
+
+      const result = await callTool('agent-1', wakeToolName, { resume: true });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Resumed session session-abc-123');
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-2',
+        resume: true,
+        sessionId: 'session-abc-123',
+      }));
+    });
+
+    it('falls back to projectPath as cwd when no worktreePath', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
+      });
+
+      await callTool('agent-1', wakeToolName, {});
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: '/project',
+      }));
+    });
+
+    it('returns error when no durable config found', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue(null);
+
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No durable agent config found');
+    });
+
+    it('returns error when caller agent is not registered', async () => {
+      mockAgentRegistryGet.mockReturnValue(undefined);
+
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Cannot determine project path');
+    });
+
+    it('returns error when spawn fails', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
+      });
+      mockSpawnAgent.mockRejectedValue(new Error('CLI not available'));
+
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('CLI not available');
     });
   });
 
