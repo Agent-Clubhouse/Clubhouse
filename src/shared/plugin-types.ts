@@ -474,7 +474,7 @@ export interface AgentInfo {
   parentAgentId?: string;
   orchestrator?: string;
   freeAgentMode?: boolean;
-  /** Plugin-supplied metadata attached at spawn time. @since 0.9 */
+  /** Plugin-supplied metadata attached at spawn time. @since 0.8 */
   pluginMetadata?: Record<string, string>;
 }
 
@@ -494,7 +494,7 @@ export interface CompletedQuickAgentInfo {
   exitCode: number;
   completedAt: number;
   parentAgentId?: string;
-  /** Plugin-supplied metadata carried from the spawning agent. @since 0.9 */
+  /** Plugin-supplied metadata carried from the spawning agent. @since 0.8 */
   pluginMetadata?: Record<string, string>;
 }
 
