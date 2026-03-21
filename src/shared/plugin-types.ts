@@ -560,7 +560,7 @@ export interface UIAPI {
   /**
    * Show a rich approval dialog with a title, summary, and multiple action buttons.
    * Returns the `value` of the selected action, or `null` if dismissed (overlay click / Escape).
-   * @since 0.9
+   * @since 0.8
    */
   showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null>;
   openExternalUrl(url: string): Promise<void>;
