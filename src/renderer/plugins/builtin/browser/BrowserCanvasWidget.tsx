@@ -7,6 +7,8 @@ import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types
 import { validateUrl, normalizeAddress } from './url-validation';
 import type { ProtocolSettings } from './url-validation';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -21,8 +23,21 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 
-  const url = metadata.url as string | undefined;
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
+  const remote = useRemoteProject(projectId);
+
+  // Browser webviews cannot be rendered over annex connections
+  if (remote.isRemote) {
+    const url = metadata.url as string | undefined;
+    return (
+      <AnnexUnsupportedPlaceholder
+        widgetType="Browser"
+        reason={url ? `Viewing ${url} on the satellite.` : 'Browser webviews cannot be streamed over Annex.'}
+      />
+    );
+  }
+
+  const url = metadata.url as string | undefined;
 
   const [addressBar, setAddressBar] = useState(url || '');
   const [error, setError] = useState<string | null>(null);

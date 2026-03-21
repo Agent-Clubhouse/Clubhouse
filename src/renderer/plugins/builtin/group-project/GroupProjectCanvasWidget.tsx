@@ -5,6 +5,8 @@ import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { ptyWrite } from '../../../services/project-proxy';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -29,11 +31,26 @@ function injectPtyMessage(agentId: string, message: string): void {
 
 export function GroupProjectCanvasWidget({
   widgetId: _widgetId,
-  api: _api,
+  api,
   metadata,
   onUpdateMetadata,
   size: _size,
 }: CanvasWidgetComponentProps) {
+  const isAppMode = api.context.mode === 'app';
+  const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
+  const remote = useRemoteProject(projectId);
+
+  // Group project bulletin board is not yet proxied over annex
+  if (remote.isRemote) {
+    const name = metadata.name as string | undefined;
+    return (
+      <AnnexUnsupportedPlaceholder
+        widgetType="Group Project"
+        reason={name ? `"${name}" is running on the satellite.` : 'Group project data is not yet available over Annex.'}
+      />
+    );
+  }
+
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
   if (!groupProjectId) {
