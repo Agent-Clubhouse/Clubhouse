@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import type { ApprovalDialogAction, ApprovalDialogOptions } from '../../shared/plugin-types';
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 interface InputDialogProps {
@@ -12,6 +14,11 @@ interface InputDialogProps {
 interface ConfirmDialogProps {
   message: string;
   onResolve: (confirmed: boolean) => void;
+}
+
+interface ApprovalDialogProps {
+  options: ApprovalDialogOptions;
+  onResolve: (value: string | null) => void;
 }
 
 // ── InputDialog ────────────────────────────────────────────────────────
@@ -217,4 +224,106 @@ export function showConfirmDialog(message: string): { promise: Promise<boolean>;
   );
 
   return { promise, cleanup: () => handleResolve(false) };
+}
+
+// ── ApprovalDialog ────────────────────────────────────────────────────
+
+const ACTION_STYLE_CLASSES: Record<NonNullable<ApprovalDialogAction['style']>, string> = {
+  primary: 'bg-ctp-accent text-ctp-base hover:opacity-90 font-medium',
+  danger: 'bg-ctp-red text-ctp-base hover:opacity-90 font-medium',
+  default: 'text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0',
+};
+
+function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
+  const resolved = useRef(false);
+
+  const resolve = useCallback((value: string | null) => {
+    if (resolved.current) return;
+    resolved.current = true;
+    onResolve(value);
+  }, [onResolve]);
+
+  // Find the primary action for Enter key (first 'primary', or first action)
+  const primaryAction = options.actions.find((a) => a.style === 'primary') ?? options.actions[0];
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') resolve(null);
+      if (e.key === 'Enter' && primaryAction) resolve(primaryAction.value);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [resolve, primaryAction]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={() => resolve(null)}
+      data-testid="plugin-dialog-overlay"
+    >
+      <div
+        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[480px] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        data-testid="plugin-approval-dialog"
+      >
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-ctp-surface0">
+          <h3 className="text-sm font-semibold text-ctp-text" data-testid="plugin-approval-title">
+            {options.title}
+          </h3>
+        </div>
+
+        {/* Summary */}
+        <div className="px-4 py-4">
+          <p className="text-sm text-ctp-subtext1 whitespace-pre-wrap" data-testid="plugin-approval-summary">
+            {options.summary}
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+          {options.actions.map((action) => (
+            <button
+              key={action.value}
+              onClick={() => resolve(action.value)}
+              data-testid={`plugin-approval-action-${action.value}`}
+              className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors ${
+                ACTION_STYLE_CLASSES[action.style ?? 'default']
+              }`}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function showApprovalDialog(options: ApprovalDialogOptions): { promise: Promise<string | null>; cleanup: () => void } {
+  const container = document.createElement('div');
+  container.setAttribute('data-plugin-dialog', 'approval');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  let resolvePromise: (value: string | null) => void;
+  const promise = new Promise<string | null>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  const cleanup = () => {
+    root.unmount();
+    container.remove();
+  };
+
+  const handleResolve = (value: string | null) => {
+    cleanup();
+    resolvePromise(value);
+  };
+
+  root.render(
+    <ApprovalDialog options={options} onResolve={handleResolve} />
+  );
+
+  return { promise, cleanup: () => handleResolve(null) };
 }

@@ -532,11 +532,37 @@ export interface GitAPI {
   diff(filePath: string, staged?: boolean): Promise<string>;
 }
 
+/** A single action button in an approval dialog. */
+export interface ApprovalDialogAction {
+  /** Value returned when this action is selected. */
+  value: string;
+  /** Button label shown in the dialog. */
+  label: string;
+  /** Visual style: 'primary' (accent), 'danger' (red), or 'default' (subtle). */
+  style?: 'primary' | 'danger' | 'default';
+}
+
+/** Options for showApprovalDialog. */
+export interface ApprovalDialogOptions {
+  /** Dialog title (short, e.g. "Approve stage transition"). */
+  title: string;
+  /** Summary or context body (supports plain text). */
+  summary: string;
+  /** Action buttons. At least one required. First 'primary' or first action gets Enter key. */
+  actions: ApprovalDialogAction[];
+}
+
 export interface UIAPI {
   showNotice(message: string): void;
   showError(message: string): void;
   showConfirm(message: string): Promise<boolean>;
   showInput(prompt: string, defaultValue?: string): Promise<string | null>;
+  /**
+   * Show a rich approval dialog with a title, summary, and multiple action buttons.
+   * Returns the `value` of the selected action, or `null` if dismissed (overlay click / Escape).
+   * @since 0.9
+   */
+  showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null>;
   openExternalUrl(url: string): Promise<void>;
 }
 
