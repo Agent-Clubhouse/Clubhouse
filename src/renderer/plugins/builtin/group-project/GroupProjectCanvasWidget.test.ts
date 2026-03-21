@@ -126,6 +126,23 @@ describe('GroupProjectCanvasWidget — broadcast modal', () => {
   });
 });
 
+// ── Message ordering (newest-first feed) ────────────────────────────
+
+describe('GroupProjectCanvasWidget — message ordering', () => {
+  it('sorts messages newest-first in expanded view using sortedMessages', () => {
+    // The expanded view should sort messages by timestamp descending
+    expect(source).toContain('sortedMessages');
+    expect(source).toMatch(/\[\.\.\.messages\]\.sort\(/);
+    expect(source).toMatch(/b\.timestamp\.localeCompare\(a\.timestamp\)/);
+  });
+
+  it('renders sortedMessages instead of raw messages in the list', () => {
+    // The message list pane should iterate over sortedMessages, not messages
+    expect(source).toContain('sortedMessages.map((m)');
+    expect(source).toContain('sortedMessages.length === 0');
+  });
+});
+
 // ── Polling toggle uses PTY injection ───────────────────────────────
 
 describe('GroupProjectCanvasWidget — polling toggle', () => {

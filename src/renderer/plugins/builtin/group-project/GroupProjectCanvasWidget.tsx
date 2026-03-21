@@ -379,6 +379,12 @@ function ExpandedProjectView({
     return () => { cancelled = true; clearInterval(interval); };
   }, [groupProjectId, selectedTopic]);
 
+  // Sort messages newest-first so the feed shows latest on top
+  const sortedMessages = useMemo(
+    () => [...messages].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    [messages],
+  );
+
   const selectedMessage = useMemo(
     () => messages.find((m) => m.id === selectedMessageId) ?? null,
     [messages, selectedMessageId],
@@ -463,12 +469,12 @@ function ExpandedProjectView({
 
         {/* Message List (compact preview pane) */}
         <div className="w-48 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
-          {messages.length === 0 ? (
+          {sortedMessages.length === 0 ? (
             <div className="p-3 text-xs text-ctp-overlay0 italic">
               {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in "${selectedTopic}"`}
             </div>
           ) : (
-            messages.map((m) => (
+            sortedMessages.map((m) => (
               <button
                 key={m.id}
                 onClick={() => setSelectedMessageId(m.id)}
