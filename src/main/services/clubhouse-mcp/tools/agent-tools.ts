@@ -10,6 +10,8 @@ import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
 import * as structuredManager from '../../structured-manager';
+import * as agentSystem from '../../agent-system';
+import { getDurableConfig } from '../../agent-config';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { getProvider } from '../../../orchestrators';
@@ -537,39 +539,95 @@ export function registerAgentTools(): void {
     'wake',
     {
       description:
-        'Wake up an idle agent by sending an Enter keystroke to its terminal.\n\n' +
-        'Use this when the linked agent appears idle or stuck and you want to nudge it. ' +
-        'For PTY agents this sends a carriage return. For structured agents this sends ' +
-        'a short wake-up message.\n\n' +
-        'This is lighter than send_message — it does not inject any text, just prods the ' +
-        'agent to check for pending input.',
+        'Wake up a sleeping agent by spawning it in its PTY.\n\n' +
+        'Use this when the linked agent is not running (sleeping) and you need it to be alive ' +
+        'to send it messages or collaborate. This uses the same mechanism as the "Wake Up" button ' +
+        'in the Clubhouse UI — it reads the agent\'s durable config and spawns a fresh session.\n\n' +
+        'If the agent is already running, this returns immediately without re-spawning.\n\n' +
+        'Set resume=true to resume the agent\'s previous CLI session instead of starting fresh.',
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          resume: {
+            type: 'boolean',
+            description:
+              'Whether to resume the agent\'s previous CLI session. ' +
+              'Defaults to false (fresh session).',
+          },
+        },
       },
     },
-    async (targetId, agentId, _args): Promise<McpToolResult> => {
+    async (targetId, agentId, args): Promise<McpToolResult> => {
+      const resume = args.resume === true;
+
+      // If already running, nothing to do
       const reg = agentRegistry.get(targetId);
-      if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+      if (reg) {
+        appLog('core:mcp', 'info', 'wake: agent already running', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
+        });
+        return { content: [{ type: 'text', text: `Agent is already running (runtime=${reg.runtime}).` }] };
       }
 
-      appLog('core:mcp', 'info', 'wake: nudging agent', {
-        meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
+      // Look up the calling agent's project path to find the durable config
+      const callerReg = agentRegistry.get(agentId);
+      if (!callerReg) {
+        return { content: [{ type: 'text', text: 'Cannot determine project path — caller agent not registered' }], isError: true };
+      }
+
+      const projectPath = callerReg.projectPath;
+
+      appLog('core:mcp', 'info', 'wake: looking up durable config', {
+        meta: { sourceAgent: agentId, targetAgent: targetId, projectPath, resume },
       });
 
       try {
-        if (reg.runtime === 'pty') {
-          ptyManager.write(targetId, '\r');
-        } else if (reg.runtime === 'structured') {
-          await structuredManager.sendMessage(targetId, '(wake)');
-        } else {
-          return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support wake` }], isError: true };
+        const config = await getDurableConfig(projectPath, targetId);
+        if (!config) {
+          return {
+            content: [{ type: 'text', text: `No durable agent config found for ${targetId} in project. The agent may be a quick agent or from a different project.` }],
+            isError: true,
+          };
         }
 
-        return { content: [{ type: 'text', text: `Agent nudged successfully.` }] };
+        const cwd = config.worktreePath || projectPath;
+
+        await agentSystem.spawnAgent({
+          agentId: targetId,
+          projectPath,
+          cwd,
+          kind: 'durable',
+          model: config.model,
+          orchestrator: config.orchestrator,
+          freeAgentMode: config.freeAgentMode,
+          resume,
+          sessionId: resume ? config.lastSessionId : undefined,
+        });
+
+        appLog('core:mcp', 'info', 'wake: agent spawned successfully', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, resume, cwd },
+        });
+
+        const resumeNote = resume && config.lastSessionId
+          ? ` Resumed session ${config.lastSessionId}.`
+          : '';
+        return {
+          content: [{
+            type: 'text',
+            text: `Agent ${config.name || targetId} woken up successfully.${resumeNote}`,
+          }],
+        };
       } catch (err) {
-        return { content: [{ type: 'text', text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+        appLog('core:mcp', 'error', 'wake: failed to spawn agent', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+        });
+        return {
+          content: [{
+            type: 'text',
+            text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}`,
+          }],
+          isError: true,
+        };
       }
     },
   );

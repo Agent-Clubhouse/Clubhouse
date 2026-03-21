@@ -34,6 +34,16 @@ vi.mock('../../structured-manager', () => ({
   sendMessage: (...args: unknown[]) => mockStructuredSendMessage(...args),
 }));
 
+const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../agent-system', () => ({
+  spawnAgent: (...args: unknown[]) => mockSpawnAgent(...args),
+}));
+
+const mockGetDurableConfig = vi.fn();
+vi.mock('../../agent-config', () => ({
+  getDurableConfig: (...args: unknown[]) => mockGetDurableConfig(...args),
+}));
+
 vi.mock('../../log-service', () => ({
   appLog: vi.fn(),
 }));
@@ -89,6 +99,8 @@ describe('AgentTools', () => {
     mockMkdir.mockReset().mockResolvedValue(undefined);
     mockWriteFile.mockReset().mockResolvedValue(undefined);
     mockUnlink.mockReset().mockResolvedValue(undefined);
+    mockSpawnAgent.mockReset().mockResolvedValue(undefined);
+    mockGetDurableConfig.mockReset();
 
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
@@ -642,31 +654,114 @@ describe('AgentTools', () => {
   describe('wake', () => {
     const wakeToolName = agentToolName(sourceBinding, 'wake');
 
-    it('sends carriage return to PTY agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+    it('returns already running when target agent is active', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' });
       const result = await callTool('agent-1', wakeToolName, {});
       expect(result.isError).toBeFalsy();
-      expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', '\r');
-      expect(result.content[0].text).toContain('nudged successfully');
+      expect(result.content[0].text).toContain('already running');
+      expect(mockSpawnAgent).not.toHaveBeenCalled();
     });
 
-    it('sends wake message to structured agent', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'structured', orchestrator: 'claude-code' });
+    it('spawns sleeping agent using durable config', async () => {
+      // Target agent not running, calling agent is running
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined; // agent-2 is sleeping
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2',
+        name: 'scrappy-robin',
+        color: 'blue',
+        worktreePath: '/project/.clubhouse/agents/scrappy-robin',
+        model: 'claude-sonnet-4.5',
+        orchestrator: 'claude-code',
+        createdAt: '2025-01-01',
+      });
+
       const result = await callTool('agent-1', wakeToolName, {});
       expect(result.isError).toBeFalsy();
-      expect(mockStructuredSendMessage).toHaveBeenCalledWith('agent-2', '(wake)');
+      expect(result.content[0].text).toContain('woken up successfully');
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-2',
+        projectPath: '/project',
+        cwd: '/project/.clubhouse/agents/scrappy-robin',
+        kind: 'durable',
+        model: 'claude-sonnet-4.5',
+        resume: false,
+      }));
     });
 
-    it('returns error when agent not running', async () => {
+    it('spawns with resume=true and passes lastSessionId', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2',
+        name: 'scrappy-robin',
+        color: 'blue',
+        createdAt: '2025-01-01',
+        lastSessionId: 'session-abc-123',
+      });
+
+      const result = await callTool('agent-1', wakeToolName, { resume: true });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Resumed session session-abc-123');
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'agent-2',
+        resume: true,
+        sessionId: 'session-abc-123',
+      }));
+    });
+
+    it('falls back to projectPath as cwd when no worktreePath', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
+      });
+
+      await callTool('agent-1', wakeToolName, {});
+      expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
+        cwd: '/project',
+      }));
+    });
+
+    it('returns error when no durable config found', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue(null);
+
+      const result = await callTool('agent-1', wakeToolName, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No durable agent config found');
+    });
+
+    it('returns error when caller agent is not registered', async () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
+
       const result = await callTool('agent-1', wakeToolName, {});
       expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Cannot determine project path');
     });
 
-    it('returns error for unsupported runtime', async () => {
-      mockAgentRegistryGet.mockReturnValue({ runtime: 'headless', orchestrator: 'claude-code' });
+    it('returns error when spawn fails', async () => {
+      mockAgentRegistryGet.mockImplementation((id: string) => {
+        if (id === 'agent-1') return { runtime: 'pty', orchestrator: 'claude-code', projectPath: '/project' };
+        return undefined;
+      });
+      mockGetDurableConfig.mockResolvedValue({
+        id: 'agent-2', name: 'robin', color: 'red', createdAt: '2025-01-01',
+      });
+      mockSpawnAgent.mockRejectedValue(new Error('CLI not available'));
+
       const result = await callTool('agent-1', wakeToolName, {});
       expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('CLI not available');
     });
   });
 
