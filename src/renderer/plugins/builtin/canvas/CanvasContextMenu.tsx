@@ -84,7 +84,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
         {BUILTIN_ITEMS.map(({ type, label, icon }) => (
           <button
             key={type}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
             onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
             data-testid={`canvas-context-menu-${type}`}
           >
@@ -100,7 +100,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             {pluginWidgets.map((widget) => (
               <button
                 key={widget.qualifiedType}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-ctp-surface1 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
                 onClick={(e) => { e.stopPropagation(); handlePluginSelect(widget); }}
                 data-testid={`canvas-context-menu-${widget.qualifiedType}`}
               >

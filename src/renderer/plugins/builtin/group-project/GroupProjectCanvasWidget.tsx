@@ -70,7 +70,7 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-ctp-surface0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
         autoFocus
       />
       <button
@@ -197,7 +197,7 @@ function ProjectCard({
             onChange={(e) => setEditName(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={handleSaveEdit}
-            className="flex-1 px-2 py-0.5 text-sm font-semibold bg-ctp-surface0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="flex-1 px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
             autoFocus
           />
         ) : (
@@ -237,7 +237,7 @@ function ProjectCard({
           {connectedAgents.map((b) => (
             <span
               key={b.agentId}
-              className="px-2 py-0.5 text-[10px] bg-ctp-surface0 text-ctp-subtext1 rounded-full"
+              className="px-2 py-0.5 text-[10px] bg-surface-0 text-ctp-subtext1 rounded-full"
             >
               {b.agentName || b.agentId}
             </span>
@@ -374,9 +374,9 @@ function ExpandedProjectView({
       />
 
       {/* 3-Pane Content */}
-      <div className="flex flex-1 min-h-0 border-t border-ctp-surface1">
+      <div className="flex flex-1 min-h-0 border-t border-surface-1">
         {/* Topic Sidebar */}
-        <div className="w-36 flex-shrink-0 border-r border-ctp-surface1 overflow-y-auto">
+        <div className="w-36 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
           {topics.length === 0 ? (
             <div className="p-3 text-xs text-ctp-overlay0 italic">No topics yet</div>
           ) : (
@@ -384,8 +384,8 @@ function ExpandedProjectView({
               <button
                 key={t.topic}
                 onClick={() => handleTopicClick(t.topic)}
-                className={`w-full text-left px-3 py-2 text-xs border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
-                  selectedTopic === t.topic ? 'bg-ctp-surface0 text-ctp-blue' : 'text-ctp-subtext1'
+                className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+                  selectedTopic === t.topic ? 'bg-surface-0 text-ctp-blue' : 'text-ctp-subtext1'
                 }`}
               >
                 <div className="font-medium truncate">{t.topic}</div>
@@ -401,7 +401,7 @@ function ExpandedProjectView({
         </div>
 
         {/* Message List */}
-        <div className="flex-1 min-w-0 border-r border-ctp-surface1 overflow-y-auto">
+        <div className="flex-1 min-w-0 border-r border-surface-1 overflow-y-auto">
           {selectedTopic ? (
             messages.length === 0 ? (
               <div className="p-3 text-xs text-ctp-overlay0 italic">No messages in "{selectedTopic}"</div>
@@ -410,8 +410,8 @@ function ExpandedProjectView({
                 <button
                   key={m.id}
                   onClick={() => setSelectedMessageId(m.id)}
-                  className={`w-full text-left px-3 py-2 border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
-                    selectedMessageId === m.id ? 'bg-ctp-surface0' : ''
+                  className={`w-full text-left px-3 py-2 border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+                    selectedMessageId === m.id ? 'bg-surface-0' : ''
                   }`}
                 >
                   <div className="flex items-center gap-2 text-xs">
@@ -447,7 +447,7 @@ function ExpandedProjectView({
                 <span className="text-ctp-overlay0">Topic:</span>{' '}
                 {selectedMessage.topic}
               </div>
-              <div className="border-t border-ctp-surface1 pt-2 mt-2 text-ctp-text whitespace-pre-wrap break-words">
+              <div className="border-t border-surface-1 pt-2 mt-2 text-ctp-text whitespace-pre-wrap break-words">
                 {selectedMessage.body}
               </div>
             </div>
@@ -458,7 +458,7 @@ function ExpandedProjectView({
       </div>
 
       {/* Action Bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-ctp-surface1 bg-ctp-mantle">
+      <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-1 bg-ctp-mantle">
         <div className="flex items-center gap-1 text-[10px] text-ctp-subtext0 flex-shrink-0">
           {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''}
         </div>
@@ -466,7 +466,7 @@ function ExpandedProjectView({
         <select
           value={tapTarget}
           onChange={(e) => setTapTarget(e.target.value)}
-          className="px-1.5 py-1 text-[10px] bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text focus:outline-none flex-shrink-0"
+          className="px-1.5 py-1 text-[10px] bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none flex-shrink-0"
         >
           <option value="all">All</option>
           {connectedAgents.map((a) => (
@@ -481,7 +481,7 @@ function ExpandedProjectView({
           onChange={(e) => setTapMessage(e.target.value)}
           onKeyDown={handleTapKeyDown}
           placeholder="Shoulder tap message..."
-          className="flex-1 min-w-0 px-2 py-1 text-[10px] bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+          className="flex-1 min-w-0 px-2 py-1 text-[10px] bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
         />
         <button
           onClick={handleSendTap}
@@ -556,7 +556,7 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-ctp-surface0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           autoFocus
         />
       ) : (
@@ -616,7 +616,7 @@ function SettingsModal({
 
   return (
     <div className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50">
-      <div className="bg-ctp-base border border-ctp-surface1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
+      <div className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ctp-text">Project Settings</h3>
           <button onClick={onClose} className="text-ctp-overlay1 hover:text-ctp-text text-lg leading-none">&times;</button>
@@ -629,7 +629,7 @@ function SettingsModal({
             onChange={(e) => setDesc(e.target.value)}
             placeholder="Purpose of this group project..."
             rows={3}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
 
@@ -640,7 +640,7 @@ function SettingsModal({
             onChange={(e) => setInstr(e.target.value)}
             placeholder="Rules agents must follow..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
 

@@ -112,7 +112,7 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
             {/* Toggle pill indicator */}
             <span
               className={`relative inline-flex h-3.5 w-6 flex-shrink-0 rounded-full transition-colors ${
-                bidirectional ? 'bg-ctp-blue' : 'bg-ctp-surface2'
+                bidirectional ? 'bg-ctp-blue' : 'bg-surface-2'
               }`}
               data-testid="wire-bidirectional-pill"
             >

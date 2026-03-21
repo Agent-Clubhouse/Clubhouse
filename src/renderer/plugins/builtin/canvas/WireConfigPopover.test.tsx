@@ -66,7 +66,7 @@ describe('WireConfigPopover', () => {
     );
     const pill = getByTestId('wire-bidirectional-pill');
     expect(pill).toBeTruthy();
-    expect(pill.className).toContain('bg-ctp-surface2');
+    expect(pill.className).toContain('bg-surface-2');
     expect(pill.className).not.toContain('bg-ctp-blue');
   });
 

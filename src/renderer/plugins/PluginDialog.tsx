@@ -39,12 +39,12 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
       data-testid="plugin-dialog-overlay"
     >
       <div
-        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[400px] flex flex-col"
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[400px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         data-testid="plugin-dialog"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-ctp-surface0">
+        <div className="px-4 py-3 border-b border-surface-0">
           <h3 className="text-sm font-semibold text-ctp-text">{prompt}</h3>
         </div>
 
@@ -56,7 +56,7 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             data-testid="plugin-dialog-input"
-            className="w-full bg-ctp-base border border-ctp-surface1 rounded-lg px-3 py-2 text-sm text-ctp-text
+            className="w-full bg-ctp-base border border-surface-1 rounded-lg px-3 py-2 text-sm text-ctp-text
               placeholder:text-ctp-subtext0 focus:outline-none focus:border-ctp-accent"
             onKeyDown={(e) => {
               if (e.key === 'Enter') resolve(value);
@@ -66,12 +66,12 @@ function InputDialog({ prompt, defaultValue, onResolve }: InputDialogProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
           <button
             onClick={() => resolve(null)}
             data-testid="plugin-dialog-cancel"
             className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
-              hover:bg-ctp-surface0 cursor-pointer transition-colors"
+              hover:bg-surface-0 cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -120,12 +120,12 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
       data-testid="plugin-dialog-overlay"
     >
       <div
-        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[400px] flex flex-col"
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[400px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         data-testid="plugin-dialog"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-ctp-surface0">
+        <div className="px-4 py-3 border-b border-surface-0">
           <h3 className="text-sm font-semibold text-ctp-text">Confirm</h3>
         </div>
 
@@ -135,12 +135,12 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
           <button
             onClick={() => resolve(false)}
             data-testid="plugin-dialog-cancel"
             className="px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text
-              hover:bg-ctp-surface0 cursor-pointer transition-colors"
+              hover:bg-surface-0 cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -149,7 +149,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
             data-testid="plugin-dialog-confirm"
             className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors font-medium ${
               isDestructive
-                ? 'bg-ctp-red text-ctp-base hover:opacity-90'
+                ? 'bg-ctp-error text-ctp-base hover:opacity-90'
                 : 'bg-ctp-accent text-ctp-base hover:opacity-90'
             }`}
           >

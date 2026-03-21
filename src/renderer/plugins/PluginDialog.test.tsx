@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { fireEvent, screen, act } from '@testing-library/react';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { showInputDialog, showConfirmDialog } from './PluginDialog';
 
 // Cleanup any leftover dialog containers after each test
@@ -146,7 +148,7 @@ describe('showInputDialog', () => {
     const dialog = screen.getByTestId('plugin-dialog');
     expect(dialog.className).toContain('shadow-2xl');
     expect(dialog.className).toContain('rounded-xl');
-    expect(dialog.className).toContain('border-ctp-surface1');
+    expect(dialog.className).toContain('border-surface-1');
   });
 });
 
@@ -241,7 +243,7 @@ describe('showConfirmDialog', () => {
     });
 
     const confirmBtn = screen.getByTestId('plugin-dialog-confirm');
-    expect(confirmBtn.className).toContain('bg-ctp-red');
+    expect(confirmBtn.className).toContain('bg-ctp-error');
     expect(confirmBtn.textContent).toBe('Delete');
   });
 
@@ -285,5 +287,26 @@ describe('showConfirmDialog', () => {
 
     await result!.promise;
     expect(document.querySelector('[data-plugin-dialog="confirm"]')).toBeNull();
+  });
+});
+
+describe('theme token validation', () => {
+  it('every color token used in PluginDialog.tsx is registered in the Tailwind theme', () => {
+    const componentSrc = readFileSync(resolve(__dirname, './PluginDialog.tsx'), 'utf-8');
+    const themeCss = readFileSync(resolve(__dirname, '../index.css'), 'utf-8');
+
+    // Extract all color tokens used as Tailwind color utilities (bg-, text-, border-, etc.)
+    const tokenMatches = componentSrc.matchAll(/(?:bg|text|border|placeholder:text|focus:border|hover:bg|hover:text)-([\w-]+)/g);
+    const usedTokens = [...new Set([...tokenMatches].map((m) => m[1]))];
+
+    // Filter to only theme color tokens (ctp-* and surface-*)
+    const colorTokens = usedTokens.filter((t) => t.startsWith('ctp-') || t.startsWith('surface-'));
+
+    expect(colorTokens.length).toBeGreaterThan(0);
+
+    for (const token of colorTokens) {
+      expect(themeCss, `${token} is used in PluginDialog.tsx but --color-${token} is not registered in index.css @theme`)
+        .toContain(`--color-${token}`);
+    }
   });
 });

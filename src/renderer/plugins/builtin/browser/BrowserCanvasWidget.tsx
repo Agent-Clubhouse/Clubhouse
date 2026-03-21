@@ -181,7 +181,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-1.5 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-1.5 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         {isAppMode && (
           <button
             className="hover:text-ctp-text transition-colors mr-1"
@@ -217,7 +217,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
           value={addressBar}
           onChange={(e) => setAddressBar(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-ctp-surface0 text-[11px] text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent"
+          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-[11px] text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent"
           placeholder="Enter URL..."
           data-testid="canvas-browser-address"
         />
