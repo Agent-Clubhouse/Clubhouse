@@ -28,14 +28,24 @@ vi.mock('./log-service', () => ({
 }));
 
 const mockPtyWrite = vi.fn();
+const mockIsRunning = vi.fn().mockReturnValue(false);
 vi.mock('./pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
+  isRunning: (...args: unknown[]) => mockIsRunning(...args),
 }));
 
 const mockGetAgentOrchestrator = vi.fn<(id: string) => string | undefined>(() => undefined);
-vi.mock('./agent-registry', () => ({
-  getAgentOrchestrator: (...args: unknown[]) => mockGetAgentOrchestrator(args[0] as string),
-}));
+vi.mock('./agent-registry', () => {
+  const registrations = new Map<string, unknown>();
+  return {
+    agentRegistry: {
+      get: (id: string) => registrations.get(id),
+      register: (id: string, reg: unknown) => registrations.set(id, reg),
+      untrack: (id: string) => registrations.delete(id),
+    },
+    getAgentOrchestrator: (...args: unknown[]) => mockGetAgentOrchestrator(args[0] as string),
+  };
+});
 
 const mockGetProvider = vi.fn(() => undefined);
 vi.mock('../orchestrators/registry', () => ({
@@ -45,12 +55,18 @@ vi.mock('../orchestrators/registry', () => ({
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
-import { initGroupProjectLifecycle, _resetLifecycleForTesting } from './group-project-lifecycle';
+import { agentRegistry } from './agent-registry';
+import {
+  initGroupProjectLifecycle,
+  _resetLifecycleForTesting,
+  _recentLeavesForTesting,
+} from './group-project-lifecycle';
 
 describe('GroupProjectLifecycle', () => {
   beforeEach(() => {
     store.clear();
     mockPtyWrite.mockClear();
+    mockIsRunning.mockReturnValue(false);
     mockGetAgentOrchestrator.mockReturnValue(undefined);
     mockGetProvider.mockReturnValue(undefined);
     bindingManager._resetForTesting();
@@ -229,5 +245,173 @@ describe('GroupProjectLifecycle', () => {
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('POLLING_START'),
     );
     expect(pollingCall).toBeUndefined();
+  });
+
+  it('suppresses spurious rejoin when agent is not running', async () => {
+    initGroupProjectLifecycle();
+
+    // Agent joins
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Agent leaves
+    bindingManager.unbind('agent-1', 'gp_123');
+    await new Promise(r => setTimeout(r, 50));
+
+    // Spurious re-bind (e.g., from canvas wire restore) — agent is NOT running
+    mockIsRunning.mockReturnValue(false);
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_123');
+    const messages = await board.getTopicMessages('system');
+    // Should have: joined, left — but NOT a second join
+    expect(messages).toHaveLength(2);
+    expect(messages[0].body).toContain('joined');
+    expect(messages[1].body).toContain('left');
+
+    // The stale binding should have been retracted
+    const bindings = bindingManager.getBindingsForAgent('agent-1');
+    const gpBindings = bindings.filter(b => b.targetId === 'gp_123');
+    expect(gpBindings).toHaveLength(0);
+  });
+
+  it('allows rejoin when agent is verified running', async () => {
+    initGroupProjectLifecycle();
+
+    // Agent joins
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Agent leaves
+    bindingManager.unbind('agent-1', 'gp_123');
+    await new Promise(r => setTimeout(r, 50));
+
+    // Re-bind — agent IS running (legitimate reconnect)
+    mockIsRunning.mockReturnValue(true);
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_123');
+    const messages = await board.getTopicMessages('system');
+    // Should have: joined, left, joined (legitimate)
+    expect(messages).toHaveLength(3);
+    expect(messages[2].body).toContain('joined');
+  });
+
+  it('allows rejoin when agent has a registered runtime (headless)', async () => {
+    initGroupProjectLifecycle();
+
+    // Agent joins
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Agent leaves
+    bindingManager.unbind('agent-1', 'gp_123');
+    await new Promise(r => setTimeout(r, 50));
+
+    // Re-bind — agent is in registry (headless mode, no PTY)
+    mockIsRunning.mockReturnValue(false);
+    agentRegistry.register('agent-1', {
+      projectPath: '/test',
+      orchestrator: 'claude-code',
+      runtime: 'headless',
+    });
+
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_123');
+    const messages = await board.getTopicMessages('system');
+    // Should have: joined, left, joined (agent is registered)
+    expect(messages).toHaveLength(3);
+    expect(messages[2].body).toContain('joined');
+
+    agentRegistry.untrack('agent-1');
+  });
+
+  it('allows rejoin after debounce window expires', async () => {
+    initGroupProjectLifecycle();
+
+    // Agent joins
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    // Agent leaves
+    bindingManager.unbind('agent-1', 'gp_123');
+    await new Promise(r => setTimeout(r, 50));
+
+    // Simulate debounce window having expired by backdating the leave timestamp
+    _recentLeavesForTesting.set('agent-1:gp_123', Date.now() - 60_000);
+
+    // Re-bind — agent is NOT running, but debounce window expired
+    mockIsRunning.mockReturnValue(false);
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    const board = getBulletinBoard('gp_123');
+    const messages = await board.getTopicMessages('system');
+    // Should have: joined, left, joined (debounce window expired)
+    expect(messages).toHaveLength(3);
+    expect(messages[2].body).toContain('joined');
+  });
+
+  it('records leave timestamp for debouncing', async () => {
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    await new Promise(r => setTimeout(r, 50));
+
+    bindingManager.unbind('agent-1', 'gp_123');
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(_recentLeavesForTesting.has('agent-1:gp_123')).toBe(true);
+    const ts = _recentLeavesForTesting.get('agent-1:gp_123')!;
+    expect(Date.now() - ts).toBeLessThan(5000);
   });
 });

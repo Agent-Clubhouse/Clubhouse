@@ -7,10 +7,14 @@ import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
 import * as ptyManager from './pty-manager';
+import { agentRegistry } from './agent-registry';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
 import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
+
+/** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
+const REJOIN_DEBOUNCE_MS = 30_000;
 
 const WELCOME_MSG =
   '[SYSTEM:GROUP_PROJECT_JOINED] You have been connected to a group project. ' +
@@ -50,6 +54,8 @@ function injectPtyMessage(agentId: string, message: string): void {
 const memberships = new Map<string, Set<string>>();
 /** Cached agent names: agentId → human-readable name */
 const agentNames = new Map<string, string>();
+/** Tracks recent leave timestamps: `${agentId}:${projectId}` → timestamp */
+const recentLeaves = new Map<string, number>();
 
 let initialized = false;
 let unsubscribe: (() => void) | null = null;
@@ -66,6 +72,13 @@ export function initGroupProjectLifecycle(): void {
   appLog('core:group-project', 'info', 'Group project lifecycle initialized');
 }
 
+/** Check whether an agent has a live process (PTY or registered runtime). */
+export function isAgentAlive(agentId: string): boolean {
+  if (ptyManager.isRunning(agentId)) return true;
+  // Agent may be running in headless or structured mode — check registry
+  return agentRegistry.get(agentId) !== undefined;
+}
+
 async function syncMemberships(agentId: string): Promise<void> {
   const bindings = bindingManager.getBindingsForAgent(agentId);
   const currentProjects = new Set(
@@ -80,6 +93,9 @@ async function syncMemberships(agentId: string): Promise<void> {
       // Agent left this project
       members.delete(agentId);
       if (members.size === 0) memberships.delete(projectId);
+
+      // Record the leave timestamp for debouncing
+      recentLeaves.set(`${agentId}:${projectId}`, Date.now());
 
       const agentName = agentNames.get(agentId) || resolveAgentName(agentId);
       try {
@@ -101,6 +117,24 @@ async function syncMemberships(agentId: string): Promise<void> {
       memberships.set(projectId, members);
     }
     if (!members.has(agentId)) {
+      // Debounce: if this agent recently left this project, verify liveness
+      // before accepting the rejoin. Stale wire restores create bindings for
+      // agents that are no longer running, producing spurious join events.
+      const leaveKey = `${agentId}:${projectId}`;
+      const lastLeave = recentLeaves.get(leaveKey);
+      if (lastLeave !== undefined && Date.now() - lastLeave < REJOIN_DEBOUNCE_MS) {
+        if (!isAgentAlive(agentId)) {
+          appLog('core:group-project', 'info', 'Suppressed spurious rejoin — agent not running', {
+            meta: { agentId, projectId, msSinceLeave: Date.now() - lastLeave },
+          });
+          // Retract the stale binding so list_members stays accurate
+          bindingManager.unbind(agentId, projectId);
+          continue;
+        }
+        // Agent is alive — clear the debounce record and proceed
+        recentLeaves.delete(leaveKey);
+      }
+
       // Agent joined this project
       members.add(agentId);
 
@@ -149,5 +183,10 @@ export function _resetLifecycleForTesting(): void {
   }
   memberships.clear();
   agentNames.clear();
+  recentLeaves.clear();
   initialized = false;
 }
+
+/** Exported for testing. */
+export { REJOIN_DEBOUNCE_MS as _REJOIN_DEBOUNCE_MS_FOR_TESTING };
+export { recentLeaves as _recentLeavesForTesting };
