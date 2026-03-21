@@ -23,9 +23,13 @@ describe('git plugin manifest', () => {
 
   it('declares required permissions including canvas', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['git', 'files', 'commands', 'notifications', 'storage', 'canvas', 'annex']),
+      expect.arrayContaining(['git', 'files', 'commands', 'notifications', 'storage', 'canvas']),
     );
-    expect(manifest.permissions).toHaveLength(7);
+    expect(manifest.permissions).toHaveLength(6);
+  });
+
+  it('does not declare annex permission', () => {
+    expect(manifest.permissions).not.toContain('annex');
   });
 
   it('contributes tab.title', () => {

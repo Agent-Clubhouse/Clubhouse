@@ -14,7 +14,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'dual',
-  permissions: ['commands', 'agents', 'projects', 'widgets', 'navigation', 'annex'],
+  permissions: ['commands', 'agents', 'projects', 'widgets', 'navigation'],
   contributes: {
     tab: { label: 'Review', title: 'Review', icon: TAB_ICON, layout: 'full' },
     railItem: { label: 'Review', title: 'Review', icon: STACK_SWIPE_ICON, position: 'top' },
