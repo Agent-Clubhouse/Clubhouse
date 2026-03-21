@@ -25,12 +25,12 @@ export function useRemoteProject(projectId: string | undefined | null): RemotePr
     }
     const parsed = parseNamespacedId(projectId);
     if (!parsed) {
-      return { isRemote: false, satelliteId: null, originalProjectId: null };
+      return { isRemote: false, satelliteId: null, originalProjectId: null } as RemoteProjectInfo;
     }
     return {
       isRemote: true,
-      satelliteId: parsed.satelliteId,
-      originalProjectId: parsed.agentId, // parseNamespacedId returns `agentId` field for the ID portion
+      satelliteId: parsed.satelliteId as string,
+      originalProjectId: parsed.agentId as string,
     };
   }, [projectId]);
 }

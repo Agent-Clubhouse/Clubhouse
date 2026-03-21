@@ -6,7 +6,7 @@
  * - Single canvas update into existing state
  * - First canvas state for new project
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock the stores that annexClientStore depends on
 vi.mock('./annexClientStore', async (importOriginal) => {

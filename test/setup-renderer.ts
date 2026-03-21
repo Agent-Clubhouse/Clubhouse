@@ -344,6 +344,7 @@ vi.stubGlobal('clubhouse', {
     agentDeleteDurable: vi.fn(async () => ({ ok: true })),
     agentWorktreeStatus: vi.fn(async () => ({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true })),
     agentReorder: asyncNoop,
+    canvasMutation: asyncNoop,
     forgetSatellite: asyncNoop,
     forgetAllSatellites: asyncNoop,
     onSatellitesChanged: () => noop,
