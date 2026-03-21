@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => '/tmp/clubhouse-test') },
   ipcMain: { handle: vi.fn() },
   dialog: {
     showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })),
