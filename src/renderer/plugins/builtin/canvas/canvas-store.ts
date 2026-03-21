@@ -255,25 +255,38 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     hydrateFromRemote: (canvasData, activeId) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const existingState = get();
+      const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
+
       const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s): CanvasInstance => {
         const restoredViews = (s.views || []).map((v: any) => ({
           ...v,
           metadata: v.metadata ?? {},
           displayName: v.displayName ?? v.title ?? v.type ?? '',
         })) as CanvasView[];
+
+        // Preserve local viewport and selection when merging (controller keeps
+        // its own pan/zoom position while receiving view updates from satellite)
+        const existing = existingCanvasMap.get(s.id);
         return {
           id: s.id,
           name: s.name,
           views: restoredViews,
-          viewport: clampViewport(s.viewport),
+          viewport: existing ? existing.viewport : clampViewport(s.viewport),
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: null,
+          selectedViewId: existing?.selectedViewId ?? null,
         };
       });
-      const resolvedActive = (activeId && canvases.find((c) => c.id === activeId))
-        ? activeId
-        : canvases[0].id;
+
+      // Preserve the controller's active canvas tab if the user hasn't switched
+      // on the satellite. Only follow satellite active tab on first hydration.
+      const resolvedActive = existingState.loaded && existingState.canvases.length > 0
+        ? (canvases.find((c) => c.id === existingState.activeCanvasId)
+          ? existingState.activeCanvasId
+          : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id))
+        : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id);
+
       set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...syncDerivedState(canvases, resolvedActive) });
     },
 
