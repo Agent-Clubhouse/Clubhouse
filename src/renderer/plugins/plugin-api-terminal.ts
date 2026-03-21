@@ -2,6 +2,7 @@ import React from 'react';
 import type { PluginContext, TerminalAPI, Disposable } from '../../shared/plugin-types';
 import { isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { satellitePtyDataBus, satellitePtyExitBus } from '../stores/annexClientStore';
+import type { TerminalIO } from '../features/terminal/ShellTerminal';
 
 export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
   const prefix = `plugin:${ctx.pluginId}:`;
@@ -10,6 +11,34 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
 
   function fullId(sessionId: string): string {
     return `${prefix}${sessionId}`;
+  }
+
+  // Build a TerminalIO adapter for remote projects so ShellTerminal routes
+  // all I/O through the annex client instead of the local PTY.
+  let remoteIO: TerminalIO | undefined;
+  if (isRemote && remoteParts) {
+    const satId = remoteParts.satelliteId;
+    remoteIO = {
+      write(sessionId: string, data: string): void {
+        window.clubhouse.annexClient.ptyInput(satId, sessionId, data);
+      },
+      resize(sessionId: string, cols: number, rows: number): void {
+        window.clubhouse.annexClient.ptyResize(satId, sessionId, cols, rows);
+      },
+      async getBuffer(sessionId: string): Promise<string> {
+        return window.clubhouse.annexClient.ptyGetBuffer(satId, sessionId);
+      },
+      onData(callback: (id: string, data: string) => void): () => void {
+        return satellitePtyDataBus.on((sid, agentId, data) => {
+          if (sid === satId) callback(agentId, data);
+        });
+      },
+      onExit(callback: (id: string, exitCode: number) => void): () => void {
+        return satellitePtyExitBus.on((sid, agentId, exitCode) => {
+          if (sid === satId) callback(agentId, exitCode);
+        });
+      },
+    };
   }
 
   let ShellTerminalComponent: React.ComponentType<any> | null = null;
@@ -23,7 +52,11 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
 
   const ShellTerminalWidget = ({ sessionId, focused }: { sessionId: string; focused?: boolean }) => {
     if (!ShellTerminalComponent) return null;
-    return React.createElement(ShellTerminalComponent, { sessionId: fullId(sessionId), focused });
+    return React.createElement(ShellTerminalComponent, {
+      sessionId: fullId(sessionId),
+      focused,
+      ...(remoteIO ? { io: remoteIO } : {}),
+    });
   };
 
   return {
