@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../../shared/types';
-import type { CanvasViewType } from './canvas-types';
+import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
@@ -10,7 +10,34 @@ import { broadcastCanvasState, sendRemoteCanvasMutation } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
-import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+
+/**
+ * Collect the real IDs a canvas view participates in for MCP bindings.
+ * Returns { agentId, targetIds } where targetIds are IDs used as binding.targetId.
+ */
+function viewBindingIds(view: CanvasView): { agentId: string | null; targetIds: string[] } {
+  if (view.type === 'agent') {
+    const av = view as AgentCanvasView;
+    return { agentId: av.agentId ?? null, targetIds: av.agentId ? [av.agentId] : [] };
+  }
+  if (view.type === 'plugin') {
+    const gpId = view.metadata?.groupProjectId as string | undefined;
+    if (gpId) return { agentId: null, targetIds: [gpId] };
+    // Browser widgets use view.id as targetId
+    return { agentId: null, targetIds: [view.id] };
+  }
+  return { agentId: null, targetIds: [] };
+}
+
+/** Find all bindings that reference a given view (as source or target). */
+function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[]): McpBindingEntry[] {
+  const { agentId, targetIds } = viewBindingIds(view);
+  return bindings.filter((b) =>
+    (agentId && b.agentId === agentId) ||
+    targetIds.includes(b.targetId),
+  );
+}
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -210,6 +237,22 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     if (remoteForward({ type: 'removeCanvas', canvasId })) return;
+    // Unbind all MCP wires attached to views on this canvas before removing it
+    const canvas = store.getState().canvases.find((c) => c.id === canvasId);
+    if (canvas) {
+      const currentBindings = bindingsRef.current;
+      const unbind = useMcpBindingStore.getState().unbind;
+      const seen = new Set<string>();
+      for (const view of canvas.views) {
+        for (const b of findBindingsForView(view, currentBindings)) {
+          const key = `${b.agentId}:${b.targetId}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unbind(b.agentId, b.targetId);
+          }
+        }
+      }
+    }
     store.getState().removeCanvas(canvasId);
   }, [store, remoteForward]);
 
@@ -240,6 +283,13 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleRemoveView = useCallback((viewId: string) => {
     if (remoteForward({ type: 'removeView', viewId })) return;
+    // Unbind any MCP wires attached to this view before removing it
+    const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
+    if (view) {
+      const stale = findBindingsForView(view, bindingsRef.current);
+      const unbind = useMcpBindingStore.getState().unbind;
+      for (const b of stale) unbind(b.agentId, b.targetId);
+    }
     store.getState().removeView(viewId);
   }, [store, remoteForward]);
 
