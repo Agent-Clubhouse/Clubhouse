@@ -23,9 +23,9 @@ describe('terminal plugin manifest', () => {
 
   it('declares required permissions including canvas', () => {
     expect(manifest.permissions).toEqual(
-      expect.arrayContaining(['terminal', 'commands', 'agents', 'canvas']),
+      expect.arrayContaining(['terminal', 'commands', 'agents', 'canvas', 'annex']),
     );
-    expect(manifest.permissions).toHaveLength(4);
+    expect(manifest.permissions).toHaveLength(5);
   });
 
   it('contributes tab.title', () => {

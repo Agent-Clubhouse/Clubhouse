@@ -276,4 +276,96 @@ describe('hydrateFromRemote', () => {
     expect(store.getState().canvases).toHaveLength(2);
     expect(store.getState().activeCanvasId).toBe('c2');
   });
+
+  // ── Wire persistence ──────────────────────────────────────────────
+
+  describe('wire persistence', () => {
+    const mockMcpBinding = {
+      bind: vi.fn().mockResolvedValue(undefined),
+      setInstructions: vi.fn().mockResolvedValue(undefined),
+    };
+
+    beforeEach(() => {
+      // Mock window.clubhouse.mcpBinding
+      (globalThis as any).window = {
+        ...(globalThis as any).window,
+        clubhouse: {
+          ...((globalThis as any).window?.clubhouse || {}),
+          mcpBinding: mockMcpBinding,
+        },
+      };
+      mockMcpBinding.bind.mockClear();
+      mockMcpBinding.setInstructions.mockClear();
+    });
+
+    it('saves wire bindings to storage', async () => {
+      const storage = createMockStorage();
+      const bindings = [
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'Agent 2', agentName: 'robin', targetName: 'falcon', projectName: 'myapp' },
+      ];
+      await store.getState().saveWires(storage, bindings);
+      expect(storage.write).toHaveBeenCalledWith('canvas-wires', expect.arrayContaining([
+        expect.objectContaining({ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' }),
+      ]));
+    });
+
+    it('saves wire bindings with instructions', async () => {
+      const storage = createMockStorage();
+      const bindings = [
+        {
+          agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'Agent 2',
+          instructions: { '*': 'No secrets' },
+        },
+      ];
+      await store.getState().saveWires(storage, bindings);
+      expect(storage.write).toHaveBeenCalledWith('canvas-wires', expect.arrayContaining([
+        expect.objectContaining({ instructions: { '*': 'No secrets' } }),
+      ]));
+    });
+
+    it('restores wires from storage via IPC bind calls', async () => {
+      const storage = createMockStorage({
+        'canvas-wires': [
+          { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2', agentName: 'robin', targetName: 'falcon', projectName: 'myapp' },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({
+        targetId: 'a2',
+        targetKind: 'agent',
+        label: 'Agent 2',
+      }));
+    });
+
+    it('restores wire instructions', async () => {
+      const storage = createMockStorage({
+        'canvas-wires': [
+          {
+            agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2',
+            instructions: { '*': 'Be careful' },
+          },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      expect(mockMcpBinding.setInstructions).toHaveBeenCalledWith('a1', 'a2', { '*': 'Be careful' });
+    });
+
+    it('handles empty storage gracefully', async () => {
+      const storage = createMockStorage();
+      await store.getState().loadWires(storage);
+      expect(mockMcpBinding.bind).not.toHaveBeenCalled();
+    });
+
+    it('skips entries with missing required fields', async () => {
+      const storage = createMockStorage({
+        'canvas-wires': [
+          { agentId: 'a1', targetId: '', targetKind: 'agent', label: 'Bad' },
+          { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Good' },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }));
+    });
+  });
 });

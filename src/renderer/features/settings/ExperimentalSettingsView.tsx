@@ -32,6 +32,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Sessions',
     description: 'Browse and replay historical agent conversation sessions with timeline playback. Requires app restart.',
   },
+  {
+    id: 'review',
+    label: 'Review Carousel',
+    description: 'Full-screen swipe carousel for browsing and reviewing agents one at a time. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

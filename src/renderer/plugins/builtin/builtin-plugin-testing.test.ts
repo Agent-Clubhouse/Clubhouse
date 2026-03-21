@@ -92,6 +92,16 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('all registered built-in plugins include the annex permission', () => {
+    const plugins = getBuiltinPlugins({ sessions: true });
+    for (const plugin of plugins) {
+      expect(
+        plugin.manifest.permissions,
+        `${plugin.manifest.id} should include 'annex' permission`,
+      ).toContain('annex');
+    }
+  });
+
   it('does not include the sessions plugin without experimental flag', () => {
     const plugins = getBuiltinPlugins();
     const ids = plugins.map((p) => p.manifest.id);
@@ -112,5 +122,27 @@ describe('getBuiltinPlugins catch-all', () => {
   it('auto-enables sessions plugin when experimental flag is set', () => {
     const defaultIds = getDefaultEnabledIds({ sessions: true });
     expect(defaultIds.has('sessions')).toBe(true);
+  });
+
+  it('does not include the review plugin without experimental flag', () => {
+    const plugins = getBuiltinPlugins();
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).not.toContain('review');
+  });
+
+  it('does not auto-enable the review plugin without experimental flag', () => {
+    const defaultIds = getDefaultEnabledIds();
+    expect(defaultIds.has('review')).toBe(false);
+  });
+
+  it('includes review plugin when experimental flag is set', () => {
+    const plugins = getBuiltinPlugins({ review: true });
+    const ids = plugins.map((p) => p.manifest.id);
+    expect(ids).toContain('review');
+  });
+
+  it('auto-enables review plugin when experimental flag is set', () => {
+    const defaultIds = getDefaultEnabledIds({ review: true });
+    expect(defaultIds.has('review')).toBe(true);
   });
 });

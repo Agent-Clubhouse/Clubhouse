@@ -2,13 +2,81 @@
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
 
+import * as fsp from 'fs/promises';
+import * as path from 'path';
+import { app } from 'electron';
 import { registerToolTemplate, buildToolName } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
 import * as ptyManager from '../../pty-manager';
 import * as structuredManager from '../../structured-manager';
+import * as agentSystem from '../../agent-system';
+import { getDurableConfig } from '../../agent-config';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
+import { getProvider } from '../../../orchestrators';
+import type { PasteSubmitTiming } from '../../../orchestrators';
+
+// ── Chunked bracketed paste ─────────────────────────────────────────────────
+
+/** Sleep helper for async delays. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Write multi-line content to a PTY using chunked bracketed paste.
+ *
+ * Sends the bracketed paste start marker, then the body in chunks with
+ * small delays between them, then the end marker.  This gives slow CLIs
+ * (e.g. GHCP) time to process each piece of the paste rather than
+ * receiving one massive write that can be mangled or truncated.
+ *
+ * When chunkSize is undefined the body is sent in a single write
+ * (existing behaviour).
+ */
+export async function writeChunkedBracketedPaste(
+  agentId: string,
+  body: string,
+  chunkSize?: number,
+  chunkDelayMs = 30,
+): Promise<void> {
+  ptyManager.write(agentId, '\x1b[200~');
+
+  if (!chunkSize || body.length <= chunkSize) {
+    ptyManager.write(agentId, body);
+  } else {
+    for (let offset = 0; offset < body.length; offset += chunkSize) {
+      if (offset > 0) await sleep(chunkDelayMs);
+      ptyManager.write(agentId, body.slice(offset, offset + chunkSize));
+    }
+  }
+
+  ptyManager.write(agentId, '\x1b[201~');
+}
+
+// ── File-backed message helpers ─────────────────────────────────────────────
+
+const A2A_MSG_DIR = path.join(app.getPath('temp'), 'clubhouse-a2a-messages');
+
+async function ensureMsgDir(): Promise<void> {
+  await fsp.mkdir(A2A_MSG_DIR, { recursive: true });
+}
+
+/** Write content to a temp file, return its path. */
+export async function writeMessageFile(taskId: string, content: string): Promise<string> {
+  await ensureMsgDir();
+  const filePath = path.join(A2A_MSG_DIR, `${taskId}.md`);
+  await fsp.writeFile(filePath, content, 'utf-8');
+  return filePath;
+}
+
+/** Schedule cleanup of a message file after a delay (default 5 min). */
+export function scheduleMessageCleanup(filePath: string, delayMs = 5 * 60 * 1000): void {
+  setTimeout(async () => {
+    try { await fsp.unlink(filePath); } catch { /* already gone */ }
+  }, delayMs);
+}
 
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
@@ -107,25 +175,40 @@ export function registerAgentTools(): void {
             meta: { targetAgent: targetId, taskId, isMultiLine, forceSubmit, messageLength: taggedMessage.length },
           });
 
+          // Resolve provider-specific paste submit timing up front.
+          const provider = getProvider(reg.orchestrator);
+          const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
+            ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
+
           if (isMultiLine) {
-            // Wrap in bracketed paste so the receiving CLI treats the entire
-            // multi-line payload as a single paste event rather than splitting
-            // on embedded newlines or collapsing into a preview.
-            ptyManager.write(targetId, `\x1b[200~${taggedMessage}\x1b[201~`);
+            // Chunked bracketed paste: send start marker, body in chunks
+            // with delays, then end marker.  Slow CLIs (GHCP) need this
+            // to avoid mangling or truncating multi-line paste content.
+            await writeChunkedBracketedPaste(
+              targetId,
+              taggedMessage,
+              timing.chunkSize,
+              timing.chunkDelayMs,
+            );
           } else {
             ptyManager.write(targetId, taggedMessage);
           }
 
           if (forceSubmit) {
+
+            appLog('core:mcp', 'info', 'send_message: using paste submit timing', {
+              meta: { targetAgent: targetId, taskId, orchestrator: reg.orchestrator, timing },
+            });
+
             // Snapshot the buffer length before the submit keystroke so we can
             // heuristically check whether the receiving agent processed the input.
             const bufferBefore = ptyManager.getBuffer(targetId)?.length ?? 0;
 
-            // Claude Code's multi-line paste preview requires Enter to accept
+            // Many CLIs show a paste preview that requires Enter to accept
             // the pasted content, then a *second* Enter to actually submit.
             // We send \r twice with delays:
-            //   1st \r (200ms): exits the paste preview / accepts pasted text
-            //   2nd \r (200ms later): submits the message to the AI
+            //   1st \r (initialDelayMs): exits the paste preview / accepts pasted text
+            //   2nd \r (retryDelayMs later): submits the message to the AI
             // The second \r is only sent if the buffer hasn't grown (meaning
             // the first Enter didn't trigger processing). If it did grow, the
             // message was already submitted and the retry is skipped.
@@ -166,9 +249,9 @@ export function registerAgentTools(): void {
                       meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterSecond, secondEnterWorked },
                     });
                     resolve();
-                  }, 200);
-                }, 200);
-              }, 200);
+                  }, timing.finalCheckDelayMs);
+                }, timing.retryDelayMs);
+              }, timing.initialDelayMs);
             });
           }
         } else if (reg.runtime === 'structured') {
@@ -343,6 +426,209 @@ export function registerAgentTools(): void {
           text: JSON.stringify(result, null, 2),
         }],
       };
+    },
+  );
+
+  // clubhouse__<project>_<name>_<hash>__send_file
+  registerToolTemplate(
+    'agent',
+    'send_file',
+    {
+      description:
+        'Send a message to the linked agent via a temp file.\n\n' +
+        'The message content is written to a temporary file on disk and the agent receives a ' +
+        'single-line notification with the file path. The target agent reads the file with its ' +
+        'normal file-reading tool.\n\n' +
+        'Use this instead of send_message when:\n' +
+        '- The message is very long or has complex formatting\n' +
+        '- send_message paste injection is unreliable for the target CLI\n' +
+        '- You want to send structured data (JSON, code, etc.) without terminal mangling\n\n' +
+        'The temp file is automatically cleaned up after 5 minutes.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          content: {
+            type: 'string',
+            description: 'The content to write to the file and deliver to the agent.',
+          },
+          task_id: {
+            type: 'string',
+            description:
+              'Optional correlation ID. Works the same as send_message task_id.',
+          },
+          filename: {
+            type: 'string',
+            description:
+              'Optional filename hint (e.g. "plan.md", "data.json"). ' +
+              'Defaults to <task_id>.md.',
+          },
+        },
+        required: ['content'],
+      },
+    },
+    async (targetId, agentId, args): Promise<McpToolResult> => {
+      const content = args.content as string;
+      if (!content) {
+        return { content: [{ type: 'text', text: 'Missing required argument: content' }], isError: true };
+      }
+
+      const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
+      const filename = (args.filename as string) || `${taskId}.md`;
+
+      const reg = agentRegistry.get(targetId);
+      if (!reg) {
+        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+      }
+
+      const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
+      const senderName = sourceBinding?.agentName || agentId;
+      const senderProject = sourceBinding?.projectName;
+      const senderLabel = senderProject ? `${senderName}@${senderProject}` : senderName;
+      const targetName = sourceBinding?.targetName || targetId;
+
+      try {
+        // Write content to temp file
+        await ensureMsgDir();
+        const filePath = path.join(A2A_MSG_DIR, `${taskId}-${filename}`);
+        await fsp.writeFile(filePath, content, 'utf-8');
+        scheduleMessageCleanup(filePath);
+
+        appLog('core:mcp', 'info', 'send_file: file written', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, taskId, filePath, contentLength: content.length },
+        });
+
+        if (reg.runtime === 'pty') {
+          // Send single-line notification to PTY
+          const ptyLine = `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`;
+          ptyManager.write(targetId, ptyLine);
+
+          // Submit with Enter
+          const provider = getProvider(reg.orchestrator);
+          const timing = provider?.getPasteSubmitTiming()
+            ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
+
+          await sleep(timing.initialDelayMs);
+          ptyManager.write(targetId, '\r');
+        } else if (reg.runtime === 'structured') {
+          await structuredManager.sendMessage(
+            targetId,
+            `[TASK:${taskId}] [FROM:${senderLabel}] File delivered: ${filePath} — read this file for content from ${senderLabel}.`,
+          );
+        } else {
+          return { content: [{ type: 'text', text: `Agent runtime "${reg.runtime}" does not support input` }], isError: true };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: `File delivered to ${targetName}. task_id=${taskId}, path=${filePath}`,
+          }],
+        };
+      } catch (err) {
+        appLog('core:mcp', 'error', 'send_file failed', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+        });
+        return { content: [{ type: 'text', text: `Failed to send file: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
+      }
+    },
+  );
+
+  // clubhouse__<project>_<name>_<hash>__wake
+  registerToolTemplate(
+    'agent',
+    'wake',
+    {
+      description:
+        'Wake up a sleeping agent by spawning it in its PTY.\n\n' +
+        'Use this when the linked agent is not running (sleeping) and you need it to be alive ' +
+        'to send it messages or collaborate. This uses the same mechanism as the "Wake Up" button ' +
+        'in the Clubhouse UI — it reads the agent\'s durable config and spawns a fresh session.\n\n' +
+        'If the agent is already running, this returns immediately without re-spawning.\n\n' +
+        'Set resume=true to resume the agent\'s previous CLI session instead of starting fresh.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          resume: {
+            type: 'boolean',
+            description:
+              'Whether to resume the agent\'s previous CLI session. ' +
+              'Defaults to false (fresh session).',
+          },
+        },
+      },
+    },
+    async (targetId, agentId, args): Promise<McpToolResult> => {
+      const resume = args.resume === true;
+
+      // If already running, nothing to do
+      const reg = agentRegistry.get(targetId);
+      if (reg) {
+        appLog('core:mcp', 'info', 'wake: agent already running', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, runtime: reg.runtime },
+        });
+        return { content: [{ type: 'text', text: `Agent is already running (runtime=${reg.runtime}).` }] };
+      }
+
+      // Look up the calling agent's project path to find the durable config
+      const callerReg = agentRegistry.get(agentId);
+      if (!callerReg) {
+        return { content: [{ type: 'text', text: 'Cannot determine project path — caller agent not registered' }], isError: true };
+      }
+
+      const projectPath = callerReg.projectPath;
+
+      appLog('core:mcp', 'info', 'wake: looking up durable config', {
+        meta: { sourceAgent: agentId, targetAgent: targetId, projectPath, resume },
+      });
+
+      try {
+        const config = await getDurableConfig(projectPath, targetId);
+        if (!config) {
+          return {
+            content: [{ type: 'text', text: `No durable agent config found for ${targetId} in project. The agent may be a quick agent or from a different project.` }],
+            isError: true,
+          };
+        }
+
+        const cwd = config.worktreePath || projectPath;
+
+        await agentSystem.spawnAgent({
+          agentId: targetId,
+          projectPath,
+          cwd,
+          kind: 'durable',
+          model: config.model,
+          orchestrator: config.orchestrator,
+          freeAgentMode: config.freeAgentMode,
+          resume,
+          sessionId: resume ? config.lastSessionId : undefined,
+        });
+
+        appLog('core:mcp', 'info', 'wake: agent spawned successfully', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, resume, cwd },
+        });
+
+        const resumeNote = resume && config.lastSessionId
+          ? ` Resumed session ${config.lastSessionId}.`
+          : '';
+        return {
+          content: [{
+            type: 'text',
+            text: `Agent ${config.name || targetId} woken up successfully.${resumeNote}`,
+          }],
+        };
+      } catch (err) {
+        appLog('core:mcp', 'error', 'wake: failed to spawn agent', {
+          meta: { sourceAgent: agentId, targetAgent: targetId, error: err instanceof Error ? err.message : String(err) },
+        });
+        return {
+          content: [{
+            type: 'text',
+            text: `Failed to wake agent: ${err instanceof Error ? err.message : String(err)}`,
+          }],
+          isError: true,
+        };
+      }
     },
   );
 }

@@ -10,6 +10,18 @@ export function createLifecycleSlice(set: SetAgentState, get: GetAgentState): Ag
   return {
     cancelledAgentIds: {},
 
+    resumingAgents: {},
+
+    setResumeStatus: (agentId, status) => {
+      set((s) => ({
+        resumingAgents: { ...s.resumingAgents, [agentId]: status },
+      }));
+    },
+
+    clearResumingAgents: () => {
+      set({ resumingAgents: {} });
+    },
+
     spawnQuickAgent: async (projectId, projectPath, mission, model, parentAgentId, orchestrator, freeAgentMode) => {
       const agentId = generateQuickAgentId();
       const name = generateQuickName();

@@ -225,6 +225,7 @@ export function registerGroupProjectTools(): void {
         name: project.name,
         description: project.description,
         instructions: project.instructions,
+        systemInstructions: 'Post messages in plain text or markdown format when possible for best readability.',
       };
 
       if (includeMembersList) {

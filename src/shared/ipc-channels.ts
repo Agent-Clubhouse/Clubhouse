@@ -192,6 +192,15 @@ export const IPC = {
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
+    // Session resume on update
+    GET_PENDING_RESUMES: 'app:get-pending-resumes',
+    RESUME_MANUAL_AGENT: 'app:resume-manual-agent',
+    RESUME_STATUS_UPDATE: 'app:resume-status-update',
+    GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
+    RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
+    CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
+    /** Dev-only: simulate update restart to test session resume flow */
+    DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
@@ -331,6 +340,7 @@ export const IPC = {
     DELETE: 'group-project:delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
+    GET_ALL_MESSAGES: 'group-project:get-all-messages',
     CHANGED: 'group-project:changed',
     POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
     SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
@@ -342,6 +352,7 @@ export const IPC = {
     BINDINGS_CHANGED: 'mcp-binding:bindings-changed',
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
+    SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },

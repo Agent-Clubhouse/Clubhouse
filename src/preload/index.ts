@@ -644,6 +644,28 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
     applyUpdate: () =>
       ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getLiveAgentsForUpdate: () =>
+      ipcRenderer.invoke(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE),
+    getPendingResumes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RESUMES),
+    resumeManualAgent: (agentId: string, projectPath: string, sessionId?: string) =>
+      ipcRenderer.invoke(IPC.APP.RESUME_MANUAL_AGENT, agentId, projectPath, sessionId),
+    resolveWorkingAgent: (agentId: string, action: string) =>
+      ipcRenderer.invoke(IPC.APP.RESOLVE_WORKING_AGENT, agentId, action),
+    confirmUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
+      ipcRenderer.invoke(IPC.APP.CONFIRM_UPDATE_RESTART, data),
+    devSimulateUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
+      ipcRenderer.invoke(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, data),
+    onDevSimulateUpdateRestart: (callback: () => void) => {
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener); };
+    },
+    onResumeStatusUpdate: (callback: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => callback(data);
+      ipcRenderer.on(IPC.APP.RESUME_STATUS_UPDATE, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.RESUME_STATUS_UPDATE, listener); };
+    },
     getPendingReleaseNotes: () =>
       ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
     clearPendingReleaseNotes: () =>
@@ -1067,7 +1089,7 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name),
     get: (id: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
-    update: (id: string, fields: { name?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+    update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
@@ -1075,6 +1097,8 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),
+    getAllMessages: (id: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, id, since, limit),
     postBulletinMessage: (projectId: string, topic: string, body: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
     sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
@@ -1097,6 +1121,8 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_BINDING.REGISTER_WEBVIEW, widgetId, webContentsId),
     unregisterWebview: (widgetId: string) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
+    setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;

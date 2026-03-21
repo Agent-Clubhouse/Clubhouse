@@ -58,7 +58,8 @@ export type PluginPermission =
   | 'workspace.cross-plugin'
   | 'workspace.shared'
   | 'workspace.cross-project'
-  | 'canvas';
+  | 'canvas'
+  | 'annex';
 
 export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'files',
@@ -90,6 +91,7 @@ export const ALL_PLUGIN_PERMISSIONS: readonly PluginPermission[] = [
   'workspace.shared',
   'workspace.cross-project',
   'canvas',
+  'annex',
 ] as const;
 
 // ── Permission risk levels ────────────────────────────────────────────
@@ -148,6 +150,9 @@ export const PERMISSION_RISK_LEVELS: Readonly<Record<PluginPermission, Permissio
 
   // elevated — canvas widget registration
   canvas: 'elevated',
+
+  // safe — annex remote-control opt-in
+  annex: 'safe',
 
   // elevated — workspace access
   workspace: 'elevated',
@@ -223,6 +228,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'workspace.shared': 'Allow other plugins with workspace.cross-plugin to read this plugin\'s workspace',
   'workspace.cross-project': 'Access workspace data scoped to other projects where the plugin is enabled',
   canvas: 'Register custom canvas widget types and query canvas widgets',
+  annex: 'Declares this plugin as compatible with Annex remote control',
 };
 
 export interface PluginHelpTopic {

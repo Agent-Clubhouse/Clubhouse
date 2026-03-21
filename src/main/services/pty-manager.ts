@@ -187,6 +187,12 @@ export function getBuffer(agentId: string): string {
   return session ? getSessionBuffer(session) : '';
 }
 
+/** Get the last activity timestamp for an agent's PTY session, or null if no session exists. */
+export function getLastActivity(agentId: string): number | null {
+  const session = sessions.get(agentId);
+  return session ? session.lastActivity : null;
+}
+
 /**
  * Get the serialized terminal state for a PTY session.
  * Returns processed output (escape sequences applied) suitable for

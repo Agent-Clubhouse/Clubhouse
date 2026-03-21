@@ -42,6 +42,12 @@ vi.mock('./pty-manager', () => ({
   isRunning: vi.fn().mockReturnValue(false),
 }));
 
+// Mock file-service
+vi.mock('./file-service', () => ({
+  readTree: vi.fn().mockResolvedValue([]),
+  readFile: vi.fn().mockResolvedValue(''),
+}));
+
 // Mock annex-identity
 vi.mock('./annex-identity', () => ({
   getOrCreateIdentity: vi.fn().mockReturnValue({
@@ -175,6 +181,7 @@ import * as structuredManagerModule from './structured-manager';
 import * as _eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
+import * as fileServiceModule from './file-service';
 import { generateQuickName } from '../../shared/name-generator';
 import { appLog } from './log-service';
 import Bonjour from 'bonjour-service';
@@ -245,6 +252,8 @@ describe('annex-server', () => {
     vi.mocked(agentConfigModule.getWorktreeStatus).mockResolvedValue({ isValid: true, branch: 'main', uncommittedFiles: [], unpushedCommits: [], hasRemote: true } as any);
     vi.mocked(ptyManagerModule.getBuffer).mockReturnValue('');
     vi.mocked(ptyManagerModule.isRunning).mockReturnValue(false);
+    vi.mocked(fileServiceModule.readTree).mockResolvedValue([]);
+    vi.mocked(fileServiceModule.readFile).mockResolvedValue('');
     vi.mocked(agentSystem.isHeadlessAgent).mockReturnValue(false);
     vi.mocked(agentSystem.spawnAgent).mockResolvedValue(undefined);
     vi.mocked(agentSystem.getAvailableOrchestrators).mockReturnValue([]);
@@ -1437,6 +1446,119 @@ describe('annex-server', () => {
     it('does not throw when called without active server', () => {
       // Should be safe to call when no WS server is running
       expect(() => annexServer.broadcastSnapshotRefresh()).not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // File system endpoints (annex remote file access)
+  // -------------------------------------------------------------------------
+
+  describe('file system endpoints', () => {
+    const PROJECT = { id: 'proj_1', name: 'test', path: '/tmp/test-project' };
+
+    beforeEach(() => {
+      vi.mocked(projectStore.list).mockReturnValue([PROJECT]);
+    });
+
+    describe('GET /api/v1/projects/:id/files/tree', () => {
+      it('returns file tree for existing project', async () => {
+        const mockTree = [
+          { name: 'src', type: 'directory', children: [{ name: 'index.ts', type: 'file' }] },
+          { name: 'package.json', type: 'file' },
+        ];
+        vi.mocked(fileServiceModule.readTree).mockResolvedValue(mockTree as any);
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(200);
+        const body = JSON.parse(res.body);
+        expect(body).toEqual(mockTree);
+      }, 10_000);
+
+      it('calls fileService.readTree with project path and default options', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project', { depth: 2, includeHidden: false });
+      }, 10_000);
+
+      it('passes query parameters (path, depth, includeHidden)', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=src&depth=5&includeHidden=true', undefined, authHeaders(token));
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project/src', { depth: 5, includeHidden: true });
+      }, 10_000);
+
+      it('returns 404 for unknown project', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/unknown/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 500 when fileService.readTree fails', async () => {
+        vi.mocked(fileServiceModule.readTree).mockRejectedValue(new Error('EACCES: permission denied'));
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
+        expect(res.status).toBe(500);
+        expect(JSON.parse(res.body).error).toContain('permission denied');
+      }, 10_000);
+    });
+
+    describe('GET /api/v1/projects/:id/files/read', () => {
+      it('returns file content for existing file', async () => {
+        vi.mocked(fileServiceModule.readFile).mockResolvedValue('console.log("hello");');
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(200);
+        expect(res.body).toBe('console.log("hello");');
+      }, 10_000);
+
+      it('calls fileService.readFile with resolved path', async () => {
+        const { port, token } = await startAndPair();
+
+        await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
+        expect(fileServiceModule.readFile).toHaveBeenCalledWith('/tmp/test-project/src/index.ts');
+      }, 10_000);
+
+      it('returns 400 when path parameter is missing', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read', undefined, authHeaders(token));
+        expect(res.status).toBe(400);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_required' });
+      }, 10_000);
+
+      it('returns 404 for unknown project', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/unknown/files/read?path=x.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 404 when file does not exist (ENOENT)', async () => {
+        const err = new Error('ENOENT') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        vi.mocked(fileServiceModule.readFile).mockRejectedValue(err);
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=missing.ts', undefined, authHeaders(token));
+        expect(res.status).toBe(404);
+        expect(JSON.parse(res.body)).toEqual({ error: 'file_not_found' });
+      }, 10_000);
+
+      it('returns 500 for non-ENOENT errors', async () => {
+        vi.mocked(fileServiceModule.readFile).mockRejectedValue(new Error('EACCES: permission denied'));
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=secret.key', undefined, authHeaders(token));
+        expect(res.status).toBe(500);
+        expect(JSON.parse(res.body).error).toContain('permission denied');
+      }, 10_000);
     });
   });
 });

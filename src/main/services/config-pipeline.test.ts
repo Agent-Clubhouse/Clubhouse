@@ -378,7 +378,7 @@ describe('config-pipeline', () => {
     it('returns null when provider does not support hooks', () => {
       const provider = {
         getCapabilities: () => ({ hooks: false } as any),
-        conventions: { configDir: '.opencode', localSettingsFile: 'opencode.json' },
+        conventions: { configDir: '.codex', localSettingsFile: 'config.toml' },
       } as any;
 
       expect(getHooksConfigPath(provider, '/project')).toBeNull();

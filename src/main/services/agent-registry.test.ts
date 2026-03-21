@@ -192,6 +192,29 @@ describe('agent-registry', () => {
     });
   });
 
+  describe('getAllRegistrations', () => {
+    it('returns empty map when no agents registered', () => {
+      const all = agentRegistry.getAllRegistrations();
+      expect(all.size).toBe(0);
+    });
+
+    it('returns all registered agents', () => {
+      agentRegistry.register('agent-1', { projectPath: '/projects/a', orchestrator: 'claude-code', runtime: 'pty' });
+      agentRegistry.register('agent-2', { projectPath: '/projects/b', orchestrator: 'copilot-cli', runtime: 'pty' });
+      const all = agentRegistry.getAllRegistrations();
+      expect(all.size).toBe(2);
+      expect(all.get('agent-1')?.projectPath).toBe('/projects/a');
+      expect(all.get('agent-2')?.orchestrator).toBe('copilot-cli');
+    });
+
+    it('returns a copy — mutations do not affect the registry', () => {
+      agentRegistry.register('agent-1', { projectPath: '/projects/a', orchestrator: 'claude-code', runtime: 'pty' });
+      const copy = agentRegistry.getAllRegistrations();
+      copy.delete('agent-1');
+      expect(agentRegistry.get('agent-1')).toBeDefined();
+    });
+  });
+
   describe('no circular dependency', () => {
     it('does not import from hook-server or agent-system', async () => {
       // This test verifies the module can be imported independently.

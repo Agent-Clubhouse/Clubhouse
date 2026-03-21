@@ -28,6 +28,8 @@ import { useOnboardingStore } from './stores/onboardingStore';
 import { initializePluginSystem } from './plugins/plugin-loader';
 import { rendererLog } from './plugins/renderer-logger';
 import { useToastStore } from './stores/toastStore';
+import { processResumeQueue } from './services/resume-queue';
+import type { RestartSessionState } from '../shared/types';
 
 // ─── Settings Loading ───────────────────────────────────────────────────────
 
@@ -85,6 +87,20 @@ export function initApp(): () => void {
     }, 500);
     cleanups.push(() => clearTimeout(onboardingTimer));
   }
+
+  // 6. Check for pending session resumes after an update restart
+  window.clubhouse.app.getPendingResumes().then((state: unknown) => {
+    if (state && typeof state === 'object' && 'sessions' in state) {
+      const typed = state as RestartSessionState;
+      if (typed.sessions.length > 0) {
+        processResumeQueue(typed);
+      }
+    }
+  }).catch((err: unknown) => {
+    rendererLog('core:resume', 'error', 'Failed to check pending resumes', {
+      meta: { error: err instanceof Error ? err.message : String(err) },
+    });
+  });
 
   return () => {
     for (const cleanup of cleanups) {

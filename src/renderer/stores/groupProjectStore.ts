@@ -6,7 +6,7 @@ interface GroupProjectStoreState {
   loaded: boolean;
   loadProjects: () => Promise<void>;
   create: (name: string) => Promise<GroupProject>;
-  update: (id: string, fields: { name?: string; description?: string; instructions?: string }) => Promise<void>;
+  update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   remove: (id: string) => Promise<void>;
   postBulletinMessage: (projectId: string, topic: string, body: string) => Promise<void>;
   sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;

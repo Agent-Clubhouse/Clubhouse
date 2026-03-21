@@ -542,6 +542,7 @@ export interface SnapshotPluginSummary {
   version: string;
   scope: 'project' | 'app' | 'dual';
   contributes?: unknown;
+  annexEnabled: boolean;
 }
 
 export interface SatelliteSnapshot {
@@ -948,5 +949,38 @@ export interface CanvasStateSnapshot {
   projectId?: string;
   /** Storage scope: 'global' for app mode, 'project' for project mode. */
   scope?: string;
+}
+
+// --- Session Resume on Update types ---
+
+export type ResumeStrategy = 'auto' | 'manual';
+
+export interface RestartSessionEntry {
+  agentId: string;
+  agentName: string;
+  projectPath: string;
+  orchestrator: OrchestratorId;
+  sessionId: string | null;
+  resumeStrategy: ResumeStrategy;
+  worktreePath?: string;
+  kind: AgentKind;
+  mission?: string;
+  model?: string;
+}
+
+export interface RestartSessionState {
+  version: number;
+  capturedAt: string;
+  appVersion: string;
+  sessions: RestartSessionEntry[];
+}
+
+export interface LiveAgentInfo {
+  agentId: string;
+  projectPath: string;
+  orchestrator: OrchestratorId;
+  runtime: string;
+  isWorking: boolean;
+  lastActivity: number | null;
 }
 

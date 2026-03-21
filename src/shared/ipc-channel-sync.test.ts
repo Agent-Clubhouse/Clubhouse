@@ -93,6 +93,8 @@ const MAIN_TO_RENDERER_ONLY_CHANNELS = new Set([
   'IPC.WINDOW.REQUEST_HUB_STATE',
   'IPC.WINDOW.REQUEST_HUB_MUTATION',
   'IPC.FILE.WATCH_EVENT',
+  'IPC.APP.RESUME_STATUS_UPDATE',
+  'IPC.APP.DEV_SIMULATE_UPDATE_RESTART', // Dev-only: handler registered behind !app.isPackaged guard
 ]);
 
 /**

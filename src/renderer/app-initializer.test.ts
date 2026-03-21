@@ -126,6 +126,7 @@ describe('initApp', () => {
     (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     cleanup = initApp();
   });
 
@@ -185,6 +186,7 @@ describe('initApp – onboarding', () => {
     (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     cleanup = initApp();
   });
 

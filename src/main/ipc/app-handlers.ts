@@ -21,6 +21,9 @@ import * as annexServer from '../services/annex-server';
 import * as experimentalSettings from '../services/experimental-settings';
 import { withValidatedArgs, stringArg, objectArg, numberArg, booleanArg } from './validation';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
+import { getLiveAgentsForUpdate, loadPendingResume, clearPendingResume, captureSessionState } from '../services/restart-session-service';
+import * as ptyManager from '../services/pty-manager';
+import * as agentSystem from '../services/agent-system';
 
 export function registerAppHandlers(): void {
   ipcMain.handle(IPC.APP.OPEN_EXTERNAL_URL, withValidatedArgs(
@@ -336,4 +339,99 @@ export function registerAppHandlers(): void {
       await experimentalSettings.saveSettings(settings);
     },
   ));
+
+  // --- Session resume on update ---
+
+  ipcMain.handle(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE, () => {
+    return getLiveAgentsForUpdate();
+  });
+
+  ipcMain.handle(IPC.APP.GET_PENDING_RESUMES, async () => {
+    // Read-once: load the state, then clear the file so it won't be
+    // re-read on a subsequent call or crash-restart loop.
+    const state = await loadPendingResume();
+    if (state) {
+      await clearPendingResume();
+    }
+    return state;
+  });
+
+  ipcMain.handle(IPC.APP.RESUME_MANUAL_AGENT, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg({ optional: true })],
+    async (_event, agentId, projectPath, sessionId) => {
+      await agentSystem.spawnAgent({
+        agentId,
+        projectPath,
+        cwd: projectPath,
+        kind: 'durable',
+        resume: true,
+        sessionId: sessionId || undefined,
+      });
+    },
+  ));
+
+  ipcMain.handle(IPC.APP.RESOLVE_WORKING_AGENT, withValidatedArgs(
+    [stringArg(), stringArg()],
+    async (_event, agentId, action) => {
+      if (action === 'interrupt') {
+        ptyManager.write(agentId, '\x03');
+      } else if (action === 'kill') {
+        ptyManager.kill(agentId);
+      }
+    },
+  ));
+
+  ipcMain.handle(IPC.APP.CONFIRM_UPDATE_RESTART, withValidatedArgs(
+    [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
+    async (_event, data) => {
+      const agentNames = new Map(Object.entries(data.agentNames));
+
+      let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string }> | undefined;
+      if (data.agentMeta) {
+        agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
+      }
+
+      await captureSessionState(agentNames, agentMeta);
+
+      const { restoreAll } = await import('../services/config-pipeline');
+      const { flushAllAgentConfigs } = await import('../services/agent-config');
+      await flushAllAgentConfigs();
+      restoreAll();
+
+      await autoUpdateService.applyUpdate();
+    },
+  ));
+
+  // Dev-only: simulate update restart to test session resume flow.
+  // Guarded by app.isPackaged — this handler is a no-op in production builds.
+  if (!app.isPackaged) {
+    ipcMain.handle(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, withValidatedArgs(
+      [objectArg<{ agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }>()],
+      async (_event, data) => {
+        const agentNames = new Map(Object.entries(data.agentNames));
+
+        let agentMeta: Map<string, { kind: 'durable' | 'quick'; mission?: string; model?: string; worktreePath?: string }> | undefined;
+        if (data.agentMeta) {
+          agentMeta = new Map(Object.entries(data.agentMeta)) as typeof agentMeta;
+        }
+
+        await captureSessionState(agentNames, agentMeta);
+
+        const { restoreAll } = await import('../services/config-pipeline');
+        const { flushAllAgentConfigs } = await import('../services/agent-config');
+        await flushAllAgentConfigs();
+        restoreAll();
+
+        // In dev mode, app.relaunch() + app.exit() kills the Forge dev server.
+        // Instead, kill all PTY sessions and reload the renderer window —
+        // this simulates the "restart" without killing the parent process.
+        const { killAll } = await import('../services/pty-manager');
+        await killAll();
+
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.reload();
+        }
+      },
+    ));
+  }
 }

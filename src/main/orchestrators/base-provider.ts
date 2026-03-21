@@ -6,6 +6,7 @@ import type {
   OrchestratorProvider,
   OrchestratorConventions,
   ProviderCapabilities,
+  PasteSubmitTiming,
   SpawnOpts,
   SpawnCommandResult,
 } from './types';
@@ -168,5 +169,10 @@ export abstract class BaseProvider implements OrchestratorProvider {
   /** Environment variable keys used for config isolation */
   getProfileEnvKeys(): string[] {
     return [...this.configEnvKeys];
+  }
+
+  /** Default paste submit timing — works for Claude Code's paste preview flow */
+  getPasteSubmitTiming(): PasteSubmitTiming {
+    return { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
   }
 }

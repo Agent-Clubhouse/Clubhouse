@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -69,9 +69,17 @@ jobs:
       - name: Build app
         run: npx electron-forge package
       - name: Run E2E tests (excluding Annex dual-instance)
+        if: runner.os != 'Linux'
         run: npx playwright test --config=playwright.config.ts
         env:
           PLAYWRIGHT_IGNORE_ANNEX: '1'
+      - name: Run E2E tests (Linux — requires virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test --config=playwright.config.ts
+        env:
+          PLAYWRIGHT_IGNORE_ANNEX: '1'
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -84,7 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -99,12 +107,45 @@ jobs:
       - name: Build app
         run: npx electron-forge package
       - name: Run Annex E2E tests
+        if: runner.os != 'Linux'
         run: npx playwright test e2e/annex-v2/
+      - name: Run Annex E2E tests (Linux — requires virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test e2e/annex-v2/
+        env:
+          # chrome-sandbox is not SUID root on GitHub runners
+          ELECTRON_DISABLE_SANDBOX: '1'
       - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: annex-traces-${{ matrix.os }}
           path: test-results/
+
+  make-linux:
+    name: Linux Package Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg fakeroot rpm
+      - name: Build .deb and .rpm packages
+        run: npx electron-forge make
+      - name: Verify packages were produced
+        run: |
+          DEB_COUNT=$(find out/make -name "*.deb" -type f | wc -l)
+          RPM_COUNT=$(find out/make -name "*.rpm" -type f | wc -l)
+          echo "Found ${DEB_COUNT} .deb and ${RPM_COUNT} .rpm packages"
+          if [ "$DEB_COUNT" -eq 0 ] && [ "$RPM_COUNT" -eq 0 ]; then
+            echo "::error::No Linux packages were produced"
+            exit 1
+          fi
 
   api-surface:
     name: API Surface Check

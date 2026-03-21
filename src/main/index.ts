@@ -17,6 +17,7 @@ import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast'
 import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
+import { loadPendingResume } from './services/restart-session-service';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -195,6 +196,18 @@ app.on('ready', () => {
   // Start stale session sweeps (safety net for leaked sessions)
   startPtyStaleSweep();
   startHeadlessStaleSweep();
+
+  // Check for pending session resumes from a previous update restart.
+  // Just log here — the renderer reads the file via GET_PENDING_RESUMES IPC
+  // and clears it after processing. We don't clear here to avoid a race
+  // condition where the file is deleted before the renderer reads it.
+  loadPendingResume().then((pendingState) => {
+    if (pendingState && pendingState.sessions.length > 0) {
+      appLog('core:startup', 'info', `Found ${pendingState.sessions.length} sessions to resume after update`);
+    }
+  }).catch((err) => {
+    appLog('core:startup', 'error', `Failed to load pending resumes: ${err instanceof Error ? err.message : String(err)}`);
+  });
 
   // macOS notification permission is triggered on-demand when the user
   // sends their first test notification or an agent event fires.

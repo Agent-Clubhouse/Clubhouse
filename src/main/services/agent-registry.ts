@@ -40,6 +40,10 @@ class AgentRegistry {
   untrack(agentId: string): void {
     this.registrations.delete(agentId);
   }
+
+  getAllRegistrations(): Map<string, AgentRegistration> {
+    return new Map(this.registrations);
+  }
 }
 
 export const agentRegistry = new AgentRegistry();

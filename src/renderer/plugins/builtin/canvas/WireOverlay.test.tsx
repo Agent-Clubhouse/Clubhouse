@@ -37,7 +37,7 @@ function makeGroupProjectView(id: string, groupProjectId: string, x = 300, y = 0
   return {
     id,
     type: 'plugin',
-    pluginWidgetType: 'plugin:group-project:group-project-card',
+    pluginWidgetType: 'plugin:group-project:group-project',
     pluginId: 'group-project',
     position: { x, y },
     size: { width: 200, height: 200 },

@@ -151,6 +151,31 @@ describe('MCP Injection', () => {
       expect(content.mcpServers.clubhouse).toBeDefined();
     });
 
+    it('skips file-based injection for TOML config format (Codex CLI)', async () => {
+      mockIsMcpEnabled.mockReturnValue(true);
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+        configDir: '.codex',
+        mcpConfigFile: '.codex/config.toml',
+        settingsFormat: 'toml',
+      });
+
+      // No config file should be created — TOML orchestrators get MCP via CLI args instead
+      const files = await fsp.readdir(tmpDir);
+      expect(files).toHaveLength(0);
+    });
+
+    it('still injects for JSON config format', async () => {
+      mockIsMcpEnabled.mockReturnValue(true);
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+        configDir: '.claude',
+        mcpConfigFile: '.mcp.json',
+        settingsFormat: 'json',
+      });
+
+      const content = JSON.parse(await fsp.readFile(path.join(tmpDir, '.mcp.json'), 'utf-8'));
+      expect(content.mcpServers.clubhouse).toBeDefined();
+    });
+
     it('no temp files left behind after injection', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1');
