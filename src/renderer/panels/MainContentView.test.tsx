@@ -75,9 +75,6 @@ vi.mock('../features/settings/AnnexSettingsView', () => ({
 vi.mock('../features/settings/WhatsNewSettingsView', () => ({
   WhatsNewSettingsView: () => <div />,
 }));
-vi.mock('../features/settings/GettingStartedSettingsView', () => ({
-  GettingStartedSettingsView: () => <div />,
-}));
 vi.mock('../features/settings/KeyboardShortcutsSettingsView', () => ({
   KeyboardShortcutsSettingsView: () => <div />,
 }));

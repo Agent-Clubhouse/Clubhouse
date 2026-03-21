@@ -75,7 +75,6 @@ function SettingsCategoryNav() {
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}
-            {navButton('Getting Started', 'getting-started')}
             {navButton("What's New", 'whats-new')}
           </>
         ) : (

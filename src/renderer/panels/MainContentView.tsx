@@ -25,7 +25,6 @@ import { UpdateSettingsView } from '../features/settings/UpdateSettingsView';
 import { AnnexSettingsView } from '../features/settings/AnnexSettingsView';
 import { AnnexControlSettingsView } from '../features/settings/AnnexControlSettingsView';
 import { WhatsNewSettingsView } from '../features/settings/WhatsNewSettingsView';
-import { GettingStartedSettingsView } from '../features/settings/GettingStartedSettingsView';
 import { KeyboardShortcutsSettingsView } from '../features/settings/KeyboardShortcutsSettingsView';
 import { EditorSettingsView } from '../features/settings/EditorSettingsView';
 import { ExperimentalSettingsView } from '../features/settings/ExperimentalSettingsView';
@@ -233,7 +232,6 @@ export function MainContentView() {
     if (settingsSubPage === 'annex-control') return <AnnexControlSettingsView />;
     if (settingsSubPage === 'updates') return <UpdateSettingsView />;
     if (settingsSubPage === 'whats-new') return <WhatsNewSettingsView />;
-    if (settingsSubPage === 'getting-started') return <GettingStartedSettingsView />;
     if (settingsSubPage === 'keyboard-shortcuts') return <KeyboardShortcutsSettingsView />;
     if (settingsSubPage === 'mcp') return <McpSettingsView />;
     if (settingsSubPage === 'experimental') return <ExperimentalSettingsView />;
