@@ -5,6 +5,15 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] },
 }));
 
+const mockMkdir = vi.fn().mockResolvedValue(undefined);
+const mockWriteFile = vi.fn().mockResolvedValue(undefined);
+const mockUnlink = vi.fn().mockResolvedValue(undefined);
+vi.mock('fs/promises', () => ({
+  mkdir: (...args: unknown[]) => mockMkdir(...args),
+  writeFile: (...args: unknown[]) => mockWriteFile(...args),
+  unlink: (...args: unknown[]) => mockUnlink(...args),
+}));
+
 const mockAgentRegistryGet = vi.fn();
 vi.mock('../../agent-registry', () => ({
   agentRegistry: {
@@ -34,7 +43,7 @@ vi.mock('../../../orchestrators', () => ({
   getProvider: (id: string) => mockGetProvider(id),
 }));
 
-import { registerAgentTools } from './agent-tools';
+import { registerAgentTools, writeMessageFile, scheduleMessageCleanup } from './agent-tools';
 import { getScopedToolList, callTool, buildToolName, _resetForTesting as resetTools } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import type { McpBinding } from '../types';
@@ -77,6 +86,9 @@ describe('AgentTools', () => {
     mockPtyGetBuffer.mockReset();
     mockStructuredSendMessage.mockReset();
     mockGetProvider.mockReset();
+    mockMkdir.mockReset().mockResolvedValue(undefined);
+    mockWriteFile.mockReset().mockResolvedValue(undefined);
+    mockUnlink.mockReset().mockResolvedValue(undefined);
 
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
@@ -138,7 +150,7 @@ describe('AgentTools', () => {
       expect(secondWrite[1]).toBe('\r');
     });
 
-    it('wraps multi-line message in bracketed paste sequences', async () => {
+    it('writes multi-line message to temp file and sends single-line reference', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const result = await sendMessage('agent-1', sendToolName, {
         message: 'line one\nline two\nline three',
@@ -146,18 +158,33 @@ describe('AgentTools', () => {
       });
       expect(result.isError).toBeFalsy();
 
-      // First write: bracketed paste wrapping
+      // Should have written full message to temp file
+      expect(mockMkdir).toHaveBeenCalledWith(
+        expect.stringContaining('clubhouse-a2a-messages'),
+        { recursive: true },
+      );
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('ml1.md'),
+        expect.stringContaining('line one\nline two\nline three'),
+        'utf-8',
+      );
+
+      // PTY write: single-line file reference (no bracketed paste)
       const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
-      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
-      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
+      expect(firstWrite).not.toContain('\x1b[200~');
+      expect(firstWrite).not.toContain('\n');
       expect(firstWrite).toContain('[TASK:ml1]');
-      expect(firstWrite).toContain('line one\nline two\nline three');
+      expect(firstWrite).toContain('saved to');
+      expect(firstWrite).toContain('ml1.md');
 
       // Second write: delayed \r submit
       expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
+
+      // Result should note file-backed delivery
+      expect(result.content[0].text).toContain('Multi-line message delivered via temp file');
     });
 
-    it('uses bracketed paste for bidirectional messages (reply instructions contain newlines)', async () => {
+    it('uses file-backed delivery for bidirectional messages (reply instructions contain newlines)', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       // Create reverse binding: agent-2 → agent-1
       bindingManager.bind('agent-2', {
@@ -168,13 +195,22 @@ describe('AgentTools', () => {
       const result = await sendMessage('agent-1', sendToolName, { message: 'do something', task_id: 'bidir1' });
       expect(result.isError).toBeFalsy();
 
+      // Bidirectional appends \n\n---\n... so file should contain reply instructions
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('bidir1.md'),
+        expect.stringContaining('Reply to mega-camel via tool'),
+        'utf-8',
+      );
+      const fileContent = mockWriteFile.mock.calls[0][1] as string;
+      expect(fileContent).toContain('clubhouse__');
+      expect(fileContent).toContain('task_id="bidir1"');
+
+      // PTY write: single-line file reference (no bracketed paste)
       const firstWrite = mockPtyWrite.mock.calls[0][1] as string;
-      // Bidirectional appends \n\n---\n... so it should use bracketed paste
-      expect(firstWrite.startsWith('\x1b[200~')).toBe(true);
-      expect(firstWrite.endsWith('\x1b[201~')).toBe(true);
-      expect(firstWrite).toContain('Reply to mega-camel via tool');
-      expect(firstWrite).toContain('clubhouse__');
-      expect(firstWrite).toContain('task_id="bidir1"');
+      expect(firstWrite).not.toContain('\x1b[200~');
+      expect(firstWrite).not.toContain('\n');
+      expect(firstWrite).toContain('[TASK:bidir1]');
+      expect(firstWrite).toContain('saved to');
 
       // Result should indicate bidirectional
       expect(result.content[0].text).toContain('Bidirectional');
@@ -247,11 +283,18 @@ describe('AgentTools', () => {
       });
       expect(result.isError).toBeFalsy();
 
-      // Only 1 write: bracketed paste, no \r
+      // File should be written
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('mlnosubmit.md'),
+        expect.stringContaining('line1\nline2'),
+        'utf-8',
+      );
+
+      // Only 1 PTY write: single-line file reference, no \r
       expect(mockPtyWrite).toHaveBeenCalledTimes(1);
       const written = mockPtyWrite.mock.calls[0][1] as string;
-      expect(written.startsWith('\x1b[200~')).toBe(true);
-      expect(written.endsWith('\x1b[201~')).toBe(true);
+      expect(written).not.toContain('\n');
+      expect(written).toContain('saved to');
     });
 
     it('uses provider-specific paste timing for copilot-cli agents', async () => {
@@ -514,6 +557,44 @@ describe('AgentTools', () => {
       expect(r2.isError).toBeFalsy();
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-2', expect.stringContaining('[TASK:x1]'));
       expect(mockPtyWrite).toHaveBeenCalledWith('agent-3', expect.stringContaining('[TASK:x2]'));
+    });
+  });
+
+  describe('file-backed message delivery', () => {
+    it('writeMessageFile creates directory and writes content', async () => {
+      const filePath = await writeMessageFile('test-task', 'hello\nworld');
+      expect(mockMkdir).toHaveBeenCalledWith(
+        expect.stringContaining('clubhouse-a2a-messages'),
+        { recursive: true },
+      );
+      expect(mockWriteFile).toHaveBeenCalledWith(filePath, 'hello\nworld', 'utf-8');
+      expect(filePath).toContain('test-task.md');
+    });
+
+    it('scheduleMessageCleanup deletes file after delay', async () => {
+      scheduleMessageCleanup('/tmp/test.md', 1000);
+      expect(mockUnlink).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockUnlink).toHaveBeenCalledWith('/tmp/test.md');
+    });
+
+    it('scheduleMessageCleanup ignores missing files', async () => {
+      mockUnlink.mockRejectedValueOnce(new Error('ENOENT'));
+      scheduleMessageCleanup('/tmp/gone.md', 100);
+      // Should not throw
+      await vi.advanceTimersByTimeAsync(100);
+    });
+
+    it('does not use file-backed delivery for single-line messages', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const sendToolName = agentToolName(sourceBinding, 'send_message');
+      await sendMessage('agent-1', sendToolName, { message: 'single line', task_id: 'sl1' });
+
+      // No file operations
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      // Direct PTY write with the message
+      expect(mockPtyWrite.mock.calls[0][1]).toContain('single line');
     });
   });
 
