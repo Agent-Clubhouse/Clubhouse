@@ -528,6 +528,61 @@ describe('CodexCliProvider', () => {
     });
   });
 
+  describe('buildMcpArgs', () => {
+    const mockServerDef = {
+      type: 'stdio',
+      command: 'node',
+      args: ['/mock/bridge.js'],
+      env: { CLUBHOUSE_MCP_PORT: '12345', CLUBHOUSE_AGENT_ID: 'agent-1', CLUBHOUSE_HOOK_NONCE: 'nonce-1' },
+    };
+
+    it('returns -c flags for command', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      expect(args).toContain('-c');
+      const commandArg = args.find(a => a.includes('mcp_servers.clubhouse.command='));
+      expect(commandArg).toBeDefined();
+      expect(commandArg).toContain('"node"');
+    });
+
+    it('returns -c flags for args array', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      const argsArg = args.find(a => a.includes('mcp_servers.clubhouse.args='));
+      expect(argsArg).toBeDefined();
+      expect(argsArg).toContain('"/mock/bridge.js"');
+    });
+
+    it('returns -c flags for each env var', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      const portArg = args.find(a => a.includes('mcp_servers.clubhouse.env.CLUBHOUSE_MCP_PORT='));
+      expect(portArg).toBeDefined();
+      expect(portArg).toContain('"12345"');
+
+      const agentArg = args.find(a => a.includes('mcp_servers.clubhouse.env.CLUBHOUSE_AGENT_ID='));
+      expect(agentArg).toBeDefined();
+      expect(agentArg).toContain('"agent-1"');
+    });
+
+    it('all -c flags are paired', () => {
+      const args = provider.buildMcpArgs(mockServerDef);
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '-c') {
+          expect(args[i + 1]).toBeDefined();
+          expect(args[i + 1]).toContain('mcp_servers.clubhouse');
+        }
+      }
+    });
+
+    it('handles server with no args', () => {
+      const args = provider.buildMcpArgs({ command: 'node' });
+      expect(args.some(a => a.includes('.args='))).toBe(false);
+    });
+
+    it('handles server with no env', () => {
+      const args = provider.buildMcpArgs({ command: 'node' });
+      expect(args.some(a => a.includes('.env.'))).toBe(false);
+    });
+  });
+
   describe('createStructuredAdapter', () => {
     it('returns a StructuredAdapter with required methods', () => {
       const adapter = provider.createStructuredAdapter();

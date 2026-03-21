@@ -406,7 +406,7 @@ describe('materialization-service', () => {
       expect(skillRm).toBeUndefined();
     });
 
-    it('skips MCP JSON write for TOML settings format', async () => {
+    it('writes TOML MCP config for TOML settings format', async () => {
       const tomlConventions: OrchestratorConventions = {
         ...testConventions,
         mcpConfigFile: '.codex/config.toml',
@@ -424,7 +424,7 @@ describe('materialization-service', () => {
         quickOverrides: {},
         agentDefaults: {
           instructions: 'Agent @@AgentName',
-          mcpJson: '{"mcpServers": {"test": {}}}',
+          mcpJson: '{"mcpServers": {"test": {"command": "node", "args": ["/test.js"]}}}',
           permissions: { allow: ['shell(git:*)'] },
         },
       }));
@@ -434,10 +434,13 @@ describe('materialization-service', () => {
       // Instructions should still be written via the provider
       expect(tomlProvider.writeInstructions).toHaveBeenCalled();
 
-      // MCP JSON should NOT be written to filesystem (via fsp.writeFile)
+      // MCP config should be written as TOML to config.toml
       const fspWrites = vi.mocked(fsp.writeFile).mock.calls;
       const tomlFspWrites = fspWrites.filter((c) => String(c[0]).includes('config.toml'));
-      expect(tomlFspWrites).toHaveLength(0);
+      expect(tomlFspWrites.length).toBeGreaterThan(0);
+      const tomlContent = String(tomlFspWrites[0][1]);
+      expect(tomlContent).toContain('[mcp_servers.test]');
+      expect(tomlContent).toContain('command = "node"');
     });
   });
 

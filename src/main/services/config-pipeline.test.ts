@@ -262,6 +262,92 @@ describe('config-pipeline', () => {
         'utf-8',
       );
     });
+
+    // ── TOML restore tests ─────────────────────────────────────
+
+    it('strips Clubhouse MCP from TOML config on restore (file existed)', async () => {
+      const originalToml = '[mcp_servers.user-server]\ncommand = "python"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(originalToml);
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      // Current file has user server + injected clubhouse
+      const currentToml = [
+        '[mcp_servers.user-server]',
+        'command = "python"',
+        '',
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+        '',
+        '[mcp_servers.clubhouse.env]',
+        'CLUBHOUSE_MCP_PORT = "12345"',
+      ].join('\n');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).toContain('[mcp_servers.user-server]');
+      expect(written).not.toContain('[mcp_servers.clubhouse]');
+    });
+
+    it('deletes TOML config when file did not exist and only clubhouse remains', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(pathExists).mockResolvedValue(true);
+      const currentToml = '[mcp_servers.clubhouse]\ncommand = "node"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.unlink).toHaveBeenCalledWith(
+        path.resolve('/project/.codex/config.toml'),
+      );
+    });
+
+    it('preserves non-clubhouse content in TOML when file did not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('ENOENT'));
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(pathExists).mockResolvedValue(true);
+      const currentToml = [
+        '[mcp_servers.user-server]',
+        'command = "python"',
+        '',
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+      ].join('\n');
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(currentToml);
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.unlink).not.toHaveBeenCalled();
+      expect(fsp.writeFile).toHaveBeenCalledTimes(1);
+      const written = vi.mocked(fsp.writeFile).mock.calls[0][1] as string;
+      expect(written).toContain('[mcp_servers.user-server]');
+      expect(written).not.toContain('[mcp_servers.clubhouse]');
+    });
+
+    it('falls back to original TOML when current file is unreadable', async () => {
+      const originalToml = '[mcp_servers.user-server]\ncommand = "python"\n';
+      vi.mocked(fsp.readFile).mockResolvedValueOnce(originalToml);
+
+      await snapshotFile('agent-1', '/project/.codex/config.toml');
+
+      vi.mocked(fsp.readFile).mockRejectedValueOnce(new Error('EACCES'));
+
+      await restoreForAgent('agent-1');
+
+      expect(fsp.writeFile).toHaveBeenCalledWith(
+        path.resolve('/project/.codex/config.toml'),
+        originalToml,
+        'utf-8',
+      );
+    });
   });
 
   describe('restoreAll', () => {
