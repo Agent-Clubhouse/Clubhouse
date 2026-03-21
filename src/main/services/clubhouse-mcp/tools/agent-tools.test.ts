@@ -67,16 +67,19 @@ function agentToolName(binding: McpBinding, suffix: string): string {
 }
 
 /**
- * Helper: call send_message and advance fake timers so the delayed \r
- * retries and buffer checks all resolve. Must be called within a
- * fake-timer context (vi.useFakeTimers).
+ * Helper: call send_message and advance fake timers so the chunked paste
+ * delays and the delayed \r retries / buffer checks all resolve.
+ * Must be called within a fake-timer context (vi.useFakeTimers).
  *
- * Timeline: 200ms (1st \r) + 200ms (retry check / 2nd \r) + 200ms (final buffer check) = 600ms
+ * Timeline (default provider):
+ *   Paste marker delays: ~60ms (30ms after start + 30ms before end)
+ *   Enter sequence: 350ms (1st \r) + 300ms (retry / 2nd \r) + 250ms (final check) = 900ms
+ *   Total: ~960ms — we advance 1000ms for headroom.
  */
 async function sendMessage(agentId: string, toolName: string, args: Record<string, unknown>) {
   const promise = callTool(agentId, toolName, args);
-  // Advance through all three setTimeout stages
-  await vi.advanceTimersByTimeAsync(600);
+  // Advance through paste delays + all three setTimeout stages
+  await vi.advanceTimersByTimeAsync(1000);
   return promise;
 }
 
@@ -105,9 +108,9 @@ describe('AgentTools', () => {
     // Default buffer mock for post-send heuristic
     mockPtyGetBuffer.mockReturnValue('');
 
-    // Default provider mock — returns Claude Code timing (200/200/200)
+    // Default provider mock — returns Claude Code timing with chunking
     mockGetProvider.mockReturnValue({
-      getPasteSubmitTiming: () => ({ initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 }),
+      getPasteSubmitTiming: () => ({ initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 }),
     });
 
     registerAgentTools();
@@ -172,10 +175,10 @@ describe('AgentTools', () => {
       });
       expect(result.isError).toBeFalsy();
 
-      // Chunked paste: start marker, body (single chunk for default provider), end marker
+      // Chunked paste: start marker, body (fits in single 512-byte chunk), end marker
       const writes = mockPtyWrite.mock.calls.map(c => c[1]);
       expect(writes[0]).toBe('\x1b[200~');
-      // Body contains the full tagged message (no chunkSize → single write)
+      // Body fits within chunkSize (512) so it's a single write
       expect(writes[1]).toContain('[TASK:ml1]');
       expect(writes[1]).toContain('line one\nline two\nline three');
       expect(writes[2]).toBe('\x1b[201~');
@@ -285,33 +288,33 @@ describe('AgentTools', () => {
     it('uses provider-specific paste timing for copilot-cli agents', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'copilot-cli' });
       mockGetProvider.mockReturnValue({
-        getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 }),
+        getPasteSubmitTiming: () => ({ initialDelayMs: 800, retryDelayMs: 600, finalCheckDelayMs: 400 }),
       });
 
       // Buffer stays empty → retry path
       mockPtyGetBuffer.mockReturnValue('');
       const promise = callTool('agent-1', sendToolName, { message: 'hello', task_id: 'cop1' });
 
-      // After 400ms only the message write should have happened (no Enter yet)
-      await vi.advanceTimersByTimeAsync(400);
+      // After 700ms only the message write should have happened (no Enter yet)
+      await vi.advanceTimersByTimeAsync(700);
       expect(mockPtyWrite).toHaveBeenCalledTimes(1);
 
-      // At 500ms the first Enter fires
+      // At 800ms the first Enter fires
       await vi.advanceTimersByTimeAsync(100);
       expect(mockPtyWrite).toHaveBeenCalledTimes(2);
       expect(mockPtyWrite.mock.calls[1][1]).toBe('\r');
 
-      // At 900ms (not yet 1000ms) no second Enter yet
-      await vi.advanceTimersByTimeAsync(400);
+      // At 1300ms (not yet 1400ms) no second Enter yet
+      await vi.advanceTimersByTimeAsync(500);
       expect(mockPtyWrite).toHaveBeenCalledTimes(2);
 
-      // At 1000ms the second Enter fires
+      // At 1400ms the second Enter fires
       await vi.advanceTimersByTimeAsync(100);
       expect(mockPtyWrite).toHaveBeenCalledTimes(3);
       expect(mockPtyWrite.mock.calls[2][1]).toBe('\r');
 
       // Drain the final check delay
-      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(400);
       await promise;
     });
 
@@ -322,8 +325,8 @@ describe('AgentTools', () => {
       mockPtyGetBuffer.mockReturnValue('');
       const promise = callTool('agent-1', sendToolName, { message: 'hello', task_id: 'fb1' });
 
-      // Falls back to 200/200/200 — total 600ms
-      await vi.advanceTimersByTimeAsync(600);
+      // Falls back to 350/300/250 — total 900ms
+      await vi.advanceTimersByTimeAsync(1000);
       await promise;
 
       // message + 2x \r (retry because buffer didn't grow)
@@ -546,8 +549,11 @@ describe('AgentTools', () => {
   });
 
   describe('writeChunkedBracketedPaste', () => {
-    it('sends start, body, end in single write when no chunkSize', async () => {
-      await writeChunkedBracketedPaste('agent-2', 'hello\nworld');
+    it('sends start, body, end with marker delays even without chunking', async () => {
+      const promise = writeChunkedBracketedPaste('agent-2', 'hello\nworld');
+      // Default chunkDelayMs=30 → 30ms after start + 30ms before end = 60ms
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
       expect(mockPtyWrite).toHaveBeenCalledTimes(3);
       expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
       expect(mockPtyWrite.mock.calls[1][1]).toBe('hello\nworld');
@@ -557,7 +563,8 @@ describe('AgentTools', () => {
     it('chunks body when chunkSize is set', async () => {
       const body = 'ABCDEFGHIJ'; // 10 chars
       const promise = writeChunkedBracketedPaste('agent-2', body, 4, 10);
-      // Need to advance timers for the sleep() calls between chunks
+      // Need to advance timers for the sleep() calls:
+      // 10ms after start marker + 10ms between chunk1-2 + 10ms between chunk2-3 + 10ms before end marker = 40ms
       await vi.advanceTimersByTimeAsync(100);
       await promise;
 
@@ -571,9 +578,59 @@ describe('AgentTools', () => {
     });
 
     it('sends body as single write when it fits in one chunk', async () => {
-      await writeChunkedBracketedPaste('agent-2', 'hi', 256);
+      const promise = writeChunkedBracketedPaste('agent-2', 'hi', 256);
+      await vi.advanceTimersByTimeAsync(100);
+      await promise;
       expect(mockPtyWrite).toHaveBeenCalledTimes(3);
       expect(mockPtyWrite.mock.calls[1][1]).toBe('hi');
+    });
+
+    it('always delays after start marker and before end marker', async () => {
+      const body = 'ABCDEF'; // 6 chars, chunkSize=3 → 2 chunks
+      const chunkDelayMs = 20;
+      const promise = writeChunkedBracketedPaste('agent-2', body, 3, chunkDelayMs);
+
+      // At t=0: start marker written immediately
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+      expect(mockPtyWrite.mock.calls[0][1]).toBe('\x1b[200~');
+
+      // At t=20ms: first chunk written (after post-start delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('ABC');
+
+      // At t=40ms: second chunk written (after inter-chunk delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('DEF');
+
+      // At t=60ms: end marker written (after pre-end delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(4);
+      expect(mockPtyWrite.mock.calls[3][1]).toBe('\x1b[201~');
+
+      await promise;
+    });
+
+    it('still adds marker delays when body fits in a single write', async () => {
+      // Even when body <= chunkSize, marker delays are applied
+      const chunkDelayMs = 50;
+      const promise = writeChunkedBracketedPaste('agent-2', 'AB', 256, chunkDelayMs);
+
+      // At t=0: start marker written
+      expect(mockPtyWrite).toHaveBeenCalledTimes(1);
+
+      // At t=50ms: body written (after post-start delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(2);
+      expect(mockPtyWrite.mock.calls[1][1]).toBe('AB');
+
+      // At t=100ms: end marker written (after pre-end delay)
+      await vi.advanceTimersByTimeAsync(chunkDelayMs);
+      expect(mockPtyWrite).toHaveBeenCalledTimes(3);
+      expect(mockPtyWrite.mock.calls[2][1]).toBe('\x1b[201~');
+
+      await promise;
     });
   });
 
@@ -586,7 +643,7 @@ describe('AgentTools', () => {
         content: 'multi\nline\ncontent',
         task_id: 'sf1',
       });
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(400);
       const result = await promise;
 
       expect(result.isError).toBeFalsy();
@@ -640,7 +697,7 @@ describe('AgentTools', () => {
         task_id: 'sf3',
         filename: 'data.json',
       });
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(400);
       await promise;
 
       expect(mockWriteFile).toHaveBeenCalledWith(

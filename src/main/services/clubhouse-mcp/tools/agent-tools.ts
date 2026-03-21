@@ -27,13 +27,16 @@ function sleep(ms: number): Promise<void> {
 /**
  * Write multi-line content to a PTY using chunked bracketed paste.
  *
- * Sends the bracketed paste start marker, then the body in chunks with
- * small delays between them, then the end marker.  This gives slow CLIs
- * (e.g. GHCP) time to process each piece of the paste rather than
- * receiving one massive write that can be mangled or truncated.
+ * Sends the bracketed paste start marker, then the body (optionally in
+ * chunks with delays between them), then the end marker.
  *
- * When chunkSize is undefined the body is sent in a single write
- * (existing behaviour).
+ * Small delays are ALWAYS inserted after the start marker and before the
+ * end marker to prevent race conditions where the CLI hasn't entered or
+ * exited paste mode before content/markers arrive.  This applies to all
+ * providers, not just slow CLIs.
+ *
+ * When chunkSize is set and the body exceeds it, the body is split into
+ * chunks with `chunkDelayMs` between each write.
  */
 export async function writeChunkedBracketedPaste(
   agentId: string,
@@ -43,6 +46,9 @@ export async function writeChunkedBracketedPaste(
 ): Promise<void> {
   ptyManager.write(agentId, '\x1b[200~');
 
+  // Always delay after start marker so the CLI can enter paste mode
+  await sleep(chunkDelayMs);
+
   if (!chunkSize || body.length <= chunkSize) {
     ptyManager.write(agentId, body);
   } else {
@@ -51,6 +57,9 @@ export async function writeChunkedBracketedPaste(
       ptyManager.write(agentId, body.slice(offset, offset + chunkSize));
     }
   }
+
+  // Always delay before end marker so the last write is fully processed
+  await sleep(chunkDelayMs);
 
   ptyManager.write(agentId, '\x1b[201~');
 }
@@ -178,7 +187,7 @@ export function registerAgentTools(): void {
           // Resolve provider-specific paste submit timing up front.
           const provider = getProvider(reg.orchestrator);
           const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
+            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
 
           if (isMultiLine) {
             // Chunked bracketed paste: send start marker, body in chunks
@@ -505,7 +514,7 @@ export function registerAgentTools(): void {
           // Submit with Enter
           const provider = getProvider(reg.orchestrator);
           const timing = provider?.getPasteSubmitTiming()
-            ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
+            ?? { initialDelayMs: 350, retryDelayMs: 300, finalCheckDelayMs: 250, chunkSize: 512, chunkDelayMs: 30 };
 
           await sleep(timing.initialDelayMs);
           ptyManager.write(targetId, '\r');
