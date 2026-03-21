@@ -6,9 +6,30 @@
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard } from './group-project-bulletin';
 import { groupProjectRegistry } from './group-project-registry';
-import { executeShoulderTap } from './group-project-shoulder-tap';
+import * as ptyManager from './pty-manager';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
+
+const WELCOME_MSG =
+  '[SYSTEM:GROUP_PROJECT_JOINED] You have been connected to a group project. ' +
+  'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
+  'post_bulletin to share updates, and list_members to see who is connected.';
+
+const POLLING_START_MSG =
+  '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. ' +
+  'Use read_bulletin to check for updates.';
+
+/** Inject a message into an agent's PTY using bracketed paste + Enter. */
+function injectPtyMessage(agentId: string, message: string): void {
+  try {
+    ptyManager.write(agentId, `\x1b[200~${message}\x1b[201~`);
+    setTimeout(() => ptyManager.write(agentId, '\r'), 150);
+  } catch (err) {
+    appLog('core:group-project', 'warn', 'PTY injection failed', {
+      meta: { agentId, error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+}
 
 /** Tracks known memberships: projectId → Set<agentId> */
 const memberships = new Map<string, Set<string>>();
@@ -79,16 +100,15 @@ async function syncMemberships(agentId: string): Promise<void> {
         });
       }
 
+      // Inject welcome message into the new agent's PTY
+      injectPtyMessage(agentId, WELCOME_MSG);
+
       // Auto-send polling instruction if polling is enabled
       try {
         const project = await groupProjectRegistry.get(projectId);
         if (project?.metadata?.pollingEnabled) {
-          await executeShoulderTap({
-            projectId,
-            senderLabel: 'system',
-            targetAgentId: agentId,
-            message: '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. Use read_bulletin to check for updates.',
-          });
+          // Small delay so the welcome message is processed first
+          setTimeout(() => injectPtyMessage(agentId, POLLING_START_MSG), 500);
         }
       } catch (err) {
         appLog('core:group-project', 'warn', 'Failed to send polling instruction to new agent', {
