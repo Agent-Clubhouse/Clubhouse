@@ -22,5 +22,4 @@ export const manifest: PluginManifest = {
       },
     ],
   },
-  settingsPanel: 'declarative',
 };
