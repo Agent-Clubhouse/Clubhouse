@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useRef, useEffect } from 'react';
 import type { HubInstance } from './useHubStore';
+import { HubTabContextMenu } from './HubTabContextMenu';
 
 interface HubTabBarProps {
   hubs: HubInstance[];
@@ -9,6 +10,8 @@ interface HubTabBarProps {
   onRemoveHub: (hubId: string) => void;
   onRenameHub: (hubId: string, name: string) => void;
   onPopOutHub: (hubId: string, hubName: string) => void;
+  onUpgradeToCanvas?: (hubId: string) => void;
+  onDuplicateHub?: (hubId: string) => void;
 }
 
 export function HubTabBar({
@@ -19,7 +22,16 @@ export function HubTabBar({
   onRemoveHub,
   onRenameHub,
   onPopOutHub,
+  onUpgradeToCanvas,
+  onDuplicateHub,
 }: HubTabBarProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; hubId: string } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, hubId: string) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, hubId });
+  }, []);
+
   return (
     <div className="flex items-center gap-0.5 px-1.5 py-1 bg-ctp-mantle border-b border-surface-0 min-h-[32px] overflow-x-auto flex-shrink-0" data-testid="hub-tab-bar">
       {hubs.map((hub) => (
@@ -32,6 +44,7 @@ export function HubTabBar({
           onRemove={() => onRemoveHub(hub.id)}
           onRename={(name) => onRenameHub(hub.id, name)}
           onPopOut={() => onPopOutHub(hub.id, hub.name)}
+          onContextMenu={(e) => handleContextMenu(e, hub.id)}
         />
       ))}
       <button
@@ -42,6 +55,16 @@ export function HubTabBar({
       >
         +
       </button>
+      {contextMenu && onUpgradeToCanvas && onDuplicateHub && (
+        <HubTabContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          hubId={contextMenu.hubId}
+          onUpgradeToCanvas={onUpgradeToCanvas}
+          onDuplicate={onDuplicateHub}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -56,9 +79,10 @@ interface HubTabProps {
   onRemove: () => void;
   onRename: (name: string) => void;
   onPopOut: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function HubTab({ hub, active, canClose, onSelect, onRemove, onRename, onPopOut }: HubTabProps) {
+function HubTab({ hub, active, canClose, onSelect, onRemove, onRename, onPopOut, onContextMenu }: HubTabProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(hub.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +130,7 @@ function HubTab({ hub, active, canClose, onSelect, onRemove, onRename, onPopOut 
       `}
       onClick={onSelect}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={onContextMenu}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       data-testid={`hub-tab-${hub.id}`}

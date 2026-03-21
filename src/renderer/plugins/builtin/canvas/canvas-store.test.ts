@@ -61,6 +61,52 @@ describe('canvas-store', () => {
     expect(store.getState().activeCanvasId).toBe(id);
   });
 
+  it('inserts a pre-formed canvas', () => {
+    const canvas = {
+      id: 'test-canvas-1',
+      name: 'Imported Canvas',
+      views: [
+        {
+          id: 'cv_test1',
+          type: 'agent' as const,
+          position: { x: 0, y: 0 },
+          size: { width: 480, height: 480 },
+          title: 'Agent',
+          displayName: 'Agent',
+          zIndex: 0,
+          metadata: {},
+          agentId: 'agent-1',
+          projectId: 'proj-1',
+        },
+      ],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 1,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    store.getState().insertCanvas(canvas);
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(store.getState().activeCanvasId).toBe('test-canvas-1');
+    expect(store.getState().views).toHaveLength(1);
+    expect(store.getState().views[0].agentId).toBe('agent-1');
+  });
+
+  it('inserted canvas becomes the active canvas', () => {
+    const canvas = {
+      id: 'inserted-1',
+      name: 'Test',
+      views: [],
+      viewport: { panX: 10, panY: 20, zoom: 0.8 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+    store.getState().insertCanvas(canvas);
+    expect(store.getState().activeCanvasId).toBe('inserted-1');
+    expect(store.getState().viewport).toEqual({ panX: 10, panY: 20, zoom: 0.8 });
+  });
+
   it('removes a canvas', () => {
     const id = store.getState().addCanvas();
     expect(store.getState().canvases).toHaveLength(2);
