@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
 import { getTheme } from '../../themes';
@@ -25,6 +26,14 @@ export function DisplaySettingsView() {
   const toggleMap = {
     showHome: { value: showHome, set: setShowHome },
   };
+
+  const [gradientsEnabled, setGradientsEnabled] = useState(false);
+
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setGradientsEnabled(!!s.themeGradients);
+    });
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto bg-ctp-base p-6">
@@ -65,6 +74,15 @@ export function DisplaySettingsView() {
             const theme = getTheme(id);
             if (!theme) return null;
             const selected = id === themeId;
+            const hasGradient = gradientsEnabled && theme.gradients?.background;
+            const cardStyle: React.CSSProperties = {
+              backgroundColor: theme.colors.base,
+              ...(hasGradient ? { backgroundImage: theme.gradients!.background } : {}),
+            };
+            const nameStyle: React.CSSProperties = {
+              color: theme.colors.text,
+              ...(gradientsEnabled && theme.fonts?.ui ? { fontFamily: theme.fonts.ui } : {}),
+            };
             return (
               <button
                 key={id}
@@ -74,7 +92,7 @@ export function DisplaySettingsView() {
                     ? 'border-ctp-accent ring-1 ring-ctp-accent'
                     : 'border-surface-1 hover:border-surface-2'
                 }`}
-                style={{ backgroundColor: theme.colors.base }}
+                style={cardStyle}
               >
                 {/* Color swatches */}
                 <div className="flex gap-1.5 mb-2">
@@ -102,7 +120,7 @@ export function DisplaySettingsView() {
                 {/* Theme name */}
                 <span
                   className="text-xs font-medium text-left"
-                  style={{ color: theme.colors.text }}
+                  style={nameStyle}
                 >
                   {theme.name}
                 </span>
