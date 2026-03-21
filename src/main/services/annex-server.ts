@@ -1640,18 +1640,18 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const projectId = payload.projectId as string;
       const orderedIds = payload.orderedIds as string[];
       if (!projectId || !Array.isArray(orderedIds)) break;
-      const project = await findProjectById(projectId);
-      if (!project) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
-        break;
-      }
-      try {
-        await agentConfig.reorderDurable(project.path, orderedIds);
-        broadcastSnapshotRefresh();
-        ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
-      } catch (err) {
-        ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
-      }
+      findProjectById(projectId).then((project) => {
+        if (!project) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        agentConfig.reorderDurable(project.path, orderedIds).then(() => {
+          broadcastSnapshotRefresh();
+          ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
+        }).catch(() => {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
+        });
+      });
       break;
     }
   }
