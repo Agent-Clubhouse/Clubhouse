@@ -12,12 +12,25 @@ import {
   StructuredAdapter,
   StructuredCapable,
 } from './types';
+import type { McpServerDef } from '../../shared/types';
+import { mcpServerToToml } from '../services/toml-utils';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 
 const execFileAsync = promisify(execFile);
+
+/** Format a string as a TOML value (double-quoted). */
+function tomlValue(s: string): string {
+  const escaped = s
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  return `"${escaped}"`;
+}
 
 const TOOL_VERBS: Record<string, string> = {
   shell: 'Running command',
@@ -190,6 +203,36 @@ export class CodexCliProvider extends BaseProvider implements HeadlessCapable, S
     if (shellEnv.OPENAI_BASE_URL) env.OPENAI_BASE_URL = shellEnv.OPENAI_BASE_URL;
 
     return { binary, args, env };
+  }
+
+  // ── MCP args ───────────────────────────────────────────────────────────
+
+  /**
+   * Codex CLI reads MCP config from .codex/config.toml, so the primary
+   * injection path writes TOML directly to that file.  buildMcpArgs is a
+   * supplementary mechanism that passes the Clubhouse MCP server definition
+   * via `-c` config-override flags at launch time.
+   */
+  buildMcpArgs(serverDef: McpServerDef): string[] {
+    // Write a temp TOML snippet to a config override flag.
+    // Codex CLI's `-c key=value` supports dot-notation with TOML-typed values.
+    const args: string[] = [];
+    const name = 'clubhouse';
+
+    if (serverDef.command) {
+      args.push('-c', `mcp_servers.${name}.command=${tomlValue(serverDef.command)}`);
+    }
+    if (serverDef.args && serverDef.args.length > 0) {
+      const arr = `[${serverDef.args.map(tomlValue).join(', ')}]`;
+      args.push('-c', `mcp_servers.${name}.args=${arr}`);
+    }
+    if (serverDef.env) {
+      for (const [key, val] of Object.entries(serverDef.env)) {
+        args.push('-c', `mcp_servers.${name}.env.${key}=${tomlValue(val)}`);
+      }
+    }
+
+    return args;
   }
 
   // ── StructuredCapable ───────────────────────────────────────────────────
