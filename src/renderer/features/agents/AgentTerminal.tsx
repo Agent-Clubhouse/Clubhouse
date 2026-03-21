@@ -24,7 +24,6 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
-  const experimentalGradients = useThemeStore((s) => s.experimentalGradients);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
   const effectiveTerminalColors = useMemo(
     () => hasGradientBg ? { ...terminalColors, background: 'transparent' } : terminalColors,
