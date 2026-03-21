@@ -63,3 +63,47 @@ describe('GroupProjectCanvasWidget — main.ts generateDisplayName', () => {
     expect(mainSource).toContain('metadata.name');
   });
 });
+
+// ── PTY injection helper ────────────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — PTY injection', () => {
+  it('imports ptyWrite from project-proxy', () => {
+    expect(source).toContain("from '../../../services/project-proxy'");
+    expect(source).toContain('ptyWrite');
+  });
+
+  it('defines injectPtyMessage helper that uses bracketed paste', () => {
+    expect(source).toContain('function injectPtyMessage');
+    expect(source).toContain('\\x1b[200~');
+    expect(source).toContain('\\x1b[201~');
+  });
+
+  it('sends Enter after injection with a delay', () => {
+    // injectPtyMessage should call ptyWrite with \r after a timeout
+    expect(source).toMatch(/setTimeout\s*\(\s*\(\)\s*=>\s*ptyWrite\s*\(/);
+  });
+});
+
+// ── Broadcast uses PTY injection ────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — broadcast modal', () => {
+  it('does not use sendShoulderTap for broadcast', () => {
+    // The broadcast modal should use injectPtyMessage, not sendShoulderTap
+    expect(source).not.toMatch(/sendShoulderTap\s*\(/);
+  });
+
+  it('calls injectPtyMessage for each target agent in broadcast', () => {
+    // ShoulderTapModal handleSend should iterate targets and call injectPtyMessage
+    expect(source).toMatch(/for\s*\(const\s+agent\s+of\s+targets\)/);
+    expect(source).toContain('injectPtyMessage(agent.agentId');
+  });
+});
+
+// ── Polling toggle uses PTY injection ───────────────────────────────
+
+describe('GroupProjectCanvasWidget — polling toggle', () => {
+  it('injects polling message to connected agents via PTY', () => {
+    // handleTogglePolling should iterate connectedAgents and call injectPtyMessage
+    expect(source).toMatch(/for\s*\(const\s+agent\s+of\s+connectedAgents\)/);
+  });
+});
