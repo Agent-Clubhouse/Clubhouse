@@ -186,10 +186,26 @@ function ProjectCard({
 
 
   const [showTapModal, setShowTapModal] = useState(false);
+  const [topics, setTopics] = useState<TopicDigest[]>([]);
 
   useEffect(() => {
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
+
+  // Poll bulletin digest for activity summary
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (cancelled) return;
+      try {
+        const digest = await window.clubhouse.groupProject.getBulletinDigest(groupProjectId) as TopicDigest[];
+        if (!cancelled) setTopics(digest);
+      } catch { /* ignore */ }
+    };
+    refresh();
+    const interval = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [groupProjectId]);
 
   const project = useMemo(
     () => projects.find((p) => p.id === groupProjectId),
@@ -204,6 +220,9 @@ function ProjectCard({
   const hasActivity = connectedAgents.length > 0;
   const description = project?.description || '';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
+
+  const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
+  const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
 
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
@@ -242,13 +261,19 @@ function ProjectCard({
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
             pollingEnabled
               ? 'text-ctp-green bg-ctp-green/10'
-              : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0'
+              : 'text-ctp-overlay0 bg-surface-0'
           }`}
           title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
         >
           <PollingIcon size={12} active={pollingEnabled} />
-          <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll' : 'Poll'}</span>
+          <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
         </button>
+      </div>
+
+      {/* Activity summary */}
+      <div className="flex items-center gap-3 text-[10px] text-ctp-subtext0">
+        <span>{topics.length} topic{topics.length !== 1 ? 's' : ''}</span>
+        <span>{totalMessages} msg{totalMessages !== 1 ? 's' : ''}{totalNew > 0 && <span className="text-ctp-green ml-0.5">+{totalNew} new</span>}</span>
       </div>
 
       {/* Description snippet */}
@@ -608,12 +633,12 @@ function ExpandedHeader({
         className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
           pollingEnabled
             ? 'text-ctp-green bg-ctp-green/10'
-            : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-surface-0'
+            : 'text-ctp-overlay0 bg-surface-0'
         }`}
         title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
       >
         <PollingIcon size={12} active={pollingEnabled} />
-        <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll' : 'Poll'}</span>
+        <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
       </button>
       {/* Settings gear */}
       <button

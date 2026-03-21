@@ -28,11 +28,16 @@ describe('GroupProjectCanvasWidget — PollingIcon', () => {
 // ── Polling toggle label ────────────────────────────────────────────
 
 describe('GroupProjectCanvasWidget — polling toggle has label', () => {
-  it('renders a "Poll" text label next to the icon', () => {
-    // Both compact and expanded views should show a label next to the polling icon
-    expect(source).toContain("'Poll'");
+  it('renders "Poll: On" and "Poll: Off" labels to indicate state', () => {
+    expect(source).toContain("'Poll: On'");
+    expect(source).toContain("'Poll: Off'");
     // The label is inside a span sibling to PollingIcon
-    expect(source).toMatch(/PollingIcon[\s\S]*?font-medium[\s\S]*?Poll/);
+    expect(source).toMatch(/PollingIcon[\s\S]*?font-medium[\s\S]*?Poll: On/);
+  });
+
+  it('uses muted styling when polling is off (default)', () => {
+    // Off state should use overlay0 + bg-surface-0 to look clearly disabled
+    expect(source).toContain("'text-ctp-overlay0 bg-surface-0'");
   });
 });
 
@@ -46,6 +51,28 @@ describe('GroupProjectCanvasWidget — activity dot', () => {
 
   it('still uses green color for active status', () => {
     expect(source).toContain('bg-ctp-green');
+  });
+});
+
+// ── Activity summary in compact card ────────────────────────────────
+
+describe('GroupProjectCanvasWidget — activity summary', () => {
+  it('shows topic and message counts in compact card', () => {
+    // The compact ProjectCard should display topic count and message count
+    expect(source).toMatch(/topics\.length.*topic/);
+    expect(source).toMatch(/totalMessages.*msg/);
+  });
+
+  it('highlights new messages when present', () => {
+    // Should show a +N new indicator in green when there are new messages
+    expect(source).toContain('totalNew > 0');
+    expect(source).toContain('text-ctp-green');
+    expect(source).toMatch(/\+.*new/);
+  });
+
+  it('polls bulletin digest on the compact card', () => {
+    // Compact card should call getBulletinDigest for activity data
+    expect(source).toContain('getBulletinDigest(groupProjectId)');
   });
 });
 
