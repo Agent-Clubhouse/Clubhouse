@@ -64,6 +64,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const focusedPaneId = store((s) => s.focusedPaneId);
   const loaded = store((s) => s.loaded);
 
+  // Check if canvas experimental feature is enabled
+  const [canvasEnabled, setCanvasEnabled] = useState(false);
+  useEffect(() => {
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setCanvasEnabled(!!s.canvas);
+    }).catch(() => {});
+  }, []);
+
   // Dynamic title: show active hub name
   const activeHub = hubs.find((h) => h.id === activeHubId);
   useEffect(() => {
@@ -298,7 +306,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       onRemoveHub: handleRemoveHub,
       onRenameHub: handleRenameHub,
       onPopOutHub: handlePopOutHub,
-      onUpgradeToCanvas: handleUpgradeToCanvas,
+      onUpgradeToCanvas: canvasEnabled ? handleUpgradeToCanvas : undefined,
       onDuplicateHub: handleDuplicateHub,
     }),
     hubPopout
