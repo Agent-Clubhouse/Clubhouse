@@ -146,7 +146,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     }
 
     if (opts.freeAgentMode) {
-      args.push('--yolo');
+      args.push('--yolo', '--autopilot');
     }
 
     if (opts.model && opts.model !== 'default') {

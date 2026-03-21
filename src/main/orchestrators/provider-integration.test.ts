@@ -243,22 +243,24 @@ describe('Provider integration tests', () => {
       expect(args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('CopilotCli: adds --yolo when freeAgentMode is true', async () => {
+    it('CopilotCli: adds --yolo and --autopilot when freeAgentMode is true', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
       expect(args).toContain('--yolo');
+      expect(args).toContain('--autopilot');
     });
 
-    it('CopilotCli: no --yolo when freeAgentMode is false', async () => {
+    it('CopilotCli: no --yolo or --autopilot when freeAgentMode is false', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
       expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--autopilot');
     });
 
     it('CodexCli: adds --full-auto when freeAgentMode is true', async () => {

@@ -155,9 +155,22 @@ describe('CopilotCliProvider', () => {
       expect(result.args).toEqual([]);
     });
 
-    it('adds --yolo flag for freeAgentMode', async () => {
+    it('adds --yolo and --autopilot flags for freeAgentMode', async () => {
       const result = await provider.buildSpawnCommand({ cwd: '/project', freeAgentMode: true });
       expect(result.args).toContain('--yolo');
+      expect(result.args).toContain('--autopilot');
+    });
+
+    it('does not add --yolo or --autopilot when freeAgentMode is false', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project', freeAgentMode: false });
+      expect(result.args).not.toContain('--yolo');
+      expect(result.args).not.toContain('--autopilot');
+    });
+
+    it('does not add --yolo or --autopilot when freeAgentMode is undefined', async () => {
+      const result = await provider.buildSpawnCommand({ cwd: '/project' });
+      expect(result.args).not.toContain('--yolo');
+      expect(result.args).not.toContain('--autopilot');
     });
 
     it('adds --model flag for non-default model', async () => {
