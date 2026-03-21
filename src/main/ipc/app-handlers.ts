@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { app, BrowserWindow, clipboard, ipcMain, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { ArchInfo, BadgeSettings, LogEntry, LoggingSettings, NotificationSettings } from '../../shared/types';
 import * as notificationService from '../services/notification-service';
