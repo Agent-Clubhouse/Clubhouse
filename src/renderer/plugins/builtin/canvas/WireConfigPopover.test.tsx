@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, waitFor } from '@testing-library/react';
 import { WireConfigPopover } from './WireConfigPopover';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
@@ -86,5 +86,69 @@ describe('WireConfigPopover', () => {
     expect(queryByTestId('wire-instructions-dialog')).toBeNull();
     fireEvent.click(getByTestId('wire-instructions-button'));
     expect(getByTestId('wire-instructions-dialog')).toBeTruthy();
+  });
+
+  it('sets instructions on both bindings for bidirectional agent-to-agent wires', async () => {
+    const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
+    const reverseBinding: McpBindingEntry = {
+      agentId: 'agent-2',
+      targetId: 'agent-1',
+      targetKind: 'agent',
+      label: 'Agent 1',
+    };
+    useMcpBindingStore.setState({
+      bindings: [agentBinding, reverseBinding],
+      setInstructions: setInstructionsMock,
+    } as any);
+
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    // Wait for useEffect to detect reverse binding and set bidirectional=true
+    const toggleContainer = getByTestId('wire-bidirectional-toggle');
+    await waitFor(() => {
+      const toggleButton = toggleContainer.querySelector('button');
+      expect(toggleButton?.className).toContain('bg-ctp-accent');
+    });
+
+    // Open instructions dialog
+    fireEvent.click(getByTestId('wire-instructions-button'));
+    const textarea = getByTestId('wire-instructions-textarea') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Be concise' } });
+    fireEvent.click(getByTestId('wire-instructions-save'));
+
+    // handleSaveInstructions is async — wait for both calls to complete
+    await waitFor(() => {
+      // Should set on forward binding (agent-1 → agent-2)
+      expect(setInstructionsMock).toHaveBeenCalledWith('agent-1', 'agent-2', { '*': 'Be concise' });
+      // Should also set on reverse binding (agent-2 → agent-1)
+      expect(setInstructionsMock).toHaveBeenCalledWith('agent-2', 'agent-1', { '*': 'Be concise' });
+      expect(setInstructionsMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('does not set instructions on reverse binding for unidirectional wires', async () => {
+    const setInstructionsMock = vi.fn().mockResolvedValue(undefined);
+    // Only forward binding, no reverse
+    useMcpBindingStore.setState({
+      bindings: [agentBinding],
+      setInstructions: setInstructionsMock,
+    } as any);
+
+    const { getByTestId } = render(
+      <WireConfigPopover binding={agentBinding} x={100} y={200} onClose={vi.fn()} />,
+    );
+
+    fireEvent.click(getByTestId('wire-instructions-button'));
+    const textarea = getByTestId('wire-instructions-textarea') as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: 'Be concise' } });
+    fireEvent.click(getByTestId('wire-instructions-save'));
+
+    // handleSaveInstructions is async — wait for it to complete
+    await waitFor(() => {
+      expect(setInstructionsMock).toHaveBeenCalledWith('agent-1', 'agent-2', { '*': 'Be concise' });
+      expect(setInstructionsMock).toHaveBeenCalledTimes(1);
+    });
   });
 });
