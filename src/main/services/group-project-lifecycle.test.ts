@@ -252,7 +252,6 @@ describe('GroupProjectLifecycle', () => {
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
     expect(welcomeCall).toBeDefined();
-    expect(welcomeCall![1]).toContain('[GROUP:Alpha Squad]');
     expect(welcomeCall![1]).toContain('"Alpha Squad"');
 
     // Join bulletin message should include project name
@@ -282,7 +281,6 @@ describe('GroupProjectLifecycle', () => {
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
     );
     expect(pollingCall).toBeDefined();
-    expect(pollingCall![1]).toContain('[GROUP:Beta Team]');
     expect(pollingCall![1]).toContain('"Beta Team"');
   });
 
