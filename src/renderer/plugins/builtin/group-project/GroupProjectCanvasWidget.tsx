@@ -192,7 +192,7 @@ function ProjectCard({
       <div className="flex items-center gap-2">
         <div
           className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-            hasActivity ? 'bg-ctp-green animate-pulse' : 'bg-ctp-overlay0'
+            hasActivity ? 'bg-ctp-green' : 'bg-ctp-overlay0'
           }`}
         />
         <RobotIcon size={14} />
@@ -210,12 +210,15 @@ function ProjectCard({
         {/* Polling toggle */}
         <button
           onClick={handleTogglePolling}
-          className={`p-1 transition-colors flex-shrink-0 ${
-            pollingEnabled ? 'text-ctp-green' : 'text-ctp-overlay1 hover:text-ctp-text'
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+            pollingEnabled
+              ? 'text-ctp-green bg-ctp-green/10'
+              : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-ctp-surface0'
           }`}
           title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
         >
-          <PollingIcon size={14} active={pollingEnabled} />
+          <PollingIcon size={12} active={pollingEnabled} />
+          <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll' : 'Poll'}</span>
         </button>
       </div>
 
@@ -578,12 +581,15 @@ function ExpandedHeader({
       {/* Polling toggle */}
       <button
         onClick={onTogglePolling}
-        className={`p-1 transition-colors flex-shrink-0 ${
-          pollingEnabled ? 'text-ctp-green' : 'text-ctp-overlay1 hover:text-ctp-text'
+        className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+          pollingEnabled
+            ? 'text-ctp-green bg-ctp-green/10'
+            : 'text-ctp-overlay1 hover:text-ctp-text hover:bg-ctp-surface0'
         }`}
         title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
       >
-        <PollingIcon size={14} active={pollingEnabled} />
+        <PollingIcon size={12} active={pollingEnabled} />
+        <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll' : 'Poll'}</span>
       </button>
       {/* Settings gear */}
       <button
@@ -806,11 +812,11 @@ function MegaphoneIcon({ size = 14 }: { size?: number }) {
 function PollingIcon({ size = 14, active = false }: { size?: number; active?: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21.5 2v6h-6" />
-      <path d="M2.5 22v-6h6" />
-      <path d="M2.5 11.5a10 10 0 0 1 18.8-4.3" />
-      <path d="M21.5 12.5a10 10 0 0 1-18.8 4.2" />
-      {active && <circle cx="12" cy="12" r="3" fill="currentColor" />}
+      {active ? (
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      ) : (
+        <line x1="2" y1="12" x2="22" y2="12" />
+      )}
     </svg>
   );
 }
