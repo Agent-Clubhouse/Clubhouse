@@ -262,7 +262,7 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
   }, [loadSettings, loadBadgeSettings, loadSoundSettings, loadPacks]);
 
   if (!settings) {
-    return <div className="p-6 text-ctp-subtext0 text-sm">Loading...</div>;
+    return <div className="p-6 text-ctp-subtext0 text-sm">Loading\u2026</div>;
   }
 
   // Project context: badges + sound overrides

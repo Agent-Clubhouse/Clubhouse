@@ -350,20 +350,6 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
           </DefaultRow>
         )}
 
-        {/* Source Control Provider — only when Clubhouse Mode is active */}
-        {clubhouseEffective && (
-          <DefaultRow label="Source Control Provider" description="Provider for Clubhouse Mode agent operations">
-            <select
-              value={project.sourceControlProvider || 'github'}
-              onChange={(e) => updateProject(project.id, { sourceControlProvider: e.target.value })}
-              className={DROPDOWN_SELECT_CLASS}
-            >
-              <option value="github">GitHub (gh CLI)</option>
-              <option value="azure-devops">Azure DevOps (az CLI)</option>
-            </select>
-          </DefaultRow>
-        )}
-
         {/* Quick Agent Mode */}
         <DefaultRow label="Quick Agent Mode" description="How quick agents spawn in this project">
           <select

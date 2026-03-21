@@ -2,7 +2,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { DisplaySettingsView } from './DisplaySettingsView';
 import { useThemeStore } from '../../stores/themeStore';
 import { useUIStore } from '../../stores/uiStore';
-import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
 
 vi.mock('../../themes', async (importOriginal) => {
   const orig = await importOriginal<typeof import('../../themes')>();
@@ -17,8 +16,6 @@ vi.mock('../../themes', async (importOriginal) => {
 
 const mockSetTheme = vi.fn();
 const mockSetShowHome = vi.fn();
-const mockSetPromptForName = vi.fn();
-const mockLoadSessionSettings = vi.fn();
 
 function resetStores() {
   useThemeStore.setState({
@@ -29,11 +26,6 @@ function resetStores() {
   useUIStore.setState({
     showHome: true,
     setShowHome: mockSetShowHome,
-  });
-  useSessionSettingsStore.setState({
-    promptForName: false,
-    setPromptForName: mockSetPromptForName,
-    loadSettings: mockLoadSessionSettings,
   });
 }
 
@@ -46,11 +38,6 @@ describe('DisplaySettingsView', () => {
   it('renders without crash', () => {
     render(<DisplaySettingsView />);
     expect(screen.getByText('Display & UI')).toBeInTheDocument();
-  });
-
-  it('loads session settings on mount', () => {
-    render(<DisplaySettingsView />);
-    expect(mockLoadSessionSettings).toHaveBeenCalled();
   });
 
   it('renders theme options', () => {
@@ -68,10 +55,5 @@ describe('DisplaySettingsView', () => {
   it('renders Home view toggle', () => {
     render(<DisplaySettingsView />);
     expect(screen.getByText('Home')).toBeInTheDocument();
-  });
-
-  it('renders session name prompt toggle', () => {
-    render(<DisplaySettingsView />);
-    expect(screen.getByText('Prompt for Session Name on Quit')).toBeInTheDocument();
   });
 });
