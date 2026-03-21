@@ -316,4 +316,76 @@ describe('WireOverlay', () => {
     const group = container.querySelector('[data-testid^="wire-group-"]');
     expect(group?.getAttribute('data-bidir')).toBe('true');
   });
+
+  it('dims wire when source agent is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-1'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBe('true');
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]') as HTMLElement;
+    expect(pathEl?.style.opacity).toBe('0.35');
+  });
+
+  it('dims wire when target agent is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makeAgentView('a2', 'agent-2', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-2'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBe('true');
+  });
+
+  it('does not dim wire when neither endpoint is sleeping', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} sleepingAgentIds={new Set(['agent-other'])} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBeNull();
+    const pathEl = container.querySelector('[data-testid="wire-path-agent-1--b1"]') as HTMLElement;
+    expect(pathEl?.style.opacity).toBe('1');
+  });
+
+  it('does not dim wire when sleepingAgentIds is not provided', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const group = container.querySelector('[data-testid^="wire-group-"]');
+    expect(group?.getAttribute('data-dimmed')).toBeNull();
+  });
 });
