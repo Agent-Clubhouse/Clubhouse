@@ -391,10 +391,10 @@ describe('clonePaneTree', () => {
     expect(sp.children[0].type).toBe('leaf');
     expect(sp.children[1].type).toBe('leaf');
 
-    // All IDs should be new
-    expect(sp.id).toBe('new_3'); // split gets generated after children
-    expect(sp.children[0].id).toBe('new_1');
-    expect(sp.children[1].id).toBe('new_2');
+    // All IDs should be new — split ID is generated before children
+    expect(sp.id).toBe('new_1');
+    expect(sp.children[0].id).toBe('new_2');
+    expect(sp.children[1].id).toBe('new_3');
 
     // Agent assignments preserved
     expect((sp.children[0] as LeafPane).agentId).toBe('a1');

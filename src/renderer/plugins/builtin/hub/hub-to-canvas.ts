@@ -5,9 +5,8 @@
 // leaf's absolute position and size from the split ratios and a reference
 // frame (the current window dimensions).
 
-import type { PaneNode, LeafPane } from './pane-tree';
-import { collectLeaves } from './pane-tree';
-import type { AgentCanvasView, CanvasInstance, Position, Size, Viewport } from '../canvas/canvas-types';
+import type { PaneNode } from './pane-tree';
+import type { AgentCanvasView, CanvasInstance, Position, Size } from '../canvas/canvas-types';
 import { GRID_SIZE, deduplicateDisplayName } from '../canvas/canvas-types';
 import { generateViewId, generateCanvasId, snapToGrid, viewportToFitViews } from '../canvas/canvas-operations';
 
