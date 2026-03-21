@@ -8,6 +8,7 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
 import { WireInstructionsDialog } from './WireInstructionsDialog';
+import { useDismissibleLayer } from './useDismissibleLayer';
 
 interface WireConfigPopoverProps {
   binding: McpBindingEntry;
@@ -42,21 +43,11 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
     }
   }, [bindings, binding, isAgentToAgent]);
 
-  // Close on click outside (skip when instructions dialog is open)
-  useEffect(() => {
-    if (showInstructions) return;
-    const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    // Delay to avoid immediate close from the same click
-    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('mousedown', handler);
-    };
-  }, [onClose, showInstructions]);
+  useDismissibleLayer({
+    layerRef: popoverRef,
+    onDismiss: onClose,
+    enabled: !showInstructions,
+  });
 
   const handleDisconnect = async () => {
     await unbind(binding.agentId, binding.targetId);
