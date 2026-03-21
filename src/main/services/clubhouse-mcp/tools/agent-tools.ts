@@ -14,6 +14,8 @@ import * as agentSystem from '../../agent-system';
 import { getDurableConfig } from '../../agent-config';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
+import { broadcastToAllWindows } from '../../../util/ipc-broadcast';
+import { IPC } from '../../../../shared/ipc-channels';
 import { getProvider } from '../../../orchestrators';
 import type { PasteSubmitTiming } from '../../../orchestrators';
 
@@ -138,7 +140,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'send_message: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
       }
 
       // Resolve sender identity from the binding
@@ -293,12 +295,16 @@ export function registerAgentTools(): void {
       const running = !!reg;
 
       const status: Record<string, unknown> = {
+        status: running ? 'running' : 'sleeping',
         running,
         runtime: reg?.runtime || null,
+        message: running
+          ? 'Agent is running and available for interaction.'
+          : 'Agent is sleeping. Use the wake tool to start it.',
       };
 
       appLog('core:mcp', 'info', 'get_status: resolved', {
-        meta: { sourceAgent: agentId, targetAgent: targetId, running, runtime: reg?.runtime },
+        meta: { sourceAgent: agentId, targetAgent: targetId, ...status },
       });
 
       return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
@@ -336,7 +342,7 @@ export function registerAgentTools(): void {
         appLog('core:mcp', 'warn', 'read_output: target agent not found in registry', {
           meta: { sourceAgent: agentId, targetAgent: targetId },
         });
-        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
       }
 
       let lines = (args.lines as number) || 50;
@@ -386,7 +392,7 @@ export function registerAgentTools(): void {
     async (targetId, agentId, _args): Promise<McpToolResult> => {
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
       }
 
       // Check if the target has a binding back to the caller
@@ -477,7 +483,7 @@ export function registerAgentTools(): void {
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {
-        return { content: [{ type: 'text', text: `Agent ${targetId} is not running` }], isError: true };
+        return { content: [{ type: 'text', text: `Agent ${targetId} is sleeping. Use the wake tool to start it first.` }], isError: true };
       }
 
       const sourceBinding = bindingManager.getBindingsForAgent(agentId).find(b => b.targetId === targetId);
@@ -592,6 +598,9 @@ export function registerAgentTools(): void {
 
         const cwd = config.worktreePath || projectPath;
 
+        // Broadcast waking status to renderer before spawning
+        broadcastToAllWindows(IPC.AGENT.AGENT_WAKING, targetId);
+
         await agentSystem.spawnAgent({
           agentId: targetId,
           projectPath,
@@ -608,13 +617,10 @@ export function registerAgentTools(): void {
           meta: { sourceAgent: agentId, targetAgent: targetId, resume, cwd },
         });
 
-        const resumeNote = resume && config.lastSessionId
-          ? ` Resumed session ${config.lastSessionId}.`
-          : '';
         return {
           content: [{
             type: 'text',
-            text: `Agent ${config.name || targetId} woken up successfully.${resumeNote}`,
+            text: `Agent ${config.name || targetId} is waking up. New tools and interactions will be available in a few seconds.`,
           }],
         };
       } catch (err) {

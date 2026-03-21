@@ -5,6 +5,7 @@
 
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
+import { agentRegistry } from '../agent-registry';
 import { appLog } from '../log-service';
 
 /**
@@ -101,7 +102,13 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     const templates = toolTemplates.get(binding.targetKind);
     if (!templates) continue;
 
+    // When target agent is sleeping (not in registry), only expose status and wake tools
+    const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
+
     for (const template of templates) {
+      if (isTargetSleeping && template.nameSuffix !== 'get_status' && template.nameSuffix !== 'wake') {
+        continue;
+      }
       let description = template.definition.description;
 
       // Inject per-wire custom instructions into tool description
