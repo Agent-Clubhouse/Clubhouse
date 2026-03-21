@@ -4,6 +4,7 @@ import type { TopicDigest, BulletinMessage } from '../../../../shared/group-proj
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
+import { ptyWrite } from '../../../services/project-proxy';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -13,6 +14,18 @@ const POLLING_START_MSG =
   '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. Use read_bulletin to check for updates.';
 const POLLING_STOP_MSG =
   '[SYSTEM:POLLING_STOP] Stop periodic bulletin board polling.';
+
+/** Inject a message into an agent's PTY using bracketed paste + Enter. */
+function injectPtyMessage(agentId: string, message: string): void {
+  const isMultiLine = message.includes('\n');
+  if (isMultiLine) {
+    ptyWrite(agentId, `\x1b[200~${message}\x1b[201~`);
+  } else {
+    ptyWrite(agentId, message);
+  }
+  // Delayed Enter so the agent processes the pasted content first
+  setTimeout(() => ptyWrite(agentId, '\r'), 150);
+}
 
 export function GroupProjectCanvasWidget({
   widgetId: _widgetId,
@@ -153,7 +166,7 @@ function ProjectCard({
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const update = useGroupProjectStore((s) => s.update);
-  const sendShoulderTap = useGroupProjectStore((s) => s.sendShoulderTap);
+
 
   const [showTapModal, setShowTapModal] = useState(false);
 
@@ -179,12 +192,11 @@ function ProjectCard({
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    await sendShoulderTap(
-      groupProjectId,
-      null,
-      newVal ? POLLING_START_MSG : POLLING_STOP_MSG,
-    );
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, sendShoulderTap]);
+    const msg = newVal ? POLLING_START_MSG : POLLING_STOP_MSG;
+    for (const agent of connectedAgents) {
+      injectPtyMessage(agent.agentId, msg);
+    }
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents]);
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -247,8 +259,6 @@ function ProjectCard({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
-          groupProjectId={groupProjectId}
-          sendShoulderTap={sendShoulderTap}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -270,7 +280,7 @@ function ExpandedProjectView({
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const update = useGroupProjectStore((s) => s.update);
-  const sendShoulderTap = useGroupProjectStore((s) => s.sendShoulderTap);
+
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -339,12 +349,11 @@ function ExpandedProjectView({
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    await sendShoulderTap(
-      groupProjectId,
-      null,
-      newVal ? POLLING_START_MSG : POLLING_STOP_MSG,
-    );
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, sendShoulderTap]);
+    const msg = newVal ? POLLING_START_MSG : POLLING_STOP_MSG;
+    for (const agent of connectedAgents) {
+      injectPtyMessage(agent.agentId, msg);
+    }
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents]);
 
   return (
     <div className="flex flex-col h-full text-ctp-text">
@@ -487,8 +496,6 @@ function ExpandedProjectView({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
-          groupProjectId={groupProjectId}
-          sendShoulderTap={sendShoulderTap}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -610,34 +617,31 @@ function ExpandedHeader({
 
 function ShoulderTapModal({
   connectedAgents,
-  groupProjectId,
-  sendShoulderTap,
   onClose,
 }: {
   connectedAgents: McpBindingEntry[];
-  groupProjectId: string;
-  sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
   onClose: () => void;
 }) {
   const [target, setTarget] = useState<string>('all');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const msg = message.trim();
     if (!msg || sending) return;
     setSending(true);
-    try {
-      await sendShoulderTap(
-        groupProjectId,
-        target === 'all' ? null : target,
-        msg,
-      );
-      onClose();
-    } finally {
-      setSending(false);
+
+    const targets = target === 'all'
+      ? connectedAgents
+      : connectedAgents.filter((a) => a.agentId === target);
+
+    for (const agent of targets) {
+      injectPtyMessage(agent.agentId, msg);
     }
-  }, [message, sending, target, groupProjectId, sendShoulderTap, onClose]);
+
+    setSending(false);
+    onClose();
+  }, [message, sending, target, connectedAgents, onClose]);
 
   return (
     <div
