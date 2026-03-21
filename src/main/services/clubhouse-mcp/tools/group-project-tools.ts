@@ -7,7 +7,6 @@ import { registerToolTemplate } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
-import { executeShoulderTap } from '../../group-project-shoulder-tap';
 import { isAgentAlive } from '../../group-project-lifecycle';
 import type { McpToolResult } from '../types';
 
@@ -258,73 +257,4 @@ export function registerGroupProjectTools(): void {
     },
   );
 
-  // group__<name>_<hash>__shoulder_tap
-  registerToolTemplate(
-    'group-project',
-    'shoulder_tap',
-    {
-      description:
-        'Send an urgent direct message to another agent in this group project.\n\n' +
-        'The message is injected directly into the target agent\'s input — use this for ' +
-        'time-sensitive requests that cannot wait for bulletin board polling.\n\n' +
-        'The target agent will receive response instructions to reply via the bulletin board ' +
-        'on the "shoulder-tap" topic. Omit target_agent_id or set to "all" to broadcast.\n\n' +
-        'Returns delivery results: { taskId, messageId, delivered[], failed[] }.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            description: 'The urgent message to deliver.',
-          },
-          target_agent_id: {
-            type: 'string',
-            description: 'Agent ID to tap. Omit or "all" to broadcast to all members.',
-          },
-          task_id: {
-            type: 'string',
-            description: 'Optional task ID for tracking responses.',
-          },
-        },
-        required: ['message'],
-      },
-    },
-    async (targetId: string, agentId: string, args: Record<string, unknown>): Promise<McpToolResult> => {
-      const message = args.message as string;
-      if (!message) {
-        return {
-          content: [{ type: 'text', text: 'message is required.' }],
-          isError: true,
-        };
-      }
-
-      // Resolve sender identity
-      const agentBindings = bindingManager.getBindingsForAgent(agentId);
-      const binding = agentBindings.find(b => b.targetId === targetId && b.targetKind === 'group-project');
-      const senderLabel = binding?.agentName
-        ? `${binding.agentName}${binding.projectName ? '@' + binding.projectName : ''}`
-        : agentId;
-
-      const targetAgentId = (args.target_agent_id as string) || null;
-
-      try {
-        const result = await executeShoulderTap({
-          projectId: targetId,
-          senderLabel,
-          targetAgentId: targetAgentId === 'all' ? null : targetAgentId,
-          message,
-          taskId: args.task_id as string | undefined,
-        });
-
-        return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-        };
-      } catch (err) {
-        return {
-          content: [{ type: 'text', text: `Shoulder tap failed: ${err instanceof Error ? err.message : String(err)}` }],
-          isError: true,
-        };
-      }
-    },
-  );
 }

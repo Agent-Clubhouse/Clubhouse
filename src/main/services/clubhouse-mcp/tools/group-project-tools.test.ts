@@ -64,7 +64,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers 6 tools for a group-project binding', () => {
+  it('registers 5 tools for a group-project binding (shoulder_tap is user-only)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -74,7 +74,7 @@ describe('GroupProjectTools', () => {
     });
 
     const tools = getScopedToolList('agent-1');
-    expect(tools).toHaveLength(6);
+    expect(tools).toHaveLength(5);
 
     const suffixes = tools.map(t => t.name.split('__').pop());
     expect(suffixes).toContain('list_members');
@@ -82,7 +82,7 @@ describe('GroupProjectTools', () => {
     expect(suffixes).toContain('read_bulletin');
     expect(suffixes).toContain('read_topic');
     expect(suffixes).toContain('get_project_info');
-    expect(suffixes).toContain('shoulder_tap');
+    expect(suffixes).not.toContain('shoulder_tap');
   });
 
   it('tool names use group prefix', () => {
@@ -357,57 +357,4 @@ describe('GroupProjectTools', () => {
     agentRegistry.untrack('agent-1');
   });
 
-  it('shoulder_tap delivers and records to bulletin', async () => {
-    const project = await groupProjectRegistry.create('TapProj');
-
-    agentRegistry.register('agent-1', {
-      projectPath: '/test',
-      orchestrator: 'claude-code',
-      runtime: 'pty',
-    });
-    agentRegistry.register('agent-2', {
-      projectPath: '/test',
-      orchestrator: 'claude-code',
-      runtime: 'pty',
-    });
-
-    bindingManager.bind('agent-1', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'TapProj',
-      agentName: 'robin',
-      targetName: 'TapProj',
-      projectName: 'myapp',
-    });
-    bindingManager.bind('agent-2', {
-      targetId: project.id,
-      targetKind: 'group-project',
-      label: 'TapProj',
-      agentName: 'falcon',
-      targetName: 'TapProj',
-    });
-
-    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'TapProj' });
-    const toolName = buildToolName(binding, 'shoulder_tap');
-    const result = await callTool('agent-1', toolName, {
-      message: 'Need your help',
-      target_agent_id: 'agent-2',
-    });
-
-    expect(result.isError).toBeFalsy();
-    const parsed = JSON.parse(result.content[0].text!);
-    expect(parsed.delivered).toHaveLength(1);
-    expect(parsed.delivered[0].agentName).toBe('falcon');
-    expect(parsed.taskId).toBeTruthy();
-    expect(parsed.messageId).toMatch(/^msg_/);
-
-    // Verify PTY injection
-    expect(mockPtyWrite).toHaveBeenCalled();
-    const ptyCall = mockPtyWrite.mock.calls[0];
-    expect(ptyCall[0]).toBe('agent-2');
-    expect(ptyCall[1]).toContain('[SHOULDER-TAP]');
-
-    agentRegistry.untrack('agent-1');
-    agentRegistry.untrack('agent-2');
-  });
 });
