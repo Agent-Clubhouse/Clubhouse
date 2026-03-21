@@ -241,7 +241,7 @@ describe('showConfirmDialog', () => {
     });
 
     const confirmBtn = screen.getByTestId('plugin-dialog-confirm');
-    expect(confirmBtn.className).toContain('bg-ctp-red');
+    expect(confirmBtn.className).toContain('bg-ctp-error');
     expect(confirmBtn.textContent).toBe('Delete');
   });
 

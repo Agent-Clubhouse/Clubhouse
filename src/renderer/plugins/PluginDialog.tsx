@@ -149,7 +149,7 @@ function ConfirmDialog({ message, onResolve }: ConfirmDialogProps) {
             data-testid="plugin-dialog-confirm"
             className={`px-4 py-1.5 text-xs rounded-lg cursor-pointer transition-colors font-medium ${
               isDestructive
-                ? 'bg-ctp-red text-ctp-base hover:opacity-90'
+                ? 'bg-ctp-error text-ctp-base hover:opacity-90'
                 : 'bg-ctp-accent text-ctp-base hover:opacity-90'
             }`}
           >
