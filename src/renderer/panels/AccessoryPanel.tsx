@@ -70,7 +70,7 @@ function SettingsCategoryNav() {
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
             {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
-            {showAnnex && navButton('Annex Server', 'annex')}
+            {showAnnex && navButton('Annex', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
             {showMcp && navButton('Clubhouse MCP', 'mcp')}
             {navButton('Updates', 'updates')}
