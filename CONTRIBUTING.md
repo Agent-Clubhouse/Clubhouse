@@ -2,9 +2,11 @@
 
 Thanks for your interest in contributing! This guide covers the essentials for getting started.
 
+Before diving in, read [PRINCIPLES.md](PRINCIPLES.md) — it describes the values that guide what goes where and how contributions are evaluated.
+
 ## Development Setup
 
-**Prerequisites:** Node.js 20+, npm, Git
+**Prerequisites:** Node.js 22+, npm, Git
 
 ```bash
 git clone https://github.com/Agent-Clubhouse/Clubhouse.git
@@ -15,9 +17,9 @@ npm start  # Launches dev mode with hot reload
 
 ### Platform Notes
 
-- **macOS:** Full support including code signing and notarization (requires Apple Developer credentials for distribution builds)
-- **Windows:** Full support. The `postinstall` script handles native module setup automatically.
-- **Linux:** Builds via deb/rpm makers. Not actively tested but should work.
+- **macOS:** Xcode Command Line Tools required (`xcode-select --install`). Full support including code signing and notarization (requires Apple Developer credentials for distribution builds).
+- **Windows:** Visual Studio Build Tools with the "Desktop development with C++" workload (for `node-pty` and other native modules). The `postinstall` script handles native module setup automatically.
+- **Linux:** Install `build-essential`, `python3` for native compilation. For packaging: `dpkg`, `fakeroot`, `rpm`. For E2E tests: `xvfb` (virtual display).
 
 ## Project Structure
 
@@ -55,16 +57,27 @@ Use conventional-ish messages — the prefix matters, the format is flexible:
 
 ## Testing
 
+Every PR must include tests. See [Principle 2](PRINCIPLES.md#principle-2-extreme-bias-for-test-coverage) for the full rationale.
+
 ```bash
-npm test                 # All tests (Vitest)
+npm test                 # All unit + component tests (Vitest)
 npm run test:unit        # Main + shared unit tests
-npm run test:components  # React component tests
-npm run test:e2e         # Playwright E2E tests
+npm run test:components  # React component tests (jsdom)
+npm run test:e2e         # Playwright E2E tests (requires packaged app)
 npm run typecheck        # TypeScript type checking
-npm run validate         # Full pipeline: typecheck + test + make + e2e
+npm run lint             # ESLint
+npm run validate         # Full pipeline: typecheck → test → make → e2e
 ```
 
-All PRs must pass `npm run typecheck` and `npm test`. The CI workflow runs these automatically.
+**E2E tests** run Playwright against the packaged Electron app. You need to `npm run package` first, or use `npm run validate` which handles the full sequence.
+
+**On Linux**, E2E tests require a virtual display:
+
+```bash
+xvfb-run --auto-servernum npx playwright test
+```
+
+All PRs must pass `npm run typecheck` and `npm test`. The CI workflow runs these on macOS, Windows, and Linux automatically.
 
 ## Pull Requests
 
@@ -84,11 +97,11 @@ Open an issue with:
 
 ## Feature Requests
 
-Open an issue describing the use case. Explain the problem you're solving, not just the solution you want.
+Open an issue describing the use case. Explain the problem you're solving, not just the solution you want. Consider whether the feature belongs in core or in a plugin — see [Principle 3](PRINCIPLES.md#principle-3-opinions-are-opt-in) and [Principle 4](PRINCIPLES.md#principle-4-change-at-the-least-obtrusive-layer).
 
 ## Plugin Development
 
-Clubhouse has a plugin API (v0.5) for extending functionality. See the [Plugin System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Plugin-System) wiki page for the full API reference, manifest format, and permissions model.
+Clubhouse has a plugin API for extending functionality. Current supported API versions: `0.5`, `0.6`, `0.7`, `0.8`. See the [Plugin System](https://github.com/Agent-Clubhouse/Clubhouse/wiki/Plugin-System) wiki page for the full API reference, manifest format, and permissions model.
 
 ## License
 
