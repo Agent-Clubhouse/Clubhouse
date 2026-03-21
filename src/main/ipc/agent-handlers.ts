@@ -122,7 +122,9 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.REORDER_DURABLE, withValidatedArgs(
     [stringArg(), arrayArg(stringArg())],
     async (_event, projectPath, orderedIds) => {
-      return agentConfig.reorderDurable(projectPath, orderedIds);
+      const result = await agentConfig.reorderDurable(projectPath, orderedIds);
+      broadcastSnapshotRefresh();
+      return result;
     },
   ));
 

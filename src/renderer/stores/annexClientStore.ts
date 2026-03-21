@@ -74,6 +74,7 @@ interface AnnexClientStoreState {
   }) => Promise<unknown>;
   sendAgentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string) => Promise<unknown>;
   requestWorktreeStatus: (satelliteId: string, projectId: string, agentId: string) => Promise<unknown>;
+  sendAgentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) => Promise<void>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
@@ -197,6 +198,12 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
 
   requestWorktreeStatus: async (satelliteId, projectId, agentId) => {
     return window.clubhouse.annexClient.agentWorktreeStatus(satelliteId, projectId, agentId);
+  },
+
+  sendAgentReorder: async (satelliteId, projectId, orderedIds) => {
+    try {
+      await window.clubhouse.annexClient.agentReorder(satelliteId, projectId, orderedIds);
+    } catch { /* ignore */ }
   },
 }));
 
