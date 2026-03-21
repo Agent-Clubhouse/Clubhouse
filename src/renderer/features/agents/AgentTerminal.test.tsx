@@ -43,6 +43,26 @@ vi.mock('../terminal/clipboard', () => ({
   attachClipboardHandlers: (...args: any[]) => (globalThis as any).__testAttachClipboard(...args),
 }));
 
+vi.mock('../../stores/annexClientStore', () => ({
+  useAnnexClientStore: vi.fn((selector: any) => {
+    const state = {
+      sendPtyInput: vi.fn(),
+      sendClipboardImage: vi.fn(),
+      requestPtyBuffer: vi.fn().mockResolvedValue(''),
+    };
+    return selector(state);
+  }),
+  satellitePtyDataBus: { on: vi.fn(() => vi.fn()) },
+}));
+
+vi.mock('../../stores/remoteProjectStore', () => ({
+  isRemoteAgentId: (id: string) => id.startsWith('remote||'),
+  parseNamespacedId: (id: string) => {
+    const parts = id.split('||');
+    return { satelliteId: parts[1], agentId: parts[2] };
+  },
+}));
+
 import { AgentTerminal } from './AgentTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
@@ -294,6 +314,36 @@ describe('AgentTerminal', () => {
       const { container } = render(<AgentTerminal agentId="agent-1" />);
       const terminalDiv = container.querySelector('[data-testid="agent-terminal"]') as HTMLElement;
       expect(terminalDiv.style.padding).toBe('8px');
+    });
+  });
+
+  describe('remote file drop banner', () => {
+    it('shows banner when files are dropped on a remote agent terminal', () => {
+      vi.useFakeTimers();
+      render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+
+      const wrapper = screen.getByTestId('agent-terminal').parentElement!.parentElement!;
+      const file = new File(['dummy'], 'test.txt', { type: 'text/plain' });
+      const dataTransfer = { types: ['Files'], files: [file], dropEffect: '' };
+
+      fireEvent.dragOver(wrapper, { dataTransfer });
+      fireEvent.drop(wrapper, { dataTransfer: { ...dataTransfer, files: { length: 1, 0: file, item: () => file, [Symbol.iterator]: function* () { yield file; } } } });
+
+      expect(screen.getByTestId('remote-banner')).toBeInTheDocument();
+      expect(screen.getByText('File drop is not supported on remote agents')).toBeInTheDocument();
+
+      // Banner should auto-dismiss after 3 seconds
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it('does not show banner for local agent file drop', async () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      // Flush the getBuffer() microtask so the terminal is ready
+      await act(async () => {});
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
     });
   });
 
