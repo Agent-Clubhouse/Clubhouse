@@ -20,6 +20,17 @@ vi.mock('../services/annex-client', () => ({
   sendToSatellite: vi.fn(() => true),
   forgetSatellite: vi.fn(),
   forgetAllSatellites: vi.fn(),
+  requestFileTree: vi.fn(async () => []),
+  requestFileRead: vi.fn(async () => ''),
+  requestPtyBuffer: vi.fn(async () => ''),
+  resizeRemoteBuffer: vi.fn(),
+  requestGitOperation: vi.fn(async () => ({})),
+  requestSessionList: vi.fn(async () => []),
+  requestSessionTranscript: vi.fn(async () => ({})),
+  requestSessionSummary: vi.fn(async () => ({})),
+  requestCreateDurable: vi.fn(async () => ({})),
+  requestDeleteDurable: vi.fn(async () => ({})),
+  requestWorktreeStatus: vi.fn(async () => ({})),
 }));
 
 import { ipcMain } from 'electron';
@@ -126,5 +137,79 @@ describe('annex-client-handlers', () => {
   it('rejects non-string fingerprint for FORGET_SATELLITE', () => {
     const handler = handlers.get(IPC.ANNEX_CLIENT.FORGET_SATELLITE)!;
     expect(() => handler({}, 123)).toThrow();
+  });
+
+  // --- File operation handlers ---
+
+  it('registers FILE_TREE handler', () => {
+    expect(handlers.has(IPC.ANNEX_CLIENT.FILE_TREE)).toBe(true);
+  });
+
+  it('registers FILE_READ handler', () => {
+    expect(handlers.has(IPC.ANNEX_CLIENT.FILE_READ)).toBe(true);
+  });
+
+  it('FILE_TREE delegates to annexClient.requestFileTree', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_TREE)!;
+    const options = { path: 'src', depth: 3, includeHidden: true };
+    await handler({}, 'sat-123', 'proj-abc', options);
+    expect(annexClient.requestFileTree).toHaveBeenCalledWith('sat-123', 'proj-abc', options);
+  });
+
+  it('FILE_TREE passes undefined options when not provided', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_TREE)!;
+    await handler({}, 'sat-123', 'proj-abc');
+    expect(annexClient.requestFileTree).toHaveBeenCalledWith('sat-123', 'proj-abc', undefined);
+  });
+
+  it('FILE_READ delegates to annexClient.requestFileRead', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_READ)!;
+    await handler({}, 'sat-123', 'proj-abc', 'src/index.ts');
+    expect(annexClient.requestFileRead).toHaveBeenCalledWith('sat-123', 'proj-abc', 'src/index.ts');
+  });
+
+  it('FILE_TREE rejects non-string satelliteId', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_TREE)!;
+    expect(() => handler({}, 123, 'proj-abc')).toThrow();
+  });
+
+  it('FILE_TREE rejects non-string projectId', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_TREE)!;
+    expect(() => handler({}, 'sat-123', 123)).toThrow();
+  });
+
+  it('FILE_READ rejects non-string path', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.FILE_READ)!;
+    expect(() => handler({}, 'sat-123', 'proj-abc', 123)).toThrow();
+  });
+
+  // --- PTY operation handlers ---
+
+  it('registers PTY_SPAWN_SHELL handler', () => {
+    expect(handlers.has(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL)).toBe(true);
+  });
+
+  it('PTY_SPAWN_SHELL delegates to annexClient.sendToSatellite', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_SPAWN_SHELL)!;
+    handler({}, 'sat-123', 'session-1', 'proj-abc');
+    expect(annexClient.sendToSatellite).toHaveBeenCalledWith('sat-123', {
+      type: 'pty:spawn-shell',
+      payload: { sessionId: 'session-1', projectId: 'proj-abc' },
+    });
+  });
+
+  it('PTY_INPUT delegates to annexClient.sendToSatellite', () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_INPUT)!;
+    handler({}, 'sat-123', 'agent-1', 'hello\n');
+    expect(annexClient.sendToSatellite).toHaveBeenCalledWith('sat-123', {
+      type: 'pty:input',
+      payload: { agentId: 'agent-1', data: 'hello\n' },
+    });
+  });
+
+  it('PTY_GET_BUFFER delegates to annexClient.requestPtyBuffer', async () => {
+    const handler = handlers.get(IPC.ANNEX_CLIENT.PTY_GET_BUFFER)!;
+    await handler({}, 'sat-123', 'agent-1');
+    expect(annexClient.requestPtyBuffer).toHaveBeenCalledWith('sat-123', 'agent-1');
   });
 });
