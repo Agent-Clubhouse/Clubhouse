@@ -15,6 +15,7 @@ import { SettingsConventions } from './agent-settings-service';
 import * as clubhouseModeSettings from './clubhouse-mode-settings';
 import * as gitExcludeManager from './git-exclude-manager';
 import { appLog } from './log-service';
+import { jsonMcpToToml } from './toml-utils';
 
 const EXCLUDE_TAG = 'clubhouse-mode';
 
@@ -295,17 +296,46 @@ export async function materializeAgent(params: {
     await writePermissions(worktreePath, resolvedPerms, conv);
   }
 
-  // 3. MCP JSON — skip for non-JSON settings formats (e.g. TOML)
-  if (defaults.mcpJson && (!conv.settingsFormat || conv.settingsFormat === 'json')) {
+  // 3. MCP config — write to the orchestrator's config file format
+  if (defaults.mcpJson) {
     try {
       const resolved = replaceWildcards(defaults.mcpJson, ctx);
-      JSON.parse(resolved); // Validate
       const mcpPath = path.join(worktreePath, conv.mcpConfigFile);
       const dir = path.dirname(mcpPath);
       await fsp.mkdir(dir, { recursive: true });
-      await fsp.writeFile(mcpPath, resolved, 'utf-8');
+
+      if (conv.settingsFormat === 'toml') {
+        // Convert JSON MCP config to TOML format for Codex CLI
+        const tomlContent = jsonMcpToToml(resolved);
+        if (tomlContent) {
+          // Read existing TOML content and append MCP sections
+          let existing = '';
+          try {
+            existing = await fsp.readFile(mcpPath, 'utf-8');
+          } catch {
+            // File doesn't exist — start fresh
+          }
+          // Strip any existing mcp_servers sections from the file,
+          // then append the new ones to avoid duplicates
+          const { stripMcpServerSection } = await import('./toml-utils');
+          let cleaned = existing;
+          // Parse the JSON to get server names so we can strip them
+          const parsed = JSON.parse(resolved);
+          const servers = parsed.mcpServers || parsed.mcp_servers || {};
+          for (const name of Object.keys(servers)) {
+            cleaned = stripMcpServerSection(cleaned, name);
+          }
+          cleaned = cleaned.trimEnd();
+          const separator = cleaned.length > 0 ? '\n\n' : '';
+          await fsp.writeFile(mcpPath, cleaned + separator + tomlContent, 'utf-8');
+        }
+      } else {
+        // JSON format — validate and write directly
+        JSON.parse(resolved); // Validate
+        await fsp.writeFile(mcpPath, resolved, 'utf-8');
+      }
     } catch {
-      appLog('core:materialization', 'warn', 'Skipping invalid MCP JSON during materialization', {
+      appLog('core:materialization', 'warn', 'Skipping invalid MCP config during materialization', {
         meta: { agentName: agent.name },
       });
     }

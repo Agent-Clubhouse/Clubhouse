@@ -570,15 +570,24 @@ export async function applyAgentDefaults(
     await writePermissions(worktreePath, defaults.permissions, conv);
   }
 
-  if (defaults.mcpJson && (!c.settingsFormat || c.settingsFormat === 'json')) {
+  if (defaults.mcpJson) {
     try {
-      JSON.parse(defaults.mcpJson); // Validate before writing
       const mcpPath = path.join(worktreePath, c.mcpConfigFile);
       const dir = path.dirname(mcpPath);
       await fsp.mkdir(dir, { recursive: true });
-      await fsp.writeFile(mcpPath, defaults.mcpJson, 'utf-8');
+
+      if (c.settingsFormat === 'toml') {
+        const { jsonMcpToToml } = await import('./toml-utils');
+        const tomlContent = jsonMcpToToml(defaults.mcpJson);
+        if (tomlContent) {
+          await fsp.writeFile(mcpPath, tomlContent, 'utf-8');
+        }
+      } else {
+        JSON.parse(defaults.mcpJson); // Validate before writing
+        await fsp.writeFile(mcpPath, defaults.mcpJson, 'utf-8');
+      }
     } catch (err) {
-      appLog(LOG_NS, 'warn', 'Skipped invalid MCP JSON in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
+      appLog(LOG_NS, 'warn', 'Skipped invalid MCP config in agent defaults', { meta: { error: err instanceof Error ? err.message : String(err) } });
     }
   }
 }
