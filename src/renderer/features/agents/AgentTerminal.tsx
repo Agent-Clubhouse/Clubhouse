@@ -24,6 +24,12 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const experimentalGradients = useThemeStore((s) => s.experimentalGradients);
+  const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
+  const effectiveTerminalColors = useMemo(
+    () => hasGradientBg ? { ...terminalColors, background: 'transparent' } : terminalColors,
+    [terminalColors, hasGradientBg],
+  );
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
   );
@@ -67,7 +73,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      theme: terminalColors,
+      theme: effectiveTerminalColors,
       fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.3,
@@ -75,6 +81,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       cursorBlink: true,
       cursorStyle: 'bar',
       allowProposedApi: true,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -225,9 +232,9 @@ export function AgentTerminal({ agentId, focused }: Props) {
   // Live-update theme on existing terminal instances
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = terminalColors;
+      terminalRef.current.options.theme = effectiveTerminalColors;
     }
-  }, [terminalColors]);
+  }, [effectiveTerminalColors]);
 
   useEffect(() => {
     if (!terminalRef.current || !experimentalMonoFont) return;
