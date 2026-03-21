@@ -6,6 +6,7 @@ import {
   type RegisteredCanvasWidget,
 } from '../../canvas-widget-registry';
 import { MenuPortal } from './MenuPortal';
+import { useDismissibleLayer } from './useDismissibleLayer';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
 export type ContextMenuSelection =
@@ -39,24 +40,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     });
     return () => disposable.dispose();
   }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onDismiss();
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onDismiss();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [onDismiss]);
+  useDismissibleLayer({ layerRef: menuRef, onDismiss });
 
   const handleBuiltinSelect = useCallback((type: CanvasViewType) => {
     onSelect({ kind: 'builtin', type });

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, fireEvent, waitFor, act } from '@testing-library/react';
 import { WireConfigPopover } from './WireConfigPopover';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
@@ -22,6 +22,10 @@ describe('WireConfigPopover', () => {
   beforeEach(() => {
     useMcpBindingStore.setState({ bindings: [browserBinding, agentBinding] });
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders binding info', () => {
@@ -86,6 +90,49 @@ describe('WireConfigPopover', () => {
     expect(queryByTestId('wire-instructions-dialog')).toBeNull();
     fireEvent.click(getByTestId('wire-instructions-button'));
     expect(getByTestId('wire-instructions-dialog')).toBeTruthy();
+  });
+
+  it('dismisses immediately on outside click after closing the instructions dialog', () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    const { getByTestId, queryByTestId } = render(
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={onClose} />,
+    );
+
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    fireEvent.click(getByTestId('wire-instructions-button'));
+    fireEvent.click(getByTestId('wire-instructions-cancel'));
+
+    expect(queryByTestId('wire-instructions-dialog')).toBeNull();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the popover on Escape when the instructions dialog is not open', () => {
+    const onClose = vi.fn();
+    render(<WireConfigPopover binding={browserBinding} x={100} y={200} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes only the instructions dialog on Escape when editing instructions', () => {
+    const onClose = vi.fn();
+    const { getByTestId, queryByTestId } = render(
+      <WireConfigPopover binding={browserBinding} x={100} y={200} onClose={onClose} />,
+    );
+
+    fireEvent.click(getByTestId('wire-instructions-button'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(queryByTestId('wire-instructions-dialog')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('sets instructions on both bindings for bidirectional agent-to-agent wires', async () => {

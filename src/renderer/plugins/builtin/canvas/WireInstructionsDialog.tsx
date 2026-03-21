@@ -43,6 +43,18 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
     textareaRef.current?.focus();
   }, [selectedTool]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const currentValue = drafts[selectedTool] || '';
 
   const handleTextChange = (value: string) => {
@@ -60,9 +72,14 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (e.target === backdropRef.current) {
       onClose();
     }
+  };
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
   };
 
   // Count how many tools have instructions set
@@ -75,6 +92,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
       style={{ zIndex: 100000 }}
+      onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
       data-testid="wire-instructions-dialog"
     >

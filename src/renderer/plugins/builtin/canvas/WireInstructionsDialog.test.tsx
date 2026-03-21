@@ -104,6 +104,15 @@ describe('WireInstructionsDialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('calls onClose when Escape is pressed', () => {
+    const onClose = vi.fn();
+    render(<WireInstructionsDialog binding={agentBinding} onSave={vi.fn()} onClose={onClose} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('switches between tools and preserves per-tool drafts', () => {
     const { getByTestId } = render(
       <WireInstructionsDialog binding={agentBinding} onSave={vi.fn()} onClose={vi.fn()} />,

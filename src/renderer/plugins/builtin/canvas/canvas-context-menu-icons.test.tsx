@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import * as widgetRegistry from '../../canvas-widget-registry';
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
@@ -106,5 +106,21 @@ describe('CanvasContextMenu plugin widget icons', () => {
     const button = screen.getByTestId('canvas-context-menu-plugin:my-plugin:no-icon');
     expect(button.textContent).toContain('+');
     expect(button.querySelector('svg')).toBeNull();
+  });
+
+  it('dismisses on outside mouse down', () => {
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    fireEvent.mouseDown(document.body);
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses on Escape', () => {
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
