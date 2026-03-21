@@ -716,7 +716,7 @@ async function handleWakeAgent(
   }
 
   // Check if already running
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
     sendJson(res, 409, { error: 'agent_already_running' });
     return;
   }
@@ -739,12 +739,13 @@ async function handleWakeAgent(
       sessionId: resume ? config.lastSessionId : undefined,
     });
 
-    // Broadcast agent:woken
+    // Broadcast agent:woken + refresh snapshot so controllers see updated status
     broadcastAndBuffer('agent:woken', {
       agentId: config.id,
       message,
       source: 'annex',
     });
+    broadcastSnapshotRefresh();
 
     sendJson(res, 200, {
       id: config.id,
@@ -1539,7 +1540,7 @@ function handleWsMessage(ws: WebSocket, data: string): void {
   const authType = wsAuthTypes.get(ws);
   const isMtls = authType === 'mtls';
 
-  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'clipboard:image')) {
+  if (!isMtls && (type === 'pty:input' || type === 'pty:resize' || type === 'pty:spawn-shell' || type === 'agent:spawn' || type === 'agent:wake' || type === 'agent:kill' || type === 'agent:reorder' || type === 'clipboard:image')) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'Control messages require mTLS authentication' } }));
     return;
   }
@@ -1634,6 +1635,25 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       ws.send(JSON.stringify({ type: 'agent:kill:ack', payload: { agentId } }));
       break;
     }
+
+    case 'agent:reorder': {
+      const projectId = payload.projectId as string;
+      const orderedIds = payload.orderedIds as string[];
+      if (!projectId || !Array.isArray(orderedIds)) break;
+      findProjectById(projectId).then((project) => {
+        if (!project) {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
+          return;
+        }
+        agentConfig.reorderDurable(project.path, orderedIds).then(() => {
+          broadcastSnapshotRefresh();
+          ws.send(JSON.stringify({ type: 'agent:reorder:ack', payload: { projectId } }));
+        }).catch(() => {
+          ws.send(JSON.stringify({ type: 'error', payload: { message: 'reorder_failed' } }));
+        });
+      });
+      break;
+    }
   }
 }
 
@@ -1693,7 +1713,7 @@ async function handleWakeAgentWs(
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_not_found' } }));
     return;
   }
-  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId)) {
+  if (ptyManager.isRunning(agentId) || isHeadlessAgent(agentId) || structuredManager.isStructuredSession(agentId)) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'agent_already_running' } }));
     return;
   }
@@ -1710,6 +1730,7 @@ async function handleWakeAgentWs(
       sessionId: options.resume ? config.lastSessionId : undefined,
     });
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
+    broadcastSnapshotRefresh();
     ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
   } catch (err) {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));

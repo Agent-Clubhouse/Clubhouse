@@ -4,7 +4,7 @@
 import { ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import * as annexClient from '../services/annex-client';
-import { withValidatedArgs, stringArg, numberArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, numberArg, objectArg, arrayArg } from './validation';
 
 export function registerAnnexClientHandlers(): void {
   ipcMain.handle(IPC.ANNEX_CLIENT.GET_SATELLITES, () => {
@@ -220,6 +220,17 @@ export function registerAnnexClientHandlers(): void {
     [stringArg(), stringArg(), stringArg()],
     async (_event, satelliteId, projectId, agentId) => {
       return annexClient.requestWorktreeStatus(satelliteId, projectId, agentId);
+    },
+  ));
+
+  // Proxy IPC: reorder durable agents on a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.AGENT_REORDER, withValidatedArgs(
+    [stringArg(), stringArg(), arrayArg(stringArg())],
+    (_event, satelliteId, projectId, orderedIds) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'agent:reorder',
+        payload: { projectId, orderedIds },
+      });
     },
   ));
 }

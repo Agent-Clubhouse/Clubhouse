@@ -158,10 +158,12 @@ describe('agent-handlers', () => {
     expect(agentConfig.updateDurableConfig).toHaveBeenCalledWith('/project', 'agent-1', { model: 'opus' });
   });
 
-  it('REORDER_DURABLE delegates to agentConfig.reorderDurable', async () => {
+  it('REORDER_DURABLE delegates to agentConfig.reorderDurable and broadcasts snapshot', async () => {
     const handler = handlers.get(IPC.AGENT.REORDER_DURABLE)!;
     await handler({}, '/project', ['a2', 'a1', 'a3']);
     expect(agentConfig.reorderDurable).toHaveBeenCalledWith('/project', ['a2', 'a1', 'a3']);
+    const { broadcastSnapshotRefresh } = await import('../services/annex-server');
+    expect(broadcastSnapshotRefresh).toHaveBeenCalled();
   });
 
   // --- Icons ---

@@ -20,7 +20,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       role="alert"
       aria-live="assertive"
       data-testid="toast-message"
-      className={`flex items-center gap-2 px-4 py-2 rounded shadow-lg bg-ctp-surface0 border ${borderClass} text-ctp-text text-sm max-w-sm`}
+      className={`flex items-center gap-2 px-4 py-2 rounded shadow-lg bg-surface-0 border ${borderClass} text-ctp-text text-sm max-w-sm`}
     >
       <span className={`${textClass} flex-shrink-0`}>●</span>
       <span className="flex-1 break-words">{toast.message}</span>

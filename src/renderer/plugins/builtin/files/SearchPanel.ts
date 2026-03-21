@@ -60,8 +60,8 @@ function ToggleButton({ label, active, onClick, title }: {
   return React.createElement('button', {
     className: `px-1 py-0 text-[10px] font-mono rounded border transition-colors ${
       active
-        ? 'bg-ctp-surface1 border-ctp-blue text-ctp-blue'
-        : 'bg-transparent border-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text hover:border-ctp-surface1'
+        ? 'bg-surface-1 border-ctp-blue text-ctp-blue'
+        : 'bg-transparent border-surface-0 text-ctp-subtext0 hover:text-ctp-text hover:border-surface-1'
     }`,
     onClick,
     title,
@@ -104,7 +104,7 @@ function FileResultGroup({ result, onMatchClick }: {
   return React.createElement('div', { className: 'mb-0.5' },
     // File header
     React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm hover:bg-ctp-surface0 transition-colors',
+      className: 'flex items-center gap-1 px-2 py-0.5 cursor-pointer rounded-sm hover:bg-surface-0 transition-colors',
       onClick: () => setCollapsed(!collapsed),
     },
       collapsed ? ChevronRight : ChevronDown,
@@ -123,7 +123,7 @@ function FileResultGroup({ result, onMatchClick }: {
       ...result.matches.slice(0, 100).map((match, i) =>
         React.createElement('div', {
           key: `${match.line}-${match.column}-${i}`,
-          className: 'flex items-start gap-1 px-2 py-px cursor-pointer rounded-sm hover:bg-ctp-surface0 transition-colors text-[11px]',
+          className: 'flex items-start gap-1 px-2 py-px cursor-pointer rounded-sm hover:bg-surface-0 transition-colors text-[11px]',
           onClick: () => onMatchClick(result.filePath, match.line),
         },
           React.createElement('span', {
@@ -253,14 +253,14 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
   },
     // Header
     React.createElement('div', {
-      className: 'flex flex-col border-b border-ctp-surface0 flex-shrink-0',
+      className: 'flex flex-col border-b border-surface-0 flex-shrink-0',
     },
       // Title row
       React.createElement('div', {
         className: 'flex items-center gap-2 px-2 py-1',
       },
         React.createElement('button', {
-          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 rounded transition-colors',
+          className: 'p-0.5 text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 rounded transition-colors',
           onClick: handleBack,
           title: 'Back to file tree',
         }, BackIcon),
@@ -272,7 +272,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
         className: 'flex items-center gap-1 px-2 pb-1',
       },
         React.createElement('div', {
-          className: 'flex-1 flex items-center bg-ctp-base border border-ctp-surface0 rounded px-1.5 py-0.5 focus-within:border-ctp-blue transition-colors',
+          className: 'flex-1 flex items-center bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 focus-within:border-ctp-blue transition-colors',
         },
           React.createElement('span', { className: 'text-ctp-subtext0 mr-1 flex-shrink-0' }, SearchIcon),
           React.createElement('input', {
@@ -332,14 +332,14 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
       },
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-ctp-surface0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
           placeholder: 'Include (e.g. src/**/*.ts)',
           value: includePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setIncludePattern(e.target.value),
         }),
         React.createElement('input', {
           type: 'text',
-          className: 'w-full bg-ctp-base border border-ctp-surface0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
+          className: 'w-full bg-ctp-base border border-surface-0 rounded px-1.5 py-0.5 text-[10px] text-ctp-text outline-none placeholder:text-ctp-subtext0 focus:border-ctp-blue transition-colors',
           placeholder: 'Exclude (e.g. dist,*.min.js)',
           value: excludePattern,
           onChange: (e: React.ChangeEvent<HTMLInputElement>) => setExcludePattern(e.target.value),
@@ -349,7 +349,7 @@ export function SearchPanel({ api }: { api: PluginAPI }) {
 
     // Status line
     (results || searching) && React.createElement('div', {
-      className: 'flex items-center gap-1 px-2 py-0.5 text-[10px] text-ctp-subtext0 border-b border-ctp-surface0 flex-shrink-0',
+      className: 'flex items-center gap-1 px-2 py-0.5 text-[10px] text-ctp-subtext0 border-b border-surface-0 flex-shrink-0',
     },
       searching
         ? React.createElement(React.Fragment, null, SpinnerIcon, ' Searching...')

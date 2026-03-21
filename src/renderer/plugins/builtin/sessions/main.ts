@@ -157,7 +157,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
   },
     // Header
     React.createElement('div', {
-      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-ctp-surface0',
+      className: 'px-3 py-2 text-xs font-semibold text-ctp-subtext0 uppercase tracking-wider border-b border-surface-0',
     }, 'Agents'),
 
     // Scrollable list
@@ -250,7 +250,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
       // Divider + completed agents
       completedAgents.length > 0 && React.createElement(React.Fragment, null,
         React.createElement('div', {
-          className: 'mx-3 my-2 border-t border-ctp-surface0',
+          className: 'mx-3 my-2 border-t border-surface-0',
         }),
         React.createElement('div', {
           className: 'px-3 py-1 text-[10px] text-ctp-subtext0 uppercase tracking-wider',
@@ -272,7 +272,7 @@ export function SidebarPanel({ api }: { api: PluginAPI }) {
               style: { borderColor: '#6c7086' },
             },
               React.createElement('div', {
-                className: 'w-6 h-6 rounded-full flex items-center justify-center bg-ctp-surface2 text-ctp-subtext0 text-[10px]',
+                className: 'w-6 h-6 rounded-full flex items-center justify-center bg-surface-2 text-ctp-subtext0 text-[10px]',
               }, '\u26A1'),
             ),
             React.createElement('div', { className: 'flex-1 min-w-0' },
@@ -454,7 +454,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   },
     // Header
     React.createElement('div', {
-      className: 'flex items-center px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+      className: 'flex items-center px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
     },
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text' },
         `Session \u2014 ${selectedAgent.agentName} \u2014 ${sessionLabel}`,
@@ -503,7 +503,7 @@ function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; age
   },
     // Header
     React.createElement('div', {
-      className: 'flex items-center px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+      className: 'flex items-center px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
     },
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text' },
         `Completed \u2014 ${agentName}`,
@@ -513,7 +513,7 @@ function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; age
     // Content
     React.createElement('div', { className: 'flex-1 overflow-y-auto' },
       React.createElement('div', {
-        className: 'mx-3 my-2 p-3 rounded-lg bg-ctp-mantle border border-ctp-surface0',
+        className: 'mx-3 my-2 p-3 rounded-lg bg-ctp-mantle border border-surface-0',
         'data-testid': 'completed-agent-card',
       },
         // Mission
@@ -540,7 +540,7 @@ function CompletedAgentDetail({ api, agentId, agentName }: { api: PluginAPI; age
         }, `Completed ${formatRelativeTime(new Date(completed.completedAt).toISOString())}`),
 
         // File list
-        completed.filesModified.length > 0 && React.createElement('div', { className: 'mt-2 pt-2 border-t border-ctp-surface0' },
+        completed.filesModified.length > 0 && React.createElement('div', { className: 'mt-2 pt-2 border-t border-surface-0' },
           React.createElement('div', { className: 'text-[10px] text-ctp-overlay0 uppercase tracking-wider mb-1' }, 'Modified files'),
           React.createElement('div', { className: 'space-y-0.5' },
             completed.filesModified.map((f) => React.createElement('div', {
@@ -561,7 +561,7 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
   const [filesExpanded, setFilesExpanded] = useState(false);
 
   return React.createElement('div', {
-    className: 'mx-3 my-2 p-3 rounded-lg bg-ctp-mantle border border-ctp-surface0',
+    className: 'mx-3 my-2 p-3 rounded-lg bg-ctp-mantle border border-surface-0',
     'data-testid': 'session-summary-card',
   },
     // Summary text
@@ -581,7 +581,7 @@ function SessionSummaryCard({ summary }: { summary: SessionSummary }) {
 
     // Additional info row
     React.createElement('div', {
-      className: 'flex items-center gap-3 mt-2 pt-2 border-t border-ctp-surface0 text-[10px] text-ctp-overlay0',
+      className: 'flex items-center gap-3 mt-2 pt-2 border-t border-surface-0 text-[10px] text-ctp-overlay0',
     },
       summary.model && React.createElement('span', null, `Model: ${summary.model}`),
       summary.orchestrator && React.createElement('span', null, `Provider: ${summary.orchestrator}`),
@@ -655,7 +655,7 @@ function TimelineSection({ events, playback }: {
     React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
       // Play/Pause
       React.createElement('button', {
-        className: 'w-6 h-6 flex items-center justify-center rounded bg-ctp-surface0 hover:bg-ctp-surface1 text-ctp-text cursor-pointer transition-colors',
+        className: 'w-6 h-6 flex items-center justify-center rounded bg-surface-0 hover:bg-surface-1 text-ctp-text cursor-pointer transition-colors',
         onClick: () => sessionsState.setPlaybackPlaying(!playback.playing),
         'data-testid': 'playback-toggle',
       }, playback.playing ? '\u275A\u275A' : '\u25B6'),
@@ -667,7 +667,7 @@ function TimelineSection({ events, playback }: {
           className: `px-1.5 py-0.5 text-[10px] rounded cursor-pointer transition-colors ${
             playback.speed === speed
               ? 'bg-ctp-blue text-ctp-base font-medium'
-              : 'bg-ctp-surface0 text-ctp-subtext0 hover:bg-ctp-surface1'
+              : 'bg-surface-0 text-ctp-subtext0 hover:bg-surface-1'
           }`,
           onClick: () => sessionsState.setPlaybackSpeed(speed),
         }, `${speed}x`),

@@ -10,6 +10,8 @@ import * as ptyManager from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
+import { getAgentOrchestrator } from './agent-registry';
+import { getProvider } from '../orchestrators/registry';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
@@ -23,11 +25,24 @@ const POLLING_START_MSG =
   '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. ' +
   'Use read_bulletin to check for updates.';
 
+/** Default delay (ms) before sending Enter after bracketed paste. */
+const DEFAULT_PASTE_DELAY_MS = 200;
+
+/** Get the orchestrator-specific paste delay for an agent. */
+function getPasteDelayMs(agentId: string): number {
+  const orchId = getAgentOrchestrator(agentId);
+  if (orchId) {
+    const provider = getProvider(orchId);
+    if (provider) return provider.getPasteSubmitTiming().initialDelayMs;
+  }
+  return DEFAULT_PASTE_DELAY_MS;
+}
+
 /** Inject a message into an agent's PTY using bracketed paste + Enter. */
 function injectPtyMessage(agentId: string, message: string): void {
   try {
     ptyManager.write(agentId, `\x1b[200~${message}\x1b[201~`);
-    setTimeout(() => ptyManager.write(agentId, '\r'), 150);
+    setTimeout(() => ptyManager.write(agentId, '\r'), getPasteDelayMs(agentId));
   } catch (err) {
     appLog('core:group-project', 'warn', 'PTY injection failed', {
       meta: { agentId, error: err instanceof Error ? err.message : String(err) },

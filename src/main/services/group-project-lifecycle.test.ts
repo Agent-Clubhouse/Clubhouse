@@ -34,6 +34,7 @@ vi.mock('./pty-manager', () => ({
   isRunning: (...args: unknown[]) => mockIsRunning(...args),
 }));
 
+const mockGetAgentOrchestrator = vi.fn<(id: string) => string | undefined>(() => undefined);
 vi.mock('./agent-registry', () => {
   const registrations = new Map<string, unknown>();
   return {
@@ -42,8 +43,14 @@ vi.mock('./agent-registry', () => {
       register: (id: string, reg: unknown) => registrations.set(id, reg),
       untrack: (id: string) => registrations.delete(id),
     },
+    getAgentOrchestrator: (...args: unknown[]) => mockGetAgentOrchestrator(args[0] as string),
   };
 });
+
+const mockGetProvider = vi.fn(() => undefined);
+vi.mock('../orchestrators/registry', () => ({
+  getProvider: (...args: unknown[]) => mockGetProvider(args[0]),
+}));
 
 import { bindingManager } from './clubhouse-mcp/binding-manager';
 import { getBulletinBoard, _resetAllBoardsForTesting } from './group-project-bulletin';
@@ -60,6 +67,8 @@ describe('GroupProjectLifecycle', () => {
     store.clear();
     mockPtyWrite.mockClear();
     mockIsRunning.mockReturnValue(false);
+    mockGetAgentOrchestrator.mockReturnValue(undefined);
+    mockGetProvider.mockReturnValue(undefined);
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
     _resetLifecycleForTesting();
@@ -177,6 +186,46 @@ describe('GroupProjectLifecycle', () => {
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![0]).toBe('agent-1');
+  });
+
+  it('uses orchestrator-specific paste timing for PTY injection', async () => {
+    // Simulate a Copilot CLI agent with 500ms paste timing
+    mockGetAgentOrchestrator.mockReturnValue('copilot-cli');
+    mockGetProvider.mockReturnValue({
+      getPasteSubmitTiming: () => ({ initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 }),
+    });
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-ghcp', {
+      targetId: 'gp_456',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'copilot-bot',
+    });
+
+    // Welcome message should fire immediately (bracketed paste)
+    await new Promise(r => setTimeout(r, 50));
+    const welcomeCall = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('GROUP_PROJECT_JOINED'),
+    );
+    expect(welcomeCall).toBeDefined();
+
+    // Enter keystroke should NOT have fired yet at 200ms (would with default 200ms timing)
+    // but should fire after 500ms
+    mockPtyWrite.mockClear();
+    await new Promise(r => setTimeout(r, 200));
+    const earlyEnter = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => c[1] === '\r',
+    );
+    // At 250ms total, the 500ms timeout hasn't fired yet
+    expect(earlyEnter).toBeUndefined();
+
+    await new Promise(r => setTimeout(r, 400));
+    const lateEnter = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => c[1] === '\r',
+    );
+    expect(lateEnter).toBeDefined();
   });
 
   it('does not inject polling instruction when polling is disabled', async () => {

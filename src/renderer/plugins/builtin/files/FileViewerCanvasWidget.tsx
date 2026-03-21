@@ -169,7 +169,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         {isAppMode && (
           <button
             className="hover:text-ctp-text transition-colors mr-1"
@@ -186,7 +186,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           <>
             <span className="text-ctp-overlay0 mx-0.5">/</span>
             <select
-              className="text-[10px] bg-ctp-surface0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
+              className="text-[10px] bg-surface-0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
               value={rootPath}
               onChange={(e) => handleSelectWorktree(e.target.value)}
               title="Switch worktree root"

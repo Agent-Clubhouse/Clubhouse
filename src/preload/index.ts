@@ -882,6 +882,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode),
     agentWorktreeStatus: (satelliteId: string, projectId: string, agentId: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
+    agentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_REORDER, satelliteId, projectId, orderedIds),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
