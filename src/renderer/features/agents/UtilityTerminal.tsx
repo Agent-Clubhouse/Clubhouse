@@ -13,6 +13,9 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const experimentalMonoFont = useThemeStore(
+    (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
+  );
 
   const ptyId = `utility_${agentId}`;
 
@@ -91,6 +94,11 @@ export function UtilityTerminal({ agentId, worktreePath }: Props) {
       terminalRef.current.options.theme = terminalColors;
     }
   }, [terminalColors]);
+
+  useEffect(() => {
+    if (!terminalRef.current || !experimentalMonoFont) return;
+    terminalRef.current.options.fontFamily = experimentalMonoFont;
+  }, [experimentalMonoFont]);
 
   return (
     <div

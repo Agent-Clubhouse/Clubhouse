@@ -217,6 +217,72 @@ describe('ToolRegistry', () => {
     });
   });
 
+  describe('instruction injection', () => {
+    it('injects global (*) instructions into all tool descriptions', () => {
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send a message',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+      registerToolTemplate('agent', 'get_status', {
+        description: 'Get status',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      });
+      bindingManager.setInstructions('agent-1', 'agent-2', { '*': 'Do not share secrets' });
+
+      const tools = getScopedToolList('agent-1');
+      expect(tools).toHaveLength(2);
+      expect(tools[0].description).toContain('WIRE INSTRUCTIONS: Do not share secrets');
+      expect(tools[1].description).toContain('WIRE INSTRUCTIONS: Do not share secrets');
+    });
+
+    it('injects per-tool instructions that override global', () => {
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send a message',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+      registerToolTemplate('agent', 'get_status', {
+        description: 'Get status',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      });
+      bindingManager.setInstructions('agent-1', 'agent-2', {
+        '*': 'Global instruction',
+        'send_message': 'Be very concise',
+      });
+
+      const tools = getScopedToolList('agent-1');
+      const sendTool = tools.find(t => t.name.includes('send_message'))!;
+      const statusTool = tools.find(t => t.name.includes('get_status'))!;
+      // Per-tool instruction takes priority over global
+      expect(sendTool.description).toContain('WIRE INSTRUCTIONS: Be very concise');
+      expect(sendTool.description).not.toContain('Global instruction');
+      // Global applies to tools without specific instruction
+      expect(statusTool.description).toContain('WIRE INSTRUCTIONS: Global instruction');
+    });
+
+    it('does not inject instructions when none are set', () => {
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send a message',
+        inputSchema: { type: 'object' },
+      }, vi.fn());
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+      });
+
+      const tools = getScopedToolList('agent-1');
+      expect(tools[0].description).toBe('Send a message');
+      expect(tools[0].description).not.toContain('WIRE INSTRUCTIONS');
+    });
+  });
+
   describe('callTool', () => {
     it('calls the correct handler', async () => {
       const handler = vi.fn().mockResolvedValue({

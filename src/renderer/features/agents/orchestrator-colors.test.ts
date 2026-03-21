@@ -65,7 +65,6 @@ describe('orchestrator-colors', () => {
     it('uses static short names when orchestrator list is not provided', () => {
       expect(getOrchestratorLabel('claude-code')).toBe('CC');
       expect(getOrchestratorLabel('copilot-cli')).toBe('GHCP');
-      expect(getOrchestratorLabel('opencode')).toBe('OC');
     });
 
     it('uses static short names when orchestrator list is empty', () => {

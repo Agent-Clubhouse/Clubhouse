@@ -234,6 +234,32 @@ describe('remoteProjectStore', () => {
       expect(useRemoteProjectStore.getState().remoteAgentDetailedStatus['remote||sat-1||agent-1']).toBeUndefined();
     });
 
+    it('propagates annexEnabled from snapshot plugins', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'dual', annexEnabled: true },
+          { id: 'community-plugin', name: 'Community Plugin', version: '1.0.0', scope: 'project', annexEnabled: false },
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState.find((p) => p.id === 'hub')?.annexEnabled).toBe(true);
+      expect(matchState.find((p) => p.id === 'community-plugin')?.annexEnabled).toBe(false);
+    });
+
+    it('defaults annexEnabled to false for old satellites without the field', () => {
+      const store = useRemoteProjectStore.getState();
+      store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({
+        plugins: [
+          { id: 'hub', name: 'Hub', version: '1.0.0', scope: 'dual' } as any,
+        ],
+      }));
+
+      const matchState = useRemoteProjectStore.getState().pluginMatchState['sat-1'];
+      expect(matchState[0].annexEnabled).toBe(false);
+    });
+
     it('tracks source field as builtin for built-in plugins', () => {
       const store = useRemoteProjectStore.getState();
       store.applySatelliteSnapshot('sat-1', 'Sat 1', makeSnapshot({

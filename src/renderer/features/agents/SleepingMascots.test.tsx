@@ -32,13 +32,6 @@ describe('SleepingMascots', () => {
       expect(head).not.toBeNull();
     });
 
-    it('renders GenericRobotSleeping for opencode orchestrator', () => {
-      const { container } = render(<SleepingMascot orchestrator="opencode" />);
-      // Generic robot uses grey body color
-      const body = container.querySelector('rect[fill="#5a5a6e"]');
-      expect(body).not.toBeNull();
-    });
-
     it('renders GenericRobotSleeping for unknown orchestrator', () => {
       const { container } = render(<SleepingMascot orchestrator="some-unknown" />);
       const body = container.querySelector('rect[fill="#5a5a6e"]');

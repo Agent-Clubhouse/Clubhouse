@@ -30,10 +30,10 @@ describe('hub manifest', () => {
     expect(manifest.permissions).toEqual(
       expect.arrayContaining([
         'commands', 'storage', 'agents', 'projects',
-        'widgets', 'navigation', 'notifications',
+        'widgets', 'navigation', 'notifications', 'annex',
       ]),
     );
-    expect(manifest.permissions).toHaveLength(7);
+    expect(manifest.permissions).toHaveLength(8);
   });
 
   it('contributes help topics', () => {

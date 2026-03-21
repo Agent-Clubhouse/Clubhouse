@@ -8,6 +8,7 @@ import { groupProjectRegistry } from '../services/group-project-registry';
 import { getBulletinBoard, destroyBulletinBoard } from '../services/group-project-bulletin';
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
 import { initGroupProjectLifecycle } from '../services/group-project-lifecycle';
+import { executeShoulderTap } from '../services/group-project-shoulder-tap';
 import { isMcpEnabledForAny } from '../services/mcp-settings';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -59,9 +60,9 @@ export function registerGroupProjectHandlers(): void {
   ));
 
   ipcMain.handle(IPC.GROUP_PROJECT.UPDATE, withValidatedArgs(
-    [stringArg(), objectArg<{ name?: string; metadata?: Record<string, unknown> }>()],
+    [stringArg(), objectArg<{ name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }>()],
     async (_event, id, fields) => {
-      const updated = await groupProjectRegistry.update(id as string, fields as { name?: string; metadata?: Record<string, unknown> });
+      const updated = await groupProjectRegistry.update(id as string, fields as { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> });
       if (updated) {
         appLog('core:group-project', 'info', 'Group project updated', { meta: { id } });
       }
@@ -98,6 +99,37 @@ export function registerGroupProjectHandlers(): void {
         since as string | undefined,
         limit as number | undefined,
       );
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true }), numberArg({ optional: true })],
+    async (_event, id, since, limit) => {
+      const board = getBulletinBoard(id as string);
+      return board.getAllMessages(
+        since as string | undefined,
+        limit as number | undefined,
+      );
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg()],
+    async (_event, projectId, topic, body) => {
+      const board = getBulletinBoard(projectId as string);
+      return board.postMessage('user', topic as string, body as string);
+    },
+  ));
+
+  ipcMain.handle(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, withValidatedArgs(
+    [stringArg(), stringArg({ optional: true }), stringArg()],
+    async (_event, projectId, targetAgentId, message) => {
+      return executeShoulderTap({
+        projectId: projectId as string,
+        senderLabel: 'user',
+        targetAgentId: (targetAgentId as string) || null,
+        message: message as string,
+      });
     },
   ));
 }

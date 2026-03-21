@@ -335,9 +335,62 @@ jobs:
           path: dist/
           retention-days: 5
 
+  build-linux:
+    name: Build Linux (${{ matrix.arch }})
+    needs: [verify-tag]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg fakeroot rpm
+
+      - name: Build Linux packages
+        run: npx electron-forge make --arch=${{ matrix.arch }}
+
+      - name: Rename artifacts for upload
+        run: |
+          VERSION="${{ needs.verify-tag.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          mkdir -p dist
+
+          # Find and rename .deb
+          DEB_PATH=$(find out/make -name "*.deb" -type f | head -1)
+          if [ -n "$DEB_PATH" ]; then
+            cp "$DEB_PATH" "dist/Clubhouse-${VERSION}-linux-${ARCH}.deb"
+          fi
+
+          # Find and rename .rpm
+          RPM_PATH=$(find out/make -name "*.rpm" -type f | head -1)
+          if [ -n "$RPM_PATH" ]; then
+            cp "$RPM_PATH" "dist/Clubhouse-${VERSION}-linux-${ARCH}.rpm"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: dist/
+          retention-days: 5
+
   publish:
     name: Publish
-    needs: [verify-tag, build-macos, build-windows]
+    needs: [verify-tag, build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -482,7 +535,7 @@ jobs:
           CONTAINER="releases"
 
           # Upload versioned artifacts (immutable)
-          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg artifacts/Clubhouse-*.exe; do
+          for file in artifacts/Clubhouse-*.zip artifacts/Clubhouse-*.dmg artifacts/Clubhouse-*.exe artifacts/Clubhouse-*.deb artifacts/Clubhouse-*.rpm; do
             [ -f "$file" ] || continue
             BLOB_NAME="artifacts/$(basename "$file")"
             az storage blob upload \
@@ -602,6 +655,29 @@ jobs:
               --auth-mode login
           done
 
+          # Copy Linux packages to the appropriate slot
+          for LINUX_ARCH in x64; do
+            for EXT in deb rpm; do
+              SRC_BLOB="artifacts/Clubhouse-${VERSION}-linux-${LINUX_ARCH}.${EXT}"
+              DEST_BLOB="${SLOT}/Clubhouse-${SLOT}-linux-${LINUX_ARCH}.${EXT}"
+              # Only copy if the source artifact exists
+              EXISTS=$(az storage blob exists \
+                --account-name "$ACCOUNT" \
+                --container-name "$CONTAINER" \
+                --name "$SRC_BLOB" \
+                --auth-mode login \
+                --query "exists" --output tsv)
+              if [ "$EXISTS" = "true" ]; then
+                az storage blob copy start \
+                  --account-name "$ACCOUNT" \
+                  --destination-container "$CONTAINER" \
+                  --destination-blob "$DEST_BLOB" \
+                  --source-uri "https://${ACCOUNT}.blob.core.windows.net/${CONTAINER}/${SRC_BLOB}" \
+                  --auth-mode login
+              fi
+            done
+          done
+
           # Wait for copies to complete
           SLOT_BLOBS=(
             "${SLOT}/Clubhouse-${SLOT}-darwin-arm64.dmg"
@@ -609,6 +685,22 @@ jobs:
             "${SLOT}/Clubhouse-${SLOT}-win32-x64-Setup.exe"
             "${SLOT}/Clubhouse-${SLOT}-win32-arm64-Setup.exe"
           )
+
+          # Add Linux blobs to wait list if they were uploaded
+          for LINUX_ARCH in x64; do
+            for EXT in deb rpm; do
+              BLOB="${SLOT}/Clubhouse-${SLOT}-linux-${LINUX_ARCH}.${EXT}"
+              EXISTS=$(az storage blob exists \
+                --account-name "$ACCOUNT" \
+                --container-name "$CONTAINER" \
+                --name "$BLOB" \
+                --auth-mode login \
+                --query "exists" --output tsv 2>/dev/null)
+              if [ "$EXISTS" = "true" ]; then
+                SLOT_BLOBS+=("$BLOB")
+              fi
+            done
+          done
           for BLOB in "${SLOT_BLOBS[@]}"; do
             while true; do
               STATUS=$(az storage blob show \
@@ -697,4 +789,6 @@ jobs:
             artifacts/Clubhouse-*.zip \
             artifacts/Clubhouse-*.dmg \
             artifacts/Clubhouse-*.exe \
+            artifacts/Clubhouse-*.deb \
+            artifacts/Clubhouse-*.rpm \
             "${MANIFEST_FILE}"

@@ -67,6 +67,14 @@ export function registerMcpBindingHandlers(): void {
     },
   ));
 
+  ipcMain.handle(IPC.MCP_BINDING.SET_INSTRUCTIONS, withValidatedArgs(
+    [stringArg(), stringArg(), objectArg<Record<string, string>>()],
+    (_event, agentId, targetId, instructions) => {
+      bindingManager.setInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
+      appLog('core:mcp', 'info', 'Binding instructions updated', { meta: { agentId, targetId } });
+    },
+  ));
+
   ipcMain.handle(IPC.MCP_BINDING.REGISTER_WEBVIEW, withValidatedArgs(
     [stringArg(), stringArg()],
     (_event, widgetId, webContentsId) => {

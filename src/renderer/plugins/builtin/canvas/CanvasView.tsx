@@ -6,7 +6,7 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType, onRegistryChange } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -340,6 +340,13 @@ export function CanvasViewComponent({
             <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
               Widget type &quot;{pluginView.pluginWidgetType}&quot; is not available.
               The providing plugin may be disabled or uninstalled.
+            </div>
+          );
+        }
+        if (isWidgetPending(pluginView.pluginWidgetType)) {
+          return (
+            <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs p-4 text-center" data-testid="widget-loading">
+              Loading {registered.declaration.label}…
             </div>
           );
         }

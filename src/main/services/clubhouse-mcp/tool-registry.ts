@@ -102,8 +102,21 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     if (!templates) continue;
 
     for (const template of templates) {
+      let description = template.definition.description;
+
+      // Inject per-wire custom instructions into tool description
+      if (binding.instructions) {
+        const specificInstruction = binding.instructions[template.nameSuffix];
+        const globalInstruction = binding.instructions['*'];
+        const instruction = specificInstruction || globalInstruction;
+        if (instruction) {
+          description += `\n\nWIRE INSTRUCTIONS: ${instruction}`;
+        }
+      }
+
       tools.push({
         ...template.definition,
+        description,
         name: buildToolName(binding, template.nameSuffix),
       });
     }

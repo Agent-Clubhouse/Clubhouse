@@ -9,6 +9,8 @@ import * as ptyManager from '../../pty-manager';
 import * as structuredManager from '../../structured-manager';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
+import { getProvider } from '../../../orchestrators';
+import type { PasteSubmitTiming } from '../../../orchestrators';
 
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
@@ -117,27 +119,69 @@ export function registerAgentTools(): void {
           }
 
           if (forceSubmit) {
+            // Resolve provider-specific paste submit timing. Different CLIs
+            // process bracketed paste at different speeds — Claude Code is
+            // fast (200ms) while Copilot CLI needs longer (500ms).
+            const provider = getProvider(reg.orchestrator);
+            const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
+              ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
+
+            appLog('core:mcp', 'info', 'send_message: using paste submit timing', {
+              meta: { targetAgent: targetId, taskId, orchestrator: reg.orchestrator, timing },
+            });
+
             // Snapshot the buffer length before the submit keystroke so we can
             // heuristically check whether the receiving agent processed the input.
             const bufferBefore = ptyManager.getBuffer(targetId)?.length ?? 0;
 
-            // Send \r (Enter) after a brief delay as a *separate* write so the
-            // receiving terminal processes paste-end before seeing the submit.
+            // Many CLIs show a paste preview that requires Enter to accept
+            // the pasted content, then a *second* Enter to actually submit.
+            // We send \r twice with delays:
+            //   1st \r (initialDelayMs): exits the paste preview / accepts pasted text
+            //   2nd \r (retryDelayMs later): submits the message to the AI
+            // The second \r is only sent if the buffer hasn't grown (meaning
+            // the first Enter didn't trigger processing). If it did grow, the
+            // message was already submitted and the retry is skipped.
             await new Promise<void>((resolve) => {
               setTimeout(() => {
                 ptyManager.write(targetId, '\r');
 
-                // Check buffer growth after another short delay to heuristically
-                // determine whether the agent started processing the message.
+                appLog('core:mcp', 'info', 'send_message: first Enter sent (accept paste)', {
+                  meta: { targetAgent: targetId, taskId },
+                });
+
+                // Check if the first \r triggered processing; if not, send
+                // a second \r to submit.
                 setTimeout(() => {
-                  const bufferAfter = ptyManager.getBuffer(targetId)?.length ?? 0;
-                  const bufferGrew = bufferAfter > bufferBefore;
-                  appLog('core:mcp', 'info', 'send_message: post-submit buffer check', {
-                    meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfter, bufferGrew },
+                  const bufferAfterFirst = ptyManager.getBuffer(targetId)?.length ?? 0;
+                  const firstEnterWorked = bufferAfterFirst > bufferBefore;
+
+                  if (firstEnterWorked) {
+                    appLog('core:mcp', 'info', 'send_message: first Enter triggered processing, skipping retry', {
+                      meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterFirst },
+                    });
+                    resolve();
+                    return;
+                  }
+
+                  // Second Enter — submit the message
+                  ptyManager.write(targetId, '\r');
+
+                  appLog('core:mcp', 'info', 'send_message: second Enter sent (submit)', {
+                    meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterFirst },
                   });
-                  resolve();
-                }, 200);
-              }, 100);
+
+                  // Final buffer check
+                  setTimeout(() => {
+                    const bufferAfterSecond = ptyManager.getBuffer(targetId)?.length ?? 0;
+                    const secondEnterWorked = bufferAfterSecond > bufferBefore;
+                    appLog('core:mcp', 'info', 'send_message: post-submit buffer check', {
+                      meta: { targetAgent: targetId, taskId, bufferBefore, bufferAfterSecond, secondEnterWorked },
+                    });
+                    resolve();
+                  }, timing.finalCheckDelayMs);
+                }, timing.retryDelayMs);
+              }, timing.initialDelayMs);
             });
           }
         } else if (reg.runtime === 'structured') {

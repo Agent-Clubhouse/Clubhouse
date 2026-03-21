@@ -22,13 +22,13 @@ export function isValidWireTarget(source: AgentCanvasViewType, target: CanvasVie
   if (target.id === source.id) return false;
   if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
-  if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card' && target.metadata?.groupProjectId) return true;
+  if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' && target.metadata?.groupProjectId) return true;
   return false;
 }
 
 function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' {
   if (view.type === 'agent') return 'agent';
-  if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project-card') return 'group-project';
+  if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project') return 'group-project';
   return 'browser';
 }
 

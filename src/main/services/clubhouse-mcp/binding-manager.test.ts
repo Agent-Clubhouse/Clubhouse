@@ -163,6 +163,60 @@ describe('BindingManager', () => {
     });
   });
 
+  describe('setInstructions', () => {
+    it('sets instructions on a binding', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      bindingManager.setInstructions('agent-1', 'widget-1', { '*': 'Do not share secrets' });
+      const bindings = bindingManager.getBindingsForAgent('agent-1');
+      expect(bindings[0].instructions).toEqual({ '*': 'Do not share secrets' });
+    });
+
+    it('removes instructions when all values are empty', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      bindingManager.setInstructions('agent-1', 'widget-1', { '*': 'Hello' });
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].instructions).toEqual({ '*': 'Hello' });
+
+      bindingManager.setInstructions('agent-1', 'widget-1', { '*': '' });
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].instructions).toBeUndefined();
+    });
+
+    it('supports per-tool instructions', () => {
+      bindingManager.bind('agent-1', { targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2' });
+      bindingManager.setInstructions('agent-1', 'agent-2', {
+        '*': 'Global instruction',
+        'send_message': 'Be concise',
+      });
+      const bindings = bindingManager.getBindingsForAgent('agent-1');
+      expect(bindings[0].instructions).toEqual({
+        '*': 'Global instruction',
+        'send_message': 'Be concise',
+      });
+    });
+
+    it('notifies listeners on change', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setInstructions('agent-1', 'widget-1', { '*': 'Test' });
+      expect(listener).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('does nothing for non-existent agent', () => {
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setInstructions('nonexistent', 'widget-1', { '*': 'Test' });
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for non-existent target', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setInstructions('agent-1', 'nonexistent', { '*': 'Test' });
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
   describe('complex scenarios', () => {
     it('handles bind + unbind + rebind cycle', () => {
       bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });

@@ -1089,7 +1089,7 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.CREATE, name),
     get: (id: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET, id),
-    update: (id: string, fields: { name?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
+    update: (id: string, fields: { name?: string; description?: string; instructions?: string; metadata?: Record<string, unknown> }): Promise<unknown> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.UPDATE, id, fields),
     delete: (id: string): Promise<boolean> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.DELETE, id),
@@ -1097,6 +1097,12 @@ const api = {
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_BULLETIN_DIGEST, id, since),
     getTopicMessages: (id: string, topic: string, since?: string, limit?: number): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_TOPIC_MESSAGES, id, topic, since, limit),
+    getAllMessages: (id: string, since?: string, limit?: number): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.GET_ALL_MESSAGES, id, since, limit),
+    postBulletinMessage: (projectId: string, topic: string, body: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.POST_BULLETIN_MESSAGE, projectId, topic, body),
+    sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string): Promise<unknown> =>
+      ipcRenderer.invoke(IPC.GROUP_PROJECT.SEND_SHOULDER_TAP, projectId, targetAgentId, message),
     onChanged: (callback: (projects: unknown[]) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, projects: unknown[]) => callback(projects);
       ipcRenderer.on(IPC.GROUP_PROJECT.CHANGED, listener);
@@ -1115,6 +1121,8 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_BINDING.REGISTER_WEBVIEW, widgetId, webContentsId),
     unregisterWebview: (widgetId: string) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
+    setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;

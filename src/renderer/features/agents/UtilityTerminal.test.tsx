@@ -1,9 +1,12 @@
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { UtilityTerminal } from './UtilityTerminal';
 import { useThemeStore } from '../../stores/themeStore';
 
 // Mock xterm Terminal and FitAddon — use inline implementations instead of vi.fn()
 // because mockReset:true clears return values between tests.
+
+const g = globalThis as any;
+g.__testTerminal = null;
 
 vi.mock('@xterm/xterm', () => {
   const TerminalClass = function (this: any) {
@@ -15,6 +18,7 @@ vi.mock('@xterm/xterm', () => {
     this.cols = 80;
     this.rows = 24;
     this.options = {};
+    (globalThis as any).__testTerminal = this;
   };
   return { Terminal: TerminalClass };
 });
@@ -26,6 +30,8 @@ vi.mock('@xterm/addon-fit', () => {
   return { FitAddon: FitAddonClass };
 });
 
+function term() { return g.__testTerminal; }
+
 function resetStores() {
   useThemeStore.setState({
     theme: {
@@ -35,6 +41,7 @@ function resetStores() {
         cursor: '#f5e0dc',
       },
     } as any,
+    experimentalGradients: false,
   });
 }
 
@@ -73,5 +80,33 @@ describe('UtilityTerminal', () => {
     );
     const terminalDiv = container.querySelector('[style*="padding"]');
     expect(terminalDiv).toBeInTheDocument();
+  });
+
+  it('updates terminal fontFamily when experimental mono font is set', () => {
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    act(() => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+          fonts: { mono: "'Fira Code', monospace" },
+        } as any,
+        experimentalGradients: true,
+      });
+    });
+    expect(term().options.fontFamily).toBe("'Fira Code', monospace");
+  });
+
+  it('does not update fontFamily when experimentalGradients is off', () => {
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    act(() => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+          fonts: { mono: "'Fira Code', monospace" },
+        } as any,
+        experimentalGradients: false,
+      });
+    });
+    expect(term().options.fontFamily).toBeUndefined();
   });
 });

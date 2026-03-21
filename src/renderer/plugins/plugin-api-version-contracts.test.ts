@@ -605,8 +605,8 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        // Canvas permission requires API >= 0.8, use v0.8 manifest
-        const manifestFn = perm === 'canvas' ? minimalV08Manifest : minimalV07Manifest;
+        // Canvas/annex permissions require API >= 0.8, use v0.8 manifest
+        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
         const result = validateManifest(manifestFn({
           permissions,
           ...extras,
@@ -1700,7 +1700,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'agent-config', 'agent-config.cross-project', 'agent-config.permissions',
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
       'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
-      'canvas',
+      'canvas', 'annex',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });

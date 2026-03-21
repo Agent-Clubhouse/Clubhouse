@@ -226,6 +226,11 @@ export function validateManifest(raw: unknown): ValidationResult {
     if (permissions.includes('canvas') && apiVersion < 0.8) {
       errors.push('Canvas permission requires API >= 0.8');
     }
+
+    // Annex permission requires API >= 0.8
+    if (permissions.includes('annex') && apiVersion < 0.8) {
+      errors.push('Annex permission requires API >= 0.8');
+    }
   }
 
   // Validate command declarations with defaultBinding (v0.6+ feature)

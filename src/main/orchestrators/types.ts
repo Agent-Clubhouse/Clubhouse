@@ -77,6 +77,23 @@ export interface ProviderCapabilities {
   structuredProtocol?: 'acp';
 }
 
+/**
+ * Timing configuration for the multi-line paste submit sequence.
+ *
+ * When sending a message to a PTY agent, bracketed paste is used for
+ * multi-line content, followed by Enter keystrokes to accept and submit.
+ * Different CLIs process paste events at different speeds, so the delays
+ * between steps are configurable per provider.
+ */
+export interface PasteSubmitTiming {
+  /** Delay (ms) before the first Enter keystroke after pasting content */
+  initialDelayMs: number;
+  /** Delay (ms) before checking the buffer / sending a retry Enter */
+  retryDelayMs: number;
+  /** Delay (ms) for the final buffer check after the last Enter */
+  finalCheckDelayMs: number;
+}
+
 // ── Capability Sub-interfaces ───────────────────────────────────────────────
 // Providers only implement interfaces for features they support.
 // Use the type guard functions (isHookCapable, etc.) to narrow at call sites.
@@ -167,6 +184,9 @@ export interface OrchestratorProvider {
   getModelOptions(): Promise<Array<{ id: string; label: string }>>;
   getDefaultPermissions(kind: 'durable' | 'quick'): string[];
   toolVerb(toolName: string): string | undefined;
+
+  /** Timing for the paste-then-submit sequence used by agent-to-agent messaging */
+  getPasteSubmitTiming(): PasteSubmitTiming;
 
   // Profile support
   /** Return the env var keys this orchestrator uses for config isolation (e.g. CLAUDE_CONFIG_DIR) */

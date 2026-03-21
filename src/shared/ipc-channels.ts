@@ -340,7 +340,10 @@ export const IPC = {
     DELETE: 'group-project:delete',
     GET_BULLETIN_DIGEST: 'group-project:get-bulletin-digest',
     GET_TOPIC_MESSAGES: 'group-project:get-topic-messages',
+    GET_ALL_MESSAGES: 'group-project:get-all-messages',
     CHANGED: 'group-project:changed',
+    POST_BULLETIN_MESSAGE: 'group-project:post-bulletin-message',
+    SEND_SHOULDER_TAP: 'group-project:send-shoulder-tap',
   },
   MCP_BINDING: {
     GET_BINDINGS: 'mcp-binding:get-bindings',
@@ -349,6 +352,7 @@ export const IPC = {
     BINDINGS_CHANGED: 'mcp-binding:bindings-changed',
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
+    SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },

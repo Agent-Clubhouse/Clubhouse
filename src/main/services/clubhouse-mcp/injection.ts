@@ -15,6 +15,7 @@ import type { McpServerDef } from '../../../shared/types';
 interface SettingsConventions {
   configDir: string;
   mcpConfigFile: string;
+  settingsFormat?: 'json' | 'toml';
 }
 
 const DEFAULT_CONVENTIONS: SettingsConventions = {
@@ -74,6 +75,15 @@ async function injectClubhouseMcpImpl(
   validateBridgeScript();
 
   const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
+
+  // Skip file-based injection for non-JSON config formats (e.g. Codex CLI uses TOML).
+  // These orchestrators receive MCP config via CLI args (buildMcpArgs) instead.
+  if (conv.settingsFormat && conv.settingsFormat !== 'json') {
+    appLog('core:mcp', 'info', 'Skipping file-based MCP injection for non-JSON config format', {
+      meta: { agentId, settingsFormat: conv.settingsFormat },
+    });
+    return;
+  }
 
   // Determine the MCP config file path
   const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);

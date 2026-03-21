@@ -10,7 +10,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'project',
-  permissions: ['terminal', 'commands', 'agents', 'canvas'],
+  permissions: ['terminal', 'commands', 'agents', 'canvas', 'annex'],
   contributes: {
     tab: { label: 'Terminal', title: 'Terminal', icon: TERMINAL_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'restart', title: 'Restart Terminal', defaultBinding: 'Meta+Shift+T' }],

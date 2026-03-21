@@ -542,6 +542,7 @@ export interface SnapshotPluginSummary {
   version: string;
   scope: 'project' | 'app' | 'dual';
   contributes?: unknown;
+  annexEnabled: boolean;
 }
 
 export interface SatelliteSnapshot {

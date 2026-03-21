@@ -17,6 +17,11 @@ export interface McpBinding {
   targetName?: string;
   /** Human-readable project name (e.g. "my-frontend-app"). */
   projectName?: string;
+  /**
+   * Per-wire custom instructions injected into tool descriptions.
+   * Keys are tool suffixes (e.g. "send_message") or "*" for all tools.
+   */
+  instructions?: Record<string, string>;
 }
 
 /** MCP JSON-RPC request envelope. */

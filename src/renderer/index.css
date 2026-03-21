@@ -77,15 +77,18 @@
   }
 
   /* Experimental: custom UI font (applied via applyTheme when feature flag is on) */
-  .theme-font-ui {
+  .theme-font-ui,
+  .theme-font-ui * {
     font-family: var(--theme-font-ui) !important;
   }
 
-  /* Experimental: custom mono font for code elements */
+  /* Experimental: custom mono font for code elements and terminals */
   .theme-font-mono pre,
   .theme-font-mono code,
   .theme-font-mono kbd,
-  .theme-font-mono samp {
+  .theme-font-mono samp,
+  .theme-font-mono .xterm-screen,
+  .theme-font-mono .monaco-editor .view-lines {
     font-family: var(--theme-font-mono) !important;
   }
 
@@ -94,10 +97,10 @@
     background-image: var(--theme-gradient-bg);
   }
 
-  /* When a gradient background is active, make root screen wrappers transparent
-     so the body gradient shows through. The React root is body > #root > div.bg-ctp-base.
+  /* When a gradient background is active, make all bg-ctp-base elements transparent
+     so the body gradient shows through nested layout wrappers.
      Uses !important to override Tailwind's bg-ctp-base utility. */
-  .theme-gradient-bg body > #root > .bg-ctp-base {
+  .theme-gradient-bg .bg-ctp-base {
     background-color: transparent !important;
   }
 

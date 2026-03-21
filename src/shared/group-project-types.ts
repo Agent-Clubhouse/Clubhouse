@@ -7,6 +7,8 @@
 export interface GroupProject {
   id: string;            // "gp_<timestamp>_<random>"
   name: string;
+  description: string;   // purpose of this group, shown to agents
+  instructions: string;  // rules agents must follow
   createdAt: string;     // ISO 8601
   metadata: Record<string, unknown>;
 }

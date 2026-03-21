@@ -36,6 +36,7 @@ function copyNativeModule(srcRoot: string, destRoot: string, moduleName: string)
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Clubhouse',
+    executableName: 'clubhouse',
     appBundleId: 'com.mason-allen.clubhouse',
     icon: path.resolve(__dirname, 'assets', 'icon'),
     extendInfo: {
@@ -94,11 +95,19 @@ const config: ForgeConfig = {
     new MakerDeb({
       options: {
         icon: path.resolve(__dirname, 'assets', 'icon.png'),
+        maintainer: 'Agent Clubhouse',
+        homepage: 'https://github.com/Agent-Clubhouse/Clubhouse',
+        description: 'A place to hangout with your agent BFFs',
+        categories: ['Utility', 'Development'],
+        genericName: 'AI Chat Application',
       },
     }),
     new MakerRpm({
       options: {
         icon: path.resolve(__dirname, 'assets', 'icon.png'),
+        homepage: 'https://github.com/Agent-Clubhouse/Clubhouse',
+        description: 'A place to hangout with your agent BFFs',
+        categories: ['Utility', 'Development'],
       },
     }),
   ],
