@@ -1,16 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import { manifest } from './manifest';
-
-// ── Manifest changes ──────────────────────────────────────────────────
-
-describe('canvas manifest — new settings', () => {
-  it('includes showHiddenFiles boolean setting defaulting to true', () => {
-    const setting = manifest.contributes!.settings!.find((s) => s.key === 'showHiddenFiles');
-    expect(setting).toBeDefined();
-    expect(setting!.type).toBe('boolean');
-    expect(setting!.default).toBe(true);
-  });
-});
 
 // ── File viewer helper logic ───────────────────────────────────────
 

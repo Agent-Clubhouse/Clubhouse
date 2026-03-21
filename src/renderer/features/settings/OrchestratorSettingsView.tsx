@@ -3,6 +3,9 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore, SpawnMode } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
+import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
+import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
+import { Toggle } from '../../components/Toggle';
 import { ProjectAgentDefaultsSection } from './ProjectAgentDefaultsSection';
 import type { SourceControlProvider } from '../../../shared/types';
 
@@ -26,12 +29,16 @@ function AppAgentSettings() {
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
   const clubhouseScp = useClubhouseModeStore((s) => s.sourceControlProvider);
   const setClubhouseScp = useClubhouseModeStore((s) => s.setSourceControlProvider);
+  const promptForName = useSessionSettingsStore((s) => s.promptForName);
+  const setPromptForName = useSessionSettingsStore((s) => s.setPromptForName);
+  const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     loadSettings().then(() => checkAllAvailability());
     loadClubhouseSettings();
-  }, [loadSettings, checkAllAvailability, loadClubhouseSettings]);
+    loadSessionSettings();
+  }, [loadSettings, checkAllAvailability, loadClubhouseSettings, loadSessionSettings]);
 
   const handleClubhouseToggle = () => {
     if (!clubhouseEnabled) {
@@ -117,6 +124,17 @@ function AppAgentSettings() {
             </p>
           </div>
         )}
+
+        {/* Session name prompt */}
+        <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-ctp-mantle border border-surface-0">
+          <div>
+            <div className="text-sm text-ctp-text">Prompt for Session Name on Quit</div>
+            <div className="text-xs text-ctp-subtext0 mt-0.5">
+              Ask to name a session when a durable agent stops (default for all projects)
+            </div>
+          </div>
+          <Toggle checked={promptForName} onChange={setPromptForName} />
+        </div>
       </div>
 
       {/* Confirmation dialog */}
@@ -203,7 +221,25 @@ function AppAgentSettings() {
   );
 }
 
-// ── Project-level: orchestrator picker + quick agent mode ────────────────
+// ── Reusable dropdown row for project defaults ──────────────────────────
+
+const DROPDOWN_SELECT_CLASS = 'w-48 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2 text-ctp-text focus:outline-none focus:border-ctp-accent/50';
+
+function DefaultRow({ label, description, children }: { label: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-2.5">
+      <div className="flex-1 min-w-0 mr-4">
+        <div className="text-sm text-ctp-text">{label}</div>
+        <div className="text-xs text-ctp-subtext0 mt-0.5">{description}</div>
+      </div>
+      <div className="flex-shrink-0">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Project-level: unified project defaults ─────────────────────────────
 
 function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const { projects, updateProject } = useProjectStore();
@@ -213,7 +249,7 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const enabledOrchestrators = allOrchestrators.filter((o) => enabled.includes(o.id));
 
   const headlessDefaultMode = useHeadlessStore((s) => s.defaultMode);
-  const projectOverrides = useHeadlessStore((s) => s.projectOverrides);
+  const headlessOverrides = useHeadlessStore((s) => s.projectOverrides);
   const setProjectMode = useHeadlessStore((s) => s.setProjectMode);
   const clearProjectMode = useHeadlessStore((s) => s.clearProjectMode);
 
@@ -223,98 +259,154 @@ function ProjectAgentSettings({ projectId }: { projectId: string }) {
   const clearClubhouseOverride = useClubhouseModeStore((s) => s.clearProjectOverride);
   const loadClubhouseSettings = useClubhouseModeStore((s) => s.loadSettings);
 
+  const sessionPromptGlobal = useSessionSettingsStore((s) => s.promptForName);
+  const sessionOverrides = useSessionSettingsStore((s) => s.projectOverrides);
+  const setSessionOverride = useSessionSettingsStore((s) => s.setProjectOverride);
+  const clearSessionOverride = useSessionSettingsStore((s) => s.clearProjectOverride);
+  const loadSessionSettings = useSessionSettingsStore((s) => s.loadSettings);
+
+  const mcpGlobalEnabled = useMcpSettingsStore((s) => s.enabled);
+  const mcpProjectOverrides = (useMcpSettingsStore((s) => s.projectOverrides) ?? {}) as Record<string, boolean>;
+  const mcpSaveSettings = useMcpSettingsStore((s) => s.saveSettings);
+  const mcpLoaded = useMcpSettingsStore((s) => s.loaded);
+  const loadMcpSettings = useMcpSettingsStore((s) => s.loadSettings);
+
+  const [showMcp, setShowMcp] = useState(false);
+
   useEffect(() => {
     loadClubhouseSettings();
-  }, [loadClubhouseSettings]);
+    loadSessionSettings();
+    loadMcpSettings();
+    window.clubhouse.app.getExperimentalSettings().then((s) => {
+      setShowMcp(!!s.mcp);
+    });
+  }, [loadClubhouseSettings, loadSessionSettings, loadMcpSettings]);
 
   if (!project) return null;
 
   const projectPath = project.path;
-  const hasOverride = projectPath in projectOverrides;
-  const currentMode = hasOverride ? projectOverrides[projectPath] : 'global';
   const currentOrchestrator = project.orchestrator || 'claude-code';
 
-  const hasClubhouseOverride = projectPath in clubhouseOverrides;
-  const currentClubhouseMode = hasClubhouseOverride
-    ? (clubhouseOverrides[projectPath] ? 'on' : 'off')
-    : 'global';
-
-  const clubhouseEffective = hasClubhouseOverride
-    ? clubhouseOverrides[projectPath]
-    : clubhouseGlobal;
-
-  const handleModeChange = (value: string) => {
+  // Headless mode
+  const hasHeadlessOverride = projectPath in headlessOverrides;
+  const currentHeadlessMode = hasHeadlessOverride ? headlessOverrides[projectPath] : 'global';
+  const handleHeadlessModeChange = (value: string) => {
     if (value === 'global') clearProjectMode(projectPath);
     else setProjectMode(projectPath, value as SpawnMode);
   };
 
+  // Clubhouse mode
+  const hasClubhouseOverride = projectPath in clubhouseOverrides;
+  const currentClubhouseMode = hasClubhouseOverride
+    ? (clubhouseOverrides[projectPath] ? 'on' : 'off')
+    : 'global';
+  const clubhouseEffective = hasClubhouseOverride
+    ? clubhouseOverrides[projectPath]
+    : clubhouseGlobal;
   const handleClubhouseModeChange = (value: string) => {
     if (value === 'global') clearClubhouseOverride(projectPath);
     else setClubhouseOverride(projectPath, value === 'on');
   };
 
+  // Session name
+  const sessionOverride = sessionOverrides[projectPath];
+  const currentSessionMode = sessionOverride === undefined ? 'global' : (sessionOverride ? 'on' : 'off');
+  const handleSessionModeChange = (value: string) => {
+    if (value === 'global') clearSessionOverride(projectPath);
+    else setSessionOverride(projectPath, value === 'on');
+  };
+
+  // MCP override
+  const mcpOverride = mcpProjectOverrides[projectPath];
+  const currentMcpMode = mcpOverride === undefined ? 'global' : (mcpOverride ? 'on' : 'off');
+  const handleMcpModeChange = (value: string) => {
+    const updated: Record<string, boolean> = { ...mcpProjectOverrides };
+    if (value === 'global') {
+      delete updated[projectPath];
+    } else {
+      updated[projectPath] = value === 'on';
+    }
+    mcpSaveSettings({ projectOverrides: Object.keys(updated).length > 0 ? updated : undefined });
+  };
+
   return (
     <>
-      {/* Orchestrator picker */}
-      {enabledOrchestrators.length > 1 && (
-        <div className="space-y-2 mb-6">
-          <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Orchestrator</h3>
-          <select
-            value={currentOrchestrator}
-            onChange={(e) => updateProject(project.id, { orchestrator: e.target.value })}
-            className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-              text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-          >
-            {enabledOrchestrators.map((o) => (
-              <option key={o.id} value={o.id}>{o.displayName}</option>
-            ))}
-          </select>
-          <p className="text-xs text-ctp-subtext0">
-            Default orchestrator for agents in this project. Individual agents can override.
-          </p>
-        </div>
-      )}
+      {/* Project Defaults */}
+      <div className="space-y-1 mb-6">
+        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider mb-2">Project Defaults</h3>
 
-      {/* Clubhouse Mode */}
-      <div className="space-y-2 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Clubhouse Mode</h3>
-        <select
-          value={currentClubhouseMode}
-          onChange={(e) => handleClubhouseModeChange(e.target.value)}
-          className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-            text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-        >
-          <option value="global">Global Default ({clubhouseGlobal ? 'On' : 'Off'})</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
-        </select>
-        <p className="text-xs text-ctp-subtext0">
-          {clubhouseEffective
-            ? 'Project-level defaults are live-managed and pushed to worktrees on agent wake.'
-            : 'When on, project-level defaults are live-managed and pushed to worktrees on agent wake.'}
-        </p>
+        {/* Default Orchestrator */}
+        {enabledOrchestrators.length > 1 && (
+          <DefaultRow label="Default Orchestrator" description="Orchestrator for agents in this project">
+            <select
+              value={currentOrchestrator}
+              onChange={(e) => updateProject(project.id, { orchestrator: e.target.value })}
+              className={DROPDOWN_SELECT_CLASS}
+            >
+              {enabledOrchestrators.map((o) => (
+                <option key={o.id} value={o.id}>{o.displayName}</option>
+              ))}
+            </select>
+          </DefaultRow>
+        )}
+
+        {/* Quick Agent Mode */}
+        <DefaultRow label="Quick Agent Mode" description="How quick agents spawn in this project">
+          <select
+            value={currentHeadlessMode}
+            onChange={(e) => handleHeadlessModeChange(e.target.value)}
+            className={DROPDOWN_SELECT_CLASS}
+          >
+            <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
+            <option value="interactive">Interactive</option>
+            <option value="headless">Headless</option>
+          </select>
+        </DefaultRow>
+
+        {/* Session Name on Quit */}
+        <DefaultRow label="Session Name on Quit" description="Prompt to name sessions when agents stop">
+          <select
+            value={currentSessionMode}
+            onChange={(e) => handleSessionModeChange(e.target.value)}
+            className={DROPDOWN_SELECT_CLASS}
+          >
+            <option value="global">Global Default ({sessionPromptGlobal ? 'On' : 'Off'})</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </DefaultRow>
+
+        {/* Clubhouse Mode */}
+        <DefaultRow label="Clubhouse Mode" description="Manage agent config centrally and push to worktrees">
+          <select
+            value={currentClubhouseMode}
+            onChange={(e) => handleClubhouseModeChange(e.target.value)}
+            className={DROPDOWN_SELECT_CLASS}
+          >
+            <option value="global">Global Default ({clubhouseGlobal ? 'On' : 'Off'})</option>
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </DefaultRow>
+
+        {/* MCP Override — only visible when MCP experimental feature enabled + global MCP enabled */}
+        {showMcp && mcpLoaded && mcpGlobalEnabled && (
+          <DefaultRow label="MCP Override" description="Override MCP bridge injection for this project">
+            <select
+              value={currentMcpMode}
+              onChange={(e) => handleMcpModeChange(e.target.value)}
+              className={DROPDOWN_SELECT_CLASS}
+            >
+              <option value="global">Global Default ({mcpGlobalEnabled ? 'On' : 'Off'})</option>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </DefaultRow>
+        )}
       </div>
 
       {/* Default Agent Settings */}
       <ProjectAgentDefaultsSection projectPath={project.path} clubhouseMode={clubhouseEffective} />
-
-      {/* Quick agent mode */}
-      <div className="space-y-2 mb-6">
-        <h3 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Quick Agent Mode</h3>
-        <select
-          value={currentMode}
-          onChange={(e) => handleModeChange(e.target.value)}
-          className="w-64 px-3 py-1.5 text-sm rounded-lg bg-ctp-mantle border border-surface-2
-            text-ctp-text focus:outline-none focus:border-ctp-accent/50"
-        >
-          <option value="global">Global Default ({headlessDefaultMode.charAt(0).toUpperCase() + headlessDefaultMode.slice(1)})</option>
-          <option value="interactive">Interactive</option>
-          <option value="headless">Headless</option>
-        </select>
-        <p className="text-xs text-ctp-subtext0">
-          How quick agents spawn in this project. Headless runs faster with richer summaries.
-        </p>
-      </div>
     </>
   );
 }

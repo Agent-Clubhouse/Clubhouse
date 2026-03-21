@@ -14,10 +14,9 @@ export interface CommandItem {
 
 export const SETTINGS_PAGES: { label: string; page: SettingsSubPage }[] = [
   { label: 'About', page: 'about' },
-  { label: 'Getting Started', page: 'getting-started' },
   { label: 'Agents', page: 'orchestrators' },
   { label: 'Display & UI', page: 'display' },
-  { label: 'Notifications', page: 'notifications' },
+  { label: 'Notifications & Alerts', page: 'notifications' },
   { label: 'Logging', page: 'logging' },
   { label: 'Plugins', page: 'plugins' },
   { label: 'Updates', page: 'updates' },

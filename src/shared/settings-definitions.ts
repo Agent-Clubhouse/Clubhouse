@@ -55,5 +55,5 @@ export const EDITOR_SETTINGS: SettingsDefinition<EditorSettings> = {
 export const MCP_SETTINGS: SettingsDefinition<McpSettings> = {
   key: 'mcp',
   filename: 'mcp-settings.json',
-  defaults: { enabled: false },
+  defaults: { enabled: false, projectDefault: true },
 };

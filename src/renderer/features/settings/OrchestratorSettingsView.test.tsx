@@ -4,6 +4,8 @@ import { useOrchestratorStore } from '../../stores/orchestratorStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { useHeadlessStore } from '../../stores/headlessStore';
 import { useClubhouseModeStore } from '../../stores/clubhouseModeStore';
+import { useSessionSettingsStore } from '../../stores/sessionSettingsStore';
+import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import { OrchestratorSettingsView } from './OrchestratorSettingsView';
 
 // Mock ProjectAgentDefaultsSection to avoid deep component tree
@@ -45,6 +47,22 @@ function resetStores() {
     setProjectOverride: vi.fn(),
     clearProjectOverride: vi.fn(),
     isEnabledForProject: () => false,
+  });
+  useSessionSettingsStore.setState({
+    promptForName: false,
+    projectOverrides: {},
+    loadSettings: vi.fn().mockResolvedValue(undefined),
+    setPromptForName: vi.fn(),
+    setProjectOverride: vi.fn(),
+    clearProjectOverride: vi.fn(),
+  });
+  useMcpSettingsStore.setState({
+    enabled: false,
+    projectDefault: true,
+    projectOverrides: undefined,
+    loaded: true,
+    loadSettings: vi.fn().mockResolvedValue(undefined),
+    saveSettings: vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -252,7 +270,7 @@ describe('OrchestratorSettingsView', () => {
 
     it('does not show orchestrator picker with single orchestrator', () => {
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.queryByText('Orchestrator')).not.toBeInTheDocument();
+      expect(screen.queryByText('Default Orchestrator')).not.toBeInTheDocument();
     });
 
     it('shows orchestrator picker with multiple orchestrators', () => {
@@ -264,7 +282,7 @@ describe('OrchestratorSettingsView', () => {
         ],
       });
       render(<OrchestratorSettingsView projectId="proj-1" />);
-      expect(screen.getByText('Orchestrator')).toBeInTheDocument();
+      expect(screen.getByText('Default Orchestrator')).toBeInTheDocument();
     });
 
     it('returns null for invalid project', () => {
