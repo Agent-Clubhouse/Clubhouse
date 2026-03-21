@@ -474,39 +474,12 @@ function ExpandedProjectView({
         </div>
       </div>
 
-      {/* Action Bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-t border-surface-1 bg-ctp-mantle">
-        <div className="flex items-center gap-1 text-[10px] text-ctp-subtext0 flex-shrink-0">
-          {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''}
-        </div>
-        <div className="flex-shrink-0 text-[10px] text-ctp-overlay0">Tap:</div>
-        <select
-          value={tapTarget}
-          onChange={(e) => setTapTarget(e.target.value)}
-          className="px-1.5 py-1 text-[10px] bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none flex-shrink-0"
-        >
-          <option value="all">All</option>
-          {connectedAgents.map((a) => (
-            <option key={a.agentId} value={a.agentId}>
-              {a.agentName || a.agentId}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={tapMessage}
-          onChange={(e) => setTapMessage(e.target.value)}
-          onKeyDown={handleTapKeyDown}
-          placeholder="Shoulder tap message..."
-          className="flex-1 min-w-0 px-2 py-1 text-[10px] bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
-        />
-        <button
-          onClick={handleSendTap}
-          disabled={!tapMessage.trim() || tapSending}
-          className="px-2 py-1 text-[10px] font-medium bg-ctp-blue text-ctp-base rounded hover:opacity-90 disabled:opacity-40 transition-opacity flex-shrink-0"
-        >
-          {tapSending ? '...' : 'Send'}
-        </button>
+      {/* Action Bar (agent count only) */}
+      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
+        <RobotIcon size={12} />
+        <span className="text-[10px] text-ctp-subtext0">
+          {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''} connected
+        </span>
       </div>
 
       {/* Settings Modal */}
