@@ -5,6 +5,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useRemoteProjectStore } from '../stores/remoteProjectStore';
+import { useAnnexClientStore } from '../stores/annexClientStore';
 import { MainContentView } from './MainContentView';
 import type { CompletedQuickAgent } from '../../shared/types';
 
@@ -47,6 +48,11 @@ vi.mock('./PluginContentView', () => ({
 }));
 vi.mock('./AnnexDisabledView', () => ({
   AnnexDisabledView: (props: any) => <div data-testid="annex-disabled-view" data-plugin-name={props.pluginName} />,
+}));
+vi.mock('./SatelliteDisconnectedOverlay', () => ({
+  SatelliteDisconnectedOverlay: (props: any) => (
+    <div data-testid="satellite-disconnected-overlay" data-satellite-id={props.satelliteId} data-satellite-alias={props.satelliteAlias} />
+  ),
 }));
 vi.mock('../features/settings/PluginDetailSettings', () => ({
   PluginDetailSettings: () => <div />,
@@ -107,6 +113,10 @@ function resetStores() {
   });
   useProjectStore.setState({
     activeProjectId: 'proj-1',
+  });
+  useAnnexClientStore.setState({
+    satellites: [],
+    satellitePaused: {},
   });
 }
 
@@ -325,5 +335,126 @@ describe('MainContentView terminal focus', () => {
     });
 
     expect(screen.getByTestId('agent-terminal')).toHaveAttribute('data-focused', 'true');
+  });
+});
+
+describe('MainContentView satellite disconnected overlay', () => {
+  const satelliteId = 'sat-fp';
+  const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+  const makeSatellite = (state: string) => ({
+    id: satelliteId,
+    alias: 'My Laptop',
+    icon: '',
+    color: 'blue',
+    fingerprint: satelliteId,
+    state,
+    host: '192.168.1.1',
+    mainPort: 9100,
+    pairingPort: 9101,
+    snapshot: null,
+    lastError: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetStores();
+  });
+
+  it('shows disconnected overlay when remote project satellite is disconnected (no-agent view)', () => {
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('disconnected')] as any });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toHaveAttribute('data-satellite-alias', 'My Laptop');
+  });
+
+  it('does not show disconnected overlay when satellite is connected', () => {
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('connected')] as any });
+
+    render(<MainContentView />);
+    expect(screen.queryByTestId('satellite-disconnected-overlay')).not.toBeInTheDocument();
+  });
+
+  it('does not show disconnected overlay for local projects', () => {
+    useProjectStore.setState({ activeProjectId: 'local-proj' });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('disconnected')] as any });
+
+    render(<MainContentView />);
+    expect(screen.queryByTestId('satellite-disconnected-overlay')).not.toBeInTheDocument();
+  });
+
+  it('shows disconnected overlay over agent terminal when viewing remote agent', async () => {
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('disconnected')] as any });
+    useAgentStore.setState({
+      agents: {},
+      activeAgentId: `remote||${satelliteId}||a-1`,
+    });
+    useRemoteProjectStore.setState({
+      remoteAgents: {
+        [`remote||${satelliteId}||a-1`]: {
+          id: `remote||${satelliteId}||a-1`,
+          projectId: remoteProjectId,
+          status: 'running',
+          kind: 'durable',
+          name: 'test-agent',
+          color: '',
+        } as any,
+      },
+    });
+
+    render(<MainContentView />);
+
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(r));
+    });
+
+    expect(screen.getByTestId('agent-terminal')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
+  });
+
+  it('shows disconnected overlay over sleeping agent view', () => {
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('disconnected')] as any });
+    useAgentStore.setState({
+      agents: {},
+      activeAgentId: `remote||${satelliteId}||a-1`,
+    });
+    useRemoteProjectStore.setState({
+      remoteAgents: {
+        [`remote||${satelliteId}||a-1`]: {
+          id: `remote||${satelliteId}||a-1`,
+          projectId: remoteProjectId,
+          status: 'sleeping',
+          kind: 'durable',
+          name: 'test-agent',
+          color: '',
+        } as any,
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('sleeping-agent')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
+  });
+
+  it('shows disconnected overlay over plugin content view', () => {
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useAnnexClientStore.setState({ satellites: [makeSatellite('disconnected')] as any });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: true, scope: 'project' },
+        ],
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('plugin-content-view')).toBeInTheDocument();
+    expect(screen.getByTestId('satellite-disconnected-overlay')).toBeInTheDocument();
   });
 });
