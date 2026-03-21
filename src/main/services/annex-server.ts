@@ -1643,6 +1643,17 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       break;
     }
 
+    case 'canvas:mutation': {
+      // Forward canvas mutation from controller to local renderer (same path as pop-out windows)
+      const projectId = payload.projectId as string;
+      const canvasId = payload.canvasId as string;
+      const scope = (payload.scope as string) || 'project';
+      const mutation = payload.mutation as Record<string, unknown>;
+      if (!canvasId || !mutation) break;
+      broadcastToAllWindows(IPC.WINDOW.REQUEST_CANVAS_MUTATION, canvasId, scope, mutation, projectId);
+      break;
+    }
+
     case 'agent:reorder': {
       const projectId = payload.projectId as string;
       const orderedIds = payload.orderedIds as string[];

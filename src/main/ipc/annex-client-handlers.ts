@@ -233,4 +233,15 @@ export function registerAnnexClientHandlers(): void {
       });
     },
   ));
+
+  // Proxy IPC: forward canvas mutation to a satellite
+  ipcMain.handle(IPC.ANNEX_CLIENT.CANVAS_MUTATION, withValidatedArgs(
+    [stringArg(), stringArg(), stringArg(), stringArg(), objectArg()],
+    (_event, satelliteId, projectId, canvasId, scope, mutation) => {
+      return annexClient.sendToSatellite(satelliteId, {
+        type: 'canvas:mutation',
+        payload: { projectId, canvasId, scope, mutation },
+      });
+    },
+  ));
 }

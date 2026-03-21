@@ -333,6 +333,7 @@ export const IPC = {
     AGENT_DELETE_DURABLE: 'annex-client:agent-delete-durable',
     AGENT_WORKTREE_STATUS: 'annex-client:agent-worktree-status',
     AGENT_REORDER: 'annex-client:agent-reorder',
+    CANVAS_MUTATION: 'annex-client:canvas-mutation',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',

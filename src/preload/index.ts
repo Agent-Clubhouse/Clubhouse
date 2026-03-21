@@ -886,6 +886,8 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
     agentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_REORDER, satelliteId, projectId, orderedIds),
+    canvasMutation: (satelliteId: string, projectId: string, canvasId: string, scope: string, mutation: unknown): Promise<void> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.CANVAS_MUTATION, satelliteId, projectId, canvasId, scope, mutation),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>

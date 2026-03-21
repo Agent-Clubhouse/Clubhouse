@@ -1,11 +1,12 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
+import type { CanvasMutation } from '../../../../shared/types';
 import type { CanvasViewType } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
-import { broadcastCanvasState } from './canvas-sync';
+import { broadcastCanvasState, sendRemoteCanvasMutation } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
@@ -157,17 +158,32 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [canvases, views, viewport, zoomedViewId, bindings, loaded, scheduleSave]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
+  // (skip for remote projects — the satellite broadcasts its own state)
+  const scope = isAppMode ? 'global' : 'project';
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || isRemote) return;
     // Only broadcast from the main window, not from pop-outs
     if (window.clubhouse.window.isPopout()) return;
     broadcastCanvasState(
       store,
       activeCanvasId,
       isAppMode ? undefined : api.context.projectId,
-      isAppMode ? 'global' : 'project',
+      scope,
     );
-  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, api]);
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, isRemote, api, scope]);
+
+  // ── Remote mutation helper ──────────────────────────────────────
+
+  /**
+   * For remote projects, forward mutations to the satellite instead of
+   * applying locally. The satellite will apply them and broadcast back.
+   * Returns true if the mutation was forwarded (caller should skip local apply).
+   */
+  const remoteForward = useCallback((mutation: CanvasMutation): boolean => {
+    if (!isRemote || !projectId) return false;
+    sendRemoteCanvasMutation(projectId, activeCanvasId, scope, mutation);
+    return true;
+  }, [isRemote, projectId, activeCanvasId, scope]);
 
   // ── Pop-out handler ─────────────────────────────────────────────
 
@@ -183,69 +199,85 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // ── Canvas tab bar callbacks ───────────────────────────────────
 
   const handleSelectCanvas = useCallback((canvasId: string) => {
+    // Tab switching is local (controller may browse different tabs than satellite)
     store.getState().setActiveCanvas(canvasId);
   }, [store]);
 
   const handleAddCanvas = useCallback(() => {
+    if (remoteForward({ type: 'addCanvas' })) return;
     store.getState().addCanvas();
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
+    if (remoteForward({ type: 'removeCanvas', canvasId })) return;
     store.getState().removeCanvas(canvasId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRenameCanvas = useCallback((canvasId: string, name: string) => {
+    if (remoteForward({ type: 'renameCanvas', canvasId, name })) return;
     store.getState().renameCanvas(canvasId, name);
-  }, [store]);
+  }, [store, remoteForward]);
 
   // ── Workspace callbacks ────────────────────────────────────────
 
+  // Viewport and selection are always local (controller navigation state)
   const handleViewportChange = useCallback((vp: typeof viewport) => {
     store.getState().setViewport(vp);
   }, [store]);
 
   const handleAddView = useCallback((type: CanvasViewType, position: { x: number; y: number }) => {
+    if (remoteForward({ type: 'addView', viewType: type, position })) return;
     store.getState().addView(type, position);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleAddPluginView = useCallback((
     pluginId: string, qualifiedType: string, label: string,
     position: { x: number; y: number }, defaultSize?: { width: number; height: number },
   ) => {
+    if (remoteForward({ type: 'addPluginView', pluginId, qualifiedType, label, position, defaultSize })) return;
     store.getState().addPluginView(pluginId, qualifiedType, label, position, undefined, defaultSize);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRemoveView = useCallback((viewId: string) => {
+    if (remoteForward({ type: 'removeView', viewId })) return;
     store.getState().removeView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleMoveView = useCallback((viewId: string, position: { x: number; y: number }) => {
+    if (remoteForward({ type: 'moveView', viewId, position })) return;
     store.getState().moveView(viewId, position);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleResizeView = useCallback((viewId: string, size: { width: number; height: number }) => {
+    if (remoteForward({ type: 'resizeView', viewId, size })) return;
     store.getState().resizeView(viewId, size);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleFocusView = useCallback((viewId: string) => {
+    if (remoteForward({ type: 'focusView', viewId })) return;
     store.getState().focusView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleUpdateView = useCallback((viewId: string, updates: Partial<any>) => {
+    if (remoteForward({ type: 'updateView', viewId, updates })) return;
     store.getState().updateView(viewId, updates);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
+    if (remoteForward({ type: 'zoomView', viewId })) return;
     store.getState().zoomView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
+  // Selection is purely local (controller UI state)
   const handleSelectView = useCallback((viewId: string | null) => {
     store.getState().selectView(viewId);
   }, [store]);
 
   const handleMoveViews = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    const posObj = Object.fromEntries(positions);
+    if (remoteForward({ type: 'moveViews', positions: posObj })) return;
     store.getState().moveViews(positions);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleToggleSelectView = useCallback((viewId: string) => {
     store.getState().toggleSelectView(viewId);
