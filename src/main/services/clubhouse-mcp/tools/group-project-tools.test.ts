@@ -28,9 +28,11 @@ vi.mock('../../log-service', () => ({
 }));
 
 const mockPtyWrite = vi.fn();
+const mockIsRunning = vi.fn().mockReturnValue(false);
 vi.mock('../../pty-manager', () => ({
   write: (...args: unknown[]) => mockPtyWrite(...args),
   getBuffer: vi.fn(() => ''),
+  isRunning: (...args: unknown[]) => mockIsRunning(...args),
 }));
 
 vi.mock('../../structured-manager', () => ({
@@ -54,6 +56,7 @@ describe('GroupProjectTools', () => {
   beforeEach(() => {
     store.clear();
     mockPtyWrite.mockClear();
+    mockIsRunning.mockReturnValue(false);
     resetToolRegistry();
     bindingManager._resetForTesting();
     _resetAllBoardsForTesting();
@@ -243,6 +246,115 @@ describe('GroupProjectTools', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('not found');
+  });
+
+  it('list_members includes status field — connected when PTY running', async () => {
+    agentRegistry.register('agent-1', {
+      projectPath: '/test',
+      orchestrator: 'claude-code',
+      runtime: 'pty',
+    });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-1');
+
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const toolName = buildToolName(binding, 'list_members');
+    const result = await callTool('agent-1', toolName, {});
+
+    const members = JSON.parse(result.content[0].text!);
+    expect(members).toHaveLength(1);
+    expect(members[0].status).toBe('connected');
+
+    agentRegistry.untrack('agent-1');
+  });
+
+  it('list_members shows sleeping status when agent has no live process', async () => {
+    // Agent is bound but NOT in registry and NOT running
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const toolName = buildToolName(binding, 'list_members');
+    const result = await callTool('agent-1', toolName, {});
+
+    const members = JSON.parse(result.content[0].text!);
+    expect(members).toHaveLength(1);
+    expect(members[0].status).toBe('sleeping');
+  });
+
+  it('list_members shows mixed statuses for multiple agents', async () => {
+    agentRegistry.register('agent-1', {
+      projectPath: '/test',
+      orchestrator: 'claude-code',
+      runtime: 'pty',
+    });
+    mockIsRunning.mockImplementation((id: string) => id === 'agent-1');
+
+    bindingManager.bind('agent-1', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'robin',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: 'gp_123',
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'falcon',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: 'gp_123', targetName: 'GP' });
+    const toolName = buildToolName(binding, 'list_members');
+    const result = await callTool('agent-1', toolName, {});
+
+    const members = JSON.parse(result.content[0].text!);
+    expect(members).toHaveLength(2);
+
+    const robin = members.find((m: any) => m.agentName === 'robin');
+    const falcon = members.find((m: any) => m.agentName === 'falcon');
+    expect(robin.status).toBe('connected');
+    expect(falcon.status).toBe('sleeping');
+
+    agentRegistry.untrack('agent-1');
+  });
+
+  it('get_project_info includes status in member list', async () => {
+    const project = await groupProjectRegistry.create('StatusProj');
+    agentRegistry.register('agent-1', {
+      projectPath: '/test',
+      orchestrator: 'claude-code',
+      runtime: 'headless',
+    });
+    // Headless agent — not in PTY but registered
+    mockIsRunning.mockReturnValue(false);
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'StatusProj',
+      agentName: 'robin',
+      targetName: 'StatusProj',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'StatusProj' });
+    const toolName = buildToolName(binding, 'get_project_info');
+    const result = await callTool('agent-1', toolName, {});
+
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.members).toHaveLength(1);
+    expect(parsed.members[0].status).toBe('connected'); // registered = alive
+
+    agentRegistry.untrack('agent-1');
   });
 
   it('shoulder_tap delivers and records to bulletin', async () => {

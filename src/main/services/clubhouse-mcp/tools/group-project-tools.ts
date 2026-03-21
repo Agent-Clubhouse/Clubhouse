@@ -8,7 +8,13 @@ import { bindingManager } from '../binding-manager';
 import { getBulletinBoard } from '../../group-project-bulletin';
 import { groupProjectRegistry } from '../../group-project-registry';
 import { executeShoulderTap } from '../../group-project-shoulder-tap';
+import { isAgentAlive } from '../../group-project-lifecycle';
 import type { McpToolResult } from '../types';
+
+/** Resolve agent status for a member entry. */
+function resolveAgentStatus(agentId: string): 'connected' | 'sleeping' {
+  return isAgentAlive(agentId) ? 'connected' : 'sleeping';
+}
 
 /** Register all group-project tool templates. */
 export function registerGroupProjectTools(): void {
@@ -19,8 +25,11 @@ export function registerGroupProjectTools(): void {
     {
       description:
         'List all agents currently connected to this group project.\n\n' +
-        'Returns a JSON array of { agentId, agentName } objects. Use this to discover ' +
+        'Returns a JSON array of { agentId, agentName, status } objects. Use this to discover ' +
         'who is collaborating with you in this group project.\n\n' +
+        'Status values:\n' +
+        '- "connected": agent has a live process and is actively participating\n' +
+        '- "sleeping": agent is bound but has no live process (exited or sleeping)\n\n' +
         'For full project context including instructions, use get_project_info.',
       inputSchema: {
         type: 'object',
@@ -32,7 +41,11 @@ export function registerGroupProjectTools(): void {
       const allBindings = bindingManager.getAllBindings();
       const members = allBindings
         .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-        .map(b => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
+        .map(b => ({
+          agentId: b.agentId,
+          agentName: b.agentName || b.agentId,
+          status: resolveAgentStatus(b.agentId),
+        }));
 
       return {
         content: [{ type: 'text', text: JSON.stringify(members, null, 2) }],
@@ -232,7 +245,11 @@ export function registerGroupProjectTools(): void {
         const allBindings = bindingManager.getAllBindings();
         result.members = allBindings
           .filter(b => b.targetKind === 'group-project' && b.targetId === targetId)
-          .map(b => ({ agentId: b.agentId, agentName: b.agentName || b.agentId }));
+          .map(b => ({
+            agentId: b.agentId,
+            agentName: b.agentName || b.agentId,
+            status: resolveAgentStatus(b.agentId),
+          }));
       }
 
       return {
