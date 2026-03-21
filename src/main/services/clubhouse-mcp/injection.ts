@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { appLog } from '../log-service';
 import { pathExists } from '../fs-utils';
 import { isMcpEnabled } from '../mcp-settings';
+import { injectMcpServerSection, stripMcpServerSection } from '../toml-utils';
 import type { McpServerDef } from '../../../shared/types';
 
 interface SettingsConventions {
@@ -76,18 +77,64 @@ async function injectClubhouseMcpImpl(
 
   const conv = { ...DEFAULT_CONVENTIONS, ...conventions };
 
-  // Skip file-based injection for non-JSON config formats (e.g. Codex CLI uses TOML).
-  // These orchestrators receive MCP config via CLI args (buildMcpArgs) instead.
-  if (conv.settingsFormat && conv.settingsFormat !== 'json') {
-    appLog('core:mcp', 'info', 'Skipping file-based MCP injection for non-JSON config format', {
-      meta: { agentId, settingsFormat: conv.settingsFormat },
-    });
-    return;
-  }
+  // Resolve bridge script path
+  const bridgeScriptPath = getBridgeScriptPath();
+
+  const serverDef: McpServerDef = {
+    command: 'node',
+    args: [bridgeScriptPath],
+    env: {
+      CLUBHOUSE_MCP_PORT: String(mcpPort),
+      CLUBHOUSE_AGENT_ID: agentId,
+      CLUBHOUSE_HOOK_NONCE: nonce,
+    },
+  };
 
   // Determine the MCP config file path
   const mcpConfigPath = path.join(cwd, conv.mcpConfigFile);
 
+  if (conv.settingsFormat === 'toml') {
+    await injectTomlMcp(mcpConfigPath, agentId, serverDef);
+  } else {
+    await injectJsonMcp(mcpConfigPath, agentId, serverDef);
+  }
+}
+
+async function injectTomlMcp(
+  mcpConfigPath: string,
+  agentId: string,
+  serverDef: McpServerDef,
+): Promise<void> {
+  // Read existing TOML content (if any)
+  let existing = '';
+  try {
+    existing = await fsp.readFile(mcpConfigPath, 'utf-8');
+  } catch {
+    // File doesn't exist — start fresh
+  }
+
+  // Inject the clubhouse MCP server section
+  const updated = injectMcpServerSection(existing, 'clubhouse', serverDef);
+
+  // Write atomically
+  const dir = path.dirname(mcpConfigPath);
+  if (!(await pathExists(dir))) {
+    await fsp.mkdir(dir, { recursive: true });
+  }
+  const tmpPath = mcpConfigPath + '.tmp.' + randomUUID().slice(0, 8);
+  await fsp.writeFile(tmpPath, updated, 'utf-8');
+  await fsp.rename(tmpPath, mcpConfigPath);
+
+  appLog('core:mcp', 'info', 'Injected Clubhouse MCP into TOML config', {
+    meta: { agentId, configPath: mcpConfigPath },
+  });
+}
+
+async function injectJsonMcp(
+  mcpConfigPath: string,
+  agentId: string,
+  serverDef: McpServerDef,
+): Promise<void> {
   // Read existing config
   let config: Record<string, unknown> = {};
   try {
@@ -103,20 +150,7 @@ async function injectClubhouseMcpImpl(
   }
 
   const mcpServers = config.mcpServers as Record<string, McpServerDef>;
-
-  // Resolve bridge script path
-  const bridgeScriptPath = getBridgeScriptPath();
-
-  // Add Clubhouse MCP entry
-  mcpServers['clubhouse'] = {
-    command: 'node',
-    args: [bridgeScriptPath],
-    env: {
-      CLUBHOUSE_MCP_PORT: String(mcpPort),
-      CLUBHOUSE_AGENT_ID: agentId,
-      CLUBHOUSE_HOOK_NONCE: nonce,
-    },
-  };
+  mcpServers['clubhouse'] = serverDef;
 
   // Write config atomically (write to temp, then rename)
   const dir = path.dirname(mcpConfigPath);
@@ -144,6 +178,14 @@ export function isClubhouseMcpEntry(entry: unknown): boolean {
   return args.some((a: unknown) =>
     typeof a === 'string' && a.includes('clubhouse-mcp-bridge'),
   );
+}
+
+/**
+ * Strip the Clubhouse MCP entry from a TOML config string.
+ * Removes [mcp_servers.clubhouse] and its sub-sections.
+ */
+export function stripClubhouseMcpToml(toml: string): string {
+  return stripMcpServerSection(toml, 'clubhouse');
 }
 
 /**
