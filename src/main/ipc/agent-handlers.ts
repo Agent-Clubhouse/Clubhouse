@@ -13,6 +13,7 @@ import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shar
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from '../services/session-reader';
 import { appLog } from '../services/log-service';
 import { broadcastSnapshotRefresh } from '../services/annex-server';
+import { bindingManager } from '../services/clubhouse-mcp/binding-manager';
 import { withValidatedArgs, stringArg, objectArg, arrayArg, numberArg, booleanArg } from './validation';
 
 type DurableConfigUpdates = Parameters<typeof agentConfig.updateDurableConfig>[2];
@@ -41,6 +42,8 @@ export function registerAgentHandlers(): void {
     [stringArg(), stringArg()],
     async (_event, projectPath, agentId) => {
       const result = await agentConfig.deleteDurable(projectPath, agentId);
+      bindingManager.unbindAgent(agentId);
+      bindingManager.unbindTarget(agentId);
       broadcastSnapshotRefresh();
       return result;
     },

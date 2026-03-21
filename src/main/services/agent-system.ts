@@ -139,7 +139,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         freeAgentMode: params.freeAgentMode,
         commandPrefix,
       }, (exitAgentId) => {
-        bindingManager.unbindAgent(exitAgentId);
+        if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
       });
       return;
@@ -177,7 +177,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
           headlessResult.outputKind || 'stream-json',
           (exitAgentId) => {
             configPipeline.restoreForAgent(exitAgentId);
-            bindingManager.unbindAgent(exitAgentId);
+            if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
           },
           commandPrefix,
@@ -304,7 +304,7 @@ async function spawnPtyAgent(
 
   ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
+    if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents — works for all providers
