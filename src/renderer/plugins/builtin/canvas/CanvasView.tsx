@@ -6,7 +6,7 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -365,8 +365,20 @@ export function CanvasViewComponent({
   // ── Content based on view type ─────────────────────────────────
 
   const handleUpdateMetadata = useCallback((updates: CanvasWidgetMetadata) => {
-    onUpdate({ metadata: { ...view.metadata, ...updates } });
-  }, [view.metadata, onUpdate]);
+    const mergedMetadata = { ...view.metadata, ...updates };
+    const viewUpdates: Partial<CanvasView> = { metadata: mergedMetadata };
+
+    // Regenerate displayName from the plugin's callback so the title bar
+    // reflects metadata changes (e.g. naming a new group project).
+    if (view.type === 'plugin') {
+      const registered = getRegisteredWidgetType((view as PluginCanvasViewType).pluginWidgetType);
+      if (registered) {
+        viewUpdates.displayName = generatePluginWidgetDisplayName(registered, mergedMetadata);
+      }
+    }
+
+    onUpdate(viewUpdates);
+  }, [view.metadata, view.type, onUpdate]);
 
   const renderContent = () => {
     switch (view.type) {
