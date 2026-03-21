@@ -66,8 +66,7 @@ function SettingsCategoryNav() {
             {navButton('Display & UI', 'display')}
             {navButton('External Editor', 'editor')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
             {showAnnex && navButton('Annex Server', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
@@ -81,8 +80,7 @@ function SettingsCategoryNav() {
           <>
             {navButton('Project Settings', 'project')}
             {navButton('Orchestrators & Agents', 'orchestrators')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
           </>
         )}

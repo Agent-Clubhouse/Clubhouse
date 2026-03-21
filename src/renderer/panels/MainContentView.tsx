@@ -12,7 +12,6 @@ import { PoppedOutPlaceholder } from '../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../hooks/usePopouts';
 import { ProjectSettings } from '../features/settings/ProjectSettings';
 import { NotificationSettingsView } from '../features/settings/NotificationSettingsView';
-import { SoundSettingsView } from '../features/settings/SoundSettingsView';
 import { DisplaySettingsView } from '../features/settings/DisplaySettingsView';
 import { OrchestratorSettingsView } from '../features/settings/OrchestratorSettingsView';
 import { ProfilesSettingsView } from '../features/settings/ProfilesSettingsView';
@@ -222,7 +221,6 @@ export function MainContentView() {
     if (settingsSubPage === 'orchestrators') return <OrchestratorSettingsView projectId={projectId} />;
     if (settingsSubPage === 'profiles') return <ProfilesSettingsView />;
     if (settingsSubPage === 'notifications') return <NotificationSettingsView projectId={projectId} />;
-    if (settingsSubPage === 'sounds') return <SoundSettingsView projectId={projectId} />;
     if (settingsSubPage === 'logging') return <LoggingSettingsView />;
     if (settingsSubPage === 'display') return <DisplaySettingsView />;
     if (settingsSubPage === 'editor') return <EditorSettingsView />;
