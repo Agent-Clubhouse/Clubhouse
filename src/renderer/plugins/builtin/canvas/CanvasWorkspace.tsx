@@ -108,6 +108,24 @@ export function CanvasWorkspace({
   const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
 
+  // ── Sleeping agent tracking (for wire dimming) ─────────────────
+  const [agentTick, setAgentTick] = useState(0);
+  useEffect(() => {
+    const sub = api.agents.onAnyChange(() => setAgentTick((n) => n + 1));
+    return () => sub.dispose();
+  }, [api]);
+  const sleepingAgentIds = useMemo(() => {
+    void agentTick; // reactive dependency
+    const agents = api.agents.list();
+    const sleeping = new Set<string>();
+    for (const agent of agents) {
+      if (agent.status === 'sleeping' || agent.status === 'error') {
+        sleeping.add(agent.id);
+      }
+    }
+    return sleeping;
+  }, [api, agentTick]);
+
   const handleWireClick = useCallback((binding: McpBindingEntry, event: React.MouseEvent) => {
     setWirePopover({ binding, x: event.clientX, y: event.clientY });
   }, []);
@@ -539,6 +557,7 @@ export function CanvasWorkspace({
             views={views}
             bindings={mcpBindings}
             viewPositions={wireViewPositions}
+            sleepingAgentIds={sleepingAgentIds}
             onWireClick={handleWireClick}
           />
         )}

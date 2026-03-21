@@ -3,9 +3,11 @@
  * disconnect, bidirectional toggle, and custom instructions controls.
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useAgentStore } from '../../../stores/agentStore';
+import { useProjectStore } from '../../../stores/projectStore';
 import { Toggle } from '../../../components/Toggle';
 import { WireInstructionsDialog } from './WireInstructionsDialog';
 import { useDismissibleLayer } from './useDismissibleLayer';
@@ -84,6 +86,26 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
     }
   };
 
+  // Wake agent support (agent-to-agent only, target sleeping)
+  const targetAgent = useAgentStore((s) => s.agents[binding.targetId]);
+  const isTargetSleeping = isAgentToAgent && (targetAgent?.status === 'sleeping' || targetAgent?.status === 'error');
+
+  const handleWake = useCallback(async () => {
+    if (!targetAgent) return;
+    const projects = useProjectStore.getState().projects;
+    const project = projects.find((p) => p.id === targetAgent.projectId);
+    if (!project) return;
+    try {
+      const config = await window.clubhouse.agent.getDurableConfig(project.path, binding.targetId);
+      if (config) {
+        await useAgentStore.getState().spawnDurableAgent(project.id, project.path, config, false);
+      }
+    } catch {
+      // Wake failed silently — user can try via the sleeping agent widget
+    }
+    onClose();
+  }, [binding.targetId, targetAgent, onClose]);
+
   const hasInstructions = liveBinding.instructions && Object.keys(liveBinding.instructions).length > 0;
 
   return (
@@ -139,6 +161,20 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
               <span className="w-1.5 h-1.5 rounded-full bg-ctp-accent flex-shrink-0" />
             )}
           </button>
+
+          {/* Wake Agent (only when target is sleeping) */}
+          {isTargetSleeping && (
+            <button
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-amber-400 hover:bg-amber-500/10 rounded transition-colors"
+              onClick={handleWake}
+              data-testid="wire-wake-agent"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              Wake Agent
+            </button>
+          )}
 
           {/* Disconnect */}
           <button
