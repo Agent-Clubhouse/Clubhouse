@@ -413,5 +413,78 @@ describe('hydrateFromRemote', () => {
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }));
     });
+
+    it('prunes stale bindings whose source and target views no longer exist', async () => {
+      // Set up a canvas with one agent view (agentId: 'agent-alive')
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-alive', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Alive', metadata: {} },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          // Valid: source agent exists on canvas
+          { agentId: 'agent-alive', targetId: 'some-target', targetKind: 'agent', label: 'Valid' },
+          // Stale: neither agentId nor targetId exist in any canvas view
+          { agentId: 'agent-gone', targetId: 'target-gone', targetKind: 'agent', label: 'Stale' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      // Only the valid binding should be restored
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-alive', expect.objectContaining({ targetId: 'some-target' }));
+    });
+
+    it('keeps bindings where only target exists on canvas', async () => {
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-target', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Target', metadata: {} },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          // Source not on canvas, but target agent IS on canvas — keep it
+          { agentId: 'external-agent', targetId: 'agent-target', targetKind: 'agent', label: 'Cross-canvas' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+    });
+
+    it('reconciles group-project bindings by metadata.groupProjectId', async () => {
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-1', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Agent', metadata: {} },
+            { id: 'cv2', type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', position: { x: 400, y: 0 }, size: { width: 300, height: 200 }, zIndex: 1, displayName: 'GP', metadata: { groupProjectId: 'gp_123' } },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 2,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          { agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', label: 'GP' },
+          // This binding's source (agent-1) still exists, so it is kept even though
+          // gp_deleted is gone — reconciliation only drops fully orphaned bindings.
+          { agentId: 'agent-1', targetId: 'gp_deleted', targetKind: 'group-project', label: 'Gone' },
+          // Fully orphaned: neither source nor target exist on any canvas
+          { agentId: 'agent-gone', targetId: 'gp_also_gone', targetKind: 'group-project', label: 'Orphan' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      // Two bindings restored (agent-1 is valid), fully orphaned one is pruned
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(2);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_deleted' }));
+    });
   });
 });

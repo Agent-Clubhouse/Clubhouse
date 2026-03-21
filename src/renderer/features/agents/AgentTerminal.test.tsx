@@ -265,6 +265,57 @@ describe('AgentTerminal', () => {
     });
   });
 
+  describe('gradient transparency', () => {
+    it('uses transparent background when gradient is active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
+    });
+
+    it('uses normal background when gradient is not active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: false,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('uses normal background when no gradient background is defined', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('live-updates to transparent when gradient is toggled on', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+          } as any,
+          experimentalGradients: true,
+        });
+      });
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
+    });
+  });
+
   describe('experimental mono font', () => {
     it('updates terminal fontFamily when experimental mono font is set', () => {
       render(<AgentTerminal agentId="agent-1" />);

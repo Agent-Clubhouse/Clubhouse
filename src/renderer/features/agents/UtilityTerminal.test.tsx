@@ -82,6 +82,43 @@ describe('UtilityTerminal', () => {
     expect(terminalDiv).toBeInTheDocument();
   });
 
+  it('uses transparent background when gradient is active', () => {
+    useThemeStore.setState({
+      theme: {
+        terminal: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+        gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+      } as any,
+      experimentalGradients: true,
+    });
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    expect(term().options.theme).toEqual({
+      background: 'transparent', foreground: '#cdd6f4', cursor: '#f5e0dc',
+    });
+  });
+
+  it('uses normal background when gradient is not active', () => {
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    expect(term().options.theme).toEqual({
+      background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc',
+    });
+  });
+
+  it('live-updates to transparent when gradient is toggled on', () => {
+    render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
+    act(() => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#1e1e2e', foreground: '#cdd6f4', cursor: '#f5e0dc' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+    });
+    expect(term().options.theme).toEqual({
+      background: 'transparent', foreground: '#cdd6f4', cursor: '#f5e0dc',
+    });
+  });
+
   it('updates terminal fontFamily when experimental mono font is set', () => {
     render(<UtilityTerminal agentId="agent-1" worktreePath="/worktrees/agent-1" />);
     act(() => {
