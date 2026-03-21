@@ -130,7 +130,7 @@ describe('AgentAvatarWithRing', () => {
     );
     const styledEl = container.querySelector('[style]');
     expect(styledEl).toBeTruthy();
-    // Waking uses amber (#f59e0b) ring color
-    expect(styledEl!.getAttribute('style')).toContain('#f59e0b');
+    // Waking uses amber ring color — rendered as rgb(245, 158, 11) from #f59e0b
+    expect(styledEl!.getAttribute('style')).toContain('245, 158, 11');
   });
 });

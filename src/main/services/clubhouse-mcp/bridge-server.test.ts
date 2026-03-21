@@ -15,8 +15,10 @@ vi.mock('electron', () => {
 });
 
 const mockGetAgentNonce = vi.fn<(id: string) => string | undefined>();
+const mockAgentRegistryGet = vi.fn<(id: string) => unknown>();
 vi.mock('../agent-registry', () => ({
   getAgentNonce: (id: string) => mockGetAgentNonce(id),
+  agentRegistry: { get: (id: string) => mockAgentRegistryGet(id) },
 }));
 
 vi.mock('../log-service', () => ({
@@ -104,6 +106,11 @@ describe('BridgeServer', () => {
       description: 'Send a message',
       inputSchema: { type: 'object', properties: { message: { type: 'string' } } },
     }, vi.fn());
+
+    // Mark target as running so all tools appear in scoped list
+    mockAgentRegistryGet.mockImplementation((id: string) =>
+      id === 'agent-2' ? { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' } : undefined,
+    );
 
     bindingManager.bind('agent-1', {
       targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',

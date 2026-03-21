@@ -16,6 +16,7 @@ const mockRemovers = {
   onNavigateToAgent: vi.fn(),
   onExit: vi.fn(),
   onHookEvent: vi.fn(),
+  onAgentWaking: vi.fn(),
   onAgentSpawned: vi.fn(),
   onEditCommand: vi.fn(),
   onStatusChanged: vi.fn(),
@@ -51,6 +52,7 @@ vi.stubGlobal('window', {
     },
     agent: {
       onHookEvent: vi.fn(() => mockRemovers.onHookEvent),
+      onAgentWaking: vi.fn(() => mockRemovers.onAgentWaking),
       readTranscript: vi.fn(),
       readQuickSummary: vi.fn(),
       killAgent: vi.fn(),

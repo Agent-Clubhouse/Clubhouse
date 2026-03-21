@@ -110,6 +110,12 @@ describe('AgentTools', () => {
       getPasteSubmitTiming: () => ({ initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 }),
     });
 
+    // Default: agent-2 is running (in registry) so all tools appear in scoped list
+    mockAgentRegistryGet.mockImplementation((id: string) => {
+      if (id === 'agent-2') return { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' };
+      return undefined;
+    });
+
     registerAgentTools();
     bindingManager.bind('agent-1', {
       targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
@@ -390,7 +396,7 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
       const result = await callTool('agent-1', sendToolName, { message: 'hello' });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('not running');
+      expect(result.content[0].text).toContain('is sleeping');
     });
 
     it('returns error for headless runtime', async () => {
@@ -680,7 +686,7 @@ describe('AgentTools', () => {
 
       const result = await callTool('agent-1', wakeToolName, {});
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('woken up successfully');
+      expect(result.content[0].text).toContain('is waking up');
       expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
         agentId: 'agent-2',
         projectPath: '/project',
@@ -706,7 +712,7 @@ describe('AgentTools', () => {
 
       const result = await callTool('agent-1', wakeToolName, { resume: true });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('Resumed session session-abc-123');
+      expect(result.content[0].text).toContain('is waking up');
       expect(mockSpawnAgent).toHaveBeenCalledWith(expect.objectContaining({
         agentId: 'agent-2',
         resume: true,
@@ -810,7 +816,7 @@ describe('AgentTools', () => {
       mockAgentRegistryGet.mockReturnValue(undefined);
       const result = await callTool('agent-1', connectToolName, {});
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('not running');
+      expect(result.content[0].text).toContain('is sleeping');
     });
   });
 });
