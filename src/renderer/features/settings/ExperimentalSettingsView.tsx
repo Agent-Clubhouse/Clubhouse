@@ -37,6 +37,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Review Carousel',
     description: 'Full-screen swipe carousel for browsing and reviewing agents one at a time. Requires app restart.',
   },
+  {
+    id: 'mcp',
+    label: 'Clubhouse MCP',
+    description: 'Agent-widget and agent-to-agent interaction via MCP bridge. Enables the MCP settings page. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {

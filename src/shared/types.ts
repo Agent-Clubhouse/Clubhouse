@@ -434,6 +434,7 @@ export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display
 
 export interface McpSettings {
   enabled: boolean;
+  projectDefault?: boolean;
   projectOverrides?: Record<string, boolean>;
 }
 
