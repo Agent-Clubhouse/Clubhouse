@@ -26,10 +26,17 @@ interface Props {
 }
 
 export function ShellTerminal({ sessionId, focused, io }: Props) {
-  const pty = io ?? window.clubhouse.pty;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+
+  // Use a ref for the IO layer so that changes to `io` don't trigger a full
+  // terminal destruction/recreation cycle.  The terminal instance is expensive
+  // to rebuild — it replays the entire buffer, resets scroll position, and
+  // causes a visible flash.  All IO call-sites read through the ref instead.
+  const ptyRef = useRef<TerminalIO>(io ?? window.clubhouse.pty);
+  ptyRef.current = io ?? window.clubhouse.pty;
+
   const terminalColors = useThemeStore((s) => s.theme.terminal);
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
@@ -39,6 +46,7 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
   useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
+  // ── Terminal creation — only depends on sessionId ────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -58,9 +66,9 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
     requestAnimationFrame(() => {
       fitAddon.fit();
-      pty.resize(sessionId, term.cols, term.rows);
+      ptyRef.current.resize(sessionId, term.cols, term.rows);
       term.focus();
-      pty.getBuffer(sessionId).then((buf: string) => {
+      ptyRef.current.getBuffer(sessionId).then((buf: string) => {
         if (buf && terminalRef.current === term) {
           term.write(buf);
         }
@@ -76,15 +84,32 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
     // the input is incomplete, and PSReadLine on Windows handles it natively.
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type === 'keydown' && ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey)) {
-        pty.write(sessionId, '\n');
+        ptyRef.current.write(sessionId, '\n');
         return false; // prevent xterm from emitting \r
       }
       return true;
     });
 
     const inputDisposable = term.onData((data) => {
-      pty.write(sessionId, data);
+      ptyRef.current.write(sessionId, data);
     });
+
+    return () => {
+      inputDisposable.dispose();
+      term.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, [sessionId]);
+
+  // ── IO event listeners — re-registered when io changes ───────────
+  // Separated from terminal creation so that an IO change (e.g. satellite
+  // reconnect) only re-subscribes listeners without destroying the terminal.
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+
+    const pty = ptyRef.current;
 
     // Batch PTY data writes using rAF to avoid 100+ DOM renders/sec.
     // Data arriving between frames is concatenated and flushed once per paint.
@@ -124,19 +149,15 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
     return () => {
       if (flushId) cancelAnimationFrame(flushId);
-      inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
-      term.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
     };
-  }, [sessionId, pty]);
+  }, [sessionId, io]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   const resizeCallback = useCallback(
-    (sid: string, cols: number, rows: number) => pty.resize(sid, cols, rows),
-    [pty],
+    (sid: string, cols: number, rows: number) => ptyRef.current.resize(sid, cols, rows),
+    [],
   );
   useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback);
 
@@ -146,10 +167,10 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
     const cleanup = attachClipboardHandlers(
       terminalRef.current,
       containerRef.current,
-      (data) => pty.write(sessionId, data)
+      (data) => ptyRef.current.write(sessionId, data)
     );
     return cleanup;
-  }, [clipboardCompat, sessionId, pty]);
+  }, [clipboardCompat, sessionId]);
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -168,9 +189,9 @@ export function ShellTerminal({ sessionId, focused, io }: Props) {
 
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
     useCallback((data: string) => {
-      pty.write(sessionId, data);
+      ptyRef.current.write(sessionId, data);
       terminalRef.current?.focus();
-    }, [sessionId, pty])
+    }, [sessionId])
   );
 
   return (

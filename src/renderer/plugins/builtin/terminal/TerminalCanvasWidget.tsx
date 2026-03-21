@@ -25,26 +25,38 @@ function projectColor(name: string): string {
 /**
  * Create a TerminalIO adapter that routes PTY operations through the
  * annex client to a satellite machine.
+ *
+ * Accepts a ref for the satellite ID so the adapter methods always use
+ * the latest connection info without creating a new object reference.
+ * This prevents the downstream ShellTerminal from recreating its xterm
+ * instance (and resetting scroll position) on satellite reconnection.
  */
-function createRemoteTerminalIO(satelliteId: string): TerminalIO {
+function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>): TerminalIO {
   return {
     write(sessionId: string, data: string) {
-      window.clubhouse.annexClient.ptyInput(satelliteId, sessionId, data);
+      if (satelliteIdRef.current) {
+        window.clubhouse.annexClient.ptyInput(satelliteIdRef.current, sessionId, data);
+      }
     },
     resize(sessionId: string, cols: number, rows: number) {
-      window.clubhouse.annexClient.ptyResize(satelliteId, sessionId, cols, rows);
+      if (satelliteIdRef.current) {
+        window.clubhouse.annexClient.ptyResize(satelliteIdRef.current, sessionId, cols, rows);
+      }
     },
     getBuffer(sessionId: string): Promise<string> {
-      return window.clubhouse.annexClient.ptyGetBuffer(satelliteId, sessionId);
+      if (satelliteIdRef.current) {
+        return window.clubhouse.annexClient.ptyGetBuffer(satelliteIdRef.current, sessionId);
+      }
+      return Promise.resolve('');
     },
     onData(callback: (id: string, data: string) => void): () => void {
       return satellitePtyDataBus.on((sid, agentId, data) => {
-        if (sid === satelliteId) callback(agentId, data);
+        if (sid === satelliteIdRef.current) callback(agentId, data);
       });
     },
     onExit(callback: (id: string, exitCode: number) => void): () => void {
       return satellitePtyExitBus.on((sid, agentId, exitCode) => {
-        if (sid === satelliteId) callback(agentId, exitCode);
+        if (sid === satelliteIdRef.current) callback(agentId, exitCode);
       });
     },
   };
@@ -72,11 +84,19 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
 
   const sessionId = `canvas-widget-terminal:${widgetId}`;
 
-  // Create remote TerminalIO if rendering in a remote context
+  // Stable ref for the satellite ID — the remote IO adapter reads through
+  // this ref so its methods always target the current satellite without
+  // changing the object identity (which would cascade into terminal recreation).
+  const satelliteIdRef = useRef<string | null>(remote.isRemote ? remote.satelliteId : null);
+  satelliteIdRef.current = remote.isRemote ? remote.satelliteId : null;
+
+  // Create remote TerminalIO if rendering in a remote context.
+  // Only recreated when isRemote flips (local <-> remote); satellite ID
+  // changes are picked up through the ref without a new object.
   const remoteIO = useMemo(() => {
-    if (!remote.isRemote || !remote.satelliteId) return undefined;
-    return createRemoteTerminalIO(remote.satelliteId);
-  }, [remote.isRemote, remote.satelliteId]);
+    if (!remote.isRemote) return undefined;
+    return createRemoteTerminalIO(satelliteIdRef);
+  }, [remote.isRemote]);
 
   // Fetch worktrees when project is selected (skip for remote — no worktree listing over annex)
   useEffect(() => {

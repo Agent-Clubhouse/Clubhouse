@@ -36,6 +36,13 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const sendClipboardImage = useAnnexClientStore((s) => s.sendClipboardImage);
   const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
 
+  // Refs for Zustand store methods — prevents terminal destruction/recreation
+  // if the store ever returns a new function reference during state updates.
+  const sendPtyInputRef = useRef(sendPtyInput);
+  sendPtyInputRef.current = sendPtyInput;
+  const requestPtyBufferRef = useRef(requestPtyBuffer);
+  requestPtyBufferRef.current = requestPtyBuffer;
+
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
 
@@ -89,7 +96,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
         });
       } else if (remoteParts) {
         // Remote agents: fetch buffer from satellite via HTTPS REST
-        requestPtyBuffer(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
+        requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
           if (buf) term.write(buf);
           bufferReplayed = true;
@@ -105,7 +112,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       if (!isRemote) {
         window.clubhouse.pty.write(agentId, data);
       } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+        sendPtyInputRef.current(remoteParts.satelliteId, remoteParts.agentId, data);
       }
     });
 
@@ -158,7 +165,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, isRemote, remoteParts, sendPtyInput, requestPtyBuffer]);
+  }, [agentId, isRemote, remoteParts]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
@@ -203,7 +210,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       if (!isRemote) {
         window.clubhouse.pty.write(agentId, data);
       } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+        sendPtyInputRef.current(remoteParts.satelliteId, remoteParts.agentId, data);
       }
     };
     const handleImagePaste = (isRemote && remoteParts)
@@ -213,7 +220,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       : undefined;
     const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData, handleImagePaste);
     return cleanup;
-  }, [clipboardCompat, agentId, isRemote, remoteParts, sendPtyInput, sendClipboardImage]);
+  }, [clipboardCompat, agentId, isRemote, remoteParts, sendClipboardImage]);
 
   // Live-update theme on existing terminal instances
   useEffect(() => {

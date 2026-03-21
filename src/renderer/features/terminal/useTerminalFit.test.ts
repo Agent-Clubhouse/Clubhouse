@@ -396,6 +396,87 @@ describe('useTerminalFit', () => {
     });
   });
 
+  describe('viewport scroll preservation', () => {
+    let viewportEl: HTMLDivElement;
+
+    function addViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
+      viewportEl = document.createElement('div');
+      viewportEl.classList.add('xterm-viewport');
+      Object.defineProperty(viewportEl, 'scrollHeight', { value: scrollHeight, configurable: true });
+      Object.defineProperty(viewportEl, 'clientHeight', { value: clientHeight, configurable: true });
+      viewportEl.scrollTop = scrollTop;
+      containerEl.appendChild(viewportEl);
+    }
+
+    it('restores scrollTop when user is scrolled up from bottom', () => {
+      // scrollHeight=1000, clientHeight=200, scrollTop=300 → user is scrolled up
+      addViewport(300, 1000, 200);
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
+
+      // Simulate fit() resetting scrollTop to 0 (the bug)
+      mockFit.mockImplementation(() => {
+        viewportEl.scrollTop = 0;
+      });
+
+      mockFit.mockClear();
+      resizeObserverCallbacks[0]();
+
+      expect(mockFit).toHaveBeenCalledTimes(1);
+      expect(viewportEl.scrollTop).toBe(300);
+    });
+
+    it('keeps viewport at bottom when user was already at bottom', () => {
+      // scrollHeight=1000, clientHeight=200, scrollTop=800 → at bottom
+      addViewport(800, 1000, 200);
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
+
+      // Simulate fit() changing scrollHeight (reflow) and scrollTop
+      mockFit.mockImplementation(() => {
+        Object.defineProperty(viewportEl, 'scrollHeight', { value: 1200, configurable: true });
+        viewportEl.scrollTop = 500;
+      });
+
+      mockFit.mockClear();
+      resizeObserverCallbacks[0]();
+
+      expect(mockFit).toHaveBeenCalledTimes(1);
+      // Should scroll to the new bottom: 1200 - 200 = 1000
+      expect(viewportEl.scrollTop).toBe(1000);
+    });
+
+    it('preserves scroll position during pane focus fit', () => {
+      addViewport(400, 1000, 200);
+      mockFit.mockImplementation(() => {
+        viewportEl.scrollTop = 0;
+      });
+
+      const { rerender } = renderHook(
+        ({ focused }) => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef, focused),
+        { initialProps: { focused: false } },
+      );
+
+      mockFit.mockClear();
+      rerender({ focused: true });
+
+      expect(mockFit).toHaveBeenCalledTimes(1);
+      expect(viewportEl.scrollTop).toBe(400);
+    });
+
+    it('works gracefully when no .xterm-viewport element exists', () => {
+      // No viewport element — save/restore should be no-ops
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      renderHook(() => useTerminalFit('s1', terminalRef, fitAddonRef, containerRef));
+
+      mockFit.mockClear();
+      resizeObserverCallbacks[0]();
+
+      // Should still call fit without errors
+      expect(mockFit).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('null-safety', () => {
     it('does nothing when container ref is null', () => {
       const nullContainer = { current: null };
