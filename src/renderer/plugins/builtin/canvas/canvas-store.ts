@@ -226,11 +226,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           const gpId = v.metadata?.groupProjectId as string | undefined;
           if (gpId) validIds.add(gpId);
         }
+        // Only reconcile if there are views to compare against — if the canvas
+        // is empty, agents may not have been added yet (fresh session).
+        const shouldReconcile = validIds.size > 0;
 
         // Restore each binding, skipping stale ones whose source/target no longer exist
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
-          if (!validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
           try {
             await window.clubhouse.mcpBinding.bind(entry.agentId, {
               targetId: entry.targetId,

@@ -424,16 +424,21 @@ describe('hydrateFromRemote', () => {
         'canvas-active-id': 'c1',
         'canvas-wires': [
           { agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', label: 'GP' },
+          // This binding's source (agent-1) still exists, so it is kept even though
+          // gp_deleted is gone — reconciliation only drops fully orphaned bindings.
           { agentId: 'agent-1', targetId: 'gp_deleted', targetKind: 'group-project', label: 'Gone' },
+          // Fully orphaned: neither source nor target exist on any canvas
+          { agentId: 'agent-gone', targetId: 'gp_also_gone', targetKind: 'group-project', label: 'Orphan' },
         ],
       });
 
       await store.getState().loadCanvas(canvasStorage);
       await store.getState().loadWires(canvasStorage);
 
-      // Only the binding to the existing group project should be restored
-      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+      // Two bindings restored (agent-1 is valid), fully orphaned one is pruned
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(2);
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_deleted' }));
     });
   });
 });

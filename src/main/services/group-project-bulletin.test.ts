@@ -35,6 +35,7 @@ describe('BulletinBoard', () => {
   beforeEach(() => {
     store.clear();
     _resetAllBoardsForTesting();
+    vi.mocked(fsp.rm).mockClear();
   });
 
   it('posts a message and returns it', async () => {
@@ -167,11 +168,13 @@ describe('BulletinBoard', () => {
       );
     });
 
-    it('handles missing directory gracefully', async () => {
-      // Directory does not exist (access will throw ENOENT)
-      await destroyBulletinBoard('gp_nonexistent');
-      // rm should not be called since the dir doesn't exist
-      expect(fsp.rm).not.toHaveBeenCalled();
+    it('does not throw when rm fails', async () => {
+      // Mark directory as existing so rm gets called
+      store.set('/tmp/test-clubhouse/.clubhouse-dev/group-projects/gp_rmfail', '');
+      vi.mocked(fsp.rm).mockRejectedValueOnce(new Error('EPERM'));
+
+      // Should not throw — error is caught and logged
+      await expect(destroyBulletinBoard('gp_rmfail')).resolves.toBeUndefined();
     });
   });
 });
