@@ -2,6 +2,9 @@
  * Agent-to-Agent MCP Tools — allows linked agents to communicate.
  */
 
+import * as fsp from 'fs/promises';
+import * as path from 'path';
+import { app } from 'electron';
 import { registerToolTemplate, buildToolName } from '../tool-registry';
 import { bindingManager } from '../binding-manager';
 import { agentRegistry } from '../../agent-registry';
@@ -11,6 +14,46 @@ import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 import { getProvider } from '../../../orchestrators';
 import type { PasteSubmitTiming } from '../../../orchestrators';
+
+// ── File-backed message delivery ────────────────────────────────────────────
+//
+// Multi-line paste via bracketed-paste escape sequences is unreliable across
+// different CLIs (GHCP in particular mangles or truncates multi-line pastes).
+// Instead we write the full message to a temp file and send a short single-line
+// reference into the PTY.  The receiving agent reads the file with its normal
+// file-reading tool.
+
+const A2A_MSG_DIR = path.join(app.getPath('temp'), 'clubhouse-a2a-messages');
+
+/** Ensure the a2a message directory exists (idempotent). */
+async function ensureMsgDir(): Promise<void> {
+  await fsp.mkdir(A2A_MSG_DIR, { recursive: true });
+}
+
+/**
+ * Write a message to a temp file and return its path.
+ * File is named after the taskId for easy correlation.
+ */
+export async function writeMessageFile(taskId: string, content: string): Promise<string> {
+  await ensureMsgDir();
+  const filePath = path.join(A2A_MSG_DIR, `${taskId}.md`);
+  await fsp.writeFile(filePath, content, 'utf-8');
+  return filePath;
+}
+
+/**
+ * Schedule cleanup of a message file after a delay.
+ * Default 5 minutes — long enough for the receiving agent to read it.
+ */
+export function scheduleMessageCleanup(filePath: string, delayMs = 5 * 60 * 1000): void {
+  setTimeout(async () => {
+    try {
+      await fsp.unlink(filePath);
+    } catch {
+      // File may already be gone — that's fine
+    }
+  }, delayMs);
+}
 
 /** Register all agent-to-agent tool templates. */
 export function registerAgentTools(): void {
@@ -23,6 +66,8 @@ export function registerAgentTools(): void {
         'Send a message to the linked agent. The message is injected as terminal input and submitted.\n\n' +
         'IMPORTANT — this is asynchronous. The target agent will process the message on its own timeline ' +
         'and may be in the middle of other work. There is no inline response.\n\n' +
+        'Multi-line messages are automatically saved to a temp file and the agent receives a single-line ' +
+        'reference with the file path. The target agent should read the file for full instructions.\n\n' +
         'Your identity (name and project) is automatically included in the message so the target ' +
         'knows who sent the request. If the connection is bidirectional, reply instructions ' +
         '(including the exact tool name to respond back) are also appended automatically.\n\n' +
@@ -110,23 +155,32 @@ export function registerAgentTools(): void {
           });
 
           if (isMultiLine) {
-            // Wrap in bracketed paste so the receiving CLI treats the entire
-            // multi-line payload as a single paste event rather than splitting
-            // on embedded newlines or collapsing into a preview.
-            ptyManager.write(targetId, `\x1b[200~${taggedMessage}\x1b[201~`);
+            // Multi-line messages are written to a temp file and a short
+            // single-line reference is sent to the PTY.  This avoids
+            // bracketed-paste issues (GHCP and other CLIs mangle or
+            // truncate multi-line paste content).
+            const filePath = await writeMessageFile(taskId, taggedMessage);
+            scheduleMessageCleanup(filePath);
+
+            const ptyLine = `[TASK:${taskId}] [FROM:${senderLabel}] Message from ${senderLabel} saved to ${filePath} — read that file for full instructions.`;
+            ptyManager.write(targetId, ptyLine);
+
+            appLog('core:mcp', 'info', 'send_message: multi-line message written to file', {
+              meta: { targetAgent: targetId, taskId, filePath, messageLength: taggedMessage.length },
+            });
           } else {
             ptyManager.write(targetId, taggedMessage);
           }
 
           if (forceSubmit) {
             // Resolve provider-specific paste submit timing. Different CLIs
-            // process bracketed paste at different speeds — Claude Code is
+            // process input at different speeds — Claude Code is
             // fast (200ms) while Copilot CLI needs longer (500ms).
             const provider = getProvider(reg.orchestrator);
             const timing: PasteSubmitTiming = provider?.getPasteSubmitTiming()
               ?? { initialDelayMs: 200, retryDelayMs: 200, finalCheckDelayMs: 200 };
 
-            appLog('core:mcp', 'info', 'send_message: using paste submit timing', {
+            appLog('core:mcp', 'info', 'send_message: using submit timing', {
               meta: { targetAgent: targetId, taskId, orchestrator: reg.orchestrator, timing },
             });
 
@@ -134,19 +188,13 @@ export function registerAgentTools(): void {
             // heuristically check whether the receiving agent processed the input.
             const bufferBefore = ptyManager.getBuffer(targetId)?.length ?? 0;
 
-            // Many CLIs show a paste preview that requires Enter to accept
-            // the pasted content, then a *second* Enter to actually submit.
-            // We send \r twice with delays:
-            //   1st \r (initialDelayMs): exits the paste preview / accepts pasted text
-            //   2nd \r (retryDelayMs later): submits the message to the AI
-            // The second \r is only sent if the buffer hasn't grown (meaning
-            // the first Enter didn't trigger processing). If it did grow, the
-            // message was already submitted and the retry is skipped.
+            // Send Enter to submit the message, then optionally a second
+            // Enter if the buffer didn't grow (some CLIs need confirmation).
             await new Promise<void>((resolve) => {
               setTimeout(() => {
                 ptyManager.write(targetId, '\r');
 
-                appLog('core:mcp', 'info', 'send_message: first Enter sent (accept paste)', {
+                appLog('core:mcp', 'info', 'send_message: first Enter sent', {
                   meta: { targetAgent: targetId, taskId },
                 });
 
@@ -191,11 +239,12 @@ export function registerAgentTools(): void {
         }
 
         const submitNote = forceSubmit ? '' : ' (force_submit=false, message injected without submitting)';
+        const multiLineNote = taggedMessage.includes('\n') ? ' Multi-line message delivered via temp file.' : '';
         const resultText = isBidirectional
           ? `Message sent to ${targetName}. task_id=${taskId}. ` +
-            `Bidirectional — ${targetName} can reply directly via send_message.${submitNote}`
+            `Bidirectional — ${targetName} can reply directly via send_message.${multiLineNote}${submitNote}`
           : `Message sent to ${targetName}. task_id=${taskId} — ` +
-            `poll read_output for TASK_RESULT:${taskId}.${submitNote}`;
+            `poll read_output for TASK_RESULT:${taskId}.${multiLineNote}${submitNote}`;
 
         return { content: [{ type: 'text', text: resultText }] };
       } catch (err) {
