@@ -107,7 +107,13 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * sending Enter keystrokes.
    */
   override getPasteSubmitTiming(): PasteSubmitTiming {
-    return { initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 };
+    return {
+      initialDelayMs: 500,
+      retryDelayMs: 500,
+      finalCheckDelayMs: 300,
+      chunkSize: 256,
+      chunkDelayMs: 50,
+    };
   }
 
   // ── Core interface ──────────────────────────────────────────────────────
