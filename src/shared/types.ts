@@ -74,6 +74,8 @@ export interface Agent {
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
   resuming?: boolean;
+  /** Plugin-supplied metadata for correlating agents to domain objects (e.g. boardId, cardId). */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface CompletedQuickAgent {
@@ -94,6 +96,8 @@ export interface CompletedQuickAgent {
   orchestrator?: string;
   model?: string;
   cancelled?: boolean;
+  /** Plugin-supplied metadata carried from the spawning agent. */
+  pluginMetadata?: Record<string, string>;
 }
 
 // --- Profile types ---

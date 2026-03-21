@@ -41,10 +41,11 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
           parentAgentId: a.parentAgentId,
           orchestrator: a.orchestrator,
           freeAgentMode: a.freeAgentMode,
+          pluginMetadata: a.pluginMetadata,
         }));
     },
 
-    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string> {
+    async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string> {
       if (options?.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
       }
@@ -70,6 +71,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         undefined, // parentAgentId
         options?.orchestrator,
         options?.freeAgentMode,
+        options?.metadata,
       );
     },
 
@@ -123,6 +125,7 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         exitCode: r.exitCode,
         completedAt: r.completedAt,
         parentAgentId: r.parentAgentId,
+        pluginMetadata: r.pluginMetadata,
       }));
     },
 

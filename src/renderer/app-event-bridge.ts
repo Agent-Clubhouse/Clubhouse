@@ -272,6 +272,7 @@ function initPtyExitListener(): () => void {
           orchestrator: agent.orchestrator || 'claude-code',
           model: agent.model,
           cancelled,
+          pluginMetadata: agent.pluginMetadata,
         });
 
         useAgentStore.getState().removeAgent(agentId);

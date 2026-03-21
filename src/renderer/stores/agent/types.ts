@@ -53,6 +53,7 @@ export interface AgentLifecycleSlice {
     parentAgentId?: string,
     orchestrator?: string,
     freeAgentMode?: boolean,
+    pluginMetadata?: Record<string, string>,
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,
