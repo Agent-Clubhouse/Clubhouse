@@ -87,6 +87,10 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
 
   const handleSaveInstructions = async (instructions: Record<string, string>) => {
     await setInstructions(binding.agentId, binding.targetId, instructions);
+    // Mirror instructions to the reverse binding for bidirectional agent-to-agent wires
+    if (bidirectional && isAgentToAgent) {
+      await setInstructions(binding.targetId, binding.agentId, instructions);
+    }
   };
 
   const hasInstructions = liveBinding.instructions && Object.keys(liveBinding.instructions).length > 0;
