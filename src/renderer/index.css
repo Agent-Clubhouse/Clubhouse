@@ -176,7 +176,7 @@
   transition: background-color 200ms ease;
 }
 .toggle-track[data-on="true"] {
-  background-color: #6366f1;
+  background-color: rgb(var(--ctp-accent));
 }
 .toggle-knob {
   position: absolute;
