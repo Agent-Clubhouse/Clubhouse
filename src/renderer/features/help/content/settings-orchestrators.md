@@ -8,7 +8,6 @@ An orchestrator is the CLI backend powering your agents — it handles AI commun
 |-------------|-------------|--------|
 | **Claude Code** | Anthropic's CLI for Claude. Most complete Clubhouse integration. | Stable |
 | **Copilot CLI** | GitHub Copilot's CLI. Best for GitHub-centric workflows. | Stable |
-| **OpenCode** | Open-source AI coding backend. Community-maintained. | Beta |
 | **Codex CLI** | OpenAI's Codex CLI. Sandbox-based permissions, `--full-auto` mode. | Beta |
 
 ## Setup
@@ -25,13 +24,13 @@ You cannot disable the last remaining orchestrator.
 
 ## Capability Matrix
 
-| Capability | Claude Code | Copilot CLI | OpenCode | Codex CLI |
-|-----------|:-----------:|:-----------:|:--------:|:---------:|
-| Headless mode | Yes | Yes | Yes | Yes |
-| Structured output | Yes | — | — | — |
-| Hooks | Yes | Yes | — | — |
-| Session resume | Yes | — | — | Yes |
-| Permissions | Yes | Yes | Yes | Yes (sandbox) |
+| Capability | Claude Code | Copilot CLI | Codex CLI |
+|-----------|:-----------:|:-----------:|:---------:|
+| Headless mode | Yes | Yes | Yes |
+| Structured output | Yes | — | — |
+| Hooks | Yes | Yes | — |
+| Session resume | Yes | — | Yes |
+| Permissions | Yes | Yes | Yes (sandbox) |
 
 ## Per-Project Selection
 
