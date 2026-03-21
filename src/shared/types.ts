@@ -932,11 +932,17 @@ export type CanvasMutation =
   | { type: 'addPluginView'; pluginId: string; qualifiedType: string; label: string; position: { x: number; y: number }; defaultSize?: { width: number; height: number } }
   | { type: 'removeView'; viewId: string }
   | { type: 'moveView'; viewId: string; position: { x: number; y: number } }
+  | { type: 'moveViews'; positions: Record<string, { x: number; y: number }> }
   | { type: 'resizeView'; viewId: string; size: { width: number; height: number } }
   | { type: 'focusView'; viewId: string }
   | { type: 'updateView'; viewId: string; updates: Record<string, unknown> }
   | { type: 'setViewport'; viewport: { panX: number; panY: number; zoom: number } }
-  | { type: 'zoomView'; viewId: string | null };
+  | { type: 'zoomView'; viewId: string | null }
+  // Canvas tab management (for pop-out + annex sync)
+  | { type: 'addCanvas' }
+  | { type: 'removeCanvas'; canvasId: string }
+  | { type: 'renameCanvas'; canvasId: string; name: string }
+  | { type: 'setActiveCanvas'; canvasId: string };
 
 export interface CanvasStateSnapshot {
   canvasId: string;
@@ -949,6 +955,10 @@ export interface CanvasStateSnapshot {
   projectId?: string;
   /** Storage scope: 'global' for app mode, 'project' for project mode. */
   scope?: string;
+  /** All canvas tab metadata — enables tab sync for annex controllers. */
+  allCanvasTabs?: Array<{ id: string; name: string }>;
+  /** Active canvas tab ID on the source — enables tab sync for annex controllers. */
+  activeCanvasId?: string;
 }
 
 // --- Session Resume on Update types ---
