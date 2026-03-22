@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import net from 'net';
+import path from 'path';
 
 const mockBonjourService = { stop: vi.fn() };
 const mockBonjour = {
@@ -1479,14 +1480,14 @@ describe('annex-server', () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
-        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project', { depth: 2, includeHidden: false });
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project'), { depth: 2, includeHidden: false });
       }, 10_000);
 
       it('passes query parameters (path, depth, includeHidden)', async () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=src&depth=5&includeHidden=true', undefined, authHeaders(token));
-        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project/src', { depth: 5, includeHidden: true });
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src'), { depth: 5, includeHidden: true });
       }, 10_000);
 
       it('returns 404 for unknown project', async () => {
@@ -1539,7 +1540,7 @@ describe('annex-server', () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
-        expect(fileServiceModule.readFile).toHaveBeenCalledWith('/tmp/test-project/src/index.ts');
+        expect(fileServiceModule.readFile).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src/index.ts'));
       }, 10_000);
 
       it('returns 400 when path parameter is missing', async () => {
