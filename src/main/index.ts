@@ -18,6 +18,7 @@ import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
+import { isAllowedNavigation } from './navigation-guard';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -104,6 +105,24 @@ const createWindow = (): void => {
   });
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  // Block navigation to external URLs — prevents renderer or plugin from loading
+  // arbitrary content. Allow only the app's own URLs (file:// or dev server).
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigation(url)) {
+      event.preventDefault();
+      appLog('core:security', 'warn', `Blocked navigation to external URL: ${url}`);
+    }
+  });
+
+  // Block window.open() and <a target="_blank"> from opening external URLs.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowedNavigation(url)) {
+      appLog('core:security', 'warn', `Blocked window.open to external URL: ${url}`);
+      return { action: 'deny' };
+    }
+    return { action: 'deny' };
+  });
 
   // Clean up file watchers when the window is about to close (before webContents is destroyed)
   mainWindow.on('close', () => {
