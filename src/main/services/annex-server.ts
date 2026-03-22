@@ -1137,8 +1137,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const includeHidden = params.get('includeHidden') === 'true';
 
     // Resolve and validate path stays within project
-    const fullPath = relPath === '.' ? project.path : `${project.path}/${relPath}`;
-    if (!fullPath.startsWith(project.path)) {
+    const resolvedProject = path.resolve(project.path);
+    const fullPath = relPath === '.' ? resolvedProject : path.resolve(resolvedProject, relPath);
+    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
       sendJson(res, 403, { error: 'path_traversal' });
       return;
     }
@@ -1168,8 +1169,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
-    const fullPath = relPath.startsWith('/') ? relPath : `${project.path}/${relPath}`;
-    if (!fullPath.startsWith(project.path)) {
+    const resolvedProject = path.resolve(project.path);
+    const fullPath = path.resolve(resolvedProject, relPath);
+    if (fullPath !== resolvedProject && !fullPath.startsWith(resolvedProject + path.sep)) {
       sendJson(res, 403, { error: 'path_traversal' });
       return;
     }

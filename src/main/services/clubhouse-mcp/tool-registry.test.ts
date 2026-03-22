@@ -423,6 +423,68 @@ describe('ToolRegistry', () => {
       expect(handler).toHaveBeenCalledWith('gp_123', 'agent-1', {});
     });
 
+    it('returns error when required argument is missing', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+          },
+          required: ['message'],
+        },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'robin', projectName: 'app',
+      }), 'send_message');
+
+      const result = await callTool('agent-1', toolName, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Missing required argument: message');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('returns error when argument has wrong type', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+          },
+          required: ['message'],
+        },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+
+      const toolName = buildToolName(makeBinding({
+        agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent',
+        targetName: 'robin', projectName: 'app',
+      }), 'send_message');
+
+      const result = await callTool('agent-1', toolName, { message: 123 });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid type');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
     it('works with browser tool names', async () => {
       const handler = vi.fn().mockResolvedValue({
         content: [{ type: 'text', text: 'navigated' }],

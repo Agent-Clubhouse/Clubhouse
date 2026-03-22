@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'http';
 import net from 'net';
+import path from 'path';
 
 const mockBonjourService = { stop: vi.fn() };
 const mockBonjour = {
@@ -1513,14 +1514,14 @@ describe('annex-server', () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/tree', undefined, authHeaders(token));
-        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project', { depth: 2, includeHidden: false });
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project'), { depth: 2, includeHidden: false });
       }, 10_000);
 
       it('passes query parameters (path, depth, includeHidden)', async () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=src&depth=5&includeHidden=true', undefined, authHeaders(token));
-        expect(fileServiceModule.readTree).toHaveBeenCalledWith('/tmp/test-project/src', { depth: 5, includeHidden: true });
+        expect(fileServiceModule.readTree).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src'), { depth: 5, includeHidden: true });
       }, 10_000);
 
       it('returns 404 for unknown project', async () => {
@@ -1529,6 +1530,24 @@ describe('annex-server', () => {
         const res = await request(port, 'GET', '/api/v1/projects/unknown/files/tree', undefined, authHeaders(token));
         expect(res.status).toBe(404);
         expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 403 for path traversal via ../ sequences', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=../../etc', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readTree).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 403 for path traversal via sibling directory prefix', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/tree?path=../test-project-evil', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readTree).not.toHaveBeenCalled();
       }, 10_000);
 
       it('returns 500 when fileService.readTree fails', async () => {
@@ -1555,7 +1574,7 @@ describe('annex-server', () => {
         const { port, token } = await startAndPair();
 
         await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=src/index.ts', undefined, authHeaders(token));
-        expect(fileServiceModule.readFile).toHaveBeenCalledWith('/tmp/test-project/src/index.ts');
+        expect(fileServiceModule.readFile).toHaveBeenCalledWith(path.resolve('/tmp/test-project', 'src/index.ts'));
       }, 10_000);
 
       it('returns 400 when path parameter is missing', async () => {
@@ -1572,6 +1591,24 @@ describe('annex-server', () => {
         const res = await request(port, 'GET', '/api/v1/projects/unknown/files/read?path=x.ts', undefined, authHeaders(token));
         expect(res.status).toBe(404);
         expect(JSON.parse(res.body)).toEqual({ error: 'project_not_found' });
+      }, 10_000);
+
+      it('returns 403 for path traversal via ../ sequences', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=../../etc/passwd', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readFile).not.toHaveBeenCalled();
+      }, 10_000);
+
+      it('returns 403 for path traversal via absolute path', async () => {
+        const { port, token } = await startAndPair();
+
+        const res = await request(port, 'GET', '/api/v1/projects/proj_1/files/read?path=/etc/passwd', undefined, authHeaders(token));
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body)).toEqual({ error: 'path_traversal' });
+        expect(fileServiceModule.readFile).not.toHaveBeenCalled();
       }, 10_000);
 
       it('returns 404 when file does not exist (ENOENT)', async () => {
