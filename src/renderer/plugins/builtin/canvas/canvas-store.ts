@@ -37,6 +37,8 @@ export interface CanvasState {
   // Canvas tab management
   addCanvas: () => string;
   insertCanvas: (canvas: CanvasInstance) => void;
+  /** Load existing canvases from storage (if not loaded), insert a new canvas, and persist immediately. */
+  loadAndInsertCanvas: (canvas: CanvasInstance, storage: ScopedStorage) => Promise<void>;
   removeCanvas: (canvasId: string) => void;
   renameCanvas: (canvasId: string, name: string) => void;
   setActiveCanvas: (canvasId: string) => void;
@@ -321,6 +323,18 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     insertCanvas: (canvas) => {
       const canvases = [...get().canvases, canvas];
       set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
+    },
+
+    loadAndInsertCanvas: async (canvas, storage) => {
+      // Ensure existing canvases are loaded from disk first
+      if (!get().loaded) {
+        await get().loadCanvas(storage);
+      }
+      // Insert the new canvas
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, loaded: true, ...syncDerivedState(canvases, canvas.id) });
+      // Persist immediately so the canvas survives re-mounts
+      await get().saveCanvas(storage);
     },
 
     removeCanvas: (canvasId) => {

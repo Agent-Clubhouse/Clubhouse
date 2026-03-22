@@ -107,6 +107,112 @@ describe('canvas-store', () => {
     expect(store.getState().viewport).toEqual({ panX: 10, panY: 20, zoom: 0.8 });
   });
 
+  // ── loadAndInsertCanvas ──────────────────────────────────────
+
+  it('loadAndInsertCanvas loads existing data then inserts', async () => {
+    // Pre-populate storage with an existing canvas
+    const existingCanvas = {
+      id: 'existing-1',
+      name: 'Existing',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+    };
+    const storage = createMockStorage({
+      'canvas-instances': [existingCanvas],
+      'canvas-active-id': 'existing-1',
+    });
+
+    const newCanvas = {
+      id: 'new-from-hub',
+      name: 'From Hub',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Should have both the existing canvas and the new one
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(store.getState().canvases.map((c) => c.id)).toContain('existing-1');
+    expect(store.getState().canvases.map((c) => c.id)).toContain('new-from-hub');
+    // New canvas should be active
+    expect(store.getState().activeCanvasId).toBe('new-from-hub');
+    expect(store.getState().loaded).toBe(true);
+  });
+
+  it('loadAndInsertCanvas persists to storage immediately', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+
+    const newCanvas = {
+      id: 'persisted-canvas',
+      name: 'Persisted',
+      views: [],
+      viewport: { panX: 5, panY: 10, zoom: 0.8 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Verify data was written to storage
+    const saved = await storage.read('canvas-instances') as any[];
+    expect(saved.map((c: any) => c.id)).toContain('persisted-canvas');
+    const savedActive = await storage.read('canvas-active-id');
+    expect(savedActive).toBe('persisted-canvas');
+  });
+
+  it('loadAndInsertCanvas skips load if already loaded', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+    const initialCount = store.getState().canvases.length;
+
+    const newCanvas = {
+      id: 'after-load',
+      name: 'After Load',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Should have initial canvas + new one (didn't double-load)
+    expect(store.getState().canvases).toHaveLength(initialCount + 1);
+    expect(store.getState().activeCanvasId).toBe('after-load');
+  });
+
+  it('loadAndInsertCanvas survives re-load from storage', async () => {
+    const storage = createMockStorage();
+
+    const newCanvas = {
+      id: 'survive-reload',
+      name: 'Survives',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    // Insert (which also saves)
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Simulate canvas plugin re-mounting: create new store and load from same storage
+    const store2 = createCanvasStore();
+    await store2.getState().loadCanvas(storage);
+
+    // The new canvas should still be there
+    expect(store2.getState().canvases.map((c) => c.id)).toContain('survive-reload');
+  });
+
   it('removes a canvas', () => {
     const id = store.getState().addCanvas();
     expect(store.getState().canvases).toHaveLength(2);

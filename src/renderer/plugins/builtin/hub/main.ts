@@ -15,6 +15,7 @@ import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
 import { UpgradeToCanvasDialog } from './UpgradeToCanvasDialog';
 import { convertHubToCanvas } from './hub-to-canvas';
 import { useAppCanvasStore, getProjectCanvasStore } from '../canvas/main';
+import { createScopedStorage } from '../../plugin-api-storage';
 
 const PANE_PREFIX = 'hub';
 
@@ -223,8 +224,15 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const upgradeHub = upgradeHubId ? hubs.find((h) => h.id === upgradeHubId) : null;
 
   const canvasStore = isAppMode ? useAppCanvasStore : getProjectCanvasStore(api.context.projectId ?? null);
+  // Build a canvas-scoped storage handle so we can persist across plugin boundaries
+  const canvasStorage = useMemo(() =>
+    isAppMode
+      ? createScopedStorage('canvas', 'global')
+      : createScopedStorage('canvas', 'project-local', api.context.projectPath),
+    [isAppMode, api.context.projectPath],
+  );
 
-  const performUpgrade = useCallback((deleteOriginal: boolean) => {
+  const performUpgrade = useCallback(async (deleteOriginal: boolean) => {
     if (!upgradeHub) return;
 
     const canvasInstance = convertHubToCanvas({
@@ -237,14 +245,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       containerHeight: window.innerHeight,
     });
 
-    canvasStore.getState().insertCanvas(canvasInstance);
+    await canvasStore.getState().loadAndInsertCanvas(canvasInstance, canvasStorage);
 
     if (deleteOriginal) {
       store.getState().removeHub(upgradeHub.id, PANE_PREFIX);
     }
 
     setUpgradeHubId(null);
-  }, [upgradeHub, canvasStore, store]);
+  }, [upgradeHub, canvasStore, canvasStorage, store]);
 
   const handleUpgradeToCanvas = useCallback((hubId: string) => {
     setUpgradeHubId(hubId);
