@@ -398,7 +398,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
       }
       // Add new agent — namespace its projectId
       const nsProjId = agent.projectId
-        ? `remote:${satelliteId}:${agent.projectId}`
+        ? namespacedProjectId(satelliteId, agent.projectId)
         : '';
       const newAgent: Agent = {
         id: nsId,
