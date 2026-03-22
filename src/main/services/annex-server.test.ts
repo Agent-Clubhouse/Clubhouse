@@ -1561,4 +1561,32 @@ describe('annex-server', () => {
       }, 10_000);
     });
   });
+
+  describe('canvas mutation error propagation', () => {
+    it('canvas:mutation handler sends error back to client on failure (structural)', () => {
+      // BUG-09: Verify that server-side canvas mutation failures are not
+      // silently swallowed but propagated back to the WebSocket client.
+      // This structural test reads the source to confirm the fix is in place.
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // Find the canvas:mutation case and verify it sends an error message
+      const mutationBlock = source.slice(
+        source.indexOf("case 'canvas:mutation':"),
+        source.indexOf("case 'agent:reorder':"),
+      );
+
+      // Must send error back via ws.send with canvas:mutation:error type
+      expect(mutationBlock).toContain('canvas:mutation:error');
+      expect(mutationBlock).toContain('ws.send');
+      // Must log the error
+      expect(mutationBlock).toContain('appLog');
+      // Must NOT silently swallow — no empty catch body
+      expect(mutationBlock).not.toMatch(/\.catch\(\s*\(\s*\)\s*=>\s*\{\s*\}\s*\)/);
+    });
+  });
 });
