@@ -22,9 +22,13 @@ import {
   generateCanvasId,
   screenToCanvas,
   canvasToScreen,
+  isViewInZone,
+  computeZoneContainment,
+  computeZoneBounds,
+  recomputeZones,
 } from './canvas-operations';
-import type { CanvasView, AgentCanvasView } from './canvas-types';
-import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE } from './canvas-types';
+import type { CanvasView, AgentCanvasView, ZoneCanvasView } from './canvas-types';
+import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT, MIN_ZOOM, MAX_ZOOM, CANVAS_SIZE, MIN_ZONE_WIDTH, MIN_ZONE_HEIGHT, ZONE_PADDING } from './canvas-types';
 
 describe('canvas-operations', () => {
   // ── ID generation ──────────────────────────────────────────────────
@@ -470,6 +474,165 @@ describe('canvas-operations', () => {
 
       expect(screenPos.x).toBeCloseTo(clientX, 10);
       expect(screenPos.y).toBeCloseTo(clientY, 10);
+    });
+  });
+
+  // ── Zone operations ─────────────────────────────────────────────
+
+  function makeZone(overrides?: Partial<ZoneCanvasView>): ZoneCanvasView {
+    return {
+      id: 'zone_1',
+      type: 'zone',
+      position: { x: 0, y: 0 },
+      size: { width: 600, height: 400 },
+      title: 'test-zone',
+      displayName: 'test-zone',
+      zIndex: 0,
+      metadata: {},
+      themeId: 'catppuccin-mocha',
+      containedViewIds: [],
+      ...overrides,
+    };
+  }
+
+  function makeAgentView(overrides?: Partial<AgentCanvasView>): AgentCanvasView {
+    return {
+      id: 'agent_1',
+      type: 'agent',
+      position: { x: 100, y: 100 },
+      size: { width: 480, height: 480 },
+      title: 'Agent',
+      displayName: 'Agent',
+      zIndex: 1,
+      metadata: {},
+      agentId: 'durable_1',
+      ...overrides,
+    };
+  }
+
+  describe('createView("zone")', () => {
+    it('creates a zone view with correct defaults', () => {
+      const view = createView('zone', { x: 100, y: 200 }, 5);
+      expect(view.type).toBe('zone');
+      expect(view.position).toEqual({ x: 100, y: 200 });
+      expect(view.zIndex).toBe(5);
+      const zone = view as ZoneCanvasView;
+      expect(zone.themeId).toBe('catppuccin-mocha');
+      expect(zone.containedViewIds).toEqual([]);
+      expect(zone.size.width).toBe(600);
+      expect(zone.size.height).toBe(400);
+    });
+
+    it('generates adjective-place display names', () => {
+      const view = createView('zone', { x: 0, y: 0 }, 0);
+      expect(view.displayName).toMatch(/^[a-z]+-[a-z]+$/);
+    });
+  });
+
+  describe('isViewInZone', () => {
+    it('returns true when widget is fully inside zone', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 600, height: 400 } });
+      const agent = makeAgentView({ position: { x: 50, y: 50 }, size: { width: 200, height: 200 } });
+      expect(isViewInZone(agent, zone)).toBe(true);
+    });
+
+    it('returns true when >50% overlap', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 600, height: 400 } });
+      // Widget extends beyond zone but >50% inside
+      const agent = makeAgentView({ position: { x: 500, y: 50 }, size: { width: 200, height: 200 } });
+      // Overlap: 100*200 = 20000, area: 200*200 = 40000, ratio: 0.5 — exactly at boundary
+      expect(isViewInZone(agent, zone)).toBe(false);
+      // Move it one pixel in
+      const agent2 = makeAgentView({ position: { x: 499, y: 50 }, size: { width: 200, height: 200 } });
+      expect(isViewInZone(agent2, zone)).toBe(true);
+    });
+
+    it('rejects self', () => {
+      const zone = makeZone();
+      expect(isViewInZone(zone, zone)).toBe(false);
+    });
+
+    it('rejects other zones (no nesting)', () => {
+      const zone = makeZone({ id: 'zone_1' });
+      const zone2 = makeZone({ id: 'zone_2', position: { x: 50, y: 50 }, size: { width: 200, height: 200 } });
+      expect(isViewInZone(zone2, zone)).toBe(false);
+    });
+
+    it('returns false when widget is fully outside', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 200, height: 200 } });
+      const agent = makeAgentView({ position: { x: 500, y: 500 }, size: { width: 100, height: 100 } });
+      expect(isViewInZone(agent, zone)).toBe(false);
+    });
+  });
+
+  describe('computeZoneContainment', () => {
+    it('finds views inside zone', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 600, height: 400 } });
+      const inside = makeAgentView({ id: 'inside', position: { x: 50, y: 50 }, size: { width: 100, height: 100 } });
+      const outside = makeAgentView({ id: 'outside', position: { x: 700, y: 700 }, size: { width: 100, height: 100 } });
+      const result = computeZoneContainment(zone, [zone, inside, outside]);
+      expect(result).toEqual(['inside']);
+    });
+
+    it('returns empty for zone with no contained views', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 200, height: 200 } });
+      const outside = makeAgentView({ position: { x: 500, y: 500 } });
+      expect(computeZoneContainment(zone, [zone, outside])).toEqual([]);
+    });
+  });
+
+  describe('computeZoneBounds', () => {
+    it('returns original bounds when no contained views', () => {
+      const zone = makeZone({ position: { x: 100, y: 100 }, size: { width: 300, height: 300 } });
+      const result = computeZoneBounds(zone, []);
+      expect(result.position).toEqual({ x: 100, y: 100 });
+      expect(result.size).toEqual({ width: 300, height: 300 });
+    });
+
+    it('expands to encompass contained views with padding', () => {
+      const zone = makeZone();
+      const widget = makeAgentView({ position: { x: 200, y: 200 }, size: { width: 100, height: 100 } });
+      const result = computeZoneBounds(zone, [widget]);
+      // Zone should encompass widget with ZONE_PADDING on each side
+      expect(result.position.x).toBeLessThanOrEqual(200 - ZONE_PADDING);
+      expect(result.position.y).toBeLessThanOrEqual(200 - ZONE_PADDING);
+      expect(result.position.x + result.size.width).toBeGreaterThanOrEqual(300 + ZONE_PADDING);
+      expect(result.position.y + result.size.height).toBeGreaterThanOrEqual(300 + ZONE_PADDING);
+    });
+
+    it('enforces minimum zone dimensions', () => {
+      const zone = makeZone();
+      const widget = makeAgentView({ position: { x: 0, y: 0 }, size: { width: 20, height: 20 } });
+      const result = computeZoneBounds(zone, [widget]);
+      expect(result.size.width).toBeGreaterThanOrEqual(MIN_ZONE_WIDTH);
+      expect(result.size.height).toBeGreaterThanOrEqual(MIN_ZONE_HEIGHT);
+    });
+  });
+
+  describe('recomputeZones', () => {
+    it('updates containedViewIds based on spatial overlap', () => {
+      const zone = makeZone({ position: { x: 0, y: 0 }, size: { width: 600, height: 400 } });
+      const inside = makeAgentView({ id: 'inside', position: { x: 50, y: 80 }, size: { width: 100, height: 100 } });
+      const outside = makeAgentView({ id: 'outside', position: { x: 800, y: 800 }, size: { width: 100, height: 100 } });
+      const result = recomputeZones([zone, inside, outside]);
+      const updatedZone = result.find((v) => v.id === 'zone_1') as ZoneCanvasView;
+      expect(updatedZone.containedViewIds).toEqual(['inside']);
+    });
+
+    it('returns views unchanged when no zones exist', () => {
+      const agent = makeAgentView();
+      const result = recomputeZones([agent]);
+      expect(result).toEqual([agent]);
+    });
+  });
+
+  describe('updateViewSize for zones', () => {
+    it('enforces minimum zone dimensions', () => {
+      const zone = makeZone({ size: { width: 600, height: 400 } });
+      const result = updateViewSize([zone], zone.id, { width: 100, height: 50 });
+      const updated = result[0] as ZoneCanvasView;
+      expect(updated.size.width).toBeGreaterThanOrEqual(MIN_ZONE_WIDTH);
+      expect(updated.size.height).toBeGreaterThanOrEqual(MIN_ZONE_HEIGHT);
     });
   });
 });

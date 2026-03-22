@@ -68,6 +68,23 @@ export function generateQuickName(): string {
   return `${pick(QUICK_ADJECTIVES)}-${pick(QUICK_NOUNS)}`;
 }
 
+// Zone names — small, intimate spaces / enclosures
+const ZONE_ADJECTIVES = [
+  'busy', 'shining', 'quiet', 'hidden', 'sunlit', 'misty', 'golden', 'dusty',
+  'lofty', 'cozy', 'shadowy', 'radiant', 'serene', 'vibrant', 'hushed', 'gleaming',
+  'warm', 'foggy', 'breezy', 'tranquil', 'mossy', 'vivid', 'frosty', 'amber',
+];
+
+const ZONE_PLACES = [
+  'grotto', 'alley', 'enclave', 'alcove', 'nook', 'clearing', 'courtyard', 'chamber',
+  'passage', 'hollow', 'corridor', 'terrace', 'pavilion', 'rotunda', 'gallery', 'arbor',
+  'atrium', 'landing', 'mezzanine', 'vestibule', 'bower', 'cloister', 'portico', 'veranda',
+];
+
+export function generateZoneName(): string {
+  return `${pick(ZONE_ADJECTIVES)}-${pick(ZONE_PLACES)}`;
+}
+
 export const AGENT_COLORS = [
   { id: 'indigo', label: 'Indigo', bg: 'bg-indigo-500', ring: 'ring-indigo-500', hex: '#6366f1' },
   { id: 'emerald', label: 'Emerald', bg: 'bg-emerald-500', ring: 'ring-emerald-500', hex: '#10b981' },

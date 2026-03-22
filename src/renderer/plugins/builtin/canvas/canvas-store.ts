@@ -1,7 +1,7 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
-import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, Position, Size, Viewport } from './canvas-types';
+import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, ZoneCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import {
@@ -16,6 +16,7 @@ import {
   clampPosition,
   queryViews as queryViewsOp,
   generateCanvasId,
+  recomputeZones,
 } from './canvas-operations';
 
 // ── Store state ──────────────────────────────────────────────────────
@@ -61,6 +62,10 @@ export interface CanvasState {
   updateView: (viewId: string, updates: Partial<CanvasView>) => void;
   updateViewMetadata: (viewId: string, metadataUpdates: CanvasWidgetMetadata) => void;
   queryViews: (filter?: CanvasWidgetFilter) => CanvasWidgetHandle[];
+
+  // Zone operations
+  removeZone: (zoneId: string, removeContents: boolean) => void;
+  updateZoneTheme: (zoneId: string, themeId: string) => void;
 
   // Viewport
   setViewport: (viewport: Viewport) => void;
@@ -169,6 +174,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
                 ...v,
                 metadata: v.metadata ?? {},
                 displayName: v.displayName ?? v.title ?? v.type ?? '',
+                ...(v.type === 'zone' ? { containedViewIds: v.containedViewIds ?? [] } : {}),
               })) as CanvasView[];
             return {
               id: s.id,
@@ -375,7 +381,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const view = createViewOp(type, position, canvas.nextZIndex, existingNames);
         newViewId = view.id;
         return {
-          views: [...canvas.views, view],
+          views: recomputeZones([...canvas.views, view]),
           nextZIndex: canvas.nextZIndex + 1,
         };
       }));
@@ -392,7 +398,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         );
         newViewId = view.id;
         return {
-          views: [...canvas.views, view],
+          views: recomputeZones([...canvas.views, view]),
           nextZIndex: canvas.nextZIndex + 1,
         };
       }));
@@ -401,20 +407,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     removeView: (viewId) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: removeViewOp(canvas.views, viewId),
+        views: recomputeZones(removeViewOp(canvas.views, viewId)),
         selectedViewId: canvas.selectedViewId === viewId ? null : canvas.selectedViewId,
       })));
     },
 
     moveView: (viewId, position) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: updateViewPosOp(canvas.views, viewId, position),
+        views: recomputeZones(updateViewPosOp(canvas.views, viewId, position)),
       })));
     },
 
     resizeView: (viewId, size) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: updateViewSizeOp(canvas.views, viewId, size),
+        views: recomputeZones(updateViewSizeOp(canvas.views, viewId, size)),
       })));
     },
 
@@ -455,6 +461,35 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     queryViews: (filter?) => {
       const { views } = get();
       return queryViewsOp(views, filter);
+    },
+
+    // ── Zone operations ─────────────────────────────────────────
+
+    removeZone: (zoneId, removeContents) => {
+      set(updateActiveCanvas(get(), (canvas) => {
+        const zone = canvas.views.find((v) => v.id === zoneId && v.type === 'zone') as ZoneCanvasView | undefined;
+        if (!zone) return { views: canvas.views };
+
+        let views = canvas.views.filter((v) => v.id !== zoneId);
+        if (removeContents) {
+          const contained = new Set(zone.containedViewIds);
+          views = views.filter((v) => !contained.has(v.id));
+        }
+        return {
+          views: recomputeZones(views),
+          selectedViewId: canvas.selectedViewId === zoneId ? null : canvas.selectedViewId,
+        };
+      }));
+    },
+
+    updateZoneTheme: (zoneId, themeId) => {
+      set(updateActiveCanvas(get(), (canvas) => ({
+        views: canvas.views.map((v) =>
+          v.id === zoneId && v.type === 'zone'
+            ? { ...v, themeId } as ZoneCanvasView
+            : v,
+        ),
+      })));
     },
 
     // ── Viewport ─────────────────────────────────────────────────
@@ -511,10 +546,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
 
     moveViews: (positions) => {
       set(updateActiveCanvas(get(), (canvas) => ({
-        views: canvas.views.map((v) => {
+        views: recomputeZones(canvas.views.map((v) => {
           const newPos = positions.get(v.id);
           return newPos ? { ...v, position: clampPosition(newPos) } : v;
-        }),
+        })),
       })));
     },
   }));

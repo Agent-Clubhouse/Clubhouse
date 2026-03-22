@@ -94,6 +94,12 @@ export function applyCanvasMutation(
     case 'zoomView':
       store.getState().zoomView(mutation.viewId);
       break;
+    case 'removeZone':
+      store.getState().removeZone(mutation.zoneId, mutation.removeContents);
+      break;
+    case 'updateZoneTheme':
+      store.getState().updateZoneTheme(mutation.zoneId, mutation.themeId);
+      break;
   }
 
   // Restore active canvas if we switched

@@ -3,13 +3,13 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, Position, Viewport } from './canvas-types';
+import type { CanvasView, AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType, ZoneCanvasView as ZoneCanvasViewType, Position, Viewport } from './canvas-types';
 import { screenToCanvas } from './canvas-operations';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
 
 export interface WireDragState {
-  /** The agent view initiating the drag. */
-  sourceView: AgentCanvasViewType;
+  /** The view initiating the drag (agent or zone). */
+  sourceView: AgentCanvasViewType | ZoneCanvasViewType;
   /** Current mouse position in canvas-space. */
   canvasPos: Position;
   /** The view currently hovered (if valid target). */
@@ -18,15 +18,25 @@ export interface WireDragState {
   hoveredValid: boolean;
 }
 
-export function isValidWireTarget(source: AgentCanvasViewType, target: CanvasView): boolean {
+export function isValidWireTarget(source: CanvasView, target: CanvasView): boolean {
   if (target.id === source.id) return false;
+  // Zones can target agents, browsers, group projects, and other zones
+  if (source.type === 'zone' || target.type === 'zone') {
+    if (target.type === 'zone' && source.type === 'zone') return true;
+    if (target.type === 'zone') return true; // agent -> zone
+    if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
+    if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
+    if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' && target.metadata?.groupProjectId) return true;
+    return false;
+  }
   if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' && target.metadata?.groupProjectId) return true;
   return false;
 }
 
-function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' {
+function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' | 'zone' {
+  if (view.type === 'zone') return 'zone';
   if (view.type === 'agent') return 'agent';
   if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project') return 'group-project';
   return 'browser';
@@ -48,19 +58,26 @@ function hitTestViews(canvasPos: Position, views: CanvasView[]): CanvasView | nu
   return null;
 }
 
+export interface ZoneWireCallback {
+  (sourceZoneId: string, targetId: string, targetType: 'zone' | 'agent' | 'group-project' | 'browser'): void;
+}
+
 export function useWiring(
   views: CanvasView[],
   viewport: Viewport,
   containerRef: React.RefObject<HTMLDivElement | null>,
+  onZoneWire?: ZoneWireCallback,
 ) {
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
+  const onZoneWireRef = useRef(onZoneWire);
+  onZoneWireRef.current = onZoneWire;
   const viewsRef = useRef(views);
   viewsRef.current = views;
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
 
-  const startWireDrag = useCallback((sourceView: AgentCanvasViewType) => {
+  const startWireDrag = useCallback((sourceView: AgentCanvasViewType | ZoneCanvasViewType) => {
     // Initialize at the source view center
     const cx = sourceView.position.x + sourceView.size.width / 2;
     const cy = sourceView.position.y + sourceView.size.height / 2;
@@ -100,40 +117,58 @@ export function useWiring(
       const canvasPos = screenToCanvas(e.clientX, e.clientY, rect, viewportRef.current);
       const hitView = hitTestViews(canvasPos, viewsRef.current);
 
-      if (hitView && isValidWireTarget(wireDrag.sourceView, hitView) && wireDrag.sourceView.agentId) {
+      if (hitView && isValidWireTarget(wireDrag.sourceView, hitView)) {
         const kind = targetKind(hitView);
-        // For agent targets, use the real agent ID (durable_*/quick_*) not the
-        // canvas view ID (cv_*). Canvas view IDs are ephemeral, tab-scoped, and
-        // not resolvable by the main process agent registry.
-        const resolvedTargetId = kind === 'agent'
-          ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
-          : kind === 'group-project'
-          ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
-          : hitView.id;
-        const projectName = (hitView.metadata?.projectName as string)
-          || (wireDrag.sourceView.metadata?.projectName as string)
-          || undefined;
-        const sourceLabel = wireDrag.sourceView.displayName || wireDrag.sourceView.title;
-        const targetLabel = hitView.displayName || hitView.title;
-        bind(wireDrag.sourceView.agentId, {
-          targetId: resolvedTargetId,
-          targetKind: kind,
-          label: targetLabel,
-          agentName: sourceLabel,
-          targetName: targetLabel,
-          projectName,
-        });
+        const isZoneInvolved = wireDrag.sourceView.type === 'zone' || kind === 'zone';
 
-        // Agent-to-agent wires default to bidirectional — also create the reverse binding
-        if (kind === 'agent') {
-          bind(resolvedTargetId, {
-            targetId: wireDrag.sourceView.agentId,
-            targetKind: 'agent',
-            label: sourceLabel,
-            agentName: targetLabel,
-            targetName: sourceLabel,
+        if (isZoneInvolved && onZoneWireRef.current) {
+          // Zone wire — delegate to zone wire handler
+          const sourceIsZone = wireDrag.sourceView.type === 'zone';
+          if (sourceIsZone) {
+            // Zone -> target
+            const resolvedTargetId = kind === 'agent'
+              ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
+              : kind === 'group-project'
+              ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
+              : hitView.id;
+            onZoneWireRef.current(wireDrag.sourceView.id, resolvedTargetId, kind as 'zone' | 'agent' | 'group-project' | 'browser');
+          } else if (wireDrag.sourceView.type === 'agent' && (wireDrag.sourceView as AgentCanvasViewType).agentId) {
+            // Agent -> zone: create a zone wire from the zone to the agent
+            onZoneWireRef.current(hitView.id, (wireDrag.sourceView as AgentCanvasViewType).agentId!, 'agent');
+          }
+        } else if (wireDrag.sourceView.type === 'agent' && (wireDrag.sourceView as AgentCanvasViewType).agentId) {
+          // Standard agent wire
+          const agentSource = wireDrag.sourceView as AgentCanvasViewType;
+          const resolvedTargetId = kind === 'agent'
+            ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
+            : kind === 'group-project'
+            ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
+            : hitView.id;
+          const projectName = (hitView.metadata?.projectName as string)
+            || (agentSource.metadata?.projectName as string)
+            || undefined;
+          const sourceLabel = agentSource.displayName || agentSource.title;
+          const targetLabel = hitView.displayName || hitView.title;
+          bind(agentSource.agentId!, {
+            targetId: resolvedTargetId,
+            targetKind: kind as 'agent' | 'browser' | 'group-project',
+            label: targetLabel,
+            agentName: sourceLabel,
+            targetName: targetLabel,
             projectName,
           });
+
+          // Agent-to-agent wires default to bidirectional
+          if (kind === 'agent') {
+            bind(resolvedTargetId, {
+              targetId: agentSource.agentId!,
+              targetKind: 'agent',
+              label: sourceLabel,
+              agentName: targetLabel,
+              targetName: sourceLabel,
+              projectName,
+            });
+          }
         }
       }
 
