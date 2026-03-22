@@ -11,6 +11,7 @@ import { useCanvasAttention, computeOffScreenIndicators } from './canvas-attenti
 import { WireOverlay } from './WireOverlay';
 import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
+import { CanvasMinimap } from './CanvasMinimap';
 import { useWiring } from './useWiring';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
@@ -651,6 +652,19 @@ export function CanvasWorkspace({
           );
         })()}
       </div>
+
+      {/* Minimap */}
+      {views.length > 0 && !zoomedView && (
+        <CanvasMinimap
+          views={views}
+          viewport={viewport}
+          containerSize={containerSize}
+          selectedViewId={selectedViewId}
+          selectedViewIds={selectedViewIds}
+          attentionMap={attentionMap}
+          onViewportChange={onViewportChange}
+        />
+      )}
 
       {/* Zoomed view overlay */}
       {zoomedView && (
