@@ -90,7 +90,12 @@ export function App() {
   useEffect(() => {
     const loadDurableAgents = useAgentStore.getState().loadDurableAgents;
     for (const p of projects) {
-      loadDurableAgents(p.id, p.path);
+      loadDurableAgents(p.id, p.path).catch((err) => {
+        rendererLog('core:agents', 'error', 'Failed to load durable agents', {
+          projectId: p.id,
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      });
     }
   }, [projects]);
 

@@ -37,6 +37,8 @@ export function AddAgentDialog({ onClose, onCreate, projectPath }: Props) {
     ]).then(([catalog, defaults]) => {
       setMcpCatalog(catalog || []);
       setSelectedMcps(defaults || []);
+    }).catch(() => {
+      // MCP catalog load failed — leave defaults (empty catalog, no selected MCPs)
     });
   }, [projectPath]);
 
