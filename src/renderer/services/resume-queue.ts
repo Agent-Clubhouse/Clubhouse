@@ -4,8 +4,6 @@ import type { Agent } from '../../shared/types';
 import type { RestartSessionEntry, RestartSessionState } from '../../shared/types';
 import type { ResumeStatus } from '../features/app/ResumeBanner';
 
-const RESUME_TIMEOUT_MS = 60_000;
-
 /**
  * Process pending resume entries after an update restart.
  * Sequential per workspace, parallel across workspaces.

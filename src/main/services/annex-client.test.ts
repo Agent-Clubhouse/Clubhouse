@@ -833,9 +833,7 @@ describe('annex-client', () => {
       });
 
       // Mock WebSocket instance to have OPEN state but throw on send
-      let wsInstance: any = null;
       vi.mocked(WsMock).mockImplementation(function (this: any) {
-        wsInstance = this;
         this.readyState = 1; // WebSocket.OPEN
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {
           if (event === 'open') setTimeout(cb, 0);
@@ -1002,6 +1000,7 @@ describe('annex-client', () => {
       let wsInstance: any = null;
 
       vi.mocked(WsMock).mockImplementation(function (this: any) {
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
         wsInstance = this;
         this.readyState = 1;
         this.on = vi.fn().mockImplementation((event: string, cb: any) => {

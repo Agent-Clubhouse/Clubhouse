@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { findBindingsForView } from './main';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
-import type { AgentCanvasView, PluginCanvasView, CanvasView } from './canvas-types';
+import type { AgentCanvasView, PluginCanvasView } from './canvas-types';
 
 function makeAgentView(id: string, agentId: string): AgentCanvasView {
   return {

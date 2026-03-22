@@ -14,7 +14,7 @@ import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useQuickAgentStore } from '../stores/quickAgentStore';
 import { useOrchestratorStore } from '../stores/orchestratorStore';
-import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
+import { useRemoteProjectStore, parseNamespacedId } from '../stores/remoteProjectStore';
 import { useAnnexClientStore } from '../stores/annexClientStore';
 
 export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): AgentsAPI {

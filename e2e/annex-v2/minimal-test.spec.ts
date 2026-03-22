@@ -177,10 +177,6 @@ test('annex experimental flag can be toggled', async () => {
   // The nav button visibility in settings is gated behind isBetaBuild() +
   // an async useEffect, which is already exercised by full-demo.spec.ts.
   // Here we just verify the flag round-trips correctly.
-  const before = await window.evaluate(async () => {
-    return (window as any).clubhouse.app.getExperimentalSettings();
-  });
-
   await window.evaluate(async () => {
     const w = window as any;
     const s = await w.clubhouse.app.getExperimentalSettings();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { registerToolTemplate, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, sanitizeId, shortHash, _resetForTesting } from './tool-registry';
+import { registerToolTemplate, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
 import type { McpBinding } from './types';

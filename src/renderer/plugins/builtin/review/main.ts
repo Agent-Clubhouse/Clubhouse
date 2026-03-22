@@ -314,7 +314,6 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       map.set(a.id, api.agents.getDetailedStatus(a.id));
     }
     return map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, allAgents, agentTick]);
 
   const agents = useMemo(() => {

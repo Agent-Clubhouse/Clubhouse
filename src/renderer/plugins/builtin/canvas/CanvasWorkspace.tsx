@@ -14,7 +14,7 @@ import { WireConfigPopover } from './WireConfigPopover';
 import { useWiring } from './useWiring';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
-import type { AgentCanvasView as AgentCanvasViewType, PluginCanvasView as PluginCanvasViewType } from './canvas-types';
+import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 
