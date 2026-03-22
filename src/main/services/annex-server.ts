@@ -949,15 +949,15 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
 
       const clientPublicKey = body.publicKey as string | undefined;
       if (clientPublicKey) {
-        // Validate Ed25519 public key: must be base64-encoded 32 bytes
-        let keyBytes: Buffer;
+        // Validate public key: must be a valid Ed25519 SPKI/DER key encoded as base64
         try {
-          keyBytes = Buffer.from(clientPublicKey, 'base64');
+          const keyBuf = Buffer.from(clientPublicKey, 'base64');
+          const keyObj = require('crypto').createPublicKey({ key: keyBuf, format: 'der', type: 'spki' });
+          if (keyObj.asymmetricKeyType !== 'ed25519') {
+            sendJson(res, 400, { error: 'invalid_public_key' });
+            return;
+          }
         } catch {
-          sendJson(res, 400, { error: 'invalid_public_key' });
-          return;
-        }
-        if (keyBytes.length !== 32) {
           sendJson(res, 400, { error: 'invalid_public_key' });
           return;
         }

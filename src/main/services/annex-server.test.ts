@@ -379,28 +379,31 @@ describe('annex-server', () => {
     }
   }, 10_000);
 
-  it('rejects pairing with invalid public key (wrong length)', async () => {
+  it('rejects pairing with invalid public key', async () => {
     annexServer.start();
     await new Promise((r) => setTimeout(r, 50));
     const status = annexServer.getStatus();
     const pairingPort = (status as any).pairingPort || status.port;
 
-    const shortKey = Buffer.from('too-short').toString('base64');
+    const invalidKey = Buffer.from('not-a-valid-key').toString('base64');
     const res = await request(pairingPort, 'POST', '/pair', {
       pin: status.pin,
-      publicKey: shortKey,
+      publicKey: invalidKey,
     });
     expect(res.status).toBe(400);
     expect(JSON.parse(res.body)).toEqual({ error: 'invalid_public_key' });
   }, 10_000);
 
-  it('accepts pairing with valid 32-byte public key', async () => {
+  it('accepts pairing with valid Ed25519 SPKI public key', async () => {
     annexServer.start();
     await new Promise((r) => setTimeout(r, 50));
     const status = annexServer.getStatus();
     const pairingPort = (status as any).pairingPort || status.port;
 
-    const validKey = Buffer.alloc(32, 0xab).toString('base64');
+    const { publicKey } = require('crypto').generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'der' },
+    });
+    const validKey = publicKey.toString('base64');
     const res = await request(pairingPort, 'POST', '/pair', {
       pin: status.pin,
       publicKey: validKey,
@@ -1185,7 +1188,7 @@ describe('annex-server', () => {
 
       await request(pairingPort, 'POST', '/pair', {
         pin: status.pin,
-        publicKey: Buffer.alloc(32, 0xab).toString('base64'),
+        publicKey: require('crypto').generateKeyPairSync('ed25519', { publicKeyEncoding: { type: 'spki', format: 'der' } }).publicKey.toString('base64'),
         alias: 'Controller Mac',
         icon: 'laptop',
         color: 'blue',
