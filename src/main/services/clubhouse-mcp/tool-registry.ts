@@ -6,7 +6,11 @@
 import type { McpToolDefinition, McpToolResult, McpBinding, BindingTargetKind } from './types';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
+import { groupProjectRegistry } from '../group-project-registry';
 import { appLog } from '../log-service';
+
+/** Tool suffixes gated behind the group-project shoulderTapEnabled setting. */
+const SHOULDER_TAP_SUFFIXES = new Set(['shoulder_tap', 'broadcast']);
 
 /**
  * Tool templates keyed by targetKind.
@@ -105,10 +109,28 @@ export function getScopedToolList(agentId: string): McpToolDefinition[] {
     // When target agent is sleeping (not in registry), only expose status and wake tools
     const isTargetSleeping = binding.targetKind === 'agent' && !agentRegistry.get(binding.targetId);
 
+    // For group-project bindings, check if shoulder tap is enabled at the project level
+    let shoulderTapEnabled = false;
+    if (binding.targetKind === 'group-project') {
+      const project = groupProjectRegistry.getSync(binding.targetId);
+      shoulderTapEnabled = !!(project?.metadata?.shoulderTapEnabled);
+    }
+
     for (const template of templates) {
       if (isTargetSleeping && template.nameSuffix !== 'get_status' && template.nameSuffix !== 'wake') {
         continue;
       }
+
+      // Skip tools disabled at the wire level
+      if (binding.disabledTools?.includes(template.nameSuffix)) {
+        continue;
+      }
+
+      // Skip shoulder tap tools when not enabled at the group project level
+      if (binding.targetKind === 'group-project' && SHOULDER_TAP_SUFFIXES.has(template.nameSuffix) && !shoulderTapEnabled) {
+        continue;
+      }
+
       let description = template.definition.description;
 
       // Inject per-wire custom instructions into tool description

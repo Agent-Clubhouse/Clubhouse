@@ -129,6 +129,11 @@ class GroupProjectRegistry {
     return this.projects.get(id) ?? null;
   }
 
+  /** Synchronous lookup from in-memory cache (returns null if not yet loaded). */
+  getSync(id: string): GroupProject | null {
+    return this.projects.get(id) ?? null;
+  }
+
   async list(): Promise<GroupProject[]> {
     await this.ensureLoaded();
     return [...this.projects.values()];
