@@ -7,6 +7,7 @@ import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { Badge } from '../components/Badge';
 import { AGENT_COLORS } from '../../shared/name-generator';
+import { sanitizeSvg } from '../utils/sanitize-svg';
 
 const EMPTY_STRING_ARRAY: string[] = [];
 
@@ -228,7 +229,7 @@ export function ExplorerRail() {
             id: `plugin:${p.id}`,
             label: contributes.tab.label,
             icon: contributes.tab.icon
-              ? <span className={isAvailable ? '' : 'opacity-60'} dangerouslySetInnerHTML={{ __html: contributes.tab.icon }} />
+              ? <span className={isAvailable ? '' : 'opacity-60'} dangerouslySetInnerHTML={{ __html: sanitizeSvg(contributes.tab.icon) }} />
               : <span className={isAvailable ? '' : 'opacity-60'}>{PLUGIN_FALLBACK_ICON}</span>,
             disabled: isMissing,
             disabledReason: p.status === 'missing'
@@ -248,7 +249,7 @@ export function ExplorerRail() {
         id: `plugin:${entry.manifest.id}`,
         label: entry.manifest.contributes!.tab!.label,
         icon: entry.manifest.contributes!.tab!.icon
-          ? <span dangerouslySetInnerHTML={{ __html: entry.manifest.contributes!.tab!.icon }} />
+          ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(entry.manifest.contributes!.tab!.icon) }} />
           : PLUGIN_FALLBACK_ICON,
       }));
   }, [pluginTabKey]);

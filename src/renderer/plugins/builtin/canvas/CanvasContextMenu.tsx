@@ -7,6 +7,7 @@ import {
 } from '../../canvas-widget-registry';
 import { MenuPortal } from './MenuPortal';
 import { useDismissibleLayer } from './useDismissibleLayer';
+import { sanitizeSvg } from '../../../utils/sanitize-svg';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
 export type ContextMenuSelection =
@@ -72,7 +73,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
             onClick={(e) => { e.stopPropagation(); handleBuiltinSelect(type); }}
             data-testid={`canvas-context-menu-${type}`}
           >
-            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: icon }} />
+            <span className="w-4 text-center text-ctp-overlay0" dangerouslySetInnerHTML={{ __html: sanitizeSvg(icon) }} />
             {label}
           </button>
         ))}
@@ -90,7 +91,7 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
               >
                 <span className="w-4 text-center text-ctp-overlay0">
                   {widget.declaration.icon
-                    ? <span dangerouslySetInnerHTML={{ __html: widget.declaration.icon }} />
+                    ? <span dangerouslySetInnerHTML={{ __html: sanitizeSvg(widget.declaration.icon) }} />
                     : '+'}
                 </span>
                 Add {widget.declaration.label}

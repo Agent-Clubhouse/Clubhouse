@@ -753,4 +753,30 @@ describe('BrowserTools', () => {
       );
     });
   });
+
+  describe('SEC-16: agent-widget binding guard', () => {
+    it('rejects browser tool call from an unbound agent', async () => {
+      // agent-2 has no binding to widget-1
+      const result = await callTool('agent-2', 'browser__widget_1__navigate', { url: 'https://example.com' });
+      // callTool itself will reject because agent-2 has no binding
+      expect(result.isError).toBe(true);
+    });
+
+    it('rejects when agent is bound to a different widget', async () => {
+      registerWebview('widget-2', 42);
+      bindingManager.bind('agent-1', { targetId: 'widget-2', targetKind: 'browser', label: 'Other' });
+      // agent-1 is bound to widget-1 and widget-2, but agent-2 is not bound to widget-2
+      const result = await callTool('agent-2', 'browser__widget_2__screenshot', {});
+      expect(result.isError).toBe(true);
+    });
+
+    it('allows browser tool call from a properly bound agent', async () => {
+      const mockWc = getMockWc();
+      mockWc.loadURL.mockResolvedValue(undefined);
+      // agent-1 is bound to widget-1 in beforeEach
+      const result = await callTool('agent-1', 'browser__widget_1__navigate', { url: 'https://example.com' });
+      expect(result.isError).toBeUndefined();
+      expect(mockWc.loadURL).toHaveBeenCalledWith('https://example.com');
+    });
+  });
 });

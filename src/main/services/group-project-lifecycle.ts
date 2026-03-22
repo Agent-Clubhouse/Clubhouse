@@ -12,6 +12,7 @@ import type { BindingTargetKind } from './clubhouse-mcp/types';
 import { appLog } from './log-service';
 import { getAgentOrchestrator } from './agent-registry';
 import { getProvider } from '../orchestrators/registry';
+import { pollingStartMsg } from '../../shared/polling-messages';
 
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
@@ -21,13 +22,6 @@ function welcomeMsg(projectName: string): string {
     `Group Project notification: You have been connected to group project "${projectName}". ` +
     'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
     'post_bulletin to share updates, and list_members to see who is connected.'
-  );
-}
-
-function pollingStartMsg(projectName: string): string {
-  return (
-    `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. ` +
-    'Use read_bulletin to check for updates.'
   );
 }
 
@@ -172,8 +166,9 @@ async function syncMemberships(agentId: string): Promise<void> {
 
       // Auto-send polling instruction if polling is enabled
       if (project?.metadata?.pollingEnabled) {
+        const orchestrator = getAgentOrchestrator(agentId);
         // Small delay so the welcome message is processed first
-        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName)), 500);
+        setTimeout(() => injectPtyMessage(agentId, pollingStartMsg(projectName, orchestrator)), 500);
       }
     }
   }
