@@ -77,7 +77,7 @@ vi.mock('./annex-peers', () => ({
   recordFailedAttempt: vi.fn(),
   recordSuccessfulAttempt: vi.fn(),
   addPeer: vi.fn(),
-  isPairedPeer: vi.fn().mockReturnValue(false),
+  getPeer: vi.fn().mockReturnValue(null),
   updateLastSeen: vi.fn(),
   listPeers: vi.fn().mockReturnValue([]),
   removePeer: vi.fn(),
@@ -124,23 +124,6 @@ vi.mock('./annex-identity', () => ({
     fingerprint: 'aa:bb:cc',
   }),
   computeFingerprint: vi.fn().mockReturnValue('dd:ee:ff'),
-}));
-
-// Mock annex-tls — force TLS creation to fail so we fall back to plain HTTP
-vi.mock('./annex-tls', () => ({
-  createTlsServerOptions: vi.fn().mockImplementation(() => { throw new Error('TLS disabled in test'); }),
-  extractPeerFingerprint: vi.fn().mockReturnValue(null),
-}));
-
-// Mock annex-peers
-vi.mock('./annex-peers', () => ({
-  checkBruteForce: vi.fn().mockReturnValue({ allowed: true, locked: false }),
-  recordFailedAttempt: vi.fn(),
-  recordSuccessfulAttempt: vi.fn(),
-  addPeer: vi.fn(),
-  getPeer: vi.fn().mockReturnValue(null),
-  isPairedPeer: vi.fn().mockReturnValue(false),
-  updateLastSeen: vi.fn(),
 }));
 
 // Mock agent-system
@@ -278,7 +261,6 @@ describe('annex-server', () => {
     });
     vi.mocked(annexTls.extractPeerFingerprint).mockReturnValue(null);
     vi.mocked(annexPeers.checkBruteForce).mockReturnValue({ allowed: true, delayMs: 0, locked: false, attemptsRemaining: 3 } as any);
-    vi.mocked(annexPeers.isPairedPeer).mockReturnValue(false);
     vi.mocked(annexEventBus.setActive).mockReturnValue(undefined);
     vi.mocked(annexEventBus.onPtyData).mockReturnValue(() => {});
     vi.mocked(annexEventBus.onHookEvent).mockReturnValue(() => {});
