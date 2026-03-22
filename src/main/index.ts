@@ -124,6 +124,51 @@ const createWindow = (): void => {
     return { action: 'deny' };
   });
 
+  // SEC-11: Restrict webview creation to safe URL schemes.
+  // webviewTag is enabled for the built-in browser plugin, but without this
+  // guard any renderer code (including community plugins) could create webviews
+  // loading javascript: or data: URLs to bypass CSP and exfiltrate data.
+  // file:// URLs are gated behind the allowLocalFileWebviews setting.
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    // Enforce security defaults on all webviews
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    (webPreferences as Record<string, unknown>).nodeIntegrationInSubFrames = false;
+
+    const src = params.src || '';
+    if (!src || src.startsWith('about:blank')) return;
+
+    const isHttp = src.startsWith('http://') || src.startsWith('https://');
+    const isFile = src.startsWith('file://');
+
+    if (isHttp) return; // always allowed
+
+    if (isFile) {
+      const annexSettings = require('./services/annex-settings');
+      const settings = annexSettings.getSettings();
+      if (settings.allowLocalFileWebviews) return; // user opted in
+
+      appLog('core:security', 'info', 'Blocked file:// webview (allowLocalFileWebviews is disabled)', {
+        meta: { src: src.slice(0, 200) },
+      });
+      event.preventDefault();
+      // Notify the renderer so it can show an error message
+      mainWindow?.webContents.send('webview-blocked', {
+        src: src.slice(0, 200),
+        reason: 'file-protocol-disabled',
+        message: 'Local file access is disabled. Enable "Allow local file webviews" in Settings > Security to load file:// URLs.',
+      });
+      return;
+    }
+
+    // Block all other schemes (javascript:, data:, blob:, etc.)
+    appLog('core:security', 'warn', 'Blocked webview with disallowed URL scheme', {
+      meta: { src: src.slice(0, 200) },
+    });
+    event.preventDefault();
+  });
+
+
   // Clean up file watchers when the window is about to close (before webContents is destroyed)
   mainWindow.on('close', () => {
     if (mainWindow) {
