@@ -190,6 +190,13 @@ const api = {
       return () => { ipcRenderer.removeListener(IPC.AGENT.HOOK_EVENT, listener); };
     },
 
+    onAgentWaking: (callback: (agentId: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, agentId: string) =>
+        callback(agentId);
+      ipcRenderer.on(IPC.AGENT.AGENT_WAKING, listener);
+      return () => { ipcRenderer.removeListener(IPC.AGENT.AGENT_WAKING, listener); };
+    },
+
     listSessions: (projectPath: string, agentId: string, orchestrator?: string): Promise<Array<{
       sessionId: string;
       startedAt: string;
@@ -644,6 +651,31 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_UPDATE_STATUS),
     applyUpdate: () =>
       ipcRenderer.invoke(IPC.APP.APPLY_UPDATE),
+    getLiveAgentsForUpdate: () =>
+      ipcRenderer.invoke(IPC.APP.GET_LIVE_AGENTS_FOR_UPDATE),
+    getPendingResumes: () =>
+      ipcRenderer.invoke(IPC.APP.GET_PENDING_RESUMES),
+    resumeManualAgent: (agentId: string, projectPath: string, sessionId?: string) =>
+      ipcRenderer.invoke(IPC.APP.RESUME_MANUAL_AGENT, agentId, projectPath, sessionId),
+    resolveWorkingAgent: (agentId: string, action: string) =>
+      ipcRenderer.invoke(IPC.APP.RESOLVE_WORKING_AGENT, agentId, action),
+    confirmUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) =>
+      ipcRenderer.invoke(IPC.APP.CONFIRM_UPDATE_RESTART, data),
+    devSimulateUpdateRestart: (data: { agentNames: Record<string, string>; agentMeta?: Record<string, unknown> }) => {
+      if (process.env.NODE_ENV !== 'development') return Promise.reject(new Error('dev-only API'));
+      return ipcRenderer.invoke(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, data);
+    },
+    onDevSimulateUpdateRestart: (callback: () => void) => {
+      if (process.env.NODE_ENV !== 'development') return () => {};
+      const listener = () => callback();
+      ipcRenderer.on(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.DEV_SIMULATE_UPDATE_RESTART, listener); };
+    },
+    onResumeStatusUpdate: (callback: (data: unknown) => void) => {
+      const listener = (_event: unknown, data: unknown) => callback(data);
+      ipcRenderer.on(IPC.APP.RESUME_STATUS_UPDATE, listener);
+      return () => { ipcRenderer.removeListener(IPC.APP.RESUME_STATUS_UPDATE, listener); };
+    },
     getPendingReleaseNotes: () =>
       ipcRenderer.invoke(IPC.APP.GET_PENDING_RELEASE_NOTES),
     clearPendingReleaseNotes: () =>
@@ -654,6 +686,8 @@ const api = {
       ipcRenderer.invoke(IPC.APP.GET_CLIPBOARD_SETTINGS),
     saveClipboardSettings: (settings: { clipboardCompat: boolean }) =>
       ipcRenderer.invoke(IPC.APP.SAVE_CLIPBOARD_SETTINGS, settings),
+    readClipboardImage: (): Promise<{ base64: string; mimeType: string } | null> =>
+      ipcRenderer.invoke(IPC.APP.READ_CLIPBOARD_IMAGE),
     getSessionSettings: () =>
       ipcRenderer.invoke(IPC.APP.GET_SESSION_SETTINGS),
     saveSessionSettings: (settings: { promptForName: boolean; projectOverrides?: Record<string, boolean> }) =>
@@ -860,6 +894,10 @@ const api = {
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_DELETE_DURABLE, satelliteId, projectId, agentId, mode),
     agentWorktreeStatus: (satelliteId: string, projectId: string, agentId: string): Promise<unknown> =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_WORKTREE_STATUS, satelliteId, projectId, agentId),
+    agentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.AGENT_REORDER, satelliteId, projectId, orderedIds),
+    canvasMutation: (satelliteId: string, projectId: string, canvasId: string, scope: string, mutation: unknown): Promise<void> =>
+      ipcRenderer.invoke(IPC.ANNEX_CLIENT.CANVAS_MUTATION, satelliteId, projectId, canvasId, scope, mutation),
     forgetSatellite: (fingerprint: string) =>
       ipcRenderer.invoke(IPC.ANNEX_CLIENT.FORGET_SATELLITE, fingerprint),
     forgetAllSatellites: () =>
@@ -1101,6 +1139,8 @@ const api = {
       ipcRenderer.invoke(IPC.MCP_BINDING.UNREGISTER_WEBVIEW, widgetId),
     setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) =>
       ipcRenderer.invoke(IPC.MCP_BINDING.SET_INSTRUCTIONS, agentId, targetId, instructions),
+    setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) =>
+      ipcRenderer.invoke(IPC.MCP_BINDING.SET_DISABLED_TOOLS, agentId, targetId, disabledTools),
     onBindingsChanged: (callback: (bindings: Array<{
       agentId: string;
       targetId: string;

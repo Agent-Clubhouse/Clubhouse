@@ -43,6 +43,34 @@ vi.mock('../terminal/clipboard', () => ({
   attachClipboardHandlers: (...args: any[]) => (globalThis as any).__testAttachClipboard(...args),
 }));
 
+g.__annexMockState = {
+  sendPtyInput: vi.fn(),
+  sendClipboardImage: vi.fn(),
+  requestPtyBuffer: vi.fn().mockResolvedValue(''),
+  sendPtyResize: vi.fn(),
+};
+
+vi.mock('../../stores/annexClientStore', () => {
+  const g = globalThis as any;
+  const useAnnexClientStore: any = (selector: any) => selector(g.__annexMockState);
+  useAnnexClientStore.getState = () => g.__annexMockState;
+  useAnnexClientStore.setState = vi.fn();
+  useAnnexClientStore.subscribe = vi.fn(() => vi.fn());
+  return {
+    useAnnexClientStore,
+    satellitePtyDataBus: { on: vi.fn(() => vi.fn()) },
+  };
+});
+
+vi.mock('../../stores/remoteProjectStore', () => ({
+  isRemoteAgentId: (id: string) => id.startsWith('remote||'),
+  parseNamespacedId: (id: string) => {
+    if (!id.startsWith('remote||')) return null;
+    const parts = id.split('||');
+    return { satelliteId: parts[1], agentId: parts[2] };
+  },
+}));
+
 import { AgentTerminal } from './AgentTerminal';
 
 let mockOnDataCallback: ((id: string, data: string) => void) | null = null;
@@ -57,6 +85,12 @@ describe('AgentTerminal', () => {
     g.__testFitAddon = null;
     g.__testAttachClipboard.mockClear();
     g.__testAttachClipboard.mockReturnValue(vi.fn());
+    g.__annexMockState = {
+      sendPtyInput: vi.fn(),
+      sendClipboardImage: vi.fn(),
+      requestPtyBuffer: vi.fn().mockResolvedValue(''),
+      sendPtyResize: vi.fn(),
+    };
     mockOnDataCallback = null;
     mockOnExitCallback = null;
     mockRemoveDataListener.mockClear();
@@ -172,17 +206,39 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" />);
       term().write.mockClear();
 
-      // Send data via onData BEFORE buffer resolves — should be gated
+      // Send data via onData BEFORE buffer resolves — should be queued, not written yet
       act(() => { mockOnDataCallback!('agent-1', 'live data'); });
       expect(term().write).not.toHaveBeenCalledWith('live data');
 
-      // Now resolve the buffer
+      // Now resolve the buffer — queued data should be replayed after snapshot
       await act(async () => { resolveBuffer!('buffered output'); });
       expect(term().write).toHaveBeenCalledWith('buffered output');
+      expect(term().write).toHaveBeenCalledWith('live data');
 
       // Data arriving AFTER buffer replay should pass through
       act(() => { mockOnDataCallback!('agent-1', 'new data'); });
       expect(term().write).toHaveBeenCalledWith('new data');
+    });
+
+    it('queues multiple live data chunks during buffer fetch and replays in order', async () => {
+      let resolveBuffer: (val: string) => void;
+      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
+        new Promise<string>((r) => { resolveBuffer = r; })
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Send multiple chunks before buffer resolves
+      act(() => { mockOnDataCallback!('agent-1', 'chunk1'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk2'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk3'); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      // Resolve buffer — snapshot + all queued chunks should be written in order
+      await act(async () => { resolveBuffer!('snapshot'); });
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['snapshot', 'chunk1', 'chunk2', 'chunk3']);
     });
 
     it('ignores PTY data for other agentIds', () => {
@@ -228,6 +284,57 @@ describe('AgentTerminal', () => {
         useThemeStore.setState({ theme: { terminal: newTheme } as any });
       });
       expect(term().options.theme).toEqual(newTheme);
+    });
+  });
+
+  describe('gradient transparency', () => {
+    it('uses transparent background when gradient is active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
+    });
+
+    it('uses normal background when gradient is not active', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: false,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('uses normal background when no gradient background is defined', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('live-updates to transparent when gradient is toggled on', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      act(() => {
+        useThemeStore.setState({
+          theme: {
+            terminal: { background: '#000', foreground: '#fff' },
+            gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+          } as any,
+          experimentalGradients: true,
+        });
+      });
+      expect(term().options.theme).toEqual({ background: 'transparent', foreground: '#fff' });
     });
   });
 
@@ -294,6 +401,42 @@ describe('AgentTerminal', () => {
       const { container } = render(<AgentTerminal agentId="agent-1" />);
       const terminalDiv = container.querySelector('[data-testid="agent-terminal"]') as HTMLElement;
       expect(terminalDiv.style.padding).toBe('8px');
+    });
+  });
+
+  describe('remote file drop banner', () => {
+    it('shows banner when files are dropped on a remote agent terminal', async () => {
+      // Render first with real timers so requestAnimationFrame runs synchronously
+      // (via the stubGlobal in beforeEach)
+      await act(async () => {
+        render(<AgentTerminal agentId="remote||sat-1||agent-1" />);
+      });
+
+      vi.useFakeTimers();
+
+      const wrapper = screen.getByTestId('agent-terminal').parentElement!;
+      const file = new File(['dummy'], 'test.txt', { type: 'text/plain' });
+      const files = Object.assign([file], { item: (i: number) => [file][i] });
+      const dataTransfer = { types: ['Files'], files, dropEffect: '' };
+
+      fireEvent.dragOver(wrapper, { dataTransfer });
+      fireEvent.drop(wrapper, { dataTransfer });
+
+      expect(screen.getByTestId('remote-banner')).toBeInTheDocument();
+      expect(screen.getByText('File drop is not supported on remote agents')).toBeInTheDocument();
+
+      // Banner should auto-dismiss after 3 seconds
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
+
+      vi.useRealTimers();
+    });
+
+    it('does not show banner for local agent file drop', async () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      // Flush the getBuffer() microtask so the terminal is ready
+      await act(async () => {});
+      expect(screen.queryByTestId('remote-banner')).toBeNull();
     });
   });
 

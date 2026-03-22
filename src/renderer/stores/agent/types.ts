@@ -53,6 +53,7 @@ export interface AgentLifecycleSlice {
     parentAgentId?: string,
     orchestrator?: string,
     freeAgentMode?: boolean,
+    pluginMetadata?: Record<string, string>,
   ) => Promise<string>;
   spawnDurableAgent: (
     projectId: string,
@@ -74,6 +75,9 @@ export interface AgentLifecycleSlice {
   /** Clear the resuming flag for an agent (called when session replay finishes) */
   clearResuming: (id: string) => void;
   executeDelete: (mode: DeleteMode, projectPath: string) => Promise<DeleteResult>;
+  resumingAgents: Record<string, import('../../features/app/ResumeBanner').ResumeStatus>;
+  setResumeStatus: (agentId: string, status: import('../../features/app/ResumeBanner').ResumeStatus) => void;
+  clearResumingAgents: () => void;
 }
 
 export interface AgentStatusSlice {

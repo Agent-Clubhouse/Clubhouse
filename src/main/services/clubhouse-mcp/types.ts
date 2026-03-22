@@ -22,6 +22,11 @@ export interface McpBinding {
    * Keys are tool suffixes (e.g. "send_message") or "*" for all tools.
    */
   instructions?: Record<string, string>;
+  /**
+   * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
+   * Tools in this list are excluded from the scoped tool list.
+   */
+  disabledTools?: string[];
 }
 
 /** MCP JSON-RPC request envelope. */

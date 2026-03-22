@@ -4,7 +4,6 @@
  * Adversarial/negative tests: wrong PIN, invalid token, rapid connect/disconnect.
  */
 import { test, expect } from '@playwright/test';
-import WebSocket from 'ws';
 import { launchDual, cleanupDual, type DualInstanceHandles } from './dual-launch';
 import {
   enableAnnexViaPreload,

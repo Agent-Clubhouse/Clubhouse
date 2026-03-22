@@ -6,7 +6,7 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -129,6 +129,8 @@ export function CanvasViewComponent({
   const dragPosRef = useRef<Position | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const currentPos = resizeState?.position ?? dragPos ?? view.position;
   const currentSize = resizeState?.size ?? view.size;
@@ -322,11 +324,61 @@ export function CanvasViewComponent({
     };
   }, [resizeState, zoom, onResizeEnd]);
 
+  // ── Mouse coordinate compensation for CSS scale(zoom) ─────────
+  // The canvas workspace wraps all views in `transform: scale(zoom)`.
+  // Interactive children (xterm.js terminals, Monaco editors) compute
+  // cell/character positions from `clientX/Y` and cached cell dimensions
+  // that are in the *unscaled* coordinate space.  At zoom ≠ 1 the
+  // screen-space mouse offset divided by unscaled cell size yields the
+  // wrong row/col — e.g. at zoom 0.75, clicking row 10 maps to row 7,
+  // making the selection highlight appear "a few lines too high".
+  //
+  // Fix: intercept mouse events in the capture phase (before xterm/Monaco
+  // handlers) and divide the offset from the element edge by zoom so that
+  // the value reaching the library matches the unscaled cell grid.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    const adjustEvent = (e: MouseEvent) => {
+      const z = zoomRef.current;
+      if (z === 1) return;
+      const rect = el.getBoundingClientRect();
+      const adjustedX = rect.left + (e.clientX - rect.left) / z;
+      const adjustedY = rect.top + (e.clientY - rect.top) / z;
+      Object.defineProperty(e, 'clientX', { value: adjustedX, configurable: true });
+      Object.defineProperty(e, 'clientY', { value: adjustedY, configurable: true });
+    };
+
+    const events: string[] = ['mousedown', 'mouseup', 'mousemove', 'click', 'dblclick', 'contextmenu'];
+    for (const type of events) {
+      el.addEventListener(type, adjustEvent as EventListener, true);
+    }
+
+    return () => {
+      for (const type of events) {
+        el.removeEventListener(type, adjustEvent as EventListener, true);
+      }
+    };
+  }, []);
+
   // ── Content based on view type ─────────────────────────────────
 
   const handleUpdateMetadata = useCallback((updates: CanvasWidgetMetadata) => {
-    onUpdate({ metadata: { ...view.metadata, ...updates } });
-  }, [view.metadata, onUpdate]);
+    const mergedMetadata = { ...view.metadata, ...updates };
+    const viewUpdates: Partial<CanvasView> = { metadata: mergedMetadata };
+
+    // Regenerate displayName from the plugin's callback so the title bar
+    // reflects metadata changes (e.g. naming a new group project).
+    if (view.type === 'plugin') {
+      const registered = getRegisteredWidgetType((view as PluginCanvasViewType).pluginWidgetType);
+      if (registered) {
+        viewUpdates.displayName = generatePluginWidgetDisplayName(registered, mergedMetadata);
+      }
+    }
+
+    onUpdate(viewUpdates);
+  }, [view.metadata, view.type, onUpdate]);
 
   const renderContent = () => {
     switch (view.type) {
@@ -684,6 +736,7 @@ export function CanvasViewComponent({
           content, so skip rendering here to prevent duplicate terminals from
           racing on PTY resize. */}
       <div
+        ref={contentRef}
         className="flex-1 min-h-0 overflow-hidden rounded-b-lg"
         onWheel={isSelected ? (e) => e.stopPropagation() : undefined}
       >

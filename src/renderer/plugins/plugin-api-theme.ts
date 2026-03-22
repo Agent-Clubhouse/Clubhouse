@@ -2,7 +2,6 @@ import type { PluginContext, ThemeAPI, ThemeInfo, Disposable } from '../../share
 
 export function buildThemeInfo(): ThemeInfo {
   // Lazy import to avoid circular deps — only needed when a plugin uses the theme API
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { useThemeStore } = require('../stores/themeStore');
   const state = useThemeStore.getState();
   const theme = state.theme;
@@ -28,7 +27,6 @@ export function createThemeAPI(ctx: PluginContext): ThemeAPI {
       return buildThemeInfo();
     },
     onDidChange(callback: (theme: ThemeInfo) => void): Disposable {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { useThemeStore } = require('../stores/themeStore');
       let prevId = useThemeStore.getState().themeId;
       const unsub = useThemeStore.subscribe((state: { themeId: string; experimentalGradients: boolean; theme: { id: string; name: string; type: 'dark' | 'light'; colors: Record<string, string>; hljs: Record<string, string>; terminal: Record<string, string>; fonts?: { ui?: string; mono?: string }; gradients?: { background?: string; surface?: string; accent?: string } } }) => {

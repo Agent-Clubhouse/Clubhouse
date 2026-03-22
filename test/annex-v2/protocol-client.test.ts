@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AnnexProtocolClient } from '../../e2e/annex-v2/protocol-client';
 import * as http from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import { randomInt, randomUUID } from 'crypto';
 
 // ---------------------------------------------------------------------------

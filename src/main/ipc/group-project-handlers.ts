@@ -75,7 +75,7 @@ export function registerGroupProjectHandlers(): void {
     async (_event, id) => {
       const deleted = await groupProjectRegistry.delete(id as string);
       if (deleted) {
-        destroyBulletinBoard(id as string);
+        await destroyBulletinBoard(id as string);
         appLog('core:group-project', 'info', 'Group project deleted', { meta: { id } });
       }
       return deleted;

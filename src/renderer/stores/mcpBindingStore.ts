@@ -16,6 +16,10 @@ export interface McpBindingEntry {
    * Keys are tool suffixes (e.g. "send_message") or "*" for all tools.
    */
   instructions?: Record<string, string>;
+  /**
+   * Tool suffixes disabled on this wire (e.g. ["read_output", "broadcast"]).
+   */
+  disabledTools?: string[];
 }
 
 interface McpBindingStoreState {
@@ -24,6 +28,7 @@ interface McpBindingStoreState {
   bind: (agentId: string, target: { targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => Promise<void>;
   unbind: (agentId: string, targetId: string) => Promise<void>;
   setInstructions: (agentId: string, targetId: string, instructions: Record<string, string>) => Promise<void>;
+  setDisabledTools: (agentId: string, targetId: string, disabledTools: string[]) => Promise<void>;
   registerWebview: (widgetId: string, webContentsId: number) => Promise<void>;
   unregisterWebview: (widgetId: string) => Promise<void>;
 }
@@ -69,6 +74,18 @@ export const useMcpBindingStore = create<McpBindingStoreState>((set) => ({
       bindings: state.bindings.map((b) =>
         b.agentId === agentId && b.targetId === targetId
           ? { ...b, instructions: Object.keys(instructions).length > 0 ? instructions : undefined }
+          : b,
+      ),
+    }));
+  },
+
+  setDisabledTools: async (agentId, targetId, disabledTools) => {
+    await window.clubhouse.mcpBinding.setDisabledTools(agentId, targetId, disabledTools);
+    // Optimistic update
+    set((state) => ({
+      bindings: state.bindings.map((b) =>
+        b.agentId === agentId && b.targetId === targetId
+          ? { ...b, disabledTools: disabledTools.length > 0 ? disabledTools : undefined }
           : b,
       ),
     }));

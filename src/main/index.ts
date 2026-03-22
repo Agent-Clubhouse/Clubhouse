@@ -17,6 +17,8 @@ import { flushAllPending as flushPendingBroadcasts } from './util/ipc-broadcast'
 import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
+import { loadPendingResume } from './services/restart-session-service';
+import { isAllowedNavigation } from './navigation-guard';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -103,6 +105,63 @@ const createWindow = (): void => {
   });
 
   mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY);
+
+  // Block navigation to external URLs — prevents renderer or plugin from loading
+  // arbitrary content. Allow only the app's own URLs (file:// or dev server).
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isAllowedNavigation(url)) {
+      event.preventDefault();
+      appLog('core:security', 'warn', `Blocked navigation to external URL: ${url}`);
+    }
+  });
+
+  // Block window.open() and <a target="_blank"> from opening external URLs.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (!isAllowedNavigation(url)) {
+      appLog('core:security', 'warn', `Blocked window.open to external URL: ${url}`);
+      return { action: 'deny' };
+    }
+    return { action: 'deny' };
+  });
+
+  // SEC-11: Restrict webview creation to safe URL schemes.
+  // webviewTag is enabled for the built-in browser plugin, but without this
+  // guard any renderer code (including community plugins) could create webviews
+  // loading javascript: or data: URLs to bypass CSP and exfiltrate data.
+  // file:// URLs are gated behind the allowLocalFileWebviews setting.
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    // Enforce security defaults on all webviews
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    (webPreferences as Record<string, unknown>).nodeIntegrationInSubFrames = false;
+
+    const src = params.src || '';
+    if (!src || src.startsWith('about:blank')) return;
+
+    const isHttp = src.startsWith('http://') || src.startsWith('https://');
+    const isFile = src.startsWith('file://');
+
+    if (isHttp) return; // always allowed
+
+    if (isFile) {
+      const { securitySettings } = require('./ipc/settings-handlers');
+      const settings = securitySettings.get();
+      if (settings.allowLocalFileWebviews) return; // user opted in
+
+      appLog('core:security', 'info', 'Blocked file:// webview — enable "Allow local file webviews" in Settings > Security', {
+        meta: { src: src.slice(0, 200) },
+      });
+      event.preventDefault();
+      return;
+    }
+
+    // Block all other schemes (javascript:, data:, blob:, etc.)
+    appLog('core:security', 'warn', 'Blocked webview with disallowed URL scheme', {
+      meta: { src: src.slice(0, 200) },
+    });
+    event.preventDefault();
+  });
+
 
   // Clean up file watchers when the window is about to close (before webContents is destroyed)
   mainWindow.on('close', () => {
@@ -196,6 +255,18 @@ app.on('ready', () => {
   startPtyStaleSweep();
   startHeadlessStaleSweep();
 
+  // Check for pending session resumes from a previous update restart.
+  // Just log here — the renderer reads the file via GET_PENDING_RESUMES IPC
+  // and clears it after processing. We don't clear here to avoid a race
+  // condition where the file is deleted before the renderer reads it.
+  loadPendingResume().then((pendingState) => {
+    if (pendingState && pendingState.sessions.length > 0) {
+      appLog('core:startup', 'info', `Found ${pendingState.sessions.length} sessions to resume after update`);
+    }
+  }).catch((err) => {
+    appLog('core:startup', 'error', `Failed to load pending resumes: ${err instanceof Error ? err.message : String(err)}`);
+  });
+
   // macOS notification permission is triggered on-demand when the user
   // sends their first test notification or an agent event fires.
   // The app must be codesigned (even ad-hoc) for macOS to show the prompt.
@@ -213,7 +284,11 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+let isQuitting = false;
+app.on('before-quit', (event) => {
+  if (isQuitting) return; // Re-entrance guard — already shutting down
+  isQuitting = true;
+
   appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
@@ -229,16 +304,25 @@ app.on('before-quit', () => {
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
 
-  // Flush any pending agent config writes to disk (best-effort async)
-  void flushAllAgentConfigs().catch((err) => {
-    appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
-  });
-
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();
   annexServer.stop();
   mcpBridgeServer.stop();
   restoreAll();
-  killAll();
   stopAllWatches();
+
+  // Delay quit to await async cleanup (killAll, flushAllAgentConfigs).
+  // Without this, Electron may exit before PTY processes are terminated,
+  // leaving orphaned processes.
+  event.preventDefault();
+  Promise.all([
+    killAll().catch((err) => {
+      appLog('core:shutdown', 'error', `Failed to kill PTY sessions: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+    flushAllAgentConfigs().catch((err) => {
+      appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+  ]).finally(() => {
+    app.quit();
+  });
 });

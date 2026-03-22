@@ -16,9 +16,22 @@ const mockAnnexClient = {
   ptyInput: vi.fn(),
   clipboardImage: vi.fn(),
   ptyResize: vi.fn(),
+  ptyGetBuffer: vi.fn(async () => ''),
+  ptySpawnShell: vi.fn(async () => {}),
   agentSpawn: vi.fn(),
   agentKill: vi.fn(),
   agentWake: vi.fn(),
+  agentCreateDurable: vi.fn(async () => ({})),
+  agentDeleteDurable: vi.fn(async () => ({})),
+  agentWorktreeStatus: vi.fn(async () => ({})),
+  agentReorder: vi.fn(),
+  fileTree: vi.fn(async () => []),
+  fileRead: vi.fn(async () => ''),
+  gitOperation: vi.fn(async () => ({})),
+  sessionList: vi.fn(async () => ({})),
+  sessionTranscript: vi.fn(async () => ({})),
+  sessionSummary: vi.fn(async () => ({})),
+  canvasMutation: vi.fn(async () => {}),
   forgetSatellite: vi.fn(),
   forgetAllSatellites: vi.fn(),
   onSatellitesChanged: vi.fn(() => vi.fn()),
@@ -298,6 +311,107 @@ describe('annexClientStore', () => {
 
       expect(spy).toHaveBeenCalledWith('sat-1', 'agent-1', detailedStatus);
       spy.mockRestore();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // session:paused / session:resumed events
+  // -------------------------------------------------------------------------
+
+  describe('session pause/resume events', () => {
+    it('sets satellitePaused to true on session:paused', () => {
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'session:paused', payload: { paused: true } });
+
+      expect(getState().satellitePaused['sat-1']).toBe(true);
+    });
+
+    it('sets satellitePaused to false on session:resumed', () => {
+      useAnnexClientStore.setState({ satellitePaused: { 'sat-1': true } });
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({ satelliteId: 'sat-1', type: 'session:resumed', payload: { paused: false } });
+
+      expect(getState().satellitePaused['sat-1']).toBe(false);
+    });
+
+    it('clears stale paused state when snapshot arrives with sessionPaused=false', () => {
+      // Simulate stale paused state from a previous connection
+      useAnnexClientStore.setState({
+        satellitePaused: { 'sat-1': true },
+        satellites: [SATELLITE],
+      });
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({
+        satelliteId: 'sat-1',
+        type: 'snapshot',
+        payload: { projects: [], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq: 0, sessionPaused: false },
+      });
+
+      expect(getState().satellitePaused['sat-1']).toBe(false);
+    });
+
+    it('preserves paused state when snapshot arrives with sessionPaused=true', () => {
+      useAnnexClientStore.setState({
+        satellitePaused: {},
+        satellites: [SATELLITE],
+      });
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({
+        satelliteId: 'sat-1',
+        type: 'snapshot',
+        payload: { projects: [], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq: 0, sessionPaused: true },
+      });
+
+      expect(getState().satellitePaused['sat-1']).toBe(true);
+    });
+
+    it('defaults to unpaused when snapshot has no sessionPaused field', () => {
+      useAnnexClientStore.setState({
+        satellitePaused: { 'sat-1': true },
+        satellites: [SATELLITE],
+      });
+
+      let eventCallback: ((event: any) => void) | undefined;
+      mockAnnexClient.onSatelliteEvent.mockImplementationOnce((cb: any) => {
+        eventCallback = cb;
+        return vi.fn();
+      });
+
+      initAnnexClientListener();
+      eventCallback!({
+        satelliteId: 'sat-1',
+        type: 'snapshot',
+        payload: { projects: [], agents: {}, quickAgents: {}, theme: {}, orchestrators: {}, pendingPermissions: [], lastSeq: 0 },
+      });
+
+      expect(getState().satellitePaused['sat-1']).toBe(false);
     });
   });
 

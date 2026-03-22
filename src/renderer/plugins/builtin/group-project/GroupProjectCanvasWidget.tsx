@@ -4,23 +4,74 @@ import type { TopicDigest, BulletinMessage } from '../../../../shared/group-proj
 import { useGroupProjectStore } from '../../../stores/groupProjectStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { renderMarkdownSafe } from '../../../utils/safe-markdown';
+import { ptyWrite } from '../../../services/project-proxy';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
+import { useAgentStore } from '../../../stores/agentStore';
+import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { Toggle } from '../../../components/Toggle';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
 const ALL_TOPICS_KEY = '__all__';
 
-const POLLING_START_MSG =
-  '[SYSTEM:POLLING_START] Poll the bulletin board every 60 seconds when idle or between turns. Use read_bulletin to check for updates.';
-const POLLING_STOP_MSG =
-  '[SYSTEM:POLLING_STOP] Stop periodic bulletin board polling.';
+/** Inject a message into an agent's PTY using bracketed paste + Enter. */
+function injectPtyMessage(agentId: string, message: string): void {
+  const isMultiLine = message.includes('\n');
+  if (isMultiLine) {
+    ptyWrite(agentId, `\x1b[200~${message}\x1b[201~`);
+  } else {
+    ptyWrite(agentId, message);
+  }
+  // Delayed Enter so the agent processes the pasted content first
+  setTimeout(() => ptyWrite(agentId, '\r'), 150);
+}
 
 export function GroupProjectCanvasWidget({
   widgetId: _widgetId,
-  api: _api,
+  api,
   metadata,
   onUpdateMetadata,
   size: _size,
 }: CanvasWidgetComponentProps) {
+  const isAppMode = api.context.mode === 'app';
+  const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
+  const remote = useRemoteProject(projectId);
+
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+
+  // Group project bulletin board is not yet proxied over annex
+  if (remote.isRemote) {
+    const name = metadata.name as string | undefined;
+    return (
+      <AnnexUnsupportedPlaceholder
+        widgetType="Group Project"
+        reason={name ? `"${name}" is running on the satellite.` : 'Group project data is not yet available over Annex.'}
+      />
+    );
+  }
+
+  if (!mcpEnabled) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-4 text-center" data-testid="group-project-mcp-disabled">
+        <div className="w-10 h-10 rounded-lg bg-surface-1 flex items-center justify-center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ctp-overlay1">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-ctp-subtext1">MCP Required</div>
+          <div className="text-[10px] text-ctp-overlay0 max-w-[200px]">
+            Group Project requires MCP to be enabled. Enable it in Settings &gt; MCP.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const groupProjectId = metadata.groupProjectId as string | undefined;
 
   if (!groupProjectId) {
@@ -77,7 +128,7 @@ function CreationForm({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Project name..."
-        className="w-full px-3 py-1.5 text-sm bg-ctp-surface0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
+        className="w-full px-3 py-1.5 text-sm bg-surface-0 border border-surface-2 rounded-md text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue"
         autoFocus
       />
       <button
@@ -153,13 +204,29 @@ function ProjectCard({
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const update = useGroupProjectStore((s) => s.update);
-  const sendShoulderTap = useGroupProjectStore((s) => s.sendShoulderTap);
+
 
   const [showTapModal, setShowTapModal] = useState(false);
+  const [topics, setTopics] = useState<TopicDigest[]>([]);
 
   useEffect(() => {
     if (!loaded) loadProjects();
   }, [loaded, loadProjects]);
+
+  // Poll bulletin digest for activity summary
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (cancelled) return;
+      try {
+        const digest = await window.clubhouse.groupProject.getBulletinDigest(groupProjectId) as TopicDigest[];
+        if (!cancelled) setTopics(digest);
+      } catch { /* ignore */ }
+    };
+    refresh();
+    const interval = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [groupProjectId]);
 
   const project = useMemo(
     () => projects.find((p) => p.id === groupProjectId),
@@ -175,16 +242,21 @@ function ProjectCard({
   const description = project?.description || '';
   const pollingEnabled = !!(project?.metadata?.pollingEnabled);
 
+  const totalMessages = topics.reduce((sum, t) => sum + t.messageCount, 0);
+  const totalNew = topics.reduce((sum, t) => sum + t.newMessageCount, 0);
+
   const handleTogglePolling = useCallback(async () => {
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    await sendShoulderTap(
-      groupProjectId,
-      null,
-      newVal ? POLLING_START_MSG : POLLING_STOP_MSG,
-    );
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, sendShoulderTap]);
+    const name = project?.name || groupProjectId;
+    const agents = useAgentStore.getState().agents;
+    for (const agent of connectedAgents) {
+      const orchestrator = agents[agent.agentId]?.orchestrator;
+      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
+      injectPtyMessage(agent.agentId, msg);
+    }
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
 
   return (
     <div className="flex flex-col h-full p-4 gap-3">
@@ -192,7 +264,7 @@ function ProjectCard({
       <div className="flex items-center gap-2">
         <div
           className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-            hasActivity ? 'bg-ctp-green animate-pulse' : 'bg-ctp-overlay0'
+            hasActivity ? 'bg-ctp-green' : 'bg-ctp-overlay0'
           }`}
         />
         <RobotIcon size={14} />
@@ -210,13 +282,22 @@ function ProjectCard({
         {/* Polling toggle */}
         <button
           onClick={handleTogglePolling}
-          className={`p-1 transition-colors flex-shrink-0 ${
-            pollingEnabled ? 'text-ctp-green' : 'text-ctp-overlay1 hover:text-ctp-text'
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+            pollingEnabled
+              ? 'text-ctp-green bg-ctp-green/10'
+              : 'text-ctp-overlay0 bg-surface-0'
           }`}
           title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
         >
-          <PollingIcon size={14} active={pollingEnabled} />
+          <PollingIcon size={12} active={pollingEnabled} />
+          <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
         </button>
+      </div>
+
+      {/* Activity summary */}
+      <div className="flex items-center gap-3 text-[10px] text-ctp-subtext0">
+        <span>{topics.length} topic{topics.length !== 1 ? 's' : ''}</span>
+        <span>{totalMessages} msg{totalMessages !== 1 ? 's' : ''}{totalNew > 0 && <span className="text-ctp-green ml-0.5">+{totalNew} new</span>}</span>
       </div>
 
       {/* Description snippet */}
@@ -232,7 +313,7 @@ function ProjectCard({
           {connectedAgents.map((b) => (
             <span
               key={b.agentId}
-              className="px-2 py-0.5 text-[10px] bg-ctp-surface0 text-ctp-subtext1 rounded-full"
+              className="px-2 py-0.5 text-[10px] bg-surface-0 text-ctp-subtext1 rounded-full"
             >
               {b.agentName || b.agentId}
             </span>
@@ -244,8 +325,6 @@ function ProjectCard({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
-          groupProjectId={groupProjectId}
-          sendShoulderTap={sendShoulderTap}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -267,7 +346,7 @@ function ExpandedProjectView({
   const loaded = useGroupProjectStore((s) => s.loaded);
   const loadProjects = useGroupProjectStore((s) => s.loadProjects);
   const update = useGroupProjectStore((s) => s.update);
-  const sendShoulderTap = useGroupProjectStore((s) => s.sendShoulderTap);
+
 
   const [selectedTopic, setSelectedTopic] = useState<string>(ALL_TOPICS_KEY);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -321,6 +400,12 @@ function ExpandedProjectView({
     return () => { cancelled = true; clearInterval(interval); };
   }, [groupProjectId, selectedTopic]);
 
+  // Sort messages newest-first so the feed shows latest on top
+  const sortedMessages = useMemo(
+    () => [...messages].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    [messages],
+  );
+
   const selectedMessage = useMemo(
     () => messages.find((m) => m.id === selectedMessageId) ?? null,
     [messages, selectedMessageId],
@@ -336,12 +421,14 @@ function ExpandedProjectView({
     const newVal = !pollingEnabled;
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
-    await sendShoulderTap(
-      groupProjectId,
-      null,
-      newVal ? POLLING_START_MSG : POLLING_STOP_MSG,
-    );
-  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, sendShoulderTap]);
+    const name = project?.name || groupProjectId;
+    const agents = useAgentStore.getState().agents;
+    for (const agent of connectedAgents) {
+      const orchestrator = agents[agent.agentId]?.orchestrator;
+      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
+      injectPtyMessage(agent.agentId, msg);
+    }
+  }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
 
   return (
     <div className="flex flex-col h-full text-ctp-text">
@@ -359,18 +446,18 @@ function ExpandedProjectView({
       />
 
       {/* 3-Pane Content */}
-      <div className="flex flex-1 min-h-0 border-t border-ctp-surface1">
+      <div className="flex flex-1 min-h-0 border-t border-surface-1">
         {/* Topic Sidebar */}
-        <div className="w-36 flex-shrink-0 border-r border-ctp-surface1 overflow-y-auto">
+        <div className="w-36 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
           <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider bg-ctp-blue/10 text-ctp-blue">
             Topics
           </div>
           {/* All virtual topic */}
           <button
             onClick={() => handleTopicClick(ALL_TOPICS_KEY)}
-            className={`w-full text-left px-3 py-2 text-xs border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
+            className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
               selectedTopic === ALL_TOPICS_KEY
-                ? 'bg-ctp-surface0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
                 : 'text-ctp-subtext1'
             }`}
           >
@@ -383,9 +470,9 @@ function ExpandedProjectView({
             <button
               key={t.topic}
               onClick={() => handleTopicClick(t.topic)}
-              className={`w-full text-left px-3 py-2 text-xs border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
+              className={`w-full text-left px-3 py-2 text-xs border-b border-surface-0 hover:bg-surface-0 transition-colors ${
                 selectedTopic === t.topic
-                  ? 'bg-ctp-surface0 text-ctp-blue border-l-2 border-l-ctp-blue'
+                  ? 'bg-surface-0 text-ctp-blue border-l-2 border-l-ctp-blue'
                   : 'text-ctp-subtext1'
               }`}
             >
@@ -404,18 +491,18 @@ function ExpandedProjectView({
         </div>
 
         {/* Message List (compact preview pane) */}
-        <div className="w-48 flex-shrink-0 border-r border-ctp-surface1 overflow-y-auto">
-          {messages.length === 0 ? (
+        <div className="w-48 flex-shrink-0 border-r border-surface-1 overflow-y-auto">
+          {sortedMessages.length === 0 ? (
             <div className="p-3 text-xs text-ctp-overlay0 italic">
               {selectedTopic === ALL_TOPICS_KEY ? 'No messages yet' : `No messages in "${selectedTopic}"`}
             </div>
           ) : (
-            messages.map((m) => (
+            sortedMessages.map((m) => (
               <button
                 key={m.id}
                 onClick={() => setSelectedMessageId(m.id)}
-                className={`w-full text-left px-3 py-2 border-b border-ctp-surface0 hover:bg-ctp-surface0 transition-colors ${
-                  selectedMessageId === m.id ? 'bg-ctp-surface0' : ''
+                className={`w-full text-left px-3 py-2 border-b border-surface-0 hover:bg-surface-0 transition-colors ${
+                  selectedMessageId === m.id ? 'bg-surface-0' : ''
                 }`}
               >
                 <div className="flex items-center gap-1.5 text-xs">
@@ -452,7 +539,7 @@ function ExpandedProjectView({
                 )}
               </div>
               <div
-                className="border-t border-ctp-surface1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
+                className="border-t border-surface-1 pt-2 mt-2 prose prose-xs prose-invert max-w-none break-words"
                 dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(selectedMessage.body) }}
               />
             </div>
@@ -463,7 +550,7 @@ function ExpandedProjectView({
       </div>
 
       {/* Action Bar (agent count only) */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-ctp-surface1 bg-ctp-mantle">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-surface-1 bg-ctp-mantle">
         <RobotIcon size={12} />
         <span className="text-[10px] text-ctp-subtext0">
           {connectedAgents.length} agent{connectedAgents.length !== 1 ? 's' : ''} connected
@@ -484,8 +571,6 @@ function ExpandedProjectView({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
-          groupProjectId={groupProjectId}
-          sendShoulderTap={sendShoulderTap}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -550,7 +635,7 @@ function ExpandedHeader({
           onChange={(e) => setEditName(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSaveEdit}
-          className="px-2 py-0.5 text-sm font-semibold bg-ctp-surface0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+          className="px-2 py-0.5 text-sm font-semibold bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           autoFocus
         />
       ) : (
@@ -578,12 +663,15 @@ function ExpandedHeader({
       {/* Polling toggle */}
       <button
         onClick={onTogglePolling}
-        className={`p-1 transition-colors flex-shrink-0 ${
-          pollingEnabled ? 'text-ctp-green' : 'text-ctp-overlay1 hover:text-ctp-text'
+        className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+          pollingEnabled
+            ? 'text-ctp-green bg-ctp-green/10'
+            : 'text-ctp-overlay0 bg-surface-0'
         }`}
         title={pollingEnabled ? 'Polling active — click to stop' : 'Enable agent polling'}
       >
-        <PollingIcon size={14} active={pollingEnabled} />
+        <PollingIcon size={12} active={pollingEnabled} />
+        <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
       </button>
       {/* Settings gear */}
       <button
@@ -604,34 +692,31 @@ function ExpandedHeader({
 
 function ShoulderTapModal({
   connectedAgents,
-  groupProjectId,
-  sendShoulderTap,
   onClose,
 }: {
   connectedAgents: McpBindingEntry[];
-  groupProjectId: string;
-  sendShoulderTap: (projectId: string, targetAgentId: string | null, message: string) => Promise<unknown>;
   onClose: () => void;
 }) {
   const [target, setTarget] = useState<string>('all');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const msg = message.trim();
     if (!msg || sending) return;
     setSending(true);
-    try {
-      await sendShoulderTap(
-        groupProjectId,
-        target === 'all' ? null : target,
-        msg,
-      );
-      onClose();
-    } finally {
-      setSending(false);
+
+    const targets = target === 'all'
+      ? connectedAgents
+      : connectedAgents.filter((a) => a.agentId === target);
+
+    for (const agent of targets) {
+      injectPtyMessage(agent.agentId, msg);
     }
-  }, [message, sending, target, groupProjectId, sendShoulderTap, onClose]);
+
+    setSending(false);
+    onClose();
+  }, [message, sending, target, connectedAgents, onClose]);
 
   return (
     <div
@@ -639,7 +724,7 @@ function ShoulderTapModal({
       onClick={onClose}
     >
       <div
-        className="bg-ctp-base border border-ctp-surface1 rounded-lg shadow-xl w-[90%] max-w-sm p-4 space-y-3"
+        className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-sm p-4 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -655,7 +740,7 @@ function ShoulderTapModal({
           <select
             value={target}
             onChange={(e) => setTarget(e.target.value)}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text focus:outline-none focus:border-ctp-blue"
           >
             <option value="all">Broadcast to all</option>
             {connectedAgents.map((a) => (
@@ -673,7 +758,7 @@ function ShoulderTapModal({
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
             autoFocus
           />
         </div>
@@ -706,28 +791,33 @@ function SettingsModal({
   update,
   onClose,
 }: {
-  project: { description: string; instructions: string };
+  project: { description: string; instructions: string; metadata?: Record<string, unknown> };
   groupProjectId: string;
-  update: (id: string, fields: { description?: string; instructions?: string }) => Promise<void>;
+  update: (id: string, fields: { description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   onClose: () => void;
 }) {
   const [desc, setDesc] = useState(project.description);
   const [instr, setInstr] = useState(project.instructions);
+  const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project.metadata?.shoulderTapEnabled));
   const [saving, setSaving] = useState(false);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      await update(groupProjectId, { description: desc, instructions: instr });
+      await update(groupProjectId, {
+        description: desc,
+        instructions: instr,
+        metadata: { shoulderTapEnabled },
+      });
       onClose();
     } finally {
       setSaving(false);
     }
-  }, [desc, instr, groupProjectId, update, onClose]);
+  }, [desc, instr, shoulderTapEnabled, groupProjectId, update, onClose]);
 
   return (
     <div className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50">
-      <div className="bg-ctp-base border border-ctp-surface1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
+      <div className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ctp-text">Project Settings</h3>
           <button onClick={onClose} className="text-ctp-overlay1 hover:text-ctp-text text-lg leading-none">&times;</button>
@@ -740,7 +830,7 @@ function SettingsModal({
             onChange={(e) => setDesc(e.target.value)}
             placeholder="Purpose of this group project..."
             rows={3}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
         </div>
 
@@ -751,8 +841,25 @@ function SettingsModal({
             onChange={(e) => setInstr(e.target.value)}
             placeholder="Rules agents must follow..."
             rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-ctp-surface0 border border-ctp-surface2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
+        </div>
+
+        {/* Shoulder Tap toggle */}
+        <div className="border-t border-surface-1 pt-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-ctp-text font-medium">Shoulder Tap</div>
+              <div className="text-[10px] text-ctp-overlay0 mt-0.5">
+                Allow agents to directly inject messages into each other's terminals.
+                When off, agents can only communicate via the bulletin board.
+              </div>
+            </div>
+            <Toggle
+              checked={shoulderTapEnabled}
+              onChange={setShoulderTapEnabled}
+            />
+          </div>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -806,11 +913,11 @@ function MegaphoneIcon({ size = 14 }: { size?: number }) {
 function PollingIcon({ size = 14, active = false }: { size?: number; active?: boolean }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21.5 2v6h-6" />
-      <path d="M2.5 22v-6h6" />
-      <path d="M2.5 11.5a10 10 0 0 1 18.8-4.3" />
-      <path d="M21.5 12.5a10 10 0 0 1-18.8 4.2" />
-      {active && <circle cx="12" cy="12" r="3" fill="currentColor" />}
+      {active ? (
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      ) : (
+        <line x1="2" y1="12" x2="22" y2="12" />
+      )}
     </svg>
   );
 }

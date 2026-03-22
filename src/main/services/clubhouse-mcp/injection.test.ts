@@ -35,7 +35,7 @@ vi.mock('../fs-utils', () => ({
   }),
 }));
 
-import { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp, buildClubhouseMcpDef } from './injection';
+import { injectClubhouseMcp, isClubhouseMcpEntry, stripClubhouseMcp, stripClubhouseMcpToml, buildClubhouseMcpDef } from './injection';
 
 describe('MCP Injection', () => {
   let tmpDir: string;
@@ -151,17 +151,65 @@ describe('MCP Injection', () => {
       expect(content.mcpServers.clubhouse).toBeDefined();
     });
 
-    it('skips file-based injection for TOML config format (Codex CLI)', async () => {
+    it('injects TOML MCP config for TOML config format (Codex CLI)', async () => {
       mockIsMcpEnabled.mockReturnValue(true);
+      const codexDir = path.join(tmpDir, '.codex');
+      await fsp.mkdir(codexDir, { recursive: true });
+
       await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
         configDir: '.codex',
         mcpConfigFile: '.codex/config.toml',
         settingsFormat: 'toml',
       });
 
-      // No config file should be created — TOML orchestrators get MCP via CLI args instead
-      const files = await fsp.readdir(tmpDir);
-      expect(files).toHaveLength(0);
+      const content = await fsp.readFile(path.join(tmpDir, '.codex', 'config.toml'), 'utf-8');
+      expect(content).toContain('[mcp_servers.clubhouse]');
+      expect(content).toContain('command = "node"');
+      expect(content).toContain('CLUBHOUSE_MCP_PORT = "12345"');
+      expect(content).toContain('CLUBHOUSE_AGENT_ID = "agent-1"');
+      expect(content).toContain('CLUBHOUSE_HOOK_NONCE = "nonce-1"');
+    });
+
+    it('preserves existing TOML content when injecting', async () => {
+      mockIsMcpEnabled.mockReturnValue(true);
+      const codexDir = path.join(tmpDir, '.codex');
+      await fsp.mkdir(codexDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(codexDir, 'config.toml'),
+        '[mcp_servers.existing]\ncommand = "other"\n',
+        'utf-8',
+      );
+
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+        configDir: '.codex',
+        mcpConfigFile: '.codex/config.toml',
+        settingsFormat: 'toml',
+      });
+
+      const content = await fsp.readFile(path.join(codexDir, 'config.toml'), 'utf-8');
+      expect(content).toContain('[mcp_servers.existing]');
+      expect(content).toContain('[mcp_servers.clubhouse]');
+    });
+
+    it('replaces existing clubhouse section in TOML', async () => {
+      mockIsMcpEnabled.mockReturnValue(true);
+      const codexDir = path.join(tmpDir, '.codex');
+      await fsp.mkdir(codexDir, { recursive: true });
+      await fsp.writeFile(
+        path.join(codexDir, 'config.toml'),
+        '[mcp_servers.clubhouse]\ncommand = "old"\n',
+        'utf-8',
+      );
+
+      await injectClubhouseMcp(tmpDir, 'agent-1', 12345, 'nonce-1', {
+        configDir: '.codex',
+        mcpConfigFile: '.codex/config.toml',
+        settingsFormat: 'toml',
+      });
+
+      const content = await fsp.readFile(path.join(codexDir, 'config.toml'), 'utf-8');
+      expect(content).not.toContain('command = "old"');
+      expect(content).toContain('command = "node"');
     });
 
     it('still injects for JSON config format', async () => {
@@ -231,6 +279,43 @@ describe('MCP Injection', () => {
     it('returns config unchanged when no mcpServers', () => {
       const config = { someOther: 'value' };
       expect(stripClubhouseMcp(config)).toEqual(config);
+    });
+  });
+
+  describe('stripClubhouseMcpToml', () => {
+    it('removes clubhouse section from TOML', () => {
+      const toml = [
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+        '',
+        '[mcp_servers.clubhouse.env]',
+        'KEY = "VALUE"',
+        '',
+        '[other_section]',
+        'key = "value"',
+      ].join('\n');
+      const result = stripClubhouseMcpToml(toml);
+      expect(result).not.toContain('[mcp_servers.clubhouse]');
+      expect(result).not.toContain('KEY = "VALUE"');
+      expect(result).toContain('[other_section]');
+    });
+
+    it('preserves other MCP servers', () => {
+      const toml = [
+        '[mcp_servers.clubhouse]',
+        'command = "node"',
+        '',
+        '[mcp_servers.other]',
+        'command = "python"',
+      ].join('\n');
+      const result = stripClubhouseMcpToml(toml);
+      expect(result).not.toContain('[mcp_servers.clubhouse]');
+      expect(result).toContain('[mcp_servers.other]');
+    });
+
+    it('handles TOML without clubhouse section', () => {
+      const toml = '[mcp_servers.other]\ncommand = "node"';
+      expect(stripClubhouseMcpToml(toml)).toBe(toml);
     });
   });
 

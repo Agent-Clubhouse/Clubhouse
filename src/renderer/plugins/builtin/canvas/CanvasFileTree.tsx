@@ -162,19 +162,26 @@ interface CanvasFileTreeProps {
   selectedPath: string | null;
   showHidden: boolean;
   onSelectFile: (path: string) => void;
+  /** Optional custom file loader for remote (annex) projects. */
+  fileLoader?: (dirPath: string) => Promise<FileNode[]>;
 }
 
 export function CanvasFileTree({
-  api, projectPath, isAppMode, selectedPath, showHidden, onSelectFile,
+  api, projectPath, isAppMode, selectedPath, showHidden, onSelectFile, fileLoader,
 }: CanvasFileTreeProps) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
+  const loadDir = useCallback((dirPath: string) => {
+    if (fileLoader) return fileLoader(dirPath);
+    return loadChildren(api, isAppMode, projectPath, dirPath);
+  }, [api, isAppMode, projectPath, fileLoader]);
+
   // Load root tree on mount
   useEffect(() => {
     setLoading(true);
-    loadChildren(api, isAppMode, projectPath, '')
+    loadDir('')
       .then((nodes) => {
         setTree(nodes);
         setLoading(false);
@@ -183,7 +190,7 @@ export function CanvasFileTree({
         setTree([]);
         setLoading(false);
       });
-  }, [api, isAppMode, projectPath]);
+  }, [loadDir]);
 
   // Toggle directory expand/collapse with lazy loading
   const handleToggle = useCallback((dirPath: string) => {
@@ -206,7 +213,7 @@ export function CanvasFileTree({
         };
         const node = findNode(tree);
         if (node && !node.children) {
-          loadChildren(api, isAppMode, projectPath, dirPath)
+          loadDir(dirPath)
             .then((children) => {
               setTree(prev => updateNodeChildren(prev, dirPath, children));
             })
@@ -217,7 +224,7 @@ export function CanvasFileTree({
       }
       return next;
     });
-  }, [api, isAppMode, projectPath, tree]);
+  }, [loadDir, tree]);
 
   // Filter hidden files
   const filteredTree = useMemo(() => {

@@ -112,6 +112,12 @@ describe('project-handlers', () => {
       IPC.PROJECT.SAVE_CROPPED_ICON,
       IPC.PROJECT.LIST_CLUBHOUSE_FILES,
       IPC.PROJECT.RESET_PROJECT,
+      IPC.PROJECT.READ_LAUNCH_WRAPPER,
+      IPC.PROJECT.WRITE_LAUNCH_WRAPPER,
+      IPC.PROJECT.READ_MCP_CATALOG,
+      IPC.PROJECT.WRITE_MCP_CATALOG,
+      IPC.PROJECT.READ_DEFAULT_MCPS,
+      IPC.PROJECT.WRITE_DEFAULT_MCPS,
     ];
     for (const channel of expectedChannels) {
       expect(handlers.has(channel)).toBe(true);
@@ -606,5 +612,37 @@ describe('project-handlers', () => {
       },
     );
     expect(result).toBe(false);
+  });
+
+  // --- Settings handlers validation ---
+
+  it('READ_LAUNCH_WRAPPER rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.READ_LAUNCH_WRAPPER)!;
+    expect(() => handler({}, 123)).toThrow('must be a string');
+  });
+
+  it('WRITE_LAUNCH_WRAPPER rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.WRITE_LAUNCH_WRAPPER)!;
+    expect(() => handler({}, null, {})).toThrow('must be a string');
+  });
+
+  it('READ_MCP_CATALOG rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.READ_MCP_CATALOG)!;
+    expect(() => handler({}, undefined)).toThrow('must be a string');
+  });
+
+  it('WRITE_MCP_CATALOG rejects non-array catalog', () => {
+    const handler = handlers.get(IPC.PROJECT.WRITE_MCP_CATALOG)!;
+    expect(() => handler({}, '/tmp/project', 'not-an-array')).toThrow('must be an array');
+  });
+
+  it('READ_DEFAULT_MCPS rejects non-string projectPath', () => {
+    const handler = handlers.get(IPC.PROJECT.READ_DEFAULT_MCPS)!;
+    expect(() => handler({}, 42)).toThrow('must be a string');
+  });
+
+  it('WRITE_DEFAULT_MCPS rejects non-array mcpIds', () => {
+    const handler = handlers.get(IPC.PROJECT.WRITE_DEFAULT_MCPS)!;
+    expect(() => handler({}, '/tmp/project', 'not-an-array')).toThrow('must be an array');
   });
 });

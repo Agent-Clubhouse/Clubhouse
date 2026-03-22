@@ -47,7 +47,7 @@ export interface Project {
   orchestrator?: OrchestratorId;
 }
 
-export type AgentStatus = 'running' | 'sleeping' | 'creating' | 'error';
+export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
 export type AgentKind = 'durable' | 'quick';
 
 export interface Agent {
@@ -74,6 +74,8 @@ export interface Agent {
   mcpIds?: string[];
   /** Set when the agent is resuming a previous CLI session (spinner overlay) */
   resuming?: boolean;
+  /** Plugin-supplied metadata for correlating agents to domain objects (e.g. boardId, cardId). */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface CompletedQuickAgent {
@@ -94,6 +96,8 @@ export interface CompletedQuickAgent {
   orchestrator?: string;
   model?: string;
   cancelled?: boolean;
+  /** Plugin-supplied metadata carried from the spawning agent. */
+  pluginMetadata?: Record<string, string>;
 }
 
 // --- Profile types ---
@@ -428,12 +432,13 @@ export interface SoundSettings {
   }>;
 }
 
-export type SettingsSubPage = 'project' | 'notifications' | 'sounds' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'getting-started' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp';
+export type SettingsSubPage = 'project' | 'notifications' | 'logging' | 'display' | 'editor' | 'orchestrators' | 'profiles' | 'plugins' | 'plugin-detail' | 'about' | 'updates' | 'whats-new' | 'keyboard-shortcuts' | 'annex' | 'annex-control' | 'experimental' | 'mcp';
 
 // --- MCP settings ---
 
 export interface McpSettings {
   enabled: boolean;
+  projectDefault?: boolean;
   projectOverrides?: Record<string, boolean>;
 }
 
@@ -451,6 +456,13 @@ export interface EditorSettings {
 export interface ExperimentalSettings {
   /** Record of feature flags: key is the feature id, value is enabled/disabled */
   [key: string]: boolean;
+}
+
+// --- Security settings ---
+
+export interface SecuritySettings {
+  /** Allow loading file:// URLs in webview widgets and the browser view. Default: false. */
+  allowLocalFileWebviews: boolean;
 }
 
 // --- Annex (LAN monitoring) types ---
@@ -562,6 +574,8 @@ export interface SatelliteSnapshot {
   agentIcons?: Record<string, string>;
   /** Per-project canvas state keyed by satellite project ID. */
   canvasState?: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+  /** Whether the satellite session is currently paused. */
+  sessionPaused?: boolean;
 }
 
 // --- Auto-update types ---
@@ -932,11 +946,17 @@ export type CanvasMutation =
   | { type: 'addPluginView'; pluginId: string; qualifiedType: string; label: string; position: { x: number; y: number }; defaultSize?: { width: number; height: number } }
   | { type: 'removeView'; viewId: string }
   | { type: 'moveView'; viewId: string; position: { x: number; y: number } }
+  | { type: 'moveViews'; positions: Record<string, { x: number; y: number }> }
   | { type: 'resizeView'; viewId: string; size: { width: number; height: number } }
   | { type: 'focusView'; viewId: string }
   | { type: 'updateView'; viewId: string; updates: Record<string, unknown> }
   | { type: 'setViewport'; viewport: { panX: number; panY: number; zoom: number } }
-  | { type: 'zoomView'; viewId: string | null };
+  | { type: 'zoomView'; viewId: string | null }
+  // Canvas tab management (for pop-out + annex sync)
+  | { type: 'addCanvas' }
+  | { type: 'removeCanvas'; canvasId: string }
+  | { type: 'renameCanvas'; canvasId: string; name: string }
+  | { type: 'setActiveCanvas'; canvasId: string };
 
 export interface CanvasStateSnapshot {
   canvasId: string;
@@ -949,5 +969,42 @@ export interface CanvasStateSnapshot {
   projectId?: string;
   /** Storage scope: 'global' for app mode, 'project' for project mode. */
   scope?: string;
+  /** All canvas tab metadata — enables tab sync for annex controllers. */
+  allCanvasTabs?: Array<{ id: string; name: string }>;
+  /** Active canvas tab ID on the source — enables tab sync for annex controllers. */
+  activeCanvasId?: string;
+}
+
+// --- Session Resume on Update types ---
+
+export type ResumeStrategy = 'auto' | 'manual';
+
+export interface RestartSessionEntry {
+  agentId: string;
+  agentName: string;
+  projectPath: string;
+  orchestrator: OrchestratorId;
+  sessionId: string | null;
+  resumeStrategy: ResumeStrategy;
+  worktreePath?: string;
+  kind: AgentKind;
+  mission?: string;
+  model?: string;
+}
+
+export interface RestartSessionState {
+  version: number;
+  capturedAt: string;
+  appVersion: string;
+  sessions: RestartSessionEntry[];
+}
+
+export interface LiveAgentInfo {
+  agentId: string;
+  projectPath: string;
+  orchestrator: OrchestratorId;
+  runtime: string;
+  isWorking: boolean;
+  lastActivity: number | null;
 }
 

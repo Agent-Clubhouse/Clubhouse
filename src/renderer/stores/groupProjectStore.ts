@@ -34,9 +34,15 @@ export const useGroupProjectStore = create<GroupProjectStoreState>((set) => ({
   update: async (id, fields) => {
     await window.clubhouse.groupProject.update(id, fields);
     set((state) => ({
-      projects: state.projects.map((p) =>
-        p.id === id ? { ...p, ...fields } : p,
-      ),
+      projects: state.projects.map((p) => {
+        if (p.id !== id) return p;
+        const updated = { ...p, ...fields };
+        // Merge metadata rather than replacing it (matches main process behavior)
+        if (fields.metadata) {
+          updated.metadata = { ...p.metadata, ...fields.metadata };
+        }
+        return updated;
+      }),
     }));
   },
 

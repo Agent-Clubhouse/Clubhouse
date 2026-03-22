@@ -97,10 +97,12 @@
     background-image: var(--theme-gradient-bg);
   }
 
-  /* When a gradient background is active, make all bg-ctp-base elements transparent
-     so the body gradient shows through nested layout wrappers.
-     Uses !important to override Tailwind's bg-ctp-base utility. */
-  .theme-gradient-bg .bg-ctp-base {
+  /* When a gradient background is active, make layout-wrapper backgrounds transparent
+     so the body gradient shows through nested elements.
+     Uses !important to override Tailwind's utilities. */
+  .theme-gradient-bg .bg-ctp-base,
+  .theme-gradient-bg .bg-ctp-mantle,
+  .theme-gradient-bg .bg-ctp-crust {
     background-color: transparent !important;
   }
 
@@ -161,6 +163,12 @@
   overflow-y: auto !important;
 }
 
+/* When gradient background is active, make xterm backgrounds transparent */
+.theme-gradient-bg .xterm-viewport,
+.theme-gradient-bg .xterm-screen {
+  background-color: transparent !important;
+}
+
 /* Hide the native blinking caret on xterm's internal keyboard-capture textarea */
 .xterm .xterm-helper-textarea {
   caret-color: transparent !important;
@@ -176,7 +184,7 @@
   transition: background-color 200ms ease;
 }
 .toggle-track[data-on="true"] {
-  background-color: #6366f1;
+  background-color: rgb(var(--ctp-accent));
 }
 .toggle-knob {
   position: absolute;

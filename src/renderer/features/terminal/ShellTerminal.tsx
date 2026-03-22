@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFileDrop } from './useFileDrop';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -7,16 +7,42 @@ import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { attachClipboardHandlers } from './clipboard';
 import { useTerminalFit } from './useTerminalFit';
 
+/**
+ * Abstraction over terminal I/O operations, allowing ShellTerminal to work
+ * with both local PTY (window.clubhouse.pty) and remote Annex terminals.
+ */
+export interface TerminalIO {
+  write(sessionId: string, data: string): void;
+  resize(sessionId: string, cols: number, rows: number): void;
+  getBuffer(sessionId: string): Promise<string>;
+  onData(callback: (id: string, data: string) => void): () => void;
+  onExit(callback: (id: string, exitCode: number) => void): () => void;
+}
+
 interface Props {
   sessionId: string;
   focused?: boolean;
+  io?: TerminalIO;
 }
 
-export function ShellTerminal({ sessionId, focused }: Props) {
+export function ShellTerminal({ sessionId, focused, io }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+
+  // Use a ref for the IO layer so that changes to `io` don't trigger a full
+  // terminal destruction/recreation cycle.  The terminal instance is expensive
+  // to rebuild — it replays the entire buffer, resets scroll position, and
+  // causes a visible flash.  All IO call-sites read through the ref instead.
+  const ptyRef = useRef<TerminalIO>(io ?? window.clubhouse.pty);
+  ptyRef.current = io ?? window.clubhouse.pty;
+
   const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
+  const effectiveTerminalColors = useMemo(
+    () => hasGradientBg ? { ...terminalColors, background: 'transparent' } : terminalColors,
+    [terminalColors, hasGradientBg],
+  );
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
   );
@@ -25,17 +51,19 @@ export function ShellTerminal({ sessionId, focused }: Props) {
 
   useEffect(() => { loadClipboard(); }, [loadClipboard]);
 
+  // ── Terminal creation — only depends on sessionId ────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      theme: terminalColors,
+      theme: effectiveTerminalColors,
       fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.3,
       cursorBlink: true,
       cursorStyle: 'bar',
       allowProposedApi: true,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -44,9 +72,9 @@ export function ShellTerminal({ sessionId, focused }: Props) {
 
     requestAnimationFrame(() => {
       fitAddon.fit();
-      window.clubhouse.pty.resize(sessionId, term.cols, term.rows);
+      ptyRef.current.resize(sessionId, term.cols, term.rows);
       term.focus();
-      window.clubhouse.pty.getBuffer(sessionId).then((buf: string) => {
+      ptyRef.current.getBuffer(sessionId).then((buf: string) => {
         if (buf && terminalRef.current === term) {
           term.write(buf);
         }
@@ -62,15 +90,32 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     // the input is incomplete, and PSReadLine on Windows handles it natively.
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type === 'keydown' && ev.key === 'Enter' && (ev.shiftKey || ev.ctrlKey)) {
-        window.clubhouse.pty.write(sessionId, '\n');
+        ptyRef.current.write(sessionId, '\n');
         return false; // prevent xterm from emitting \r
       }
       return true;
     });
 
     const inputDisposable = term.onData((data) => {
-      window.clubhouse.pty.write(sessionId, data);
+      ptyRef.current.write(sessionId, data);
     });
+
+    return () => {
+      inputDisposable.dispose();
+      term.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, [sessionId]);
+
+  // ── IO event listeners — re-registered when io changes ───────────
+  // Separated from terminal creation so that an IO change (e.g. satellite
+  // reconnect) only re-subscribes listeners without destroying the terminal.
+  useEffect(() => {
+    const term = terminalRef.current;
+    if (!term) return;
+
+    const pty = ptyRef.current;
 
     // Batch PTY data writes using rAF to avoid 100+ DOM renders/sec.
     // Data arriving between frames is concatenated and flushed once per paint.
@@ -78,7 +123,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     let flushScheduled = false;
     let flushId = 0;
 
-    const removeDataListener = window.clubhouse.pty.onData(
+    const removeDataListener = pty.onData(
       (id: string, data: string) => {
         if (id === sessionId) {
           pendingData += data;
@@ -96,7 +141,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     );
 
     // Reset terminal state when the PTY process exits.
-    const removeExitListener = window.clubhouse.pty.onExit(
+    const removeExitListener = pty.onExit(
       (id: string, _exitCode: number) => {
         if (id === sessionId && terminalRef.current) {
           terminalRef.current.write(
@@ -110,17 +155,17 @@ export function ShellTerminal({ sessionId, focused }: Props) {
 
     return () => {
       if (flushId) cancelAnimationFrame(flushId);
-      inputDisposable.dispose();
       removeDataListener();
       removeExitListener();
-      term.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, io]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
-  useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused);
+  const resizeCallback = useCallback(
+    (sid: string, cols: number, rows: number) => ptyRef.current.resize(sid, cols, rows),
+    [],
+  );
+  useTerminalFit(sessionId, terminalRef, fitAddonRef, containerRef, focused, resizeCallback);
 
   // Attach clipboard handlers only when clipboard compatibility is enabled
   useEffect(() => {
@@ -128,16 +173,16 @@ export function ShellTerminal({ sessionId, focused }: Props) {
     const cleanup = attachClipboardHandlers(
       terminalRef.current,
       containerRef.current,
-      (data) => window.clubhouse.pty.write(sessionId, data)
+      (data) => ptyRef.current.write(sessionId, data)
     );
     return cleanup;
   }, [clipboardCompat, sessionId]);
 
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = terminalColors;
+      terminalRef.current.options.theme = effectiveTerminalColors;
     }
-  }, [terminalColors]);
+  }, [effectiveTerminalColors]);
 
   useEffect(() => {
     if (!terminalRef.current || !experimentalMonoFont) return;
@@ -150,7 +195,7 @@ export function ShellTerminal({ sessionId, focused }: Props) {
 
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
     useCallback((data: string) => {
-      window.clubhouse.pty.write(sessionId, data);
+      ptyRef.current.write(sessionId, data);
       terminalRef.current?.focus();
     }, [sessionId])
   );

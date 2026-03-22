@@ -5,11 +5,12 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { CanvasWidgetComponentProps, PluginAPI } from '../../../../shared/plugin-types';
-import type { GitWorktreeEntry } from '../../../../shared/types';
+import type { GitWorktreeEntry, FileNode } from '../../../../shared/types';
 import { useEditorSettingsStore } from '../../../../renderer/stores/editorSettingsStore';
 import { CanvasFileTree } from '../canvas/CanvasFileTree';
 import { ReadOnlyMonacoEditor } from '../canvas/ReadOnlyMonacoEditor';
 import { ResizableSidebar } from '../canvas/ResizableSidebar';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -48,6 +49,8 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
   const filePath = metadata.filePath as string | undefined;
 
+  const remote = useRemoteProject(projectId);
+
   const activeProject = useMemo(
     () => projectId ? projects.find((p) => p.id === projectId) : null,
     [projects, projectId],
@@ -57,16 +60,16 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   const rootPath = (metadata.rootPath as string) || activeProject?.path || '';
   const hasMultipleWorktrees = worktrees.length > 1;
 
-  // Fetch git worktrees when project is selected
+  // Fetch git worktrees when project is selected (skip for remote)
   useEffect(() => {
-    if (!activeProject?.path) {
+    if (!activeProject?.path || remote.isRemote) {
       setWorktrees([]);
       return;
     }
     window.clubhouse.git.listWorktrees(activeProject.path)
       .then((wts: GitWorktreeEntry[]) => setWorktrees(wts))
       .catch(() => setWorktrees([]));
-  }, [activeProject?.path]);
+  }, [activeProject?.path, remote.isRemote]);
 
   useEffect(() => {
     const sub = api.settings.onChange((key: string) => {
@@ -83,10 +86,32 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
       return;
     }
     setFileContent(null);
-    readProjectFile(api, isAppMode, rootPath, filePath)
-      .then(setFileContent)
-      .catch(() => setFileContent('Error reading file'));
-  }, [api, filePath, projectId, activeProject, isAppMode, rootPath]);
+    if (remote.isRemote && remote.satelliteId && remote.originalProjectId) {
+      window.clubhouse.annexClient.fileRead(remote.satelliteId, remote.originalProjectId, filePath)
+        .then(setFileContent)
+        .catch(() => setFileContent('Error reading file'));
+    } else {
+      readProjectFile(api, isAppMode, rootPath, filePath)
+        .then(setFileContent)
+        .catch(() => setFileContent('Error reading file'));
+    }
+  }, [api, filePath, projectId, activeProject, isAppMode, rootPath, remote]);
+
+  // Create remote file loader for CanvasFileTree
+  const remoteFileLoader = useMemo(() => {
+    if (!remote.isRemote || !remote.satelliteId || !remote.originalProjectId) return undefined;
+    const { satelliteId, originalProjectId } = remote;
+    return async (dirPath: string): Promise<FileNode[]> => {
+      const items = await window.clubhouse.annexClient.fileTree(
+        satelliteId, originalProjectId, { path: dirPath || undefined },
+      ) as Array<{ name: string; path: string; isDirectory: boolean }>;
+      return items.map((item) => ({
+        name: item.name,
+        path: item.path,
+        isDirectory: item.isDirectory,
+      }));
+    };
+  }, [remote]);
 
   const handleSelectProject = useCallback((pid: string) => {
     onUpdateMetadata({ projectId: pid, filePath: null, rootPath: null });
@@ -98,14 +123,14 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   }, [onUpdateMetadata, projectId]);
 
   const handleSave = useCallback(async (content: string) => {
-    if (!filePath || !activeProject) return;
+    if (!filePath || !activeProject || remote.isRemote) return;
     if (isAppMode) {
       await window.clubhouse.file.write(`${rootPath}/${filePath}`, content);
     } else {
       await api.project.writeFile(filePath, content);
     }
     setFileContent(content);
-  }, [api, isAppMode, rootPath, activeProject, filePath]);
+  }, [api, isAppMode, rootPath, activeProject, filePath, remote.isRemote]);
 
   const handleBackToProjects = useCallback(() => {
     onUpdateMetadata({ projectId: null, filePath: null, rootPath: null });
@@ -122,12 +147,12 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
     : null;
 
   const handleShowInFolder = useCallback(() => {
-    if (fullFilePath) window.clubhouse.file.showInFolder(fullFilePath);
-  }, [fullFilePath]);
+    if (fullFilePath && !remote.isRemote) window.clubhouse.file.showInFolder(fullFilePath);
+  }, [fullFilePath, remote.isRemote]);
 
   const handleOpenInEditor = useCallback(() => {
-    if (fullFilePath) window.clubhouse.file.openInEditor(fullFilePath);
-  }, [fullFilePath]);
+    if (fullFilePath && !remote.isRemote) window.clubhouse.file.openInEditor(fullFilePath);
+  }, [fullFilePath, remote.isRemote]);
 
   // No project selected — show project picker
   if (!projectId) {
@@ -169,7 +194,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-2 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         {isAppMode && (
           <button
             className="hover:text-ctp-text transition-colors mr-1"
@@ -182,11 +207,16 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         <span className="truncate font-medium text-ctp-subtext1">
           {activeProject?.name || 'Project'}
         </span>
-        {hasMultipleWorktrees && (
+        {remote.isRemote && (
+          <span className="text-[8px] text-ctp-peach bg-ctp-peach/10 px-1.5 py-0.5 rounded ml-1">
+            remote
+          </span>
+        )}
+        {hasMultipleWorktrees && !remote.isRemote && (
           <>
             <span className="text-ctp-overlay0 mx-0.5">/</span>
             <select
-              className="text-[10px] bg-ctp-surface0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
+              className="text-[10px] bg-surface-0 text-ctp-subtext1 border-none rounded px-1 py-0.5 cursor-pointer truncate outline-none max-w-[120px]"
               value={rootPath}
               onChange={(e) => handleSelectWorktree(e.target.value)}
               title="Switch worktree root"
@@ -207,7 +237,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
           </>
         )}
         <span className="flex-1" />
-        {fullFilePath && (
+        {fullFilePath && !remote.isRemote && (
           <>
             <button
               className="hover:text-ctp-text transition-colors px-1"
@@ -233,16 +263,17 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
         )}
         <label
           className="flex items-center gap-1 cursor-pointer select-none ml-2"
-          title={readOnly ? 'Read-only mode' : 'Edit mode'}
+          title={remote.isRemote ? 'Read-only (remote)' : readOnly ? 'Read-only mode' : 'Edit mode'}
         >
           <input
             type="checkbox"
-            checked={readOnly}
-            onChange={(e) => setReadOnly(e.target.checked)}
+            checked={remote.isRemote || readOnly}
+            onChange={(e) => { if (!remote.isRemote) setReadOnly(e.target.checked); }}
             className="accent-ctp-blue w-3 h-3"
+            disabled={remote.isRemote}
           />
-          <span className={readOnly ? 'text-ctp-subtext0' : 'text-ctp-peach'}>
-            {readOnly ? 'Read-only' : 'Editing'}
+          <span className={remote.isRemote ? 'text-ctp-overlay0' : readOnly ? 'text-ctp-subtext0' : 'text-ctp-peach'}>
+            {remote.isRemote ? 'Read-only' : readOnly ? 'Read-only' : 'Editing'}
           </span>
         </label>
       </div>
@@ -257,6 +288,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             selectedPath={filePath || null}
             showHidden={showHidden}
             onSelectFile={handleSelectFile}
+            fileLoader={remoteFileLoader}
           />
         </ResizableSidebar>
 
@@ -265,7 +297,7 @@ export function FileViewerCanvasWidget({ widgetId: _widgetId, api, metadata, onU
             <ReadOnlyMonacoEditor
               value={fileContent}
               filePath={filePath}
-              readOnly={readOnly}
+              readOnly={remote.isRemote || readOnly}
               onSave={handleSave}
             />
           ) : filePath && fileContent === null ? (

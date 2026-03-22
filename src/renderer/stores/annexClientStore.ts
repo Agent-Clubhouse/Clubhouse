@@ -74,6 +74,7 @@ interface AnnexClientStoreState {
   }) => Promise<unknown>;
   sendAgentDeleteDurable: (satelliteId: string, projectId: string, agentId: string, mode: string) => Promise<unknown>;
   requestWorktreeStatus: (satelliteId: string, projectId: string, agentId: string) => Promise<unknown>;
+  sendAgentReorder: (satelliteId: string, projectId: string, orderedIds: string[]) => Promise<void>;
 }
 
 export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
@@ -110,73 +111,97 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   connect: async (fingerprint, bearerToken) => {
     try {
       await window.clubhouse.annexClient.connect(fingerprint, bearerToken);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] connect failed:', fingerprint, err);
+    }
   },
 
   disconnect: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.disconnect(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] disconnect failed:', fingerprint, err);
+    }
   },
 
   forgetSatellite: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.forgetSatellite(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] forgetSatellite failed:', fingerprint, err);
+    }
   },
 
   forgetAllSatellites: async () => {
     try {
       await window.clubhouse.annexClient.forgetAllSatellites();
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] forgetAllSatellites failed:', err);
+    }
   },
 
   retry: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.retry(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] retry failed:', fingerprint, err);
+    }
   },
 
   scan: async () => {
     try {
       await window.clubhouse.annexClient.scan();
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] scan failed:', err);
+    }
   },
 
   sendPtyInput: async (satelliteId, agentId, data) => {
     try {
       await window.clubhouse.annexClient.ptyInput(satelliteId, agentId, data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendPtyInput failed:', satelliteId, agentId, err);
+    }
   },
 
   sendClipboardImage: async (satelliteId, agentId, base64, mimeType) => {
     try {
       await window.clubhouse.annexClient.clipboardImage(satelliteId, agentId, base64, mimeType);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendClipboardImage failed:', satelliteId, agentId, err);
+    }
   },
 
   sendPtyResize: async (satelliteId, agentId, cols, rows) => {
     try {
       await window.clubhouse.annexClient.ptyResize(satelliteId, agentId, cols, rows);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendPtyResize failed:', satelliteId, agentId, err);
+    }
   },
 
   sendAgentSpawn: async (satelliteId, params) => {
     try {
       await window.clubhouse.annexClient.agentSpawn(satelliteId, params);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentSpawn failed:', satelliteId, err);
+    }
   },
 
   sendAgentKill: async (satelliteId, agentId) => {
     try {
       await window.clubhouse.annexClient.agentKill(satelliteId, agentId);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentKill failed:', satelliteId, agentId, err);
+    }
   },
 
   sendAgentWake: async (satelliteId, agentId, options) => {
     try {
       await window.clubhouse.annexClient.agentWake(satelliteId, agentId, options);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentWake failed:', satelliteId, agentId, err);
+    }
   },
 
   requestPtyBuffer: async (satelliteId, agentId) => {
@@ -198,6 +223,14 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   requestWorktreeStatus: async (satelliteId, projectId, agentId) => {
     return window.clubhouse.annexClient.agentWorktreeStatus(satelliteId, projectId, agentId);
   },
+
+  sendAgentReorder: async (satelliteId, projectId, orderedIds) => {
+    try {
+      await window.clubhouse.annexClient.agentReorder(satelliteId, projectId, orderedIds);
+    } catch (err) {
+      console.warn('[annex-client] sendAgentReorder failed:', satelliteId, projectId, err);
+    }
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -214,7 +247,9 @@ export const satellitePtyDataBus = {
   },
   emit(satelliteId: string, agentId: string, data: string): void {
     for (const listener of ptyDataListeners) {
-      try { listener(satelliteId, agentId, data); } catch { /* ignore */ }
+      try { listener(satelliteId, agentId, data); } catch (err) {
+        console.warn('[annex-client] ptyDataBus listener threw:', err);
+      }
     }
   },
 };
@@ -233,7 +268,9 @@ export const satellitePtyExitBus = {
   },
   emit(satelliteId: string, agentId: string, exitCode: number): void {
     for (const listener of ptyExitListeners) {
-      try { listener(satelliteId, agentId, exitCode); } catch { /* ignore */ }
+      try { listener(satelliteId, agentId, exitCode); } catch (err) {
+        console.warn('[annex-client] ptyExitBus listener threw:', err);
+      }
     }
   },
 };
@@ -255,11 +292,16 @@ export function initAnnexClientListener(): () => void {
       // Find satellite name from current satellites list
       const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
       const satelliteName = satellite?.alias || satelliteId;
+      const snap = payload as SatelliteSnapshot;
       useRemoteProjectStore.getState().applySatelliteSnapshot(
         satelliteId,
         satelliteName,
-        payload as SatelliteSnapshot,
+        snap,
       );
+      // Sync pause state from snapshot so reconnects clear stale paused flags
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
+      }));
     } else if (type === 'pty:data') {
       const p = payload as { agentId: string; data: string };
       satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);
@@ -322,20 +364,66 @@ export function initAnnexClientListener(): () => void {
       const p = payload as { projectId?: string; state?: unknown };
       if (p.projectId && p.state) {
         const nsProjId = `remote||${satelliteId}||${p.projectId}`;
-        const cs = p.state as { canvasId: string; views: unknown[]; viewport: unknown; nextZIndex: number; zoomedViewId: string | null; name: string };
-        // Update the canvas state for this remote project — store a single-canvas
-        // snapshot so the canvas plugin can hydrate from it
-        useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
-          canvases: [{
-            id: cs.canvasId,
-            name: cs.name,
-            views: cs.views,
-            viewport: cs.viewport,
-            nextZIndex: cs.nextZIndex,
+        const cs = p.state as {
+          canvasId: string; views: unknown[]; viewport: unknown;
+          nextZIndex: number; zoomedViewId: string | null; name: string;
+          allCanvasTabs?: Array<{ id: string; name: string }>;
+          activeCanvasId?: string;
+        };
+
+        const existing = useRemoteProjectStore.getState().remoteCanvasState[nsProjId];
+
+        if (cs.allCanvasTabs) {
+          // Full tab metadata available — build complete canvas list.
+          // Use full data for the canvas that changed, stub data for others.
+          const canvases = cs.allCanvasTabs.map((tab) => {
+            if (tab.id === cs.canvasId) {
+              return {
+                id: cs.canvasId,
+                name: cs.name,
+                views: cs.views,
+                viewport: cs.viewport,
+                nextZIndex: cs.nextZIndex,
+                zoomedViewId: cs.zoomedViewId,
+              };
+            }
+            // Preserve existing data for other tabs if we have it
+            const prev = existing?.canvases?.find((c: any) => c.id === tab.id);
+            return prev || { id: tab.id, name: tab.name, views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null };
+          });
+          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+            canvases,
+            activeCanvasId: cs.activeCanvasId || cs.canvasId,
+          });
+        } else if (existing) {
+          // No tab metadata — merge single canvas into existing state
+          const canvases = [...(existing.canvases as any[])];
+          const idx = canvases.findIndex((c: any) => c.id === cs.canvasId);
+          const updated = {
+            id: cs.canvasId, name: cs.name, views: cs.views,
+            viewport: cs.viewport, nextZIndex: cs.nextZIndex,
             zoomedViewId: cs.zoomedViewId,
-          }],
-          activeCanvasId: cs.canvasId,
-        });
+          };
+          if (idx >= 0) {
+            canvases[idx] = updated;
+          } else {
+            canvases.push(updated);
+          }
+          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+            canvases,
+            activeCanvasId: existing.activeCanvasId,
+          });
+        } else {
+          // First canvas state for this project
+          useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
+            canvases: [{
+              id: cs.canvasId, name: cs.name, views: cs.views,
+              viewport: cs.viewport, nextZIndex: cs.nextZIndex,
+              zoomedViewId: cs.zoomedViewId,
+            }],
+            activeCanvasId: cs.canvasId,
+          });
+        }
       }
     } else if (type === 'session:paused') {
       useAnnexClientStore.setState((state) => ({

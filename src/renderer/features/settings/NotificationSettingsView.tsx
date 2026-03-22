@@ -1,8 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useBadgeStore } from '../../stores/badgeStore';
 import { useBadgeSettingsStore, ResolvedBadgeSettings } from '../../stores/badgeSettingsStore';
+import { useSoundStore } from '../../stores/soundStore';
+import { ALL_SOUND_EVENTS } from '../../../shared/types';
 import { Toggle } from '../../components/Toggle';
+import { SoundEventRow, SoundPackCard, ProjectSoundOverrideSection } from './sound-components';
 
 const TOGGLES: { key: keyof Omit<import('../../../shared/types').NotificationSettings, 'enabled' | 'playSound'>; label: string; description: string }[] = [
   { key: 'permissionNeeded', label: 'Permission Needed', description: 'Notify when an agent is waiting for approval' },
@@ -157,26 +160,121 @@ function BadgeSettingsSection({ projectId }: { projectId?: string }) {
   );
 }
 
+// ── App-level Sound Section ────────────────────────────────────────────
+
+function AppSoundSection() {
+  const { settings, packs, saveSettings, importPack, deletePack, applyAllFromPack } = useSoundStore();
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  if (!settings) return null;
+
+  return (
+    <>
+      <h3 className="text-md font-semibold text-ctp-text mt-6 mb-4">Sounds</h3>
+
+      {/* Per-slot sound selection */}
+      <div className="space-y-3 mb-6">
+        <h4 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Event Sounds</h4>
+        <p className="text-xs text-ctp-subtext0">
+          Choose which sound to play for each event. Mix and match sounds from different packs.
+        </p>
+
+        <div className="space-y-1">
+          {ALL_SOUND_EVENTS.map((event) => (
+            <SoundEventRow
+              key={event}
+              event={event}
+              packs={packs}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-surface-0 mb-6" />
+
+      {/* Sound Packs management */}
+      <div className="space-y-3">
+        <h4 className="text-xs text-ctp-subtext0 uppercase tracking-wider">Sound Packs</h4>
+        <p className="text-xs text-ctp-subtext0">
+          Sound packs provide sounds for each slot. Use &quot;Apply All&quot; to set every slot from one pack, or mix and match above.
+          Drop sound files into ~/.clubhouse/sounds/&lt;pack-name&gt;/ or import a folder.
+        </p>
+
+        <div className="space-y-2">
+          {packs.map((pack) => (
+            <SoundPackCard
+              key={pack.id}
+              pack={pack}
+              onApplyAll={() => applyAllFromPack(pack.id)}
+              onDelete={pack.source === 'user' ? () => {
+                if (confirmDelete === pack.id) {
+                  deletePack(pack.id);
+                  setConfirmDelete(null);
+                } else {
+                  setConfirmDelete(pack.id);
+                  setTimeout(() => setConfirmDelete(null), 3000);
+                }
+              } : undefined}
+            />
+          ))}
+
+          {packs.length === 0 && (
+            <p className="text-xs text-ctp-subtext0 py-2">No sound packs installed. Import one to get started.</p>
+          )}
+        </div>
+
+        {/* Import button */}
+        <button
+          type="button"
+          onClick={() => importPack()}
+          className="px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
+        >
+          Import Sound Pack...
+        </button>
+
+        {/* Reset All to OS Default */}
+        {Object.keys(settings.slotAssignments).length > 0 && (
+          <button
+            type="button"
+            onClick={() => saveSettings({ slotAssignments: {} })}
+            className="ml-2 px-3 py-1.5 text-xs font-medium rounded-md bg-surface-2 text-ctp-subtext0 hover:bg-surface-1 transition-colors cursor-pointer"
+          >
+            Reset All to OS Default
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ── Main View ──────────────────────────────────────────────────────────
+
 export function NotificationSettingsView({ projectId }: { projectId?: string }) {
   const { settings, loadSettings, saveSettings } = useNotificationStore();
   const loadBadgeSettings = useBadgeSettingsStore((s) => s.loadSettings);
+  const { loadSettings: loadSoundSettings, loadPacks, packs } = useSoundStore();
 
   useEffect(() => {
     loadSettings();
     loadBadgeSettings();
-  }, [loadSettings, loadBadgeSettings]);
+    loadSoundSettings();
+    loadPacks();
+  }, [loadSettings, loadBadgeSettings, loadSoundSettings, loadPacks]);
 
   if (!settings) {
-    return <div className="p-6 text-ctp-subtext0 text-sm">Loading…</div>;
+    return <div className="p-6 text-ctp-subtext0 text-sm">Loading\u2026</div>;
   }
 
-  // Project context: only show badge settings
+  // Project context: badges + sound overrides
   if (projectId) {
     return (
       <div className="h-full overflow-y-auto p-6">
         <div className="max-w-2xl">
-          <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications</h2>
+          <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications & Alerts</h2>
           <BadgeSettingsSection projectId={projectId} />
+
+          <div className="border-t border-surface-0 mt-6" />
+          <ProjectSoundOverrideSection projectId={projectId} packs={packs} />
         </div>
       </div>
     );
@@ -185,14 +283,14 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-2xl">
-        <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications</h2>
+        <h2 className="text-lg font-semibold text-ctp-text mb-4">Notifications & Alerts</h2>
 
         <div className="space-y-5">
           {/* Master toggle */}
           <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm text-ctp-text font-medium">Enable Notifications</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Show macOS notifications for agent events</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">Show desktop notifications for agent events</div>
             </div>
             <Toggle checked={settings.enabled} onChange={(v) => saveSettings({ enabled: v })} />
           </div>
@@ -216,26 +314,11 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
 
           <div className="border-t border-surface-0" />
 
-          {/* Sound toggle */}
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <div className="text-sm text-ctp-text font-medium">Play Sound</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Play the default notification sound</div>
-            </div>
-            <Toggle
-              checked={settings.playSound}
-              onChange={(v) => saveSettings({ playSound: v })}
-              disabled={!settings.enabled}
-            />
-          </div>
-
-          <div className="border-t border-surface-0" />
-
           {/* Test notification */}
           <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm text-ctp-text font-medium">Test Notification</div>
-              <div className="text-xs text-ctp-subtext0 mt-0.5">Send a test notification (also triggers the macOS permission prompt)</div>
+              <div className="text-xs text-ctp-subtext0 mt-0.5">Send a test notification to verify your system permissions</div>
             </div>
             <button
               type="button"
@@ -248,6 +331,10 @@ export function NotificationSettingsView({ projectId }: { projectId?: string }) 
         </div>
 
         <BadgeSettingsSection />
+
+        <div className="border-t border-surface-0 mt-6" />
+
+        <AppSoundSection />
       </div>
     </div>
   );

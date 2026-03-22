@@ -92,6 +92,15 @@ export interface PasteSubmitTiming {
   retryDelayMs: number;
   /** Delay (ms) for the final buffer check after the last Enter */
   finalCheckDelayMs: number;
+  /**
+   * Max bytes per write when chunking multi-line bracketed paste content.
+   * If set, the paste body is split into chunks of this size with
+   * `chunkDelayMs` between each write.  Helps slow CLIs process large pastes.
+   * Default (undefined) sends the entire body in a single write.
+   */
+  chunkSize?: number;
+  /** Delay (ms) between chunks when chunking is enabled (default 30). */
+  chunkDelayMs?: number;
 }
 
 // ── Capability Sub-interfaces ───────────────────────────────────────────────
@@ -174,8 +183,8 @@ export interface OrchestratorProvider {
   getExitCommand(): string;
 
   // Instructions
-  readInstructions(worktreePath: string): string;
-  writeInstructions(worktreePath: string, content: string): void;
+  readInstructions(worktreePath: string): Promise<string>;
+  writeInstructions(worktreePath: string, content: string): Promise<void>;
 
   // Conventions
   readonly conventions: OrchestratorConventions;

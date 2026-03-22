@@ -67,6 +67,18 @@ class BindingManager {
     this.notifyChange(agentId);
   }
 
+  /** Set disabled tools on a binding. */
+  setDisabledTools(agentId: string, targetId: string, disabledTools: string[]): void {
+    const agentBindings = this.bindings.get(agentId);
+    if (!agentBindings) return;
+
+    const binding = agentBindings.find(b => b.targetId === targetId);
+    if (!binding) return;
+
+    binding.disabledTools = disabledTools.length > 0 ? disabledTools : undefined;
+    this.notifyChange(agentId);
+  }
+
   /** Remove a target from all agents (widget closed or agent exited). */
   unbindTarget(targetId: string): void {
     const affectedAgents: string[] = [];

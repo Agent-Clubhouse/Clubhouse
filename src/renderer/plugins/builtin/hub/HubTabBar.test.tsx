@@ -213,4 +213,109 @@ describe('HubTabBar', () => {
     // Should exit edit mode and show original name
     expect(screen.getByText('test-hub')).toBeInTheDocument();
   });
+
+  // ── Context menu ────────────────────────────────────────────────────
+
+  it('shows context menu on right-click when handlers are provided', () => {
+    const onUpgradeToCanvas = vi.fn();
+    const onDuplicateHub = vi.fn();
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+        onUpgradeToCanvas={onUpgradeToCanvas}
+        onDuplicateHub={onDuplicateHub}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'), { clientX: 100, clientY: 200 });
+    expect(screen.getByTestId('hub-tab-context-menu')).toBeInTheDocument();
+  });
+
+  it('does not show context menu when handlers are not provided', () => {
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'));
+    expect(screen.queryByTestId('hub-tab-context-menu')).not.toBeInTheDocument();
+  });
+
+  it('calls onUpgradeToCanvas from context menu', () => {
+    const onUpgradeToCanvas = vi.fn();
+    const onDuplicateHub = vi.fn();
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+        onUpgradeToCanvas={onUpgradeToCanvas}
+        onDuplicateHub={onDuplicateHub}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'));
+    fireEvent.click(screen.getByTestId('hub-ctx-upgrade-to-canvas'));
+    expect(onUpgradeToCanvas).toHaveBeenCalledWith('h1');
+  });
+
+  it('calls onDuplicateHub from context menu', () => {
+    const onUpgradeToCanvas = vi.fn();
+    const onDuplicateHub = vi.fn();
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+        onUpgradeToCanvas={onUpgradeToCanvas}
+        onDuplicateHub={onDuplicateHub}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'));
+    fireEvent.click(screen.getByTestId('hub-ctx-duplicate'));
+    expect(onDuplicateHub).toHaveBeenCalledWith('h1');
+  });
+
+  it('shows context menu with only Duplicate when canvas is not enabled', () => {
+    const onDuplicateHub = vi.fn();
+    const hubs = [makeHub('h1', 'test-hub')];
+    render(
+      <HubTabBar
+        hubs={hubs}
+        activeHubId="h1"
+        onSelectHub={noop}
+        onAddHub={noop}
+        onRemoveHub={noop}
+        onRenameHub={noop}
+        onPopOutHub={noop}
+        onDuplicateHub={onDuplicateHub}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId('hub-tab-h1'));
+    expect(screen.getByTestId('hub-tab-context-menu')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-ctx-duplicate')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-ctx-upgrade-to-canvas')).not.toBeInTheDocument();
+  });
 });

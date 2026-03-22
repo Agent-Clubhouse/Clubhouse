@@ -57,6 +57,7 @@ export const IPC = {
     CREATE_AGENT_TEMPLATE: 'agent:create-agent-template',
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
+    AGENT_WAKING: 'agent:agent-waking',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
@@ -179,6 +180,7 @@ export const IPC = {
     GET_VERSION_HISTORY: 'app:get-version-history',
     GET_CLIPBOARD_SETTINGS: 'app:get-clipboard-settings',
     SAVE_CLIPBOARD_SETTINGS: 'app:save-clipboard-settings',
+    READ_CLIPBOARD_IMAGE: 'app:read-clipboard-image',
     GET_CLUBHOUSE_MODE_SETTINGS: 'app:get-clubhouse-mode-settings',
     SAVE_CLUBHOUSE_MODE_SETTINGS: 'app:save-clubhouse-mode-settings',
     GET_SOUND_SETTINGS: 'app:get-sound-settings',
@@ -192,6 +194,15 @@ export const IPC = {
     RESTART: 'app:restart',
     GET_EXPERIMENTAL_SETTINGS: 'app:get-experimental-settings',
     SAVE_EXPERIMENTAL_SETTINGS: 'app:save-experimental-settings',
+    // Session resume on update
+    GET_PENDING_RESUMES: 'app:get-pending-resumes',
+    RESUME_MANUAL_AGENT: 'app:resume-manual-agent',
+    RESUME_STATUS_UPDATE: 'app:resume-status-update',
+    GET_LIVE_AGENTS_FOR_UPDATE: 'app:get-live-agents-for-update',
+    RESOLVE_WORKING_AGENT: 'app:resolve-working-agent',
+    CONFIRM_UPDATE_RESTART: 'app:confirm-update-restart',
+    /** Dev-only: simulate update restart to test session resume flow */
+    DEV_SIMULATE_UPDATE_RESTART: 'app:dev-simulate-update-restart',
   },
   PLUGIN: {
     DISCOVER_COMMUNITY: 'plugin:discover-community',
@@ -322,6 +333,8 @@ export const IPC = {
     AGENT_CREATE_DURABLE: 'annex-client:agent-create-durable',
     AGENT_DELETE_DURABLE: 'annex-client:agent-delete-durable',
     AGENT_WORKTREE_STATUS: 'annex-client:agent-worktree-status',
+    AGENT_REORDER: 'annex-client:agent-reorder',
+    CANVAS_MUTATION: 'annex-client:canvas-mutation',
   },
   GROUP_PROJECT: {
     CREATE: 'group-project:create',
@@ -344,6 +357,7 @@ export const IPC = {
     REGISTER_WEBVIEW: 'mcp-binding:register-webview',
     UNREGISTER_WEBVIEW: 'mcp-binding:unregister-webview',
     SET_INSTRUCTIONS: 'mcp-binding:set-instructions',
+    SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },

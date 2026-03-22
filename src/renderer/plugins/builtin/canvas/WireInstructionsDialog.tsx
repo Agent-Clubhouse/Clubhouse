@@ -8,9 +8,9 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
-  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity'],
+  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'wake'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
-  'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'get_project_info', 'shoulder_tap'],
+  'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'get_project_info', 'shoulder_tap', 'broadcast'],
   terminal: [],
 };
 
@@ -43,6 +43,18 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
     textareaRef.current?.focus();
   }, [selectedTool]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const currentValue = drafts[selectedTool] || '';
 
   const handleTextChange = (value: string) => {
@@ -60,9 +72,14 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (e.target === backdropRef.current) {
       onClose();
     }
+  };
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
   };
 
   // Count how many tools have instructions set
@@ -75,6 +92,7 @@ export function WireInstructionsDialog({ binding, onSave, onClose }: WireInstruc
       ref={backdropRef}
       className="fixed inset-0 bg-black/50 flex items-center justify-center"
       style={{ zIndex: 100000 }}
+      onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
       data-testid="wire-instructions-dialog"
     >

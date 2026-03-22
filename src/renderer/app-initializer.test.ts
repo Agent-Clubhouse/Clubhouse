@@ -10,20 +10,22 @@ const {
   mockLoadLoggingSettings,
   mockLoadHeadlessSettings,
   mockLoadBadgeSettings,
+  mockLoadSessionSettings,
   mockLoadUpdateSettings,
   mockCheckWhatsNew,
   mockStartOnboarding,
   mockInitBadgeSideEffects,
   mockInitializePluginSystem,
 } = vi.hoisted(() => ({
-  mockLoadProjects: vi.fn(),
-  mockLoadNotificationSettings: vi.fn(),
-  mockLoadTheme: vi.fn(),
-  mockLoadOrchestratorSettings: vi.fn(),
-  mockLoadLoggingSettings: vi.fn(),
-  mockLoadHeadlessSettings: vi.fn(),
-  mockLoadBadgeSettings: vi.fn(),
-  mockLoadUpdateSettings: vi.fn(),
+  mockLoadProjects: vi.fn().mockResolvedValue(undefined),
+  mockLoadNotificationSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadTheme: vi.fn().mockResolvedValue(undefined),
+  mockLoadOrchestratorSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadLoggingSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadHeadlessSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadBadgeSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadSessionSettings: vi.fn().mockResolvedValue(undefined),
+  mockLoadUpdateSettings: vi.fn().mockResolvedValue(undefined),
   mockCheckWhatsNew: vi.fn(),
   mockStartOnboarding: vi.fn(),
   mockInitBadgeSideEffects: vi.fn(),
@@ -69,6 +71,12 @@ vi.mock('./stores/headlessStore', () => ({
 vi.mock('./stores/badgeSettingsStore', () => ({
   useBadgeSettingsStore: Object.assign(vi.fn(), {
     getState: vi.fn(() => ({ loadSettings: mockLoadBadgeSettings })),
+  }),
+}));
+
+vi.mock('./stores/sessionSettingsStore', () => ({
+  useSessionSettingsStore: Object.assign(vi.fn(), {
+    getState: vi.fn(() => ({ loadSettings: mockLoadSessionSettings })),
   }),
 }));
 
@@ -118,15 +126,15 @@ import { initPluginUpdateListener } from './stores/pluginUpdateStore';
 describe('initApp', () => {
   let cleanup: () => void;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     mockOnboardingCompleted = true;
-    // mockReset:true clears implementations — restore them each test
     mockInitializePluginSystem.mockResolvedValue(undefined);
     (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    cleanup = initApp();
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    cleanup = await initApp();
   });
 
   afterEach(() => {
@@ -142,10 +150,11 @@ describe('initApp', () => {
     expect(mockLoadLoggingSettings).toHaveBeenCalled();
     expect(mockLoadHeadlessSettings).toHaveBeenCalled();
     expect(mockLoadBadgeSettings).toHaveBeenCalled();
+    expect(mockLoadSessionSettings).toHaveBeenCalled();
     expect(mockLoadUpdateSettings).toHaveBeenCalled();
   });
 
-  it('should initialize badge side effects', () => {
+  it('should initialize badge side effects after settings load', () => {
     expect(mockInitBadgeSideEffects).toHaveBeenCalled();
   });
 
@@ -175,17 +184,67 @@ describe('initApp', () => {
   });
 });
 
+describe('initApp – ordering', () => {
+  it('should await settings before plugin system and badge side effects', async () => {
+    vi.useFakeTimers();
+    const callOrder: string[] = [];
+
+    // Make settings load take time via a delayed promise
+    mockLoadProjects.mockImplementation(() => {
+      callOrder.push('loadProjects:start');
+      return new Promise<void>((resolve) => {
+        setTimeout(() => { callOrder.push('loadProjects:done'); resolve(); }, 100);
+      });
+    });
+    mockInitializePluginSystem.mockImplementation(() => {
+      callOrder.push('pluginSystem');
+      return Promise.resolve();
+    });
+    mockInitBadgeSideEffects.mockImplementation(() => {
+      callOrder.push('badgeSideEffects');
+    });
+
+    (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+    const initPromise = initApp();
+
+    // Settings haven't resolved yet — plugin system should NOT have been called
+    expect(callOrder).toContain('loadProjects:start');
+    expect(callOrder).not.toContain('pluginSystem');
+    expect(callOrder).not.toContain('badgeSideEffects');
+
+    // Advance timers to let the delayed settings resolve
+    await vi.advanceTimersByTimeAsync(100);
+    await initPromise;
+
+    // Now plugin system and badge side effects should have been called, in order
+    const pluginIdx = callOrder.indexOf('pluginSystem');
+    const badgeIdx = callOrder.indexOf('badgeSideEffects');
+    const settingsDoneIdx = callOrder.indexOf('loadProjects:done');
+
+    expect(settingsDoneIdx).toBeLessThan(pluginIdx);
+    expect(pluginIdx).toBeLessThan(badgeIdx);
+
+    (await initPromise)?.();
+    vi.useRealTimers();
+  });
+});
+
 describe('initApp – onboarding', () => {
   let cleanup: () => void;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.useFakeTimers();
     mockOnboardingCompleted = false;
     mockInitializePluginSystem.mockResolvedValue(undefined);
     (initUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initAnnexListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
     (initPluginUpdateListener as ReturnType<typeof vi.fn>).mockReturnValue(vi.fn());
-    cleanup = initApp();
+    (window.clubhouse.app.getPendingResumes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    cleanup = await initApp();
   });
 
   afterEach(() => {

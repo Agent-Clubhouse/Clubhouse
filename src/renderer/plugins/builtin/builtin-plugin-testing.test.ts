@@ -92,14 +92,13 @@ describe('getBuiltinPlugins catch-all', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('all registered built-in plugins include the annex permission', () => {
-    const plugins = getBuiltinPlugins({ sessions: true });
-    for (const plugin of plugins) {
-      expect(
-        plugin.manifest.permissions,
-        `${plugin.manifest.id} should include 'annex' permission`,
-      ).toContain('annex');
-    }
+  it('only terminal, files, and canvas declare the annex permission', () => {
+    const plugins = getBuiltinPlugins({ sessions: true, review: true, canvas: true });
+    const annexPlugins = plugins
+      .filter((p) => p.manifest.permissions.includes('annex'))
+      .map((p) => p.manifest.id)
+      .sort();
+    expect(annexPlugins).toEqual(['canvas', 'files', 'terminal']);
   });
 
   it('does not include the sessions plugin without experimental flag', () => {

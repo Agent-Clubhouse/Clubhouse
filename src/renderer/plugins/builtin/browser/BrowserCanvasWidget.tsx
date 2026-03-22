@@ -7,6 +7,8 @@ import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types
 import { validateUrl, normalizeAddress } from './url-validation';
 import type { ProtocolSettings } from './url-validation';
 import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 
 function projectColor(name: string): string {
   let hash = 0;
@@ -21,8 +23,21 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 
-  const url = metadata.url as string | undefined;
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
+  const remote = useRemoteProject(projectId);
+
+  // Browser webviews cannot be rendered over annex connections
+  if (remote.isRemote) {
+    const url = metadata.url as string | undefined;
+    return (
+      <AnnexUnsupportedPlaceholder
+        widgetType="Browser"
+        reason={url ? `Viewing ${url} on the satellite.` : 'Browser webviews cannot be streamed over Annex.'}
+      />
+    );
+  }
+
+  const url = metadata.url as string | undefined;
 
   const [addressBar, setAddressBar] = useState(url || '');
   const [error, setError] = useState<string | null>(null);
@@ -181,7 +196,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
   return (
     <div className="flex flex-col h-full">
       {/* Header bar */}
-      <div className="flex items-center gap-1 px-1.5 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-1.5 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         {isAppMode && (
           <button
             className="hover:text-ctp-text transition-colors mr-1"
@@ -217,7 +232,7 @@ export function BrowserCanvasWidget({ widgetId, api, metadata, onUpdateMetadata,
           value={addressBar}
           onChange={(e) => setAddressBar(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-ctp-surface0 text-[11px] text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent"
+          className="flex-1 min-w-0 px-2 py-0.5 rounded bg-surface-0 text-[11px] text-ctp-text border border-surface-1 outline-none focus:border-ctp-accent"
           placeholder="Enter URL..."
           data-testid="canvas-browser-address"
         />

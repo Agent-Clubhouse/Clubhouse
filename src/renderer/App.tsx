@@ -15,6 +15,7 @@ import { PluginContentView } from './panels/PluginContentView';
 import { HelpView } from './features/help/HelpView';
 import { PermissionViolationBanner } from './features/plugins/PermissionViolationBanner';
 import { UpdateBanner } from './features/app/UpdateBanner';
+import { ResumeBanner, ResumeBannerSession } from './features/app/ResumeBanner';
 import { WhatsNewDialog } from './features/app/WhatsNewDialog';
 import { OnboardingModal } from './features/onboarding/OnboardingModal';
 import { CommandPalette } from './features/command-palette/CommandPalette';
@@ -34,6 +35,15 @@ export function App() {
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
+
+  // ── Resume banner state ──────────────────────────────────────────────────
+  const resumingAgents = useAgentStore((s) => s.resumingAgents);
+  const agents = useAgentStore((s) => s.agents);
+  const resumeSessions: ResumeBannerSession[] = Object.entries(resumingAgents).map(([agentId, status]) => ({
+    agentId,
+    agentName: agents[agentId]?.name || agentId,
+    status,
+  }));
 
   // ── Annex lock state (individual selectors to avoid reference-inequality re-render loops) ──
   const lockLocked = useLockStore((s) => s.locked);
@@ -66,10 +76,19 @@ export function App() {
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
-    const cleanupInit = initApp();
+    let cleanupInit: (() => void) | undefined;
+    let cancelled = false;
+    initApp().then((cleanup) => {
+      if (cancelled) {
+        cleanup();
+      } else {
+        cleanupInit = cleanup;
+      }
+    });
     const cleanupBridge = initAppEventBridge();
     return () => {
-      cleanupInit();
+      cancelled = true;
+      cleanupInit?.();
       cleanupBridge();
     };
   }, []);
@@ -80,7 +99,12 @@ export function App() {
   useEffect(() => {
     const loadDurableAgents = useAgentStore.getState().loadDurableAgents;
     for (const p of projects) {
-      loadDurableAgents(p.id, p.path);
+      loadDurableAgents(p.id, p.path).catch((err) => {
+        rendererLog('core:agents', 'error', 'Failed to load durable agents', {
+          projectId: p.id,
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      });
     }
   }, [projects]);
 
@@ -95,6 +119,7 @@ export function App() {
   // Handle plugin lifecycle on project switches
   const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
     const prevId = prevProjectIdRef.current;
     prevProjectIdRef.current = activeProjectId;
     if (activeProjectId && activeProjectId !== prevId) {
@@ -117,6 +142,7 @@ export function App() {
           // a project switch that fires before init completes would see an
           // empty plugin registry and silently skip community plugins.
           await pluginSystemReady;
+          if (cancelled) return;
 
           if (isRemote) {
             // Remote project: use matched plugins from satellite snapshot
@@ -129,10 +155,12 @@ export function App() {
               // Merge built-in project-scoped plugins
               let expFlags = {};
               try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+              if (cancelled) return;
               const builtinIds = getBuiltinProjectPluginIds(expFlags);
               const merged = [...new Set([...matchedIds, ...builtinIds])];
               usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
             }
+            if (cancelled) return;
             await handleProjectSwitch(prevId, activeProjectId, '__remote__');
           } else {
             // Load persisted per-project plugin config. The storageRead may
@@ -147,8 +175,10 @@ export function App() {
                 key: `project-enabled-${activeProjectId}`,
               }) as string[] | undefined;
             } catch { /* no saved config — will use builtin defaults */ }
+            if (cancelled) return;
             let expFlags = {};
             try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+            if (cancelled) return;
             const builtinIds = getBuiltinProjectPluginIds(expFlags);
             const base = Array.isArray(saved) ? saved : [];
             const merged = [...new Set([...base, ...builtinIds])];
@@ -156,6 +186,7 @@ export function App() {
             await handleProjectSwitch(prevId, activeProjectId, project!.path);
           }
         })().catch((err) => {
+          if (cancelled) return;
           rendererLog('core:plugins', 'error', 'Project switch error', {
             projectId: activeProjectId,
             meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
@@ -167,6 +198,7 @@ export function App() {
         });
       }
     }
+    return () => { cancelled = true; };
   }, [activeProjectId, projects]);
 
   // ── Lock overlay action handlers ─────────────────────────────────────────
@@ -218,6 +250,13 @@ export function App() {
         <div ref={bannerRef}>
           <PermissionViolationBanner />
           <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
           <PluginUpdateBanner />
         </div>
         <RailSection>
@@ -242,6 +281,13 @@ export function App() {
         <div ref={bannerRef}>
           <PermissionViolationBanner />
           <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
           <PluginUpdateBanner />
         </div>
         <RailSection>
@@ -265,6 +311,13 @@ export function App() {
         <div ref={bannerRef}>
           <PermissionViolationBanner />
           <UpdateBanner />
+          <ResumeBanner
+            sessions={resumeSessions}
+            onManualResume={(agentId) => {
+              console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+            }}
+            onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+          />
           <PluginUpdateBanner />
         </div>
         <RailSection>
@@ -287,6 +340,13 @@ export function App() {
       <div ref={bannerRef}>
         <PermissionViolationBanner />
         <UpdateBanner />
+        <ResumeBanner
+          sessions={resumeSessions}
+          onManualResume={(agentId) => {
+            console.log('[ResumeBanner] Manual resume requested for agent:', agentId);
+          }}
+          onDismiss={() => useAgentStore.getState().clearResumingAgents()}
+        />
         <PluginUpdateBanner />
         <GitBanner />
       </div>

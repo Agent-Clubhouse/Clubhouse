@@ -126,7 +126,7 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
       {/* Actions */}
       <div className="flex gap-1 mt-auto">
         <button
-          className="flex-1 text-[10px] px-2 py-1 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors"
+          className="flex-1 text-[10px] px-2 py-1 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors"
           onClick={handleStageAll}
         >
           Stage All
@@ -139,7 +139,7 @@ export function GitCanvasWidget({ widgetId: _widgetId, api, metadata, onUpdateMe
           Commit
         </button>
         <button
-          className="flex-1 text-[10px] px-2 py-1 rounded bg-ctp-surface0 text-ctp-subtext0 hover:text-ctp-text transition-colors"
+          className="flex-1 text-[10px] px-2 py-1 rounded bg-surface-0 text-ctp-subtext0 hover:text-ctp-text transition-colors"
           onClick={handlePush}
         >
           Push

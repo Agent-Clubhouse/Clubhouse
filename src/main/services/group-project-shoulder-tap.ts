@@ -90,11 +90,11 @@ export async function executeShoulderTap(params: ShoulderTapParams): Promise<Sho
 
     // Build the injected message
     const taggedMessage =
-      `[SHOULDER-TAP] [TASK:${taskId}] [FROM:${senderLabel}] [GROUP:${projectName}]\n` +
+      `Group Project notification — shoulder tap from "${senderLabel}" in "${projectName}"\n` +
       `${message}\n\n` +
       `---\n` +
       `RESPONSE INSTRUCTIONS:\n` +
-      `Shoulder tap from "${senderLabel}" in group project "${projectName}" (ID: ${projectId}).\n` +
+      `Project: "${projectName}" (ID: ${projectId})\n` +
       `Task ID: ${taskId} | Message ID: ${bulletinMsg.id}\n\n` +
       `To respond, use your ${replyToolName} tool:\n` +
       `  topic: "shoulder-tap"\n` +

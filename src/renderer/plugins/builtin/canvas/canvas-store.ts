@@ -1,7 +1,7 @@
 import { create, StoreApi, UseBoundStore } from 'zustand';
 import type { ScopedStorage } from '../../../../shared/plugin-types';
 import { generateHubName } from '../../../../shared/name-generator';
-import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, Position, Size, Viewport } from './canvas-types';
+import type { CanvasView, CanvasViewType, CanvasInstance, CanvasInstanceData, AgentCanvasView, Position, Size, Viewport } from './canvas-types';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import {
@@ -36,6 +36,9 @@ export interface CanvasState {
 
   // Canvas tab management
   addCanvas: () => string;
+  insertCanvas: (canvas: CanvasInstance) => void;
+  /** Load existing canvases from storage (if not loaded), insert a new canvas, and persist immediately. */
+  loadAndInsertCanvas: (canvas: CanvasInstance, storage: ScopedStorage) => Promise<void>;
   removeCanvas: (canvasId: string) => void;
   renameCanvas: (canvasId: string, name: string) => void;
   setActiveCanvas: (canvasId: string) => void;
@@ -213,9 +216,27 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const saved = await storage.read(STORAGE_KEY_WIRES) as McpBindingEntry[] | null;
         if (!saved || !Array.isArray(saved) || saved.length === 0) return;
 
-        // Restore each binding to the main process
+        // Build a set of valid IDs from all canvas views for reconciliation.
+        // Bindings reference agentIds (durable_*/quick_*), groupProjectIds,
+        // or browser widget view IDs — collect them all.
+        const allViews = get().canvases.flatMap((c) => c.views);
+        const validIds = new Set<string>();
+        for (const v of allViews) {
+          validIds.add(v.id);
+          if (v.type === 'agent' && (v as AgentCanvasView).agentId) {
+            validIds.add((v as AgentCanvasView).agentId!);
+          }
+          const gpId = v.metadata?.groupProjectId as string | undefined;
+          if (gpId) validIds.add(gpId);
+        }
+        // Only reconcile if there are views to compare against — if the canvas
+        // is empty, agents may not have been added yet (fresh session).
+        const shouldReconcile = validIds.size > 0;
+
+        // Restore each binding, skipping stale ones whose source/target no longer exist
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
+          if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
           try {
             await window.clubhouse.mcpBinding.bind(entry.agentId, {
               targetId: entry.targetId,
@@ -228,6 +249,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             // Restore instructions if present
             if (entry.instructions && Object.keys(entry.instructions).length > 0) {
               await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
+            }
+            // Restore disabled tools if present
+            if (entry.disabledTools && entry.disabledTools.length > 0) {
+              await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
             }
           } catch {
             // Binding restore failed (e.g. MCP not enabled) — skip
@@ -249,31 +274,45 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         targetName: b.targetName,
         projectName: b.projectName,
         ...(b.instructions ? { instructions: b.instructions } : {}),
+        ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
       }));
       await storage.write(STORAGE_KEY_WIRES, data);
     },
 
     hydrateFromRemote: (canvasData, activeId) => {
       if (!canvasData || !Array.isArray(canvasData) || canvasData.length === 0) return;
+      const existingState = get();
+      const existingCanvasMap = new Map(existingState.canvases.map((c) => [c.id, c]));
+
       const canvases: CanvasInstance[] = (canvasData as CanvasInstanceData[]).map((s): CanvasInstance => {
         const restoredViews = (s.views || []).map((v: any) => ({
           ...v,
           metadata: v.metadata ?? {},
           displayName: v.displayName ?? v.title ?? v.type ?? '',
         })) as CanvasView[];
+
+        // Preserve local viewport and selection when merging (controller keeps
+        // its own pan/zoom position while receiving view updates from satellite)
+        const existing = existingCanvasMap.get(s.id);
         return {
           id: s.id,
           name: s.name,
           views: restoredViews,
-          viewport: clampViewport(s.viewport),
+          viewport: existing ? existing.viewport : clampViewport(s.viewport),
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: null,
+          selectedViewId: existing?.selectedViewId ?? null,
         };
       });
-      const resolvedActive = (activeId && canvases.find((c) => c.id === activeId))
-        ? activeId
-        : canvases[0].id;
+
+      // Preserve the controller's active canvas tab if the user hasn't switched
+      // on the satellite. Only follow satellite active tab on first hydration.
+      const resolvedActive = existingState.loaded && existingState.canvases.length > 0
+        ? (canvases.find((c) => c.id === existingState.activeCanvasId)
+          ? existingState.activeCanvasId
+          : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id))
+        : (activeId && canvases.find((c) => c.id === activeId) ? activeId : canvases[0].id);
+
       set({ canvases, activeCanvasId: resolvedActive, loaded: true, ...syncDerivedState(canvases, resolvedActive) });
     },
 
@@ -284,6 +323,23 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
       const canvases = [...get().canvases, canvas];
       set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
       return canvas.id;
+    },
+
+    insertCanvas: (canvas) => {
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, ...syncDerivedState(canvases, canvas.id) });
+    },
+
+    loadAndInsertCanvas: async (canvas, storage) => {
+      // Ensure existing canvases are loaded from disk first
+      if (!get().loaded) {
+        await get().loadCanvas(storage);
+      }
+      // Insert the new canvas
+      const canvases = [...get().canvases, canvas];
+      set({ canvases, activeCanvasId: canvas.id, loaded: true, ...syncDerivedState(canvases, canvas.id) });
+      // Persist immediately so the canvas survives re-mounts
+      await get().saveCanvas(storage);
     },
 
     removeCanvas: (canvasId) => {

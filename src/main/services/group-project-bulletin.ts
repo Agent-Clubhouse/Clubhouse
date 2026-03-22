@@ -264,12 +264,21 @@ export function getBulletinBoard(projectId: string): BulletinBoard {
   return board;
 }
 
-/** Destroy a bulletin board instance (e.g., when project is deleted). */
-export function destroyBulletinBoard(projectId: string): void {
+/** Destroy a bulletin board instance and remove its data directory from disk. */
+export async function destroyBulletinBoard(projectId: string): Promise<void> {
   const board = boards.get(projectId);
   if (board) {
     board._resetForTesting();
     boards.delete(projectId);
+  }
+  // Remove the project's data directory (contains bulletin.json and any future artifacts)
+  const dir = path.join(groupProjectsDir(), projectId);
+  try {
+    if (await pathExists(dir)) {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  } catch {
+    appLog('core:group-project', 'warn', 'Failed to remove bulletin data directory', { meta: { projectId, dir } });
   }
 }
 

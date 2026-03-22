@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import * as widgetRegistry from '../../canvas-widget-registry';
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 // ── Mock the canvas-widget-registry ──────────────────────────────────
 
@@ -106,5 +107,63 @@ describe('CanvasContextMenu plugin widget icons', () => {
     const button = screen.getByTestId('canvas-context-menu-plugin:my-plugin:no-icon');
     expect(button.textContent).toContain('+');
     expect(button.querySelector('svg')).toBeNull();
+  });
+
+  it('dismisses on outside mouse down', () => {
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    fireEvent.mouseDown(document.body);
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses on Escape', () => {
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CanvasContextMenu MCP gating', () => {
+  const onSelect = vi.fn();
+  const onDismiss = vi.fn();
+
+  const groupProjectWidget = makeWidget({
+    qualifiedType: 'plugin:group-project:group-project',
+    pluginId: 'group-project',
+    declaration: { id: 'group-project', label: 'Group Project', icon: TEST_SVG_ICON },
+  });
+
+  const terminalWidget = makeWidget({
+    qualifiedType: 'plugin:terminal:shell',
+    pluginId: 'terminal',
+    declaration: { id: 'shell', label: 'Terminal', icon: TEST_SVG_ICON },
+  });
+
+  beforeEach(() => {
+    onSelect.mockReset();
+    onDismiss.mockReset();
+  });
+
+  it('hides group-project widget when MCP is disabled', () => {
+    useMcpSettingsStore.setState({ enabled: false, loaded: true });
+    vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
+
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    expect(screen.queryByTestId('canvas-context-menu-plugin:group-project:group-project')).toBeNull();
+    expect(screen.getByTestId('canvas-context-menu-plugin:terminal:shell')).toBeTruthy();
+  });
+
+  it('shows group-project widget when MCP is enabled', () => {
+    useMcpSettingsStore.setState({ enabled: true, loaded: true });
+    vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
+
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    expect(screen.getByTestId('canvas-context-menu-plugin:group-project:group-project')).toBeTruthy();
+    expect(screen.getByTestId('canvas-context-menu-plugin:terminal:shell')).toBeTruthy();
   });
 });

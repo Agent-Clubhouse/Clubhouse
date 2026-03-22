@@ -23,7 +23,7 @@ export function registerFileHandlers(): void {
       }),
     ],
     async (event, dirPath: string, options?: { includeHidden?: boolean; depth?: number }) => {
-    assertAllowedPath(dirPath);
+    await assertAllowedPath(dirPath);
     const controller = new AbortController();
     const abort = () => controller.abort();
     event.sender.once('destroyed', abort);
@@ -36,7 +36,7 @@ export function registerFileHandlers(): void {
   ));
 
   ipcMain.handle(IPC.FILE.READ, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
-    assertAllowedPath(filePath);
+    await assertAllowedPath(filePath);
     try {
       return await fileService.readFile(filePath);
     } catch (err) {
@@ -50,45 +50,108 @@ export function registerFileHandlers(): void {
   }));
 
   ipcMain.handle(IPC.FILE.WRITE, withValidatedArgs([stringArg(), stringArg({ minLength: 0 })], async (_event, filePath: string, content: string) => {
-    assertAllowedPath(filePath);
-    await fileService.writeFile(filePath, content);
+    await assertAllowedPath(filePath);
+    try {
+      await fileService.writeFile(filePath, content);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to write file', {
+        meta: { filePath, code, error: message },
+      });
+      throw new Error(`Failed to write file "${filePath}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.READ_BINARY, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
-    assertAllowedPath(filePath);
-    return fileService.readBinary(filePath);
+    await assertAllowedPath(filePath);
+    try {
+      return await fileService.readBinary(filePath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to read binary file', {
+        meta: { filePath, code, error: message },
+      });
+      throw new Error(`Failed to read binary file "${filePath}": ${code} - ${message}`);
+    }
   }));
 
-  ipcMain.handle(IPC.FILE.SHOW_IN_FOLDER, withValidatedArgs([stringArg()], (_event, filePath: string) => {
-    assertAllowedPath(filePath);
+  ipcMain.handle(IPC.FILE.SHOW_IN_FOLDER, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    await assertAllowedPath(filePath);
     shell.showItemInFolder(filePath);
   }));
 
   ipcMain.handle(IPC.FILE.MKDIR, withValidatedArgs([stringArg()], async (_event, dirPath: string) => {
-    assertAllowedPath(dirPath);
-    await fileService.mkdir(dirPath);
+    await assertAllowedPath(dirPath);
+    try {
+      await fileService.mkdir(dirPath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to create directory', {
+        meta: { dirPath, code, error: message },
+      });
+      throw new Error(`Failed to create directory "${dirPath}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.DELETE, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
-    assertAllowedPath(filePath);
-    await fileService.deleteFile(filePath);
+    await assertAllowedPath(filePath);
+    try {
+      await fileService.deleteFile(filePath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to delete file', {
+        meta: { filePath, code, error: message },
+      });
+      throw new Error(`Failed to delete file "${filePath}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.RENAME, withValidatedArgs([stringArg(), stringArg()], async (_event, oldPath: string, newPath: string) => {
-    assertAllowedPath(oldPath);
-    assertAllowedPath(newPath);
-    await fileService.rename(oldPath, newPath);
+    await assertAllowedPath(oldPath);
+    await assertAllowedPath(newPath);
+    try {
+      await fileService.rename(oldPath, newPath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to rename file', {
+        meta: { oldPath, newPath, code, error: message },
+      });
+      throw new Error(`Failed to rename "${oldPath}" to "${newPath}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.COPY, withValidatedArgs([stringArg(), stringArg()], async (_event, src: string, dest: string) => {
-    assertAllowedPath(src);
-    assertAllowedPath(dest);
-    await fileService.copy(src, dest);
+    await assertAllowedPath(src);
+    await assertAllowedPath(dest);
+    try {
+      await fileService.copy(src, dest);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to copy file', {
+        meta: { src, dest, code, error: message },
+      });
+      throw new Error(`Failed to copy "${src}" to "${dest}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.STAT, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
-    assertAllowedPath(filePath);
-    return fileService.stat(filePath);
+    await assertAllowedPath(filePath);
+    try {
+      return await fileService.stat(filePath);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
+      appLog('core:file', 'error', 'Failed to stat file', {
+        meta: { filePath, code, error: message },
+      });
+      throw new Error(`Failed to stat "${filePath}": ${code} - ${message}`);
+    }
   }));
 
   ipcMain.handle(IPC.FILE.WATCH_START, withValidatedArgs([stringArg(), stringArg()], (event, watchId: string, glob: string) => {
@@ -104,12 +167,12 @@ export function registerFileHandlers(): void {
     stringArg({ minLength: 0 }),
     objectArg<FileSearchOptions>({ optional: true }),
   ], async (_event, rootPath: string, query: string, options?: FileSearchOptions) => {
-    assertAllowedPath(rootPath);
+    await assertAllowedPath(rootPath);
     return searchService.searchFiles(rootPath, query, options);
   }));
 
-  ipcMain.handle(IPC.FILE.OPEN_IN_EDITOR, withValidatedArgs([stringArg()], (_event, filePath: string) => {
-    assertAllowedPath(filePath);
+  ipcMain.handle(IPC.FILE.OPEN_IN_EDITOR, withValidatedArgs([stringArg()], async (_event, filePath: string) => {
+    await assertAllowedPath(filePath);
     const { editorCommand } = editorSettings.getSettings();
     execFile(editorCommand, [filePath], (err) => {
       if (err) {

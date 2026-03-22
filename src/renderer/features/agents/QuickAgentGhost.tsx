@@ -114,12 +114,12 @@ export function QuickAgentGhost({ completed, onDismiss, onDelete }: Props) {
           {(completed.durationMs != null || (completed.toolsUsed && completed.toolsUsed.length > 0)) && (
             <div className="flex items-center gap-2 flex-wrap">
               {completed.durationMs != null && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext1">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-0 text-ctp-subtext1">
                   {formatDuration(completed.durationMs)}
                 </span>
               )}
               {completed.toolsUsed && completed.toolsUsed.map((tool) => (
-                <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-ctp-surface0 text-ctp-subtext0 font-mono">
+                <span key={tool} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-surface-0 text-ctp-subtext0 font-mono">
                   {tool}
                 </span>
               ))}

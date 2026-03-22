@@ -105,9 +105,19 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
    * Copilot CLI processes bracketed paste more slowly than Claude Code.
    * Use longer delays to give it time to render the paste preview before
    * sending Enter keystrokes.
+   *
+   * The latest GHCP beta introduced additional latency in paste handling,
+   * so these values include extra headroom to avoid race conditions where
+   * Enter arrives before the paste preview is ready.
    */
   override getPasteSubmitTiming(): PasteSubmitTiming {
-    return { initialDelayMs: 500, retryDelayMs: 500, finalCheckDelayMs: 300 };
+    return {
+      initialDelayMs: 800,
+      retryDelayMs: 600,
+      finalCheckDelayMs: 400,
+      chunkSize: 256,
+      chunkDelayMs: 80,
+    };
   }
 
   // ── Core interface ──────────────────────────────────────────────────────
@@ -140,7 +150,7 @@ export class CopilotCliProvider extends BaseProvider implements HookCapable, Hea
     }
 
     if (opts.freeAgentMode) {
-      args.push('--yolo');
+      args.push('--yolo', '--autopilot');
     }
 
     if (opts.model && opts.model !== 'default') {

@@ -605,6 +605,93 @@ describe('useHubStore', () => {
     });
   });
 
+  // ── duplicateHub ────────────────────────────────────────────────────
+
+  describe('duplicateHub', () => {
+    it('creates a copy of the hub with a new name', () => {
+      const store = createHubStore('hub');
+      const originalId = store.getState().hubs[0].id;
+      store.getState().renameHub(originalId, 'My Hub');
+
+      const newId = store.getState().duplicateHub(originalId, 'hub');
+      expect(store.getState().hubs).toHaveLength(2);
+      expect(store.getState().hubs[1].name).toBe('My Hub-2');
+      expect(newId).not.toBe(originalId);
+    });
+
+    it('activates the duplicated hub', () => {
+      const store = createHubStore('hub');
+      const originalId = store.getState().hubs[0].id;
+      const newId = store.getState().duplicateHub(originalId, 'hub');
+      expect(store.getState().activeHubId).toBe(newId);
+    });
+
+    it('preserves agent assignments in the clone', () => {
+      const store = createHubStore('hub');
+      const paneId = store.getState().paneTree.id;
+      store.getState().assignAgent(paneId, 'agent-1', 'proj-1');
+      const originalId = store.getState().hubs[0].id;
+
+      store.getState().duplicateHub(originalId, 'hub');
+      const clone = store.getState().hubs[1];
+      const leaf = clone.paneTree as LeafPane;
+      expect(leaf.agentId).toBe('agent-1');
+      expect(leaf.projectId).toBe('proj-1');
+    });
+
+    it('duplicated hub has independent IDs (different from source)', () => {
+      const store = createHubStore('hub');
+      const paneId = store.getState().paneTree.id;
+      store.getState().splitPane(paneId, 'horizontal', 'hub');
+      const originalId = store.getState().hubs[0].id;
+
+      store.getState().duplicateHub(originalId, 'hub');
+
+      const origLeaves = collectLeaves(store.getState().hubs[0].paneTree);
+      const cloneLeaves = collectLeaves(store.getState().hubs[1].paneTree);
+      const origIds = origLeaves.map((l) => l.id);
+      const cloneIds = cloneLeaves.map((l) => l.id);
+      for (const id of cloneIds) {
+        expect(origIds).not.toContain(id);
+      }
+    });
+
+    it('increments suffix for multiple duplicates', () => {
+      const store = createHubStore('hub');
+      const originalId = store.getState().hubs[0].id;
+      store.getState().renameHub(originalId, 'Hub');
+
+      store.getState().duplicateHub(originalId, 'hub');
+      expect(store.getState().hubs[1].name).toBe('Hub-2');
+
+      store.getState().duplicateHub(originalId, 'hub');
+      expect(store.getState().hubs[2].name).toBe('Hub-3');
+    });
+
+    it('returns empty string for nonexistent hub', () => {
+      const store = createHubStore('hub');
+      const result = store.getState().duplicateHub('nonexistent', 'hub');
+      expect(result).toBe('');
+    });
+
+    it('preserves complex split tree structure', () => {
+      const store = createHubStore('hub');
+      const id = store.getState().paneTree.id;
+      store.getState().splitPane(id, 'horizontal', 'hub');
+      const leaves = collectLeaves(store.getState().paneTree);
+      store.getState().splitPane(leaves[1].id, 'vertical', 'hub');
+      store.getState().assignAgent(leaves[0].id, 'a1');
+
+      const originalId = store.getState().hubs[0].id;
+      store.getState().duplicateHub(originalId, 'hub');
+
+      const cloneLeaves = collectLeaves(store.getState().hubs[1].paneTree);
+      expect(cloneLeaves).toHaveLength(3);
+      // First leaf should still have agent
+      expect(cloneLeaves[0].agentId).toBe('a1');
+    });
+  });
+
   // ── Scoped counters (no cross-store ID collisions) ─────────────────
 
   describe('per-store scoped counters', () => {

@@ -10,7 +10,7 @@ export const manifest: PluginManifest = {
   author: 'Clubhouse',
   engine: { api: 0.8 },
   scope: 'project',
-  permissions: ['git', 'files', 'commands', 'notifications', 'storage', 'canvas', 'annex'],
+  permissions: ['git', 'files', 'commands', 'notifications', 'storage', 'canvas'],
   contributes: {
     tab: { label: 'Git', title: 'Git', icon: GIT_ICON, layout: 'sidebar-content' },
     commands: [{ id: 'refresh', title: 'Refresh Git Status', defaultBinding: 'Meta+Shift+G' }],

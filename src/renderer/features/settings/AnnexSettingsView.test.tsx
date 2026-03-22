@@ -33,10 +33,9 @@ describe('AnnexSettingsView', () => {
     expect(mockLoadSettings).toHaveBeenCalled();
   });
 
-  it('shows server and client toggles', () => {
+  it('shows server toggle', () => {
     render(<AnnexSettingsView />);
     expect(screen.getByText('Allow remote control')).toBeInTheDocument();
-    expect(screen.getByText('Connect to satellites')).toBeInTheDocument();
   });
 
   it('hides server details when enableServer is false', () => {

@@ -1,15 +1,43 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import type { PluginContext, PluginAPI, PluginModule, CanvasWidgetFilter } from '../../../../shared/plugin-types';
-import type { CanvasViewType } from './canvas-types';
+import type { CanvasMutation } from '../../../../shared/types';
+import type { CanvasView, CanvasViewType, AgentCanvasView } from './canvas-types';
 import { createCanvasStore } from './canvas-store';
 import { CanvasTabBar } from './CanvasTabBar';
 import { CanvasWorkspace } from './CanvasWorkspace';
 import { setCanvasQueryProvider } from '../../plugin-api-canvas';
-import { broadcastCanvasState } from './canvas-sync';
+import { broadcastCanvasState, sendRemoteCanvasMutation } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
-import { useMcpBindingStore } from '../../../stores/mcpBindingStore';
+import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
+
+/**
+ * Collect the real IDs a canvas view participates in for MCP bindings.
+ * Returns { agentId, targetIds } where targetIds are IDs used as binding.targetId.
+ */
+function viewBindingIds(view: CanvasView): { agentId: string | null; targetIds: string[] } {
+  if (view.type === 'agent') {
+    const av = view as AgentCanvasView;
+    return { agentId: av.agentId ?? null, targetIds: av.agentId ? [av.agentId] : [] };
+  }
+  if (view.type === 'plugin') {
+    const gpId = view.metadata?.groupProjectId as string | undefined;
+    if (gpId) return { agentId: null, targetIds: [gpId] };
+    // Browser widgets use view.id as targetId
+    return { agentId: null, targetIds: [view.id] };
+  }
+  return { agentId: null, targetIds: [] };
+}
+
+/** Find all bindings that reference a given view (as source or target). */
+export function findBindingsForView(view: CanvasView, bindings: McpBindingEntry[]): McpBindingEntry[] {
+  const { agentId, targetIds } = viewBindingIds(view);
+  return bindings.filter((b) =>
+    (agentId && b.agentId === agentId) ||
+    targetIds.includes(b.targetId),
+  );
+}
 
 // App-mode canvas store: single instance shared across all projects
 export const useAppCanvasStore = createCanvasStore();
@@ -157,17 +185,37 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [canvases, views, viewport, zoomedViewId, bindings, loaded, scheduleSave]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
+  // (skip for remote projects — the satellite broadcasts its own state)
+  const scope = isAppMode ? 'global' : 'project';
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || isRemote) return;
     // Only broadcast from the main window, not from pop-outs
     if (window.clubhouse.window.isPopout()) return;
     broadcastCanvasState(
       store,
       activeCanvasId,
       isAppMode ? undefined : api.context.projectId,
-      isAppMode ? 'global' : 'project',
+      scope,
     );
-  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, api]);
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, isRemote, api, scope]);
+
+  // ── Remote mutation helper ──────────────────────────────────────
+
+  /**
+   * For remote projects, forward mutations to the satellite for persistence.
+   *
+   * Mutations are always applied locally first (optimistic) so the controller
+   * UI updates immediately.  The satellite processes the mutation, persists it,
+   * and broadcasts the authoritative state back.  On hydration the satellite's
+   * state replaces the local optimistic state — this is safe because the
+   * mutation result is identical on both sides for modify-operations (move,
+   * resize, update, remove) and for create-operations the satellite's version
+   * simply has a different view ID at the same position.
+   */
+  const remoteForward = useCallback((mutation: CanvasMutation): void => {
+    if (!isRemote || !projectId) return;
+    sendRemoteCanvasMutation(projectId, activeCanvasId, scope, mutation);
+  }, [isRemote, projectId, activeCanvasId, scope]);
 
   // ── Pop-out handler ─────────────────────────────────────────────
 
@@ -183,69 +231,108 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // ── Canvas tab bar callbacks ───────────────────────────────────
 
   const handleSelectCanvas = useCallback((canvasId: string) => {
+    // Tab switching is local (controller may browse different tabs than satellite)
     store.getState().setActiveCanvas(canvasId);
   }, [store]);
 
   const handleAddCanvas = useCallback(() => {
+    remoteForward({ type: 'addCanvas' });
     store.getState().addCanvas();
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
+    remoteForward({ type: 'removeCanvas', canvasId });
+    // Unbind all MCP wires attached to views on this canvas before removing it
+    const canvas = store.getState().canvases.find((c) => c.id === canvasId);
+    if (canvas) {
+      const currentBindings = bindingsRef.current;
+      const unbind = useMcpBindingStore.getState().unbind;
+      const seen = new Set<string>();
+      for (const view of canvas.views) {
+        for (const b of findBindingsForView(view, currentBindings)) {
+          const key = `${b.agentId}:${b.targetId}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unbind(b.agentId, b.targetId);
+          }
+        }
+      }
+    }
     store.getState().removeCanvas(canvasId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRenameCanvas = useCallback((canvasId: string, name: string) => {
+    remoteForward({ type: 'renameCanvas', canvasId, name });
     store.getState().renameCanvas(canvasId, name);
-  }, [store]);
+  }, [store, remoteForward]);
 
   // ── Workspace callbacks ────────────────────────────────────────
 
+  // Viewport and selection are always local (controller navigation state)
   const handleViewportChange = useCallback((vp: typeof viewport) => {
     store.getState().setViewport(vp);
   }, [store]);
 
   const handleAddView = useCallback((type: CanvasViewType, position: { x: number; y: number }) => {
+    remoteForward({ type: 'addView', viewType: type, position });
     store.getState().addView(type, position);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleAddPluginView = useCallback((
     pluginId: string, qualifiedType: string, label: string,
     position: { x: number; y: number }, defaultSize?: { width: number; height: number },
   ) => {
+    remoteForward({ type: 'addPluginView', pluginId, qualifiedType, label, position, defaultSize });
     store.getState().addPluginView(pluginId, qualifiedType, label, position, undefined, defaultSize);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleRemoveView = useCallback((viewId: string) => {
+    remoteForward({ type: 'removeView', viewId });
+    // Unbind any MCP wires attached to this view before removing it
+    const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
+    if (view) {
+      const stale = findBindingsForView(view, bindingsRef.current);
+      const unbind = useMcpBindingStore.getState().unbind;
+      for (const b of stale) unbind(b.agentId, b.targetId);
+    }
     store.getState().removeView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleMoveView = useCallback((viewId: string, position: { x: number; y: number }) => {
+    remoteForward({ type: 'moveView', viewId, position });
     store.getState().moveView(viewId, position);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleResizeView = useCallback((viewId: string, size: { width: number; height: number }) => {
+    remoteForward({ type: 'resizeView', viewId, size });
     store.getState().resizeView(viewId, size);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleFocusView = useCallback((viewId: string) => {
+    remoteForward({ type: 'focusView', viewId });
     store.getState().focusView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleUpdateView = useCallback((viewId: string, updates: Partial<any>) => {
+    remoteForward({ type: 'updateView', viewId, updates });
     store.getState().updateView(viewId, updates);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
+    remoteForward({ type: 'zoomView', viewId });
     store.getState().zoomView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
+  // Selection is purely local (controller UI state)
   const handleSelectView = useCallback((viewId: string | null) => {
     store.getState().selectView(viewId);
   }, [store]);
 
   const handleMoveViews = useCallback((positions: Map<string, { x: number; y: number }>) => {
+    const posObj = Object.fromEntries(positions);
+    remoteForward({ type: 'moveViews', positions: posObj });
     store.getState().moveViews(positions);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleToggleSelectView = useCallback((viewId: string) => {
     store.getState().toggleSelectView(viewId);

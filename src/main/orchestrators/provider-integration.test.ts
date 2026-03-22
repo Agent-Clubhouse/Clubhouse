@@ -243,22 +243,24 @@ describe('Provider integration tests', () => {
       expect(args).not.toContain('--dangerously-skip-permissions');
     });
 
-    it('CopilotCli: adds --yolo when freeAgentMode is true', async () => {
+    it('CopilotCli: adds --yolo and --autopilot when freeAgentMode is true', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: true,
       });
       expect(args).toContain('--yolo');
+      expect(args).toContain('--autopilot');
     });
 
-    it('CopilotCli: no --yolo when freeAgentMode is false', async () => {
+    it('CopilotCli: no --yolo or --autopilot when freeAgentMode is false', async () => {
       const provider = new CopilotCliProvider();
       const { args } = await provider.buildSpawnCommand({
         cwd: '/p',
         freeAgentMode: false,
       });
       expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--autopilot');
     });
 
     it('CodexCli: adds --full-auto when freeAgentMode is true', async () => {
@@ -507,6 +509,19 @@ describe('Provider integration tests', () => {
     it('CodexCli: does not implement HookCapable (no writeHooksConfig)', () => {
       const provider = new CodexCliProvider();
       expect((provider as any).writeHooksConfig).toBeUndefined();
+    });
+
+    it('CodexCli: implements buildMcpArgs for CLI-arg MCP injection', () => {
+      const provider = new CodexCliProvider();
+      expect(typeof provider.buildMcpArgs).toBe('function');
+      const args = provider.buildMcpArgs({
+        command: 'node',
+        args: ['/bridge.js'],
+        env: { CLUBHOUSE_MCP_PORT: '12345' },
+      });
+      expect(args.length).toBeGreaterThan(0);
+      expect(args).toContain('-c');
+      expect(args.some(a => a.includes('mcp_servers.clubhouse'))).toBe(true);
     });
 
   });

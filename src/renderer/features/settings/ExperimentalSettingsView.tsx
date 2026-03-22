@@ -37,6 +37,11 @@ const EXPERIMENTAL_FEATURES: Array<{
     label: 'Review Carousel',
     description: 'Full-screen swipe carousel for browsing and reviewing agents one at a time. Requires app restart.',
   },
+  {
+    id: 'mcp',
+    label: 'Clubhouse MCP',
+    description: 'Agent-widget and agent-to-agent interaction via MCP bridge. Enables the MCP settings page. Requires app restart.',
+  },
 ];
 
 export function ExperimentalSettingsView() {
@@ -107,7 +112,7 @@ export function ExperimentalSettingsView() {
             </div>
             <button
               onClick={handleRestart}
-              className="px-4 py-1.5 text-sm rounded bg-ctp-surface0 text-ctp-text hover:bg-ctp-surface1 transition-colors cursor-pointer"
+              className="px-4 py-1.5 text-sm rounded bg-surface-0 text-ctp-text hover:bg-surface-1 transition-colors cursor-pointer"
             >
               Restart
             </button>

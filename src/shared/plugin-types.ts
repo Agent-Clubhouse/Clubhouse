@@ -462,7 +462,7 @@ export interface AgentInfo {
   id: string;
   name: string;
   kind: 'durable' | 'quick';
-  status: 'running' | 'sleeping' | 'creating' | 'error';
+  status: 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
   color: string;
   icon?: string;
   exitCode?: number;
@@ -474,6 +474,8 @@ export interface AgentInfo {
   parentAgentId?: string;
   orchestrator?: string;
   freeAgentMode?: boolean;
+  /** Plugin-supplied metadata attached at spawn time. @since 0.8 */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface PluginAgentDetailedStatus {
@@ -492,6 +494,8 @@ export interface CompletedQuickAgentInfo {
   exitCode: number;
   completedAt: number;
   parentAgentId?: string;
+  /** Plugin-supplied metadata carried from the spawning agent. @since 0.8 */
+  pluginMetadata?: Record<string, string>;
 }
 
 export interface ScopedStorage {
@@ -606,7 +610,7 @@ export interface ModelOption {
 
 export interface AgentsAPI {
   list(): AgentInfo[];
-  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean }): Promise<string>;
+  runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;
   kill(agentId: string): Promise<void>;
   resume(agentId: string, options?: { mission?: string }): Promise<void>;
   listCompleted(projectId?: string): CompletedQuickAgentInfo[];

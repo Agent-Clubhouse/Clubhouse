@@ -74,6 +74,7 @@ export function AgentAvatar({ agent, size = 'md', showRing = false, ringColor }:
 export const STATUS_RING_COLOR: Record<string, string> = {
   running: '#22c55e',
   sleeping: '#6c7086',
+  waking: '#f59e0b',
   error: '#f87171',
 };
 

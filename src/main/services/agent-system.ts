@@ -139,7 +139,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
         freeAgentMode: params.freeAgentMode,
         commandPrefix,
       }, (exitAgentId) => {
-        bindingManager.unbindAgent(exitAgentId);
+        if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
         untrackAgent(exitAgentId);
       });
       return;
@@ -177,7 +177,7 @@ export async function spawnAgent(params: SpawnAgentParams): Promise<void> {
           headlessResult.outputKind || 'stream-json',
           (exitAgentId) => {
             configPipeline.restoreForAgent(exitAgentId);
-            bindingManager.unbindAgent(exitAgentId);
+            if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
             untrackAgent(exitAgentId);
           },
           commandPrefix,
@@ -223,11 +223,9 @@ async function spawnPtyAgent(
     } catch { /* config not available */ }
   }
   const mcpEnabledForSpawn = isMcpEnabled(params.projectPath, agentMcpOverride);
-  // Only snapshot file-based MCP configs (JSON). TOML configs (e.g. Codex CLI)
-  // are not modified by injection, so snapshotting them is unnecessary and the
-  // JSON-based restore logic could corrupt them.
-  const isJsonMcpConfig = !provider.conventions.settingsFormat || provider.conventions.settingsFormat === 'json';
-  if (mcpEnabledForSpawn && isJsonMcpConfig) {
+  // Snapshot MCP config for all formats — TOML injection is now supported
+  // and the config-pipeline restore logic handles both JSON and TOML files.
+  if (mcpEnabledForSpawn) {
     configPipeline.snapshotFile(params.agentId, mcpJsonPath);
   }
 
@@ -304,9 +302,9 @@ async function spawnPtyAgent(
     });
   }
 
-  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
+  await ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
-    bindingManager.unbindAgent(exitAgentId);
+    if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
 
     // Capture session ID for durable agents — works for all providers

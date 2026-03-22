@@ -14,11 +14,15 @@ import { WireFlowDots } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
 
-/** CSS animation for ambient wire glow */
+/** CSS animations for wire glow — ambient is subtle, active is vivid */
 const WIRE_GLOW_KEYFRAMES = `
 @keyframes wire-pulse {
   0%, 100% { filter: drop-shadow(0 0 3px rgb(var(--ctp-accent, 137 180 250) / 0.4)); }
   50% { filter: drop-shadow(0 0 6px rgb(var(--ctp-accent, 137 180 250) / 0.7)); }
+}
+@keyframes wire-pulse-active {
+  0%, 100% { filter: drop-shadow(0 0 6px rgb(var(--ctp-accent, 137 180 250) / 0.8)); }
+  50% { filter: drop-shadow(0 0 12px rgb(var(--ctp-accent, 137 180 250) / 1)); }
 }
 `;
 
@@ -35,6 +39,8 @@ interface WireOverlayProps {
   bindings: McpBindingEntry[];
   /** Optional per-view position overrides (e.g. during drag). */
   viewPositions?: Map<string, { x: number; y: number }>;
+  /** Agent IDs whose status is sleeping or error — wires to/from them render dimmed. */
+  sleepingAgentIds?: Set<string>;
   onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
 }
 
@@ -86,20 +92,28 @@ const WireGroup = React.memo(function WireGroup({
   path,
   binding,
   bidir,
+  sleepingAgentIds,
   onWireClick,
 }: {
   wireKey: string;
   path: string;
   binding: McpBindingEntry;
   bidir: boolean;
+  sleepingAgentIds?: Set<string>;
   onWireClick?: (binding: McpBindingEntry, event: React.MouseEvent) => void;
 }) {
-  // Always treat wires as alive for now — ambient mode.
-  // A future enhancement can check agent status from agentStore.
+  // Keep alive=true so activity indicators fire even for sleeping wires (e.g. wake requests)
   const activity = useWireActivity(wireKey, true);
 
+  // Dim wires when source or target agent is sleeping/error
+  const isDimmed = sleepingAgentIds
+    ? sleepingAgentIds.has(binding.agentId) || sleepingAgentIds.has(binding.targetId)
+    : false;
+
+  const isActive = activity.startsWith('active');
+
   return (
-    <g data-testid={`wire-group-${wireKey}`} data-bidir={bidir ? 'true' : undefined} data-activity={activity}>
+    <g data-testid={`wire-group-${wireKey}`} data-bidir={bidir ? 'true' : undefined} data-activity={activity} data-dimmed={isDimmed ? 'true' : undefined}>
       {/* Invisible thick hitbox for click interaction */}
       <path
         d={path}
@@ -115,13 +129,15 @@ const WireGroup = React.memo(function WireGroup({
         d={path}
         fill="none"
         stroke="rgb(var(--ctp-accent, 137 180 250))"
-        strokeWidth={2}
+        strokeWidth={isActive ? 2.5 : 2}
         strokeLinecap="round"
         markerEnd="url(#wire-arrow-fwd)"
         markerStart={bidir ? 'url(#wire-arrow-rev)' : undefined}
         style={{
           pointerEvents: 'none',
-          animation: 'wire-pulse 3s ease-in-out infinite',
+          animation: isDimmed ? 'none' : isActive ? 'wire-pulse-active 1.5s ease-in-out infinite' : 'wire-pulse 3s ease-in-out infinite',
+          opacity: isDimmed ? 0.35 : 1,
+          transition: 'opacity 0.5s ease, stroke-width 0.3s ease',
         }}
         data-testid={`wire-path-${wireKey}`}
       />
@@ -135,6 +151,7 @@ export const WireOverlay = React.memo(function WireOverlay({
   views,
   bindings,
   viewPositions,
+  sleepingAgentIds,
   onWireClick,
 }: WireOverlayProps) {
   const viewMap = useMemo(() => {
@@ -261,6 +278,7 @@ export const WireOverlay = React.memo(function WireOverlay({
             path={physicsPath}
             binding={binding}
             bidir={bidir}
+            sleepingAgentIds={sleepingAgentIds}
             onWireClick={onWireClick}
           />
         );

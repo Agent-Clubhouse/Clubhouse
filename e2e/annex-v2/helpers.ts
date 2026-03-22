@@ -7,8 +7,6 @@
 import type { Page } from '@playwright/test';
 import WebSocket from 'ws';
 
-type ElectronApp = Awaited<ReturnType<typeof import('@playwright/test')._electron.launch>>;
-
 // ---------------------------------------------------------------------------
 // UI helpers
 // ---------------------------------------------------------------------------

@@ -49,11 +49,11 @@ function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogP
     className: 'absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm',
   },
     React.createElement('div', {
-      className: 'bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[360px] flex flex-col',
+      className: 'bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[360px] flex flex-col',
       onClick: (e: React.MouseEvent) => e.stopPropagation(),
     },
       // Header
-      React.createElement('div', { className: 'px-4 py-3 border-b border-ctp-surface0' },
+      React.createElement('div', { className: 'px-4 py-3 border-b border-surface-0' },
         React.createElement('h3', { className: 'text-sm font-semibold text-ctp-text' }, 'Unsaved Changes'),
         React.createElement('p', { className: 'text-xs text-ctp-subtext0 mt-1' },
           `"${fileName}" has unsaved changes.`,
@@ -62,11 +62,11 @@ function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogP
       // Actions
       React.createElement('div', { className: 'flex items-center justify-end gap-2 px-4 py-3' },
         React.createElement('button', {
-          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0 cursor-pointer transition-colors',
+          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0 cursor-pointer transition-colors',
           onClick: onCancel,
         }, 'Cancel'),
         React.createElement('button', {
-          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-red hover:bg-ctp-surface0 cursor-pointer transition-colors',
+          className: 'px-3 py-1.5 text-xs rounded-lg text-ctp-red hover:bg-surface-0 cursor-pointer transition-colors',
           onClick: onDiscard,
         }, 'Discard'),
         React.createElement('button', {
@@ -82,7 +82,7 @@ function UnsavedDialog({ fileName, onSave, onDiscard, onCancel }: UnsavedDialogP
 
 function OpenInFinderButton({ api, relativePath }: { api: PluginAPI; relativePath: string }) {
   return React.createElement('button', {
-    className: 'px-3 py-1.5 text-xs bg-ctp-surface0 text-ctp-text rounded hover:bg-ctp-surface1 transition-colors',
+    className: 'px-3 py-1.5 text-xs bg-surface-0 text-ctp-text rounded hover:bg-surface-1 transition-colors',
     onClick: () => api.files.showInFolder(relativePath),
   }, 'Open in Finder');
 }
@@ -112,7 +112,7 @@ interface EditorStatusBarProps {
 
 function EditorStatusBar({ line, column, language }: EditorStatusBarProps) {
   return React.createElement('div', {
-    className: 'flex items-center justify-between px-3 py-0.5 border-t border-ctp-surface0 bg-ctp-mantle flex-shrink-0 text-[10px] text-ctp-subtext0 select-none',
+    className: 'flex items-center justify-between px-3 py-0.5 border-t border-surface-0 bg-ctp-mantle flex-shrink-0 text-[10px] text-ctp-subtext0 select-none',
   },
     React.createElement('span', null, `Ln ${line}, Col ${column}`),
     React.createElement('div', { className: 'flex items-center gap-3' },
@@ -428,7 +428,7 @@ export function FileViewer({ api }: { api: PluginAPI }) {
 
   // File header (below tab bar)
   const header = React.createElement('div', {
-    className: 'flex items-center justify-between px-3 py-1.5 border-b border-ctp-surface0 bg-ctp-mantle flex-shrink-0',
+    className: 'flex items-center justify-between px-3 py-1.5 border-b border-surface-0 bg-ctp-mantle flex-shrink-0',
   },
     React.createElement('div', { className: 'flex items-center gap-2 min-w-0' },
       React.createElement('span', { className: 'text-xs font-medium text-ctp-text truncate' }, fileName),
@@ -440,20 +440,20 @@ export function FileViewer({ api }: { api: PluginAPI }) {
         : null,
       lang !== 'plaintext'
         ? React.createElement('span', {
-            className: 'text-[10px] px-1.5 py-0.5 rounded bg-ctp-surface0 text-ctp-subtext0 flex-shrink-0',
+            className: 'text-[10px] px-1.5 py-0.5 rounded bg-surface-0 text-ctp-subtext0 flex-shrink-0',
           }, lang)
         : null,
     ),
     React.createElement('div', { className: 'flex items-center gap-2 flex-shrink-0' },
       // Preview/Source toggle for markdown and SVG
       (loadedFile.fileType === 'markdown' || loadedFile.fileType === 'svg')
-        ? React.createElement('div', { className: 'flex items-center bg-ctp-surface0 rounded text-[10px]' },
+        ? React.createElement('div', { className: 'flex items-center bg-surface-0 rounded text-[10px]' },
             React.createElement('button', {
-              className: `px-2 py-0.5 rounded ${previewMode === 'preview' ? 'bg-ctp-surface1 text-ctp-text' : 'text-ctp-subtext0'}`,
+              className: `px-2 py-0.5 rounded ${previewMode === 'preview' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`,
               onClick: () => setPreviewMode('preview'),
             }, 'Preview'),
             React.createElement('button', {
-              className: `px-2 py-0.5 rounded ${previewMode === 'source' ? 'bg-ctp-surface1 text-ctp-text' : 'text-ctp-subtext0'}`,
+              className: `px-2 py-0.5 rounded ${previewMode === 'source' ? 'bg-surface-1 text-ctp-text' : 'text-ctp-subtext0'}`,
               onClick: () => setPreviewMode('source'),
             }, 'Source'),
           )

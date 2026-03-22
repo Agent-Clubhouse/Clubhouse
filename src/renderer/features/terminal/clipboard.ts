@@ -23,9 +23,21 @@ export interface ClipboardImageData {
 
 /**
  * Read an image from the system clipboard as base64.
- * Returns null if no image is found or on failure.
+ *
+ * Uses Electron's native clipboard.readImage() via IPC as the primary path
+ * because navigator.clipboard.read() is unreliable for images in Electron.
+ * Falls back to the web Clipboard API if the IPC bridge is unavailable.
  */
 export async function readClipboardImage(): Promise<ClipboardImageData | null> {
+  // Primary: Electron native clipboard (reliable for images)
+  try {
+    const result = await window.clubhouse.app.readClipboardImage();
+    if (result) return result;
+  } catch {
+    // IPC bridge unavailable — fall through to web API
+  }
+
+  // Fallback: web Clipboard API
   try {
     const items = await navigator.clipboard.read();
     for (const item of items) {

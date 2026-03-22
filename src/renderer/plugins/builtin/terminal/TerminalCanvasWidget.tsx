@@ -6,7 +6,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { CanvasWidgetComponentProps } from '../../../../shared/plugin-types';
 import type { GitWorktreeEntry } from '../../../../shared/types';
+import type { TerminalIO } from '../../../features/terminal/ShellTerminal';
 import { ShellTerminal } from '../../../features/terminal/ShellTerminal';
+import { useRemoteProject } from '../../../hooks/useRemoteProject';
+import { satellitePtyDataBus, satellitePtyExitBus } from '../../../stores/annexClientStore';
 
 type TerminalStatus = 'starting' | 'running' | 'exited';
 
@@ -19,12 +22,54 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
+/**
+ * Create a TerminalIO adapter that routes PTY operations through the
+ * annex client to a satellite machine.
+ *
+ * Accepts a ref for the satellite ID so the adapter methods always use
+ * the latest connection info without creating a new object reference.
+ * This prevents the downstream ShellTerminal from recreating its xterm
+ * instance (and resetting scroll position) on satellite reconnection.
+ */
+function createRemoteTerminalIO(satelliteIdRef: React.RefObject<string | null>): TerminalIO {
+  return {
+    write(sessionId: string, data: string) {
+      if (satelliteIdRef.current) {
+        window.clubhouse.annexClient.ptyInput(satelliteIdRef.current, sessionId, data);
+      }
+    },
+    resize(sessionId: string, cols: number, rows: number) {
+      if (satelliteIdRef.current) {
+        window.clubhouse.annexClient.ptyResize(satelliteIdRef.current, sessionId, cols, rows);
+      }
+    },
+    getBuffer(sessionId: string): Promise<string> {
+      if (satelliteIdRef.current) {
+        return window.clubhouse.annexClient.ptyGetBuffer(satelliteIdRef.current, sessionId);
+      }
+      return Promise.resolve('');
+    },
+    onData(callback: (id: string, data: string) => void): () => void {
+      return satellitePtyDataBus.on((sid, agentId, data) => {
+        if (sid === satelliteIdRef.current) callback(agentId, data);
+      });
+    },
+    onExit(callback: (id: string, exitCode: number) => void): () => void {
+      return satellitePtyExitBus.on((sid, agentId, exitCode) => {
+        if (sid === satelliteIdRef.current) callback(agentId, exitCode);
+      });
+    },
+  };
+}
+
 export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata, size: _size }: CanvasWidgetComponentProps) {
   const isAppMode = api.context.mode === 'app';
   const projects = useMemo(() => api.projects.list(), [api]);
 
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
   const cwd = metadata.cwd as string | undefined;
+
+  const remote = useRemoteProject(projectId);
 
   const activeProject = useMemo(
     () => projectId ? projects.find((p) => p.id === projectId) : null,
@@ -39,10 +84,30 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
 
   const sessionId = `canvas-widget-terminal:${widgetId}`;
 
-  // Fetch worktrees when project is selected
+  // Stable ref for the satellite ID — the remote IO adapter reads through
+  // this ref so its methods always target the current satellite without
+  // changing the object identity (which would cascade into terminal recreation).
+  const satelliteIdRef = useRef<string | null>(remote.isRemote ? remote.satelliteId : null);
+  satelliteIdRef.current = remote.isRemote ? remote.satelliteId : null;
+
+  // Create remote TerminalIO if rendering in a remote context.
+  // Only recreated when isRemote flips (local <-> remote); satellite ID
+  // changes are picked up through the ref without a new object.
+  const remoteIO = useMemo(() => {
+    if (!remote.isRemote) return undefined;
+    return createRemoteTerminalIO(satelliteIdRef);
+  }, [remote.isRemote]);
+
+  // Fetch worktrees when project is selected (skip for remote — no worktree listing over annex)
   useEffect(() => {
     if (!activeProject?.path) {
       setWorktrees([]);
+      return;
+    }
+    if (remote.isRemote) {
+      // Remote projects don't support worktree listing; auto-select project root
+      setWorktrees([]);
+      setLoadingWorktrees(false);
       return;
     }
     setLoadingWorktrees(true);
@@ -55,19 +120,25 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
         setWorktrees([]);
         setLoadingWorktrees(false);
       });
-  }, [activeProject?.path]);
+  }, [activeProject?.path, remote.isRemote]);
 
   // Spawn or reconnect when cwd is set
   const spawnTerminal = useCallback(async (dir: string) => {
     setStatus('starting');
     setExitCode(null);
     try {
-      await window.clubhouse.pty.spawnShell(sessionId, dir);
+      if (remote.isRemote && remote.satelliteId && remote.originalProjectId) {
+        await window.clubhouse.annexClient.ptySpawnShell(
+          remote.satelliteId, sessionId, remote.originalProjectId,
+        );
+      } else {
+        await window.clubhouse.pty.spawnShell(sessionId, dir);
+      }
       setStatus('running');
     } catch {
       setStatus('exited');
     }
-  }, [sessionId]);
+  }, [sessionId, remote]);
 
   useEffect(() => {
     if (!cwd) return;
@@ -75,7 +146,8 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
       setStatus('running');
       return;
     }
-    window.clubhouse.pty.getBuffer(sessionId).then((buf: string) => {
+    const io = remoteIO ?? window.clubhouse.pty;
+    io.getBuffer(sessionId).then((buf: string) => {
       if (buf && buf.length > 0) {
         setStatus('running');
       } else {
@@ -83,26 +155,29 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
       }
       spawnedRef.current = true;
     });
-  }, [sessionId, cwd, spawnTerminal]);
+  }, [sessionId, cwd, spawnTerminal, remoteIO]);
 
   // Listen for exit
   useEffect(() => {
     if (!cwd) return;
-    const removeListener = window.clubhouse.pty.onExit((id: string, code: number) => {
+    const io = remoteIO ?? window.clubhouse.pty;
+    const removeListener = io.onExit((id: string, code: number) => {
       if (id === sessionId) {
         setStatus('exited');
         setExitCode(code);
       }
     });
     return removeListener;
-  }, [sessionId, cwd]);
+  }, [sessionId, cwd, remoteIO]);
 
   const handleRestart = useCallback(async () => {
     if (!cwd) return;
     spawnedRef.current = false;
-    await window.clubhouse.pty.kill(sessionId);
+    if (!remote.isRemote) {
+      await window.clubhouse.pty.kill(sessionId);
+    }
     spawnTerminal(cwd);
-  }, [sessionId, cwd, spawnTerminal]);
+  }, [sessionId, cwd, spawnTerminal, remote.isRemote]);
 
   const handleSelectProject = useCallback((pid: string) => {
     setWorktrees([]);
@@ -115,20 +190,20 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   }, [onUpdateMetadata, projectId]);
 
   const handleBackToProjects = useCallback(() => {
-    if (cwd) {
+    if (cwd && !remote.isRemote) {
       window.clubhouse.pty.kill(sessionId).catch(() => {});
       spawnedRef.current = false;
     }
     onUpdateMetadata({ projectId: null, cwd: null });
-  }, [cwd, sessionId, onUpdateMetadata]);
+  }, [cwd, sessionId, onUpdateMetadata, remote.isRemote]);
 
   const handleBackToWorktrees = useCallback(() => {
-    if (cwd) {
+    if (cwd && !remote.isRemote) {
       window.clubhouse.pty.kill(sessionId).catch(() => {});
       spawnedRef.current = false;
     }
     onUpdateMetadata({ cwd: null, projectId: projectId ?? null });
-  }, [cwd, sessionId, projectId, onUpdateMetadata]);
+  }, [cwd, sessionId, projectId, onUpdateMetadata, remote.isRemote]);
 
   // Step 1: Project picker
   if (!projectId) {
@@ -166,14 +241,17 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
     );
   }
 
-  // Step 2: Worktree/root picker
+  // Step 2: Worktree/root picker (skipped for remote — auto-selects project root)
   if (!cwd) {
     const hasMultipleWorktrees = worktrees.length > 1;
 
-    if (!hasMultipleWorktrees && !loadingWorktrees && activeProject?.path) {
-      Promise.resolve().then(() => {
-        handleSelectCwd(activeProject.path);
-      });
+    if ((!hasMultipleWorktrees && !loadingWorktrees && activeProject?.path) || remote.isRemote) {
+      const rootPath = remote.isRemote ? '__remote__' : activeProject?.path;
+      if (rootPath) {
+        Promise.resolve().then(() => {
+          handleSelectCwd(rootPath);
+        });
+      }
       return (
         <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
           Starting terminal...
@@ -233,7 +311,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
   // Step 3: Terminal view
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-2 py-1 bg-ctp-surface0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
+      <div className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 border-b border-surface-0 text-[10px] text-ctp-subtext0 flex-shrink-0">
         <button
           className="flex items-center gap-1 px-1.5 py-0.5 rounded text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1 transition-colors"
           onClick={handleRestart}
@@ -261,6 +339,11 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
         >
           {activeProject?.name || 'Terminal'}
         </button>
+        {remote.isRemote && (
+          <span className="text-[8px] text-ctp-peach bg-ctp-peach/10 px-1.5 py-0.5 rounded ml-1">
+            remote
+          </span>
+        )}
         <span className="flex-1" />
         <span className={`text-[9px] ${
           status === 'running' ? 'text-ctp-green' :
@@ -274,7 +357,7 @@ export function TerminalCanvasWidget({ widgetId, api, metadata, onUpdateMetadata
       </div>
       <div className="flex-1 min-h-0">
         {status !== 'starting' ? (
-          <ShellTerminal sessionId={sessionId} focused={true} />
+          <ShellTerminal sessionId={sessionId} focused={true} io={remoteIO} />
         ) : (
           <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs">
             Starting terminal...

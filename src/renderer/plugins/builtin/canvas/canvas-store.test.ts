@@ -61,6 +61,158 @@ describe('canvas-store', () => {
     expect(store.getState().activeCanvasId).toBe(id);
   });
 
+  it('inserts a pre-formed canvas', () => {
+    const canvas = {
+      id: 'test-canvas-1',
+      name: 'Imported Canvas',
+      views: [
+        {
+          id: 'cv_test1',
+          type: 'agent' as const,
+          position: { x: 0, y: 0 },
+          size: { width: 480, height: 480 },
+          title: 'Agent',
+          displayName: 'Agent',
+          zIndex: 0,
+          metadata: {},
+          agentId: 'agent-1',
+          projectId: 'proj-1',
+        },
+      ],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 1,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    store.getState().insertCanvas(canvas);
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(store.getState().activeCanvasId).toBe('test-canvas-1');
+    expect(store.getState().views).toHaveLength(1);
+    expect(store.getState().views[0].agentId).toBe('agent-1');
+  });
+
+  it('inserted canvas becomes the active canvas', () => {
+    const canvas = {
+      id: 'inserted-1',
+      name: 'Test',
+      views: [],
+      viewport: { panX: 10, panY: 20, zoom: 0.8 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+    store.getState().insertCanvas(canvas);
+    expect(store.getState().activeCanvasId).toBe('inserted-1');
+    expect(store.getState().viewport).toEqual({ panX: 10, panY: 20, zoom: 0.8 });
+  });
+
+  // ── loadAndInsertCanvas ──────────────────────────────────────
+
+  it('loadAndInsertCanvas loads existing data then inserts', async () => {
+    // Pre-populate storage with an existing canvas
+    const existingCanvas = {
+      id: 'existing-1',
+      name: 'Existing',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+    };
+    const storage = createMockStorage({
+      'canvas-instances': [existingCanvas],
+      'canvas-active-id': 'existing-1',
+    });
+
+    const newCanvas = {
+      id: 'new-from-hub',
+      name: 'From Hub',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Should have both the existing canvas and the new one
+    expect(store.getState().canvases).toHaveLength(2);
+    expect(store.getState().canvases.map((c) => c.id)).toContain('existing-1');
+    expect(store.getState().canvases.map((c) => c.id)).toContain('new-from-hub');
+    // New canvas should be active
+    expect(store.getState().activeCanvasId).toBe('new-from-hub');
+    expect(store.getState().loaded).toBe(true);
+  });
+
+  it('loadAndInsertCanvas persists to storage immediately', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+
+    const newCanvas = {
+      id: 'persisted-canvas',
+      name: 'Persisted',
+      views: [],
+      viewport: { panX: 5, panY: 10, zoom: 0.8 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Verify data was written to storage
+    const saved = await storage.read('canvas-instances') as any[];
+    expect(saved.map((c: any) => c.id)).toContain('persisted-canvas');
+    const savedActive = await storage.read('canvas-active-id');
+    expect(savedActive).toBe('persisted-canvas');
+  });
+
+  it('loadAndInsertCanvas skips load if already loaded', async () => {
+    const storage = createMockStorage();
+    await store.getState().loadCanvas(storage);
+    const initialCount = store.getState().canvases.length;
+
+    const newCanvas = {
+      id: 'after-load',
+      name: 'After Load',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Should have initial canvas + new one (didn't double-load)
+    expect(store.getState().canvases).toHaveLength(initialCount + 1);
+    expect(store.getState().activeCanvasId).toBe('after-load');
+  });
+
+  it('loadAndInsertCanvas survives re-load from storage', async () => {
+    const storage = createMockStorage();
+
+    const newCanvas = {
+      id: 'survive-reload',
+      name: 'Survives',
+      views: [],
+      viewport: { panX: 0, panY: 0, zoom: 1 },
+      nextZIndex: 0,
+      zoomedViewId: null,
+      selectedViewId: null,
+    };
+
+    // Insert (which also saves)
+    await store.getState().loadAndInsertCanvas(newCanvas, storage);
+
+    // Simulate canvas plugin re-mounting: create new store and load from same storage
+    const store2 = createCanvasStore();
+    await store2.getState().loadCanvas(storage);
+
+    // The new canvas should still be there
+    expect(store2.getState().canvases.map((c) => c.id)).toContain('survive-reload');
+  });
+
   it('removes a canvas', () => {
     const id = store.getState().addCanvas();
     expect(store.getState().canvases).toHaveLength(2);
@@ -366,6 +518,79 @@ describe('hydrateFromRemote', () => {
       await store.getState().loadWires(storage);
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('a1', expect.objectContaining({ targetId: 'a2' }));
+    });
+
+    it('prunes stale bindings whose source and target views no longer exist', async () => {
+      // Set up a canvas with one agent view (agentId: 'agent-alive')
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-alive', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Alive', metadata: {} },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          // Valid: source agent exists on canvas
+          { agentId: 'agent-alive', targetId: 'some-target', targetKind: 'agent', label: 'Valid' },
+          // Stale: neither agentId nor targetId exist in any canvas view
+          { agentId: 'agent-gone', targetId: 'target-gone', targetKind: 'agent', label: 'Stale' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      // Only the valid binding should be restored
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-alive', expect.objectContaining({ targetId: 'some-target' }));
+    });
+
+    it('keeps bindings where only target exists on canvas', async () => {
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-target', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Target', metadata: {} },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          // Source not on canvas, but target agent IS on canvas — keep it
+          { agentId: 'external-agent', targetId: 'agent-target', targetKind: 'agent', label: 'Cross-canvas' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+    });
+
+    it('reconciles group-project bindings by metadata.groupProjectId', async () => {
+      const canvasStorage = createMockStorage({
+        'canvas-instances': [{
+          id: 'c1', name: 'Canvas', views: [
+            { id: 'cv1', type: 'agent', agentId: 'agent-1', position: { x: 0, y: 0 }, size: { width: 300, height: 200 }, zIndex: 0, displayName: 'Agent', metadata: {} },
+            { id: 'cv2', type: 'plugin', pluginWidgetType: 'plugin:group-project:group-project', pluginId: 'group-project', position: { x: 400, y: 0 }, size: { width: 300, height: 200 }, zIndex: 1, displayName: 'GP', metadata: { groupProjectId: 'gp_123' } },
+          ], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 2,
+        }],
+        'canvas-active-id': 'c1',
+        'canvas-wires': [
+          { agentId: 'agent-1', targetId: 'gp_123', targetKind: 'group-project', label: 'GP' },
+          // This binding's source (agent-1) still exists, so it is kept even though
+          // gp_deleted is gone — reconciliation only drops fully orphaned bindings.
+          { agentId: 'agent-1', targetId: 'gp_deleted', targetKind: 'group-project', label: 'Gone' },
+          // Fully orphaned: neither source nor target exist on any canvas
+          { agentId: 'agent-gone', targetId: 'gp_also_gone', targetKind: 'group-project', label: 'Orphan' },
+        ],
+      });
+
+      await store.getState().loadCanvas(canvasStorage);
+      await store.getState().loadWires(canvasStorage);
+
+      // Two bindings restored (agent-1 is valid), fully orphaned one is pruned
+      expect(mockMcpBinding.bind).toHaveBeenCalledTimes(2);
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_123' }));
+      expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_deleted' }));
     });
   });
 });

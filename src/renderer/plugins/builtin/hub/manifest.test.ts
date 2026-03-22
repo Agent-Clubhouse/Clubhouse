@@ -30,10 +30,14 @@ describe('hub manifest', () => {
     expect(manifest.permissions).toEqual(
       expect.arrayContaining([
         'commands', 'storage', 'agents', 'projects',
-        'widgets', 'navigation', 'notifications', 'annex',
+        'widgets', 'navigation', 'notifications',
       ]),
     );
-    expect(manifest.permissions).toHaveLength(8);
+    expect(manifest.permissions).toHaveLength(7);
+  });
+
+  it('does not declare annex permission', () => {
+    expect(manifest.permissions).not.toContain('annex');
   });
 
   it('contributes help topics', () => {

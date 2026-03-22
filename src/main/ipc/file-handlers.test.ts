@@ -331,5 +331,95 @@ describe('file-handlers', () => {
       await expect(handler({}, '/etc/passwd', '/project/stolen.txt')).rejects.toThrow('Access denied');
       expect(fileService.copy).not.toHaveBeenCalled();
     });
+
+    it('awaits assertAllowedPath before performing file operations', async () => {
+      // Regression test for SEC-02: if assertAllowedPath is called but not
+      // awaited, the file operation runs before the guard rejects.
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.READ)!;
+      const resultPromise = handler({}, '/project/file.ts');
+
+      // Yield a microtask tick — if the handler forgot `await`, readFile would
+      // already have been called by now.
+      await Promise.resolve();
+      expect(fileService.readFile).not.toHaveBeenCalled();
+
+      // Now let the guard resolve and the handler should proceed.
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.readFile).toHaveBeenCalledWith('/project/file.ts');
+    });
+
+    it('awaits assertAllowedPath before performing write operations', async () => {
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.WRITE)!;
+      const resultPromise = handler({}, '/project/file.ts', 'content');
+
+      await Promise.resolve();
+      expect(fileService.writeFile).not.toHaveBeenCalled();
+
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.writeFile).toHaveBeenCalledWith('/project/file.ts', 'content');
+    });
+
+    it('awaits assertAllowedPath before performing delete operations', async () => {
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.DELETE)!;
+      const resultPromise = handler({}, '/project/file.ts');
+
+      await Promise.resolve();
+      expect(fileService.deleteFile).not.toHaveBeenCalled();
+
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.deleteFile).toHaveBeenCalledWith('/project/file.ts');
+    });
+  });
+
+  describe('error handling with structured logging', () => {
+    it('WRITE logs and rethrows on failure', async () => {
+      const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      vi.mocked(fileService.writeFile).mockRejectedValueOnce(err);
+      const handler = handlers.get(IPC.FILE.WRITE)!;
+      await expect(handler({}, '/project/file.ts', 'data')).rejects.toThrow('Failed to write file');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to write file', expect.objectContaining({
+        meta: expect.objectContaining({ filePath: '/project/file.ts', code: 'EACCES' }),
+      }));
+    });
+
+    it('MKDIR logs and rethrows on failure', async () => {
+      vi.mocked(fileService.mkdir).mockRejectedValueOnce(new Error('EEXIST'));
+      const handler = handlers.get(IPC.FILE.MKDIR)!;
+      await expect(handler({}, '/project/dir')).rejects.toThrow('Failed to create directory');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to create directory', expect.anything());
+    });
+
+    it('DELETE logs and rethrows on failure', async () => {
+      vi.mocked(fileService.deleteFile).mockRejectedValueOnce(new Error('ENOENT'));
+      const handler = handlers.get(IPC.FILE.DELETE)!;
+      await expect(handler({}, '/project/file.ts')).rejects.toThrow('Failed to delete file');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to delete file', expect.anything());
+    });
+
+    it('STAT logs and rethrows on failure', async () => {
+      vi.mocked(fileService.stat).mockRejectedValueOnce(new Error('ENOENT'));
+      const handler = handlers.get(IPC.FILE.STAT)!;
+      await expect(handler({}, '/project/file.ts')).rejects.toThrow('Failed to stat');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to stat file', expect.anything());
+    });
   });
 });

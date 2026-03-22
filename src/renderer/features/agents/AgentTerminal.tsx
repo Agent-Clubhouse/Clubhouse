@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
@@ -24,6 +24,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
+  const effectiveTerminalColors = useMemo(
+    () => hasGradientBg ? { ...terminalColors, background: 'transparent' } : terminalColors,
+    [terminalColors, hasGradientBg],
+  );
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
   );
@@ -35,6 +40,13 @@ export function AgentTerminal({ agentId, focused }: Props) {
   const sendPtyInput = useAnnexClientStore((s) => s.sendPtyInput);
   const sendClipboardImage = useAnnexClientStore((s) => s.sendClipboardImage);
   const requestPtyBuffer = useAnnexClientStore((s) => s.requestPtyBuffer);
+
+  // Refs for Zustand store methods — prevents terminal destruction/recreation
+  // if the store ever returns a new function reference during state updates.
+  const sendPtyInputRef = useRef(sendPtyInput);
+  sendPtyInputRef.current = sendPtyInput;
+  const requestPtyBufferRef = useRef(requestPtyBuffer);
+  requestPtyBufferRef.current = requestPtyBuffer;
 
   const resuming = useAgentStore((s) => s.agents[agentId]?.resuming);
   const clearResuming = useAgentStore((s) => s.clearResuming);
@@ -60,7 +72,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
     if (!containerRef.current) return;
 
     const term = new Terminal({
-      theme: terminalColors,
+      theme: effectiveTerminalColors,
       fontFamily: '"SF Mono", "Cascadia Code", "Fira Code", Menlo, monospace',
       fontSize: 13,
       lineHeight: 1.3,
@@ -68,6 +80,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       cursorBlink: true,
       cursorStyle: 'bar',
       allowProposedApi: true,
+      allowTransparency: true,
     });
 
     const fitAddon = new FitAddon();
@@ -85,13 +98,17 @@ export function AgentTerminal({ agentId, focused }: Props) {
         window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
           if (buf) term.write(buf);
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
           bufferReplayed = true;
         });
       } else if (remoteParts) {
         // Remote agents: fetch buffer from satellite via HTTPS REST
-        requestPtyBuffer(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
+        requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
           if (buf) term.write(buf);
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
           bufferReplayed = true;
         });
       }
@@ -105,12 +122,14 @@ export function AgentTerminal({ agentId, focused }: Props) {
       if (!isRemote) {
         window.clubhouse.pty.write(agentId, data);
       } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+        sendPtyInputRef.current(remoteParts.satelliteId, remoteParts.agentId, data);
       }
     });
 
-    // Gate live PTY data until after the buffer snapshot has been replayed.
+    // Gate live PTY data until after the buffer snapshot has been replayed;
+    // queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
+    const pendingData: string[] = [];
 
     let removeDataListener: () => void;
     let removeExitListener: () => void;
@@ -119,8 +138,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
       // Local PTY: receive from local pty manager
       removeDataListener = window.clubhouse.pty.onData(
         (id: string, data: string) => {
-          if (id === agentId && bufferReplayed) {
+          if (id !== agentId) return;
+          if (bufferReplayed) {
             term.write(data);
+          } else {
+            pendingData.push(data);
           }
         }
       );
@@ -142,8 +164,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
       const origAgentId = remoteParts?.agentId;
       removeDataListener = satellitePtyDataBus.on(
         (incomingSatId: string, incomingAgentId: string, data: string) => {
-          if (incomingSatId === satId && incomingAgentId === origAgentId && bufferReplayed) {
+          if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
+          if (bufferReplayed) {
             term.write(data);
+          } else {
+            pendingData.push(data);
           }
         }
       );
@@ -158,7 +183,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [agentId, isRemote, remoteParts, sendPtyInput, requestPtyBuffer]);
+  }, [agentId, isRemote, remoteParts]);
 
   // Focus-aware resize: ResizeObserver, visibilitychange, window focus, pane focus
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
@@ -203,7 +228,7 @@ export function AgentTerminal({ agentId, focused }: Props) {
       if (!isRemote) {
         window.clubhouse.pty.write(agentId, data);
       } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+        sendPtyInputRef.current(remoteParts.satelliteId, remoteParts.agentId, data);
       }
     };
     const handleImagePaste = (isRemote && remoteParts)
@@ -213,19 +238,28 @@ export function AgentTerminal({ agentId, focused }: Props) {
       : undefined;
     const cleanup = attachClipboardHandlers(terminalRef.current, containerRef.current, writeData, handleImagePaste);
     return cleanup;
-  }, [clipboardCompat, agentId, isRemote, remoteParts, sendPtyInput, sendClipboardImage]);
+  }, [clipboardCompat, agentId, isRemote, remoteParts, sendClipboardImage]);
 
   // Live-update theme on existing terminal instances
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = terminalColors;
+      terminalRef.current.options.theme = effectiveTerminalColors;
     }
-  }, [terminalColors]);
+  }, [effectiveTerminalColors]);
 
   useEffect(() => {
     if (!terminalRef.current || !experimentalMonoFont) return;
     terminalRef.current.options.fontFamily = experimentalMonoFont;
   }, [experimentalMonoFont]);
+
+  const [remoteBanner, setRemoteBanner] = useState<string | null>(null);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showRemoteBanner = useCallback((msg: string) => {
+    setRemoteBanner(msg);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setRemoteBanner(null), 3000);
+  }, []);
 
   const handleMouseDown = useCallback(() => {
     terminalRef.current?.focus();
@@ -233,13 +267,14 @@ export function AgentTerminal({ agentId, focused }: Props) {
 
   const { isDragOver, handleDragOver, handleDragLeave, handleDrop } = useFileDrop(
     useCallback((data: string) => {
-      if (!isRemote) {
-        window.clubhouse.pty.write(agentId, data);
-      } else if (remoteParts) {
-        sendPtyInput(remoteParts.satelliteId, remoteParts.agentId, data);
+      if (isRemote) {
+        // Local file paths don't exist on the remote satellite
+        showRemoteBanner('File drop is not supported on remote agents');
+        return;
       }
+      window.clubhouse.pty.write(agentId, data);
       terminalRef.current?.focus();
-    }, [agentId, isRemote, remoteParts, sendPtyInput])
+    }, [agentId, isRemote, showRemoteBanner])
   );
 
   return (
@@ -267,7 +302,17 @@ export function AgentTerminal({ agentId, focused }: Props) {
       )}
       {isDragOver && (
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none z-10">
-          <span className="text-white/90 text-sm font-medium">Drop to insert path</span>
+          <span className="text-white/90 text-sm font-medium">
+            {isRemote ? 'File drop not supported on remote' : 'Drop to insert path'}
+          </span>
+        </div>
+      )}
+      {remoteBanner && (
+        <div
+          data-testid="remote-banner"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg bg-ctp-surface0/90 text-ctp-subtext0 text-xs font-medium shadow-lg z-10 pointer-events-none"
+        >
+          {remoteBanner}
         </div>
       )}
     </div>

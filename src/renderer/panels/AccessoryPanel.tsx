@@ -22,6 +22,7 @@ function SettingsCategoryNav() {
   const previewChannel = useUpdateStore((s) => s.settings.previewChannel);
   const [showExperimental, setShowExperimental] = useState(false);
   const [showAnnex, setShowAnnex] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
 
   useEffect(() => {
     window.clubhouse.app.getVersion().then((v) => {
@@ -30,6 +31,7 @@ function SettingsCategoryNav() {
       if (isPreview) {
         window.clubhouse.app.getExperimentalSettings().then((s) => {
           setShowAnnex(!!s.annex);
+          setShowMcp(!!s.mcp);
         });
       }
     });
@@ -66,24 +68,21 @@ function SettingsCategoryNav() {
             {navButton('Display & UI', 'display')}
             {navButton('External Editor', 'editor')}
             {navButton('Keyboard Shortcuts', 'keyboard-shortcuts')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
-            {showAnnex && navButton('Annex Server', 'annex')}
+            {showAnnex && navButton('Annex', 'annex')}
             {showAnnex && navButton('Annex Control', 'annex-control')}
-            {showExperimental && navButton('Clubhouse MCP', 'mcp')}
+            {showMcp && navButton('Clubhouse MCP', 'mcp')}
             {navButton('Updates', 'updates')}
             {navButton('Logging', 'logging')}
             {showExperimental && navButton('Experimental', 'experimental')}
-            {navButton('Getting Started', 'getting-started')}
             {navButton("What's New", 'whats-new')}
           </>
         ) : (
           <>
             {navButton('Project Settings', 'project')}
             {navButton('Orchestrators & Agents', 'orchestrators')}
-            {navButton('Notifications', 'notifications')}
-            {navButton('Sounds', 'sounds')}
+            {navButton('Notifications & Alerts', 'notifications')}
             {navButton('Plugins', 'plugins')}
           </>
         )}
