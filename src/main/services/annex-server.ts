@@ -996,12 +996,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   // to bearer token. Without this, REST calls from the controller using only
   // mTLS certs (e.g. buffer fetch) would be rejected with 401.
   let authenticated = false;
+  let isMtlsAuthenticated = false;
   if (req.socket && 'getPeerCertificate' in req.socket) {
     const peerFingerprint = annexTls.extractPeerFingerprint(req.socket as tls.TLSSocket);
     if (peerFingerprint) {
       const peer = annexPeers.getPeer(peerFingerprint);
       if (peer && (peer.role === 'controller' || !peer.role)) {
         authenticated = true;
+        isMtlsAuthenticated = true;
         annexPeers.updateLastSeen(peerFingerprint);
       }
     }
@@ -1012,6 +1014,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
+  }
+
+  /** Require mTLS for destructive operations when TLS is active. Returns true if rejected. */
+  function requireMtls(): boolean {
+    // Only enforce mTLS when the server is running with TLS.
+    // In HTTP fallback mode, bearer tokens are sufficient (no TLS available).
+    if (tlsServer && !isMtlsAuthenticated) {
+      appLog('core:annex', 'warn', 'Rejected destructive REST request — mTLS required', {
+        meta: { method, url },
+      });
+      sendJson(res, 403, { error: 'mtls_required', message: 'Destructive operations require mTLS authentication' });
+      return true;
+    }
+    return false;
   }
 
   // GET /api/v1/status
@@ -1228,9 +1244,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/projects/:id/git/:operation
+  // POST /api/v1/projects/:id/git/:operation (destructive — requires mTLS)
   const gitOpMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/git\/(stage|unstage|stage-all|unstage-all|commit|push|pull|checkout|stash|stash-pop)$/);
   if (method === 'POST' && gitOpMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(gitOpMatch[1]);
     const operation = gitOpMatch[2];
     const project = await findProjectById(projectId);
@@ -1343,17 +1360,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
   // --- POST endpoints (Issues 4, 6, 7) ---
 
-  // POST /api/v1/projects/:id/agents/quick
+  // POST /api/v1/projects/:id/agents/quick (destructive — requires mTLS)
   const quickProjectMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickProjectMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(quickProjectMatch[1]);
     readJsonBody(req, res, (body) => handleSpawnQuickAgent(res, projectId, null, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/agents/quick
+  // POST /api/v1/agents/:id/agents/quick (destructive — requires mTLS)
   const quickAgentMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/agents\/quick$/);
   if (method === 'POST' && quickAgentMatch) {
+    if (requireMtls()) return;
     const parentAgentId = decodeURIComponent(quickAgentMatch[1]);
     const parentInfo = await findAgentAcrossProjects(parentAgentId);
     if (!parentInfo) {
@@ -1364,33 +1383,37 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/agents/:id/wake
+  // POST /api/v1/agents/:id/wake (destructive — requires mTLS)
   const wakeMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/wake$/);
   if (method === 'POST' && wakeMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(wakeMatch[1]);
     readJsonBody(req, res, (body) => handleWakeAgent(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/permission-response
+  // POST /api/v1/agents/:id/permission-response (control — requires mTLS)
   const permissionMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/permission-response$/);
   if (method === 'POST' && permissionMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(permissionMatch[1]);
     readJsonBody(req, res, (body) => handlePermissionResponse(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/agents/:id/structured-permission
+  // POST /api/v1/agents/:id/structured-permission (control — requires mTLS)
   const structuredPermMatch = url.match(/^\/api\/v1\/agents\/([^/]+)\/structured-permission$/);
   if (method === 'POST' && structuredPermMatch) {
+    if (requireMtls()) return;
     const agentId = decodeURIComponent(structuredPermMatch[1]);
     readJsonBody(req, res, (body) => handleStructuredPermissionResponse(res, agentId, body));
     return;
   }
 
-  // POST /api/v1/projects/:id/agents/durable — create a durable agent
+  // POST /api/v1/projects/:id/agents/durable — create a durable agent (destructive — requires mTLS)
   const durableCreateMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/durable$/);
   if (method === 'POST' && durableCreateMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(durableCreateMatch[1]);
     const project = await findProjectById(projectId);
     if (!project) {
@@ -1425,9 +1448,10 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent
+  // POST /api/v1/projects/:id/agents/:agentId/delete — delete a durable agent (destructive — requires mTLS)
   const durableDeleteMatch = url.match(/^\/api\/v1\/projects\/([^/]+)\/agents\/([^/]+)\/delete$/);
   if (method === 'POST' && durableDeleteMatch) {
+    if (requireMtls()) return;
     const projectId = decodeURIComponent(durableDeleteMatch[1]);
     const agentId = decodeURIComponent(durableDeleteMatch[2]);
     const project = await findProjectById(projectId);
