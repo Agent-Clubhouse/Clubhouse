@@ -8,9 +8,9 @@ import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 
 /** Known tool suffixes for each target kind. */
 const TOOL_SUFFIXES: Record<string, string[]> = {
-  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity'],
+  agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'wake'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
-  'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'get_project_info', 'shoulder_tap'],
+  'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'get_project_info', 'shoulder_tap', 'broadcast'],
   terminal: [],
 };
 
