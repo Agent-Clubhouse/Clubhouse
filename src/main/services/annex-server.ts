@@ -345,34 +345,31 @@ async function buildSnapshot(): Promise<object> {
   const projects = await projectStore.list();
   const agents: Record<string, unknown[]> = {};
   const quickAgents: Record<string, unknown[]> = {};
-
-  // Resolve project icon data URLs for remote display
   const projectIcons: Record<string, string> = {};
-  for (const proj of projects) {
+  const agentIcons: Record<string, string> = {};
+
+  // Fetch project icons in parallel
+  await Promise.all(projects.map(async (proj) => {
     if (proj.icon) {
       const dataUrl = await projectStore.readIconData(proj.icon);
       if (dataUrl) projectIcons[proj.id] = dataUrl;
     }
-  }
+  }));
 
-  // Resolve agent icon data URLs
-  const agentIcons: Record<string, string> = {};
-
-  for (const proj of projects) {
+  // Fetch agents and their icons per project in parallel
+  await Promise.all(projects.map(async (proj) => {
     const durables = await agentConfig.listDurable(proj.path);
-    const mapped = durables.map((d) => mapDurableAgent(d, proj.id));
+    agents[proj.id] = durables.map((d) => mapDurableAgent(d, proj.id));
+    quickAgents[proj.id] = [];
 
-    // Resolve agent icon data URLs
-    for (const d of durables) {
+    // Fetch agent icons in parallel within this project
+    await Promise.all(durables.map(async (d) => {
       if (d.icon) {
         const dataUrl = await agentConfig.readAgentIconData(d.icon);
         if (dataUrl) agentIcons[d.id] = dataUrl;
       }
-    }
-
-    agents[proj.id] = mapped;
-    quickAgents[proj.id] = [];
-  }
+    }));
+  }));
 
   // Add tracked quick agents to their project buckets
   for (const qa of trackedQuickAgents.values()) {
@@ -408,22 +405,24 @@ async function buildSnapshot(): Promise<object> {
     annexEnabled: (m.permissions ?? []).includes('annex'),
   }));
 
-  // Read per-project canvas state from plugin storage
+  // Read per-project canvas state in parallel
   const canvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }> = {};
-  for (const proj of projects) {
+  await Promise.all(projects.map(async (proj) => {
     try {
-      const canvases = await readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'project-local',
-        key: 'canvas-instances',
-        projectPath: proj.path,
-      });
-      const activeId = await readPluginStorageKey({
-        pluginId: 'canvas',
-        scope: 'project-local',
-        key: 'canvas-active-id',
-        projectPath: proj.path,
-      });
+      const [canvases, activeId] = await Promise.all([
+        readPluginStorageKey({
+          pluginId: 'canvas',
+          scope: 'project-local',
+          key: 'canvas-instances',
+          projectPath: proj.path,
+        }),
+        readPluginStorageKey({
+          pluginId: 'canvas',
+          scope: 'project-local',
+          key: 'canvas-active-id',
+          projectPath: proj.path,
+        }),
+      ]);
       if (canvases && Array.isArray(canvases) && canvases.length > 0) {
         canvasState[proj.id] = {
           canvases,
@@ -433,7 +432,7 @@ async function buildSnapshot(): Promise<object> {
     } catch {
       // Canvas data not available — skip
     }
-  }
+  }));
 
   return {
     protocolVersion: 2,
