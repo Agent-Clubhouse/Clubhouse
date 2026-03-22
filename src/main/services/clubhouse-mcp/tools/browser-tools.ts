@@ -5,6 +5,7 @@
 
 import { webContents } from 'electron';
 import { registerToolTemplate } from '../tool-registry';
+import { bindingManager } from '../binding-manager';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
 
@@ -112,6 +113,20 @@ function errorResult(text: string): McpToolResult {
   return { content: [{ type: 'text', text }], isError: true };
 }
 
+/** Verify the agent has an active binding to the target widget. */
+function assertAgentBoundToWidget(agentId: string, widgetId: string): void {
+  const bindings = bindingManager.getBindingsForAgent(agentId);
+  const hasBrowserBinding = bindings.some(
+    b => b.targetKind === 'browser' && b.targetId === widgetId,
+  );
+  if (!hasBrowserBinding) {
+    appLog('core:mcp', 'warn', 'Browser tool rejected — agent not bound to widget', {
+      meta: { agentId, widgetId },
+    });
+    throw new Error(`Agent ${agentId} is not bound to widget ${widgetId}`);
+  }
+}
+
 /** For testing: clear all internal state. */
 export function _resetForTesting(): void {
   webviewRegistry.clear();
@@ -132,6 +147,7 @@ export function registerBrowserTools(): void {
       required: ['url'],
     },
   }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const url = args.url as string;
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
       return errorResult('URL must start with http:// or https://');
@@ -151,7 +167,8 @@ export function registerBrowserTools(): void {
   registerToolTemplate('browser', 'screenshot', {
     description: 'Take a screenshot of the browser widget.',
     inputSchema: { type: 'object', properties: {} },
-  }, async (targetId) => {
+  }, async (targetId, agentId) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -183,7 +200,8 @@ export function registerBrowserTools(): void {
         limit: { type: 'number', description: 'Number of entries to return (default 50).' },
       },
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
 
@@ -204,7 +222,8 @@ export function registerBrowserTools(): void {
       },
       required: ['selector'],
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const selector = args.selector as string;
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
@@ -246,7 +265,8 @@ export function registerBrowserTools(): void {
       },
       required: ['selector', 'text'],
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const selector = args.selector as string;
     const text = args.text as string;
     const wc = getWebContents(targetId);
@@ -287,7 +307,8 @@ export function registerBrowserTools(): void {
       },
       required: ['expression'],
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const expression = args.expression as string;
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
@@ -323,7 +344,8 @@ export function registerBrowserTools(): void {
         selector: { type: 'string', description: 'CSS selector (optional, defaults to document body).' },
       },
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const selector = (args.selector as string) || 'body';
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
@@ -359,7 +381,8 @@ export function registerBrowserTools(): void {
         depth: { type: 'number', description: 'Maximum depth to traverse (default 5).' },
       },
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
+    assertAgentBoundToWidget(agentId, targetId);
     const depth = Math.min(Math.max(Math.floor((args.depth as number) || 5), 1), 10);
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
