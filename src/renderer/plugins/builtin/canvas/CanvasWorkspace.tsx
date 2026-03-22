@@ -17,7 +17,9 @@ import { WireOverlay } from './WireOverlay';
 import { WireDragOverlay } from './WireDragOverlay';
 import { WireConfigPopover } from './WireConfigPopover';
 import { CanvasMinimap } from './CanvasMinimap';
-import { useWiring } from './useWiring';
+import { useWiring, type ZoneWireCallback } from './useWiring';
+import { useZoneWireStore } from './zone-wire-store';
+import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 import type { PluginCanvasView as PluginCanvasViewType } from './canvas-types';
@@ -115,7 +117,30 @@ export function CanvasWorkspace({
   // ── MCP wiring state ──────────────────────────────────────────
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
-  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
+  const addZoneWire = useZoneWireStore((s) => s.addWire);
+  const zoneWires = useZoneWireStore((s) => s.wires);
+  const mcpBind = useMcpBindingStore((s) => s.bind);
+  const mcpUnbind = useMcpBindingStore((s) => s.unbind);
+
+  const handleZoneWire: ZoneWireCallback = useCallback((sourceZoneId, targetId, targetType) => {
+    addZoneWire({ sourceZoneId, targetId, targetType });
+    // Immediately expand and reconcile bindings
+    const allWires = [...useZoneWireStore.getState().wires];
+    const expanded = expandZoneWires(allWires, views);
+    const current = useMcpBindingStore.getState().bindings;
+    const { toAdd } = reconcileZoneBindings(expanded, current);
+    for (const b of toAdd) {
+      mcpBind(b.agentId, {
+        targetId: b.targetId,
+        targetKind: b.targetKind,
+        label: b.label,
+        agentName: b.agentName,
+        targetName: b.targetName,
+      });
+    }
+  }, [views, addZoneWire, mcpBind]);
+
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
 
   // ── Zone state ──────────────────────────────────────────────────
@@ -691,10 +716,12 @@ export function CanvasWorkspace({
           <ZoneCard
             key={`zone-card-${zone.id}`}
             zone={zone}
+            mcpEnabled={mcpEnabled}
             onRename={(name) => onUpdateView(zone.id, { displayName: name, title: name })}
             onThemeChange={(themeId) => onUpdateZoneTheme(zone.id, themeId)}
             onDelete={() => handleZoneDelete(zone.id)}
             onDragStart={(e) => handleZoneDragStart(zone.id, e)}
+            onStartWireDrag={() => startWireDrag(zone)}
           />
         ))}
 

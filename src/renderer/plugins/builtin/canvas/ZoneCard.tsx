@@ -11,13 +11,15 @@ import { getAllThemeIds, getTheme } from '../../../themes';
 
 interface ZoneCardProps {
   zone: ZoneCanvasView;
+  mcpEnabled: boolean;
   onRename: (name: string) => void;
   onThemeChange: (themeId: string) => void;
   onDelete: () => void;
   onDragStart: (e: React.MouseEvent) => void;
+  onStartWireDrag: () => void;
 }
 
-export function ZoneCard({ zone, onRename, onThemeChange, onDelete, onDragStart }: ZoneCardProps) {
+export function ZoneCard({ zone, mcpEnabled, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const currentTheme = getTheme(zone.themeId);
@@ -82,6 +84,22 @@ export function ZoneCard({ zone, onRename, onThemeChange, onDelete, onDragStart 
           />
         )}
       </div>
+
+      {/* Wire handle — only when MCP enabled */}
+      {mcpEnabled && (
+        <button
+          className="w-6 h-6 flex items-center justify-center rounded text-ctp-blue hover:bg-ctp-blue/20 transition-colors flex-shrink-0"
+          onClick={(e) => { e.stopPropagation(); onStartWireDrag(); }}
+          onMouseDown={(e) => e.stopPropagation()}
+          title="Connect zone"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="5" cy="12" r="3" />
+            <circle cx="19" cy="12" r="3" />
+            <line x1="8" y1="12" x2="16" y2="12" />
+          </svg>
+        </button>
+      )}
 
       {/* Delete button */}
       <button
