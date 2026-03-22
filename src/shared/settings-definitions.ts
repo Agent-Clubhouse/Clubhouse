@@ -38,7 +38,7 @@ export function settingsChannels(key: string) {
 // Concrete definitions — importable from both main and renderer
 // ---------------------------------------------------------------------------
 
-import type { ClipboardSettings, EditorSettings, McpSettings } from './types';
+import type { ClipboardSettings, EditorSettings, McpSettings, SecuritySettings } from './types';
 
 export const CLIPBOARD_SETTINGS: SettingsDefinition<ClipboardSettings> = {
   key: 'clipboard',
@@ -56,4 +56,10 @@ export const MCP_SETTINGS: SettingsDefinition<McpSettings> = {
   key: 'mcp',
   filename: 'mcp-settings.json',
   defaults: { enabled: false, projectDefault: true },
+};
+
+export const SECURITY_SETTINGS: SettingsDefinition<SecuritySettings> = {
+  key: 'security',
+  filename: 'security-settings.json',
+  defaults: { allowLocalFileWebviews: false },
 };
