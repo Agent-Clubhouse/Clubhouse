@@ -1659,8 +1659,15 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       broadcastToAllWindows(IPC.WINDOW.REQUEST_CANVAS_MUTATION, canvasId, scope, mutation, projectId);
 
       // Server-side: read → apply → write → broadcast
-      applyCanvasMutationServerSide(projectId, canvasId, mutation).catch(() => {
-        // Mutation failed server-side — renderer path is the fallback
+      applyCanvasMutationServerSide(projectId, canvasId, mutation).catch((err) => {
+        const message = err instanceof Error ? err.message : 'canvas_mutation_failed';
+        appLog('core:annex', 'error', 'Canvas mutation failed server-side', {
+          meta: { projectId, canvasId, mutationType: mutation.type, error: message },
+        });
+        ws.send(JSON.stringify({
+          type: 'canvas:mutation:error',
+          payload: { projectId, canvasId, mutationType: mutation.type, message },
+        }));
       });
       break;
     }
