@@ -202,14 +202,19 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // ── Remote mutation helper ──────────────────────────────────────
 
   /**
-   * For remote projects, forward mutations to the satellite instead of
-   * applying locally. The satellite will apply them and broadcast back.
-   * Returns true if the mutation was forwarded (caller should skip local apply).
+   * For remote projects, forward mutations to the satellite for persistence.
+   *
+   * Mutations are always applied locally first (optimistic) so the controller
+   * UI updates immediately.  The satellite processes the mutation, persists it,
+   * and broadcasts the authoritative state back.  On hydration the satellite's
+   * state replaces the local optimistic state — this is safe because the
+   * mutation result is identical on both sides for modify-operations (move,
+   * resize, update, remove) and for create-operations the satellite's version
+   * simply has a different view ID at the same position.
    */
-  const remoteForward = useCallback((mutation: CanvasMutation): boolean => {
-    if (!isRemote || !projectId) return false;
+  const remoteForward = useCallback((mutation: CanvasMutation): void => {
+    if (!isRemote || !projectId) return;
     sendRemoteCanvasMutation(projectId, activeCanvasId, scope, mutation);
-    return true;
   }, [isRemote, projectId, activeCanvasId, scope]);
 
   // ── Pop-out handler ─────────────────────────────────────────────
@@ -231,12 +236,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store]);
 
   const handleAddCanvas = useCallback(() => {
-    if (remoteForward({ type: 'addCanvas' })) return;
+    remoteForward({ type: 'addCanvas' });
     store.getState().addCanvas();
   }, [store, remoteForward]);
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
-    if (remoteForward({ type: 'removeCanvas', canvasId })) return;
+    remoteForward({ type: 'removeCanvas', canvasId });
     // Unbind all MCP wires attached to views on this canvas before removing it
     const canvas = store.getState().canvases.find((c) => c.id === canvasId);
     if (canvas) {
@@ -257,7 +262,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, remoteForward]);
 
   const handleRenameCanvas = useCallback((canvasId: string, name: string) => {
-    if (remoteForward({ type: 'renameCanvas', canvasId, name })) return;
+    remoteForward({ type: 'renameCanvas', canvasId, name });
     store.getState().renameCanvas(canvasId, name);
   }, [store, remoteForward]);
 
@@ -269,7 +274,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store]);
 
   const handleAddView = useCallback((type: CanvasViewType, position: { x: number; y: number }) => {
-    if (remoteForward({ type: 'addView', viewType: type, position })) return;
+    remoteForward({ type: 'addView', viewType: type, position });
     store.getState().addView(type, position);
   }, [store, remoteForward]);
 
@@ -277,12 +282,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     pluginId: string, qualifiedType: string, label: string,
     position: { x: number; y: number }, defaultSize?: { width: number; height: number },
   ) => {
-    if (remoteForward({ type: 'addPluginView', pluginId, qualifiedType, label, position, defaultSize })) return;
+    remoteForward({ type: 'addPluginView', pluginId, qualifiedType, label, position, defaultSize });
     store.getState().addPluginView(pluginId, qualifiedType, label, position, undefined, defaultSize);
   }, [store, remoteForward]);
 
   const handleRemoveView = useCallback((viewId: string) => {
-    if (remoteForward({ type: 'removeView', viewId })) return;
+    remoteForward({ type: 'removeView', viewId });
     // Unbind any MCP wires attached to this view before removing it
     const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
     if (view) {
@@ -294,27 +299,27 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [store, remoteForward]);
 
   const handleMoveView = useCallback((viewId: string, position: { x: number; y: number }) => {
-    if (remoteForward({ type: 'moveView', viewId, position })) return;
+    remoteForward({ type: 'moveView', viewId, position });
     store.getState().moveView(viewId, position);
   }, [store, remoteForward]);
 
   const handleResizeView = useCallback((viewId: string, size: { width: number; height: number }) => {
-    if (remoteForward({ type: 'resizeView', viewId, size })) return;
+    remoteForward({ type: 'resizeView', viewId, size });
     store.getState().resizeView(viewId, size);
   }, [store, remoteForward]);
 
   const handleFocusView = useCallback((viewId: string) => {
-    if (remoteForward({ type: 'focusView', viewId })) return;
+    remoteForward({ type: 'focusView', viewId });
     store.getState().focusView(viewId);
   }, [store, remoteForward]);
 
   const handleUpdateView = useCallback((viewId: string, updates: Partial<any>) => {
-    if (remoteForward({ type: 'updateView', viewId, updates })) return;
+    remoteForward({ type: 'updateView', viewId, updates });
     store.getState().updateView(viewId, updates);
   }, [store, remoteForward]);
 
   const handleZoomView = useCallback((viewId: string | null) => {
-    if (remoteForward({ type: 'zoomView', viewId })) return;
+    remoteForward({ type: 'zoomView', viewId });
     store.getState().zoomView(viewId);
   }, [store, remoteForward]);
 
@@ -325,7 +330,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleMoveViews = useCallback((positions: Map<string, { x: number; y: number }>) => {
     const posObj = Object.fromEntries(positions);
-    if (remoteForward({ type: 'moveViews', positions: posObj })) return;
+    remoteForward({ type: 'moveViews', positions: posObj });
     store.getState().moveViews(positions);
   }, [store, remoteForward]);
 

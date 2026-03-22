@@ -533,4 +533,177 @@ describe('annex canvas sync', () => {
       expect(canvasMutationSpy).not.toHaveBeenCalled();
     });
   });
+
+  // ── Controller optimistic local apply ──────────────────────────────
+  //
+  // The controller applies mutations locally AND forwards to satellite.
+  // On hydration the satellite's state replaces the optimistic local state.
+
+  describe('controller optimistic apply with satellite hydration', () => {
+    it('addView appears locally then survives hydration with satellite version', () => {
+      const canvasId = 'opt-canvas-1';
+
+      // Controller hydrated from satellite
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 0, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [],
+        }],
+        canvasId,
+      );
+
+      // Controller adds view locally (optimistic)
+      controllerStore.getState().addView('agent', { x: 200, y: 200 });
+      expect(controllerStore.getState().views).toHaveLength(1);
+      const localViewId = controllerStore.getState().views[0].id;
+
+      // Satellite processes the same mutation with a different view ID
+      // and broadcasts back. Controller hydrates with satellite's version.
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{
+            id: 'cv_satellite1', type: 'agent',
+            position: { x: 200, y: 200 }, size: { width: 480, height: 480 },
+            title: 'Agent', displayName: 'Agent', zIndex: 0, metadata: {},
+          }],
+        }],
+        canvasId,
+      );
+
+      // After hydration: satellite's version replaces local
+      expect(controllerStore.getState().views).toHaveLength(1);
+      expect(controllerStore.getState().views[0].id).toBe('cv_satellite1');
+      expect(controllerStore.getState().views[0].id).not.toBe(localViewId);
+    });
+
+    it('moveView applies locally and survives hydration', () => {
+      const canvasId = 'opt-canvas-2';
+
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{
+            id: 'cv_view1', type: 'agent',
+            position: { x: 100, y: 100 }, size: { width: 480, height: 480 },
+            title: 'Agent', displayName: 'Agent', zIndex: 0, metadata: {},
+          }],
+        }],
+        canvasId,
+      );
+
+      // Controller moves view locally (optimistic)
+      controllerStore.getState().moveView('cv_view1', { x: 500, y: 300 });
+      expect(controllerStore.getState().views[0].position).toEqual({ x: 500, y: 300 });
+
+      // Satellite confirms the same move
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{
+            id: 'cv_view1', type: 'agent',
+            position: { x: 500, y: 300 }, size: { width: 480, height: 480 },
+            title: 'Agent', displayName: 'Agent', zIndex: 0, metadata: {},
+          }],
+        }],
+        canvasId,
+      );
+
+      // Position stays at moved location (no snap-back)
+      expect(controllerStore.getState().views[0].position).toEqual({ x: 500, y: 300 });
+    });
+
+    it('updateView (agent pick) applies locally — shows terminal immediately', () => {
+      const canvasId = 'opt-canvas-3';
+
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{
+            id: 'cv_view1', type: 'agent',
+            position: { x: 100, y: 100 }, size: { width: 480, height: 480 },
+            title: 'Agent', displayName: 'Agent', zIndex: 0, metadata: {},
+          }],
+        }],
+        canvasId,
+      );
+
+      // Controller picks an agent (optimistic local apply)
+      controllerStore.getState().updateView('cv_view1', {
+        agentId: 'remote||sat-1||agent-1',
+        title: 'mega-camel',
+        displayName: 'mega-camel',
+      });
+
+      // View should immediately have agentId set (UI transitions to terminal)
+      const view = controllerStore.getState().views[0] as any;
+      expect(view.agentId).toBe('remote||sat-1||agent-1');
+      expect(view.title).toBe('mega-camel');
+    });
+
+    it('removeView applies locally — view disappears immediately', () => {
+      const canvasId = 'opt-canvas-4';
+
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 2, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [
+            { id: 'cv_a', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} },
+            { id: 'cv_b', type: 'agent', position: { x: 500, y: 0 }, size: { width: 480, height: 480 }, title: 'B', displayName: 'B', zIndex: 1, metadata: {} },
+          ],
+        }],
+        canvasId,
+      );
+
+      // Controller removes view B (optimistic)
+      controllerStore.getState().removeView('cv_b');
+      expect(controllerStore.getState().views).toHaveLength(1);
+      expect(controllerStore.getState().views[0].id).toBe('cv_a');
+
+      // Satellite confirms
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 2, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [
+            { id: 'cv_a', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} },
+          ],
+        }],
+        canvasId,
+      );
+
+      expect(controllerStore.getState().views).toHaveLength(1);
+    });
+
+    it('resizeView applies locally — no snap-back on hydration', () => {
+      const canvasId = 'opt-canvas-5';
+
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{
+            id: 'cv_view1', type: 'agent',
+            position: { x: 100, y: 100 }, size: { width: 480, height: 480 },
+            title: 'Agent', displayName: 'Agent', zIndex: 0, metadata: {},
+          }],
+        }],
+        canvasId,
+      );
+
+      controllerStore.getState().resizeView('cv_view1', { width: 800, height: 600 });
+      expect(controllerStore.getState().views[0].size).toEqual({ width: 800, height: 600 });
+    });
+  });
 });
