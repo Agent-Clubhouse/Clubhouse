@@ -230,8 +230,8 @@ export function showConfirmDialog(message: string): { promise: Promise<boolean>;
 
 const ACTION_STYLE_CLASSES: Record<NonNullable<ApprovalDialogAction['style']>, string> = {
   primary: 'bg-ctp-accent text-ctp-base hover:opacity-90 font-medium',
-  danger: 'bg-ctp-red text-ctp-base hover:opacity-90 font-medium',
-  default: 'text-ctp-subtext0 hover:text-ctp-text hover:bg-ctp-surface0',
+  danger: 'bg-ctp-error text-ctp-base hover:opacity-90 font-medium',
+  default: 'text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-0',
 };
 
 function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
@@ -262,12 +262,12 @@ function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
       data-testid="plugin-dialog-overlay"
     >
       <div
-        className="bg-ctp-mantle border border-ctp-surface1 rounded-xl shadow-2xl w-[480px] flex flex-col"
+        className="bg-ctp-mantle border border-surface-1 rounded-xl shadow-2xl w-[480px] flex flex-col"
         onClick={(e) => e.stopPropagation()}
         data-testid="plugin-approval-dialog"
       >
         {/* Header */}
-        <div className="px-4 py-3 border-b border-ctp-surface0">
+        <div className="px-4 py-3 border-b border-surface-0">
           <h3 className="text-sm font-semibold text-ctp-text" data-testid="plugin-approval-title">
             {options.title}
           </h3>
@@ -281,7 +281,7 @@ function ApprovalDialog({ options, onResolve }: ApprovalDialogProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-ctp-surface0">
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-surface-0">
           {options.actions.map((action) => (
             <button
               key={action.value}

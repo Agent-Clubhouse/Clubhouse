@@ -427,7 +427,7 @@ describe('showApprovalDialog', () => {
     });
 
     const deleteBtn = screen.getByTestId('plugin-approval-action-delete');
-    expect(deleteBtn.className).toContain('bg-ctp-red');
+    expect(deleteBtn.className).toContain('bg-ctp-error');
   });
 
   it('cleanup resolves with null', async () => {
