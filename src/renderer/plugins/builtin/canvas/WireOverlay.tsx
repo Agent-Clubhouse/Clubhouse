@@ -14,11 +14,15 @@ import { WireFlowDots } from './WireFlowDots';
 import { useWirePhysics } from './useWirePhysics';
 import { useWireActivity } from './useWireActivity';
 
-/** CSS animation for ambient wire glow */
+/** CSS animations for wire glow — ambient is subtle, active is vivid */
 const WIRE_GLOW_KEYFRAMES = `
 @keyframes wire-pulse {
   0%, 100% { filter: drop-shadow(0 0 3px rgb(var(--ctp-accent, 137 180 250) / 0.4)); }
   50% { filter: drop-shadow(0 0 6px rgb(var(--ctp-accent, 137 180 250) / 0.7)); }
+}
+@keyframes wire-pulse-active {
+  0%, 100% { filter: drop-shadow(0 0 6px rgb(var(--ctp-accent, 137 180 250) / 0.8)); }
+  50% { filter: drop-shadow(0 0 12px rgb(var(--ctp-accent, 137 180 250) / 1)); }
 }
 `;
 
@@ -106,6 +110,8 @@ const WireGroup = React.memo(function WireGroup({
     ? sleepingAgentIds.has(binding.agentId) || sleepingAgentIds.has(binding.targetId)
     : false;
 
+  const isActive = activity.startsWith('active');
+
   return (
     <g data-testid={`wire-group-${wireKey}`} data-bidir={bidir ? 'true' : undefined} data-activity={activity} data-dimmed={isDimmed ? 'true' : undefined}>
       {/* Invisible thick hitbox for click interaction */}
@@ -123,15 +129,15 @@ const WireGroup = React.memo(function WireGroup({
         d={path}
         fill="none"
         stroke="rgb(var(--ctp-accent, 137 180 250))"
-        strokeWidth={2}
+        strokeWidth={isActive ? 2.5 : 2}
         strokeLinecap="round"
         markerEnd="url(#wire-arrow-fwd)"
         markerStart={bidir ? 'url(#wire-arrow-rev)' : undefined}
         style={{
           pointerEvents: 'none',
-          animation: isDimmed ? 'none' : 'wire-pulse 3s ease-in-out infinite',
+          animation: isDimmed ? 'none' : isActive ? 'wire-pulse-active 1.5s ease-in-out infinite' : 'wire-pulse 3s ease-in-out infinite',
           opacity: isDimmed ? 0.35 : 1,
-          transition: 'opacity 0.5s ease',
+          transition: 'opacity 0.5s ease, stroke-width 0.3s ease',
         }}
         data-testid={`wire-path-${wireKey}`}
       />
