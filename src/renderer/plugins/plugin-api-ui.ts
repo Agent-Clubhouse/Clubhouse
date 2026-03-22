@@ -125,14 +125,12 @@ export function createNavigationAPI(): NavigationAPI {
     },
     toggleSidebar(): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { usePanelStore } = require('../stores/panelStore');
         usePanelStore.getState().toggleExplorerCollapse();
       } catch { /* ignore in test */ }
     },
     toggleAccessoryPanel(): void {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { usePanelStore } = require('../stores/panelStore');
         usePanelStore.getState().toggleAccessoryCollapse();
       } catch { /* ignore in test */ }
@@ -160,15 +158,10 @@ export function createWidgetsAPI(): WidgetsAPI {
   let AgentAvatarWithRingComponent: React.ComponentType<any>;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentTerminalComponent = require('../features/agents/AgentTerminal').AgentTerminal;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     SleepingAgentComponent = require('../features/agents/SleepingAgent').SleepingAgent;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentAvatarComponent = require('../features/agents/AgentAvatar').AgentAvatar;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     AgentAvatarWithRingComponent = require('../features/agents/AgentAvatar').AgentAvatarWithRing;
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     QuickAgentGhostComponent = require('../features/agents/QuickAgentGhost').QuickAgentGhost;
   } catch {
     // In test environments, return stub components

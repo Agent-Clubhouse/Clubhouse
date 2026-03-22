@@ -1724,7 +1724,7 @@ async function handleSpawnQuickAgentWs(
       parentAgentId, projectId: project.id, headless: true,
     });
     ws.send(JSON.stringify({ type: 'agent:spawn:ack', payload: { id: agentId, name, status: 'starting' } }));
-  } catch (err) {
+  } catch {
     tracked.status = 'failed';
     trackedQuickAgents.delete(agentId);
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'spawn_failed' } }));
@@ -1761,7 +1761,7 @@ async function handleWakeAgentWs(
     broadcastAndBuffer('agent:woken', { agentId: config.id, source: 'annex-v2' });
     broadcastSnapshotRefresh();
     ws.send(JSON.stringify({ type: 'agent:wake:ack', payload: { agentId: config.id, status: 'starting' } }));
-  } catch (err) {
+  } catch {
     ws.send(JSON.stringify({ type: 'error', payload: { message: 'wake_failed' } }));
   }
 }
@@ -2163,7 +2163,7 @@ async function applyCanvasMutationServerSide(
     ? (raw as CanvasInstanceJSON[])
     : [{ id: canvasId, name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null }];
 
-  let activeIdRaw = await readPluginStorageKey({
+  const activeIdRaw = await readPluginStorageKey({
     pluginId: 'canvas',
     scope: 'project-local',
     key: 'canvas-active-id',

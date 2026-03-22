@@ -13,7 +13,6 @@ import {
   StructuredCapable,
 } from './types';
 import type { McpServerDef } from '../../shared/types';
-import { mcpServerToToml } from '../services/toml-utils';
 import { BaseProvider } from './base-provider';
 import { CodexAppServerAdapter } from './adapters';
 import { homePath, parseModelChoicesFromHelp } from './shared';

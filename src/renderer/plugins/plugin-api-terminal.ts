@@ -49,7 +49,6 @@ export function createTerminalAPI(ctx: PluginContext): TerminalAPI {
   let ShellTerminalComponent: React.ComponentType<any> | null = null;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     ShellTerminalComponent = require('../features/terminal/ShellTerminal').ShellTerminal;
   } catch {
     // Test environment — return stub

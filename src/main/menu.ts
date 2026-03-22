@@ -1,4 +1,4 @@
-import { app, ipcMain, Menu, BrowserWindow } from 'electron';
+import { app, Menu, BrowserWindow } from 'electron';
 import { IPC } from '../shared/ipc-channels';
 
 export function buildMenu(): void {

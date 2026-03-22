@@ -28,7 +28,6 @@ vi.mock('../log-service', () => ({
 import * as bridgeServer from './bridge-server';
 import { bindingManager } from './binding-manager';
 import { registerToolTemplate, buildToolName, _resetForTesting as resetTools } from './tool-registry';
-import type { McpBinding } from './types';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {

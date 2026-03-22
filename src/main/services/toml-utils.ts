@@ -91,22 +91,6 @@ export function jsonMcpToToml(jsonStr: string): string | null {
 // ── TOML section management ─────────────────────────────────────────────────
 
 /**
- * Pattern that matches a `[mcp_servers.<name>]` section header and all
- * subsequent lines up to the next top-level section header or EOF.
- * Also matches sub-sections like `[mcp_servers.<name>.env]`.
- */
-function mcpServerSectionPattern(name: string): RegExp {
-  // Escape dots and other regex-special chars in the name
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // Match [mcp_servers.<name>] or [mcp_servers.<name>.<sub>] headers
-  // and all lines until the next top-level section (not a sub-section of this server)
-  return new RegExp(
-    `(?:^|\\n)(\\[mcp_servers\\.${escaped}(?:\\.[^\\]]*)?\\](?:[^\\[]|\\[(?!(?:[a-z_]|mcp_servers\\.(?!${escaped}(?:\\.|\\])))))*?)(?=\\n\\[(?!mcp_servers\\.${escaped})|$)`,
-    'g',
-  );
-}
-
-/**
  * Remove all `[mcp_servers.<name>]` sections (and sub-sections) from a TOML string.
  */
 export function stripMcpServerSection(toml: string, serverName: string): string {

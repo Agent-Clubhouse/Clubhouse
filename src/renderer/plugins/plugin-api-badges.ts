@@ -5,7 +5,6 @@ let _badgeStoreCache: any = null;
 function getBadgeStore() {
   if (_badgeStoreCache) return _badgeStoreCache;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     _badgeStoreCache = require('../stores/badgeStore').useBadgeStore;
   } catch {
     // Test environment — return a no-op store
