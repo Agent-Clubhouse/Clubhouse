@@ -278,10 +278,64 @@ describe('GroupProjectLifecycle', () => {
 
     const calls = mockPtyWrite.mock.calls;
     const pollingCall = calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('Poll the bulletin'),
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('bulletin'),
     );
     expect(pollingCall).toBeDefined();
     expect(pollingCall![1]).toContain('"Beta Team"');
+  });
+
+  it('sends Claude Code-specific polling instruction with /loop', async () => {
+    const project = await groupProjectRegistry.create('CC Project');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
+    // Simulate a Claude Code agent
+    mockGetAgentOrchestrator.mockReturnValue('claude-code');
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-cc', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'claude-bot',
+    });
+
+    await new Promise(r => setTimeout(r, 800));
+
+    const calls = mockPtyWrite.mock.calls;
+    const pollingCall = calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('/loop'),
+    );
+    expect(pollingCall).toBeDefined();
+    expect(pollingCall![1]).toContain('"CC Project"');
+    expect(pollingCall![1]).toContain('read_bulletin');
+  });
+
+  it('sends generic polling instruction for non-claude orchestrators', async () => {
+    const project = await groupProjectRegistry.create('Codex Project');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
+    // Simulate a Codex CLI agent
+    mockGetAgentOrchestrator.mockReturnValue('codex-cli');
+
+    initGroupProjectLifecycle();
+
+    bindingManager.bind('agent-codex', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'GP',
+      agentName: 'codex-bot',
+    });
+
+    await new Promise(r => setTimeout(r, 800));
+
+    const calls = mockPtyWrite.mock.calls;
+    const pollingCall = calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification') && (c[1] as string).includes('bulletin'),
+    );
+    expect(pollingCall).toBeDefined();
+    expect(pollingCall![1]).not.toContain('/loop');
+    expect(pollingCall![1]).toContain('read_bulletin');
   });
 
   it('does not inject polling instruction when polling is disabled', async () => {
