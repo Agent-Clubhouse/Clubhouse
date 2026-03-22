@@ -226,7 +226,11 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+let isQuitting = false;
+app.on('before-quit', (event) => {
+  if (isQuitting) return; // Re-entrance guard — already shutting down
+  isQuitting = true;
+
   appLog('core:shutdown', 'info', 'App shutting down, restoring configs and killing all PTY sessions');
   stopUpdateChecks();
   stopPeriodicPluginUpdateChecks();
@@ -242,16 +246,25 @@ app.on('before-quit', () => {
   // Flush any pending throttled IPC broadcasts before tearing down
   flushPendingBroadcasts();
 
-  // Flush any pending agent config writes to disk (best-effort async)
-  void flushAllAgentConfigs().catch((err) => {
-    appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
-  });
-
   stopPtyStaleSweep();
   stopHeadlessStaleSweep();
   annexServer.stop();
   mcpBridgeServer.stop();
   restoreAll();
-  killAll();
   stopAllWatches();
+
+  // Delay quit to await async cleanup (killAll, flushAllAgentConfigs).
+  // Without this, Electron may exit before PTY processes are terminated,
+  // leaving orphaned processes.
+  event.preventDefault();
+  Promise.all([
+    killAll().catch((err) => {
+      appLog('core:shutdown', 'error', `Failed to kill PTY sessions: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+    flushAllAgentConfigs().catch((err) => {
+      appLog('core:shutdown', 'error', `Failed to flush agent configs: ${err instanceof Error ? err.message : String(err)}`);
+    }),
+  ]).finally(() => {
+    app.quit();
+  });
 });
