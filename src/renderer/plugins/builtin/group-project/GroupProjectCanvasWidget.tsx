@@ -10,6 +10,7 @@ import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupp
 import { useAgentStore } from '../../../stores/agentStore';
 import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
+import { Toggle } from '../../../components/Toggle';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -790,24 +791,29 @@ function SettingsModal({
   update,
   onClose,
 }: {
-  project: { description: string; instructions: string };
+  project: { description: string; instructions: string; metadata?: Record<string, unknown> };
   groupProjectId: string;
-  update: (id: string, fields: { description?: string; instructions?: string }) => Promise<void>;
+  update: (id: string, fields: { description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
   onClose: () => void;
 }) {
   const [desc, setDesc] = useState(project.description);
   const [instr, setInstr] = useState(project.instructions);
+  const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project.metadata?.shoulderTapEnabled));
   const [saving, setSaving] = useState(false);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      await update(groupProjectId, { description: desc, instructions: instr });
+      await update(groupProjectId, {
+        description: desc,
+        instructions: instr,
+        metadata: { shoulderTapEnabled },
+      });
       onClose();
     } finally {
       setSaving(false);
     }
-  }, [desc, instr, groupProjectId, update, onClose]);
+  }, [desc, instr, shoulderTapEnabled, groupProjectId, update, onClose]);
 
   return (
     <div className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50">
@@ -837,6 +843,23 @@ function SettingsModal({
             rows={4}
             className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
           />
+        </div>
+
+        {/* Shoulder Tap toggle */}
+        <div className="border-t border-surface-1 pt-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs text-ctp-text font-medium">Shoulder Tap</div>
+              <div className="text-[10px] text-ctp-overlay0 mt-0.5">
+                Allow agents to directly inject messages into each other's terminals.
+                When off, agents can only communicate via the bulletin board.
+              </div>
+            </div>
+            <Toggle
+              checked={shoulderTapEnabled}
+              onChange={setShoulderTapEnabled}
+            />
+          </div>
         </div>
 
         <div className="flex justify-end gap-2">
