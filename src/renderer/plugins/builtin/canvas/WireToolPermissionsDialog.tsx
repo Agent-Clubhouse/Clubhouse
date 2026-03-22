@@ -2,7 +2,7 @@
  * WireToolPermissionsDialog — popout dialog for toggling individual tools on/off per wire.
  */
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { McpBindingEntry } from '../../../stores/mcpBindingStore';
 import { Toggle } from '../../../components/Toggle';
 
