@@ -103,6 +103,8 @@ async function resumeAgent(entry: RestartSessionEntry): Promise<void> {
     // If we had a specific sessionId and it failed, try --continue fallback
     if (entry.sessionId && entry.resumeStrategy === 'auto') {
       try {
+        // Kill existing process before retrying to prevent orphaned agents
+        window.clubhouse.pty.kill(entry.agentId);
         const cwd = entry.worktreePath || entry.projectPath;
         await window.clubhouse.agent.spawnAgent({
           agentId: entry.agentId,
