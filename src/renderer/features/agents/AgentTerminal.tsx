@@ -98,6 +98,8 @@ export function AgentTerminal({ agentId, focused }: Props) {
         window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
           if (buf) term.write(buf);
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
           bufferReplayed = true;
         });
       } else if (remoteParts) {
@@ -105,6 +107,8 @@ export function AgentTerminal({ agentId, focused }: Props) {
         requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
           if (buf) term.write(buf);
+          for (const data of pendingData) term.write(data);
+          pendingData.length = 0;
           bufferReplayed = true;
         });
       }
@@ -123,7 +127,9 @@ export function AgentTerminal({ agentId, focused }: Props) {
     });
 
     // Gate live PTY data until after the buffer snapshot has been replayed.
+    // Queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
+    const pendingData: string[] = [];
 
     let removeDataListener: () => void;
     let removeExitListener: () => void;
@@ -132,8 +138,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
       // Local PTY: receive from local pty manager
       removeDataListener = window.clubhouse.pty.onData(
         (id: string, data: string) => {
-          if (id === agentId && bufferReplayed) {
+          if (id !== agentId) return;
+          if (bufferReplayed) {
             term.write(data);
+          } else {
+            pendingData.push(data);
           }
         }
       );
@@ -155,8 +164,11 @@ export function AgentTerminal({ agentId, focused }: Props) {
       const origAgentId = remoteParts?.agentId;
       removeDataListener = satellitePtyDataBus.on(
         (incomingSatId: string, incomingAgentId: string, data: string) => {
-          if (incomingSatId === satId && incomingAgentId === origAgentId && bufferReplayed) {
+          if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
+          if (bufferReplayed) {
             term.write(data);
+          } else {
+            pendingData.push(data);
           }
         }
       );

@@ -206,17 +206,39 @@ describe('AgentTerminal', () => {
       render(<AgentTerminal agentId="agent-1" />);
       term().write.mockClear();
 
-      // Send data via onData BEFORE buffer resolves — should be gated
+      // Send data via onData BEFORE buffer resolves — should be queued, not written yet
       act(() => { mockOnDataCallback!('agent-1', 'live data'); });
       expect(term().write).not.toHaveBeenCalledWith('live data');
 
-      // Now resolve the buffer
+      // Now resolve the buffer — queued data should be replayed after snapshot
       await act(async () => { resolveBuffer!('buffered output'); });
       expect(term().write).toHaveBeenCalledWith('buffered output');
+      expect(term().write).toHaveBeenCalledWith('live data');
 
       // Data arriving AFTER buffer replay should pass through
       act(() => { mockOnDataCallback!('agent-1', 'new data'); });
       expect(term().write).toHaveBeenCalledWith('new data');
+    });
+
+    it('queues multiple live data chunks during buffer fetch and replays in order', async () => {
+      let resolveBuffer: (val: string) => void;
+      (window.clubhouse.pty.getBuffer as any).mockReturnValue(
+        new Promise<string>((r) => { resolveBuffer = r; })
+      );
+
+      render(<AgentTerminal agentId="agent-1" />);
+      term().write.mockClear();
+
+      // Send multiple chunks before buffer resolves
+      act(() => { mockOnDataCallback!('agent-1', 'chunk1'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk2'); });
+      act(() => { mockOnDataCallback!('agent-1', 'chunk3'); });
+      expect(term().write).not.toHaveBeenCalled();
+
+      // Resolve buffer — snapshot + all queued chunks should be written in order
+      await act(async () => { resolveBuffer!('snapshot'); });
+      const writeCalls = term().write.mock.calls.map((c: unknown[]) => c[0]);
+      expect(writeCalls).toEqual(['snapshot', 'chunk1', 'chunk2', 'chunk3']);
     });
 
     it('ignores PTY data for other agentIds', () => {
