@@ -6,6 +6,7 @@ import type {
   AgentCanvasView,
   AnchorCanvasView,
   PluginCanvasView,
+  ZoneCanvasView,
   Position,
   Size,
   Viewport,
@@ -19,11 +20,18 @@ import {
   DEFAULT_ANCHOR_WIDTH,
   DEFAULT_ANCHOR_HEIGHT,
   ANCHOR_HEIGHT,
+  DEFAULT_ZONE_WIDTH,
+  DEFAULT_ZONE_HEIGHT,
+  MIN_ZONE_WIDTH,
+  MIN_ZONE_HEIGHT,
+  ZONE_PADDING,
+  ZONE_CARD_HEIGHT,
   MIN_ZOOM,
   MAX_ZOOM,
   CANVAS_SIZE,
   deduplicateDisplayName,
 } from './canvas-types';
+import { generateZoneName } from '../../../../shared/name-generator';
 import type { CanvasWidgetMetadata, CanvasWidgetFilter, CanvasWidgetHandle } from '../../../../shared/plugin-types';
 
 // ── ID generation ────────────────────────────────────────────────────
@@ -82,6 +90,19 @@ export function createView(
         label: displayName,
         size: { width: DEFAULT_ANCHOR_WIDTH, height: DEFAULT_ANCHOR_HEIGHT },
       } satisfies AnchorCanvasView;
+    }
+    case 'zone': {
+      const displayName = deduplicateDisplayName(generateZoneName(), existingDisplayNames);
+      return {
+        ...base,
+        type: 'zone',
+        title: displayName,
+        displayName,
+        metadata: {},
+        themeId: 'catppuccin-mocha',
+        containedViewIds: [],
+        size: { width: DEFAULT_ZONE_WIDTH, height: DEFAULT_ZONE_HEIGHT },
+      } satisfies ZoneCanvasView;
     }
     case 'plugin':
       // Plugin views are created via createPluginView instead
@@ -169,7 +190,23 @@ export function updateViewSize(views: CanvasView[], viewId: string, size: Size):
   return views.map((v) => {
     if (v.id !== viewId) return v;
     // Anchors have a fixed height — only width is user-adjustable
-    const height = v.type === 'anchor' ? ANCHOR_HEIGHT : Math.max(MIN_VIEW_HEIGHT, size.height);
+    if (v.type === 'anchor') {
+      return { ...v, size: { width: Math.max(MIN_VIEW_WIDTH, size.width), height: ANCHOR_HEIGHT } };
+    }
+    // Zones enforce their own minimums and cannot shrink below contained widget bounds
+    if (v.type === 'zone') {
+      const zone = v as ZoneCanvasView;
+      const containedViews = views.filter((cv) => zone.containedViewIds.includes(cv.id));
+      const minBounds = computeZoneBounds(zone, containedViews);
+      return {
+        ...v,
+        size: {
+          width: Math.max(MIN_ZONE_WIDTH, minBounds.size.width, size.width),
+          height: Math.max(MIN_ZONE_HEIGHT, minBounds.size.height, size.height),
+        },
+      };
+    }
+    const height = Math.max(MIN_VIEW_HEIGHT, size.height);
     return { ...v, size: { width: Math.max(MIN_VIEW_WIDTH, size.width), height } };
   });
 }
@@ -442,6 +479,87 @@ export function computeTiledPositions(
   }
 
   return result;
+}
+
+// ── Zone containment ────────────────────────────────────────────────
+
+/** Check if a view is spatially inside a zone (>50% overlap by area). */
+export function isViewInZone(view: CanvasView, zone: ZoneCanvasView): boolean {
+  if (view.id === zone.id) return false;
+  if (view.type === 'zone') return false; // no nesting
+
+  const overlapX = Math.max(0,
+    Math.min(view.position.x + view.size.width, zone.position.x + zone.size.width)
+    - Math.max(view.position.x, zone.position.x),
+  );
+  const overlapY = Math.max(0,
+    Math.min(view.position.y + view.size.height, zone.position.y + zone.size.height)
+    - Math.max(view.position.y, zone.position.y),
+  );
+  const overlapArea = overlapX * overlapY;
+  const viewArea = view.size.width * view.size.height;
+  return viewArea > 0 && overlapArea > viewArea * 0.5;
+}
+
+/** Compute which non-zone views are contained in a zone. */
+export function computeZoneContainment(zone: ZoneCanvasView, allViews: CanvasView[]): string[] {
+  return allViews
+    .filter((v) => isViewInZone(v, zone))
+    .map((v) => v.id);
+}
+
+/** Compute the minimum bounds a zone needs to encompass all contained views plus padding. */
+export function computeZoneBounds(
+  zone: ZoneCanvasView,
+  containedViews: CanvasView[],
+  padding: number = ZONE_PADDING,
+): { position: Position; size: Size } {
+  if (containedViews.length === 0) {
+    return { position: zone.position, size: zone.size };
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const v of containedViews) {
+    minX = Math.min(minX, v.position.x);
+    minY = Math.min(minY, v.position.y);
+    maxX = Math.max(maxX, v.position.x + v.size.width);
+    maxY = Math.max(maxY, v.position.y + v.size.height);
+  }
+
+  // Account for zone card at top-left
+  const topPadding = Math.max(padding, ZONE_CARD_HEIGHT + 10);
+
+  return {
+    position: snapPosition({ x: minX - padding, y: minY - topPadding }),
+    size: {
+      width: Math.max(MIN_ZONE_WIDTH, snapToGrid(maxX - minX + padding * 2)),
+      height: Math.max(MIN_ZONE_HEIGHT, snapToGrid(maxY - minY + topPadding + padding)),
+    },
+  };
+}
+
+/**
+ * Recompute containment and auto-resize for all zones after spatial changes.
+ * Returns updated views array.
+ */
+export function recomputeZones(views: CanvasView[]): CanvasView[] {
+  const zones = views.filter((v): v is ZoneCanvasView => v.type === 'zone');
+  if (zones.length === 0) return views;
+
+  let updated = [...views];
+  for (const zone of zones) {
+    const containedIds = computeZoneContainment(zone, updated);
+    const containedViews = updated.filter((v) => containedIds.includes(v.id));
+    const { position, size } = computeZoneBounds(zone, containedViews);
+
+    updated = updated.map((v) =>
+      v.id === zone.id
+        ? { ...v, containedViewIds: containedIds, position, size } as ZoneCanvasView
+        : v,
+    );
+  }
+
+  return updated;
 }
 
 // ── Canvas instance helpers ──────────────────────────────────────────
