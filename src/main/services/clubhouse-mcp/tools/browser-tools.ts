@@ -3,7 +3,7 @@
  * Phase 3 implementation.
  */
 
-import { webContents } from 'electron';
+import { BrowserWindow, dialog, webContents } from 'electron';
 import { registerToolTemplate } from '../tool-registry';
 import type { McpToolResult } from '../types';
 import { appLog } from '../../log-service';
@@ -287,10 +287,30 @@ export function registerBrowserTools(): void {
       },
       required: ['expression'],
     },
-  }, async (targetId, _agentId, args) => {
+  }, async (targetId, agentId, args) => {
     const expression = args.expression as string;
     const wc = getWebContents(targetId);
     if (!wc) return errorResult('Browser widget not found or not ready');
+
+    // SEC-04: Require user confirmation before executing arbitrary JS
+    const truncated = expression.length > 500 ? expression.slice(0, 500) + '…' : expression;
+    const parentWindow = BrowserWindow.getAllWindows()[0] ?? null;
+    const { response } = await dialog.showMessageBox(parentWindow, {
+      type: 'warning',
+      title: 'Agent JavaScript Execution',
+      message: `Agent "${agentId}" wants to evaluate JavaScript in browser widget "${targetId}".`,
+      detail: `Expression:\n\n${truncated}\n\nThis code will run in the page context and can access cookies, localStorage, and make network requests. Only allow if you trust this agent and expression.`,
+      buttons: ['Deny', 'Allow'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+
+    if (response !== 1) {
+      appLog('core:mcp', 'warn', 'User denied browser evaluate', {
+        meta: { agentId, targetId, expression: truncated },
+      });
+      return errorResult('User denied JavaScript execution');
+    }
 
     try {
       await ensureDebuggerAttached(wc);

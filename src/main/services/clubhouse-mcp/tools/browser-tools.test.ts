@@ -17,6 +17,9 @@ vi.mock('electron', () => {
   return {
     app: { getPath: () => '/tmp/clubhouse-test' },
     BrowserWindow: { getAllWindows: () => [] },
+    dialog: {
+      showMessageBox: vi.fn(async () => ({ response: 1 })), // Default: allow
+    },
     webContents: {
       fromId: vi.fn((id: number) => (id === 42 ? mockWc : null)),
     },
@@ -31,7 +34,7 @@ vi.mock('../../agent-registry', () => ({
   getAgentNonce: vi.fn(),
 }));
 
-import { webContents } from 'electron';
+import { dialog, webContents } from 'electron';
 import {
   registerBrowserTools,
   registerWebview,
@@ -69,6 +72,7 @@ describe('BrowserTools', () => {
 
     // Sensible defaults
     mockDbg.sendCommand.mockResolvedValue({});
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 1 } as any); // Default: allow
 
     registerBrowserTools();
     registerWebview('widget-1', 42);
@@ -449,6 +453,52 @@ describe('BrowserTools', () => {
       unregisterWebview('widget-1');
       const result = await callTool('agent-1', 'browser__widget_1__evaluate', { expression: '1' });
       expect(result.isError).toBe(true);
+    });
+
+    it('shows confirmation dialog before executing', async () => {
+      const mockDbg = getMockDebugger();
+      mockDbg.sendCommand.mockImplementation(async (cmd: string) => {
+        if (cmd === 'Runtime.evaluate') return { result: { value: 1 } };
+        return {};
+      });
+
+      await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'document.title' });
+
+      expect(dialog.showMessageBox).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          type: 'warning',
+          title: 'Agent JavaScript Execution',
+          message: expect.stringContaining('agent-1'),
+          buttons: ['Deny', 'Allow'],
+        }),
+      );
+    });
+
+    it('blocks execution when user denies', async () => {
+      vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0 } as any);
+      const mockDbg = getMockDebugger();
+
+      const result = await callTool('agent-1', 'browser__widget_1__evaluate', { expression: 'document.cookie' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('User denied');
+      expect(mockDbg.sendCommand).not.toHaveBeenCalledWith('Runtime.evaluate', expect.anything());
+    });
+
+    it('truncates long expressions in the dialog', async () => {
+      const mockDbg = getMockDebugger();
+      mockDbg.sendCommand.mockImplementation(async (cmd: string) => {
+        if (cmd === 'Runtime.evaluate') return { result: { value: null } };
+        return {};
+      });
+
+      const longExpression = 'x'.repeat(600);
+      await callTool('agent-1', 'browser__widget_1__evaluate', { expression: longExpression });
+
+      const dialogCall = vi.mocked(dialog.showMessageBox).mock.calls[0];
+      const detail = (dialogCall[1] as any).detail as string;
+      expect(detail).not.toContain(longExpression);
+      expect(detail).toContain('…');
     });
 
     it('returns null when result has no value or description', async () => {
