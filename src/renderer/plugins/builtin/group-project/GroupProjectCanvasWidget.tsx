@@ -9,6 +9,7 @@ import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { useAgentStore } from '../../../stores/agentStore';
 import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
@@ -37,6 +38,8 @@ export function GroupProjectCanvasWidget({
   const projectId = (metadata.projectId as string) || (isAppMode ? undefined : api.context.projectId);
   const remote = useRemoteProject(projectId);
 
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+
   // Group project bulletin board is not yet proxied over annex
   if (remote.isRemote) {
     const name = metadata.name as string | undefined;
@@ -45,6 +48,26 @@ export function GroupProjectCanvasWidget({
         widgetType="Group Project"
         reason={name ? `"${name}" is running on the satellite.` : 'Group project data is not yet available over Annex.'}
       />
+    );
+  }
+
+  if (!mcpEnabled) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3 p-4 text-center" data-testid="group-project-mcp-disabled">
+        <div className="w-10 h-10 rounded-lg bg-surface-1 flex items-center justify-center">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ctp-overlay1">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-ctp-subtext1">MCP Required</div>
+          <div className="text-[10px] text-ctp-overlay0 max-w-[200px]">
+            Group Project requires MCP to be enabled. Enable it in Settings &gt; MCP.
+          </div>
+        </div>
+      </div>
     );
   }
 

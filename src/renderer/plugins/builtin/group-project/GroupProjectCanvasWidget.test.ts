@@ -152,6 +152,30 @@ describe('GroupProjectCanvasWidget — polling toggle', () => {
   });
 });
 
+// ── MCP gating ──────────────────────────────────────────────────────
+
+describe('GroupProjectCanvasWidget — MCP required gate', () => {
+  it('imports useMcpSettingsStore for MCP check', () => {
+    expect(source).toContain("from '../../../stores/mcpSettingsStore'");
+    expect(source).toContain('useMcpSettingsStore');
+  });
+
+  it('reads mcpEnabled from the store', () => {
+    expect(source).toContain('useMcpSettingsStore((s) => s.enabled)');
+  });
+
+  it('renders an MCP-required placeholder when MCP is disabled', () => {
+    expect(source).toContain('!mcpEnabled');
+    expect(source).toContain('group-project-mcp-disabled');
+    expect(source).toContain('MCP Required');
+  });
+
+  it('directs user to enable MCP in settings', () => {
+    expect(source).toContain('Settings');
+    expect(source).toContain('MCP');
+  });
+});
+
 // ── Orchestrator-aware polling messages ─────────────────────────────
 
 describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {

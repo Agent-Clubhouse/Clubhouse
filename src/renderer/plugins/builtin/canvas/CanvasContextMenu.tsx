@@ -8,6 +8,7 @@ import {
 import { MenuPortal } from './MenuPortal';
 import { useDismissibleLayer } from './useDismissibleLayer';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
+import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 /** A menu item can either be a built-in view type or a qualified plugin widget type string. */
 export type ContextMenuSelection =
@@ -31,8 +32,12 @@ const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }
   { type: 'anchor', label: 'Add Anchor', icon: ANCHOR_ICON },
 ];
 
+/** Widget plugin IDs that require MCP to be enabled in order to function. */
+const MCP_REQUIRED_PLUGIN_IDS = new Set(['group-project']);
+
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const [pluginWidgets, setPluginWidgets] = useState<RegisteredCanvasWidget[]>(() => getRegisteredWidgetTypes());
 
   useEffect(() => {
@@ -41,6 +46,10 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     });
     return () => disposable.dispose();
   }, []);
+
+  const visibleWidgets = mcpEnabled
+    ? pluginWidgets
+    : pluginWidgets.filter((w) => !MCP_REQUIRED_PLUGIN_IDS.has(w.pluginId));
   useDismissibleLayer({ layerRef: menuRef, onDismiss });
 
   const handleBuiltinSelect = useCallback((type: CanvasViewType) => {
@@ -79,10 +88,10 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
         ))}
 
         {/* Plugin-provided widgets */}
-        {pluginWidgets.length > 0 && (
+        {visibleWidgets.length > 0 && (
           <>
             <div className="border-t border-surface-0 my-1" />
-            {pluginWidgets.map((widget) => (
+            {visibleWidgets.map((widget) => (
               <button
                 key={widget.qualifiedType}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-ctp-text hover:bg-surface-1 transition-colors text-left"
