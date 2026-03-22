@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isAllowedNavigation } from './index';
+import { isAllowedNavigation } from './navigation-guard';
 
 describe('isAllowedNavigation', () => {
   it('allows file:// URLs', () => {

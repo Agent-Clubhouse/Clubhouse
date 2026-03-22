@@ -18,6 +18,7 @@ import { flushAllAgentConfigs } from './services/agent-config';
 import { preWarmShellEnvironment } from './util/shell';
 import { initializeRipgrep } from './services/search-service';
 import { loadPendingResume } from './services/restart-session-service';
+import { isAllowedNavigation } from './navigation-guard';
 
 // Allow overriding userData path for running multiple isolated instances (e.g. testing,
 // dual-instance Annex V2 workflows). Must be set before app.name so that any early
@@ -67,21 +68,6 @@ function getThemeColors(): { bg: string; mantle: string; text: string } {
     return getThemeColorsForTitleBar(themeId);
   } catch {
     return getThemeColorsForTitleBar('catppuccin-mocha');
-  }
-}
-
-/**
- * Returns true if the URL is an app-internal navigation target.
- * Allows file:// protocol and localhost dev server; blocks everything else.
- */
-export function isAllowedNavigation(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === 'file:') return true;
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return true;
-    return false;
-  } catch {
-    return false;
   }
 }
 
