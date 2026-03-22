@@ -1,6 +1,7 @@
 import React from 'react';
-import { showInputDialog, showConfirmDialog } from './PluginDialog';
+import { showInputDialog, showConfirmDialog, showApprovalDialog } from './PluginDialog';
 import type {
+  ApprovalDialogOptions,
   PluginContext,
   UIAPI,
   CommandsAPI,
@@ -33,6 +34,14 @@ export function createUIAPI(ctx: PluginContext): UIAPI {
     },
     async showInput(prompt: string, defaultValue = ''): Promise<string | null> {
       const { promise, cleanup } = showInputDialog(prompt, defaultValue);
+      ctx.subscriptions.push({ dispose: cleanup });
+      return promise;
+    },
+    async showApprovalDialog(options: ApprovalDialogOptions): Promise<string | null> {
+      if (!options.actions || options.actions.length === 0) {
+        throw new Error('showApprovalDialog requires at least one action');
+      }
+      const { promise, cleanup } = showApprovalDialog(options);
       ctx.subscriptions.push({ dispose: cleanup });
       return promise;
     },
