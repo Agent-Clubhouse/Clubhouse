@@ -64,7 +64,7 @@ describe('GroupProjectTools', () => {
     registerGroupProjectTools();
   });
 
-  it('registers 5 tools for a group-project binding (shoulder_tap is user-only)', () => {
+  it('registers 5 tools when shoulderTapEnabled is false (default)', () => {
     bindingManager.bind('agent-1', {
       targetId: 'gp_123',
       targetKind: 'group-project',
@@ -355,6 +355,123 @@ describe('GroupProjectTools', () => {
     expect(parsed.members[0].status).toBe('connected'); // registered = alive
 
     agentRegistry.untrack('agent-1');
+  });
+
+  it('registers 7 tools when shoulderTapEnabled is true', async () => {
+    const project = await groupProjectRegistry.create('TapProj');
+    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'TapProj',
+      agentName: 'robin',
+      targetName: 'TapProj',
+    });
+
+    const tools = getScopedToolList('agent-1');
+    expect(tools).toHaveLength(7);
+
+    const suffixes = tools.map(t => t.name.split('__').pop());
+    expect(suffixes).toContain('shoulder_tap');
+    expect(suffixes).toContain('broadcast');
+  });
+
+  it('shoulder_tap delivers message to target agent', async () => {
+    const project = await groupProjectRegistry.create('TapDelivery');
+    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+
+    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'TD',
+      agentName: 'robin',
+      targetName: 'TapDelivery',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'TD',
+      agentName: 'falcon',
+      targetName: 'TapDelivery',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'TapDelivery' });
+    const toolName = buildToolName(binding, 'shoulder_tap');
+    const result = await callTool('agent-1', toolName, {
+      target_agent_id: 'agent-2',
+      message: 'Check the config file',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.delivered).toBe(1);
+    expect(parsed.taskId).toMatch(/^tap_/);
+
+    agentRegistry.untrack('agent-1');
+    agentRegistry.untrack('agent-2');
+  });
+
+  it('broadcast delivers message to all agents except sender', async () => {
+    const project = await groupProjectRegistry.create('BroadcastProj');
+    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+
+    agentRegistry.register('agent-1', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+    agentRegistry.register('agent-2', { projectPath: '/test', orchestrator: 'claude-code', runtime: 'pty' });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'BP',
+      agentName: 'robin',
+      targetName: 'BroadcastProj',
+      projectName: 'myapp',
+    });
+    bindingManager.bind('agent-2', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'BP',
+      agentName: 'falcon',
+      targetName: 'BroadcastProj',
+      projectName: 'myapp',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'BroadcastProj' });
+    const toolName = buildToolName(binding, 'broadcast');
+    const result = await callTool('agent-1', toolName, {
+      message: 'Stop all work immediately',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0].text!);
+    expect(parsed.delivered).toBe(1); // Only falcon (sender excluded)
+    expect(parsed.taskId).toMatch(/^tap_/);
+
+    agentRegistry.untrack('agent-1');
+    agentRegistry.untrack('agent-2');
+  });
+
+  it('shoulder_tap returns error when target_agent_id is missing', async () => {
+    const project = await groupProjectRegistry.create('ErrProj');
+    await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+
+    bindingManager.bind('agent-1', {
+      targetId: project.id,
+      targetKind: 'group-project',
+      label: 'EP',
+      agentName: 'robin',
+      targetName: 'ErrProj',
+    });
+
+    const binding = makeBinding({ agentId: 'agent-1', targetId: project.id, targetName: 'ErrProj' });
+    const toolName = buildToolName(binding, 'shoulder_tap');
+    const result = await callTool('agent-1', toolName, { message: 'hello' });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('required');
   });
 
 });

@@ -217,6 +217,47 @@ describe('BindingManager', () => {
     });
   });
 
+  describe('setDisabledTools', () => {
+    it('sets disabled tools on a binding', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      bindingManager.setDisabledTools('agent-1', 'widget-1', ['navigate', 'screenshot']);
+      const bindings = bindingManager.getBindingsForAgent('agent-1');
+      expect(bindings[0].disabledTools).toEqual(['navigate', 'screenshot']);
+    });
+
+    it('clears disabled tools when empty array is passed', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      bindingManager.setDisabledTools('agent-1', 'widget-1', ['navigate']);
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].disabledTools).toEqual(['navigate']);
+
+      bindingManager.setDisabledTools('agent-1', 'widget-1', []);
+      expect(bindingManager.getBindingsForAgent('agent-1')[0].disabledTools).toBeUndefined();
+    });
+
+    it('notifies listeners on change', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setDisabledTools('agent-1', 'widget-1', ['navigate']);
+      expect(listener).toHaveBeenCalledWith('agent-1');
+    });
+
+    it('does nothing for non-existent agent', () => {
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setDisabledTools('nonexistent', 'widget-1', ['navigate']);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('does nothing for non-existent target', () => {
+      bindingManager.bind('agent-1', { targetId: 'widget-1', targetKind: 'browser', label: 'Browser' });
+      const listener = vi.fn();
+      bindingManager.onChange(listener);
+      bindingManager.setDisabledTools('agent-1', 'nonexistent', ['navigate']);
+      expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
   describe('complex scenarios', () => {
     it('handles bind + unbind + rebind cycle', () => {
       bindingManager.bind('agent-1', { targetId: 'w1', targetKind: 'browser', label: 'B' });

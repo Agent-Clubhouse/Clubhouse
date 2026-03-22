@@ -1,7 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('electron', () => ({
+  app: { isPackaged: false, getPath: () => '/tmp/test-clubhouse' },
+}));
+
+vi.mock('fs/promises', () => ({
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+  readFile: vi.fn().mockRejectedValue(new Error('ENOENT')),
+  writeFile: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { registerToolTemplate, getScopedToolList, callTool, buildToolName, buildToolKey, parseToolName, shortHash, _resetForTesting } from './tool-registry';
 import { bindingManager } from './binding-manager';
 import { agentRegistry } from '../agent-registry';
+import { groupProjectRegistry } from '../group-project-registry';
 import type { McpBinding } from './types';
 
 function makeBinding(overrides: Partial<McpBinding> & { agentId: string; targetId: string; targetKind: McpBinding['targetKind'] }): McpBinding {
@@ -12,6 +25,7 @@ describe('ToolRegistry', () => {
   beforeEach(() => {
     _resetForTesting();
     bindingManager._resetForTesting();
+    groupProjectRegistry._resetForTesting();
     // Clean up any registrations from previous tests
     agentRegistry.untrack('agent-2');
     agentRegistry.untrack('agent-3');
@@ -538,6 +552,93 @@ describe('ToolRegistry', () => {
       const tools = getScopedToolList('agent-1');
       const browserTools = tools.filter(t => t.name.startsWith('browser__'));
       expect(browserTools).toHaveLength(1);
+    });
+  });
+
+  describe('disabledTools filtering', () => {
+    beforeEach(() => {
+      registerToolTemplate('agent', 'send_message', { description: 'Send', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('agent', 'get_status', { description: 'Status', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('agent', 'read_output', { description: 'Read', inputSchema: { type: 'object' } }, vi.fn());
+
+      agentRegistry.register('agent-2', { runtime: 'pty', projectPath: '/test', orchestrator: 'claude-code' });
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'Agent 2',
+        targetName: 'robin', projectName: 'app',
+      });
+    });
+
+    it('excludes tools listed in disabledTools', () => {
+      bindingManager.setDisabledTools('agent-1', 'agent-2', ['read_output']);
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('send_message');
+      expect(suffixes).toContain('get_status');
+      expect(suffixes).not.toContain('read_output');
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('excludes multiple disabled tools', () => {
+      bindingManager.setDisabledTools('agent-1', 'agent-2', ['send_message', 'read_output']);
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toEqual(['get_status']);
+      agentRegistry.untrack('agent-2');
+    });
+
+    it('exposes all tools when disabledTools is empty', () => {
+      bindingManager.setDisabledTools('agent-1', 'agent-2', []);
+      const tools = getScopedToolList('agent-1');
+      expect(tools).toHaveLength(3);
+      agentRegistry.untrack('agent-2');
+    });
+  });
+
+  describe('shoulder tap group project gating', () => {
+    beforeEach(() => {
+      registerToolTemplate('group-project', 'list_members', { description: 'List', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'shoulder_tap', { description: 'Tap', inputSchema: { type: 'object' } }, vi.fn());
+      registerToolTemplate('group-project', 'broadcast', { description: 'Broadcast', inputSchema: { type: 'object' } }, vi.fn());
+    });
+
+    it('hides shoulder_tap and broadcast when shoulderTapEnabled is false', async () => {
+      const project = await groupProjectRegistry.create('TestProj');
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'TP', targetName: 'TestProj',
+      });
+      // Default: shoulderTapEnabled not set (falsy)
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('list_members');
+      expect(suffixes).not.toContain('shoulder_tap');
+      expect(suffixes).not.toContain('broadcast');
+    });
+
+    it('shows shoulder_tap and broadcast when shoulderTapEnabled is true', async () => {
+      const project = await groupProjectRegistry.create('TapProj');
+      await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'TP', targetName: 'TapProj',
+      });
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('list_members');
+      expect(suffixes).toContain('shoulder_tap');
+      expect(suffixes).toContain('broadcast');
+    });
+
+    it('hides shoulder_tap even when enabled at project level if disabled at wire level', async () => {
+      const project = await groupProjectRegistry.create('MixProj');
+      await groupProjectRegistry.update(project.id, { metadata: { shoulderTapEnabled: true } });
+      bindingManager.bind('agent-1', {
+        targetId: project.id, targetKind: 'group-project', label: 'MP', targetName: 'MixProj',
+      });
+      bindingManager.setDisabledTools('agent-1', project.id, ['shoulder_tap']);
+      const tools = getScopedToolList('agent-1');
+      const suffixes = tools.map(t => t.name.split('__').pop());
+      expect(suffixes).toContain('list_members');
+      expect(suffixes).not.toContain('shoulder_tap');
+      expect(suffixes).toContain('broadcast'); // broadcast not disabled at wire level
     });
   });
 });
