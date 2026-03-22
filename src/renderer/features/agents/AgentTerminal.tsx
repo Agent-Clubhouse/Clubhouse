@@ -126,8 +126,8 @@ export function AgentTerminal({ agentId, focused }: Props) {
       }
     });
 
-    // Gate live PTY data until after the buffer snapshot has been replayed.
-    // Queue data arriving during fetch to avoid silent data loss.
+    // Gate live PTY data until after the buffer snapshot has been replayed;
+    // queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
     const pendingData: string[] = [];
 
