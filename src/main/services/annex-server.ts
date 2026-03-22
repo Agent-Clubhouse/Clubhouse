@@ -75,6 +75,22 @@ let unsubPermissionRequest: (() => void) | null = null;
 let unsubStructuredEvent: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 
+/** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
+function unsubscribeEventBus(): void {
+  unsubPtyData?.();
+  unsubHookEvent?.();
+  unsubPtyExit?.();
+  unsubAgentSpawned?.();
+  unsubPermissionRequest?.();
+  unsubStructuredEvent?.();
+  unsubPtyData = null;
+  unsubHookEvent = null;
+  unsubPtyExit = null;
+  unsubAgentSpawned = null;
+  unsubPermissionRequest = null;
+  unsubStructuredEvent = null;
+}
+
 // ---------------------------------------------------------------------------
 // Detailed status cache (Issue 3)
 // ---------------------------------------------------------------------------
@@ -1907,7 +1923,8 @@ export function start(): void {
     });
   });
 
-  // Subscribe to event bus
+  // Subscribe to event bus (clean up any stale listeners first)
+  unsubscribeEventBus();
   annexEventBus.setActive(true);
 
   unsubPtyData = annexEventBus.onPtyData((agentId, data) => {
@@ -2023,18 +2040,7 @@ export function start(): void {
 
 export function stop(): void {
   // Unsubscribe from event bus
-  unsubPtyData?.();
-  unsubHookEvent?.();
-  unsubPtyExit?.();
-  unsubAgentSpawned?.();
-  unsubPermissionRequest?.();
-  unsubStructuredEvent?.();
-  unsubPtyData = null;
-  unsubHookEvent = null;
-  unsubPtyExit = null;
-  unsubAgentSpawned = null;
-  unsubPermissionRequest = null;
-  unsubStructuredEvent = null;
+  unsubscribeEventBus();
 
   if (staleEvictionInterval) {
     clearInterval(staleEvictionInterval);
