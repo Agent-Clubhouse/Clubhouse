@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CanvasView, CanvasViewAttention, Viewport, Size, Position } from './canvas-types';
+import type { CanvasView, CanvasViewAttention, Viewport, Size } from './canvas-types';
 import {
   computeMinimapBounds,
   canvasToMinimap,
