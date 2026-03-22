@@ -450,4 +450,22 @@ describe('remoteProjectStore', () => {
       expect(after.status).toBe('sleeping'); // Only status changed
     });
   });
+
+  describe('upsertRemoteAgent', () => {
+    it('uses canonical || namespace format for projectId', () => {
+      const store = useRemoteProjectStore.getState();
+      store.upsertRemoteAgent('sat-1', {
+        id: 'new-agent',
+        name: 'New Agent',
+        kind: 'quick',
+        status: 'running',
+        projectId: 'proj-1',
+        color: 'red',
+      } as any);
+
+      const agent = useRemoteProjectStore.getState().remoteAgents['remote||sat-1||new-agent'];
+      expect(agent).toBeDefined();
+      expect(agent.projectId).toBe('remote||sat-1||proj-1');
+    });
+  });
 });
