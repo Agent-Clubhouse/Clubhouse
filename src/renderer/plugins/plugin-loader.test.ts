@@ -1711,6 +1711,19 @@ describe('plugin-loader', () => {
       await pluginSystemReady;
       expect(usePluginStore.getState().safeModeActive).toBe(true);
     });
+
+    it('resolves even when community plugin discovery throws', async () => {
+      mockPlugin.storageRead.mockImplementation(async ({ key }: { key: string }) => {
+        if (key === 'external-plugins-enabled') return true;
+        return undefined;
+      });
+      mockPlugin.discoverCommunity.mockRejectedValue(new Error('network error'));
+
+      await initializePluginSystem();
+
+      // pluginSystemReady must resolve — not hang
+      await pluginSystemReady;
+    });
   });
 
   // ── initializePluginSystem: app-scoped activation ───────────────────
