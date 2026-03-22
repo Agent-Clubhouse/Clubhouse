@@ -346,6 +346,32 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().clearSelection();
   }, [store]);
 
+  const handleRemoveZone = useCallback((zoneId: string, removeContents: boolean) => {
+    remoteForward({ type: 'removeZone', zoneId, removeContents });
+    // Unbind any MCP wires attached to the zone or its contained widgets
+    const zone = store.getState().activeCanvas().views.find((v) => v.id === zoneId && v.type === 'zone');
+    if (zone) {
+      const unbind = useMcpBindingStore.getState().unbind;
+      // Unbind wires for contained views if they're being removed
+      if (removeContents && 'containedViewIds' in zone) {
+        const contained = (zone as any).containedViewIds as string[];
+        for (const viewId of contained) {
+          const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
+          if (view) {
+            const stale = findBindingsForView(view, bindingsRef.current);
+            for (const b of stale) unbind(b.agentId, b.targetId);
+          }
+        }
+      }
+    }
+    store.getState().removeZone(zoneId, removeContents);
+  }, [store, remoteForward]);
+
+  const handleUpdateZoneTheme = useCallback((zoneId: string, themeId: string) => {
+    remoteForward({ type: 'updateZoneTheme', zoneId, themeId });
+    store.getState().updateZoneTheme(zoneId, themeId);
+  }, [store, remoteForward]);
+
   if (!loaded) {
     return React.createElement('div', {
       className: 'flex items-center justify-center h-full text-ctp-subtext0 text-xs',
@@ -395,6 +421,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onToggleSelectView: handleToggleSelectView,
             onSetSelectedViewIds: handleSetSelectedViewIds,
             onClearSelection: handleClearSelection,
+            onRemoveZone: handleRemoveZone,
+            onUpdateZoneTheme: handleUpdateZoneTheme,
           }),
         ),
   );

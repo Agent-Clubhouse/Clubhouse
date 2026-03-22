@@ -1,7 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import type { CanvasView, CanvasViewType, Viewport, Position, Size } from './canvas-types';
+import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
 import { GRID_SIZE } from './canvas-types';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
+import { ZoneBackground } from './ZoneBackground';
+import { ZoneCard } from './ZoneCard';
+import { ZoneDeleteDialog } from './ZoneDeleteDialog';
+import { ZoneThemeProvider } from './ZoneThemeProvider';
+import { useZoneContainment, getViewThemeOverride } from './zone-containment';
 import { CanvasViewComponent, formatViewType, buildProjectContext } from './CanvasView';
 import { AgentCanvasView } from './AgentCanvasView';
 import { CanvasControls } from './CanvasControls';
@@ -63,6 +68,8 @@ interface CanvasWorkspaceProps {
   onToggleSelectView: (viewId: string) => void;
   onSetSelectedViewIds: (ids: string[]) => void;
   onClearSelection: () => void;
+  onRemoveZone: (zoneId: string, removeContents: boolean) => void;
+  onUpdateZoneTheme: (zoneId: string, themeId: string) => void;
 }
 
 export function CanvasWorkspace({
@@ -86,6 +93,8 @@ export function CanvasWorkspace({
   onToggleSelectView,
   onSetSelectedViewIds,
   onClearSelection,
+  onRemoveZone,
+  onUpdateZoneTheme,
 }: CanvasWorkspaceProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -108,6 +117,12 @@ export function CanvasWorkspace({
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
   const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
+
+  // ── Zone state ──────────────────────────────────────────────────
+  const zoneContainment = useZoneContainment(views);
+  const zones = useMemo(() => views.filter((v): v is ZoneCanvasView => v.type === 'zone'), [views]);
+  const nonZoneViews = useMemo(() => views.filter((v) => v.type !== 'zone'), [views]);
+  const [zoneDeleteDialog, setZoneDeleteDialog] = useState<{ zoneId: string; zoneName: string; containedCount: number } | null>(null);
 
   // ── Sleeping agent tracking (for wire dimming) ─────────────────
   const [agentTick, setAgentTick] = useState(0);
@@ -463,6 +478,73 @@ export function CanvasWorkspace({
     }
   }, [views, viewport.zoom, zoomedViewId, onZoomView, onViewportChange]);
 
+  // ── Zone handlers ────────────────────────────────────────────────
+
+  const handleZoneDragStart = useCallback((zoneId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startPositions = new Map<string, Position>();
+    startPositions.set(zone.id, zone.position);
+    for (const viewId of zone.containedViewIds) {
+      const view = views.find((v) => v.id === viewId);
+      if (view) startPositions.set(viewId, view.position);
+    }
+
+    const handleMove = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+      // Update positions for wire overlay tracking
+      const dragPositions = new Map<string, Position>();
+      for (const [id, pos] of startPositions) {
+        dragPositions.set(id, { x: pos.x + dx, y: pos.y + dy });
+      }
+      setSingleDragPos(dragPositions);
+    };
+
+    const handleUp = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+      const positions = new Map<string, Position>();
+      for (const [id, pos] of startPositions) {
+        positions.set(id, snapPosition({ x: pos.x + dx, y: pos.y + dy }));
+      }
+      onMoveViews(positions);
+      setSingleDragPos(new Map());
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [zones, views, viewport.zoom, onMoveViews]);
+
+  const handleZoneDelete = useCallback((zoneId: string) => {
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    if (zone.containedViewIds.length === 0) {
+      // No contained widgets — just delete
+      onRemoveZone(zoneId, false);
+    } else {
+      setZoneDeleteDialog({
+        zoneId,
+        zoneName: zone.displayName,
+        containedCount: zone.containedViewIds.length,
+      });
+    }
+  }, [zones, onRemoveZone]);
+
+  const handleZoneDeleteConfirm = useCallback((removeContents: boolean) => {
+    if (zoneDeleteDialog) {
+      onRemoveZone(zoneDeleteDialog.zoneId, removeContents);
+      setZoneDeleteDialog(null);
+    }
+  }, [zoneDeleteDialog, onRemoveZone]);
+
   // ── Dot grid background ────────────────────────────────────────
 
   const gridSpacing = GRID_SIZE * viewport.zoom;
@@ -552,7 +634,12 @@ export function CanvasWorkspace({
           left: 0,
         }}
       >
-        {/* MCP wire overlay — rendered BEFORE views (z-order: behind) */}
+        {/* Layer 1: Zone backgrounds (behind everything) */}
+        {zones.map((zone) => (
+          <ZoneBackground key={`zone-bg-${zone.id}`} zone={zone} />
+        ))}
+
+        {/* Layer 2: MCP wire overlay */}
         {mcpEnabled && (
           <WireOverlay
             views={views}
@@ -563,38 +650,53 @@ export function CanvasWorkspace({
           />
         )}
 
-        {views.map((view) => {
+        {/* Layer 3: Non-zone views (with zone theme scoping) */}
+        {nonZoneViews.map((view) => {
+          const themeOverride = getViewThemeOverride(view.id, zoneContainment);
           return (
-            <CanvasViewComponent
-              key={view.id}
-              view={view}
-              api={api}
-              zoom={viewport.zoom}
-              isZoomed={zoomedViewId === view.id}
-              isSelected={selectedViewId === view.id}
-              isMultiSelected={selectedViewIds.includes(view.id)}
-              multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
-              attention={attentionMap.get(view.id) ?? null}
-              allViews={views}
-              mcpEnabled={mcpEnabled}
-              onStartWireDrag={startWireDrag}
-              onClose={() => onRemoveView(view.id)}
-              onFocus={() => onFocusView(view.id)}
-              onSelect={() => {
-                onClearSelection();
-                onSelectView(view.id);
-              }}
-              onToggleSelect={() => onToggleSelectView(view.id)}
-              onCenterView={() => handleCenterView(view.id)}
-              onZoomView={() => handleToggleZoomView(view.id)}
-              onDragStart={handleViewMultiDragStart}
-              onDragMove={handleViewDragMove}
-              onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
-              onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
-              onUpdate={(updates) => onUpdateView(view.id, updates)}
-            />
+            <ZoneThemeProvider key={view.id} themeId={themeOverride}>
+              <CanvasViewComponent
+                view={view}
+                api={api}
+                zoom={viewport.zoom}
+                isZoomed={zoomedViewId === view.id}
+                isSelected={selectedViewId === view.id}
+                isMultiSelected={selectedViewIds.includes(view.id)}
+                multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
+                attention={attentionMap.get(view.id) ?? null}
+                allViews={views}
+                mcpEnabled={mcpEnabled}
+                onStartWireDrag={startWireDrag}
+                onClose={() => onRemoveView(view.id)}
+                onFocus={() => onFocusView(view.id)}
+                onSelect={() => {
+                  onClearSelection();
+                  onSelectView(view.id);
+                }}
+                onToggleSelect={() => onToggleSelectView(view.id)}
+                onCenterView={() => handleCenterView(view.id)}
+                onZoomView={() => handleToggleZoomView(view.id)}
+                onDragStart={handleViewMultiDragStart}
+                onDragMove={handleViewDragMove}
+                onDragEnd={(pos) => handleViewDragEnd(view.id, pos)}
+                onResizeEnd={(size, pos) => handleViewResizeEnd(view.id, size, pos)}
+                onUpdate={(updates) => onUpdateView(view.id, updates)}
+              />
+            </ZoneThemeProvider>
           );
         })}
+
+        {/* Layer 4: Zone cards */}
+        {zones.map((zone) => (
+          <ZoneCard
+            key={`zone-card-${zone.id}`}
+            zone={zone}
+            onRename={(name) => onUpdateView(zone.id, { displayName: name, title: name })}
+            onThemeChange={(themeId) => onUpdateZoneTheme(zone.id, themeId)}
+            onDelete={() => handleZoneDelete(zone.id)}
+            onDragStart={(e) => handleZoneDragStart(zone.id, e)}
+          />
+        ))}
 
         {/* Selection rectangle (lasso) */}
         {selectionRect && (
@@ -751,6 +853,16 @@ export function CanvasWorkspace({
           x={wirePopover.x}
           y={wirePopover.y}
           onClose={handleWirePopoverClose}
+        />
+      )}
+
+      {/* Zone delete confirmation dialog */}
+      {zoneDeleteDialog && (
+        <ZoneDeleteDialog
+          zoneName={zoneDeleteDialog.zoneName}
+          containedCount={zoneDeleteDialog.containedCount}
+          onConfirm={handleZoneDeleteConfirm}
+          onCancel={() => setZoneDeleteDialog(null)}
         />
       )}
     </div>
