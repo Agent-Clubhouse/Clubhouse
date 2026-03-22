@@ -20,7 +20,7 @@ import * as eventReplay from './annex-event-replay';
 import * as permissionQueue from './annex-permission-queue';
 import * as structuredManager from './structured-manager';
 import * as pluginManifestRegistry from './plugin-manifest-registry';
-import { readKey as readPluginStorageKey } from './plugin-storage';
+import { readKey as readPluginStorageKey, writeKey as writePluginStorageKey } from './plugin-storage';
 import * as fileService from './file-service';
 import * as gitService from './git-service';
 import { normalizeSessionEvents, buildSessionSummary, paginateEvents } from './session-reader';
@@ -1644,13 +1644,24 @@ function handleWsMessage(ws: WebSocket, data: string): void {
     }
 
     case 'canvas:mutation': {
-      // Forward canvas mutation from controller to local renderer (same path as pop-out windows)
+      // Apply canvas mutation server-side and broadcast the result directly
+      // to controller clients.  Also forward to the local renderer so its
+      // in-memory store stays in sync (this is the path that previously was
+      // the *only* path, but it fails when the renderer's canvas store for
+      // the target project isn't loaded).
       const projectId = payload.projectId as string;
       const canvasId = payload.canvasId as string;
       const scope = (payload.scope as string) || 'project';
       const mutation = payload.mutation as Record<string, unknown>;
       if (!canvasId || !mutation) break;
+
+      // Forward to renderer for in-memory sync (best-effort)
       broadcastToAllWindows(IPC.WINDOW.REQUEST_CANVAS_MUTATION, canvasId, scope, mutation, projectId);
+
+      // Server-side: read → apply → write → broadcast
+      applyCanvasMutationServerSide(projectId, canvasId, mutation).catch(() => {
+        // Mutation failed server-side — renderer path is the fallback
+      });
       break;
     }
 
@@ -2112,6 +2123,213 @@ export function broadcastSnapshotRefresh(): void {
 /** Broadcast theme change to all connected WS clients. */
 export function broadcastThemeChanged(): void {
   broadcastWs({ type: 'theme:changed', payload: getThemeColors() });
+}
+
+// ---------------------------------------------------------------------------
+// Server-side canvas mutation processing
+// ---------------------------------------------------------------------------
+//
+// Reads the persisted canvas state from plugin storage, applies the mutation
+// in-memory, writes the result back, and broadcasts to WS clients.  This
+// runs in the main process and does not depend on the renderer's canvas
+// store being loaded for the target project.
+
+interface CanvasInstanceJSON {
+  id: string;
+  name: string;
+  views: any[];
+  viewport: { panX: number; panY: number; zoom: number };
+  nextZIndex: number;
+  zoomedViewId?: string | null;
+}
+
+async function applyCanvasMutationServerSide(
+  projectId: string,
+  canvasId: string,
+  mutation: Record<string, unknown>,
+): Promise<void> {
+  const project = await findProjectById(projectId);
+  if (!project) return;
+
+  // Read current canvas state
+  const raw = await readPluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-instances',
+    projectPath: project.path,
+  });
+
+  let canvases: CanvasInstanceJSON[] = Array.isArray(raw) && raw.length > 0
+    ? (raw as CanvasInstanceJSON[])
+    : [{ id: canvasId, name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null }];
+
+  let activeIdRaw = await readPluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-active-id',
+    projectPath: project.path,
+  });
+  let activeCanvasId = (typeof activeIdRaw === 'string' && activeIdRaw) || canvases[0]?.id || canvasId;
+
+  // Apply the mutation to the JSON data
+  const type = mutation.type as string;
+
+  switch (type) {
+    case 'addCanvas': {
+      const newId = `hub_${randomUUID().slice(0, 8)}`;
+      canvases.push({ id: newId, name: 'Canvas', views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null });
+      activeCanvasId = newId;
+      break;
+    }
+    case 'removeCanvas': {
+      const removeId = mutation.canvasId as string;
+      if (canvases.length <= 1) break;
+      canvases = canvases.filter((c) => c.id !== removeId);
+      if (activeCanvasId === removeId) activeCanvasId = canvases[0].id;
+      break;
+    }
+    case 'renameCanvas': {
+      const renameId = mutation.canvasId as string;
+      const name = mutation.name as string;
+      const canvas = canvases.find((c) => c.id === renameId);
+      if (canvas) canvas.name = name;
+      break;
+    }
+    case 'setActiveCanvas': {
+      const setId = mutation.canvasId as string;
+      if (canvases.find((c) => c.id === setId)) activeCanvasId = setId;
+      break;
+    }
+    default: {
+      // View-level mutations — find the target canvas
+      const canvas = canvases.find((c) => c.id === canvasId);
+      if (!canvas) return;
+
+      switch (type) {
+        case 'addView': {
+          const viewId = `cv_${randomUUID().slice(0, 8)}`;
+          canvas.views.push({
+            id: viewId,
+            type: mutation.viewType as string || 'agent',
+            position: mutation.position || { x: 200, y: 200 },
+            size: { width: 480, height: 480 },
+            title: mutation.viewType === 'anchor' ? 'Anchor' : 'Agent',
+            displayName: mutation.viewType === 'anchor' ? 'Anchor' : 'Agent',
+            zIndex: canvas.nextZIndex,
+            metadata: {},
+          });
+          canvas.nextZIndex++;
+          break;
+        }
+        case 'addPluginView': {
+          const viewId = `cv_${randomUUID().slice(0, 8)}`;
+          const defaultSize = mutation.defaultSize as { width: number; height: number } | undefined;
+          canvas.views.push({
+            id: viewId,
+            type: 'plugin',
+            pluginId: mutation.pluginId,
+            pluginWidgetType: mutation.qualifiedType,
+            position: mutation.position || { x: 300, y: 300 },
+            size: defaultSize || { width: 480, height: 480 },
+            title: mutation.label as string || 'Plugin',
+            displayName: mutation.label as string || 'Plugin',
+            zIndex: canvas.nextZIndex,
+            metadata: {},
+          });
+          canvas.nextZIndex++;
+          break;
+        }
+        case 'removeView': {
+          const viewId = mutation.viewId as string;
+          canvas.views = canvas.views.filter((v: any) => v.id !== viewId);
+          break;
+        }
+        case 'moveView': {
+          const viewId = mutation.viewId as string;
+          const pos = mutation.position as { x: number; y: number };
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) view.position = pos;
+          break;
+        }
+        case 'moveViews': {
+          const positions = mutation.positions as Record<string, { x: number; y: number }>;
+          if (positions) {
+            for (const [vid, pos] of Object.entries(positions)) {
+              const view = canvas.views.find((v: any) => v.id === vid);
+              if (view) view.position = pos;
+            }
+          }
+          break;
+        }
+        case 'resizeView': {
+          const viewId = mutation.viewId as string;
+          const size = mutation.size as { width: number; height: number };
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) view.size = size;
+          break;
+        }
+        case 'updateView': {
+          const viewId = mutation.viewId as string;
+          const updates = mutation.updates as Record<string, unknown>;
+          const idx = canvas.views.findIndex((v: any) => v.id === viewId);
+          if (idx >= 0 && updates) {
+            canvas.views[idx] = { ...canvas.views[idx], ...updates };
+          }
+          break;
+        }
+        case 'focusView': {
+          const viewId = mutation.viewId as string;
+          const view = canvas.views.find((v: any) => v.id === viewId);
+          if (view) {
+            view.zIndex = canvas.nextZIndex;
+            canvas.nextZIndex++;
+          }
+          break;
+        }
+        case 'setViewport': {
+          const vp = mutation.viewport as { panX: number; panY: number; zoom: number };
+          if (vp) canvas.viewport = vp;
+          break;
+        }
+        case 'zoomView': {
+          canvas.zoomedViewId = (mutation.viewId as string) ?? null;
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  // Write updated state back to plugin storage
+  await writePluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-instances',
+    value: canvases,
+    projectPath: project.path,
+  });
+  await writePluginStorageKey({
+    pluginId: 'canvas',
+    scope: 'project-local',
+    key: 'canvas-active-id',
+    value: activeCanvasId,
+    projectPath: project.path,
+  });
+
+  // Broadcast the updated canvas state directly to WS clients
+  const targetCanvas = canvases.find((c) => c.id === canvasId) || canvases.find((c) => c.id === activeCanvasId);
+  if (targetCanvas) {
+    broadcastCanvasStateToClients(projectId, {
+      canvasId: targetCanvas.id,
+      name: targetCanvas.name,
+      views: targetCanvas.views,
+      viewport: targetCanvas.viewport,
+      nextZIndex: targetCanvas.nextZIndex,
+      zoomedViewId: targetCanvas.zoomedViewId ?? null,
+      allCanvasTabs: canvases.map((c) => ({ id: c.id, name: c.name })),
+      activeCanvasId,
+    });
+  }
 }
 
 /** Broadcast canvas state update to all connected controller clients. */
