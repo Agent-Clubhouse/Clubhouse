@@ -148,16 +148,10 @@ const createWindow = (): void => {
       const settings = securitySettings.get();
       if (settings.allowLocalFileWebviews) return; // user opted in
 
-      appLog('core:security', 'info', 'Blocked file:// webview (allowLocalFileWebviews is disabled)', {
+      appLog('core:security', 'info', 'Blocked file:// webview — enable "Allow local file webviews" in Settings > Security', {
         meta: { src: src.slice(0, 200) },
       });
       event.preventDefault();
-      // Notify the renderer so it can show an error message
-      mainWindow?.webContents.send('webview-blocked', {
-        src: src.slice(0, 200),
-        reason: 'file-protocol-disabled',
-        message: 'Local file access is disabled. Enable "Allow local file webviews" in Settings > Security to load file:// URLs.',
-      });
       return;
     }
 
