@@ -343,6 +343,58 @@ describe('annex-server', () => {
     expect(res.status).toBe(401);
   });
 
+  it('rejects expired bearer tokens after 24 hours', async () => {
+    const { port, token } = await startAndPair();
+
+    // Token works before expiry
+    const res1 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
+    expect(res1.status).toBe(200);
+
+    // Advance Date.now() past 24h TTL
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 24 * 60 * 60 * 1000 + 1;
+    try {
+      const res2 = await request(port, 'GET', '/api/v1/status', undefined, authHeaders(token));
+      expect(res2.status).toBe(401);
+    } finally {
+      Date.now = originalNow;
+    }
+  }, 10_000);
+
+  it('rejects pairing with invalid public key', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const invalidKey = Buffer.from('not-a-valid-key').toString('base64');
+    const res = await request(pairingPort, 'POST', '/pair', {
+      pin: status.pin,
+      publicKey: invalidKey,
+    });
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_public_key' });
+  }, 10_000);
+
+  it('accepts pairing with valid Ed25519 SPKI public key', async () => {
+    annexServer.start();
+    await new Promise((r) => setTimeout(r, 50));
+    const status = annexServer.getStatus();
+    const pairingPort = (status as any).pairingPort || status.port;
+
+    const { publicKey } = require('crypto').generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'der' },
+    });
+    const validKey = publicKey.toString('base64');
+    const res = await request(pairingPort, 'POST', '/pair', {
+      pin: status.pin,
+      publicKey: validKey,
+      alias: 'Test Client',
+    });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body).token).toBeDefined();
+  }, 10_000);
+
   it('returns 404 for unknown routes', async () => {
     const { port, token } = await startAndPair();
 
@@ -1118,7 +1170,7 @@ describe('annex-server', () => {
 
       await request(pairingPort, 'POST', '/pair', {
         pin: status.pin,
-        publicKey: 'client-public-key',
+        publicKey: require('crypto').generateKeyPairSync('ed25519', { publicKeyEncoding: { type: 'spki', format: 'der' } }).publicKey.toString('base64'),
         alias: 'Controller Mac',
         icon: 'laptop',
         color: 'blue',

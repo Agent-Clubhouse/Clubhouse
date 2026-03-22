@@ -32,11 +32,15 @@ vi.mock('../stores/projectStore', () => ({
 
 // Mock window.clubhouse
 const mockSpawnAgent = vi.fn().mockResolvedValue(undefined);
+const mockPtyKill = vi.fn();
 Object.defineProperty(globalThis, 'window', {
   value: {
     clubhouse: {
       agent: {
         spawnAgent: mockSpawnAgent,
+      },
+      pty: {
+        kill: mockPtyKill,
       },
     },
   },
@@ -236,6 +240,9 @@ describe('resume-queue', () => {
       );
 
       expect(mockSetResumeStatus).toHaveBeenCalledWith('fallback-agent', 'resumed');
+
+      // Must kill existing process before retrying to prevent orphaned agents
+      expect(mockPtyKill).toHaveBeenCalledWith('fallback-agent');
     });
 
     it('sets status to failed when both spawnAgent attempts fail', async () => {

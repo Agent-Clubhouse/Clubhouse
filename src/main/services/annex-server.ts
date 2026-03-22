@@ -59,7 +59,8 @@ let bonjour: InstanceType<typeof Bonjour> | null = null;
 let bonjourService: Service | null = null;
 let serverPort = 0; // Main TLS port
 let currentPin = '';
-const sessionTokens = new Set<string>();
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const sessionTokens = new Map<string, { issuedAt: number }>();
 
 // Tag WebSocket connections with auth type for security gating
 type WsAuthType = 'bearer' | 'mtls';
@@ -254,7 +255,14 @@ function generatePin(): string {
 }
 
 function isValidToken(token: string | undefined): boolean {
-  return !!token && sessionTokens.has(token);
+  if (!token) return false;
+  const entry = sessionTokens.get(token);
+  if (!entry) return false;
+  if (Date.now() - entry.issuedAt > TOKEN_TTL_MS) {
+    sessionTokens.delete(token);
+    return false;
+  }
+  return true;
 }
 
 function extractBearerToken(req: http.IncomingMessage): string | undefined {
@@ -954,13 +962,25 @@ async function handlePairingRequest(req: http.IncomingMessage, res: http.ServerR
 
       annexPeers.recordSuccessfulAttempt(source);
       const token = randomUUID();
-      sessionTokens.add(token);
+      sessionTokens.set(token, { issuedAt: Date.now() });
 
       const identity = annexIdentity.getOrCreateIdentity();
       const settings = annexSettings.getSettings();
 
       const clientPublicKey = body.publicKey as string | undefined;
       if (clientPublicKey) {
+        // Validate public key: must be a valid Ed25519 SPKI/DER key encoded as base64
+        try {
+          const keyBuf = Buffer.from(clientPublicKey, 'base64');
+          const keyObj = require('crypto').createPublicKey({ key: keyBuf, format: 'der', type: 'spki' });
+          if (keyObj.asymmetricKeyType !== 'ed25519') {
+            sendJson(res, 400, { error: 'invalid_public_key' });
+            return;
+          }
+        } catch {
+          sendJson(res, 400, { error: 'invalid_public_key' });
+          return;
+        }
         annexPeers.addPeer({
           fingerprint: annexIdentity.computeFingerprint(clientPublicKey),
           publicKey: clientPublicKey,
