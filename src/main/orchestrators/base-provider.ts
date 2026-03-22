@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -118,23 +119,21 @@ export abstract class BaseProvider implements OrchestratorProvider {
   }
 
   /** Read project instructions from the conventional file location */
-  readInstructions(worktreePath: string): string {
+  async readInstructions(worktreePath: string): Promise<string> {
     const filePath = this.getInstructionsPath(worktreePath);
     try {
-      return fs.readFileSync(filePath, 'utf-8');
+      return await fsp.readFile(filePath, 'utf-8');
     } catch {
       return '';
     }
   }
 
   /** Write project instructions to the conventional file location */
-  writeInstructions(worktreePath: string, content: string): void {
+  async writeInstructions(worktreePath: string, content: string): Promise<void> {
     const filePath = this.getInstructionsPath(worktreePath);
     const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(filePath, content, 'utf-8');
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(filePath, content, 'utf-8');
   }
 
   /** Get available model options, with optional dynamic fetching */

@@ -380,31 +380,29 @@ describe('ClaudeCodeProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from CLAUDE.md at project root', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from CLAUDE.md at project root', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('project instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('project instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(path.join('/project', 'CLAUDE.md'), 'utf-8');
+      expect(fsp.readFile).toHaveBeenCalledWith(path.join('/project', 'CLAUDE.md'), 'utf-8');
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    it('writes CLAUDE.md at project root', () => {
-      const projectDir = path.join('/project');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isClaudePath(s) || s === projectDir;
-      });
+    it('writes CLAUDE.md at project root', async () => {
+      await provider.writeInstructions('/project', 'new instructions');
 
-      provider.writeInstructions('/project', 'new instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'CLAUDE.md'),
         'new instructions',
         'utf-8'

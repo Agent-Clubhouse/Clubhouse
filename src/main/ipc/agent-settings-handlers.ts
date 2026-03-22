@@ -31,7 +31,7 @@ export function registerAgentSettingsHandlers(): void {
     async (_event, worktreePath, projectPath) => {
       if (projectPath) {
         const provider = await resolveOrchestrator(projectPath);
-        return provider.readInstructions(worktreePath);
+        return await provider.readInstructions(worktreePath);
       }
       return agentSettings.readClaudeMd(worktreePath);
     },
@@ -42,7 +42,7 @@ export function registerAgentSettingsHandlers(): void {
     async (_event, worktreePath, content, projectPath) => {
       if (projectPath) {
         const provider = await resolveOrchestrator(projectPath);
-        provider.writeInstructions(worktreePath, content);
+        await provider.writeInstructions(worktreePath, content);
       } else {
         await agentSettings.writeClaudeMd(worktreePath, content);
       }

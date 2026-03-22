@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import * as pty from 'node-pty';
 import { IPC } from '../../shared/ipc-channels';
@@ -54,21 +55,21 @@ const SENSITIVE_PREFIXES_WIN = [
  * Throws if the path is relative, does not exist, is not a directory,
  * or resolves to a sensitive system location.
  */
-export function validateSpawnCwd(cwd: string): string {
+export async function validateSpawnCwd(cwd: string): Promise<string> {
   if (!path.isAbsolute(cwd)) {
     throw new Error(`PTY cwd must be an absolute path, received: ${cwd}`);
   }
 
   let realCwd: string;
   try {
-    realCwd = fs.realpathSync(cwd);
+    realCwd = await fsp.realpath(cwd);
   } catch {
     throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
   }
 
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(realCwd);
+    stat = await fsp.stat(realCwd);
   } catch {
     throw new Error(`PTY cwd does not exist or is not accessible: ${cwd}`);
   }
@@ -220,8 +221,8 @@ function cleanupSession(agentId: string): void {
   sessions.delete(agentId);
 }
 
-export function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): void {
-  validateSpawnCwd(cwd);
+export async function spawn(agentId: string, cwd: string, binary: string, args: string[] = [], extraEnv?: Record<string, string>, onExit?: (agentId: string, exitCode: number, buffer?: string) => void, commandPrefix?: string): Promise<void> {
+  await validateSpawnCwd(cwd);
 
   if (sessions.has(agentId)) {
     const existing = sessions.get(agentId)!;
@@ -317,8 +318,8 @@ export function spawn(agentId: string, cwd: string, binary: string, args: string
   });
 }
 
-export function spawnShell(id: string, projectPath: string): void {
-  validateSpawnCwd(projectPath);
+export async function spawnShell(id: string, projectPath: string): Promise<void> {
+  await validateSpawnCwd(projectPath);
 
   if (sessions.has(id)) {
     const existing = sessions.get(id)!;

@@ -551,7 +551,7 @@ export async function writeProjectAgentDefaults(projectPath: string, defaults: P
 export async function applyAgentDefaults(
   worktreePath: string,
   projectPath: string,
-  writeInstructions?: (worktreePath: string, content: string) => void,
+  writeInstructions?: (worktreePath: string, content: string) => void | Promise<void>,
   conv?: SettingsConventions,
 ): Promise<void> {
   const c = conv || CLAUDE_CODE_CONVENTIONS;
@@ -560,7 +560,7 @@ export async function applyAgentDefaults(
 
   if (defaults.instructions) {
     if (writeInstructions) {
-      writeInstructions(worktreePath, defaults.instructions);
+      await writeInstructions(worktreePath, defaults.instructions);
     } else {
       await writeClaudeMd(worktreePath, defaults.instructions);
     }

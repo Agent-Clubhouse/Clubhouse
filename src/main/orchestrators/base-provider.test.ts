@@ -8,6 +8,14 @@ vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => {}),
+  mkdir: vi.fn(async () => {}),
+  stat: vi.fn(async () => ({ isDirectory: () => true })),
+  realpath: vi.fn(async (p: string) => p),
+}));
+
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
   execSync: vi.fn(() => { throw new Error('not found'); }),
@@ -22,6 +30,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { BaseProvider } from './base-provider';
 import type {
   ProviderCapabilities,
@@ -161,58 +170,44 @@ describe('BaseProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from the instructions path', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('test instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from the instructions path', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('test instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('test instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', '.test', 'TEST.md'),
         'utf-8',
       );
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(provider.readInstructions('/project')).toBe('');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      expect(await provider.readInstructions('/project')).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    it('writes to the instructions path', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isBinaryPath(s) || s === path.join('/project', '.test');
-      });
+    it('writes to the instructions path', async () => {
+      await provider.writeInstructions('/project', 'new content');
 
-      provider.writeInstructions('/project', 'new content');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project', '.test'),
+        { recursive: true },
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.test', 'TEST.md'),
         'new content',
         'utf-8',
       );
     });
 
-    it('creates parent directory if it does not exist', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => isBinaryPath(String(p)));
+    it('creates parent directory if it does not exist', async () => {
+      await provider.writeInstructions('/project', 'content');
 
-      provider.writeInstructions('/project', 'content');
-
-      expect(fs.mkdirSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
         path.join('/project', '.test'),
         { recursive: true },
       );
-    });
-
-    it('skips mkdir when parent directory already exists', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isBinaryPath(s) || s === path.join('/project', '.test');
-      });
-
-      provider.writeInstructions('/project', 'content');
-
-      expect(fs.mkdirSync).not.toHaveBeenCalled();
     });
   });
 
@@ -223,17 +218,14 @@ describe('BaseProvider', () => {
       rootProvider = new TestProviderRootInstructions();
     });
 
-    it('does not create subdirectories when instructions are at root', () => {
-      const projectDir = path.join('/project');
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isBinaryPath(s) || s === projectDir;
-      });
+    it('does not create subdirectories when instructions are at root', async () => {
+      await rootProvider.writeInstructions('/project', 'root content');
 
-      rootProvider.writeInstructions('/project', 'root content');
-
-      expect(fs.mkdirSync).not.toHaveBeenCalled();
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true },
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'TEST.md'),
         'root content',
         'utf-8',

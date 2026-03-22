@@ -54,17 +54,13 @@ vi.mock('./pty-headless-terminal', () => ({
   disposeAll: vi.fn(),
 }));
 
-// Mock fs for validateSpawnCwd — default to making all paths look like valid directories
-const mockRealpathSync = vi.fn((p: string) => p);
-const mockStatSync = vi.fn(() => ({ isDirectory: () => true }));
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs')>();
-  return {
-    ...actual,
-    realpathSync: (...args: unknown[]) => mockRealpathSync(...args),
-    statSync: (...args: unknown[]) => mockStatSync(...args),
-  };
-});
+// Mock fs/promises for validateSpawnCwd — default to making all paths look like valid directories
+const mockRealpath = vi.fn((p: string) => Promise.resolve(p));
+const mockStat = vi.fn(() => Promise.resolve({ isDirectory: () => true }));
+vi.mock('fs/promises', () => ({
+  realpath: (...args: unknown[]) => mockRealpath(...args),
+  stat: (...args: unknown[]) => mockStat(...args),
+}));
 
 // We need to import AFTER mocks are set up
 // But the module has state (Maps), so we need to handle that.
@@ -77,8 +73,8 @@ import * as headlessTerminal from './pty-headless-terminal';
 
 // Helper: spawn and immediately fire resize to clear pendingCommands
 // so that onData callbacks start buffering data.
-function spawnAndActivate(agentId: string, cwd = '/test', binary = '/usr/local/bin/claude', args: string[] = []) {
-  spawn(agentId, cwd, binary, args);
+async function spawnAndActivate(agentId: string, cwd = '/test', binary = '/usr/local/bin/claude', args: string[] = []) {
+  await spawn(agentId, cwd, binary, args);
   // Resize triggers the pending command and starts data flow
   resize(agentId, 120, 30);
 }
@@ -90,8 +86,8 @@ describe('pty-manager', () => {
     mockProcess.onExit.mockReset();
     mockProcess.write.mockReset();
     mockProcess.kill.mockReset();
-    mockRealpathSync.mockImplementation((p: string) => p);
-    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }));
+    mockRealpath.mockImplementation((p: string) => Promise.resolve(p));
+    mockStat.mockResolvedValue({ isDirectory: () => true });
   });
 
   describe('getBuffer', () => {
@@ -101,16 +97,16 @@ describe('pty-manager', () => {
   });
 
   describe('getSerializedBuffer', () => {
-    it('returns serialized headless terminal content when available', () => {
+    it('returns serialized headless terminal content when available', async () => {
       vi.mocked(headlessTerminal).serialize.mockReturnValue('serialized output');
-      spawnAndActivate('agent_ser');
+      await spawnAndActivate('agent_ser');
       expect(getSerializedBuffer('agent_ser')).toBe('serialized output');
       vi.mocked(headlessTerminal).serialize.mockReturnValue('');
     });
 
-    it('falls back to raw buffer when headless terminal returns empty', () => {
+    it('falls back to raw buffer when headless terminal returns empty', async () => {
       vi.mocked(headlessTerminal).serialize.mockReturnValue('');
-      spawnAndActivate('agent_fallback');
+      await spawnAndActivate('agent_fallback');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('raw data');
       expect(getSerializedBuffer('agent_fallback')).toBe('raw data');
@@ -123,65 +119,65 @@ describe('pty-manager', () => {
   });
 
   describe('headless terminal integration', () => {
-    it('feeds PTY data to headless terminal', () => {
-      spawnAndActivate('agent_hl');
+    it('feeds PTY data to headless terminal', async () => {
+      await spawnAndActivate('agent_hl');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
       expect(vi.mocked(headlessTerminal).feedData).toHaveBeenCalledWith('agent_hl', 'hello');
     });
 
-    it('resizes headless terminal on pty resize', () => {
-      spawnAndActivate('agent_hlr');
+    it('resizes headless terminal on pty resize', async () => {
+      await spawnAndActivate('agent_hlr');
       resize('agent_hlr', 100, 50);
       expect(vi.mocked(headlessTerminal).resize).toHaveBeenCalledWith('agent_hlr', 100, 50);
     });
 
-    it('disposes headless terminal on PTY exit', () => {
-      spawnAndActivate('agent_hle');
+    it('disposes headless terminal on PTY exit', async () => {
+      await spawnAndActivate('agent_hle');
       const onExitCb = mockProcess.onExit.mock.calls[0][0];
       onExitCb({ exitCode: 0 });
       expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hle');
     });
 
-    it('disposes headless terminal on kill', () => {
-      spawnAndActivate('agent_hlk');
+    it('disposes headless terminal on kill', async () => {
+      await spawnAndActivate('agent_hlk');
       kill('agent_hlk');
       expect(vi.mocked(headlessTerminal).dispose).toHaveBeenCalledWith('agent_hlk');
     });
   });
 
   describe('spawn + buffer', () => {
-    it('clears previous buffer on spawn', () => {
+    it('clears previous buffer on spawn', async () => {
       // Spawn first to set up buffer
-      spawnAndActivate('agent_buf');
+      await spawnAndActivate('agent_buf');
       // Simulate data via the onData callback
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello');
       expect(getBuffer('agent_buf')).toBe('hello');
 
       // Spawn again — should clear
-      spawn('agent_buf', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_buf', '/test', '/usr/local/bin/claude', []);
       expect(getBuffer('agent_buf')).toBe('');
     });
 
-    it('kills existing PTY for same agentId', () => {
-      spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
-      spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
+    it('kills existing PTY for same agentId', async () => {
+      await spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dup', '/test', '/usr/local/bin/claude', []);
       expect(mockProcess.kill).toHaveBeenCalled();
     });
   });
 
   describe('appendToBuffer (via spawn + onData)', () => {
-    it('stores and concatenates data', () => {
-      spawnAndActivate('agent_concat');
+    it('stores and concatenates data', async () => {
+      await spawnAndActivate('agent_concat');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello ');
       onDataCb('world');
       expect(getBuffer('agent_concat')).toBe('hello world');
     });
 
-    it('reuses the joined buffer until new data arrives', () => {
-      spawnAndActivate('agent_cache');
+    it('reuses the joined buffer until new data arrives', async () => {
+      await spawnAndActivate('agent_cache');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('hello ');
       onDataCb('world');
@@ -202,8 +198,8 @@ describe('pty-manager', () => {
       }
     });
 
-    it('evicts oldest chunks when >2MB', () => {
-      spawnAndActivate('agent_evict');
+    it('evicts oldest chunks when >2MB', async () => {
+      await spawnAndActivate('agent_evict');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       // Write chunks that total > 2MB
       const chunkSize = 512 * 1024; // 512KB
@@ -216,8 +212,8 @@ describe('pty-manager', () => {
       expect(buf.length).toBeGreaterThan(0);
     });
 
-    it('drops evicted chunks from a previously cached buffer', () => {
-      spawnAndActivate('agent_cached_evict');
+    it('drops evicted chunks from a previously cached buffer', async () => {
+      await spawnAndActivate('agent_cached_evict');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       const chunkSize = 512 * 1024; // 512KB each, 5 chunks = 2.5MB > 2MB limit
       const chunks = ['a', 'b', 'c', 'd', 'e'].map((char) => char.repeat(chunkSize));
@@ -233,20 +229,20 @@ describe('pty-manager', () => {
       expect(getBuffer('agent_cached_evict')).toBe(chunks.slice(1).join(''));
     });
 
-    it('keeps last chunk even if it alone exceeds limit', () => {
-      spawnAndActivate('agent_big');
+    it('keeps last chunk even if it alone exceeds limit', async () => {
+      await spawnAndActivate('agent_big');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       const bigChunk = 'x'.repeat(600 * 1024); // 600KB single chunk
       onDataCb(bigChunk);
       expect(getBuffer('agent_big')).toBe(bigChunk);
     });
 
-    it('independent buffers per agent', () => {
-      spawnAndActivate('agent_a');
+    it('independent buffers per agent', async () => {
+      await spawnAndActivate('agent_a');
       const cbA = mockProcess.onData.mock.calls[0][0];
       cbA('data_a');
 
-      spawnAndActivate('agent_b');
+      await spawnAndActivate('agent_b');
       const cbB = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
       cbB('data_b');
 
@@ -254,8 +250,8 @@ describe('pty-manager', () => {
       expect(getBuffer('agent_b')).toBe('data_b');
     });
 
-    it('suppresses shell startup data and auto-fires pending command', () => {
-      spawn('agent_suppress', '/test', '/usr/local/bin/claude', []);
+    it('suppresses shell startup data and auto-fires pending command', async () => {
+      await spawn('agent_suppress', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('shell startup noise');
 
@@ -278,10 +274,10 @@ describe('pty-manager', () => {
       expect(getBuffer('agent_suppress')).toBe('real data');
     });
 
-    it('auto-fires pending command on first shell data without requiring resize', () => {
+    it('auto-fires pending command on first shell data without requiring resize', async () => {
       if (process.platform === 'win32') return; // Unix-only behavior
 
-      spawn('agent_autofire', '/test', '/usr/local/bin/claude', ['--model', 'opus']);
+      await spawn('agent_autofire', '/test', '/usr/local/bin/claude', ['--model', 'opus']);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
 
       // Before any data, command hasn't fired
@@ -303,10 +299,10 @@ describe('pty-manager', () => {
       );
     });
 
-    it('prefixes exec with screen-clear on Unix to suppress echo noise', () => {
+    it('prefixes exec with screen-clear on Unix to suppress echo noise', async () => {
       if (process.platform === 'win32') return; // Unix-only behavior
 
-      spawn('agent_clear', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_clear', '/test', '/usr/local/bin/claude', []);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('shell ready');
 
@@ -321,8 +317,8 @@ describe('pty-manager', () => {
   });
 
   describe('spawnShell', () => {
-    it('spawns a shell without pendingCommand', () => {
-      spawnShell('shell-1', '/project');
+    it('spawns a shell without pendingCommand', async () => {
+      await spawnShell('shell-1', '/project');
       // onData should work immediately (no pendingCommand suppression)
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('prompt$ ');
@@ -331,21 +327,21 @@ describe('pty-manager', () => {
       expect(mockProcess.onData).toHaveBeenCalled();
     });
 
-    it('kills existing session with same id', () => {
-      spawnShell('shell-dup', '/project');
-      spawnShell('shell-dup', '/project');
+    it('kills existing session with same id', async () => {
+      await spawnShell('shell-dup', '/project');
+      await spawnShell('shell-dup', '/project');
       expect(mockProcess.kill).toHaveBeenCalled();
     });
 
-    it('registers onExit handler', () => {
-      spawnShell('shell-exit', '/project');
+    it('registers onExit handler', async () => {
+      await spawnShell('shell-exit', '/project');
       expect(mockProcess.onExit).toHaveBeenCalled();
     });
   });
 
   describe('write', () => {
-    it('writes data to the PTY process', () => {
-      spawn('agent_w', '/test', '/usr/local/bin/claude', []);
+    it('writes data to the PTY process', async () => {
+      await spawn('agent_w', '/test', '/usr/local/bin/claude', []);
       write('agent_w', 'hello\n');
       expect(mockProcess.write).toHaveBeenCalledWith('hello\n');
     });
@@ -356,16 +352,16 @@ describe('pty-manager', () => {
       expect(mockProcess.write).not.toHaveBeenCalled();
     });
 
-    it('rejects oversized writes (defense-in-depth)', () => {
-      spawn('agent_big', '/test', '/usr/local/bin/claude', []);
+    it('rejects oversized writes (defense-in-depth)', async () => {
+      await spawn('agent_big', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       const oversized = 'x'.repeat(64 * 1024 + 1);
       write('agent_big', oversized);
       expect(mockProcess.write).not.toHaveBeenCalled();
     });
 
-    it('accepts writes at exactly the max length', () => {
-      spawn('agent_exact', '/test', '/usr/local/bin/claude', []);
+    it('accepts writes at exactly the max length', async () => {
+      await spawn('agent_exact', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       const maxData = 'x'.repeat(64 * 1024);
       write('agent_exact', maxData);
@@ -374,14 +370,14 @@ describe('pty-manager', () => {
   });
 
   describe('resize', () => {
-    it('resizes the PTY process', () => {
-      spawn('agent_r', '/test', '/usr/local/bin/claude', []);
+    it('resizes the PTY process', async () => {
+      await spawn('agent_r', '/test', '/usr/local/bin/claude', []);
       resize('agent_r', 200, 50);
       expect(mockProcess.resize).toHaveBeenCalledWith(200, 50);
     });
 
-    it('fires pending command on first resize', () => {
-      spawn('agent_pc', '/test', '/usr/local/bin/claude', ['--model', 'opus']);
+    it('fires pending command on first resize', async () => {
+      await spawn('agent_pc', '/test', '/usr/local/bin/claude', ['--model', 'opus']);
       resize('agent_pc', 120, 30);
 
       if (process.platform === 'win32') {
@@ -397,8 +393,8 @@ describe('pty-manager', () => {
       }
     });
 
-    it('does not fire pending command on subsequent resize', () => {
-      spawn('agent_pc2', '/test', '/usr/local/bin/claude', []);
+    it('does not fire pending command on subsequent resize', async () => {
+      await spawn('agent_pc2', '/test', '/usr/local/bin/claude', []);
       resize('agent_pc2', 120, 30); // clears pending
       mockProcess.write.mockClear();
       resize('agent_pc2', 200, 50); // no pending command
@@ -422,14 +418,14 @@ describe('pty-manager', () => {
   });
 
   describe('gracefulKill', () => {
-    it('writes /exit to process', () => {
-      spawn('agent_gk', '/test', '/usr/local/bin/claude', []);
+    it('writes /exit to process', async () => {
+      await spawn('agent_gk', '/test', '/usr/local/bin/claude', []);
       gracefulKill('agent_gk');
       expect(mockProcess.write).toHaveBeenCalledWith('/exit\r');
     });
 
-    it('uses custom exit command', () => {
-      spawn('agent_gk_custom', '/test', '/usr/local/bin/codex', []);
+    it('uses custom exit command', async () => {
+      await spawn('agent_gk_custom', '/test', '/usr/local/bin/codex', []);
       gracefulKill('agent_gk_custom', '/quit\r');
       expect(mockProcess.write).toHaveBeenCalledWith('/quit\r');
     });
@@ -440,9 +436,9 @@ describe('pty-manager', () => {
       expect(mockProcess.write).not.toHaveBeenCalled();
     });
 
-    it('sends EOF after 3s, SIGTERM after 6s, hard kill after 9s', () => {
+    it('sends EOF after 3s, SIGTERM after 6s, hard kill after 9s', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_staged', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_staged', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -466,9 +462,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('skips escalation if agent exits before timeout', () => {
+    it('skips escalation if agent exits before timeout', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_fast', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_fast', '/test', '/usr/local/bin/claude', []);
 
       gracefulKill('agent_gk_fast');
 
@@ -484,9 +480,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('clears all three timers when session exits early via cleanupSession', () => {
+    it('clears all three timers when session exits early via cleanupSession', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_timers', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_timers', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -512,9 +508,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('double gracefulKill clears previous timers to prevent leaked escalation', () => {
+    it('double gracefulKill clears previous timers to prevent leaked escalation', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_double', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_double', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -542,9 +538,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('does not act on stale session if agent is re-spawned during gracefulKill', () => {
+    it('does not act on stale session if agent is re-spawned during gracefulKill', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -552,7 +548,7 @@ describe('pty-manager', () => {
 
       // Re-spawn the same agentId (simulates user restarting agent)
       // This creates a new session for the same agentId
-      spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_stale', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -569,9 +565,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('broadcasts PTY.EXIT when the 9s kill timer fires on a stuck process', () => {
+    it('broadcasts PTY.EXIT when the 9s kill timer fires on a stuck process', async () => {
       vi.useFakeTimers();
-      spawn('agent_gk_exit', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_gk_exit', '/test', '/usr/local/bin/claude', []);
       vi.mocked(broadcastToAllWindows).mockClear();
       vi.mocked(annexEventBus.emitPtyExit).mockClear();
 
@@ -587,10 +583,10 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('invokes onExit callback from 9s kill timer so registry is cleaned up (#566)', () => {
+    it('invokes onExit callback from 9s kill timer so registry is cleaned up (#566)', async () => {
       vi.useFakeTimers();
       const onExit = vi.fn();
-      spawn('agent_gk_onexit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      await spawn('agent_gk_onexit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
 
       gracefulKill('agent_gk_onexit');
 
@@ -606,8 +602,8 @@ describe('pty-manager', () => {
   });
 
   describe('kill', () => {
-    it('immediately kills and clears buffer', () => {
-      spawnAndActivate('agent_kill');
+    it('immediately kills and clears buffer', async () => {
+      await spawnAndActivate('agent_kill');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('some data');
       expect(getBuffer('agent_kill')).toBe('some data');
@@ -625,9 +621,9 @@ describe('pty-manager', () => {
   });
 
   describe('killAll', () => {
-    it('writes exit command to all sessions', () => {
-      spawn('agent_ka_1', '/test', '/usr/local/bin/claude', []);
-      spawn('agent_ka_2', '/test', '/usr/local/bin/claude', []);
+    it('writes exit command to all sessions', async () => {
+      await spawn('agent_ka_1', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_ka_2', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
 
       killAll('/exit\r');
@@ -638,7 +634,7 @@ describe('pty-manager', () => {
 
     it('clears all sessions after kill timeout', async () => {
       vi.useFakeTimers();
-      spawnAndActivate('agent_ka_3');
+      await spawnAndActivate('agent_ka_3');
       const cb = mockProcess.onData.mock.calls[0][0];
       cb('data');
       expect(getBuffer('agent_ka_3')).toBe('data');
@@ -650,8 +646,8 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('uses custom exit command', () => {
-      spawn('agent_ka_4', '/test', '/usr/local/bin/codex', []);
+    it('uses custom exit command', async () => {
+      await spawn('agent_ka_4', '/test', '/usr/local/bin/codex', []);
       mockProcess.write.mockClear();
 
       killAll('/quit\r');
@@ -661,7 +657,7 @@ describe('pty-manager', () => {
 
     it('returns a promise that resolves after cleanup', async () => {
       vi.useFakeTimers();
-      spawn('agent_ka_5', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_ka_5', '/test', '/usr/local/bin/claude', []);
 
       const promise = killAll();
       expect(promise).toBeInstanceOf(Promise);
@@ -680,7 +676,7 @@ describe('pty-manager', () => {
 
     it('clears active gracefulKill timers via cleanupSession', async () => {
       vi.useFakeTimers();
-      spawn('agent_ka_gk', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_ka_gk', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -707,10 +703,10 @@ describe('pty-manager', () => {
   });
 
   describe('command prefix', () => {
-    it('prepends command prefix to pending command on Unix', () => {
+    it('prepends command prefix to pending command on Unix', async () => {
       if (process.platform === 'win32') return;
 
-      spawn('agent_prefix', '/test', '/usr/local/bin/claude', ['--model', 'opus'], undefined, undefined, '. ./init.sh');
+      await spawn('agent_prefix', '/test', '/usr/local/bin/claude', ['--model', 'opus'], undefined, undefined, '. ./init.sh');
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('shell ready');
 
@@ -722,10 +718,10 @@ describe('pty-manager', () => {
       expect(writeCall![0]).toContain("exec '/usr/local/bin/claude' '--model' 'opus'");
     });
 
-    it('prepends command prefix to pending command on Windows', () => {
+    it('prepends command prefix to pending command on Windows', async () => {
       if (process.platform !== 'win32') return;
 
-      spawn('agent_prefix_win', '/test', 'C:\\path\\to\\claude.cmd', [], undefined, undefined, '. .\\init.ps1');
+      await spawn('agent_prefix_win', '/test', 'C:\\path\\to\\claude.cmd', [], undefined, undefined, '. .\\init.ps1');
       resize('agent_prefix_win', 120, 30);
 
       const writeCall = mockProcess.write.mock.calls.find(
@@ -735,10 +731,10 @@ describe('pty-manager', () => {
       expect(writeCall![0]).toContain('. .\\init.ps1 & ');
     });
 
-    it('does not alter command when prefix is undefined', () => {
+    it('does not alter command when prefix is undefined', async () => {
       if (process.platform === 'win32') return;
 
-      spawn('agent_no_prefix', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined);
+      await spawn('agent_no_prefix', '/test', '/usr/local/bin/claude', [], undefined, undefined, undefined);
       const onDataCb = mockProcess.onData.mock.calls[0][0];
       onDataCb('shell ready');
 
@@ -754,7 +750,7 @@ describe('pty-manager', () => {
     it('passes extraEnv to pty spawn', async () => {
       const pty = await import('node-pty');
       vi.mocked(pty.spawn).mockClear();
-      spawn('agent_env', '/test', '/usr/local/bin/claude', [], { CUSTOM_VAR: 'value' });
+      await spawn('agent_env', '/test', '/usr/local/bin/claude', [], { CUSTOM_VAR: 'value' });
 
       if (process.platform === 'win32') {
         // On Windows, cmd.exe is spawned interactively (pendingCommand mechanism)
@@ -784,7 +780,7 @@ describe('pty-manager', () => {
 
       const pty = await import('node-pty');
       vi.mocked(pty.spawn).mockClear();
-      spawn('agent_cmd', '/test', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', ['--model', 'opus']);
+      await spawn('agent_cmd', '/test', 'C:\\Users\\test\\AppData\\Roaming\\npm\\claude.cmd', ['--model', 'opus']);
 
       // Windows now uses interactive cmd.exe (no /c) with pendingCommand
       expect(pty.spawn).toHaveBeenCalledWith(
@@ -798,10 +794,10 @@ describe('pty-manager', () => {
       );
     });
 
-    it('fires properly quoted command with & exit suffix on Windows resize', () => {
+    it('fires properly quoted command with & exit suffix on Windows resize', async () => {
       if (process.platform !== 'win32') return; // Windows-only test
 
-      spawn('agent_win_resize', '/test', 'C:\\path\\to\\claude.cmd', ['--model', 'opus', 'Fix the bug']);
+      await spawn('agent_win_resize', '/test', 'C:\\path\\to\\claude.cmd', ['--model', 'opus', 'Fix the bug']);
       resize('agent_win_resize', 120, 30);
 
       // Should write the quoted command with & exit
@@ -819,7 +815,7 @@ describe('pty-manager', () => {
       const pty = await import('node-pty');
       vi.mocked(pty.spawn).mockClear();
 
-      spawn('agent_noenv', '/test', '/usr/local/bin/claude', [], {
+      await spawn('agent_noenv', '/test', '/usr/local/bin/claude', [], {
         CLAUDECODE: 'should-be-removed',
         CLAUDE_CODE_ENTRYPOINT: 'should-be-removed',
         KEEP_THIS: 'yes',
@@ -832,8 +828,8 @@ describe('pty-manager', () => {
       expect(env.KEEP_THIS).toBe('yes');
     });
 
-    it('quotes mission text with spaces for Windows pendingCommand', () => {
-      spawn('agent_mission_quote', '/test', '/usr/local/bin/claude', ['--model', 'opus', 'Fix the login bug']);
+    it('quotes mission text with spaces for Windows pendingCommand', async () => {
+      await spawn('agent_mission_quote', '/test', '/usr/local/bin/claude', ['--model', 'opus', 'Fix the login bug']);
       resize('agent_mission_quote', 120, 30);
 
       if (process.platform === 'win32') {
@@ -853,9 +849,9 @@ describe('pty-manager', () => {
   // in timer callbacks, and killAll interaction with active gracefulKill.
 
   describe('gracefulKill — double-call timer leak', () => {
-    it('does not duplicate EOF writes when gracefulKill is called twice', () => {
+    it('does not duplicate EOF writes when gracefulKill is called twice', async () => {
       vi.useFakeTimers();
-      spawn('agent_dbl_gk', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dbl_gk', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -874,9 +870,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('does not duplicate SIGTERM when gracefulKill is called twice', () => {
+    it('does not duplicate SIGTERM when gracefulKill is called twice', async () => {
       vi.useFakeTimers();
-      spawn('agent_dbl_gk_term', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dbl_gk_term', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -894,9 +890,9 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('does not duplicate hard kill when gracefulKill is called twice', () => {
+    it('does not duplicate hard kill when gracefulKill is called twice', async () => {
       vi.useFakeTimers();
-      spawn('agent_dbl_gk_hard', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dbl_gk_hard', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -916,9 +912,9 @@ describe('pty-manager', () => {
   });
 
   describe('gracefulKill — leaked timer must not destroy replacement session', () => {
-    it('new session survives leaked killTimer from double gracefulKill', () => {
+    it('new session survives leaked killTimer from double gracefulKill', async () => {
       vi.useFakeTimers();
-      spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
 
       // Double gracefulKill leaks first set of timers
       gracefulKill('agent_leak');
@@ -929,7 +925,7 @@ describe('pty-manager', () => {
       expect(isRunning('agent_leak')).toBe(false);
 
       // New session spawned with the same ID
-      spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_leak', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_leak')).toBe(true);
 
       // Advance past all leaked timer deadlines (9s)
@@ -941,16 +937,16 @@ describe('pty-manager', () => {
       vi.useRealTimers();
     });
 
-    it('new session buffer is preserved after leaked timers fire', () => {
+    it('new session buffer is preserved after leaked timers fire', async () => {
       vi.useFakeTimers();
-      spawn('agent_leak_buf', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_leak_buf', '/test', '/usr/local/bin/claude', []);
 
       gracefulKill('agent_leak_buf');
       gracefulKill('agent_leak_buf');
       kill('agent_leak_buf');
 
       // Spawn new session and write data
-      spawnAndActivate('agent_leak_buf');
+      await spawnAndActivate('agent_leak_buf');
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
       onDataCb('important data');
       expect(getBuffer('agent_leak_buf')).toBe('important data');
@@ -966,9 +962,9 @@ describe('pty-manager', () => {
   });
 
   describe('gracefulKill — timer identity guards', () => {
-    it('timers do not fire on a replacement session after natural exit', () => {
+    it('timers do not fire on a replacement session after natural exit', async () => {
       vi.useFakeTimers();
-      spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
 
       gracefulKill('agent_id_guard');
@@ -978,7 +974,7 @@ describe('pty-manager', () => {
       onExitCb({ exitCode: 0 });
 
       // Spawn replacement session
-      spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_id_guard', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
       mockProcess.kill.mockClear();
 
@@ -993,8 +989,8 @@ describe('pty-manager', () => {
   });
 
   describe('isRunning', () => {
-    it('returns true for active session', () => {
-      spawn('agent_ir_active', '/test', '/usr/local/bin/claude', []);
+    it('returns true for active session', async () => {
+      await spawn('agent_ir_active', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_ir_active')).toBe(true);
     });
 
@@ -1002,14 +998,14 @@ describe('pty-manager', () => {
       expect(isRunning('agent_ir_unknown')).toBe(false);
     });
 
-    it('returns true during graceful kill (session still alive)', () => {
-      spawn('agent_ir_killing', '/test', '/usr/local/bin/claude', []);
+    it('returns true during graceful kill (session still alive)', async () => {
+      await spawn('agent_ir_killing', '/test', '/usr/local/bin/claude', []);
       gracefulKill('agent_ir_killing');
       expect(isRunning('agent_ir_killing')).toBe(true);
     });
 
-    it('returns false after kill()', () => {
-      spawn('agent_ir_killed', '/test', '/usr/local/bin/claude', []);
+    it('returns false after kill()', async () => {
+      await spawn('agent_ir_killed', '/test', '/usr/local/bin/claude', []);
       kill('agent_ir_killed');
       expect(isRunning('agent_ir_killed')).toBe(false);
     });
@@ -1029,9 +1025,9 @@ describe('pty-manager', () => {
       stopStaleSweep();
     });
 
-    it('sweep cleans up sessions whose processes have died', () => {
+    it('sweep cleans up sessions whose processes have died', async () => {
       vi.useFakeTimers();
-      spawn('agent_stale_sweep', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_stale_sweep', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_stale_sweep')).toBe(true);
 
       // Mock process.kill to throw (simulating dead process)
@@ -1051,9 +1047,9 @@ describe('pty-manager', () => {
       process.kill = originalKill;
     });
 
-    it('sweep does not remove sessions with live processes', () => {
+    it('sweep does not remove sessions with live processes', async () => {
       vi.useFakeTimers();
-      spawn('agent_alive_sweep', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_alive_sweep', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_alive_sweep')).toBe(true);
 
       // Mock process.kill to succeed (process is alive)
@@ -1073,10 +1069,10 @@ describe('pty-manager', () => {
       process.kill = originalKill;
     });
 
-    it('sweep invokes onExit callback so registry is cleaned up (#566)', () => {
+    it('sweep invokes onExit callback so registry is cleaned up (#566)', async () => {
       vi.useFakeTimers();
       const onExit = vi.fn();
-      spawn('agent_stale_exit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
+      await spawn('agent_stale_exit', '/test', '/usr/local/bin/claude', [], undefined, onExit);
       expect(isRunning('agent_stale_exit')).toBe(true);
 
       // Mock process.kill to throw (simulating dead process)
@@ -1103,7 +1099,7 @@ describe('pty-manager', () => {
         throw new Error('ENOMEM: not enough memory');
       });
 
-      expect(() => spawn('agent_fail', '/test', '/usr/local/bin/claude', [])).toThrow('ENOMEM');
+      await expect(spawn('agent_fail', '/test', '/usr/local/bin/claude', [])).rejects.toThrow('ENOMEM');
       // Session should not be registered
       expect(isRunning('agent_fail')).toBe(false);
     });
@@ -1114,13 +1110,13 @@ describe('pty-manager', () => {
         throw new Error('ENOENT: shell not found');
       });
 
-      expect(() => spawnShell('shell_fail', '/test')).toThrow('ENOENT');
+      await expect(spawnShell('shell_fail', '/test')).rejects.toThrow('ENOENT');
       expect(isRunning('shell_fail')).toBe(false);
     });
 
     it('cleans up existing session before failing on re-spawn', async () => {
       // First spawn succeeds
-      spawn('agent_refail', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_refail', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_refail')).toBe(true);
 
       // Second spawn attempt fails
@@ -1129,7 +1125,7 @@ describe('pty-manager', () => {
         throw new Error('ENOMEM');
       });
 
-      expect(() => spawn('agent_refail', '/test', '/usr/local/bin/claude', [])).toThrow('ENOMEM');
+      await expect(spawn('agent_refail', '/test', '/usr/local/bin/claude', [])).rejects.toThrow('ENOMEM');
       // Old session was killed during cleanup, new one failed to create
       expect(isRunning('agent_refail')).toBe(false);
     });
@@ -1138,13 +1134,13 @@ describe('pty-manager', () => {
   // ── onData/onExit Guard Checks ───────────────────────────────────────
 
   describe('onData/onExit session identity guards', () => {
-    it('onData callback is ignored if session has been replaced', () => {
+    it('onData callback is ignored if session has been replaced', async () => {
       // First spawn
-      spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
       const _firstOnData = mockProcess.onData.mock.calls[0][0];
 
       // Replace session with a new spawn
-      spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_guard_data', '/test', '/usr/local/bin/claude', []);
 
       // Activate the new session so data flows
       resize('agent_guard_data', 120, 30);
@@ -1178,11 +1174,11 @@ describe('pty-manager', () => {
       };
 
       vi.mocked(pty.spawn).mockReturnValueOnce(firstProc as any);
-      spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
       const firstOnExit = firstProc.onExit.mock.calls[0][0];
 
       vi.mocked(pty.spawn).mockReturnValueOnce(secondProc as any);
-      spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_guard_exit', '/test', '/usr/local/bin/claude', []);
       expect(isRunning('agent_guard_exit')).toBe(true);
 
       // Old onExit fires — should not tear down the replacement session
@@ -1192,9 +1188,9 @@ describe('pty-manager', () => {
       expect(isRunning('agent_guard_exit')).toBe(true);
     });
 
-    it('onExit invokes the onExit callback with buffer content', () => {
+    it('onExit invokes the onExit callback with buffer content', async () => {
       const exitCallback = vi.fn();
-      spawn('agent_exit_cb', '/test', '/usr/local/bin/claude', [], undefined, exitCallback);
+      await spawn('agent_exit_cb', '/test', '/usr/local/bin/claude', [], undefined, exitCallback);
 
       // Activate and write some data
       resize('agent_exit_cb', 120, 30);
@@ -1213,8 +1209,8 @@ describe('pty-manager', () => {
       );
     });
 
-    it('onExit broadcasts exit code and last output to renderer', () => {
-      spawn('agent_exit_bcast', '/test', '/usr/local/bin/claude', []);
+    it('onExit broadcasts exit code and last output to renderer', async () => {
+      await spawn('agent_exit_bcast', '/test', '/usr/local/bin/claude', []);
       vi.mocked(broadcastToAllWindows).mockClear();
 
       resize('agent_exit_bcast', 120, 30);
@@ -1233,8 +1229,8 @@ describe('pty-manager', () => {
       expect(annexEventBus.emitPtyExit).toHaveBeenCalledWith('agent_exit_bcast', 1);
     });
 
-    it('session is cleaned up after onExit fires', () => {
-      spawn('agent_exit_cleanup', '/test', '/usr/local/bin/claude', []);
+    it('session is cleaned up after onExit fires', async () => {
+      await spawn('agent_exit_cleanup', '/test', '/usr/local/bin/claude', []);
 
       const onExitCb = mockProcess.onExit.mock.calls[mockProcess.onExit.mock.calls.length - 1][0];
       onExitCb({ exitCode: 0 });
@@ -1247,8 +1243,8 @@ describe('pty-manager', () => {
   // ── spawnShell lifecycle ─────────────────────────────────────────────
 
   describe('spawnShell lifecycle', () => {
-    it('buffers data via appendToBuffer', () => {
-      spawnShell('shell_buf', '/project');
+    it('buffers data via appendToBuffer', async () => {
+      await spawnShell('shell_buf', '/project');
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
       onDataCb('prompt$ ');
       onDataCb('ls\n');
@@ -1256,8 +1252,8 @@ describe('pty-manager', () => {
       expect(getBuffer('shell_buf')).toBe('prompt$ ls\n');
     });
 
-    it('broadcasts data on IPC', () => {
-      spawnShell('shell_ipc', '/project');
+    it('broadcasts data on IPC', async () => {
+      await spawnShell('shell_ipc', '/project');
       vi.mocked(broadcastToAllWindows).mockClear();
 
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
@@ -1266,8 +1262,8 @@ describe('pty-manager', () => {
       expect(broadcastToAllWindows).toHaveBeenCalledWith('pty:data', 'shell_ipc', 'hello');
     });
 
-    it('onExit cleans up session and broadcasts', () => {
-      spawnShell('shell_exit', '/project');
+    it('onExit cleans up session and broadcasts', async () => {
+      await spawnShell('shell_exit', '/project');
       vi.mocked(broadcastToAllWindows).mockClear();
 
       const onExitCb = mockProcess.onExit.mock.calls[mockProcess.onExit.mock.calls.length - 1][0];
@@ -1281,8 +1277,8 @@ describe('pty-manager', () => {
   // ── Buffer compaction ────────────────────────────────────────────────
 
   describe('buffer compaction', () => {
-    it('compacts array after COMPACT_THRESHOLD evictions', () => {
-      spawnAndActivate('agent_compact');
+    it('compacts array after COMPACT_THRESHOLD evictions', async () => {
+      await spawnAndActivate('agent_compact');
       const onDataCb = mockProcess.onData.mock.calls[mockProcess.onData.mock.calls.length - 1][0];
 
       // Write many small chunks that will trigger eviction + compaction.
@@ -1308,7 +1304,7 @@ describe('pty-manager', () => {
   describe('killAll — additional edge cases', () => {
     it('handles write errors for dead processes gracefully', async () => {
       vi.useFakeTimers();
-      spawn('agent_dead_write', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dead_write', '/test', '/usr/local/bin/claude', []);
 
       // Simulate process already dead — write throws
       mockProcess.write.mockImplementation(() => {
@@ -1326,9 +1322,9 @@ describe('pty-manager', () => {
 
     it('cleans up multiple sessions', async () => {
       vi.useFakeTimers();
-      spawn('agent_multi_1', '/test', '/usr/local/bin/claude', []);
-      spawn('agent_multi_2', '/test', '/usr/local/bin/claude', []);
-      spawn('agent_multi_3', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_multi_1', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_multi_2', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_multi_3', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockClear();
 
       const promise = killAll();
@@ -1345,8 +1341,8 @@ describe('pty-manager', () => {
   // ── gracefulKill edge cases ──────────────────────────────────────────
 
   describe('gracefulKill — process already dead', () => {
-    it('handles write error when process is already dead', () => {
-      spawn('agent_dead_gk', '/test', '/usr/local/bin/claude', []);
+    it('handles write error when process is already dead', async () => {
+      await spawn('agent_dead_gk', '/test', '/usr/local/bin/claude', []);
       mockProcess.write.mockImplementation(() => {
         throw new Error('Process is dead');
       });
@@ -1355,9 +1351,9 @@ describe('pty-manager', () => {
       expect(() => gracefulKill('agent_dead_gk')).not.toThrow();
     });
 
-    it('escalation timers handle dead process gracefully', () => {
+    it('escalation timers handle dead process gracefully', async () => {
       vi.useFakeTimers();
-      spawn('agent_dead_esc', '/test', '/usr/local/bin/claude', []);
+      await spawn('agent_dead_esc', '/test', '/usr/local/bin/claude', []);
 
       gracefulKill('agent_dead_esc');
 
@@ -1379,10 +1375,10 @@ describe('pty-manager', () => {
   // ── winQuoteArg edge cases (via spawn on Windows) ────────────────────
 
   describe('winQuoteArg', () => {
-    it('handles empty string argument', () => {
+    it('handles empty string argument', async () => {
       if (process.platform !== 'win32') return;
 
-      spawn('agent_winquote', '/test', '/usr/local/bin/claude', ['']);
+      await spawn('agent_winquote', '/test', '/usr/local/bin/claude', ['']);
       resize('agent_winquote', 120, 30);
 
       const writeCall = mockProcess.write.mock.calls.find(
@@ -1397,91 +1393,91 @@ describe('pty-manager', () => {
   // ── validateSpawnCwd ────────────────────────────────────────────────
 
   describe('validateSpawnCwd', () => {
-    it('accepts a valid absolute directory path', () => {
-      expect(() => validateSpawnCwd('/home/user/project')).not.toThrow();
+    it('accepts a valid absolute directory path', async () => {
+      await expect(validateSpawnCwd('/home/user/project')).resolves.not.toThrow();
     });
 
-    it('returns the resolved real path', () => {
-      mockRealpathSync.mockReturnValue('/resolved/project');
-      expect(validateSpawnCwd('/home/user/project')).toBe('/resolved/project');
+    it('returns the resolved real path', async () => {
+      mockRealpath.mockResolvedValue('/resolved/project');
+      await expect(validateSpawnCwd('/home/user/project')).resolves.toBe('/resolved/project');
     });
 
-    it('rejects relative paths', () => {
-      expect(() => validateSpawnCwd('relative/path')).toThrow('must be an absolute path');
+    it('rejects relative paths', async () => {
+      await expect(validateSpawnCwd('relative/path')).rejects.toThrow('must be an absolute path');
     });
 
-    it('rejects dot-relative paths', () => {
-      expect(() => validateSpawnCwd('./project')).toThrow('must be an absolute path');
+    it('rejects dot-relative paths', async () => {
+      await expect(validateSpawnCwd('./project')).rejects.toThrow('must be an absolute path');
     });
 
-    it('rejects paths that do not exist', () => {
-      mockRealpathSync.mockImplementation(() => { throw new Error('ENOENT'); });
-      expect(() => validateSpawnCwd('/nonexistent/path')).toThrow('does not exist');
+    it('rejects paths that do not exist', async () => {
+      mockRealpath.mockRejectedValue(new Error('ENOENT'));
+      await expect(validateSpawnCwd('/nonexistent/path')).rejects.toThrow('does not exist');
     });
 
-    it('rejects paths where stat fails', () => {
-      mockStatSync.mockImplementation(() => { throw new Error('EACCES'); });
-      expect(() => validateSpawnCwd('/no/access')).toThrow('does not exist');
+    it('rejects paths where stat fails', async () => {
+      mockStat.mockRejectedValue(new Error('EACCES'));
+      await expect(validateSpawnCwd('/no/access')).rejects.toThrow('does not exist');
     });
 
-    it('rejects paths that are files, not directories', () => {
-      mockStatSync.mockReturnValue({ isDirectory: () => false });
-      expect(() => validateSpawnCwd('/home/user/file.txt')).toThrow('not a directory');
+    it('rejects paths that are files, not directories', async () => {
+      mockStat.mockResolvedValue({ isDirectory: () => false });
+      await expect(validateSpawnCwd('/home/user/file.txt')).rejects.toThrow('not a directory');
     });
 
-    it('rejects /etc as a sensitive directory (unix)', () => {
+    it('rejects /etc as a sensitive directory (unix)', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/etc')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/etc')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects subdirectories of /etc (unix)', () => {
+    it('rejects subdirectories of /etc (unix)', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/etc/ssh')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/etc/ssh')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects /sbin (unix)', () => {
+    it('rejects /sbin (unix)', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/sbin')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/sbin')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects /System on macOS', () => {
+    it('rejects /System on macOS', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/System/Library')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/System/Library')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects /private/etc (macOS symlink target)', () => {
+    it('rejects /private/etc (macOS symlink target)', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/private/etc')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/private/etc')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects /Library', () => {
+    it('rejects /Library', async () => {
       if (process.platform === 'win32') return;
-      expect(() => validateSpawnCwd('/Library/Preferences')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('/Library/Preferences')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects C:\\Windows as a sensitive directory (win32)', () => {
+    it('rejects C:\\Windows as a sensitive directory (win32)', async () => {
       if (process.platform !== 'win32') return;
-      expect(() => validateSpawnCwd('C:\\Windows')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('C:\\Windows')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects subdirectories of C:\\Windows (win32)', () => {
+    it('rejects subdirectories of C:\\Windows (win32)', async () => {
       if (process.platform !== 'win32') return;
-      expect(() => validateSpawnCwd('C:\\Windows\\System32')).toThrow('restricted system directory');
+      await expect(validateSpawnCwd('C:\\Windows\\System32')).rejects.toThrow('restricted system directory');
     });
 
-    it('rejects path traversal resolving to sensitive directory', () => {
+    it('rejects path traversal resolving to sensitive directory', async () => {
       const sensitivePath = process.platform === 'win32' ? 'C:\\Windows\\System32' : '/etc/shadow';
       const inputPath = process.platform === 'win32' ? 'C:\\Users\\..\\Windows\\System32' : '/home/user/../../etc/shadow';
-      mockRealpathSync.mockReturnValue(sensitivePath);
-      expect(() => validateSpawnCwd(inputPath)).toThrow('restricted system directory');
+      mockRealpath.mockResolvedValue(sensitivePath);
+      await expect(validateSpawnCwd(inputPath)).rejects.toThrow('restricted system directory');
     });
 
-    it('accepts /tmp as a valid directory', () => {
-      expect(() => validateSpawnCwd('/tmp/build')).not.toThrow();
+    it('accepts /tmp as a valid directory', async () => {
+      await expect(validateSpawnCwd('/tmp/build')).resolves.not.toThrow();
     });
 
-    it('accepts home directory paths', () => {
-      expect(() => validateSpawnCwd('/Users/dev/project')).not.toThrow();
+    it('accepts home directory paths', async () => {
+      await expect(validateSpawnCwd('/Users/dev/project')).resolves.not.toThrow();
     });
   });
 
@@ -1490,30 +1486,30 @@ describe('pty-manager', () => {
   describe('spawn path validation', () => {
     const sensitiveDir = process.platform === 'win32' ? 'C:\\Windows' : '/etc';
 
-    it('spawn rejects sensitive cwd', () => {
-      expect(() => spawn('agent_val', sensitiveDir, '/usr/local/bin/claude', [])).toThrow('restricted system directory');
+    it('spawn rejects sensitive cwd', async () => {
+      await expect(spawn('agent_val', sensitiveDir, '/usr/local/bin/claude', [])).rejects.toThrow('restricted system directory');
       expect(isRunning('agent_val')).toBe(false);
     });
 
-    it('spawn rejects relative cwd', () => {
-      expect(() => spawn('agent_rel', 'relative', '/usr/local/bin/claude', [])).toThrow('must be an absolute path');
+    it('spawn rejects relative cwd', async () => {
+      await expect(spawn('agent_rel', 'relative', '/usr/local/bin/claude', [])).rejects.toThrow('must be an absolute path');
       expect(isRunning('agent_rel')).toBe(false);
     });
 
-    it('spawnShell rejects sensitive projectPath', () => {
-      expect(() => spawnShell('shell_val', sensitiveDir)).toThrow('restricted system directory');
+    it('spawnShell rejects sensitive projectPath', async () => {
+      await expect(spawnShell('shell_val', sensitiveDir)).rejects.toThrow('restricted system directory');
       expect(isRunning('shell_val')).toBe(false);
     });
 
-    it('spawnShell rejects relative projectPath', () => {
-      expect(() => spawnShell('shell_rel', 'relative')).toThrow('must be an absolute path');
+    it('spawnShell rejects relative projectPath', async () => {
+      await expect(spawnShell('shell_rel', 'relative')).rejects.toThrow('must be an absolute path');
       expect(isRunning('shell_rel')).toBe(false);
     });
 
-    it('spawnShell rejects path-traversal projectPath', () => {
-      mockRealpathSync.mockReturnValue(sensitiveDir);
+    it('spawnShell rejects path-traversal projectPath', async () => {
+      mockRealpath.mockResolvedValue(sensitiveDir);
       const traversalPath = process.platform === 'win32' ? 'C:\\Users\\..\\Windows' : '/home/../etc';
-      expect(() => spawnShell('shell_trav', traversalPath)).toThrow('restricted system directory');
+      await expect(spawnShell('shell_trav', traversalPath)).rejects.toThrow('restricted system directory');
       expect(isRunning('shell_trav')).toBe(false);
     });
   });

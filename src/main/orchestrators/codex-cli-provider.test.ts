@@ -9,6 +9,14 @@ vi.mock('fs', () => ({
   unlinkSync: vi.fn(),
 }));
 
+vi.mock('fs/promises', () => ({
+  readFile: vi.fn(async () => { throw new Error('ENOENT'); }),
+  writeFile: vi.fn(async () => {}),
+  mkdir: vi.fn(async () => {}),
+  stat: vi.fn(async () => ({ isDirectory: () => true })),
+  realpath: vi.fn(async (p: string) => p),
+}));
+
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => { throw new Error('not found'); }),
   execFile: vi.fn((_cmd: string, args: string[], _opts: unknown, cb: (...args: unknown[]) => void) => {
@@ -29,6 +37,7 @@ vi.mock('../util/shell', () => ({
 }));
 
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as childProcess from 'child_process';
 import { getShellEnvironment, invalidateShellEnvironmentCache } from '../util/shell';
 import { CodexCliProvider } from './codex-cli-provider';
@@ -363,60 +372,41 @@ describe('CodexCliProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from AGENTS.md at project root', () => {
-      vi.mocked(fs.readFileSync).mockReturnValue('project instructions');
-      const result = provider.readInstructions('/project');
+    it('reads from AGENTS.md at project root', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('project instructions');
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('project instructions');
-      expect(fs.readFileSync).toHaveBeenCalledWith(path.join('/project', 'AGENTS.md'), 'utf-8');
+      expect(fsp.readFile).toHaveBeenCalledWith(path.join('/project', 'AGENTS.md'), 'utf-8');
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    const projectDir = path.join('/project');
+    it('writes AGENTS.md at project root', async () => {
+      await provider.writeInstructions('/project', 'new instructions');
 
-    it('writes AGENTS.md at project root', () => {
-      // Parent dir (/project) exists so no mkdir needed
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isCodexPath(s) || s === projectDir;
-      });
-
-      provider.writeInstructions('/project', 'new instructions');
-
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', 'AGENTS.md'),
         'new instructions',
         'utf-8'
       );
     });
 
-    it('does not create subdirectories when parent dir exists', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isCodexPath(s) || s === projectDir;
-      });
-
-      provider.writeInstructions('/project', 'test');
-      expect(fs.mkdirSync).not.toHaveBeenCalled();
-    });
-
-    it('round-trip: write then read returns same content', () => {
-      vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
-        return isCodexPath(s) || s === projectDir;
-      });
-
+    it('round-trip: write then read returns same content', async () => {
       const content = 'My custom instructions\nWith multiple lines';
-      provider.writeInstructions('/project', content);
+      await provider.writeInstructions('/project', content);
 
-      vi.mocked(fs.readFileSync).mockReturnValue(content);
-      const result = provider.readInstructions('/project');
+      vi.mocked(fsp.readFile).mockResolvedValue(content);
+      const result = await provider.readInstructions('/project');
       expect(result).toBe(content);
     });
   });
