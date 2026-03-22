@@ -12,7 +12,7 @@ import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group
 import { agentRegistry } from '../services/agent-registry';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
-import { withValidatedArgs, stringArg, objectArg } from './validation';
+import { withValidatedArgs, stringArg, objectArg, arrayArg } from './validation';
 
 /** Verify the agentId refers to a registered agent. Throws if not. */
 function assertAgentRegistered(agentId: string): void {
@@ -84,6 +84,14 @@ export function registerMcpBindingHandlers(): void {
       assertAgentRegistered(agentId as string);
       bindingManager.setInstructions(agentId as string, targetId as string, instructions as Record<string, string>);
       appLog('core:mcp', 'info', 'Binding instructions updated', { meta: { agentId, targetId } });
+    },
+  ));
+
+  ipcMain.handle(IPC.MCP_BINDING.SET_DISABLED_TOOLS, withValidatedArgs(
+    [stringArg(), stringArg(), arrayArg(stringArg())],
+    (_event, agentId, targetId, disabledTools) => {
+      bindingManager.setDisabledTools(agentId as string, targetId as string, disabledTools as string[]);
+      appLog('core:mcp', 'info', 'Binding disabled tools updated', { meta: { agentId, targetId, disabledTools } });
     },
   ));
 

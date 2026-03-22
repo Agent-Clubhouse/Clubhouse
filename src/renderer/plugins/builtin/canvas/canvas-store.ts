@@ -250,6 +250,10 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
             if (entry.instructions && Object.keys(entry.instructions).length > 0) {
               await window.clubhouse.mcpBinding.setInstructions(entry.agentId, entry.targetId, entry.instructions);
             }
+            // Restore disabled tools if present
+            if (entry.disabledTools && entry.disabledTools.length > 0) {
+              await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
+            }
           } catch {
             // Binding restore failed (e.g. MCP not enabled) — skip
           }
@@ -270,6 +274,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         targetName: b.targetName,
         projectName: b.projectName,
         ...(b.instructions ? { instructions: b.instructions } : {}),
+        ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
       }));
       await storage.write(STORAGE_KEY_WIRES, data);
     },
