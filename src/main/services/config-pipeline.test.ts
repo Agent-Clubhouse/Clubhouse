@@ -508,4 +508,37 @@ describe('config-pipeline', () => {
       expect(isClubhouseHookEntry(entry)).toBe(true);
     });
   });
+
+  describe('concurrent restore serialization', () => {
+    it('serializes concurrent restoreForAgent calls via mutex', async () => {
+      const callOrder: string[] = [];
+      const absPath = path.resolve('/project/.claude/settings.json');
+
+      // Make readFile return content so snapshot exists
+      vi.mocked(fsp.readFile).mockResolvedValue('{"hooks":{}}');
+      vi.mocked(pathExists).mockResolvedValue(true as any);
+
+      // Create a delayed writeFile that tracks call order
+      vi.mocked(fsp.writeFile).mockImplementation(async () => {
+        callOrder.push('write-start');
+        await new Promise((r) => setTimeout(r, 10));
+        callOrder.push('write-end');
+      });
+
+      // Two agents snapshot the same file
+      await snapshotFile('agent-a', '/project/.claude/settings.json');
+      await snapshotFile('agent-b', '/project/.claude/settings.json');
+
+      // Both agents exit concurrently — mutex should serialize
+      const p1 = restoreForAgent('agent-a');
+      const p2 = restoreForAgent('agent-b');
+      await Promise.all([p1, p2]);
+
+      // With mutex: agent-b's restore runs after agent-a completes.
+      // agent-a decrements refCount to 1 (no file write).
+      // agent-b decrements refCount to 0 and restores (one write).
+      // Without mutex, overlapping writes would interleave.
+      expect(callOrder.filter(c => c === 'write-start').length).toBeLessThanOrEqual(1);
+    });
+  });
 });
