@@ -403,13 +403,9 @@ export function gracefulKill(agentId: string, exitCommand: string = '/exit\r'): 
   const session = sessions.get(agentId);
   if (!session) return;
 
-  // Clear any existing escalation timers to prevent leaks on double-call.
-  // Without this, calling gracefulKill twice overwrites the timer references
-  // on the session object, leaking the first set of timers which then fire
-  // on stale session references and can destroy replacement sessions.
-  if (session.eofTimer) clearTimeout(session.eofTimer);
-  if (session.termTimer) clearTimeout(session.termTimer);
-  if (session.killTimer) clearTimeout(session.killTimer);
+  // If a graceful kill is already in progress, no-op to prevent timer
+  // overwrite races where concurrent calls orphan timer references.
+  if (session.killing) return;
 
   session.killing = true;
 
