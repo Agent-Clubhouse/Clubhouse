@@ -563,6 +563,8 @@ export interface SatelliteSnapshot {
   agentIcons?: Record<string, string>;
   /** Per-project canvas state keyed by satellite project ID. */
   canvasState?: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+  /** Whether the satellite session is currently paused. */
+  sessionPaused?: boolean;
 }
 
 // --- Auto-update types ---

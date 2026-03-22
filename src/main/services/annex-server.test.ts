@@ -1633,6 +1633,57 @@ describe('annex-server', () => {
     });
   });
 
+  describe('session pause state tracking', () => {
+    it('notifySessionPause tracks sessionPaused state (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // notifySessionPause must update the tracked sessionPaused state
+      const notifyFn = source.slice(
+        source.indexOf('export function notifySessionPause'),
+        source.indexOf('}', source.indexOf('export function notifySessionPause') + 80) + 1,
+      );
+      expect(notifyFn).toContain('sessionPaused = paused');
+    });
+
+    it('buildSnapshot includes sessionPaused in payload (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // The snapshot return object must include sessionPaused
+      const snapshotReturn = source.slice(
+        source.lastIndexOf('return {', source.indexOf('canvasState,')),
+        source.indexOf('};', source.indexOf('canvasState,')) + 2,
+      );
+      expect(snapshotReturn).toContain('sessionPaused');
+    });
+
+    it('resets sessionPaused when last mTLS controller disconnects (structural)', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+
+      // When the last mTLS client disconnects and locked=false is broadcast,
+      // sessionPaused must also be reset
+      const unlockBlock = source.slice(
+        source.indexOf('if (!hasMtlsClient)'),
+        source.indexOf('locked: false,') + 100,
+      );
+      expect(unlockBlock).toContain('sessionPaused = false');
+    });
+  });
+
   describe('canvas mutation error propagation', () => {
     it('canvas:mutation handler sends error back to client on failure (structural)', () => {
       // BUG-09: Verify that server-side canvas mutation failures are not

@@ -292,11 +292,16 @@ export function initAnnexClientListener(): () => void {
       // Find satellite name from current satellites list
       const satellite = useAnnexClientStore.getState().satellites.find((s) => s.id === satelliteId);
       const satelliteName = satellite?.alias || satelliteId;
+      const snap = payload as SatelliteSnapshot;
       useRemoteProjectStore.getState().applySatelliteSnapshot(
         satelliteId,
         satelliteName,
-        payload as SatelliteSnapshot,
+        snap,
       );
+      // Sync pause state from snapshot so reconnects clear stale paused flags
+      useAnnexClientStore.setState((state) => ({
+        satellitePaused: { ...state.satellitePaused, [satelliteId]: !!snap.sessionPaused },
+      }));
     } else if (type === 'pty:data') {
       const p = payload as { agentId: string; data: string };
       satellitePtyDataBus.emit(satelliteId, p.agentId, p.data);

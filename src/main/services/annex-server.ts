@@ -76,6 +76,9 @@ let unsubPermissionRequest: (() => void) | null = null;
 let unsubStructuredEvent: (() => void) | null = null;
 let staleEvictionInterval: ReturnType<typeof setInterval> | null = null;
 
+/** Whether the satellite session is currently paused (tracks across reconnects). */
+let sessionPaused = false;
+
 /** Unsubscribe all event bus listeners to prevent accumulation on restart cycles. */
 function unsubscribeEventBus(): void {
   unsubPtyData?.();
@@ -476,6 +479,7 @@ async function buildSnapshot(): Promise<object> {
     projectIcons,
     agentIcons,
     canvasState,
+    sessionPaused,
   };
 }
 
@@ -1974,6 +1978,7 @@ export function start(): void {
           (client) => client !== ws && client.readyState === WebSocket.OPEN && wsAuthTypes.get(client) === 'mtls',
         );
         if (!hasMtlsClient) {
+          sessionPaused = false;
           broadcastToAllWindows(IPC.ANNEX.LOCK_STATE_CHANGED, {
             locked: false,
             remainingMs: 0,
@@ -2417,6 +2422,7 @@ export function broadcastCanvasStateToClients(projectId: string, state: unknown)
 
 /** Broadcast session pause/resume to all connected WS clients. */
 export function notifySessionPause(paused: boolean): void {
+  sessionPaused = paused;
   broadcastWs({ type: paused ? 'session:paused' : 'session:resumed', payload: { paused } });
 }
 
