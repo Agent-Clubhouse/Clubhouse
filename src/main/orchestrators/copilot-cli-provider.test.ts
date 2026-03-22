@@ -416,30 +416,32 @@ describe('CopilotCliProvider', () => {
   });
 
   describe('readInstructions', () => {
-    it('reads from .github/copilot-instructions.md', () => {
-      const result = provider.readInstructions('/project');
-      expect(fs.readFileSync).toHaveBeenCalledWith(
+    it('reads from .github/copilot-instructions.md', async () => {
+      vi.mocked(fsp.readFile).mockResolvedValue('# Instructions');
+      const result = await provider.readInstructions('/project');
+      expect(fsp.readFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'utf-8',
       );
       expect(result).toBe('# Instructions');
     });
 
-    it('returns empty string when file does not exist', () => {
-      vi.mocked(fs.readFileSync).mockImplementationOnce(() => {
-        throw new Error('ENOENT');
-      });
-      const result = provider.readInstructions('/project');
+    it('returns empty string when file does not exist', async () => {
+      vi.mocked(fsp.readFile).mockRejectedValue(new Error('ENOENT'));
+      const result = await provider.readInstructions('/project');
       expect(result).toBe('');
     });
   });
 
   describe('writeInstructions', () => {
-    it('creates .github directory if needed', () => {
-      vi.mocked(fs.existsSync).mockReturnValueOnce(false);
-      provider.writeInstructions('/project', 'New instructions');
-      expect(fs.mkdirSync).toHaveBeenCalled();
-      expect(fs.writeFileSync).toHaveBeenCalledWith(
+    it('creates .github directory and writes copilot-instructions.md', async () => {
+      await provider.writeInstructions('/project', 'New instructions');
+
+      expect(fsp.mkdir).toHaveBeenCalledWith(
+        path.join('/project', '.github'),
+        { recursive: true }
+      );
+      expect(fsp.writeFile).toHaveBeenCalledWith(
         path.join('/project', '.github', 'copilot-instructions.md'),
         'New instructions',
         'utf-8',

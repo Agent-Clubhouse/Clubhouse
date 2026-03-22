@@ -183,8 +183,8 @@ export interface OrchestratorProvider {
   getExitCommand(): string;
 
   // Instructions
-  readInstructions(worktreePath: string): string;
-  writeInstructions(worktreePath: string, content: string): void;
+  readInstructions(worktreePath: string): Promise<string>;
+  writeInstructions(worktreePath: string, content: string): Promise<void>;
 
   // Conventions
   readonly conventions: OrchestratorConventions;

@@ -284,7 +284,7 @@ export async function materializeAgent(params: {
   // 1. Instructions
   if (defaults.instructions) {
     const resolved = replaceWildcards(defaults.instructions, ctx);
-    provider.writeInstructions(worktreePath, resolved);
+    await provider.writeInstructions(worktreePath, resolved);
   }
 
   // 2. Permissions

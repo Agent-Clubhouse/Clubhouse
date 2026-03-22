@@ -1657,13 +1657,13 @@ function handleWsMessage(ws: WebSocket, data: string): void {
       const sessionId = payload.sessionId as string;
       const projectId = payload.projectId as string;
       if (!sessionId || !projectId) break;
-      findProjectById(projectId).then((project) => {
+      findProjectById(projectId).then(async (project) => {
         if (!project) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: 'project_not_found' } }));
           return;
         }
         try {
-          ptyManager.spawnShell(sessionId, project.path);
+          await ptyManager.spawnShell(sessionId, project.path);
           ws.send(JSON.stringify({ type: 'pty:spawn-shell:ack', payload: { sessionId } }));
         } catch (err) {
           ws.send(JSON.stringify({ type: 'error', payload: { message: err instanceof Error ? err.message : 'spawn_failed' } }));

@@ -7,8 +7,8 @@ import { numberArg, stringArg, withValidatedArgs } from './validation';
 const PTY_WRITE_MAX_LENGTH = 64 * 1024;
 
 export function registerPtyHandlers(): void {
-  ipcMain.handle(IPC.PTY.SPAWN_SHELL, withValidatedArgs([stringArg(), stringArg()], (_event, id: string, projectPath: string) => {
-    ptyManager.spawnShell(id, projectPath);
+  ipcMain.handle(IPC.PTY.SPAWN_SHELL, withValidatedArgs([stringArg(), stringArg()], async (_event, id: string, projectPath: string) => {
+    await ptyManager.spawnShell(id, projectPath);
   }));
 
   ipcMain.on(IPC.PTY.WRITE, withValidatedArgs([stringArg(), stringArg({ minLength: 0, maxLength: PTY_WRITE_MAX_LENGTH })], (_event, agentId: string, data: string) => {

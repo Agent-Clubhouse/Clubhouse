@@ -302,7 +302,7 @@ async function spawnPtyAgent(
     });
   }
 
-  ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
+  await ptyManager.spawn(params.agentId, params.cwd, binary, args, spawnEnv, (exitAgentId, _exitCode, buffer) => {
     configPipeline.restoreForAgent(exitAgentId);
     if (params.kind !== 'durable') bindingManager.unbindAgent(exitAgentId);
     untrackAgent(exitAgentId);
