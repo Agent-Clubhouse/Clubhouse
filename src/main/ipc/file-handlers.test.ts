@@ -332,4 +332,38 @@ describe('file-handlers', () => {
       expect(fileService.copy).not.toHaveBeenCalled();
     });
   });
+
+  describe('error handling with structured logging', () => {
+    it('WRITE logs and rethrows on failure', async () => {
+      const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      vi.mocked(fileService.writeFile).mockRejectedValueOnce(err);
+      const handler = handlers.get(IPC.FILE.WRITE)!;
+      await expect(handler({}, '/project/file.ts', 'data')).rejects.toThrow('Failed to write file');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to write file', expect.objectContaining({
+        meta: expect.objectContaining({ filePath: '/project/file.ts', code: 'EACCES' }),
+      }));
+    });
+
+    it('MKDIR logs and rethrows on failure', async () => {
+      vi.mocked(fileService.mkdir).mockRejectedValueOnce(new Error('EEXIST'));
+      const handler = handlers.get(IPC.FILE.MKDIR)!;
+      await expect(handler({}, '/project/dir')).rejects.toThrow('Failed to create directory');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to create directory', expect.anything());
+    });
+
+    it('DELETE logs and rethrows on failure', async () => {
+      vi.mocked(fileService.deleteFile).mockRejectedValueOnce(new Error('ENOENT'));
+      const handler = handlers.get(IPC.FILE.DELETE)!;
+      await expect(handler({}, '/project/file.ts')).rejects.toThrow('Failed to delete file');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to delete file', expect.anything());
+    });
+
+    it('STAT logs and rethrows on failure', async () => {
+      vi.mocked(fileService.stat).mockRejectedValueOnce(new Error('ENOENT'));
+      const handler = handlers.get(IPC.FILE.STAT)!;
+      await expect(handler({}, '/project/file.ts')).rejects.toThrow('Failed to stat');
+      expect(appLog).toHaveBeenCalledWith('core:file', 'error', 'Failed to stat file', expect.anything());
+    });
+  });
 });
