@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildZoneContainmentMap, getViewThemeOverride } from './zone-containment';
-import type { CanvasView, ZoneCanvasView, AgentCanvasView } from './canvas-types';
+import type { ZoneCanvasView, AgentCanvasView } from './canvas-types';
 
 function makeZone(overrides?: Partial<ZoneCanvasView>): ZoneCanvasView {
   return {

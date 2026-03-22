@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { expandZoneWires, reconcileZoneBindings } from './zone-wire-expansion';
-import type { CanvasView, AgentCanvasView, ZoneCanvasView, PluginCanvasView } from './canvas-types';
+import type { AgentCanvasView, ZoneCanvasView, PluginCanvasView } from './canvas-types';
 import type { ZoneWireDefinition } from './zone-wire-store';
 
 function makeZone(id: string, containedViewIds: string[]): ZoneCanvasView {

@@ -956,7 +956,10 @@ export type CanvasMutation =
   | { type: 'addCanvas' }
   | { type: 'removeCanvas'; canvasId: string }
   | { type: 'renameCanvas'; canvasId: string; name: string }
-  | { type: 'setActiveCanvas'; canvasId: string };
+  | { type: 'setActiveCanvas'; canvasId: string }
+  // Zone operations
+  | { type: 'removeZone'; zoneId: string; removeContents: boolean }
+  | { type: 'updateZoneTheme'; zoneId: string; themeId: string };
 
 export interface CanvasStateSnapshot {
   canvasId: string;

@@ -118,9 +118,7 @@ export function CanvasWorkspace({
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
   const addZoneWire = useZoneWireStore((s) => s.addWire);
-  const zoneWires = useZoneWireStore((s) => s.wires);
   const mcpBind = useMcpBindingStore((s) => s.bind);
-  const mcpUnbind = useMcpBindingStore((s) => s.unbind);
 
   const handleZoneWire: ZoneWireCallback = useCallback((sourceZoneId, targetId, targetType) => {
     addZoneWire({ sourceZoneId, targetId, targetType });

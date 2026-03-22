@@ -289,6 +289,14 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
     setSelectedViewId(null);
   }, []);
 
+  const handleRemoveZone = useCallback((zoneId: string, removeContents: boolean) => {
+    sendMutation({ type: 'removeZone', zoneId, removeContents });
+  }, [sendMutation]);
+
+  const handleUpdateZoneTheme = useCallback((zoneId: string, themeId: string) => {
+    sendMutation({ type: 'updateZoneTheme', zoneId, themeId });
+  }, [sendMutation]);
+
   // ── Render ────────────────────────────────────────────────────────
 
   if (loading) {
@@ -330,6 +338,8 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onToggleSelectView={handleToggleSelectView}
         onSetSelectedViewIds={setSelectedViewIds}
         onClearSelection={handleClearSelection}
+        onRemoveZone={handleRemoveZone}
+        onUpdateZoneTheme={handleUpdateZoneTheme}
       />
     </div>
   );
