@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isValidWireTarget } from './useWiring';
-import type { AgentCanvasView, PluginCanvasView, AnchorCanvasView } from './canvas-types';
+import type { AgentCanvasView, PluginCanvasView, AnchorCanvasView, ZoneCanvasView } from './canvas-types';
 
 function makeAgentView(id: string, agentId: string | null): AgentCanvasView {
   return {
@@ -74,5 +74,53 @@ describe('isValidWireTarget', () => {
 
   it('rejects anchor views', () => {
     expect(isValidWireTarget(source, makeAnchorView('anc1'))).toBe(false);
+  });
+
+  // Zone wire targets
+  describe('zone support', () => {
+    function makeZoneView(id: string): ZoneCanvasView {
+      return {
+        id,
+        type: 'zone',
+        position: { x: 0, y: 0 },
+        size: { width: 600, height: 400 },
+        title: `Zone ${id}`,
+        displayName: `Zone ${id}`,
+        zIndex: 0,
+        metadata: {},
+        themeId: 'catppuccin-mocha',
+        containedViewIds: [],
+      };
+    }
+
+    it('accepts zone as target from agent source', () => {
+      expect(isValidWireTarget(source, makeZoneView('z1'))).toBe(true);
+    });
+
+    it('accepts agent as target from zone source', () => {
+      const zoneSource = makeZoneView('z1');
+      expect(isValidWireTarget(zoneSource, makeAgentView('a2', 'agent-2'))).toBe(true);
+    });
+
+    it('accepts zone-to-zone', () => {
+      const z1 = makeZoneView('z1');
+      const z2 = makeZoneView('z2');
+      expect(isValidWireTarget(z1, z2)).toBe(true);
+    });
+
+    it('rejects zone-to-self', () => {
+      const z1 = makeZoneView('z1');
+      expect(isValidWireTarget(z1, z1)).toBe(false);
+    });
+
+    it('accepts browser as target from zone source', () => {
+      const zoneSource = makeZoneView('z1');
+      expect(isValidWireTarget(zoneSource, makeBrowserView('b1'))).toBe(true);
+    });
+
+    it('rejects anchor from zone source', () => {
+      const zoneSource = makeZoneView('z1');
+      expect(isValidWireTarget(zoneSource, makeAnchorView('anc1'))).toBe(false);
+    });
   });
 });
