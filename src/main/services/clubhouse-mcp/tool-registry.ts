@@ -189,6 +189,35 @@ export async function callTool(
     };
   }
 
+  // Validate arguments against the tool's declared inputSchema
+  const schema = template.definition.inputSchema;
+  if (schema && typeof schema === 'object') {
+    const schemaObj = schema as Record<string, unknown>;
+    const required = (schemaObj.required as string[]) || [];
+    const properties = (schemaObj.properties as Record<string, { type?: string }>) || {};
+
+    // Check required fields are present
+    for (const field of required) {
+      if (args[field] === undefined || args[field] === null) {
+        return {
+          content: [{ type: 'text', text: `Missing required argument: ${field}` }],
+          isError: true,
+        };
+      }
+    }
+
+    // Check types of provided fields
+    for (const [key, value] of Object.entries(args)) {
+      const propSchema = properties[key];
+      if (propSchema?.type && typeof value !== propSchema.type) {
+        return {
+          content: [{ type: 'text', text: `Invalid type for argument "${key}": expected ${propSchema.type}, got ${typeof value}` }],
+          isError: true,
+        };
+      }
+    }
+  }
+
   return template.handler(binding.targetId, agentId, args);
 }
 

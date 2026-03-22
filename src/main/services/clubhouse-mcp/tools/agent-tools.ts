@@ -488,7 +488,8 @@ export function registerAgentTools(): void {
       }
 
       const taskId = (args.task_id as string) || `t_${Date.now().toString(36)}`;
-      const filename = (args.filename as string) || `${taskId}.md`;
+      const rawFilename = (args.filename as string) || `${taskId}.md`;
+      const filename = path.basename(rawFilename);
 
       const reg = agentRegistry.get(targetId);
       if (!reg) {

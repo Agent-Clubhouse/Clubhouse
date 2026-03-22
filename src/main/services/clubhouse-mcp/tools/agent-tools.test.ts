@@ -696,6 +696,27 @@ describe('AgentTools', () => {
       expect(result.isError).toBe(true);
     });
 
+    it('strips path traversal sequences from filename', async () => {
+      mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
+      const promise = callTool('agent-1', sendFileToolName, {
+        content: 'pwned',
+        task_id: 'sf_evil',
+        filename: '../../etc/passwd',
+      });
+      await vi.advanceTimersByTimeAsync(400);
+      await promise;
+
+      // path.basename('../../etc/passwd') → 'passwd', so file stays in temp dir
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        expect.stringContaining('sf_evil-passwd'),
+        'pwned',
+        'utf-8',
+      );
+      // Must NOT contain directory traversal in the written path
+      const writtenPath = mockWriteFile.mock.calls[0][0] as string;
+      expect(writtenPath).not.toContain('..');
+    });
+
     it('uses custom filename when provided', async () => {
       mockAgentRegistryGet.mockReturnValue({ runtime: 'pty', orchestrator: 'claude-code' });
       const promise = callTool('agent-1', sendFileToolName, {
