@@ -37,6 +37,14 @@ export default defineConfig({
   plugins: [rawMarkdown()],
   test: {
     ...sharedTestConfig,
+    coverage: {
+      thresholds: {
+        lines: 60,
+        branches: 50,
+        functions: 60,
+        statements: 60,
+      },
+    },
     projects: [
       {
         plugins: [rawMarkdown()],
