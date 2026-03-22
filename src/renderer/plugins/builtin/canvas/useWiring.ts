@@ -113,14 +113,28 @@ export function useWiring(
         const projectName = (hitView.metadata?.projectName as string)
           || (wireDrag.sourceView.metadata?.projectName as string)
           || undefined;
+        const sourceLabel = wireDrag.sourceView.displayName || wireDrag.sourceView.title;
+        const targetLabel = hitView.displayName || hitView.title;
         bind(wireDrag.sourceView.agentId, {
           targetId: resolvedTargetId,
           targetKind: kind,
-          label: hitView.displayName || hitView.title,
-          agentName: wireDrag.sourceView.displayName || wireDrag.sourceView.title,
-          targetName: hitView.displayName || hitView.title,
+          label: targetLabel,
+          agentName: sourceLabel,
+          targetName: targetLabel,
           projectName,
         });
+
+        // Agent-to-agent wires default to bidirectional — also create the reverse binding
+        if (kind === 'agent') {
+          bind(resolvedTargetId, {
+            targetId: wireDrag.sourceView.agentId,
+            targetKind: 'agent',
+            label: sourceLabel,
+            agentName: targetLabel,
+            targetName: sourceLabel,
+            projectName,
+          });
+        }
       }
 
       setWireDrag(null);
