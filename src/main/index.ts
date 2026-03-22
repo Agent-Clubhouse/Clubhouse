@@ -144,8 +144,8 @@ const createWindow = (): void => {
     if (isHttp) return; // always allowed
 
     if (isFile) {
-      const annexSettings = require('./services/annex-settings');
-      const settings = annexSettings.getSettings();
+      const { securitySettings } = require('./ipc/settings-handlers');
+      const settings = securitySettings.get();
       if (settings.allowLocalFileWebviews) return; // user opted in
 
       appLog('core:security', 'info', 'Blocked file:// webview (allowLocalFileWebviews is disabled)', {

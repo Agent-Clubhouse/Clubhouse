@@ -13,10 +13,10 @@
  * That's it — no IPC channels, handler registration, or preload changes needed.
  */
 import { createManagedSettings } from '../services/managed-settings';
-import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS } from '../../shared/settings-definitions';
+import { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS } from '../../shared/settings-definitions';
 import { onMcpSettingsChanged } from './mcp-binding-handlers';
 
-export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS };
+export { CLIPBOARD_SETTINGS, EDITOR_SETTINGS, MCP_SETTINGS, SECURITY_SETTINGS };
 
 export const clipboardSettings = createManagedSettings(CLIPBOARD_SETTINGS, {
   defaultsOverride: {
@@ -29,6 +29,8 @@ export const editorSettings = createManagedSettings(EDITOR_SETTINGS);
 export const mcpSettings = createManagedSettings(MCP_SETTINGS, {
   onSave: () => onMcpSettingsChanged(),
 });
+
+export const securitySettings = createManagedSettings(SECURITY_SETTINGS);
 
 // ---------------------------------------------------------------------------
 // To migrate more settings, add them here following the same pattern.
@@ -45,4 +47,5 @@ export function registerSettingsHandlers(): void {
   clipboardSettings.register();
   editorSettings.register();
   mcpSettings.register();
+  securitySettings.register();
 }

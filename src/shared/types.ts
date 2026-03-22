@@ -454,6 +454,13 @@ export interface ExperimentalSettings {
   [key: string]: boolean;
 }
 
+// --- Security settings ---
+
+export interface SecuritySettings {
+  /** Allow loading file:// URLs in webview widgets and the browser view. Default: false. */
+  allowLocalFileWebviews: boolean;
+}
+
 // --- Annex (LAN monitoring) types ---
 
 export interface AnnexSettings {
