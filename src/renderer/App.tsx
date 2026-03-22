@@ -105,6 +105,7 @@ export function App() {
   // Handle plugin lifecycle on project switches
   const prevProjectIdRef = useRef<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
     const prevId = prevProjectIdRef.current;
     prevProjectIdRef.current = activeProjectId;
     if (activeProjectId && activeProjectId !== prevId) {
@@ -127,6 +128,7 @@ export function App() {
           // a project switch that fires before init completes would see an
           // empty plugin registry and silently skip community plugins.
           await pluginSystemReady;
+          if (cancelled) return;
 
           if (isRemote) {
             // Remote project: use matched plugins from satellite snapshot
@@ -139,10 +141,12 @@ export function App() {
               // Merge built-in project-scoped plugins
               let expFlags = {};
               try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+              if (cancelled) return;
               const builtinIds = getBuiltinProjectPluginIds(expFlags);
               const merged = [...new Set([...matchedIds, ...builtinIds])];
               usePluginStore.getState().loadProjectPluginConfig(activeProjectId, merged);
             }
+            if (cancelled) return;
             await handleProjectSwitch(prevId, activeProjectId, '__remote__');
           } else {
             // Load persisted per-project plugin config. The storageRead may
@@ -157,8 +161,10 @@ export function App() {
                 key: `project-enabled-${activeProjectId}`,
               }) as string[] | undefined;
             } catch { /* no saved config — will use builtin defaults */ }
+            if (cancelled) return;
             let expFlags = {};
             try { expFlags = await window.clubhouse.app.getExperimentalSettings(); } catch { /* ignore */ }
+            if (cancelled) return;
             const builtinIds = getBuiltinProjectPluginIds(expFlags);
             const base = Array.isArray(saved) ? saved : [];
             const merged = [...new Set([...base, ...builtinIds])];
@@ -166,6 +172,7 @@ export function App() {
             await handleProjectSwitch(prevId, activeProjectId, project!.path);
           }
         })().catch((err) => {
+          if (cancelled) return;
           rendererLog('core:plugins', 'error', 'Project switch error', {
             projectId: activeProjectId,
             meta: { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
@@ -177,6 +184,7 @@ export function App() {
         });
       }
     }
+    return () => { cancelled = true; };
   }, [activeProjectId, projects]);
 
   // ── Lock overlay action handlers ─────────────────────────────────────────
