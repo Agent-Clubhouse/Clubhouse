@@ -472,7 +472,11 @@ function startHeartbeat(sat: SatelliteConnectionInternal): void {
         meta: { fingerprint: sat.fingerprint },
       });
       if (sat.ws) {
-        try { sat.ws.terminate(); } catch { /* ignore */ }
+        try { sat.ws.terminate(); } catch (err) {
+          appLog('core:annex-client', 'debug', 'Failed to terminate WebSocket on heartbeat timeout', {
+            meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
+          });
+        }
         sat.ws = null;
       }
       setState(sat, 'disconnected', 'Heartbeat timeout');
@@ -526,7 +530,11 @@ function disconnectSatellite(sat: SatelliteConnectionInternal): void {
     sat.reconnectTimer = null;
   }
   if (sat.ws) {
-    try { sat.ws.close(); } catch { /* ignore */ }
+    try { sat.ws.close(); } catch (err) {
+      appLog('core:annex-client', 'debug', 'Failed to close WebSocket during disconnect', {
+        meta: { fingerprint: sat.fingerprint, error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     sat.ws = null;
   }
   setState(sat, 'disconnected');
@@ -656,11 +664,19 @@ function startDiscovery(): void {
 
 function stopDiscovery(): void {
   if (bonjourBrowser) {
-    try { bonjourBrowser.stop(); } catch { /* ignore */ }
+    try { bonjourBrowser.stop(); } catch (err) {
+      appLog('core:annex-client', 'debug', 'Failed to stop Bonjour browser', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjourBrowser = null;
   }
   if (bonjourInstance) {
-    try { bonjourInstance.destroy(); } catch { /* ignore */ }
+    try { bonjourInstance.destroy(); } catch (err) {
+      appLog('core:annex-client', 'debug', 'Failed to destroy Bonjour instance', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjourInstance = null;
   }
 }

@@ -196,7 +196,11 @@ function handleClipboardImage(agentId: string, base64: string, mimeType: string)
 
     // Schedule cleanup (30 minutes — long enough for the agent to read the file)
     setTimeout(() => {
-      try { fs.unlinkSync(filePath); } catch { /* already gone */ }
+      try { fs.unlinkSync(filePath); } catch (err) {
+        appLog('core:annex', 'debug', 'Clipboard image cleanup failed (file may already be removed)', {
+          meta: { filePath, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }, CLIPBOARD_IMAGE_CLEANUP_MS);
   } catch (err) {
     appLog('core:annex-server', 'error', 'clipboard:image — failed to write temp file', {
@@ -1888,7 +1892,11 @@ export function start(): void {
       });
       try {
         ws.send(JSON.stringify({ type: 'error', payload: { message: 'snapshot_failed' } }));
-      } catch { /* client already gone */ }
+      } catch (sendErr) {
+        appLog('core:annex', 'debug', 'Failed to send error to client (client likely disconnected)', {
+          meta: { error: sendErr instanceof Error ? sendErr.message : String(sendErr) },
+        });
+      }
     }
 
     // Broadcast lock state when an mTLS controller connects
@@ -2070,7 +2078,11 @@ export function stop(): void {
   // Close all WebSocket clients
   if (wss) {
     for (const client of wss.clients) {
-      try { client.close(); } catch { /* ignore */ }
+      try { client.close(); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close WebSocket client during shutdown', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
     wss.close();
     wss = null;
@@ -2078,11 +2090,19 @@ export function stop(): void {
 
   // Un-publish mDNS
   if (bonjourService) {
-    try { bonjourService.stop?.(); } catch { /* ignore */ }
+    try { bonjourService.stop?.(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to stop Bonjour service during shutdown', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjourService = null;
   }
   if (bonjour) {
-    try { bonjour.destroy(); } catch { /* ignore */ }
+    try { bonjour.destroy(); } catch (err) {
+      appLog('core:annex', 'debug', 'Failed to destroy Bonjour instance during shutdown', {
+        meta: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
     bonjour = null;
   }
 
@@ -2372,7 +2392,11 @@ export function regeneratePin(): void {
   // Close all WS clients so they must re-pair
   if (wss) {
     for (const client of wss.clients) {
-      try { client.close(); } catch { /* ignore */ }
+      try { client.close(); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close WebSocket client during pin regeneration', {
+          meta: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   }
 }
@@ -2383,7 +2407,11 @@ export function disconnectPeer(fingerprint: string): void {
   if (!wss) return;
   for (const client of wss.clients) {
     if (wsPeerFingerprints.get(client) === fingerprint) {
-      try { client.close(1000, 'disconnected_by_satellite'); } catch { /* ignore */ }
+      try { client.close(1000, 'disconnected_by_satellite'); } catch (err) {
+        appLog('core:annex', 'debug', 'Failed to close peer WebSocket connection', {
+          meta: { fingerprint, error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   }
 }

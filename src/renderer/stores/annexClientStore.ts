@@ -111,73 +111,97 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   connect: async (fingerprint, bearerToken) => {
     try {
       await window.clubhouse.annexClient.connect(fingerprint, bearerToken);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] connect failed:', fingerprint, err);
+    }
   },
 
   disconnect: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.disconnect(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] disconnect failed:', fingerprint, err);
+    }
   },
 
   forgetSatellite: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.forgetSatellite(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] forgetSatellite failed:', fingerprint, err);
+    }
   },
 
   forgetAllSatellites: async () => {
     try {
       await window.clubhouse.annexClient.forgetAllSatellites();
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] forgetAllSatellites failed:', err);
+    }
   },
 
   retry: async (fingerprint) => {
     try {
       await window.clubhouse.annexClient.retry(fingerprint);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] retry failed:', fingerprint, err);
+    }
   },
 
   scan: async () => {
     try {
       await window.clubhouse.annexClient.scan();
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] scan failed:', err);
+    }
   },
 
   sendPtyInput: async (satelliteId, agentId, data) => {
     try {
       await window.clubhouse.annexClient.ptyInput(satelliteId, agentId, data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendPtyInput failed:', satelliteId, agentId, err);
+    }
   },
 
   sendClipboardImage: async (satelliteId, agentId, base64, mimeType) => {
     try {
       await window.clubhouse.annexClient.clipboardImage(satelliteId, agentId, base64, mimeType);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendClipboardImage failed:', satelliteId, agentId, err);
+    }
   },
 
   sendPtyResize: async (satelliteId, agentId, cols, rows) => {
     try {
       await window.clubhouse.annexClient.ptyResize(satelliteId, agentId, cols, rows);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendPtyResize failed:', satelliteId, agentId, err);
+    }
   },
 
   sendAgentSpawn: async (satelliteId, params) => {
     try {
       await window.clubhouse.annexClient.agentSpawn(satelliteId, params);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentSpawn failed:', satelliteId, err);
+    }
   },
 
   sendAgentKill: async (satelliteId, agentId) => {
     try {
       await window.clubhouse.annexClient.agentKill(satelliteId, agentId);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentKill failed:', satelliteId, agentId, err);
+    }
   },
 
   sendAgentWake: async (satelliteId, agentId, options) => {
     try {
       await window.clubhouse.annexClient.agentWake(satelliteId, agentId, options);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentWake failed:', satelliteId, agentId, err);
+    }
   },
 
   requestPtyBuffer: async (satelliteId, agentId) => {
@@ -203,7 +227,9 @@ export const useAnnexClientStore = create<AnnexClientStoreState>((set) => ({
   sendAgentReorder: async (satelliteId, projectId, orderedIds) => {
     try {
       await window.clubhouse.annexClient.agentReorder(satelliteId, projectId, orderedIds);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[annex-client] sendAgentReorder failed:', satelliteId, projectId, err);
+    }
   },
 }));
 
@@ -221,7 +247,9 @@ export const satellitePtyDataBus = {
   },
   emit(satelliteId: string, agentId: string, data: string): void {
     for (const listener of ptyDataListeners) {
-      try { listener(satelliteId, agentId, data); } catch { /* ignore */ }
+      try { listener(satelliteId, agentId, data); } catch (err) {
+        console.warn('[annex-client] ptyDataBus listener threw:', err);
+      }
     }
   },
 };
@@ -240,7 +268,9 @@ export const satellitePtyExitBus = {
   },
   emit(satelliteId: string, agentId: string, exitCode: number): void {
     for (const listener of ptyExitListeners) {
-      try { listener(satelliteId, agentId, exitCode); } catch { /* ignore */ }
+      try { listener(satelliteId, agentId, exitCode); } catch (err) {
+        console.warn('[annex-client] ptyExitBus listener threw:', err);
+      }
     }
   },
 };
