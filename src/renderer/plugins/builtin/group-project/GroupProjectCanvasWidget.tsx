@@ -7,17 +7,12 @@ import { renderMarkdownSafe } from '../../../utils/safe-markdown';
 import { ptyWrite } from '../../../services/project-proxy';
 import { useRemoteProject } from '../../../hooks/useRemoteProject';
 import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
+import { useAgentStore } from '../../../stores/agentStore';
+import { pollingStartMsg, pollingStopMsg } from '../../../../shared/polling-messages';
 
 const EXPANDED_WIDTH_THRESHOLD = 500;
 const POLL_INTERVAL_MS = 5000;
 const ALL_TOPICS_KEY = '__all__';
-
-function pollingStartMsg(projectName: string): string {
-  return `Group Project notification: Poll the bulletin board for "${projectName}" every 60 seconds when idle or between turns. Use read_bulletin to check for updates.`;
-}
-function pollingStopMsg(projectName: string): string {
-  return `Group Project notification: Stop periodic bulletin board polling for "${projectName}".`;
-}
 
 /** Inject a message into an agent's PTY using bracketed paste + Enter. */
 function injectPtyMessage(agentId: string, message: string): void {
@@ -231,8 +226,10 @@ function ProjectCard({
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
-    const msg = newVal ? pollingStartMsg(name) : pollingStopMsg(name);
+    const agents = useAgentStore.getState().agents;
     for (const agent of connectedAgents) {
+      const orchestrator = agents[agent.agentId]?.orchestrator;
+      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       injectPtyMessage(agent.agentId, msg);
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);
@@ -401,8 +398,10 @@ function ExpandedProjectView({
     await update(groupProjectId, { metadata: { pollingEnabled: newVal } } as any);
     onUpdateMetadata({ pollingEnabled: newVal });
     const name = project?.name || groupProjectId;
-    const msg = newVal ? pollingStartMsg(name) : pollingStopMsg(name);
+    const agents = useAgentStore.getState().agents;
     for (const agent of connectedAgents) {
+      const orchestrator = agents[agent.agentId]?.orchestrator;
+      const msg = newVal ? pollingStartMsg(name, orchestrator) : pollingStopMsg(name, orchestrator);
       injectPtyMessage(agent.agentId, msg);
     }
   }, [pollingEnabled, update, groupProjectId, onUpdateMetadata, connectedAgents, project]);

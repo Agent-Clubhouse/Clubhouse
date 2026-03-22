@@ -151,3 +151,35 @@ describe('GroupProjectCanvasWidget — polling toggle', () => {
     expect(source).toMatch(/for\s*\(const\s+agent\s+of\s+connectedAgents\)/);
   });
 });
+
+// ── Orchestrator-aware polling messages ─────────────────────────────
+
+describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
+  it('imports shared polling message builders', () => {
+    expect(source).toContain("from '../../../../shared/polling-messages'");
+    expect(source).toContain('pollingStartMsg');
+    expect(source).toContain('pollingStopMsg');
+  });
+
+  it('does not define local pollingStartMsg or pollingStopMsg functions', () => {
+    // These should come from the shared module, not be defined locally
+    expect(source).not.toMatch(/^function pollingStartMsg/m);
+    expect(source).not.toMatch(/^function pollingStopMsg/m);
+  });
+
+  it('imports useAgentStore for orchestrator lookup', () => {
+    expect(source).toContain("from '../../../stores/agentStore'");
+    expect(source).toContain('useAgentStore');
+  });
+
+  it('looks up orchestrator per agent in handleTogglePolling', () => {
+    // Should get agents from store and look up orchestrator per connected agent
+    expect(source).toContain('useAgentStore.getState().agents');
+    expect(source).toContain('agents[agent.agentId]?.orchestrator');
+  });
+
+  it('passes orchestrator to pollingStartMsg and pollingStopMsg', () => {
+    expect(source).toMatch(/pollingStartMsg\(name,\s*orchestrator\)/);
+    expect(source).toMatch(/pollingStopMsg\(name,\s*orchestrator\)/);
+  });
+});

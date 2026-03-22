@@ -76,10 +76,19 @@ export function App() {
 
   // ── One-time initialization & event bridge ──────────────────────────────
   useEffect(() => {
-    const cleanupInit = initApp();
+    let cleanupInit: (() => void) | undefined;
+    let cancelled = false;
+    initApp().then((cleanup) => {
+      if (cancelled) {
+        cleanup();
+      } else {
+        cleanupInit = cleanup;
+      }
+    });
     const cleanupBridge = initAppEventBridge();
     return () => {
-      cleanupInit();
+      cancelled = true;
+      cleanupInit?.();
       cleanupBridge();
     };
   }, []);

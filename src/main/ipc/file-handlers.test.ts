@@ -331,5 +331,61 @@ describe('file-handlers', () => {
       await expect(handler({}, '/etc/passwd', '/project/stolen.txt')).rejects.toThrow('Access denied');
       expect(fileService.copy).not.toHaveBeenCalled();
     });
+
+    it('awaits assertAllowedPath before performing file operations', async () => {
+      // Regression test for SEC-02: if assertAllowedPath is called but not
+      // awaited, the file operation runs before the guard rejects.
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.READ)!;
+      const resultPromise = handler({}, '/project/file.ts');
+
+      // Yield a microtask tick — if the handler forgot `await`, readFile would
+      // already have been called by now.
+      await Promise.resolve();
+      expect(fileService.readFile).not.toHaveBeenCalled();
+
+      // Now let the guard resolve and the handler should proceed.
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.readFile).toHaveBeenCalledWith('/project/file.ts');
+    });
+
+    it('awaits assertAllowedPath before performing write operations', async () => {
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.WRITE)!;
+      const resultPromise = handler({}, '/project/file.ts', 'content');
+
+      await Promise.resolve();
+      expect(fileService.writeFile).not.toHaveBeenCalled();
+
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.writeFile).toHaveBeenCalledWith('/project/file.ts', 'content');
+    });
+
+    it('awaits assertAllowedPath before performing delete operations', async () => {
+      let resolveGuard!: () => void;
+      const guardPromise = new Promise<void>((resolve) => { resolveGuard = resolve; });
+
+      vi.mocked(assertAllowedPath).mockReturnValue(guardPromise as Promise<void>);
+
+      const handler = handlers.get(IPC.FILE.DELETE)!;
+      const resultPromise = handler({}, '/project/file.ts');
+
+      await Promise.resolve();
+      expect(fileService.deleteFile).not.toHaveBeenCalled();
+
+      resolveGuard();
+      await resultPromise;
+      expect(fileService.deleteFile).toHaveBeenCalledWith('/project/file.ts');
+    });
   });
 });
