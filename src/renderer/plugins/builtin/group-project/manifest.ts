@@ -12,6 +12,7 @@ export const manifest: PluginManifest = {
   scope: 'dual',
   permissions: ['canvas', 'widgets', 'storage'],
   contributes: {
+    help: {},
     canvasWidgets: [
       {
         id: 'group-project',
