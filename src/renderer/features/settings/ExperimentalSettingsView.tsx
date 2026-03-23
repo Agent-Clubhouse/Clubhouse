@@ -18,11 +18,6 @@ const EXPERIMENTAL_FEATURES: Array<{
     description: 'Allow themes to define custom font families and background gradients. Requires app restart.',
   },
   {
-    id: 'canvas',
-    label: 'Canvas',
-    description: 'Free-form spatial workspace for arranging agent, file, and browser views on a pannable/zoomable surface. Requires app restart.',
-  },
-  {
     id: 'annex',
     label: 'Annex (Remote Control)',
     description: 'Desktop-to-desktop remote control over LAN. Enables the Annex Server and Annex Control settings pages. Requires app restart.',

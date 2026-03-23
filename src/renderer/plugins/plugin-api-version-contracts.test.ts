@@ -313,8 +313,8 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.5, 0.6, 0.7, 0.8, 0.9]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
+  it('contains exactly [0.5, 0.6, 0.7, 0.8]', () => {
+    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {
@@ -637,7 +637,12 @@ describe('§2 Per-version manifest validation', () => {
   });
 
   describe('every permission in ALL_PLUGIN_PERMISSIONS is accepted individually', () => {
+    // v0.9-gated permissions are not loadable in 0.38 (v0.9 not supported)
+    const V09_PERMISSIONS = new Set(['companion', 'mcp.tools']);
+
     for (const perm of ALL_PLUGIN_PERMISSIONS) {
+      if (V09_PERMISSIONS.has(perm)) continue;
+
       // Skip sub-permissions that require base permissions
       const requiresBase = ['agent-config.cross-project', 'agent-config.permissions', 'agent-config.mcp', 'agents.free-agent-mode', 'files.watch'];
       const needsExternalRoots = perm === 'files.external';
@@ -668,8 +673,7 @@ describe('§2 Per-version manifest validation', () => {
         }
 
         // Version-gated permissions need the appropriate manifest version
-        const manifestFn = perm === 'companion' || perm === 'mcp.tools' ? minimalV09Manifest
-          : perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
+        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
         const result = validateManifest(manifestFn({
           permissions,
           ...extras,
@@ -677,6 +681,13 @@ describe('§2 Per-version manifest validation', () => {
         expect(result.valid).toBe(true);
       });
     }
+
+    it('v0.9 manifests are rejected (reserved for v0.39)', () => {
+      const result = validateManifest(minimalV09Manifest());
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.includes('API version'))).toBe(true);
+    });
+
   });
 
   describe('scope/contributes consistency for all versions', () => {

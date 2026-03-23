@@ -57,7 +57,7 @@ describe('built-in plugin canvas widget declarations', () => {
     'agent-queue': ['agent-queue'],
   };
 
-  const allPlugins = getBuiltinPlugins({ canvas: true });
+  const allPlugins = getBuiltinPlugins();
 
   for (const [pluginId, expectedWidgetIds] of Object.entries(EXPECTED_CANVAS_WIDGETS)) {
     describe(`${pluginId} plugin`, () => {
@@ -113,14 +113,16 @@ describe('getBuiltinProjectPluginIds', () => {
     expect(ids).toContain('git');
   });
 
-  it('includes browser (dual-scoped, also activated per project)', () => {
+  it('does not include browser (loaded but not in defaults)', () => {
     const ids = getBuiltinProjectPluginIds();
-    expect(ids).toContain('browser');
+    expect(ids).not.toContain('browser');
   });
 
-  it('includes group-project when canvas experimental flag is set', () => {
-    const ids = getBuiltinProjectPluginIds({ canvas: true });
-    expect(ids).toContain('group-project');
+  it('does not include canvas or sub-plugins (loaded but not in defaults)', () => {
+    const ids = getBuiltinProjectPluginIds();
+    expect(ids).not.toContain('canvas');
+    expect(ids).not.toContain('group-project');
+    expect(ids).not.toContain('agent-queue');
   });
 
   it('includes hub (dual-scoped, part of defaults)', () => {
@@ -128,15 +130,10 @@ describe('getBuiltinProjectPluginIds', () => {
     expect(ids).toContain('hub');
   });
 
-  it('includes canvas when experimental flag is set', () => {
-    const ids = getBuiltinProjectPluginIds({ canvas: true });
-    expect(ids).toContain('canvas');
-  });
-
-  it('all project-scoped plugins with canvas widgets are in the returned list', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
-    const projectIds = getBuiltinProjectPluginIds({ canvas: true });
-    const defaults = getDefaultEnabledIds({ canvas: true });
+  it('all project-scoped default-enabled plugins with canvas widgets are in the returned list', () => {
+    const allPlugins = getBuiltinPlugins();
+    const projectIds = getBuiltinProjectPluginIds();
+    const defaults = getDefaultEnabledIds();
 
     const pluginsWithWidgets = allPlugins.filter(
       (p) =>
@@ -254,7 +251,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('pre-registering all built-in canvas widgets populates the registry', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
+    const allPlugins = getBuiltinPlugins();
 
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
@@ -282,7 +279,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 
   it('pre-registered widgets have correct labels from manifests', () => {
-    const allPlugins = getBuiltinPlugins({ canvas: true });
+    const allPlugins = getBuiltinPlugins();
     for (const { manifest } of allPlugins) {
       if (manifest.contributes?.canvasWidgets) {
         for (const widgetDecl of manifest.contributes.canvasWidgets) {
@@ -302,7 +299,7 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
 // ── Built-in plugin activate() registers canvas widgets ─────────────────
 
 describe('built-in plugin activate() canvas widget registration', () => {
-  const allPlugins = getBuiltinPlugins({ canvas: true });
+  const allPlugins = getBuiltinPlugins();
   const pluginsWithWidgets = allPlugins.filter(
     (p) => p.manifest.contributes?.canvasWidgets && p.manifest.contributes.canvasWidgets.length > 0,
   );
