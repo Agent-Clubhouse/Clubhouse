@@ -13,7 +13,16 @@ g.__testAttachClipboard = vi.fn().mockReturnValue(vi.fn());
 vi.mock('@xterm/xterm', () => {
   class Terminal {
     loadAddon = vi.fn();
-    open = vi.fn();
+    open = vi.fn().mockImplementation((container: HTMLElement) => {
+      // Create a mock .xterm-viewport element like real xterm does
+      const viewport = document.createElement('div');
+      viewport.classList.add('xterm-viewport');
+      // Default: large scrollback, at the bottom
+      Object.defineProperty(viewport, 'scrollHeight', { value: 200, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: 200, configurable: true, writable: true });
+      viewport.scrollTop = 0;
+      container.appendChild(viewport);
+    });
     write = vi.fn();
     focus = vi.fn();
     dispose = vi.fn();
@@ -437,6 +446,114 @@ describe('AgentTerminal', () => {
       // Flush the getBuffer() microtask so the terminal is ready
       await act(async () => {});
       expect(screen.queryByTestId('remote-banner')).toBeNull();
+    });
+  });
+
+  describe('scroll guardian and scroll-to-bottom button', () => {
+    function configureViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
+      const container = screen.getByTestId('agent-terminal');
+      const viewport = container.querySelector('.xterm-viewport') as HTMLDivElement;
+      expect(viewport).toBeTruthy();
+      Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: clientHeight, configurable: true, writable: true });
+      viewport.scrollTop = scrollTop;
+      return viewport;
+    }
+
+    it('does not show scroll-to-bottom button when at bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      // No viewport or at bottom — button should not show
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+    });
+
+    it('shows scroll-to-bottom button when scrolled up', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      // Fire scroll event to trigger state update
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
+    });
+
+    it('hides scroll-to-bottom button when user scrolls to bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      // First, trigger scrolled-up state
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      expect(screen.getByTestId('scroll-to-bottom')).toBeInTheDocument();
+
+      // Now scroll to bottom (scrollTop >= scrollHeight - clientHeight - 5)
+      viewport.scrollTop = 1800;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+    });
+
+    it('clicking scroll-to-bottom scrolls viewport to bottom', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      const button = screen.getByTestId('scroll-to-bottom');
+      fireEvent.click(button);
+
+      // Should have set scrollTop to scrollHeight - clientHeight
+      expect(viewport.scrollTop).toBe(1800);
+    });
+
+    it('scroll guardian detects unexpected reset to 0 and restores position', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(500, 2000, 200);
+
+      // Establish a known scroll position
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Simulate unexpected reset to 0 (from xterm reflow)
+      viewport.scrollTop = 0;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // The scroll guardian should have restored to the previous position
+      // (runs in rAF which is synchronous in tests)
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    it('does not show scroll-to-bottom button during resume', () => {
+      useAgentStore.setState({
+        agents: {
+          'agent-1': {
+            id: 'agent-1', projectId: 'proj-1', name: 'test',
+            kind: 'durable', status: 'running', color: 'indigo',
+            resuming: true,
+          },
+        },
+        clearResuming: vi.fn(),
+      });
+
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(100, 2000, 200);
+
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Button hidden during resume even when scrolled up
+      expect(screen.queryByTestId('scroll-to-bottom')).toBeNull();
+      // But the resume overlay should be visible
+      expect(screen.getByTestId('resume-overlay')).toBeInTheDocument();
     });
   });
 

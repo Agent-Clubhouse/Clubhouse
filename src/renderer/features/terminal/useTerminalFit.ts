@@ -29,13 +29,22 @@ function restoreViewportScroll(container: HTMLElement, saved: { scrollTop: numbe
   if (!saved) return;
   const viewport = container.querySelector('.xterm-viewport') as HTMLElement | null;
   if (!viewport) return;
-  if (saved.atBottom) {
-    // User was at the bottom — make sure we stay there after reflow
-    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
-  } else {
-    // User was scrolled up — restore the previous position
-    viewport.scrollTop = saved.scrollTop;
-  }
+
+  const applyScroll = () => {
+    if (saved.atBottom) {
+      viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+    } else {
+      viewport.scrollTop = saved.scrollTop;
+    }
+  };
+
+  // Apply immediately…
+  applyScroll();
+
+  // …and once more in the next frame.  xterm.js schedules its own
+  // requestAnimationFrame render after fit() which can overwrite our
+  // scrollTop.  The deferred restore catches that async clobber.
+  requestAnimationFrame(applyScroll);
 }
 
 /**
