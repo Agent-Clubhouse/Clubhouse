@@ -1711,4 +1711,64 @@ describe('annex-server', () => {
       expect(mutationBlock).not.toMatch(/\.catch\(\s*\(\s*\)\s*=>\s*\{\s*\}\s*\)/);
     });
   });
+
+  describe('canvas mutation selectView and namespace stripping (structural)', () => {
+    let source: string;
+
+    beforeAll(() => {
+      const fs = require('fs');
+      const path = require('path');
+      source = fs.readFileSync(
+        path.resolve(__dirname, 'annex-server.ts'),
+        'utf-8',
+      );
+    });
+
+    it('applyCanvasMutationServerSide handles selectView mutation', () => {
+      // Verify there is a case for selectView that sets canvas.selectedViewId
+      expect(source).toContain("case 'selectView':");
+      expect(source).toContain('canvas.selectedViewId');
+    });
+
+    it('selectedViewId is included in CanvasInstanceJSON interface', () => {
+      // Verify the interface includes the field
+      const interfaceBlock = source.slice(
+        source.indexOf('interface CanvasInstanceJSON'),
+        source.indexOf('async function applyCanvasMutationServerSide'),
+      );
+      expect(interfaceBlock).toContain('selectedViewId');
+    });
+
+    it('selectedViewId is broadcast to controller clients', () => {
+      // Verify broadcastCanvasStateToClients call includes selectedViewId
+      const broadcastBlock = source.slice(
+        source.indexOf('broadcastCanvasStateToClients(projectId'),
+        source.indexOf('broadcastCanvasStateToClients(projectId') + 400,
+      );
+      expect(broadcastBlock).toContain('selectedViewId');
+    });
+
+    it('stripNamespacedIds is called in updateView handler', () => {
+      // Verify the updateView mutation case uses stripNamespacedIds
+      const updateViewBlock = source.slice(
+        source.indexOf("case 'updateView':"),
+        source.indexOf("case 'focusView':"),
+      );
+      expect(updateViewBlock).toContain('stripNamespacedIds');
+    });
+
+    it('stripNamespacedIds function exists and handles agentId/projectId/metadata', () => {
+      const fnBlock = source.slice(
+        source.indexOf('function stripNamespacedIds'),
+        source.indexOf('async function applyCanvasMutationServerSide'),
+      );
+      // Must handle agentId and projectId fields
+      expect(fnBlock).toContain("'agentId'");
+      expect(fnBlock).toContain("'projectId'");
+      // Must handle nested metadata
+      expect(fnBlock).toContain('metadata');
+      // Must parse the remote|| prefix
+      expect(fnBlock).toContain("'remote'");
+    });
+  });
 });

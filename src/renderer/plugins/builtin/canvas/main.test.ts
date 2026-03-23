@@ -84,6 +84,26 @@ describe('canvas main', () => {
     expect(storeA).not.toBe(storeB);
   });
 
+  it('selectView is forwarded via remoteForward (structural)', () => {
+    // Verify that handleSelectView calls remoteForward with selectView mutation.
+    // Previously selectView was local-only, causing the satellite to stay in
+    // empty state when the controller selected an agent.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // handleSelectView should call remoteForward
+    const selectViewBlock = source.slice(
+      source.indexOf('handleSelectView'),
+      source.indexOf('handleSelectView') + 300,
+    );
+    expect(selectViewBlock).toContain('remoteForward');
+    expect(selectViewBlock).toContain("'selectView'");
+
+    // It should NOT have the old "Selection is purely local" comment
+    expect(source).not.toContain('Selection is purely local');
+  });
+
   it('per-project stores have isolated state', () => {
     const storeA = canvasModule.getProjectCanvasStore('canvas-proj-iso-a');
     const storeB = canvasModule.getProjectCanvasStore('canvas-proj-iso-b');

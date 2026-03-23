@@ -495,6 +495,144 @@ describe('annex canvas sync', () => {
     });
   });
 
+  // ── selectView mutation + selectedViewId sync ──────────────────────
+
+  describe('selectView mutation', () => {
+    it('applies selectView via applyCanvasMutation', () => {
+      const canvasId = store.getState().activeCanvasId;
+      const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+      broadcastSpy.mockClear();
+
+      applyCanvasMutation(store, canvasId, { type: 'selectView', viewId });
+
+      expect(store.getState().selectedViewId).toBe(viewId);
+      expect(broadcastSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies selectView with null to deselect', () => {
+      const canvasId = store.getState().activeCanvasId;
+      const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+      store.getState().selectView(viewId);
+      broadcastSpy.mockClear();
+
+      applyCanvasMutation(store, canvasId, { type: 'selectView', viewId: null });
+
+      expect(store.getState().selectedViewId).toBeNull();
+    });
+
+    it('broadcasts selectedViewId in snapshot', () => {
+      const canvasId = store.getState().activeCanvasId;
+      const viewId = store.getState().addView('agent', { x: 0, y: 0 });
+      store.getState().selectView(viewId);
+      broadcastSpy.mockClear();
+
+      broadcastCanvasState(store, canvasId);
+
+      const snapshot = broadcastSpy.mock.calls[0][0];
+      expect(snapshot.selectedViewId).toBe(viewId);
+    });
+
+    it('broadcasts null selectedViewId when nothing is selected', () => {
+      const canvasId = store.getState().activeCanvasId;
+      broadcastCanvasState(store, canvasId);
+
+      const snapshot = broadcastSpy.mock.calls[0][0];
+      expect(snapshot.selectedViewId).toBeNull();
+    });
+  });
+
+  describe('hydrateFromRemote selectedViewId sync', () => {
+    it('takes selectedViewId from satellite on hydration', () => {
+      const canvasId = 'remote-sel-1';
+
+      store.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Tab 1', views: [
+            { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} },
+          ],
+          viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+          zoomedViewId: null, selectedViewId: 'v1',
+        }],
+        canvasId,
+      );
+
+      expect(store.getState().selectedViewId).toBe('v1');
+    });
+
+    it('preserves local selectedViewId when satellite sends null', () => {
+      const canvasId = 'remote-sel-2';
+
+      // Initial hydration — select a view locally
+      store.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Tab 1', views: [
+            { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} },
+          ],
+          viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+          zoomedViewId: null, selectedViewId: 'v1',
+        }],
+        canvasId,
+      );
+      expect(store.getState().selectedViewId).toBe('v1');
+
+      // Re-hydration without selectedViewId — should keep local
+      store.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Tab 1', views: [
+            { id: 'v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} },
+          ],
+          viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 1,
+          zoomedViewId: null,
+        }],
+        canvasId,
+      );
+
+      expect(store.getState().selectedViewId).toBe('v1');
+    });
+
+    it('selectView round-trips through satellite', () => {
+      const canvasId = 'round-trip-sel';
+
+      // Satellite has a view
+      const satelliteStore = createCanvasStore();
+      satelliteStore.getState().hydrateFromRemote(
+        [{
+          id: canvasId, name: 'Main', nextZIndex: 1, zoomedViewId: null,
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          views: [{ id: 'cv_v1', type: 'agent', position: { x: 0, y: 0 }, size: { width: 480, height: 480 }, title: 'A', displayName: 'A', zIndex: 0, metadata: {} }],
+        }],
+        canvasId,
+      );
+
+      // Controller sends selectView
+      applyCanvasMutation(
+        satelliteStore, canvasId,
+        { type: 'selectView', viewId: 'cv_v1' },
+        'proj-1', 'project',
+      );
+
+      expect(satelliteStore.getState().selectedViewId).toBe('cv_v1');
+
+      // Broadcast includes selectedViewId
+      const snapshot = broadcastSpy.mock.calls[0][0];
+      expect(snapshot.selectedViewId).toBe('cv_v1');
+
+      // Controller hydrates from broadcast
+      const controllerStore = createCanvasStore();
+      controllerStore.getState().hydrateFromRemote(
+        [{
+          id: snapshot.canvasId, name: snapshot.name, views: snapshot.views,
+          viewport: snapshot.viewport, nextZIndex: snapshot.nextZIndex,
+          zoomedViewId: snapshot.zoomedViewId,
+          selectedViewId: snapshot.selectedViewId,
+        }],
+        snapshot.activeCanvasId,
+      );
+
+      expect(controllerStore.getState().selectedViewId).toBe('cv_v1');
+    });
+  });
+
   // ── sendRemoteCanvasMutation ───────────────────────────────────────
 
   describe('sendRemoteCanvasMutation', () => {
