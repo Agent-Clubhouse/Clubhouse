@@ -126,7 +126,7 @@ const CONTEXT_PROPERTIES: (keyof PluginContextInfo)[] = ['mode', 'projectId', 'p
 const PLUGIN_API_NAMESPACES: (keyof PluginAPI)[] = [
   'project', 'projects', 'git', 'storage', 'ui', 'commands', 'events',
   'settings', 'agents', 'hub', 'navigation', 'widgets', 'terminal',
-  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'context',
+  'logging', 'files', 'process', 'badges', 'agentConfig', 'sounds', 'theme', 'workspace', 'canvas', 'window', 'mcp', 'context',
 ];
 
 // ── Helper: minimal valid manifest per version ─────────────────────────────
