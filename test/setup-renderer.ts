@@ -352,6 +352,17 @@ vi.stubGlobal('clubhouse', {
     onDiscoveredChanged: () => noop,
     onSatelliteEvent: () => noop,
   },
+  agentQueue: {
+    list: async () => [],
+    create: asyncNoop,
+    get: asyncNoop,
+    update: asyncNoop,
+    delete: async () => false,
+    listTasks: async () => [],
+    getTask: asyncNoop,
+    onChanged: () => noop,
+    onTaskChanged: () => noop,
+  },
   groupProject: {
     list: async () => [],
     create: asyncNoop,

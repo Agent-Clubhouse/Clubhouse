@@ -33,6 +33,10 @@ vi.mock('../services/clubhouse-mcp/tools/group-project-tools', () => ({
   registerGroupProjectTools: vi.fn(),
 }));
 
+vi.mock('../services/clubhouse-mcp/tools/agent-queue-tools', () => ({
+  registerAgentQueueTools: vi.fn(),
+}));
+
 vi.mock('../services/log-service', () => ({
   appLog: vi.fn(),
 }));

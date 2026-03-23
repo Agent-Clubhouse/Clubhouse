@@ -54,6 +54,7 @@ describe('built-in plugin canvas widget declarations', () => {
     git: ['git-status'],
     browser: ['webview'],
     'group-project': ['group-project'],
+    'agent-queue': ['agent-queue'],
   };
 
   const allPlugins = getBuiltinPlugins({ canvas: true });
