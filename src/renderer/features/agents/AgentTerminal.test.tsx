@@ -62,14 +62,18 @@ vi.mock('../../stores/annexClientStore', () => {
   };
 });
 
-vi.mock('../../themes', () => ({
-  getTheme: (id: string) => {
-    if (id === 'catppuccin-latte') {
-      return { terminal: { background: '#eff1f5', foreground: '#4c4f69' } };
-    }
-    return undefined;
-  },
-}));
+vi.mock('../../themes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../themes')>();
+  return {
+    ...actual,
+    getTheme: (id: string) => {
+      if (id === 'catppuccin-latte') {
+        return { terminal: { background: '#eff1f5', foreground: '#4c4f69' } };
+      }
+      return actual.getTheme(id);
+    },
+  };
+});
 
 vi.mock('../../stores/remoteProjectStore', () => ({
   isRemoteAgentId: (id: string) => id.startsWith('remote||'),

@@ -647,7 +647,7 @@ export interface NavigationAPI {
 }
 
 export interface WidgetsAPI {
-  AgentTerminal: React.ComponentType<{ agentId: string; focused?: boolean }>;
+  AgentTerminal: React.ComponentType<{ agentId: string; focused?: boolean; zoneThemeId?: string }>;
   SleepingAgent: React.ComponentType<{ agentId: string }>;
   AgentAvatar: React.ComponentType<{
     agentId: string;
