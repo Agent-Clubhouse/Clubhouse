@@ -296,6 +296,73 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
   });
 });
 
+// ── Safety: pre-registered widgets with disabled plugins must not crash ──
+
+describe('pre-registered widgets without activation do not crash renderer', () => {
+  beforeEach(() => {
+    _resetRegistryForTesting();
+  });
+
+  it('all pre-registered placeholders have null component (verifies guard is needed)', () => {
+    const allPlugins = getBuiltinPlugins();
+    for (const { manifest } of allPlugins) {
+      if (manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
+
+    const registered = getRegisteredWidgetTypes();
+    for (const entry of registered) {
+      // All pre-registered placeholders should have null component
+      expect(entry.descriptor.component).toBeNull();
+      // And be marked as pending
+      expect(isWidgetPending(entry.qualifiedType)).toBe(true);
+    }
+  });
+
+  it('CanvasView guards against null component rendering (structural)', () => {
+    // This catches the React error #130 regression: if a plugin widget has
+    // component: null and somehow gets past the isWidgetPending check,
+    // the CanvasView must NOT pass null to React.createElement.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, 'builtin/canvas/CanvasView.tsx'),
+      'utf-8',
+    );
+
+    // Find the plugin rendering block (between "const Component =" and the JSX)
+    const componentIdx = source.indexOf('const Component = registered.descriptor.component');
+    expect(componentIdx).toBeGreaterThan(-1);
+
+    const block = source.slice(componentIdx, componentIdx + 500);
+    // Must check for null before rendering
+    expect(block).toContain('if (!Component)');
+  });
+
+  it('enabling canvas cascades to enable sub-plugins (structural)', () => {
+    // Verifies that the PluginListSettings cascade-enable logic exists,
+    // preventing the scenario where canvas is enabled but sub-plugins
+    // (group-project, agent-queue) are left disabled with null placeholders.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../features/settings/PluginListSettings.tsx'),
+      'utf-8',
+    );
+
+    // After enableApp(pluginId), there should be cascade logic for canvas
+    const enableIdx = source.indexOf('enableApp(pluginId)');
+    expect(enableIdx).toBeGreaterThan(-1);
+
+    const afterEnable = source.slice(enableIdx, enableIdx + 800);
+    expect(afterEnable).toContain('CANVAS_SUB_PLUGIN_IDS');
+    expect(afterEnable).toContain('enableApp(subId)');
+  });
+});
+
 // ── Built-in plugin activate() registers canvas widgets ─────────────────
 
 describe('built-in plugin activate() canvas widget registration', () => {
