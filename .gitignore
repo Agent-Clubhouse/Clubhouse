@@ -103,7 +103,8 @@ out/
 # Internal agent/worktree config
 CLAUDE.md
 PLAN.md
-.claude/
+.claude/*
+!.claude/skills/
 
 # Claude Code hooks (local dev only)
 .github/hooks/
