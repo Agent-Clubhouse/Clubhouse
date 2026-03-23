@@ -2224,6 +2224,37 @@ interface CanvasInstanceJSON {
   viewport: { panX: number; panY: number; zoom: number };
   nextZIndex: number;
   zoomedViewId?: string | null;
+  selectedViewId?: string | null;
+}
+
+/**
+ * Strip `remote||satelliteId||originalId` namespace prefixes from agent/project
+ * IDs in view update payloads.  Controllers send namespaced IDs but the
+ * satellite must store originals so its renderer can resolve agents locally.
+ */
+function stripNamespacedIds(updates: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...updates };
+  for (const key of ['agentId', 'projectId'] as const) {
+    if (typeof cleaned[key] === 'string') {
+      const parts = (cleaned[key] as string).split('||');
+      if (parts.length === 3 && parts[0] === 'remote') {
+        cleaned[key] = parts[2];
+      }
+    }
+  }
+  if (cleaned.metadata && typeof cleaned.metadata === 'object') {
+    const meta = { ...(cleaned.metadata as Record<string, unknown>) };
+    for (const key of ['agentId', 'projectId'] as const) {
+      if (typeof meta[key] === 'string') {
+        const parts = (meta[key] as string).split('||');
+        if (parts.length === 3 && parts[0] === 'remote') {
+          meta[key] = parts[2];
+        }
+      }
+    }
+    cleaned.metadata = meta;
+  }
+  return cleaned;
 }
 
 async function applyCanvasMutationServerSide(
@@ -2356,7 +2387,11 @@ async function applyCanvasMutationServerSide(
           const updates = mutation.updates as Record<string, unknown>;
           const idx = canvas.views.findIndex((v: any) => v.id === viewId);
           if (idx >= 0 && updates) {
-            canvas.views[idx] = { ...canvas.views[idx], ...updates };
+            // Strip namespace prefixes from agent/project IDs — controllers
+            // send namespaced IDs (remote||satId||origId) but the satellite
+            // stores original IDs so its own renderer can resolve them.
+            const cleaned = stripNamespacedIds(updates);
+            canvas.views[idx] = { ...canvas.views[idx], ...cleaned };
           }
           break;
         }
@@ -2376,6 +2411,10 @@ async function applyCanvasMutationServerSide(
         }
         case 'zoomView': {
           canvas.zoomedViewId = (mutation.viewId as string) ?? null;
+          break;
+        }
+        case 'selectView': {
+          canvas.selectedViewId = (mutation.viewId as string) ?? null;
           break;
         }
       }
@@ -2409,6 +2448,7 @@ async function applyCanvasMutationServerSide(
       viewport: targetCanvas.viewport,
       nextZIndex: targetCanvas.nextZIndex,
       zoomedViewId: targetCanvas.zoomedViewId ?? null,
+      selectedViewId: targetCanvas.selectedViewId ?? null,
       allCanvasTabs: canvases.map((c) => ({ id: c.id, name: c.name })),
       activeCanvasId,
     });

@@ -94,6 +94,9 @@ export function applyCanvasMutation(
     case 'zoomView':
       store.getState().zoomView(mutation.viewId);
       break;
+    case 'selectView':
+      store.getState().selectView(mutation.viewId);
+      break;
     case 'removeZone':
       store.getState().removeZone(mutation.zoneId, mutation.removeContents);
       break;
@@ -134,6 +137,7 @@ export function broadcastCanvasState(
     viewport: canvas.viewport,
     nextZIndex: canvas.nextZIndex,
     zoomedViewId: canvas.zoomedViewId,
+    selectedViewId: canvas.selectedViewId,
     projectId,
     scope,
     // Tab metadata for annex controllers

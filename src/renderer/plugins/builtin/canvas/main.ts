@@ -323,10 +323,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().zoomView(viewId);
   }, [store, remoteForward]);
 
-  // Selection is purely local (controller UI state)
   const handleSelectView = useCallback((viewId: string | null) => {
+    remoteForward({ type: 'selectView', viewId });
     store.getState().selectView(viewId);
-  }, [store]);
+  }, [store, remoteForward]);
 
   const handleMoveViews = useCallback((positions: Map<string, { x: number; y: number }>) => {
     const posObj = Object.fromEntries(positions);

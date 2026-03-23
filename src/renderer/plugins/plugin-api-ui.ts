@@ -16,6 +16,7 @@ import { pluginCommandRegistry } from './plugin-commands';
 import { pluginHotkeyRegistry } from './plugin-hotkeys';
 import { useAgentStore } from '../stores/agentStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { useUIStore } from '../stores/uiStore';
 
 export function createUIAPI(ctx: PluginContext): UIAPI {
@@ -184,16 +185,22 @@ export function createWidgetsAPI(): WidgetsAPI {
     return _widgetsCache;
   }
 
-  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent reactively
+  // SleepingAgent adapter: plugin passes agentId, we resolve to Agent reactively.
+  // Checks both local and remote agent stores so remote canvas views work.
   const SleepingAgentAdapter = ({ agentId }: { agentId: string }) => {
-    const agent = useAgentStore((s) => s.agents[agentId]);
+    const localAgent = useAgentStore((s) => s.agents[agentId]);
+    const remoteAgent = useRemoteProjectStore((s) => s.remoteAgents[agentId]);
+    const agent = localAgent || remoteAgent;
     if (!agent) return null;
     return React.createElement(SleepingAgentComponent, { agent });
   };
 
-  // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors
+  // AgentAvatar adapter: when showStatusRing is true, use the ring variant with status colors.
+  // Checks both local and remote agent stores so remote canvas views work.
   const AgentAvatarAdapter = ({ agentId, size, showStatusRing }: { agentId: string; size?: 'sm' | 'md'; showStatusRing?: boolean }) => {
-    const agent = useAgentStore((s) => s.agents[agentId]);
+    const localAgent = useAgentStore((s) => s.agents[agentId]);
+    const remoteAgent = useRemoteProjectStore((s) => s.remoteAgents[agentId]);
+    const agent = localAgent || remoteAgent;
     if (!agent) return null;
     if (showStatusRing && AgentAvatarWithRingComponent) {
       return React.createElement(AgentAvatarWithRingComponent, { agent });
