@@ -15,7 +15,7 @@ import type { ZoneWireDefinition } from './zone-wire-store';
 export interface ExpandedBinding {
   agentId: string;
   targetId: string;
-  targetKind: 'agent' | 'browser' | 'group-project';
+  targetKind: 'agent' | 'browser' | 'group-project' | 'agent-queue';
   label: string;
   agentName: string;
   targetName: string;
@@ -41,6 +41,16 @@ function getGroupProjects(views: CanvasView[]): PluginCanvasViewType[] {
       v.type === 'plugin' &&
       (v as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' &&
       !!v.metadata?.groupProjectId,
+  );
+}
+
+/** Get agent-queue plugin views from a list of views. */
+function getAgentQueues(views: CanvasView[]): PluginCanvasViewType[] {
+  return views.filter(
+    (v): v is PluginCanvasViewType =>
+      v.type === 'plugin' &&
+      (v as PluginCanvasViewType).pluginWidgetType === 'plugin:agent-queue:agent-queue' &&
+      !!v.metadata?.queueId,
   );
 }
 
@@ -114,6 +124,16 @@ export function expandZoneWires(
           targetName: gp.displayName,
         });
       }
+      for (const aq of getAgentQueues(contained)) {
+        addBinding({
+          agentId: targetAgent.agentId,
+          targetId: aq.metadata.queueId as string,
+          targetKind: 'agent-queue',
+          label: aq.displayName,
+          agentName: targetAgent.displayName,
+          targetName: aq.displayName,
+        });
+      }
     } else if (wire.targetType === 'group-project') {
       // Zone -> group project: each agent in zone binds to group project
       for (const agent of getAgents(contained)) {
@@ -121,6 +141,18 @@ export function expandZoneWires(
           agentId: agent.agentId!,
           targetId: wire.targetId,
           targetKind: 'group-project',
+          label: wire.targetId,
+          agentName: agent.displayName,
+          targetName: wire.targetId,
+        });
+      }
+    } else if (wire.targetType === 'agent-queue') {
+      // Zone -> agent queue: each agent in zone binds to agent queue
+      for (const agent of getAgents(contained)) {
+        addBinding({
+          agentId: agent.agentId!,
+          targetId: wire.targetId,
+          targetKind: 'agent-queue',
           label: wire.targetId,
           agentName: agent.displayName,
           targetName: wire.targetId,
@@ -172,6 +204,17 @@ export function expandZoneWires(
             targetName: tgp.displayName,
           });
         }
+        // Each source agent -> each target agent queue
+        for (const taq of getAgentQueues(targetContained)) {
+          addBinding({
+            agentId: sa.agentId!,
+            targetId: taq.metadata.queueId as string,
+            targetKind: 'agent-queue',
+            label: taq.displayName,
+            agentName: sa.displayName,
+            targetName: taq.displayName,
+          });
+        }
       }
 
       // Reverse: each target agent -> each source browser/group-project
@@ -194,6 +237,16 @@ export function expandZoneWires(
             label: sgp.displayName,
             agentName: ta.displayName,
             targetName: sgp.displayName,
+          });
+        }
+        for (const saq of getAgentQueues(contained)) {
+          addBinding({
+            agentId: ta.agentId!,
+            targetId: saq.metadata.queueId as string,
+            targetKind: 'agent-queue',
+            label: saq.displayName,
+            agentName: ta.displayName,
+            targetName: saq.displayName,
           });
         }
       }

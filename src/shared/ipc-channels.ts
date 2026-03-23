@@ -361,4 +361,15 @@ export const IPC = {
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
   },
+  AGENT_QUEUE: {
+    CREATE: 'agent-queue:create',
+    GET: 'agent-queue:get',
+    LIST: 'agent-queue:list',
+    UPDATE: 'agent-queue:update',
+    DELETE: 'agent-queue:delete',
+    LIST_TASKS: 'agent-queue:list-tasks',
+    GET_TASK: 'agent-queue:get-task',
+    CHANGED: 'agent-queue:changed',
+    TASK_CHANGED: 'agent-queue:task-changed',
+  },
 } as const;

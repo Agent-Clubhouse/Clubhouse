@@ -11,6 +11,7 @@ import { registerWindowHandlers } from './window-handlers';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import { registerMcpBindingHandlers, maybeStartMcpBridge } from './mcp-binding-handlers';
 import { registerGroupProjectHandlers } from './group-project-handlers';
+import { registerAgentQueueHandlers } from './agent-queue-handlers';
 import { registerAnnexClientHandlers } from './annex-client-handlers';
 import { registerMarketplaceHandlers } from './marketplace-handlers';
 import { registerProfileHandlers } from './profile-handlers';
@@ -49,6 +50,7 @@ export function registerAllHandlers(): void {
   registerSettingsHandlers();
   registerMcpBindingHandlers();
   registerGroupProjectHandlers();
+  registerAgentQueueHandlers();
 
   // Start the hook server for agent status events
   hookServer.start().catch((err) => {

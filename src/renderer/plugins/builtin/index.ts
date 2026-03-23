@@ -17,6 +17,8 @@ import { manifest as reviewManifest } from './review/manifest';
 import * as reviewModule from './review/main';
 import { manifest as groupProjectManifest } from './group-project/manifest';
 import * as groupProjectModule from './group-project/main';
+import { manifest as agentQueueManifest } from './agent-queue/manifest';
+import * as agentQueueModule from './agent-queue/main';
 
 export interface BuiltinPlugin {
   manifest: PluginManifest;
@@ -50,6 +52,7 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
   if (experimentalFlags.canvas) {
     plugins.push({ manifest: canvasManifest, module: canvasModule });
     plugins.push({ manifest: groupProjectManifest, module: groupProjectModule });
+    plugins.push({ manifest: agentQueueManifest, module: agentQueueModule });
   }
 
   if (experimentalFlags.sessions) {
@@ -68,6 +71,7 @@ export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}):
   if (experimentalFlags.canvas) {
     ids.push('canvas');
     ids.push('group-project');
+    ids.push('agent-queue');
   }
   if (experimentalFlags.sessions) {
     ids.push('sessions');

@@ -11,6 +11,7 @@ const TOOL_SUFFIXES: Record<string, string[]> = {
   agent: ['send_message', 'get_status', 'read_output', 'check_connectivity', 'send_file', 'wake'],
   browser: ['navigate', 'screenshot', 'get_console', 'click', 'type', 'evaluate', 'get_page_content', 'get_accessibility_tree'],
   'group-project': ['list_members', 'post_bulletin', 'read_bulletin', 'read_topic', 'get_project_info', 'shoulder_tap', 'broadcast'],
+  'agent-queue': ['invoke', 'get_output', 'list', 'cancel', 'get_queue_info'],
   terminal: [],
 };
 
@@ -42,6 +43,11 @@ const TOOL_HINTS: Record<string, string> = {
   get_project_info: 'Get project details',
   shoulder_tap: 'Direct message an agent',
   broadcast: 'Message all agents',
+  invoke: 'Submit a task to the queue',
+  get_output: 'Get task status and output',
+  list: 'List all tasks in queue',
+  cancel: 'Cancel a pending task',
+  get_queue_info: 'Get queue configuration',
 };
 
 interface WireToolPermissionsDialogProps {

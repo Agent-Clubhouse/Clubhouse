@@ -9,6 +9,7 @@ import { bindingManager, bridgeServer } from '../services/clubhouse-mcp';
 import { registerAgentTools } from '../services/clubhouse-mcp/tools/agent-tools';
 import { registerBrowserTools, registerWebview, unregisterWebview } from '../services/clubhouse-mcp/tools/browser-tools';
 import { registerGroupProjectTools } from '../services/clubhouse-mcp/tools/group-project-tools';
+import { registerAgentQueueTools } from '../services/clubhouse-mcp/tools/agent-queue-tools';
 import { agentRegistry } from '../services/agent-registry';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
@@ -40,6 +41,7 @@ export function registerMcpBindingHandlers(): void {
   registerAgentTools();
   registerBrowserTools();
   registerGroupProjectTools();
+  registerAgentQueueTools();
 
   appLog('core:mcp', 'info', 'MCP binding handlers registered');
 

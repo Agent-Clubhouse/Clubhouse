@@ -20,25 +20,28 @@ export interface WireDragState {
 
 export function isValidWireTarget(source: CanvasView, target: CanvasView): boolean {
   if (target.id === source.id) return false;
-  // Zones can target agents, browsers, group projects, and other zones
+  // Zones can target agents, browsers, group projects, agent queues, and other zones
   if (source.type === 'zone' || target.type === 'zone') {
     if (target.type === 'zone' && source.type === 'zone') return true;
     if (target.type === 'zone') return true; // agent -> zone
     if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
     if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
     if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' && target.metadata?.groupProjectId) return true;
+    if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:agent-queue:agent-queue' && target.metadata?.queueId) return true;
     return false;
   }
   if (target.type === 'agent' && (target as AgentCanvasViewType).agentId) return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:browser:webview') return true;
   if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project' && target.metadata?.groupProjectId) return true;
+  if (target.type === 'plugin' && (target as PluginCanvasViewType).pluginWidgetType === 'plugin:agent-queue:agent-queue' && target.metadata?.queueId) return true;
   return false;
 }
 
-function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' | 'zone' {
+function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' | 'agent-queue' | 'zone' {
   if (view.type === 'zone') return 'zone';
   if (view.type === 'agent') return 'agent';
   if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:group-project:group-project') return 'group-project';
+  if (view.type === 'plugin' && (view as PluginCanvasViewType).pluginWidgetType === 'plugin:agent-queue:agent-queue') return 'agent-queue';
   return 'browser';
 }
 
@@ -59,7 +62,7 @@ function hitTestViews(canvasPos: Position, views: CanvasView[]): CanvasView | nu
 }
 
 export interface ZoneWireCallback {
-  (sourceZoneId: string, targetId: string, targetType: 'zone' | 'agent' | 'group-project' | 'browser'): void;
+  (sourceZoneId: string, targetId: string, targetType: 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser'): void;
 }
 
 export function useWiring(
@@ -130,8 +133,10 @@ export function useWiring(
               ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
               : kind === 'group-project'
               ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
+              : kind === 'agent-queue'
+              ? (hitView.metadata?.queueId as string) ?? hitView.id
               : hitView.id;
-            onZoneWireRef.current(wireDrag.sourceView.id, resolvedTargetId, kind as 'zone' | 'agent' | 'group-project' | 'browser');
+            onZoneWireRef.current(wireDrag.sourceView.id, resolvedTargetId, kind as 'zone' | 'agent' | 'group-project' | 'agent-queue' | 'browser');
           } else if (wireDrag.sourceView.type === 'agent' && (wireDrag.sourceView as AgentCanvasViewType).agentId) {
             // Agent -> zone: create a zone wire from the zone to the agent
             onZoneWireRef.current(hitView.id, (wireDrag.sourceView as AgentCanvasViewType).agentId!, 'agent');
@@ -143,6 +148,8 @@ export function useWiring(
             ? (hitView as AgentCanvasViewType).agentId ?? hitView.id
             : kind === 'group-project'
             ? (hitView.metadata?.groupProjectId as string) ?? hitView.id
+            : kind === 'agent-queue'
+            ? (hitView.metadata?.queueId as string) ?? hitView.id
             : hitView.id;
           const projectName = (hitView.metadata?.projectName as string)
             || (agentSource.metadata?.projectName as string)
@@ -151,7 +158,7 @@ export function useWiring(
           const targetLabel = hitView.displayName || hitView.title;
           bind(agentSource.agentId!, {
             targetId: resolvedTargetId,
-            targetKind: kind as 'agent' | 'browser' | 'group-project',
+            targetKind: kind as 'agent' | 'browser' | 'group-project' | 'agent-queue',
             label: targetLabel,
             agentName: sourceLabel,
             targetName: targetLabel,
