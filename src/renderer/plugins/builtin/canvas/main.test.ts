@@ -84,6 +84,28 @@ describe('canvas main', () => {
     expect(storeA).not.toBe(storeB);
   });
 
+  it('loadCanvas is awaited before loadWires in MainPanel (structural)', () => {
+    // The loadCanvas/loadWires race condition caused auto-save to overwrite
+    // persisted wire data with incomplete bindings. Verify the fix:
+    // loadCanvas must be awaited before loadWires is called.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // Find the async IIFE that wraps the load calls
+    const asyncBlock = source.slice(
+      source.indexOf('(async () =>'),
+      source.indexOf('(async () =>') + 300,
+    );
+    // Both loadCanvas and loadWires must be awaited inside the IIFE
+    expect(asyncBlock).toContain('await store.getState().loadCanvas(storage)');
+    expect(asyncBlock).toContain('await store.getState().loadWires(storage)');
+    // loadCanvas must come before loadWires
+    const canvasIdx = asyncBlock.indexOf('loadCanvas');
+    const wiresIdx = asyncBlock.indexOf('loadWires');
+    expect(canvasIdx).toBeLessThan(wiresIdx);
+  });
+
   it('selectView is forwarded via remoteForward (structural)', () => {
     // Verify that handleSelectView calls remoteForward with selectView mutation.
     // Previously selectView was local-only, causing the satellite to stay in
@@ -102,6 +124,23 @@ describe('canvas main', () => {
 
     // It should NOT have the old "Selection is purely local" comment
     expect(source).not.toContain('Selection is purely local');
+  });
+
+  it('CanvasView guards against null plugin component (structural)', () => {
+    // React error #130 occurs when a pre-registered widget placeholder has
+    // component: null but gets past the isWidgetPending check. The CanvasView
+    // must guard against null components before rendering.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'CanvasView.tsx'), 'utf-8');
+
+    // After getting the Component, there should be a null check before rendering
+    const componentBlock = source.slice(
+      source.indexOf('const Component = registered.descriptor.component'),
+      source.indexOf('const Component = registered.descriptor.component') + 400,
+    );
+    expect(componentBlock).toContain('if (!Component)');
+    expect(componentBlock).toContain('not available');
   });
 
   it('per-project stores have isolated state', () => {

@@ -160,9 +160,14 @@ export function MainPanel({ api }: { api: PluginAPI }) {
         return;
       }
     }
-    store.getState().loadCanvas(storage);
-    // Restore persisted wire connections (dormant until agents wake)
-    store.getState().loadWires(storage);
+    // Await loadCanvas before loadWires so that wire reconciliation has
+    // access to the loaded canvas views.  Without this, the auto-save
+    // triggered by `loaded: true` can overwrite persisted wire data with
+    // an incomplete bindings list before loadWires finishes restoring.
+    (async () => {
+      await store.getState().loadCanvas(storage);
+      await store.getState().loadWires(storage);
+    })();
   }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId]);
 
   // Subscribe to live remote canvas state updates (project-level)

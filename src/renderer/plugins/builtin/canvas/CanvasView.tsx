@@ -435,6 +435,14 @@ export function CanvasViewComponent({
           );
         }
         const Component = registered.descriptor.component;
+        if (!Component) {
+          return (
+            <div className="flex items-center justify-center h-full text-ctp-overlay0 text-xs p-4 text-center">
+              {registered.declaration.label} is not available.
+              The providing plugin may be disabled.
+            </div>
+          );
+        }
         return (
           <Component
             widgetId={view.id}
