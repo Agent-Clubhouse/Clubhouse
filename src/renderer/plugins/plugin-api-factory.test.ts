@@ -43,6 +43,7 @@ const mockAgent = {
   listDurable: vi.fn(),
   killAgent: vi.fn(),
   getModelOptions: vi.fn(),
+  createDurable: vi.fn(),
 };
 
 const mockPty = {

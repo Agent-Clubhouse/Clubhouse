@@ -45,6 +45,41 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         }));
     },
 
+    async createDurable(options: {
+      projectId?: string;
+      name: string;
+      color: string;
+      model?: string;
+      useWorktree?: boolean;
+      orchestrator?: string;
+      freeAgentMode?: boolean;
+      mcpIds?: string[];
+    }): Promise<string> {
+      if (options.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
+        throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);
+      }
+
+      let projectId = ctx.projectId;
+      let projectPath = ctx.projectPath;
+
+      if (options.projectId) {
+        const project = useProjectStore.getState().projects.find((p) => p.id === options.projectId);
+        if (!project) throw new Error(`Project not found: ${options.projectId}`);
+        projectId = project.id;
+        projectPath = project.path;
+      }
+
+      if (!projectId || !projectPath) {
+        throw new Error('createDurable requires a project context');
+      }
+
+      const model = options.model && options.model !== 'default' ? options.model : undefined;
+      const config = await window.clubhouse.agent.createDurable(
+        projectPath, options.name, options.color, model, options.useWorktree ?? false, options.orchestrator, options.freeAgentMode, options.mcpIds,
+      );
+      return useAgentStore.getState().spawnDurableAgent(projectId, projectPath, config, false);
+    },
+
     async runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string> {
       if (options?.freeAgentMode && !hasPermission(manifest, 'agents.free-agent-mode')) {
         throw new Error(`Plugin '${ctx.pluginId}' requires 'agents.free-agent-mode' permission to use freeAgentMode`);

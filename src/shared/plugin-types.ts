@@ -610,6 +610,17 @@ export interface ModelOption {
 
 export interface AgentsAPI {
   list(): AgentInfo[];
+  /** Create a new durable agent in a project and spawn it. Returns the new agent ID. */
+  createDurable(options: {
+    projectId?: string;
+    name: string;
+    color: string;
+    model?: string;
+    useWorktree?: boolean;
+    orchestrator?: string;
+    freeAgentMode?: boolean;
+    mcpIds?: string[];
+  }): Promise<string>;
   runQuick(mission: string, options?: { model?: string; systemPrompt?: string; projectId?: string; orchestrator?: string; freeAgentMode?: boolean; metadata?: Record<string, string> }): Promise<string>;
   kill(agentId: string): Promise<void>;
   resume(agentId: string, options?: { mission?: string }): Promise<void>;
