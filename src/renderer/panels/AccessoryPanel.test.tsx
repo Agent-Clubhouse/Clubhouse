@@ -2,7 +2,17 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useUIStore } from '../stores/uiStore';
 import { useUpdateStore } from '../stores/updateStore';
+import { useProjectStore } from '../stores/projectStore';
+import { usePluginStore } from '../plugins/plugin-store';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { AccessoryPanel } from './AccessoryPanel';
+
+vi.mock('../plugins/plugin-loader', () => ({
+  getActiveContext: () => null,
+}));
+vi.mock('../plugins/plugin-api-factory', () => ({
+  createPluginAPI: () => ({}),
+}));
 
 function resetStores(opts: { previewChannel?: boolean } = {}) {
   useUIStore.setState({
@@ -86,5 +96,121 @@ describe('SettingsCategoryNav (via AccessoryPanel)', () => {
     window.clubhouse.app.getVersion = vi.fn().mockResolvedValue('1.0.0');
     render(<AccessoryPanel />);
     expect(screen.getByText('External Editor')).toBeInTheDocument();
+  });
+});
+
+describe('AccessoryPanel annex plugin sidebar gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders nothing for non-annex-enabled plugin sidebar on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    usePluginStore.setState({
+      plugins: {
+        'my-plugin': {
+          manifest: { id: 'my-plugin', name: 'My Plugin', contributes: { tab: { label: 'My Plugin', layout: 'sidebar-content' } } },
+          status: 'activated',
+        } as any,
+      },
+      modules: {
+        'my-plugin': { SidebarPanel: () => <div data-testid="sidebar-panel">Sidebar Content</div> } as any,
+      },
+    });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: false, scope: 'project' },
+        ],
+      },
+    });
+
+    const { container } = render(<AccessoryPanel />);
+    expect(screen.queryByTestId('sidebar-panel')).not.toBeInTheDocument();
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('renders nothing when plugin not found in match state on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:unknown-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    usePluginStore.setState({
+      plugins: {
+        'unknown-plugin': {
+          manifest: { id: 'unknown-plugin', name: 'Unknown', contributes: { tab: { label: 'Unknown', layout: 'sidebar-content' } } },
+          status: 'activated',
+        } as any,
+      },
+      modules: {
+        'unknown-plugin': { SidebarPanel: () => <div data-testid="sidebar-panel">Sidebar Content</div> } as any,
+      },
+    });
+    useRemoteProjectStore.setState({
+      pluginMatchState: { [satelliteId]: [] },
+    });
+
+    const { container } = render(<AccessoryPanel />);
+    expect(screen.queryByTestId('sidebar-panel')).not.toBeInTheDocument();
+    expect(container.innerHTML).toBe('');
+  });
+
+  it('renders sidebar for annex-enabled plugin on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    usePluginStore.setState({
+      plugins: {
+        'my-plugin': {
+          manifest: { id: 'my-plugin', name: 'My Plugin', contributes: { tab: { label: 'My Plugin', layout: 'sidebar-content' } } },
+          status: 'activated',
+        } as any,
+      },
+      modules: {
+        'my-plugin': { SidebarPanel: () => <div data-testid="sidebar-panel">Sidebar Content</div> } as any,
+      },
+    });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: true, scope: 'project' },
+        ],
+      },
+    });
+
+    render(<AccessoryPanel />);
+    // The sidebar panel component won't actually render since getActiveContext is mocked to return null,
+    // but importantly the AccessoryPanel should NOT return null (it should attempt to render the sidebar wrapper)
+    const container = screen.queryByTestId('sidebar-panel');
+    // getActiveContext returns null so PluginSidebarPanel returns null, but the wrapper div renders
+    // The key assertion is that the annex gate did NOT block: we should see the sidebar wrapper div
+    expect(document.querySelector('.bg-ctp-base.border-r')).toBeInTheDocument();
+  });
+
+  it('renders sidebar for local (non-remote) project regardless of annex state', () => {
+    useUIStore.setState({ explorerTab: 'plugin:my-plugin' });
+    useProjectStore.setState({ activeProjectId: 'local-proj-1' });
+    usePluginStore.setState({
+      plugins: {
+        'my-plugin': {
+          manifest: { id: 'my-plugin', name: 'My Plugin', contributes: { tab: { label: 'My Plugin', layout: 'sidebar-content' } } },
+          status: 'activated',
+        } as any,
+      },
+      modules: {
+        'my-plugin': { SidebarPanel: () => <div data-testid="sidebar-panel">Sidebar Content</div> } as any,
+      },
+    });
+
+    render(<AccessoryPanel />);
+    // Not a remote project — annex gate should not apply. Wrapper div should render.
+    expect(document.querySelector('.bg-ctp-base.border-r')).toBeInTheDocument();
   });
 });
