@@ -45,6 +45,8 @@ vi.mock('fs/promises', () => ({
   readdir: vi.fn(() => []),
   unlink: vi.fn(),
   stat: vi.fn(),
+  copyFile: vi.fn(),
+  rename: vi.fn(),
 }));
 
 // Mock fs-utils
@@ -82,6 +84,8 @@ import {
   saveAgentIcon,
   clearAgentConfigCache,
   flushAgentConfig,
+  getBackupInfo,
+  restoreFromBackup,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
@@ -118,8 +122,12 @@ describe('readAgents (via listDurable)', () => {
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
   });
 
-  it('returns [] on corrupt JSON', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
+  it('returns [] on corrupt JSON with no backup', async () => {
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      if (String(p).endsWith('agents.json.bak')) return false;
+      return false;
+    });
     vi.mocked(fsp.readFile).mockResolvedValue('{{invalid json');
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
   });
@@ -1575,5 +1583,208 @@ describe('write-back cache', () => {
     expect(written[0].color).toBe('emerald');
     expect(written[1].name).toBe('renamed-2');
     expect(written[1].color).toBe('rose');
+  });
+});
+
+// ── Backup and Recovery ──────────────────────────────────────────────
+
+describe('backup and recovery', () => {
+  const BACKUP_AGENTS = [
+    { id: 'durable_1', name: 'agent-one', color: 'indigo', createdAt: '2024-01-01' },
+    { id: 'durable_2', name: 'agent-two', color: 'rose', createdAt: '2024-01-02' },
+    { id: 'durable_3', name: 'agent-three', color: 'emerald', createdAt: '2024-01-03' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+  });
+
+  describe('auto-recovery on corrupt agents.json', () => {
+    it('recovers from backup when main file is corrupt', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return true;
+        if (s.endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        if (s.endsWith('agents.json')) return '{{corrupt';
+        return '';
+      });
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toHaveLength(3);
+      expect(result[0].name).toBe('agent-one');
+    });
+
+    it('recovers from backup when main file is missing', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return true;
+        if (s.endsWith('agents.json')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        return '';
+      });
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toHaveLength(3);
+    });
+
+    it('returns [] when both main and backup are corrupt', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue('{{corrupt');
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('atomic writes', () => {
+    it('writeAgentsToDisk uses temp file + rename', async () => {
+      const agents = [{ id: 'durable_1', name: 'test', color: 'blue', createdAt: '2024-01-01' }];
+      // Mock: no existing file
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json')) return false;
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('.git')) return true;
+        if (String(p).endsWith('.gitignore')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
+      vi.mocked(isInsideGitRepo).mockResolvedValue(true);
+      vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+        cb(null, '', '');
+        return {} as any;
+      });
+
+      await createDurable(PROJECT_PATH, 'test-agent', 'blue');
+      await flushAgentConfig(PROJECT_PATH);
+
+      // Verify temp file was written and then renamed
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => String(call[0]).includes('.tmp.'),
+      );
+      expect(writeCall).toBeDefined();
+      expect(vi.mocked(fsp.rename)).toHaveBeenCalled();
+    });
+
+    it('creates backup before writing', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json')) return true;
+        if (s.endsWith('agents.json.bak')) return false;
+        if (s.endsWith('.git')) return true;
+        if (s.endsWith('.gitignore')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json')) return JSON.stringify(BACKUP_AGENTS);
+        return '';
+      });
+
+      await listDurable(PROJECT_PATH); // populate cache
+      // Trigger a write by updating
+      const agents = await listDurable(PROJECT_PATH);
+      agents.push({ id: 'durable_new', name: 'new', color: 'red', createdAt: '2024-01-04' } as any);
+
+      // Now pathExists for agents.json should return true (it does)
+      await flushAgentConfig(PROJECT_PATH);
+
+      // Verify copyFile was called (backup creation)
+      const copyCall = vi.mocked(fsp.copyFile).mock.calls.find(
+        (call) => String(call[1]).endsWith('agents.json.bak'),
+      );
+      expect(copyCall).toBeDefined();
+    });
+  });
+
+  describe('getBackupInfo', () => {
+    it('returns null when no backup exists', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
+
+      expect(await getBackupInfo(PROJECT_PATH)).toBeNull();
+    });
+
+    it('returns null when backup has same count as current', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        return JSON.stringify(BACKUP_AGENTS);
+      });
+
+      expect(await getBackupInfo(PROJECT_PATH)).toBeNull();
+    });
+
+    it('returns info when backup has more agents than current', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        // Current only has 1 agent
+        return JSON.stringify([BACKUP_AGENTS[0]]);
+      });
+
+      const info = await getBackupInfo(PROJECT_PATH);
+      expect(info).not.toBeNull();
+      expect(info!.backupAgents).toHaveLength(3);
+      expect(info!.currentCount).toBe(1);
+    });
+  });
+
+  describe('restoreFromBackup', () => {
+    it('restores missing agents from backup', async () => {
+      const writtenData: Record<string, string> = {};
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (writtenData[s]) return writtenData[s];
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        // Current only has first agent
+        return JSON.stringify([BACKUP_AGENTS[0]]);
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+        writtenData[String(p)] = String(data);
+      });
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(2);
+      expect(result.agents).toHaveLength(3);
+    });
+
+    it('returns 0 restored when no backup exists', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify([BACKUP_AGENTS[0]]));
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(0);
+    });
+
+    it('does not duplicate agents already present', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        // Both have all 3 agents
+        return JSON.stringify(BACKUP_AGENTS);
+      });
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(0);
+    });
   });
 });
