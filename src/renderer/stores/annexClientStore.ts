@@ -366,10 +366,35 @@ export function initAnnexClientListener(): () => void {
         const nsProjId = `remote||${satelliteId}||${p.projectId}`;
         const cs = p.state as {
           canvasId: string; views: unknown[]; viewport: unknown;
-          nextZIndex: number; zoomedViewId: string | null; name: string;
+          nextZIndex: number; zoomedViewId: string | null;
+          selectedViewId?: string | null; name: string;
           allCanvasTabs?: Array<{ id: string; name: string }>;
           activeCanvasId?: string;
         };
+
+        // Re-namespace agent/project IDs in views — the satellite stores
+        // original IDs but the controller needs namespaced IDs to resolve
+        // remote agents from its store.
+        const namespacedViews = (cs.views as any[]).map((v: any) => {
+          const patched = { ...v };
+          if (patched.agentId && typeof patched.agentId === 'string' && !patched.agentId.startsWith('remote||')) {
+            patched.agentId = `remote||${satelliteId}||${patched.agentId}`;
+          }
+          if (patched.projectId && typeof patched.projectId === 'string' && !patched.projectId.startsWith('remote||')) {
+            patched.projectId = `remote||${satelliteId}||${patched.projectId}`;
+          }
+          if (patched.metadata && typeof patched.metadata === 'object') {
+            const meta = { ...patched.metadata };
+            if (meta.agentId && typeof meta.agentId === 'string' && !meta.agentId.startsWith('remote||')) {
+              meta.agentId = `remote||${satelliteId}||${meta.agentId}`;
+            }
+            if (meta.projectId && typeof meta.projectId === 'string' && !meta.projectId.startsWith('remote||')) {
+              meta.projectId = `remote||${satelliteId}||${meta.projectId}`;
+            }
+            patched.metadata = meta;
+          }
+          return patched;
+        });
 
         const existing = useRemoteProjectStore.getState().remoteCanvasState[nsProjId];
 
@@ -381,15 +406,16 @@ export function initAnnexClientListener(): () => void {
               return {
                 id: cs.canvasId,
                 name: cs.name,
-                views: cs.views,
+                views: namespacedViews,
                 viewport: cs.viewport,
                 nextZIndex: cs.nextZIndex,
                 zoomedViewId: cs.zoomedViewId,
+                selectedViewId: cs.selectedViewId ?? null,
               };
             }
             // Preserve existing data for other tabs if we have it
             const prev = existing?.canvases?.find((c: any) => c.id === tab.id);
-            return prev || { id: tab.id, name: tab.name, views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null };
+            return prev || { id: tab.id, name: tab.name, views: [], viewport: { panX: 0, panY: 0, zoom: 1 }, nextZIndex: 0, zoomedViewId: null, selectedViewId: null };
           });
           useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
             canvases,
@@ -400,9 +426,10 @@ export function initAnnexClientListener(): () => void {
           const canvases = [...(existing.canvases as any[])];
           const idx = canvases.findIndex((c: any) => c.id === cs.canvasId);
           const updated = {
-            id: cs.canvasId, name: cs.name, views: cs.views,
+            id: cs.canvasId, name: cs.name, views: namespacedViews,
             viewport: cs.viewport, nextZIndex: cs.nextZIndex,
             zoomedViewId: cs.zoomedViewId,
+            selectedViewId: cs.selectedViewId ?? null,
           };
           if (idx >= 0) {
             canvases[idx] = updated;
@@ -417,9 +444,10 @@ export function initAnnexClientListener(): () => void {
           // First canvas state for this project
           useRemoteProjectStore.getState().updateRemoteCanvasState(nsProjId, {
             canvases: [{
-              id: cs.canvasId, name: cs.name, views: cs.views,
+              id: cs.canvasId, name: cs.name, views: namespacedViews,
               viewport: cs.viewport, nextZIndex: cs.nextZIndex,
               zoomedViewId: cs.zoomedViewId,
+              selectedViewId: cs.selectedViewId ?? null,
             }],
             activeCanvasId: cs.canvasId,
           });

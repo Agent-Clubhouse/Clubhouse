@@ -952,6 +952,7 @@ export type CanvasMutation =
   | { type: 'updateView'; viewId: string; updates: Record<string, unknown> }
   | { type: 'setViewport'; viewport: { panX: number; panY: number; zoom: number } }
   | { type: 'zoomView'; viewId: string | null }
+  | { type: 'selectView'; viewId: string | null }
   // Canvas tab management (for pop-out + annex sync)
   | { type: 'addCanvas' }
   | { type: 'removeCanvas'; canvasId: string }
@@ -968,6 +969,7 @@ export interface CanvasStateSnapshot {
   viewport: { panX: number; panY: number; zoom: number };
   nextZIndex: number;
   zoomedViewId: string | null;
+  selectedViewId?: string | null;
   /** Project context for annex canvas sync (absent in local-only broadcasts). */
   projectId?: string;
   /** Storage scope: 'global' for app mode, 'project' for project mode. */

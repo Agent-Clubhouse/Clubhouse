@@ -297,8 +297,9 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           displayName: v.displayName ?? v.title ?? v.type ?? '',
         })) as CanvasView[];
 
-        // Preserve local viewport and selection when merging (controller keeps
-        // its own pan/zoom position while receiving view updates from satellite)
+        // Preserve local viewport when merging (controller keeps its own
+        // pan/zoom position while receiving view updates from satellite).
+        // Selection and zoom are synced from the satellite.
         const existing = existingCanvasMap.get(s.id);
         return {
           id: s.id,
@@ -307,7 +308,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           viewport: existing ? existing.viewport : clampViewport(s.viewport),
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: existing?.selectedViewId ?? null,
+          selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
         };
       });
 
