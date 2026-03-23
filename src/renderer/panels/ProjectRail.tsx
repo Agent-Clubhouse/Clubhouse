@@ -3,8 +3,8 @@ import { useProjectStore } from '../stores/projectStore';
 import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useAnnexClientStore } from '../stores/annexClientStore';
-import { useRemoteProjectStore } from '../stores/remoteProjectStore';
-import { SatelliteSection } from './SatelliteSection';
+import { useRemoteProjectStore, type PluginMatchResult } from '../stores/remoteProjectStore';
+import { LocalHostRow, SatelliteHostRow, SatelliteSections, SatelliteProjectList } from './SatelliteSection';
 import { useBadgeStore, aggregateBadges } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { usePanelStore } from '../stores/panelStore';
@@ -13,41 +13,6 @@ import { Project } from '../../shared/types';
 import { PluginRegistryEntry } from '../../shared/plugin-types';
 import { AGENT_COLORS } from '../../shared/name-generator';
 import { sanitizeSvg } from '../utils/sanitize-svg';
-
-/** Renders satellite sections (connected first, then offline, both alphabetical). */
-function SatelliteSections({ activeProjectId, expanded, onSelectProject }: {
-  activeProjectId: string | null;
-  expanded: boolean;
-  onSelectProject: (id: string) => void;
-}) {
-  const satellites = useAnnexClientStore((s) => s.satellites);
-  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
-
-  if (satellites.length === 0) return null;
-
-  // Sort: connected first, then alphabetical
-  const sorted = [...satellites].sort((a, b) => {
-    if (a.state === 'connected' && b.state !== 'connected') return -1;
-    if (a.state !== 'connected' && b.state === 'connected') return 1;
-    return a.alias.localeCompare(b.alias);
-  });
-
-  return (
-    <>
-      <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-      {sorted.map((sat) => (
-        <SatelliteSection
-          key={sat.id}
-          satellite={sat}
-          projects={satelliteProjects[sat.fingerprint] || []}
-          activeProjectId={activeProjectId}
-          expanded={expanded}
-          onSelectProject={onSelectProject}
-        />
-      ))}
-    </>
-  );
-}
 
 function ProjectContextMenu({ position, onClose, onSettings, onCloseProject }: {
   position: { x: number; y: number };
@@ -201,11 +166,12 @@ function ProjectIcon({ project, isActive, onClick, expanded }: {
   );
 }
 
-function PluginRailButton({ entry, isActive, onClick, expanded }: {
+function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
   entry: PluginRegistryEntry;
   isActive: boolean;
   onClick: () => void;
   expanded: boolean;
+  dimmed?: boolean;
 }) {
   const label = entry.manifest.contributes!.railItem!.label;
   const customIcon = entry.manifest.contributes!.railItem!.icon;
@@ -222,18 +188,18 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
 
   return (
     <button
-      onClick={onClick}
-      title={label}
-      className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
-        expanded ? 'hover:bg-surface-0' : ''
-      }`}
+      onClick={dimmed ? undefined : onClick}
+      title={dimmed ? `${label} — not annex enabled` : label}
+      className={`w-full h-10 flex items-center gap-3 rounded-lg flex-shrink-0 ${
+        dimmed ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
+      } ${expanded && !dimmed ? 'hover:bg-surface-0' : ''}`}
     >
       <div className="relative w-10 h-10 flex-shrink-0">
         <div
           className={`
             w-10 h-10 rounded-lg flex items-center justify-center
             transition-colors duration-100
-            ${isActive
+            ${isActive && !dimmed
               ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
               : expanded
                 ? 'bg-surface-1 text-ctp-subtext0'
@@ -249,7 +215,7 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
             </svg>
           )}
         </div>
-        {pluginBadge && (
+        {pluginBadge && !dimmed && (
           <span className="absolute -top-1 -right-1 z-10">
             <Badge type={pluginBadge.type} value={pluginBadge.value} />
           </span>
@@ -257,6 +223,31 @@ function PluginRailButton({ entry, isActive, onClick, expanded }: {
       </div>
       <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>{label}</span>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Annex-gated plugin rail button (placeholder for non-annex plugins)
+// ---------------------------------------------------------------------------
+
+function AnnexGatedPluginRailButton({ entry, pluginMatches, isActive, onClick, expanded }: {
+  entry: PluginRegistryEntry;
+  pluginMatches: PluginMatchResult[];
+  isActive: boolean;
+  onClick: () => void;
+  expanded: boolean;
+}) {
+  const match = pluginMatches.find((p) => p.id === entry.manifest.id);
+  const isAnnexEnabled = match?.status === 'matched' && match.annexEnabled;
+
+  return (
+    <PluginRailButton
+      entry={entry}
+      isActive={isActive}
+      onClick={onClick}
+      expanded={expanded}
+      dimmed={!isAnnexEnabled}
+    />
   );
 }
 
@@ -271,15 +262,37 @@ export function ProjectRail() {
   const setExplorerTab = useUIStore((s) => s.setExplorerTab);
   const previousExplorerTab = useUIStore((s) => s.previousExplorerTab);
   const showHome = useUIStore((s) => s.showHome);
+  const activeHostId = useUIStore((s) => s.activeHostId);
+  const setActiveHost = useUIStore((s) => s.setActiveHost);
 
   const plugins = usePluginStore((s) => s.plugins);
   const appEnabled = usePluginStore((s) => s.appEnabled);
   const pluginSettings = usePluginStore((s) => s.pluginSettings);
 
+  const satellites = useAnnexClientStore((s) => s.satellites);
+  const satelliteProjects = useRemoteProjectStore((s) => s.satelliteProjects);
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+
   const inSettings = explorerTab === 'settings';
   const inHelp = explorerTab === 'help';
   const isAppPlugin = explorerTab.startsWith('plugin:app:');
   const isHome = activeProjectId === null && !inSettings && !inHelp && !isAppPlugin;
+
+  const isLocalHost = activeHostId === null;
+  const activeSatellite = !isLocalHost ? satellites.find((s) => s.id === activeHostId) : null;
+  const activeSatelliteProjects = activeSatellite
+    ? satelliteProjects[activeSatellite.fingerprint] || []
+    : [];
+  const activeSatellitePluginMatches = activeSatellite
+    ? pluginMatchState[activeSatellite.id] || []
+    : [];
+
+  // If the active host satellite no longer exists (unpaired/disconnected), reset to local
+  useEffect(() => {
+    if (activeHostId && satellites.length > 0 && !satellites.find((s) => s.id === activeHostId)) {
+      setActiveHost(null);
+    }
+  }, [activeHostId, satellites, setActiveHost]);
 
   // App-enabled is the source of truth for rail visibility.
   // Status is an internal runtime detail — incompatible plugins are the only exclusion.
@@ -433,7 +446,47 @@ export function ProjectRail() {
     }
   }, [toggleRailPin, railPinned]);
 
+  const handleActivateHost = useCallback((satelliteId: string) => {
+    setActiveHost(satelliteId);
+  }, [setActiveHost]);
+
+  const handleActivateLocal = useCallback(() => {
+    setActiveHost(null);
+  }, [setActiveHost]);
+
   const computedWidth = railPinned ? railWidth : (hoverExpanded ? 200 : collapsedWidth);
+
+  // ---------------------------------------------------------------------------
+  // Render helpers for the two rail modes
+  // ---------------------------------------------------------------------------
+
+  /** Render app plugin buttons, optionally gated by annex permissions. */
+  const renderPluginButtons = (items: PluginRegistryEntry[], gated: boolean) => {
+    return items.map((entry) => {
+      const tabId = `plugin:app:${entry.manifest.id}`;
+      if (gated) {
+        return (
+          <AnnexGatedPluginRailButton
+            key={tabId}
+            entry={entry}
+            pluginMatches={activeSatellitePluginMatches}
+            isActive={explorerTab === tabId}
+            onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
+            expanded={expanded}
+          />
+        );
+      }
+      return (
+        <PluginRailButton
+          key={tabId}
+          entry={entry}
+          isActive={explorerTab === tabId}
+          onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
+          expanded={expanded}
+        />
+      );
+    });
+  };
 
   return (
     <div
@@ -481,115 +534,201 @@ export function ProjectRail() {
             <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
           </svg>
         </button>
-        {/* Home button */}
-        {showHome && (
-          <button
-            onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
-            title="Home"
-            data-testid="nav-home"
-            className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
-              expanded ? 'hover:bg-surface-0' : ''
-            }`}
-          >
-            <div
-              className={`
-                w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
-                transition-colors duration-100
-                ${isHome
-                  ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
-                  : expanded
-                    ? 'bg-surface-1 text-ctp-subtext0'
-                    : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
-                }
-              `}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            </div>
-            <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Home</span>
-          </button>
-        )}
 
-        {/* Top app-scoped plugin items */}
-        {topPluginItems.map((entry) => {
-          const tabId = `plugin:app:${entry.manifest.id}`;
-          return (
-            <PluginRailButton
-              key={tabId}
-              entry={entry}
-              isActive={explorerTab === tabId}
-              onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
-              expanded={expanded}
-            />
-          );
-        })}
+        {/* ================================================================
+            MODE: Local host active (default)
+            ================================================================ */}
+        {isLocalHost && (
+          <>
+            {/* Home button */}
+            {showHome && (
+              <button
+                onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
+                title="Home"
+                data-testid="nav-home"
+                className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
+                  expanded ? 'hover:bg-surface-0' : ''
+                }`}
+              >
+                <div
+                  className={`
+                    w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                    transition-colors duration-100
+                    ${isHome
+                      ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+                      : expanded
+                        ? 'bg-surface-1 text-ctp-subtext0'
+                        : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+                    }
+                  `}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </div>
+                <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Home</span>
+              </button>
+            )}
 
-        {(showHome || topPluginItems.length > 0) && (
-          <div className="border-t border-surface-2 my-1 flex-shrink-0" />
-        )}
+            {/* Top app-scoped plugin items */}
+            {renderPluginButtons(topPluginItems, false)}
 
-        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
-          {projects.map((p, i) => (
-            <div
-              key={p.id}
-              ref={dragIndex === i ? dragNodeRef : undefined}
-              draggable
-              onDragStart={(e) => handleDragStart(e, i)}
-              onDragEnd={handleDragEnd}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={(e) => handleDrop(e, i)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setContextMenu({ projectId: p.id, x: e.clientX, y: e.clientY });
-              }}
-              className="relative flex-shrink-0"
-            >
-              {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
-                <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-indigo-500 rounded-full" />
-              )}
-              <ProjectIcon
-                project={p}
-                isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
-                onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
+            {(showHome || topPluginItems.length > 0) && (
+              <div className="border-t border-surface-2 my-1 flex-shrink-0" />
+            )}
+
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
+              {projects.map((p, i) => (
+                <div
+                  key={p.id}
+                  ref={dragIndex === i ? dragNodeRef : undefined}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, i)}
+                  onDragEnd={handleDragEnd}
+                  onDragOver={(e) => handleDragOver(e, i)}
+                  onDrop={(e) => handleDrop(e, i)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ projectId: p.id, x: e.clientX, y: e.clientY });
+                  }}
+                  className="relative flex-shrink-0"
+                >
+                  {dragOverIndex === i && dragIndex !== null && dragIndex !== i && (
+                    <div className="absolute -top-1.5 left-1 right-1 h-0.5 bg-indigo-500 rounded-full" />
+                  )}
+                  <ProjectIcon
+                    project={p}
+                    isActive={!inSettings && !inHelp && !isAppPlugin && p.id === activeProjectId}
+                    onClick={() => exitSettingsAndNavigate(() => setActiveProject(p.id))}
+                    expanded={expanded}
+                  />
+                </div>
+              ))}
+              <button
+                onClick={() => pickAndAddProject()}
+                title="Add project"
+                data-testid="nav-add-project"
+                className="
+                  w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0
+                  text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1
+                  cursor-pointer border border-dashed border-surface-2
+                "
+              >
+                +
+              </button>
+
+              {/* Satellite host rows */}
+              <SatelliteSections
+                satellites={satellites}
                 expanded={expanded}
+                activeHostId={activeHostId}
+                onActivateHost={handleActivateHost}
               />
             </div>
-          ))}
-          <button
-            onClick={() => pickAndAddProject()}
-            title="Add project"
-            data-testid="nav-add-project"
-            className="
-              w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0
-              text-ctp-subtext0 hover:text-ctp-text hover:bg-surface-1
-              cursor-pointer border border-dashed border-surface-2
-            "
-          >
-            +
-          </button>
 
-          {/* Satellite sections (Annex V2) */}
-          <SatelliteSections
-            activeProjectId={activeProjectId}
-            expanded={expanded}
-            onSelectProject={(id) => exitSettingsAndNavigate(() => setActiveProject(id))}
-          />
-        </div>
-        {/* Bottom app-scoped plugin items */}
-        {bottomPluginItems.map((entry) => {
-          const tabId = `plugin:app:${entry.manifest.id}`;
-          return (
-            <PluginRailButton
-              key={tabId}
-              entry={entry}
-              isActive={explorerTab === tabId}
-              onClick={() => exitSettingsAndNavigate(() => setExplorerTab(tabId))}
+            {/* Bottom app-scoped plugin items */}
+            {renderPluginButtons(bottomPluginItems, false)}
+          </>
+        )}
+
+        {/* ================================================================
+            MODE: Satellite host active
+            ================================================================ */}
+        {!isLocalHost && activeSatellite && (
+          <>
+            {/* Host switcher: collapsed local + collapsed other satellites */}
+            <LocalHostRow
               expanded={expanded}
+              isActive={false}
+              onClick={handleActivateLocal}
             />
-          );
-        })}
+
+            {/* Other satellites (collapsed, single rows) */}
+            {satellites
+              .filter((s) => s.id !== activeHostId)
+              .sort((a, b) => {
+                if (a.state === 'connected' && b.state !== 'connected') return -1;
+                if (a.state !== 'connected' && b.state === 'connected') return 1;
+                return a.alias.localeCompare(b.alias);
+              })
+              .map((sat) => (
+                <SatelliteHostRow
+                  key={sat.id}
+                  satellite={sat}
+                  expanded={expanded}
+                  isActive={false}
+                  onClick={() => handleActivateHost(sat.id)}
+                />
+              ))}
+
+            <div className="border-t border-surface-2 my-1 flex-shrink-0" />
+
+            {/* Active satellite header (highlighted) */}
+            <SatelliteHostRow
+              satellite={activeSatellite}
+              expanded={expanded}
+              isActive={true}
+              onClick={() => {}}
+            />
+
+            {/* Home button (annex-gated) */}
+            {showHome && (
+              <button
+                onClick={() => exitSettingsAndNavigate(() => setActiveProject(null))}
+                title="Home"
+                data-testid="nav-home"
+                className={`w-full h-10 flex items-center gap-3 cursor-pointer rounded-lg flex-shrink-0 ${
+                  expanded ? 'hover:bg-surface-0' : ''
+                }`}
+              >
+                <div
+                  className={`
+                    w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0
+                    transition-colors duration-100
+                    ${isHome
+                      ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
+                      : expanded
+                        ? 'bg-surface-1 text-ctp-subtext0'
+                        : 'bg-surface-1 text-ctp-subtext0 hover:bg-surface-2 hover:text-ctp-text'
+                    }
+                  `}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </div>
+                <span className={`text-xs font-medium truncate pr-3 whitespace-nowrap text-ctp-text transition-opacity duration-200 ${expanded ? 'opacity-100' : 'opacity-0'}`}>Home</span>
+              </button>
+            )}
+
+            {/* Top app-scoped plugin items (annex-gated) */}
+            {renderPluginButtons(topPluginItems, true)}
+
+            {(showHome || topPluginItems.length > 0) && (
+              <div className="border-t border-surface-2 my-1 flex-shrink-0" />
+            )}
+
+            {/* Remote projects for active satellite */}
+            <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col gap-2 pt-1">
+              <SatelliteProjectList
+                satellite={activeSatellite}
+                projects={activeSatelliteProjects}
+                activeProjectId={activeProjectId}
+                expanded={expanded}
+                onSelectProject={(id) => exitSettingsAndNavigate(() => setActiveProject(id))}
+              />
+            </div>
+
+            {/* Bottom app-scoped plugin items (annex-gated) */}
+            {renderPluginButtons(bottomPluginItems, true)}
+          </>
+        )}
+
+        {/* ================================================================
+            Common footer: Help & Settings
+            ================================================================ */}
         <div className="border-t border-surface-2 my-1 flex-shrink-0" />
         <button
           onClick={toggleHelp}
