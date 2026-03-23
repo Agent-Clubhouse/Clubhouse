@@ -186,11 +186,9 @@ describe('AccessoryPanel annex plugin sidebar gating', () => {
     });
 
     render(<AccessoryPanel />);
-    // The sidebar panel component won't actually render since getActiveContext is mocked to return null,
-    // but importantly the AccessoryPanel should NOT return null (it should attempt to render the sidebar wrapper)
-    const container = screen.queryByTestId('sidebar-panel');
-    // getActiveContext returns null so PluginSidebarPanel returns null, but the wrapper div renders
-    // The key assertion is that the annex gate did NOT block: we should see the sidebar wrapper div
+    // getActiveContext returns null so PluginSidebarPanel returns null, but the wrapper div renders.
+    // The key assertion is that the annex gate did NOT block: we should see the sidebar wrapper div.
+    expect(screen.queryByTestId('sidebar-panel')).not.toBeInTheDocument();
     expect(document.querySelector('.bg-ctp-base.border-r')).toBeInTheDocument();
   });
 
