@@ -429,8 +429,9 @@ export function CanvasViewComponent({
         }
         if (isWidgetPending(pluginView.pluginWidgetType)) {
           return (
-            <div className="flex items-center justify-center h-full text-ctp-subtext0 text-xs p-4 text-center" data-testid="widget-loading">
-              Loading {registered.declaration.label}…
+            <div className="flex flex-col items-center justify-center h-full gap-2 text-ctp-overlay0 text-xs p-4 text-center" data-testid="widget-loading">
+              <span className="font-medium text-ctp-subtext0">{registered.declaration.label} is not enabled</span>
+              <span>Enable it in Settings &gt; Plugins</span>
             </div>
           );
         }
