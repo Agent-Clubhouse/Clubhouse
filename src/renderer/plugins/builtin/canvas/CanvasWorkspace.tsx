@@ -706,6 +706,7 @@ export function CanvasWorkspace({
                 attention={attentionMap.get(view.id) ?? null}
                 allViews={views}
                 mcpEnabled={mcpEnabled}
+                zoneThemeId={themeOverride}
                 onStartWireDrag={startWireDrag}
                 onClose={() => onRemoveView(view.id)}
                 onFocus={() => onFocusView(view.id)}

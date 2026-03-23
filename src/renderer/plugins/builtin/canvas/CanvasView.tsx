@@ -65,6 +65,8 @@ interface CanvasViewComponentProps {
   allViews?: CanvasView[];
   /** Whether MCP is enabled — controls visibility of Link/Wire buttons. */
   mcpEnabled?: boolean;
+  /** Zone theme ID override — used to propagate zone theme to terminal. */
+  zoneThemeId?: string;
   /** Callback to start wire drag from this agent view. */
   onStartWireDrag?: (view: AgentCanvasViewType) => void;
   onClose: () => void;
@@ -91,6 +93,7 @@ export function CanvasViewComponent({
   attention,
   allViews,
   mcpEnabled,
+  zoneThemeId,
   onStartWireDrag,
   onClose,
   onFocus,
@@ -383,7 +386,7 @@ export function CanvasViewComponent({
   const renderContent = () => {
     switch (view.type) {
       case 'agent':
-        return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} />;
+        return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} zoneThemeId={zoneThemeId} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);

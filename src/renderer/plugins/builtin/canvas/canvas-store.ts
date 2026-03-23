@@ -381,8 +381,11 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         const existingNames = canvas.views.map((v) => v.displayName);
         const view = createViewOp(type, position, canvas.nextZIndex, existingNames);
         newViewId = view.id;
+        const newViews = [...canvas.views, view];
         return {
-          views: recomputeZones([...canvas.views, view]),
+          // When adding a zone, skip recomputeZones so existing agents aren't
+          // auto-contained. The zone starts empty; agents join when moved in.
+          views: type === 'zone' ? newViews : recomputeZones(newViews),
           nextZIndex: canvas.nextZIndex + 1,
         };
       }));

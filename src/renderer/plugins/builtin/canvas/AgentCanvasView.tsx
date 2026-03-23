@@ -6,6 +6,8 @@ interface AgentCanvasViewProps {
   view: AgentCanvasViewType;
   api: PluginAPI;
   onUpdate: (updates: Partial<CanvasView>) => void;
+  /** Zone theme ID — propagated to the terminal for PTY background updates. */
+  zoneThemeId?: string;
 }
 
 function projectColor(name: string): string {
@@ -17,7 +19,7 @@ function projectColor(name: string): string {
   return `hsl(${hue}, 55%, 55%)`;
 }
 
-export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
+export function AgentCanvasView({ view, api, onUpdate, zoneThemeId }: AgentCanvasViewProps) {
   const isAppMode = api.context.mode === 'app';
   const [agentTick, setAgentTick] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -179,6 +181,7 @@ export function AgentCanvasView({ view, api, onUpdate }: AgentCanvasViewProps) {
       <div className="relative flex flex-col h-full">
         {React.createElement(api.widgets.AgentTerminal, {
           agentId: view.agentId,
+          zoneThemeId,
         })}
       </div>
     );

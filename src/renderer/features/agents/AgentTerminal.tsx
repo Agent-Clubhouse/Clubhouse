@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useMemo, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useThemeStore } from '../../stores/themeStore';
+import { getTheme } from '../../themes';
 import { useClipboardSettingsStore } from '../../stores/clipboardSettingsStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useAnnexClientStore, satellitePtyDataBus } from '../../stores/annexClientStore';
@@ -17,17 +18,26 @@ const RESUME_SETTLE_MS = 1500;
 interface Props {
   agentId: string;
   focused?: boolean;
+  /** Zone theme ID — when set, terminal uses this theme's colors instead of global. */
+  zoneThemeId?: string;
 }
 
-export function AgentTerminal({ agentId, focused }: Props) {
+export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const terminalColors = useThemeStore((s) => s.theme.terminal);
+  const globalTerminalColors = useThemeStore((s) => s.theme.terminal);
   const hasGradientBg = useThemeStore((s) => s.experimentalGradients && !!s.theme.gradients?.background);
+  const terminalColors = useMemo(() => {
+    if (zoneThemeId) {
+      const zoneTheme = getTheme(zoneThemeId);
+      if (zoneTheme) return zoneTheme.terminal;
+    }
+    return globalTerminalColors;
+  }, [zoneThemeId, globalTerminalColors]);
   const effectiveTerminalColors = useMemo(
-    () => hasGradientBg ? { ...terminalColors, background: 'transparent' } : terminalColors,
-    [terminalColors, hasGradientBg],
+    () => hasGradientBg && !zoneThemeId ? { ...terminalColors, background: 'transparent' } : terminalColors,
+    [terminalColors, hasGradientBg, zoneThemeId],
   );
   const experimentalMonoFont = useThemeStore(
     (s) => s.experimentalGradients ? (s.theme.fonts?.mono ?? s.theme.fontOverride) : undefined,
