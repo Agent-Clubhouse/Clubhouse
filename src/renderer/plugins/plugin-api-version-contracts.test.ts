@@ -10,7 +10,7 @@
  * @see https://github.com/Agent-Clubhouse/Clubhouse/issues/239
  */
 import { describe, it, expect } from 'vitest';
-import { validateManifest, SUPPORTED_API_VERSIONS } from './manifest-validator';
+import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
 import { createMockAPI, createMockContext } from './testing';
 import type {
   PluginAPI,
@@ -317,6 +317,56 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
   it('does NOT contain v1.0 or higher (not yet released)', () => {
     expect(SUPPORTED_API_VERSIONS).not.toContain(1.0);
     expect(SUPPORTED_API_VERSIONS).not.toContain(0.9);
+  });
+});
+
+// =============================================================================
+// § 1b. DEPRECATED_PLUGIN_API_VERSIONS
+// =============================================================================
+
+describe('§1b DEPRECATED_PLUGIN_API_VERSIONS', () => {
+  it('marks v0.5 and v0.6 as deprecated', () => {
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.5]).toBeDefined();
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.6]).toBeDefined();
+  });
+
+  it('does not mark v0.7 or v0.8 as deprecated', () => {
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.7]).toBeUndefined();
+    expect(DEPRECATED_PLUGIN_API_VERSIONS[0.8]).toBeUndefined();
+  });
+
+  it('v0.5 manifest validates but returns deprecation warning', () => {
+    const result = validateManifest(minimalV05Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('0.5'))).toBe(true);
+  });
+
+  it('v0.6 manifest validates but returns deprecation warning', () => {
+    const result = validateManifest(minimalV06Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('0.6'))).toBe(true);
+  });
+
+  it('v0.7 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV07Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('v0.8 manifest validates with no deprecation warnings', () => {
+    const result = validateManifest(minimalV08Manifest());
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('deprecation warning includes removal target version', () => {
+    const result = validateManifest(minimalV05Manifest());
+    const removalTarget = DEPRECATED_PLUGIN_API_VERSIONS[0.5];
+    expect(result.warnings.some(w => w.includes(removalTarget))).toBe(true);
   });
 });
 
