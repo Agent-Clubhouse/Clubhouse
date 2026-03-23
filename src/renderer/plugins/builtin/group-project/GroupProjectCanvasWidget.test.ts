@@ -126,6 +126,42 @@ describe('GroupProjectCanvasWidget — broadcast modal', () => {
   });
 });
 
+// ── Include project instructions checkbox ───────────────────────────
+
+describe('GroupProjectCanvasWidget — include instructions checkbox', () => {
+  it('ShoulderTapModal accepts projectInstructions prop', () => {
+    expect(source).toContain('projectInstructions');
+  });
+
+  it('has an includeInstructions checkbox state', () => {
+    expect(source).toContain('includeInstructions');
+    expect(source).toContain("useState(false)");
+    expect(source).toContain("type=\"checkbox\"");
+  });
+
+  it('renders "Include project instructions" label', () => {
+    expect(source).toContain('Include project instructions');
+  });
+
+  it('disables checkbox when projectInstructions is empty', () => {
+    expect(source).toContain("disabled={!projectInstructions.trim()}");
+  });
+
+  it('prepends instructions to message when checkbox is checked', () => {
+    expect(source).toContain('Project Instructions:');
+    expect(source).toContain('projectInstructions.trim()');
+  });
+
+  it('allows sending with only instructions checked and no message', () => {
+    expect(source).toContain('!msg && !includeInstructions');
+    expect(source).toContain('(!message.trim() && !includeInstructions) || sending');
+  });
+
+  it('passes projectInstructions from ProjectCard to ShoulderTapModal', () => {
+    expect(source).toContain("projectInstructions={project?.instructions || ''}");
+  });
+});
+
 // ── Message ordering (newest-first feed) ────────────────────────────
 
 describe('GroupProjectCanvasWidget — message ordering', () => {

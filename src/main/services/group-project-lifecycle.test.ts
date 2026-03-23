@@ -140,7 +140,7 @@ describe('GroupProjectLifecycle', () => {
     expect(messages).toHaveLength(1);
   });
 
-  it('injects welcome message into agent PTY on join', async () => {
+  it('does not inject welcome message into agent PTY on join', async () => {
     initGroupProjectLifecycle();
 
     bindingManager.bind('agent-1', {
@@ -152,17 +152,12 @@ describe('GroupProjectLifecycle', () => {
 
     await new Promise(r => setTimeout(r, 250));
 
-    // Should have called ptyManager.write with bracketed paste for welcome
-    expect(mockPtyWrite).toHaveBeenCalled();
+    // Should NOT inject any welcome message into the PTY
     const calls = mockPtyWrite.mock.calls;
     const welcomeCall = calls.find(
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
-    expect(welcomeCall).toBeDefined();
-    expect(welcomeCall![0]).toBe('agent-1');
-    // Should use bracketed paste
-    expect(welcomeCall![1]).toContain('\x1b[200~');
-    expect(welcomeCall![1]).toContain('\x1b[201~');
+    expect(welcomeCall).toBeUndefined();
   });
 
   it('injects polling instruction on join when polling is enabled', async () => {
@@ -181,7 +176,7 @@ describe('GroupProjectLifecycle', () => {
       agentName: 'robin',
     });
 
-    // Wait for welcome + polling delay (500ms) + processing
+    // Wait for polling delay (500ms) + processing
     await new Promise(r => setTimeout(r, 800));
 
     const calls = mockPtyWrite.mock.calls;
@@ -193,6 +188,10 @@ describe('GroupProjectLifecycle', () => {
   });
 
   it('uses orchestrator-specific paste timing for PTY injection', async () => {
+    // Set up a project with polling enabled
+    const project = await groupProjectRegistry.create('Timing Project');
+    await groupProjectRegistry.update(project.id, { metadata: { pollingEnabled: true } });
+
     // Simulate a Copilot CLI agent with 800ms paste timing
     mockGetAgentOrchestrator.mockReturnValue('copilot-cli');
     mockGetProvider.mockReturnValue({
@@ -202,27 +201,26 @@ describe('GroupProjectLifecycle', () => {
     initGroupProjectLifecycle();
 
     bindingManager.bind('agent-ghcp', {
-      targetId: 'gp_456',
+      targetId: project.id,
       targetKind: 'group-project',
       label: 'GP',
       agentName: 'copilot-bot',
     });
 
-    // Welcome message should fire immediately (bracketed paste)
-    await new Promise(r => setTimeout(r, 50));
-    const welcomeCall = mockPtyWrite.mock.calls.find(
-      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
+    // Polling message should fire after 500ms delay (bracketed paste)
+    await new Promise(r => setTimeout(r, 600));
+    const pollingCall = mockPtyWrite.mock.calls.find(
+      (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('bulletin'),
     );
-    expect(welcomeCall).toBeDefined();
+    expect(pollingCall).toBeDefined();
 
-    // Enter keystroke should NOT have fired yet at 200ms (would with default 200ms timing)
-    // but should fire after 800ms
+    // Enter keystroke should NOT have fired yet at 200ms after polling paste
+    // (would with default 200ms timing) but should fire after 800ms
     mockPtyWrite.mockClear();
     await new Promise(r => setTimeout(r, 200));
     const earlyEnter = mockPtyWrite.mock.calls.find(
       (c: unknown[]) => c[1] === '\r',
     );
-    // At 250ms total, the 800ms timeout hasn't fired yet
     expect(earlyEnter).toBeUndefined();
 
     await new Promise(r => setTimeout(r, 700));
@@ -232,7 +230,7 @@ describe('GroupProjectLifecycle', () => {
     expect(lateEnter).toBeDefined();
   });
 
-  it('includes project name in welcome message when project exists', async () => {
+  it('includes project name in join bulletin message when project exists', async () => {
     const project = await groupProjectRegistry.create('Alpha Squad');
 
     initGroupProjectLifecycle();
@@ -246,13 +244,12 @@ describe('GroupProjectLifecycle', () => {
 
     await new Promise(r => setTimeout(r, 250));
 
-    // Welcome PTY message should include the project name
+    // No welcome PTY message should be injected
     const calls = mockPtyWrite.mock.calls;
     const welcomeCall = calls.find(
       (c: unknown[]) => typeof c[1] === 'string' && (c[1] as string).includes('Group Project notification'),
     );
-    expect(welcomeCall).toBeDefined();
-    expect(welcomeCall![1]).toContain('"Alpha Squad"');
+    expect(welcomeCall).toBeUndefined();
 
     // Join bulletin message should include project name
     const board = getBulletinBoard(project.id);
