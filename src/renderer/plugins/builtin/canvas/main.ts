@@ -10,6 +10,7 @@ import { broadcastCanvasState, sendRemoteCanvasMutation } from './canvas-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteProjectId, useRemoteProjectStore } from '../../../stores/remoteProjectStore';
+import { useUIStore } from '../../../stores/uiStore';
 import { useMcpBindingStore, type McpBindingEntry } from '../../../stores/mcpBindingStore';
 
 /**
@@ -141,7 +142,17 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   // Load persisted state (or remote canvas state for annex projects)
   const projectId = api.context.projectId;
   const isRemote = projectId ? isRemoteProjectId(projectId) : false;
+  const activeHostId = useUIStore((s) => s.activeHostId);
+  const isRemoteApp = isAppMode && !!activeHostId;
   useEffect(() => {
+    // App-mode with active satellite: hydrate from remote app canvas state
+    if (isRemoteApp && activeHostId) {
+      const remoteState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
+      if (remoteState) {
+        store.getState().hydrateFromRemote(remoteState.canvases, remoteState.activeCanvasId);
+        return;
+      }
+    }
     if (isRemote && projectId) {
       const remoteState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
       if (remoteState) {
@@ -152,9 +163,9 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     store.getState().loadCanvas(storage);
     // Restore persisted wire connections (dormant until agents wake)
     store.getState().loadWires(storage);
-  }, [store, storage, isRemote, projectId]);
+  }, [store, storage, isRemote, projectId, isRemoteApp, activeHostId]);
 
-  // Subscribe to live remote canvas state updates
+  // Subscribe to live remote canvas state updates (project-level)
   useEffect(() => {
     if (!isRemote || !projectId) return;
     let prevState = useRemoteProjectStore.getState().remoteCanvasState[projectId];
@@ -167,17 +178,30 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     });
   }, [store, isRemote, projectId]);
 
-  // Debounced auto-save (skip for remote projects — state is owned by satellite)
+  // Subscribe to live remote app canvas state updates (app-level satellite)
+  useEffect(() => {
+    if (!isRemoteApp || !activeHostId) return;
+    let prevState = useRemoteProjectStore.getState().remoteAppCanvasState[activeHostId];
+    return useRemoteProjectStore.subscribe((state) => {
+      const newState = state.remoteAppCanvasState[activeHostId];
+      if (newState && newState !== prevState && store.getState().loaded) {
+        prevState = newState;
+        store.getState().hydrateFromRemote(newState.canvases, newState.activeCanvasId);
+      }
+    });
+  }, [store, isRemoteApp, activeHostId]);
+
+  // Debounced auto-save (skip for remote projects/app — state is owned by satellite)
   const bindingsRef = useRef(bindings);
   bindingsRef.current = bindings;
   const scheduleSave = useCallback(() => {
-    if (isRemote) return;
+    if (isRemote || isRemoteApp) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       store.getState().saveCanvas(storage);
       store.getState().saveWires(storage, bindingsRef.current);
     }, 500);
-  }, [store, storage, isRemote]);
+  }, [store, storage, isRemote, isRemoteApp]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -185,10 +209,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   }, [canvases, views, viewport, zoomedViewId, bindings, loaded, scheduleSave]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
-  // (skip for remote projects — the satellite broadcasts its own state)
+  // (skip for remote projects/app — the satellite broadcasts its own state)
   const scope = isAppMode ? 'global' : 'project';
   useEffect(() => {
-    if (!loaded || isRemote) return;
+    if (!loaded || isRemote || isRemoteApp) return;
     // Only broadcast from the main window, not from pop-outs
     if (window.clubhouse.window.isPopout()) return;
     broadcastCanvasState(
@@ -197,7 +221,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
       isAppMode ? undefined : api.context.projectId,
       scope,
     );
-  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, isRemote, api, scope]);
+  }, [store, activeCanvasId, canvases, views, viewport, zoomedViewId, loaded, isAppMode, isRemote, isRemoteApp, api, scope]);
 
   // ── Remote mutation helper ──────────────────────────────────────
 
