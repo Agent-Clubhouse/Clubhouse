@@ -586,9 +586,10 @@ function ExpandedProjectView({
                     {formatTime(m.timestamp)}
                   </span>
                 </div>
-                <div className="text-xs text-ctp-subtext0 truncate mt-0.5">
-                  {m.body.slice(0, 80)}
-                </div>
+                <div
+                  className="text-xs text-ctp-subtext0 truncate mt-0.5 prose prose-xs prose-invert max-w-none [&>*]:inline [&>*]:m-0"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(m.body.slice(0, 80)) }}
+                />
               </button>
             ))
           )}
