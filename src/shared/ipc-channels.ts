@@ -103,6 +103,9 @@ export const IPC = {
     UPDATE_SESSION_NAME: 'agent:update-session-name',
     READ_SESSION_TRANSCRIPT: 'agent:read-session-transcript',
     GET_SESSION_SUMMARY: 'agent:get-session-summary',
+    // Backup & recovery
+    GET_BACKUP_INFO: 'agent:get-backup-info',
+    RESTORE_FROM_BACKUP: 'agent:restore-from-backup',
     // Structured mode channels
     STRUCTURED_EVENT: 'agent:structured-event',                // Main → Renderer
     START_STRUCTURED: 'agent:start-structured',                // Renderer → Main

@@ -425,4 +425,22 @@ export function registerAgentHandlers(): void {
       },
     ),
   );
+
+  // ── Backup & recovery ──────────────────────────────────────────────
+
+  ipcMain.handle(IPC.AGENT.GET_BACKUP_INFO, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      return agentConfig.getBackupInfo(projectPath);
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.RESTORE_FROM_BACKUP, withValidatedArgs(
+    [stringArg()],
+    async (_event, projectPath) => {
+      const result = await agentConfig.restoreFromBackup(projectPath);
+      if (result.restoredCount > 0) broadcastSnapshotRefresh();
+      return result;
+    },
+  ));
 }

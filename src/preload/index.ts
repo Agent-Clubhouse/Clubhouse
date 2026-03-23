@@ -266,6 +266,12 @@ const api = {
     respondPermission: (agentId: string, requestId: string, approved: boolean, reason?: string) =>
       ipcRenderer.invoke(IPC.AGENT.RESPOND_PERMISSION, agentId, requestId, approved, reason),
 
+    // Backup & recovery
+    getBackupInfo: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_BACKUP_INFO, projectPath),
+    restoreFromBackup: (projectPath: string) =>
+      ipcRenderer.invoke(IPC.AGENT.RESTORE_FROM_BACKUP, projectPath),
+
     onStructuredEvent: (callback: (agentId: string, event: {
       type: string;
       timestamp: number;
