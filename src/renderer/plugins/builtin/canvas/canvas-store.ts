@@ -308,7 +308,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           viewport: existing ? existing.viewport : clampViewport(s.viewport),
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
-          selectedViewId: s.selectedViewId ?? existing?.selectedViewId ?? null,
+          selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
         };
       });
 
