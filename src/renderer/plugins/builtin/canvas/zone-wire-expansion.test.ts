@@ -149,4 +149,23 @@ describe('reconcileZoneBindings', () => {
     expect(toRemove.length).toBe(1);
     expect(toRemove[0].targetId).toBe('a4');
   });
+
+  it('individual bindings not in zone expansion are only in toRemove, not toAdd', () => {
+    // Simulates the real usage where only toAdd is used — individual bindings
+    // that aren't part of zone expansion are not affected.
+    const desired = [
+      { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'A2', agentName: 'A1', targetName: 'A2' },
+    ];
+    const current = [
+      { agentId: 'a1', targetId: 'a2' }, // matches zone expansion
+      { agentId: 'a1', targetId: 'a3' }, // individual binding (not in zone expansion)
+    ];
+    const { toAdd, toRemove } = reconcileZoneBindings(desired, current);
+    // Nothing new to add
+    expect(toAdd.length).toBe(0);
+    // a1->a3 appears in toRemove but since the real handler only uses toAdd,
+    // this individual binding is preserved
+    expect(toRemove.length).toBe(1);
+    expect(toRemove[0].targetId).toBe('a3');
+  });
 });

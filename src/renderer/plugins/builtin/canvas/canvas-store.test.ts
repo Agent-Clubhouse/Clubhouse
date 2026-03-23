@@ -593,4 +593,54 @@ describe('hydrateFromRemote', () => {
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-1', expect.objectContaining({ targetId: 'gp_deleted' }));
     });
   });
+
+  // ── Zone creation: no auto-containment ────────────────────────────
+
+  describe('zone creation does not auto-contain existing agents', () => {
+    it('adding a zone on top of an existing agent does not contain it', () => {
+      // Add an agent at (100, 100)
+      store.getState().addView('agent', { x: 100, y: 100 });
+      expect(store.getState().views).toHaveLength(1);
+
+      // Add a zone that spatially covers the agent
+      store.getState().addView('zone', { x: 0, y: 0 });
+      const views = store.getState().views;
+      expect(views).toHaveLength(2);
+
+      const zone = views.find((v) => v.type === 'zone') as any;
+      expect(zone).toBeDefined();
+      // Zone should start with empty containedViewIds
+      expect(zone.containedViewIds).toEqual([]);
+    });
+
+    it('moving an agent into a zone adds it to containment', () => {
+      // Add a zone first
+      store.getState().addView('zone', { x: 0, y: 0 });
+      // Add an agent outside the zone
+      store.getState().addView('agent', { x: 1000, y: 1000 });
+
+      const agent = store.getState().views.find((v) => v.type === 'agent')!;
+      const zone = store.getState().views.find((v) => v.type === 'zone')!;
+
+      // Move the agent into the zone
+      store.getState().moveView(agent.id, { x: 100, y: 100 });
+
+      const updatedZone = store.getState().views.find((v) => v.id === zone.id) as any;
+      expect(updatedZone.containedViewIds).toContain(agent.id);
+    });
+
+    it('adding a non-zone view inside an existing zone does contain it', () => {
+      // Add a zone first
+      store.getState().addView('zone', { x: 0, y: 0 });
+
+      // Add an agent inside the zone
+      store.getState().addView('agent', { x: 100, y: 100 });
+
+      const views = store.getState().views;
+      const zone = views.find((v) => v.type === 'zone') as any;
+      const agent = views.find((v) => v.type === 'agent')!;
+      // Agent added inside zone → containment computed
+      expect(zone.containedViewIds).toContain(agent.id);
+    });
+  });
 });

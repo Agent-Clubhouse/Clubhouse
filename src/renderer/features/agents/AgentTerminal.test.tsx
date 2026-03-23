@@ -62,6 +62,15 @@ vi.mock('../../stores/annexClientStore', () => {
   };
 });
 
+vi.mock('../../themes', () => ({
+  getTheme: (id: string) => {
+    if (id === 'catppuccin-latte') {
+      return { terminal: { background: '#eff1f5', foreground: '#4c4f69' } };
+    }
+    return undefined;
+  },
+}));
+
 vi.mock('../../stores/remoteProjectStore', () => ({
   isRemoteAgentId: (id: string) => id.startsWith('remote||'),
   parseNamespacedId: (id: string) => {
@@ -571,6 +580,39 @@ describe('AgentTerminal', () => {
       expect(window.clubhouse.pty.resize).toHaveBeenCalledWith('agent-1', 80, 24);
 
       vi.useRealTimers();
+    });
+  });
+
+  describe('zone theme override', () => {
+    it('uses zone theme terminal colors when zoneThemeId is provided', () => {
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
+    });
+
+    it('falls back to global theme when zoneThemeId is unknown', () => {
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="nonexistent-theme" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+    });
+
+    it('live-updates terminal colors when zoneThemeId changes', () => {
+      const { rerender } = render(<AgentTerminal agentId="agent-1" />);
+      expect(term().options.theme).toEqual({ background: '#000', foreground: '#fff' });
+
+      rerender(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
+    });
+
+    it('does not use transparent background for zone-themed terminal even with gradient', () => {
+      useThemeStore.setState({
+        theme: {
+          terminal: { background: '#000', foreground: '#fff' },
+          gradients: { background: 'linear-gradient(#1e1e2e, #000)' },
+        } as any,
+        experimentalGradients: true,
+      });
+      render(<AgentTerminal agentId="agent-1" zoneThemeId="catppuccin-latte" />);
+      // Zone theme should use its own background, not transparent
+      expect(term().options.theme).toEqual({ background: '#eff1f5', foreground: '#4c4f69' });
     });
   });
 });

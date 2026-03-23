@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidWireTarget } from './useWiring';
+import { isValidWireTarget, hitTestViews } from './useWiring';
 import type { AgentCanvasView, PluginCanvasView, AnchorCanvasView, ZoneCanvasView } from './canvas-types';
 
 function makeAgentView(id: string, agentId: string | null): AgentCanvasView {
@@ -122,5 +122,53 @@ describe('isValidWireTarget', () => {
       const zoneSource = makeZoneView('z1');
       expect(isValidWireTarget(zoneSource, makeAnchorView('anc1'))).toBe(false);
     });
+  });
+});
+
+describe('hitTestViews', () => {
+  function makeZoneView(id: string): ZoneCanvasView {
+    return {
+      id,
+      type: 'zone',
+      position: { x: 0, y: 0 },
+      size: { width: 600, height: 400 },
+      title: `Zone ${id}`,
+      displayName: `Zone ${id}`,
+      zIndex: 0,
+      metadata: {},
+      themeId: 'catppuccin-mocha',
+      containedViewIds: [],
+    };
+  }
+
+  it('returns agent inside a zone instead of the zone', () => {
+    const zone = makeZoneView('z1');
+    const agent = makeAgentView('a1', 'agent-1');
+    // Agent at (0,0) 200x200 inside zone at (0,0) 600x400
+    const result = hitTestViews({ x: 100, y: 100 }, [zone, agent]);
+    expect(result?.id).toBe('a1');
+  });
+
+  it('returns zone only when no non-zone view overlaps', () => {
+    const zone = makeZoneView('z1');
+    const agent: AgentCanvasView = {
+      ...makeAgentView('a1', 'agent-1'),
+      position: { x: 800, y: 800 }, // outside zone
+    };
+    const result = hitTestViews({ x: 100, y: 100 }, [zone, agent]);
+    expect(result?.id).toBe('z1');
+  });
+
+  it('returns null when no view is hit', () => {
+    const zone = makeZoneView('z1');
+    const result = hitTestViews({ x: 1000, y: 1000 }, [zone]);
+    expect(result).toBeNull();
+  });
+
+  it('prefers agent over zone even when zone has higher zIndex', () => {
+    const zone: ZoneCanvasView = { ...makeZoneView('z1'), zIndex: 10 };
+    const agent: AgentCanvasView = { ...makeAgentView('a1', 'agent-1'), zIndex: 1 };
+    const result = hitTestViews({ x: 100, y: 100 }, [zone, agent]);
+    expect(result?.id).toBe('a1');
   });
 });

@@ -42,7 +42,7 @@ function targetKind(view: CanvasView): 'agent' | 'browser' | 'group-project' | '
   return 'browser';
 }
 
-function hitTestViews(canvasPos: Position, views: CanvasView[]): CanvasView | null {
+export function hitTestViews(canvasPos: Position, views: CanvasView[]): CanvasView | null {
   // Check in reverse z-order (highest z-index first), but prioritize non-zone
   // views over zones so users can wire to individual agents inside zones.
   const sorted = [...views].sort((a, b) => b.zIndex - a.zIndex);
