@@ -134,11 +134,32 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     window: createWindowAPI(ctx, manifest), // always available (v0.8+)
     mcp: {
-      // v0.9 MCP tool contribution stubs — implementation will follow in a separate PR
-      async contributeTools() { throw new Error('MCP tool contribution requires API >= 0.9 (not yet implemented)'); },
-      async removeTools() { throw new Error('MCP tool contribution requires API >= 0.9 (not yet implemented)'); },
-      async listContributedTools() { return []; },
-      onToolCall() { return { dispose() {} }; },
+      async contributeTools(tools) {
+        await window.clubhouse.pluginMcp.contributeTools(ctx.pluginId, tools);
+      },
+      async removeTools() {
+        await window.clubhouse.pluginMcp.removeTools(ctx.pluginId);
+      },
+      async listContributedTools() {
+        return window.clubhouse.pluginMcp.listTools(ctx.pluginId);
+      },
+      onToolCall(handler) {
+        const cleanup = window.clubhouse.pluginMcp.onToolCall(async (data) => {
+          if (data.pluginId !== ctx.pluginId) return;
+          try {
+            const result = await handler(data.toolName, data.args);
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, result);
+          } catch (err) {
+            window.clubhouse.pluginMcp.sendToolResult(data.callId, {
+              content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }],
+              isError: true,
+            });
+          }
+        });
+        const disposable = { dispose() { cleanup(); } };
+        ctx.subscriptions.push(disposable);
+        return disposable;
+      },
     },
     context: contextInfo, // always available
   };
