@@ -140,6 +140,12 @@ export async function initializePluginSystem(): Promise<void> {
             store.registerPlugin(result.manifest, source, pluginPath, 'registered');
             // Notify main process to load trusted manifest from disk
             window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
+            // Log deprecation warnings for plugins on old API versions
+            if (result.warnings.length > 0) {
+              rendererLog('core:plugins', 'warn', `Plugin "${result.manifest.name}" (${result.manifest.id}): ${result.warnings.join('; ')}`, {
+                meta: { pluginId: result.manifest.id, warnings: result.warnings },
+              });
+            }
           } else {
             rendererLog('core:plugins', 'warn', `Community plugin incompatible: ${pluginPath}`, {
               meta: { pluginPath, errors: result.errors },

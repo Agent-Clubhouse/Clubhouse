@@ -7,6 +7,7 @@ import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePlugi
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
+import { DEPRECATED_PLUGIN_API_VERSIONS } from '../../../shared/marketplace-types';
 import { PluginMarketplaceDialog } from './PluginMarketplaceDialog';
 
 const RISK_ORDER: Record<PermissionRiskLevel, number> = { safe: 0, elevated: 1, dangerous: 2 };
@@ -396,6 +397,9 @@ function PluginRow({
             <PermissionInfoPopup entry={entry} />
             {isIncompatible && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Incompatible</span>
+            )}
+            {!isIncompatible && DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api] && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400" title={`API ${entry.manifest.engine.api} will be removed in ${DEPRECATED_PLUGIN_API_VERSIONS[entry.manifest.engine.api]}`}>Deprecated API</span>
             )}
             {isErrored && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">Error</span>
