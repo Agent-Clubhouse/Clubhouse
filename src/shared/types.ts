@@ -48,7 +48,7 @@ export interface Project {
 }
 
 export type AgentStatus = 'running' | 'sleeping' | 'waking' | 'creating' | 'error';
-export type AgentKind = 'durable' | 'quick';
+export type AgentKind = 'durable' | 'quick' | 'companion';
 
 export interface Agent {
   id: string;
@@ -76,6 +76,10 @@ export interface Agent {
   resuming?: boolean;
   /** Plugin-supplied metadata for correlating agents to domain objects (e.g. boardId, cardId). */
   pluginMetadata?: Record<string, string>;
+  /** Plugin ID that owns this companion agent (v0.9+). */
+  pluginOwner?: string;
+  /** Path to companion workspace directory (v0.9+). */
+  companionWorkspace?: string;
 }
 
 export interface CompletedQuickAgent {
