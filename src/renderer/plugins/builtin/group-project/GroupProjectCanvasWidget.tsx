@@ -352,7 +352,6 @@ function ExpandedProjectView({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [topics, setTopics] = useState<TopicDigest[]>([]);
   const [messages, setMessages] = useState<BulletinMessage[]>([]);
-  const [showSettings, setShowSettings] = useState(false);
   const [showTapModal, setShowTapModal] = useState(false);
 
   useEffect(() => {
@@ -363,6 +362,41 @@ function ExpandedProjectView({
     () => projects.find((p) => p.id === groupProjectId),
     [projects, groupProjectId],
   );
+
+  // Inline editable description, instructions & shoulder tap toggle
+  const [editDesc, setEditDesc] = useState(project?.description || '');
+  const [editInstr, setEditInstr] = useState(project?.instructions || '');
+  const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project?.metadata?.shoulderTapEnabled));
+  const [saving, setSaving] = useState(false);
+
+  // Sync local state when project data loads or changes externally
+  useEffect(() => {
+    if (project) {
+      setEditDesc(project.description || '');
+      setEditInstr(project.instructions || '');
+      setShoulderTapEnabled(!!(project.metadata?.shoulderTapEnabled));
+    }
+  }, [project?.description, project?.instructions, project?.metadata?.shoulderTapEnabled]);
+
+  const hasUnsavedChanges = project
+    ? editDesc !== (project.description || '') ||
+      editInstr !== (project.instructions || '') ||
+      shoulderTapEnabled !== !!(project.metadata?.shoulderTapEnabled)
+    : false;
+
+  const handleSaveDescInstr = useCallback(async () => {
+    if (!hasUnsavedChanges || saving) return;
+    setSaving(true);
+    try {
+      await update(groupProjectId, {
+        description: editDesc,
+        instructions: editInstr,
+        metadata: { shoulderTapEnabled },
+      } as any);
+    } finally {
+      setSaving(false);
+    }
+  }, [hasUnsavedChanges, saving, update, groupProjectId, editDesc, editInstr, shoulderTapEnabled]);
 
   const connectedAgents = useMemo(
     () => dedupeAgents(bindings, groupProjectId),
@@ -435,15 +469,54 @@ function ExpandedProjectView({
       {/* Header */}
       <ExpandedHeader
         displayName={displayName}
-        description={project?.description || ''}
         groupProjectId={groupProjectId}
         update={update}
         onUpdateMetadata={onUpdateMetadata}
-        onShowSettings={() => setShowSettings(true)}
         onShowTapModal={() => setShowTapModal(true)}
         pollingEnabled={pollingEnabled}
         onTogglePolling={handleTogglePolling}
       />
+
+      {/* Inline Description & Instructions Editor */}
+      <div className="flex gap-3 px-3 py-2 border-t border-surface-1 bg-ctp-mantle/50">
+        <div className="flex-1 min-w-0">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Description</label>
+          <textarea
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            placeholder="Purpose of this group project..."
+            rows={5}
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <label className="block text-[10px] font-semibold uppercase tracking-wider text-ctp-subtext0 mb-1">Instructions</label>
+          <textarea
+            value={editInstr}
+            onChange={(e) => setEditInstr(e.target.value)}
+            placeholder="Rules agents must follow..."
+            rows={5}
+            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
+          />
+        </div>
+        <div className="flex flex-col justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <Toggle checked={shoulderTapEnabled} onChange={setShoulderTapEnabled} />
+            <span className="text-[10px] text-ctp-subtext0 whitespace-nowrap" title="Allow agents to inject messages into each other's terminals">Shoulder Tap</span>
+          </div>
+          <button
+            onClick={handleSaveDescInstr}
+            disabled={!hasUnsavedChanges || saving}
+            className={`px-3 py-1.5 text-xs font-medium rounded transition-all ${
+              hasUnsavedChanges
+                ? 'bg-ctp-blue text-white shadow-md hover:opacity-90'
+                : 'bg-surface-0 text-ctp-overlay0 cursor-default'
+            }`}
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
 
       {/* 3-Pane Content */}
       <div className="flex flex-1 min-h-0 border-t border-surface-1">
@@ -557,16 +630,6 @@ function ExpandedProjectView({
         </span>
       </div>
 
-      {/* Settings Modal */}
-      {showSettings && project && (
-        <SettingsModal
-          project={project}
-          groupProjectId={groupProjectId}
-          update={update}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
-
       {/* Shoulder Tap Modal */}
       {showTapModal && (
         <ShoulderTapModal
@@ -582,21 +645,17 @@ function ExpandedProjectView({
 
 function ExpandedHeader({
   displayName,
-  description,
   groupProjectId,
   update,
   onUpdateMetadata,
-  onShowSettings,
   onShowTapModal,
   pollingEnabled,
   onTogglePolling,
 }: {
   displayName: string;
-  description: string;
   groupProjectId: string;
   update: (id: string, fields: { name?: string }) => Promise<void>;
   onUpdateMetadata: (updates: Record<string, unknown>) => void;
-  onShowSettings: () => void;
   onShowTapModal: () => void;
   pollingEnabled: boolean;
   onTogglePolling: () => void;
@@ -647,11 +706,7 @@ function ExpandedHeader({
           {displayName}
         </button>
       )}
-      {description && (
-        <span className="text-xs text-ctp-subtext0 truncate flex-1" title={description}>
-          {description}
-        </span>
-      )}
+      <div className="flex-1" />
       {/* Megaphone broadcast */}
       <button
         onClick={onShowTapModal}
@@ -672,17 +727,6 @@ function ExpandedHeader({
       >
         <PollingIcon size={12} active={pollingEnabled} />
         <span className="text-[10px] font-medium">{pollingEnabled ? 'Poll: On' : 'Poll: Off'}</span>
-      </button>
-      {/* Settings gear */}
-      <button
-        onClick={onShowSettings}
-        className="p-1 text-ctp-overlay1 hover:text-ctp-text transition-colors flex-shrink-0"
-        title="Settings"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
       </button>
     </div>
   );
@@ -776,105 +820,6 @@ function ShoulderTapModal({
             className="px-3 py-1.5 text-xs font-medium bg-ctp-blue text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {sending ? 'Sending...' : 'Send'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Settings Modal ---------- */
-
-function SettingsModal({
-  project,
-  groupProjectId,
-  update,
-  onClose,
-}: {
-  project: { description: string; instructions: string; metadata?: Record<string, unknown> };
-  groupProjectId: string;
-  update: (id: string, fields: { description?: string; instructions?: string; metadata?: Record<string, unknown> }) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [desc, setDesc] = useState(project.description);
-  const [instr, setInstr] = useState(project.instructions);
-  const [shoulderTapEnabled, setShoulderTapEnabled] = useState(!!(project.metadata?.shoulderTapEnabled));
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await update(groupProjectId, {
-        description: desc,
-        instructions: instr,
-        metadata: { shoulderTapEnabled },
-      });
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  }, [desc, instr, shoulderTapEnabled, groupProjectId, update, onClose]);
-
-  return (
-    <div className="absolute inset-0 bg-ctp-crust/80 flex items-center justify-center z-50">
-      <div className="bg-ctp-base border border-surface-1 rounded-lg shadow-xl w-[90%] max-w-md p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ctp-text">Project Settings</h3>
-          <button onClick={onClose} className="text-ctp-overlay1 hover:text-ctp-text text-lg leading-none">&times;</button>
-        </div>
-
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Description</label>
-          <textarea
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            placeholder="Purpose of this group project..."
-            rows={3}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
-          />
-        </div>
-
-        <div>
-          <label className="block text-xs text-ctp-subtext0 mb-1">Instructions (for agents)</label>
-          <textarea
-            value={instr}
-            onChange={(e) => setInstr(e.target.value)}
-            placeholder="Rules agents must follow..."
-            rows={4}
-            className="w-full px-2 py-1.5 text-xs bg-surface-0 border border-surface-2 rounded text-ctp-text placeholder:text-ctp-overlay0 focus:outline-none focus:border-ctp-blue resize-none"
-          />
-        </div>
-
-        {/* Shoulder Tap toggle */}
-        <div className="border-t border-surface-1 pt-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs text-ctp-text font-medium">Shoulder Tap</div>
-              <div className="text-[10px] text-ctp-overlay0 mt-0.5">
-                Allow agents to directly inject messages into each other's terminals.
-                When off, agents can only communicate via the bulletin board.
-              </div>
-            </div>
-            <Toggle
-              checked={shoulderTapEnabled}
-              onChange={setShoulderTapEnabled}
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs text-ctp-subtext0 hover:text-ctp-text transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-3 py-1.5 text-xs font-medium bg-ctp-blue text-ctp-base rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
-          >
-            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
