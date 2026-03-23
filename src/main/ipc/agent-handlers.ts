@@ -425,4 +425,71 @@ export function registerAgentHandlers(): void {
       },
     ),
   );
+
+  // ── Companion agent handlers (v0.9+) ───────────────────────────────
+
+  ipcMain.handle(IPC.AGENT.SPAWN_COMPANION, withValidatedArgs(
+    [stringArg(), objectArg({ optional: true })],
+    async (_event, pluginId, options?: { model?: string; systemPrompt?: string }) => {
+      const companionWs = await import('../services/companion-workspace');
+      const wsPath = await companionWs.ensureCompanionWorkspace(pluginId);
+
+      // Check if a companion agent already exists for this plugin
+      const registry = agentSystem.agentRegistry || (await import('../services/agent-registry')).agentRegistry;
+      const existing = registry.list().find(
+        (entry: { id: string; projectPath: string; orchestrator: string }) => {
+          const agent = registry.get(entry.id);
+          return agent && (agent as Record<string, unknown>).pluginOwner === pluginId;
+        },
+      );
+
+      if (existing) {
+        // Wake existing companion if sleeping
+        appLog('core:companion', 'info', `Companion agent already exists for ${pluginId}: ${existing.id}`);
+        return existing.id;
+      }
+
+      // Create new companion agent
+      const agentId = `companion-${pluginId}-${Date.now()}`;
+      await agentSystem.spawnAgent({
+        agentId,
+        projectPath: wsPath,
+        cwd: wsPath,
+        kind: 'companion',
+        model: options?.model,
+        systemPrompt: options?.systemPrompt,
+        pluginOwner: pluginId,
+        companionWorkspace: wsPath,
+      });
+
+      return agentId;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_STATUS, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const registry = agentSystem.agentRegistry || (await import('../services/agent-registry')).agentRegistry;
+      const existing = registry.list().find(
+        (entry: { id: string }) => {
+          const agent = registry.get(entry.id);
+          return agent && (agent as Record<string, unknown>).pluginOwner === pluginId;
+        },
+      );
+
+      if (!existing) return 'none';
+
+      const agent = registry.get(existing.id);
+      if (!agent) return 'sleeping';
+      return 'active';
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_WORKSPACE, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const companionWs = await import('../services/companion-workspace');
+      return companionWs.getCompanionWorkspacePath(pluginId);
+    },
+  ));
 }

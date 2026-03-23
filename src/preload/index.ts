@@ -140,6 +140,15 @@ const api = {
     killAgent: (agentId: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath),
 
+    spawnCompanion: (pluginId: string, options?: { model?: string; systemPrompt?: string }) =>
+      ipcRenderer.invoke(IPC.AGENT.SPAWN_COMPANION, pluginId, options),
+
+    getCompanionStatus: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_STATUS, pluginId),
+
+    getCompanionWorkspace: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_WORKSPACE, pluginId),
+
     getModelOptions: (projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),
 
