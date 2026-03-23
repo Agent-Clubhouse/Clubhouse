@@ -92,15 +92,18 @@ describe('canvas main', () => {
     const path = require('path');
     const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
 
-    // Find the load effect block
-    const loadBlock = source.slice(
-      source.indexOf('loadCanvas(storage)'),
-      source.indexOf('loadCanvas(storage)') + 200,
+    // Find the async IIFE that wraps the load calls
+    const asyncBlock = source.slice(
+      source.indexOf('(async () =>'),
+      source.indexOf('(async () =>') + 300,
     );
-    // loadCanvas must be awaited
-    expect(loadBlock).toContain('await store.getState().loadCanvas(storage)');
-    // loadWires must also be awaited (after loadCanvas)
-    expect(loadBlock).toContain('await store.getState().loadWires(storage)');
+    // Both loadCanvas and loadWires must be awaited inside the IIFE
+    expect(asyncBlock).toContain('await store.getState().loadCanvas(storage)');
+    expect(asyncBlock).toContain('await store.getState().loadWires(storage)');
+    // loadCanvas must come before loadWires
+    const canvasIdx = asyncBlock.indexOf('loadCanvas');
+    const wiresIdx = asyncBlock.indexOf('loadWires');
+    expect(canvasIdx).toBeLessThan(wiresIdx);
   });
 
   it('selectView is forwarded via remoteForward (structural)', () => {

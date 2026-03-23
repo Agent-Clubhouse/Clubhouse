@@ -52,12 +52,12 @@ describe('canvas feature gating', () => {
     // (symmetric with cascade-disable on canvas off).
     const fs = require('fs');
     const path = require('path');
-    const source = fs.readFileSync(path.resolve(__dirname, '../../settings/PluginListSettings.tsx'), 'utf-8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../features/settings/PluginListSettings.tsx'), 'utf-8');
 
     // The handleToggle function should cascade-enable canvas sub-plugins
     const enableBlock = source.slice(
       source.indexOf("pluginId === 'canvas'", source.indexOf('enableApp(pluginId)')),
-      source.indexOf("pluginId === 'canvas'", source.indexOf('enableApp(pluginId)')) + 300,
+      source.indexOf("pluginId === 'canvas'", source.indexOf('enableApp(pluginId)')) + 600,
     );
     expect(enableBlock).toContain('CANVAS_SUB_PLUGIN_IDS');
     expect(enableBlock).toContain('enableApp(subId)');
