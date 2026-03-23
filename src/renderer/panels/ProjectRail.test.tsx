@@ -6,14 +6,44 @@ import { useBadgeStore } from '../stores/badgeStore';
 import { useBadgeSettingsStore } from '../stores/badgeSettingsStore';
 import { usePanelStore } from '../stores/panelStore';
 import { usePluginStore } from '../plugins/plugin-store';
+import { useAnnexClientStore } from '../stores/annexClientStore';
+import { useRemoteProjectStore } from '../stores/remoteProjectStore';
 import { ProjectRail } from './ProjectRail';
 import type { Project } from '../../shared/types';
+import type { SatelliteConnection } from '../stores/annexClientStore';
+
+// Mock window.clubhouse.annexClient for SatelliteHostRow retry
+const mockAnnexClient = {
+  retry: vi.fn(),
+};
+
+vi.stubGlobal('window', {
+  ...globalThis.window,
+  clubhouse: { annexClient: mockAnnexClient },
+});
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'proj-1',
     name: 'test-project',
     path: '/home/user/test-project',
+    ...overrides,
+  };
+}
+
+function makeSatellite(overrides: Partial<SatelliteConnection> = {}): SatelliteConnection {
+  return {
+    id: 'sat-1',
+    alias: 'Office Mac',
+    icon: '',
+    color: 'emerald',
+    fingerprint: 'ab:cd:ef',
+    state: 'connected',
+    host: '192.168.1.100',
+    mainPort: 9090,
+    pairingPort: 9091,
+    snapshot: null,
+    lastError: null,
     ...overrides,
   };
 }
@@ -27,6 +57,7 @@ function resetStores() {
   useUIStore.setState({
     explorerTab: 'agents',
     showHome: false,
+    activeHostId: null,
   });
   usePluginStore.setState({
     plugins: {},
@@ -43,6 +74,14 @@ function resetStores() {
   usePanelStore.setState({
     railPinned: false,
     railWidth: 200,
+  });
+  useAnnexClientStore.setState({
+    satellites: [],
+  });
+  useRemoteProjectStore.setState({
+    satelliteProjects: {},
+    pluginMatchState: {},
+    remoteProjectIcons: {},
   });
 }
 
@@ -374,5 +413,286 @@ describe('ProjectRail pinned behavior', () => {
     const cssVar = document.documentElement.style.getPropertyValue('--rail-width');
     // collapsedWidth is 70px (no scrollbar in test)
     expect(cssVar).toBe('70px');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Host switching tests
+// ---------------------------------------------------------------------------
+
+describe('ProjectRail host switching', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+    usePanelStore.setState({ railPinned: true }); // pinned so labels visible
+  });
+
+  it('renders satellites as single rows in local mode', () => {
+    useAnnexClientStore.setState({
+      satellites: [
+        makeSatellite({ id: 'sat-1', alias: 'Office Mac' }),
+        makeSatellite({ id: 'sat-2', alias: 'Home PC', state: 'disconnected' }),
+      ],
+    });
+
+    render(<ProjectRail />);
+    expect(screen.getByTestId('host-satellite-sat-1')).toBeInTheDocument();
+    expect(screen.getByTestId('host-satellite-sat-2')).toBeInTheDocument();
+    // No local host row in local mode
+    expect(screen.queryByTestId('host-local')).not.toBeInTheDocument();
+  });
+
+  it('satellite rows show status dots', () => {
+    useAnnexClientStore.setState({
+      satellites: [
+        makeSatellite({ id: 'sat-1', state: 'connected' }),
+        makeSatellite({ id: 'sat-2', state: 'disconnected' }),
+      ],
+    });
+
+    render(<ProjectRail />);
+    const onlineDot = screen.getByTestId('host-status-sat-1');
+    const offlineDot = screen.getByTestId('host-status-sat-2');
+    expect(onlineDot.className).toContain('bg-emerald-500');
+    expect(offlineDot.className).toContain('bg-surface-2');
+  });
+
+  it('clicking a satellite switches to satellite host mode', () => {
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1', alias: 'Office Mac' })],
+    });
+
+    render(<ProjectRail />);
+    fireEvent.click(screen.getByTestId('host-satellite-sat-1'));
+
+    expect(useUIStore.getState().activeHostId).toBe('sat-1');
+  });
+
+  it('satellite host mode shows local host row and hides local projects', () => {
+    useProjectStore.setState({
+      projects: [makeProject({ id: 'p1', name: 'Alpha' })],
+    });
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1', alias: 'Office Mac' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+
+    render(<ProjectRail />);
+    // Local host row should appear
+    expect(screen.getByTestId('host-local')).toBeInTheDocument();
+    // Local project should not be visible
+    expect(screen.queryByTestId('project-p1')).not.toBeInTheDocument();
+    // Add project button should not be visible
+    expect(screen.queryByTestId('nav-add-project')).not.toBeInTheDocument();
+  });
+
+  it('clicking local host row switches back to local mode', () => {
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1', alias: 'Office Mac' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+
+    render(<ProjectRail />);
+    fireEvent.click(screen.getByTestId('host-local'));
+
+    expect(useUIStore.getState().activeHostId).toBeNull();
+  });
+
+  it('satellite host mode shows active satellite highlighted', () => {
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1', alias: 'Office Mac', color: 'emerald' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+
+    render(<ProjectRail />);
+    // There should be two satellite host rows: the collapsed one in switcher
+    // does not exist (it's filtered out), only the active highlighted one
+    const rows = screen.getAllByTestId('host-satellite-sat-1');
+    expect(rows).toHaveLength(1);
+  });
+
+  it('satellite host mode shows other satellites as collapsed rows', () => {
+    useAnnexClientStore.setState({
+      satellites: [
+        makeSatellite({ id: 'sat-1', alias: 'Office Mac' }),
+        makeSatellite({ id: 'sat-2', alias: 'Home PC' }),
+      ],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+
+    render(<ProjectRail />);
+    // sat-2 should appear as a collapsed row
+    expect(screen.getByTestId('host-satellite-sat-2')).toBeInTheDocument();
+    // sat-1 is the active host (highlighted)
+    expect(screen.getByTestId('host-satellite-sat-1')).toBeInTheDocument();
+  });
+
+  it('satellite host mode renders remote projects', () => {
+    const sat = makeSatellite({ id: 'sat-1', alias: 'Office Mac', fingerprint: 'ab:cd:ef' });
+    useAnnexClientStore.setState({ satellites: [sat] });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    useRemoteProjectStore.setState({
+      satelliteProjects: {
+        'ab:cd:ef': [
+          {
+            id: 'remote||sat-1||rp-1',
+            name: 'RemoteProject',
+            path: '__remote__',
+            remote: true,
+            satelliteId: 'sat-1',
+            satelliteName: 'Office Mac',
+          } as any,
+        ],
+      },
+    });
+
+    render(<ProjectRail />);
+    expect(screen.getByTestId('project-remote||sat-1||rp-1')).toBeInTheDocument();
+  });
+
+  it('renders "No projects" when active satellite has no projects', () => {
+    const sat = makeSatellite({ id: 'sat-1', alias: 'Office Mac', fingerprint: 'ab:cd:ef' });
+    useAnnexClientStore.setState({ satellites: [sat] });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    useRemoteProjectStore.setState({
+      satelliteProjects: { 'ab:cd:ef': [] },
+    });
+
+    render(<ProjectRail />);
+    expect(screen.getByText('No projects')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Annex-gated plugin tests
+// ---------------------------------------------------------------------------
+
+describe('ProjectRail annex-gated plugins', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(_cb: () => void) {}
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    resetStores();
+    usePanelStore.setState({ railPinned: true });
+  });
+
+  it('renders app plugins normally in local mode', () => {
+    usePluginStore.setState({
+      plugins: {
+        'canvas': {
+          manifest: {
+            id: 'canvas',
+            name: 'Canvas',
+            version: '1.0.0',
+            scope: 'dual',
+            permissions: ['annex'],
+            contributes: {
+              railItem: { label: 'Canvas', position: 'top' },
+            },
+          },
+          status: 'activated',
+          source: 'builtin',
+        } as any,
+      },
+      appEnabled: ['canvas'],
+    });
+
+    render(<ProjectRail />);
+    const canvasBtn = screen.getByTitle('Canvas');
+    // Should not be dimmed
+    expect(canvasBtn.className).not.toContain('cursor-not-allowed');
+    expect(canvasBtn.className).not.toContain('opacity-40');
+  });
+
+  it('dims non-annex plugins when satellite is active host', () => {
+    usePluginStore.setState({
+      plugins: {
+        'my-plugin': {
+          manifest: {
+            id: 'my-plugin',
+            name: 'My Plugin',
+            version: '1.0.0',
+            scope: 'app',
+            contributes: {
+              railItem: { label: 'My Plugin', position: 'top' },
+            },
+          },
+          status: 'activated',
+          source: 'community',
+        } as any,
+      },
+      appEnabled: ['my-plugin'],
+    });
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        'sat-1': [
+          { id: 'my-plugin', name: 'My Plugin', status: 'matched', annexEnabled: false },
+        ],
+      },
+    });
+
+    render(<ProjectRail />);
+    const pluginBtn = screen.getByTitle('My Plugin — not annex enabled');
+    expect(pluginBtn.className).toContain('cursor-not-allowed');
+    expect(pluginBtn.className).toContain('opacity-40');
+  });
+
+  it('shows annex-enabled plugins normally when satellite is active host', () => {
+    usePluginStore.setState({
+      plugins: {
+        'canvas': {
+          manifest: {
+            id: 'canvas',
+            name: 'Canvas',
+            version: '1.0.0',
+            scope: 'dual',
+            permissions: ['annex'],
+            contributes: {
+              railItem: { label: 'Canvas', position: 'top' },
+            },
+          },
+          status: 'activated',
+          source: 'builtin',
+        } as any,
+      },
+      appEnabled: ['canvas'],
+    });
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        'sat-1': [
+          { id: 'canvas', name: 'Canvas', status: 'matched', annexEnabled: true },
+        ],
+      },
+    });
+
+    render(<ProjectRail />);
+    const canvasBtn = screen.getByTitle('Canvas');
+    expect(canvasBtn.className).not.toContain('cursor-not-allowed');
+    expect(canvasBtn.className).not.toContain('opacity-40');
+  });
+
+  it('help and settings are always visible regardless of host mode', () => {
+    useAnnexClientStore.setState({
+      satellites: [makeSatellite({ id: 'sat-1' })],
+    });
+    useUIStore.setState({ activeHostId: 'sat-1' });
+
+    render(<ProjectRail />);
+    expect(screen.getByTestId('nav-help')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-settings')).toBeInTheDocument();
   });
 });
