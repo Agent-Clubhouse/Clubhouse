@@ -610,7 +610,7 @@ describe('ProjectRail annex-gated plugins', () => {
     expect(canvasBtn.className).not.toContain('opacity-40');
   });
 
-  it('dims non-annex plugins when satellite is active host', () => {
+  it('shows non-annex plugins as clickable but dimmed when satellite is active host', () => {
     usePluginStore.setState({
       plugins: {
         'my-plugin': {
@@ -642,9 +642,11 @@ describe('ProjectRail annex-gated plugins', () => {
     });
 
     render(<ProjectRail />);
-    const pluginBtn = screen.getByTitle('My Plugin — not annex enabled');
-    expect(pluginBtn.className).toContain('cursor-not-allowed');
-    expect(pluginBtn.className).toContain('opacity-40');
+    const pluginBtn = screen.getByTitle('My Plugin');
+    // Button is clickable (navigable) but visually dimmed
+    expect(pluginBtn.className).toContain('cursor-pointer');
+    expect(pluginBtn.className).toContain('opacity-60');
+    expect(pluginBtn.className).not.toContain('cursor-not-allowed');
   });
 
   it('shows annex-enabled plugins normally when satellite is active host', () => {
