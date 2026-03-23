@@ -465,6 +465,31 @@ async function buildSnapshot(): Promise<object> {
     }
   }));
 
+  // Read app-level (global scope) canvas state
+  let appCanvasState: { canvases: unknown[]; activeCanvasId: string } | null = null;
+  try {
+    const [appCanvases, appActiveId] = await Promise.all([
+      readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'global',
+        key: 'canvas-instances',
+      }),
+      readPluginStorageKey({
+        pluginId: 'canvas',
+        scope: 'global',
+        key: 'canvas-active-id',
+      }),
+    ]);
+    if (appCanvases && Array.isArray(appCanvases) && appCanvases.length > 0) {
+      appCanvasState = {
+        canvases: appCanvases,
+        activeCanvasId: (appActiveId as string) || (appCanvases[0] as any)?.id || '',
+      };
+    }
+  } catch {
+    // App-level canvas data not available — skip
+  }
+
   return {
     protocolVersion: 2,
     projects,
@@ -479,6 +504,7 @@ async function buildSnapshot(): Promise<object> {
     projectIcons,
     agentIcons,
     canvasState,
+    appCanvasState,
     sessionPaused,
   };
 }
