@@ -368,6 +368,7 @@ export const IPC = {
     CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
     REMOVE_TOOLS: 'plugin-mcp:remove-tools',
     LIST_TOOLS: 'plugin-mcp:list-tools',
+    /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
     TOOL_CALL: 'plugin-mcp:tool-call',
     TOOL_RESULT: 'plugin-mcp:tool-result',
   },

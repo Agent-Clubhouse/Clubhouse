@@ -10,6 +10,7 @@
 import type { McpToolDefinition, McpToolResult } from './types';
 import { registerToolTemplate, sanitizeId } from './tool-registry';
 import { appLog } from '../log-service';
+import { IPC } from '../../../shared/ipc-channels';
 
 interface PluginToolEntry {
   pluginId: string;
@@ -123,7 +124,7 @@ async function invokePluginToolHandler(
     const { BrowserWindow } = require('electron');
     const windows = BrowserWindow.getAllWindows();
     if (windows.length > 0) {
-      windows[0].webContents.send('plugin-tool-call', {
+      windows[0].webContents.send(IPC.PLUGIN_MCP.TOOL_CALL, {
         callId,
         pluginId,
         toolName,
