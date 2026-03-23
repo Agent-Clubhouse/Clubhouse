@@ -233,6 +233,19 @@ function minimalV08Manifest(overrides?: Partial<PluginManifest>): Record<string,
   };
 }
 
+function minimalV09Manifest(overrides?: Partial<PluginManifest>): Record<string, unknown> {
+  return {
+    id: 'test-plugin',
+    name: 'Test Plugin',
+    version: '1.0.0',
+    engine: { api: 0.9 },
+    scope: 'app',
+    permissions: ['files'],
+    contributes: { help: {} },
+    ...overrides,
+  };
+}
+
 function minimalPackManifest(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     id: 'test-pack',
@@ -300,8 +313,8 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.5, 0.6, 0.7, 0.8]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8]);
+  it('contains exactly [0.5, 0.6, 0.7, 0.8, 0.9]', () => {
+    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {
@@ -316,7 +329,6 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
 
   it('does NOT contain v1.0 or higher (not yet released)', () => {
     expect(SUPPORTED_API_VERSIONS).not.toContain(1.0);
-    expect(SUPPORTED_API_VERSIONS).not.toContain(0.9);
   });
 });
 
@@ -655,8 +667,9 @@ describe('§2 Per-version manifest validation', () => {
           extras.allowedCommands = ['node'];
         }
 
-        // Canvas/annex permissions require API >= 0.8, use v0.8 manifest
-        const manifestFn = perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
+        // Version-gated permissions need the appropriate manifest version
+        const manifestFn = perm === 'companion' || perm === 'mcp.tools' ? minimalV09Manifest
+          : perm === 'canvas' || perm === 'annex' ? minimalV08Manifest : minimalV07Manifest;
         const result = validateManifest(manifestFn({
           permissions,
           ...extras,
@@ -1751,6 +1764,7 @@ describe('§7 ALL_PLUGIN_PERMISSIONS exhaustiveness', () => {
       'agents.free-agent-mode', 'agent-config.mcp', 'sounds', 'theme',
       'workspace', 'workspace.watch', 'workspace.cross-plugin', 'workspace.shared', 'workspace.cross-project',
       'canvas', 'annex',
+      'companion', 'mcp.tools',
     ];
     expect([...ALL_PLUGIN_PERMISSIONS].sort()).toEqual([...expected].sort());
   });
