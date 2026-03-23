@@ -57,10 +57,31 @@ export function AgentTerminal({ agentId, focused }: Props) {
 
   const finishResume = useCallback(() => {
     clearResuming(agentId);
-    // Re-fit the terminal to fix rendering glitches from the replay burst
+    // Re-fit the terminal to fix rendering glitches from the replay burst.
+    // Preserve scroll position — fit() triggers an xterm buffer reflow that
+    // can jump the viewport to the top.
     requestAnimationFrame(() => {
       if (fitAddonRef.current && terminalRef.current) {
+        const el = containerRef.current;
+        const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+        const savedScroll = viewport
+          ? { scrollTop: viewport.scrollTop, atBottom: viewport.scrollTop >= viewport.scrollHeight - viewport.clientHeight - 5 }
+          : null;
+
         fitAddonRef.current.fit();
+
+        if (viewport && savedScroll) {
+          const restore = () => {
+            if (savedScroll.atBottom) {
+              viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+            } else {
+              viewport.scrollTop = savedScroll.scrollTop;
+            }
+          };
+          restore();
+          requestAnimationFrame(restore);
+        }
+
         ptyResize(agentId, terminalRef.current.cols, terminalRef.current.rows);
       }
     });
@@ -189,6 +210,70 @@ export function AgentTerminal({ agentId, focused }: Props) {
   // Pass ptyResize so remote agents route resize through the Annex client, not local IPC
   useTerminalFit(agentId, terminalRef, fitAddonRef, containerRef, focused, ptyResize);
 
+  // ── Scroll guardian + scroll-to-bottom tracking ─────────────────
+  // Monitors the xterm viewport scroll position to:
+  // 1. Detect unexpected resets to 0 (e.g. from xterm's async reflow after
+  //    fit()) and restore the previous position.
+  // 2. Track whether the user is scrolled up so we can show a "scroll to
+  //    bottom" button.
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const lastKnownScrollRef = useRef<number>(0);
+  const scrollGuardRafRef = useRef<number>(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Wait for xterm to mount its viewport element.
+    const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (!viewport) return;
+
+    const BOTTOM_THRESHOLD = 5;
+
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const atBottom = scrollTop >= scrollHeight - clientHeight - BOTTOM_THRESHOLD;
+
+      // Detect unexpected reset: scrollTop jumped to 0 while we were
+      // previously scrolled down.  Restore the previous position.
+      if (
+        scrollTop === 0 &&
+        lastKnownScrollRef.current > BOTTOM_THRESHOLD &&
+        scrollHeight > clientHeight
+      ) {
+        // Schedule the restoration in the next frame so it doesn't fight
+        // with the current scroll event.
+        cancelAnimationFrame(scrollGuardRafRef.current);
+        scrollGuardRafRef.current = requestAnimationFrame(() => {
+          // Re-check: another handler may have already fixed this.
+          if (viewport.scrollTop === 0 && viewport.scrollHeight > viewport.clientHeight) {
+            viewport.scrollTop = Math.min(lastKnownScrollRef.current, viewport.scrollHeight - viewport.clientHeight);
+          }
+        });
+        return; // don't update lastKnownScroll with the bogus 0
+      }
+
+      lastKnownScrollRef.current = scrollTop;
+      setIsScrolledUp(!atBottom && scrollHeight > clientHeight);
+    };
+
+    viewport.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener('scroll', onScroll);
+      cancelAnimationFrame(scrollGuardRafRef.current);
+    };
+  }, [agentId]);
+
+  const handleScrollToBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (!viewport) return;
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+    lastKnownScrollRef.current = viewport.scrollTop;
+    setIsScrolledUp(false);
+  }, []);
+
   // Resume settle detection: watch PTY data and clear resuming after silence
   useEffect(() => {
     if (!resuming) return;
@@ -291,6 +376,23 @@ export function AgentTerminal({ agentId, focused }: Props) {
         style={{ padding: '8px' }}
         onMouseDown={handleMouseDown}
       />
+      {/* Scroll-to-bottom floating button */}
+      {isScrolledUp && !resuming && (
+        <button
+          data-testid="scroll-to-bottom"
+          onClick={handleScrollToBottom}
+          className="absolute top-2 right-2 z-10 flex items-center gap-1 px-2 py-1 rounded-md
+            bg-ctp-surface0/90 hover:bg-ctp-surface1 text-ctp-subtext0 hover:text-ctp-text
+            text-[10px] font-medium shadow-lg backdrop-blur-sm transition-all duration-150
+            border border-ctp-surface1/50"
+          title="Scroll to bottom"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          Bottom
+        </button>
+      )}
       {resuming && (
         <div
           data-testid="resume-overlay"
