@@ -12,6 +12,8 @@ import { getAllThemeIds, getTheme } from '../../../themes';
 interface ZoneCardProps {
   zone: ZoneCanvasView;
   mcpEnabled: boolean;
+  /** Offset to apply during drag. */
+  dragOffset?: { dx: number; dy: number };
   onRename: (name: string) => void;
   onThemeChange: (themeId: string) => void;
   onDelete: () => void;
@@ -19,7 +21,7 @@ interface ZoneCardProps {
   onStartWireDrag: () => void;
 }
 
-export function ZoneCard({ zone, mcpEnabled, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
+export function ZoneCard({ zone, mcpEnabled, dragOffset, onRename, onThemeChange, onDelete, onDragStart, onStartWireDrag }: ZoneCardProps) {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const currentTheme = getTheme(zone.themeId);
@@ -50,6 +52,12 @@ export function ZoneCard({ zone, mcpEnabled, onRename, onThemeChange, onDelete, 
         width: ZONE_CARD_WIDTH,
         height: ZONE_CARD_HEIGHT,
         zIndex: zone.zIndex + 1,
+        transition: 'box-shadow 0.15s ease',
+        ...(dragOffset && {
+          transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)`,
+          willChange: 'transform',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)',
+        }),
       }}
       data-testid={`zone-card-${zone.id}`}
     >

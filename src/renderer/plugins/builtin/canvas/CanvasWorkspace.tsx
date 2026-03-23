@@ -29,11 +29,6 @@ import { getRegisteredWidgetType } from '../../canvas-widget-registry';
 /** Pixels to pan per arrow key press (2 grid units). */
 const ARROW_PAN_STEP = 40;
 
-/** Number of ghost cards shown behind the primary in the drag stack. */
-const STACK_GHOST_COUNT = 3;
-/** Pixel offset between stacked ghost cards. */
-const STACK_OFFSET = 4;
-
 interface SelectionRect {
   startX: number;
   startY: number;
@@ -110,6 +105,10 @@ export function CanvasWorkspace({
   // ── Multi-drag state ─────────────────────────────────────────
   const [multiDrag, setMultiDrag] = useState<MultiDragState | null>(null);
   const [multiDragDelta, setMultiDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+  // ── Zone drag state ─────────────────────────────────────────
+  const [zoneDrag, setZoneDrag] = useState<{ zoneId: string; containedViewIds: string[] } | null>(null);
+  const [zoneDragDelta, setZoneDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
   // ── Single-view drag position tracking (for wire overlay) ─────
   const [singleDragPos, setSingleDragPos] = useState<Map<string, Position>>(new Map());
@@ -509,6 +508,9 @@ export function CanvasWorkspace({
     const zone = zones.find((z) => z.id === zoneId);
     if (!zone) return;
 
+    setZoneDrag({ zoneId, containedViewIds: [...zone.containedViewIds] });
+    setZoneDragDelta({ dx: 0, dy: 0 });
+
     const startMouseX = e.clientX;
     const startMouseY = e.clientY;
     const startPositions = new Map<string, Position>();
@@ -521,6 +523,7 @@ export function CanvasWorkspace({
     const handleMove = (ev: MouseEvent) => {
       const dx = (ev.clientX - startMouseX) / viewport.zoom;
       const dy = (ev.clientY - startMouseY) / viewport.zoom;
+      setZoneDragDelta({ dx, dy });
       // Update positions for wire overlay tracking
       const dragPositions = new Map<string, Position>();
       for (const [id, pos] of startPositions) {
@@ -538,6 +541,8 @@ export function CanvasWorkspace({
       }
       onMoveViews(positions);
       setSingleDragPos(new Map());
+      setZoneDrag(null);
+      setZoneDragDelta({ dx: 0, dy: 0 });
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseup', handleUp);
     };
@@ -659,7 +664,11 @@ export function CanvasWorkspace({
       >
         {/* Layer 1: Zone backgrounds (behind everything) */}
         {zones.map((zone) => (
-          <ZoneBackground key={`zone-bg-${zone.id}`} zone={zone} />
+          <ZoneBackground
+            key={`zone-bg-${zone.id}`}
+            zone={zone}
+            dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
+          />
         ))}
 
         {/* Layer 2: MCP wire overlay */}
@@ -685,7 +694,15 @@ export function CanvasWorkspace({
                 isZoomed={zoomedViewId === view.id}
                 isSelected={selectedViewId === view.id}
                 isMultiSelected={selectedViewIds.includes(view.id)}
-                multiDragHidden={multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId}
+                dragOffset={
+                  // Multi-drag: non-primary selected views move with the drag delta
+                  (multiDrag != null && selectedViewIds.includes(view.id) && view.id !== multiDrag.dragViewId)
+                    ? multiDragDelta
+                    // Zone drag: contained views move with the zone
+                    : (zoneDrag != null && zoneDrag.containedViewIds.includes(view.id))
+                      ? zoneDragDelta
+                      : undefined
+                }
                 attention={attentionMap.get(view.id) ?? null}
                 allViews={views}
                 mcpEnabled={mcpEnabled}
@@ -715,6 +732,7 @@ export function CanvasWorkspace({
             key={`zone-card-${zone.id}`}
             zone={zone}
             mcpEnabled={mcpEnabled}
+            dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
             onRename={(name) => onUpdateView(zone.id, { displayName: name, title: name })}
             onThemeChange={(themeId) => onUpdateZoneTheme(zone.id, themeId)}
             onDelete={() => handleZoneDelete(zone.id)}
@@ -741,40 +759,19 @@ export function CanvasWorkspace({
         {/* Wire drag overlay (high z-index, inside transform container) */}
         {wireDrag && <WireDragOverlay wireDrag={wireDrag} views={views} />}
 
-        {/* Multi-drag stack visual */}
+        {/* Multi-drag count badge (floating on the primary view) */}
         {multiDrag && selectedViewIds.length > 1 && (() => {
           const primaryView = views.find((v) => v.id === multiDrag.dragViewId);
           if (!primaryView) return null;
-          const stackX = primaryView.position.x + multiDragDelta.dx;
-          const stackY = primaryView.position.y + multiDragDelta.dy;
-          const ghostCount = Math.min(STACK_GHOST_COUNT, selectedViewIds.length - 1);
-
+          const badgeX = primaryView.position.x + multiDragDelta.dx + primaryView.size.width - 8;
+          const badgeY = primaryView.position.y + multiDragDelta.dy - 8;
           return (
             <div
-              className="absolute pointer-events-none"
-              style={{ left: stackX, top: stackY, zIndex: 99997 }}
-              data-testid="canvas-multi-drag-stack"
+              className="absolute pointer-events-none bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
+              style={{ left: badgeX, top: badgeY, zIndex: 99997 }}
+              data-testid="canvas-multi-drag-badge"
             >
-              {/* Ghost cards stacked behind */}
-              {Array.from({ length: ghostCount }, (_, i) => (
-                <div
-                  key={i}
-                  className="absolute bg-ctp-mantle border border-surface-2 rounded-lg opacity-40"
-                  style={{
-                    left: (i + 1) * STACK_OFFSET,
-                    top: (i + 1) * STACK_OFFSET,
-                    width: primaryView.size.width,
-                    height: primaryView.size.height,
-                  }}
-                />
-              ))}
-              {/* Count badge */}
-              <div
-                className="absolute -top-3 -right-3 bg-ctp-blue text-ctp-base text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center"
-                style={{ zIndex: 1 }}
-              >
-                {selectedViewIds.length}
-              </div>
+              {selectedViewIds.length}
             </div>
           );
         })()}

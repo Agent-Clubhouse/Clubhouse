@@ -58,8 +58,8 @@ interface CanvasViewComponentProps {
   isZoomed?: boolean;
   isSelected?: boolean;
   isMultiSelected?: boolean;
-  /** When true, hide this view because it's part of a multi-drag (non-primary). */
-  multiDragHidden?: boolean;
+  /** Offset to apply during external drag (multi-drag or zone drag). */
+  dragOffset?: { dx: number; dy: number };
   attention?: CanvasViewAttention | null;
   /** All views on the canvas (needed for LinkDropdown target list). */
   allViews?: CanvasView[];
@@ -87,7 +87,7 @@ export function CanvasViewComponent({
   isZoomed,
   isSelected,
   isMultiSelected,
-  multiDragHidden,
+  dragOffset,
   attention,
   allViews,
   mcpEnabled,
@@ -418,12 +418,15 @@ export function CanvasViewComponent({
 
   const { AgentAvatar } = api.widgets;
 
-  // ── Selection highlight ─────────────────────────────────────────
-  const selectionShadow = isSelected
-    ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-    : isMultiSelected
+  // ── Selection & drag highlight ──────────────────────────────────
+  const isDragActive = dragPos !== null || !!dragOffset;
+  const selectionShadow = isDragActive
+    ? '0 12px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+    : isSelected
       ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
-      : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
+      : isMultiSelected
+        ? '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 2px var(--ctp-blue, #89b4fa)'
+        : '0 4px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(88, 91, 112, 0.15)';
 
   // ── Compact anchor strip ──────────────────────────────────────
   if (view.type === 'anchor') {
@@ -440,9 +443,10 @@ export function CanvasViewComponent({
           width: visualWidth,
           height: ANCHOR_HEIGHT,
           zIndex: view.zIndex,
-          transition: dragPos ? undefined : 'width 150ms ease',
+          transition: isDragActive ? 'box-shadow 0.15s ease' : 'width 150ms ease, box-shadow 0.15s ease',
           ...(!attention && { boxShadow: selectionShadow }),
-          ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
+          ...(isDragActive && { willChange: 'transform' as const }),
+          ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
         }}
         onMouseDown={(e) => {
           e.stopPropagation();
@@ -572,8 +576,10 @@ export function CanvasViewComponent({
         width: currentSize.width,
         height: currentSize.height,
         zIndex: view.zIndex,
+        transition: 'box-shadow 0.15s ease',
         ...(!attention && { boxShadow: selectionShadow }),
-        ...(multiDragHidden && { opacity: 0, pointerEvents: 'none' as const }),
+        ...(isDragActive && { willChange: 'transform' as const }),
+        ...(dragOffset && { transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)` }),
       }}
       onMouseDown={(e) => {
         e.stopPropagation();

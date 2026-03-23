@@ -11,9 +11,11 @@ import { getTheme } from '../../../themes';
 
 interface ZoneBackgroundProps {
   zone: ZoneCanvasView;
+  /** Offset to apply during drag. */
+  dragOffset?: { dx: number; dy: number };
 }
 
-export function ZoneBackground({ zone }: ZoneBackgroundProps) {
+export function ZoneBackground({ zone, dragOffset }: ZoneBackgroundProps) {
   const theme = getTheme(zone.themeId);
   if (!theme) return null;
 
@@ -36,6 +38,10 @@ export function ZoneBackground({ zone }: ZoneBackgroundProps) {
         backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
         // Offset so dots align with the global canvas grid
         backgroundPosition: `${-zone.position.x % GRID_SIZE}px ${-zone.position.y % GRID_SIZE}px`,
+        ...(dragOffset && {
+          transform: `translate(${dragOffset.dx}px, ${dragOffset.dy}px)`,
+          willChange: 'transform',
+        }),
       }}
       data-testid={`zone-background-${zone.id}`}
     />
