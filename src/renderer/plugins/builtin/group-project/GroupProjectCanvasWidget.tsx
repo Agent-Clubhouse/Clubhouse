@@ -325,6 +325,7 @@ function ProjectCard({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
+          projectInstructions={project?.instructions || ''}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -635,6 +636,7 @@ function ExpandedProjectView({
       {showTapModal && (
         <ShoulderTapModal
           connectedAgents={connectedAgents}
+          projectInstructions={project?.instructions || ''}
           onClose={() => setShowTapModal(false)}
         />
       )}
@@ -737,31 +739,42 @@ function ExpandedHeader({
 
 function ShoulderTapModal({
   connectedAgents,
+  projectInstructions,
   onClose,
 }: {
   connectedAgents: McpBindingEntry[];
+  projectInstructions: string;
   onClose: () => void;
 }) {
   const [target, setTarget] = useState<string>('all');
   const [message, setMessage] = useState('');
+  const [includeInstructions, setIncludeInstructions] = useState(false);
   const [sending, setSending] = useState(false);
 
   const handleSend = useCallback(() => {
     const msg = message.trim();
-    if (!msg || sending) return;
+    if (!msg && !includeInstructions) return;
+    if (sending) return;
     setSending(true);
+
+    const parts: string[] = [];
+    if (includeInstructions && projectInstructions.trim()) {
+      parts.push(`Project Instructions:\n${projectInstructions.trim()}`);
+    }
+    if (msg) parts.push(msg);
+    const fullMessage = parts.join('\n\n');
 
     const targets = target === 'all'
       ? connectedAgents
       : connectedAgents.filter((a) => a.agentId === target);
 
     for (const agent of targets) {
-      injectPtyMessage(agent.agentId, msg);
+      injectPtyMessage(agent.agentId, fullMessage);
     }
 
     setSending(false);
     onClose();
-  }, [message, sending, target, connectedAgents, onClose]);
+  }, [message, includeInstructions, projectInstructions, sending, target, connectedAgents, onClose]);
 
   return (
     <div
@@ -796,6 +809,19 @@ function ShoulderTapModal({
           </select>
         </div>
 
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={includeInstructions}
+            onChange={(e) => setIncludeInstructions(e.target.checked)}
+            className="accent-ctp-blue"
+            disabled={!projectInstructions.trim()}
+          />
+          <span className={`text-xs ${projectInstructions.trim() ? 'text-ctp-subtext1' : 'text-ctp-overlay0'}`}>
+            Include project instructions
+          </span>
+        </label>
+
         <div>
           <label className="block text-xs text-ctp-subtext0 mb-1">Message</label>
           <textarea
@@ -817,7 +843,7 @@ function ShoulderTapModal({
           </button>
           <button
             onClick={handleSend}
-            disabled={!message.trim() || sending}
+            disabled={(!message.trim() && !includeInstructions) || sending}
             className="px-3 py-1.5 text-xs font-medium bg-ctp-blue text-white rounded hover:opacity-90 disabled:opacity-40 transition-opacity"
           >
             {sending ? 'Sending...' : 'Send'}
