@@ -188,22 +188,17 @@ export async function initializePluginSystem(): Promise<void> {
       // No saved config — auto-enabled builtins remain
     }
 
-    // Migration: canvas, group-project, and agent-queue were previously
-    // auto-enabled in-memory via the experimental 'canvas' flag but never
-    // persisted to the app-enabled storage.  v0.38 removed the flag path,
-    // so existing users who had canvas enabled lost their enablement.
-    // Detect the stale flag and migrate once.
+    // Migration: canvas was previously auto-enabled in-memory via the
+    // experimental 'canvas' flag but never persisted to the app-enabled
+    // storage.  v0.38 removed the flag path, so existing users who had
+    // canvas enabled lost their enablement.  Only migrate canvas itself —
+    // sub-plugins (group-project, agent-queue) depend on MCP which is
+    // still experimental; users can enable them manually.
     if (experimentalFlags && experimentalFlags.canvas) {
-      const canvasPluginIds = ['canvas', 'group-project', 'agent-queue'];
       const migrationState = usePluginStore.getState();
-      const missing = canvasPluginIds.filter((id) => !migrationState.appEnabled.includes(id));
-      if (missing.length > 0) {
-        for (const id of missing) {
-          migrationState.enableApp(id);
-        }
-        rendererLog('core:plugins', 'info', 'Migrated canvas plugins from experimental flag to app-enabled', {
-          meta: { migrated: missing },
-        });
+      if (!migrationState.appEnabled.includes('canvas')) {
+        migrationState.enableApp('canvas');
+        rendererLog('core:plugins', 'info', 'Migrated canvas from experimental flag to app-enabled');
       }
       // Persist the migrated state and clear the stale flag
       try {

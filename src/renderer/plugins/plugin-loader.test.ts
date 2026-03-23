@@ -600,7 +600,7 @@ describe('plugin-loader', () => {
       mockApp.saveExperimentalSettings.mockResolvedValue(undefined);
     });
 
-    it('migrates canvas plugins to appEnabled when experimentalFlags.canvas is true', async () => {
+    it('migrates only canvas to appEnabled when experimentalFlags.canvas is true', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
 
@@ -608,8 +608,10 @@ describe('plugin-loader', () => {
 
       const { appEnabled } = usePluginStore.getState();
       expect(appEnabled).toContain('canvas');
-      expect(appEnabled).toContain('group-project');
-      expect(appEnabled).toContain('agent-queue');
+      // Sub-plugins (group-project, agent-queue) depend on MCP (still
+      // experimental) — they must be enabled manually by the user.
+      expect(appEnabled).not.toContain('group-project');
+      expect(appEnabled).not.toContain('agent-queue');
     });
 
     it('persists migrated appEnabled list to storage', async () => {
@@ -623,7 +625,7 @@ describe('plugin-loader', () => {
           pluginId: '_system',
           scope: 'global',
           key: 'app-enabled',
-          value: expect.arrayContaining(['canvas', 'group-project', 'agent-queue']),
+          value: expect.arrayContaining(['canvas']),
         }),
       );
     });
@@ -645,15 +647,12 @@ describe('plugin-loader', () => {
 
       const { appEnabled } = usePluginStore.getState();
       expect(appEnabled).not.toContain('canvas');
-      expect(appEnabled).not.toContain('group-project');
-      expect(appEnabled).not.toContain('agent-queue');
       expect(mockApp.saveExperimentalSettings).not.toHaveBeenCalled();
     });
 
-    it('does not double-add plugins already in appEnabled', async () => {
+    it('does not double-add canvas if already in appEnabled', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
-      // Simulate canvas already persisted in app-enabled
       mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
         if (req.key === 'app-enabled') return ['hub', 'canvas'];
         return undefined;
@@ -664,19 +663,18 @@ describe('plugin-loader', () => {
       const { appEnabled } = usePluginStore.getState();
       const canvasCount = appEnabled.filter((id: string) => id === 'canvas').length;
       expect(canvasCount).toBe(1);
-      expect(appEnabled).toContain('group-project');
-      expect(appEnabled).toContain('agent-queue');
     });
 
-    it('activates migrated dual-scoped plugins at app level', async () => {
+    it('activates migrated canvas at app level', async () => {
       setupCanvasBuiltins();
       mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
 
       await initializePluginSystem();
 
       expect(canvasModule.activate).toHaveBeenCalledTimes(1);
-      expect(gpModule.activate).toHaveBeenCalledTimes(1);
-      expect(aqModule.activate).toHaveBeenCalledTimes(1);
+      // Sub-plugins should NOT be activated by migration
+      expect(gpModule.activate).not.toHaveBeenCalled();
+      expect(aqModule.activate).not.toHaveBeenCalled();
     });
   });
 
