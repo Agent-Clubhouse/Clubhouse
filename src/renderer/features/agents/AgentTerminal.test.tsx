@@ -52,6 +52,10 @@ vi.mock('../terminal/clipboard', () => ({
   attachClipboardHandlers: (...args: any[]) => (globalThis as any).__testAttachClipboard(...args),
 }));
 
+vi.mock('../../plugins/renderer-logger', () => ({
+  rendererLog: vi.fn(),
+}));
+
 g.__annexMockState = {
   sendPtyInput: vi.fn(),
   sendClipboardImage: vi.fn(),
@@ -542,6 +546,43 @@ describe('AgentTerminal', () => {
       // The scroll guardian should have restored to the previous position
       // (runs in rAF which is synchronous in tests)
       expect(viewport.scrollTop).toBe(500);
+    });
+
+    it('scroll guardian detects near-zero reset (not just exact 0)', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(500, 2000, 200);
+
+      // Establish a known scroll position
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Simulate near-zero reset (e.g. from rounding during xterm reflow)
+      viewport.scrollTop = 5;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Guard should still restore — NEAR_TOP_PX threshold is 10
+      expect(viewport.scrollTop).toBe(500);
+    });
+
+    it('scroll guardian does not fire when lastKnown is below jump threshold', () => {
+      render(<AgentTerminal agentId="agent-1" />);
+      const viewport = configureViewport(20, 2000, 200);
+
+      // Establish a low scroll position (below JUMP_MIN_PX of 30)
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      // Reset to 0 — should NOT trigger restore because 20 < JUMP_MIN_PX
+      viewport.scrollTop = 0;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+
+      expect(viewport.scrollTop).toBe(0);
     });
 
     it('does not show scroll-to-bottom button during resume', () => {

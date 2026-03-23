@@ -2,6 +2,10 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useTerminalFit } from './useTerminalFit';
 
+vi.mock('../../plugins/renderer-logger', () => ({
+  rendererLog: vi.fn(),
+}));
+
 // Track listener registrations so tests can fire events manually
 let visibilityListeners: Array<() => void> = [];
 let focusListeners: Array<() => void> = [];
