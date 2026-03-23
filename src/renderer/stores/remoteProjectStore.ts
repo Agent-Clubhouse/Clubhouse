@@ -96,6 +96,9 @@ interface RemoteProjectStoreState {
   /** Remote canvas state keyed by namespaced project ID */
   remoteCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
 
+  /** App-level (global) canvas state keyed by satelliteId */
+  remoteAppCanvasState: Record<string, { canvases: unknown[]; activeCanvasId: string }>;
+
   /** Apply a satellite snapshot to the store. */
   applySatelliteSnapshot: (satelliteId: string, satelliteName: string, snapshot: SatelliteSnapshot) => void;
 
@@ -190,6 +193,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
   remoteProjectIcons: {},
   remoteAgentIcons: {},
   remoteCanvasState: {},
+  remoteAppCanvasState: {},
 
   applySatelliteSnapshot: (satelliteId, satelliteName, snapshot) => {
     // Map projects to RemoteProject
@@ -312,6 +316,9 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
           ...state.remoteCanvasState,
           ...newCanvasState,
         },
+        remoteAppCanvasState: snapshot.appCanvasState
+          ? { ...state.remoteAppCanvasState, [satelliteId]: snapshot.appCanvasState }
+          : state.remoteAppCanvasState,
       };
     });
   },
@@ -347,6 +354,9 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         if (key.startsWith(satellitePrefix(satelliteId))) delete newCanvasState[key];
       }
 
+      const newAppCanvasState = { ...state.remoteAppCanvasState };
+      delete newAppCanvasState[satelliteId];
+
       return {
         satelliteProjects: newProjects,
         remoteAgents: newAgents,
@@ -355,6 +365,7 @@ export const useRemoteProjectStore = create<RemoteProjectStoreState>((set, get) 
         remoteProjectIcons: newProjectIcons,
         remoteAgentIcons: newAgentIcons,
         remoteCanvasState: newCanvasState,
+        remoteAppCanvasState: newAppCanvasState,
       };
     });
   },

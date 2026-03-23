@@ -360,13 +360,14 @@ describe('App.tsx – global dialog presence in all return paths', () => {
 describe('App.tsx – selector discipline', () => {
   const selectors = findStoreSelectors(appFn.body!);
 
-  it('should have at most 13 store selector calls (routing + lock state + resume)', () => {
+  it('should have at most 15 store selector calls (routing + lock state + resume + annex)', () => {
     // After extracting TitleBar, RailSection, and ProjectPanelLayout:
     // projects, activeProjectId, explorerTab = 3 selectors
+    // Annex V2 routing: activeHostId, pluginMatchState = 2 selectors
     // Annex V2 lock state: locked, paused, alias, icon, color, fingerprint, togglePause, unlock = 8 selectors
     // Session resume: resumingAgents, agents = 2 selectors (agents may already be counted)
     // Individual selectors avoid Zustand reference-inequality re-render loops
-    expect(selectors.length).toBeLessThanOrEqual(13);
+    expect(selectors.length).toBeLessThanOrEqual(15);
   });
 
   it('should NOT subscribe to agentStore for event handler functions', () => {
