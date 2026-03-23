@@ -133,6 +133,13 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
       ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
     ),
     window: createWindowAPI(ctx, manifest), // always available (v0.8+)
+    mcp: {
+      // v0.9 MCP tool contribution stubs — implementation will follow in a separate PR
+      async contributeTools() { throw new Error('MCP tool contribution requires API >= 0.9 (not yet implemented)'); },
+      async removeTools() { throw new Error('MCP tool contribution requires API >= 0.9 (not yet implemented)'); },
+      async listContributedTools() { return []; },
+      onToolCall() { return { dispose() {} }; },
+    },
     context: contextInfo, // always available
   };
 

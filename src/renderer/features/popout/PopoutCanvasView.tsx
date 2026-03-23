@@ -89,6 +89,9 @@ function createPopoutApi(projectId?: string): PluginAPI {
     listSessions: () => Promise.resolve([]),
     readSessionTranscript: () => Promise.resolve(null),
     getSessionSummary: () => Promise.resolve(null),
+    spawnCompanion: () => Promise.reject(new Error('Not available in popout')),
+    getCompanionStatus: () => Promise.resolve('none' as const),
+    getCompanionWorkspace: () => Promise.reject(new Error('Not available in popout')),
   };
 
   const projects: ProjectsAPI = {

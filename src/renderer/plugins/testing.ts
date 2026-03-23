@@ -99,6 +99,9 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       listSessions: async () => [],
       readSessionTranscript: async () => null,
       getSessionSummary: async () => null,
+      spawnCompanion: asyncNoop as unknown as PluginAPI['agents']['spawnCompanion'],
+      getCompanionStatus: async () => 'none' as const,
+      getCompanionWorkspace: asyncNoop as unknown as PluginAPI['agents']['getCompanionWorkspace'],
     },
     hub: {},
     navigation: {
@@ -213,6 +216,12 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
       setTitle: noop,
       resetTitle: noop,
       getTitle: () => '',
+    },
+    mcp: {
+      contributeTools: asyncNoop as unknown as PluginAPI['mcp']['contributeTools'],
+      removeTools: asyncNoop as unknown as PluginAPI['mcp']['removeTools'],
+      listContributedTools: async () => [],
+      onToolCall: () => ({ dispose: noop }),
     },
     context: {
       mode: 'project',

@@ -341,5 +341,16 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
         return null;
       }
     },
+
+    // v0.9 companion agent stubs — implementation will follow in a separate PR
+    async spawnCompanion() {
+      throw new Error('Companion agents require API >= 0.9 (not yet implemented)');
+    },
+    async getCompanionStatus() {
+      return 'none' as const;
+    },
+    async getCompanionWorkspace() {
+      throw new Error('Companion agents require API >= 0.9 (not yet implemented)');
+    },
   };
 }
