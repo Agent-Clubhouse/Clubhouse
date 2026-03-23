@@ -6,7 +6,9 @@ import type { ProjectInfo } from '../../../../shared/plugin-types';
 import { AgentCanvasView } from './AgentCanvasView';
 import type { PluginAPI, CanvasWidgetMetadata } from '../../../../shared/plugin-types';
 import type { CanvasViewAttention } from './canvas-types';
-import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange } from '../../canvas-widget-registry';
+import { getRegisteredWidgetType, generatePluginWidgetDisplayName, isWidgetPending, onRegistryChange, parsePluginWidgetType } from '../../canvas-widget-registry';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../../../stores/remoteProjectStore';
+import { AnnexUnsupportedPlaceholder } from '../../../features/annex/AnnexUnsupportedPlaceholder';
 import { LinkDropdown } from './LinkDropdown';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -117,6 +119,12 @@ export function CanvasViewComponent({
     const disposable = onRegistryChange(() => setRegistryTick((n) => n + 1));
     return () => disposable.dispose();
   }, [view.type]);
+
+  // Security gate: track annex enablement for plugin widgets on remote projects
+  const canvasProjectId = api.context.projectId;
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  const isCanvasRemote = canvasProjectId ? isRemoteProjectId(canvasProjectId) : false;
+
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
   const resizeStartRef = useRef({ mouseX: 0, mouseY: 0, startW: 0, startH: 0, startX: 0, startY: 0, direction: 'se' as ResizeDirection });
 
@@ -386,6 +394,27 @@ export function CanvasViewComponent({
         return <AgentCanvasView view={view} api={api} onUpdate={onUpdate} />;
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
+
+        // Security gate: block non-annex-enabled plugin widgets on remote projects
+        if (isCanvasRemote && canvasProjectId) {
+          const parsed = parseNamespacedId(canvasProjectId);
+          if (parsed) {
+            const widgetParts = parsePluginWidgetType(pluginView.pluginWidgetType);
+            if (widgetParts) {
+              const matches = pluginMatchState[parsed.satelliteId] || [];
+              const match = matches.find((p) => p.id === widgetParts.pluginId);
+              if (!match?.annexEnabled) {
+                return (
+                  <AnnexUnsupportedPlaceholder
+                    widgetType={match?.name || widgetParts.pluginId}
+                    reason={`${match?.name || widgetParts.pluginId} has not declared Annex compatibility.`}
+                  />
+                );
+              }
+            }
+          }
+        }
+
         const registered = getRegisteredWidgetType(pluginView.pluginWidgetType);
         if (!registered) {
           return (
