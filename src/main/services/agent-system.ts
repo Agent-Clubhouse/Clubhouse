@@ -28,7 +28,7 @@ export interface SpawnAgentParams {
   agentId: string;
   projectPath: string;
   cwd: string;
-  kind: 'durable' | 'quick';
+  kind: 'durable' | 'quick' | 'companion';
   model?: string;
   mission?: string;
   systemPrompt?: string;

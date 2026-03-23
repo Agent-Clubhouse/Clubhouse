@@ -7,6 +7,7 @@ import { StructuredSessionOpts } from '../orchestrators/types';
 import { isSessionCapable, isStructuredCapable } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
+import { agentRegistry } from '../services/agent-registry';
 import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
@@ -435,7 +436,7 @@ export function registerAgentHandlers(): void {
       const wsPath = await companionWs.ensureCompanionWorkspace(pluginId);
 
       // Check if a companion agent already exists for this plugin
-      const registry = agentSystem.agentRegistry || (await import('../services/agent-registry')).agentRegistry;
+      const registry = agentRegistry;
       const existing = registry.list().find(
         (entry: { id: string; projectPath: string; orchestrator: string }) => {
           const agent = registry.get(entry.id);
@@ -469,7 +470,7 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.GET_COMPANION_STATUS, withValidatedArgs(
     [stringArg()],
     async (_event, pluginId) => {
-      const registry = agentSystem.agentRegistry || (await import('../services/agent-registry')).agentRegistry;
+      const registry = agentRegistry;
       const existing = registry.list().find(
         (entry: { id: string }) => {
           const agent = registry.get(entry.id);

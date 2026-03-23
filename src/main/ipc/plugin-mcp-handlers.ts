@@ -13,12 +13,11 @@ import {
 import { withValidatedArgs, stringArg, arrayArg, objectArg } from './validation';
 
 export function registerPluginMcpHandlers(): void {
-  ipcMain.handle(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, withValidatedArgs(
-    [stringArg(), arrayArg(objectArg())],
-    async (_event, pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) => {
+  ipcMain.handle(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS,
+    async (_event: Electron.IpcMainInvokeEvent, pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) => {
       registerPluginTools(pluginId, tools);
     },
-  ));
+  );
 
   ipcMain.handle(IPC.PLUGIN_MCP.REMOVE_TOOLS, withValidatedArgs(
     [stringArg()],

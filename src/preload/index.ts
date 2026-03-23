@@ -126,7 +126,7 @@ const api = {
       agentId: string;
       projectPath: string;
       cwd: string;
-      kind: 'durable' | 'quick';
+      kind: 'durable' | 'quick' | 'companion';
       model?: string;
       mission?: string;
       systemPrompt?: string;
@@ -135,6 +135,8 @@ const api = {
       freeAgentMode?: boolean;
       resume?: boolean;
       sessionId?: string;
+      pluginOwner?: string;
+      companionWorkspace?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string) =>

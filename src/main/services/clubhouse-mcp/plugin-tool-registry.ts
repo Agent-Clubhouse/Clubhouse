@@ -51,7 +51,11 @@ export function registerPluginTools(
       name: tool.name,
       definition: {
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: {
+          type: 'object' as const,
+          properties: (tool.inputSchema.properties as Record<string, unknown>) ?? {},
+          required: (tool.inputSchema.required as string[]) ?? [],
+        },
       },
     };
     entries.push(entry);
