@@ -207,3 +207,67 @@ describe('GroupProjectCanvasWidget — orchestrator-aware polling', () => {
     expect(source).toMatch(/pollingStopMsg\(name,\s*orchestrator\)/);
   });
 });
+
+// ── Inline description & instructions editor ────────────────────────
+
+describe('GroupProjectCanvasWidget — inline description/instructions editor', () => {
+  it('does not have a SettingsModal component', () => {
+    expect(source).not.toContain('function SettingsModal');
+    expect(source).not.toContain('showSettings');
+    expect(source).not.toContain('onShowSettings');
+  });
+
+  it('does not have a settings gear button', () => {
+    expect(source).not.toContain('Settings gear');
+    expect(source).not.toContain("title=\"Settings\"");
+  });
+
+  it('has inline textarea for description with label', () => {
+    expect(source).toContain('>Description</label>');
+    expect(source).toMatch(/editDesc/);
+    expect(source).toContain('Purpose of this group project...');
+  });
+
+  it('has inline textarea for instructions with label', () => {
+    expect(source).toContain('>Instructions</label>');
+    expect(source).toMatch(/editInstr/);
+    expect(source).toContain('Rules agents must follow...');
+  });
+
+  it('uses 5-row textareas for both fields', () => {
+    // Both textareas should have rows={5} for ~5 lines of content
+    expect(source).toMatch(/rows=\{5\}[\s\S]*?rows=\{5\}/);
+  });
+
+  it('tracks unsaved changes to enable/disable save button', () => {
+    expect(source).toContain('hasUnsavedChanges');
+    // Save button disabled when no changes
+    expect(source).toContain('disabled={!hasUnsavedChanges || saving}');
+  });
+
+  it('lights up the save button with blue styling when there are unsaved changes', () => {
+    // Active state: blue bg with shadow
+    expect(source).toContain("'bg-ctp-blue text-white shadow-md hover:opacity-90'");
+    // Inactive state: muted
+    expect(source).toContain("'bg-surface-0 text-ctp-overlay0 cursor-default'");
+  });
+
+  it('syncs local state when project data changes externally', () => {
+    // Should have an effect that syncs editDesc/editInstr when project changes
+    expect(source).toContain('project?.description, project?.instructions');
+    expect(source).toContain("setEditDesc(project.description || '')");
+    expect(source).toContain("setEditInstr(project.instructions || '')");
+  });
+
+  it('includes shoulder tap toggle in the inline editor', () => {
+    expect(source).toContain('shoulderTapEnabled');
+    expect(source).toContain('Shoulder Tap');
+    expect(source).toMatch(/<Toggle\s+checked=\{shoulderTapEnabled\}/);
+  });
+
+  it('saves description, instructions, and shoulderTap together', () => {
+    expect(source).toContain('description: editDesc');
+    expect(source).toContain('instructions: editInstr');
+    expect(source).toContain('metadata: { shoulderTapEnabled }');
+  });
+});
