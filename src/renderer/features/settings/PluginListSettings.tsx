@@ -828,16 +828,30 @@ export function PluginListSettings() {
         }
         enableApp(pluginId);
         await activatePlugin(pluginId);
+        // When enabling canvas, also cascade-enable its sub-plugins
+        // (symmetric with cascade-disable on canvas off)
+        if (pluginId === 'canvas') {
+          for (const subId of CANVAS_SUB_PLUGIN_IDS) {
+            if (!isEnabled(subId)) {
+              const subEntry = usePluginStore.getState().plugins[subId];
+              if (subEntry?.status === 'disabled') {
+                usePluginStore.getState().setPluginStatus(subId, 'registered');
+              }
+              enableApp(subId);
+              await activatePlugin(subId);
+            }
+          }
+        }
       } else if (projectId) {
         enableForProject(projectId, pluginId);
         const projectPath = project?.path;
         await activatePlugin(pluginId, projectId, projectPath);
       }
-      // Persist
+      // Persist — read current state to capture any cascade-enabled sub-plugins
       try {
         const key = isAppContext ? 'app-enabled' : `project-enabled-${projectId}`;
         const currentList = isAppContext
-          ? [...appEnabled, pluginId]
+          ? usePluginStore.getState().appEnabled
           : [...(projectEnabled[projectId!] || []), pluginId];
         await window.clubhouse.plugin.storageWrite({
           pluginId: '_system',
