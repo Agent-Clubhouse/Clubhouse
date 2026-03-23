@@ -97,6 +97,8 @@ vi.stubGlobal('clubhouse', {
     cancelStructured: asyncNoop,
     sendStructuredMessage: asyncNoop,
     respondPermission: asyncNoop,
+    getBackupInfo: async () => null,
+    restoreFromBackup: async () => ({ restoredCount: 0, agents: [] }),
     onStructuredEvent: () => noop,
     listSessions: async () => [],
     updateSessionName: asyncNoop,
