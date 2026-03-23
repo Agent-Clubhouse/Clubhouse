@@ -1,9 +1,11 @@
 import type { PluginManifest } from './plugin-types';
 import { ALL_PLUGIN_PERMISSIONS, PERMISSION_HIERARCHY } from './plugin-types';
-import { SUPPORTED_PLUGIN_API_VERSIONS } from './marketplace-types';
+import { SUPPORTED_PLUGIN_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './marketplace-types';
 
 /** @deprecated Use SUPPORTED_PLUGIN_API_VERSIONS from shared/marketplace-types instead. */
 export const SUPPORTED_API_VERSIONS = SUPPORTED_PLUGIN_API_VERSIONS;
+
+export { DEPRECATED_PLUGIN_API_VERSIONS };
 
 const PLUGIN_ID_REGEX = /^[a-z0-9-]+$/;
 
@@ -11,13 +13,15 @@ interface ValidationResult {
   valid: boolean;
   manifest?: PluginManifest;
   errors: string[];
+  warnings: string[];
 }
 
 export function validateManifest(raw: unknown): ValidationResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   if (!raw || typeof raw !== 'object') {
-    return { valid: false, errors: ['Manifest must be a JSON object'] };
+    return { valid: false, errors: ['Manifest must be a JSON object'], warnings: [] };
   }
 
   const m = raw as Record<string, unknown>;
@@ -46,6 +50,16 @@ export function validateManifest(raw: unknown): ValidationResult {
       errors.push('engine.api must be a number');
     } else if (!SUPPORTED_API_VERSIONS.includes(engine.api)) {
       errors.push(`Plugin requires API version ${engine.api}, which is not supported by this version of Clubhouse. Supported API versions: ${SUPPORTED_API_VERSIONS.join(', ')}`);
+    }
+  }
+
+  // Deprecation warning for old API versions
+  {
+    const engObj = m.engine as Record<string, unknown> | undefined;
+    const ver = engObj && typeof engObj.api === 'number' ? engObj.api : 0;
+    const removalTarget = DEPRECATED_PLUGIN_API_VERSIONS[ver];
+    if (removalTarget) {
+      warnings.push(`API version ${ver} is deprecated and will be removed in ${removalTarget}. Please migrate to a newer API version.`);
     }
   }
 
@@ -457,12 +471,13 @@ export function validateManifest(raw: unknown): ValidationResult {
   }
 
   if (errors.length > 0) {
-    return { valid: false, errors };
+    return { valid: false, errors, warnings };
   }
 
   return {
     valid: true,
     manifest: raw as PluginManifest,
     errors: [],
+    warnings,
   };
 }

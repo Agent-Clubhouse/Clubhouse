@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest, SUPPORTED_API_VERSIONS } from './manifest-validator';
+import { validateManifest, SUPPORTED_API_VERSIONS, DEPRECATED_PLUGIN_API_VERSIONS } from './manifest-validator';
 import { PERMISSION_HIERARCHY } from '../../shared/plugin-types';
 
 describe('manifest-validator', () => {
@@ -20,6 +20,40 @@ describe('manifest-validator', () => {
 
     it('does not include version 0.4', () => {
       expect(SUPPORTED_API_VERSIONS).not.toContain(0.4);
+    });
+  });
+
+  describe('DEPRECATED_PLUGIN_API_VERSIONS', () => {
+    it('marks 0.5 as deprecated', () => {
+      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.5]).toBeDefined();
+    });
+
+    it('marks 0.6 as deprecated', () => {
+      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.6]).toBeDefined();
+    });
+
+    it('does not mark 0.7 as deprecated', () => {
+      expect(DEPRECATED_PLUGIN_API_VERSIONS[0.7]).toBeUndefined();
+    });
+  });
+
+  describe('deprecation warnings', () => {
+    it('returns warnings for deprecated API version 0.5', () => {
+      const result = validateManifest(validManifest);
+      expect(result.valid).toBe(true);
+      expect(result.warnings.some(w => w.includes('deprecated'))).toBe(true);
+    });
+
+    it('returns no warnings for non-deprecated API version 0.7', () => {
+      const result = validateManifest({ ...validManifest, engine: { api: 0.7 } });
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('returns warnings array even for invalid manifests', () => {
+      const result = validateManifest(null);
+      expect(result.valid).toBe(false);
+      expect(result.warnings).toEqual([]);
     });
   });
 
