@@ -214,8 +214,12 @@ function scheduleFlush(projectPath: string, entry: CacheEntry): void {
 async function readAgents(projectPath: string): Promise<DurableAgentConfig[]> {
   let entry = configCache.get(projectPath);
   if (!entry) {
-    entry = { agents: await readAgentsFromDisk(projectPath), dirty: false, flushTimer: null, pendingFlush: null };
+    const agents = await readAgentsFromDisk(projectPath);
+    entry = { agents, dirty: false, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
+    appLog('core:agent-config', 'info', `Cache initialized with ${agents.length} agent(s)`, {
+      meta: { projectPath, agentIds: agents.map((a) => a.id) },
+    });
   }
   return entry.agents;
 }
@@ -226,6 +230,20 @@ async function writeAgents(projectPath: string, agents: DurableAgentConfig[]): P
     entry = { agents, dirty: true, flushTimer: null, pendingFlush: null };
     configCache.set(projectPath, entry);
   } else {
+    // Log when agent count decreases — this is the signal for data loss
+    const prevCount = entry.agents.length;
+    if (agents.length < prevCount) {
+      const prevIds = new Set(entry.agents.map((a) => a.id));
+      const newIds = new Set(agents.map((a) => a.id));
+      const removed = entry.agents.filter((a) => !newIds.has(a.id));
+      appLog('core:agent-config', 'warn', `Agent count decreased: ${prevCount} → ${agents.length}`, {
+        meta: {
+          projectPath,
+          removedAgents: removed.map((a) => ({ id: a.id, name: a.name })),
+          caller: new Error().stack?.split('\n').slice(1, 4).map((l) => l.trim()),
+        },
+      });
+    }
     entry.agents = agents;
   }
   entry.dirty = true;
@@ -242,6 +260,12 @@ export async function flushAgentConfig(projectPath: string): Promise<void> {
 
 /** Flush all pending writes across all project paths */
 export async function flushAllAgentConfigs(): Promise<void> {
+  const dirtyEntries = [...configCache.entries()].filter(([, e]) => e.dirty);
+  if (dirtyEntries.length > 0) {
+    appLog('core:agent-config', 'info', `Flushing ${dirtyEntries.length} dirty cache(s) on shutdown`, {
+      meta: { projects: dirtyEntries.map(([p, e]) => ({ path: p, agentCount: e.agents.length })) },
+    });
+  }
   await Promise.all([...configCache.entries()].map(([projectPath, entry]) => flushEntry(projectPath, entry)));
 }
 
