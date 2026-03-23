@@ -83,6 +83,9 @@ vi.stubGlobal('clubhouse', {
     updateDurableConfig: asyncNoop,
     spawnAgent: asyncNoop,
     killAgent: asyncNoop,
+    spawnCompanion: async () => 'companion-test',
+    getCompanionStatus: async () => 'none',
+    getCompanionWorkspace: async () => '/tmp/test-workspace',
     getModelOptions: async () => [],
     checkOrchestrator: async () => ({ available: true }),
     getOrchestrators: async () => [],
@@ -237,6 +240,13 @@ vi.stubGlobal('clubhouse', {
   },
   process: {
     exec: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+  },
+  pluginMcp: {
+    contributeTools: asyncNoop,
+    removeTools: asyncNoop,
+    listTools: async () => [],
+    onToolCall: () => noop,
+    sendToolResult: noop,
   },
   app: {
     openExternalUrl: asyncNoop,
