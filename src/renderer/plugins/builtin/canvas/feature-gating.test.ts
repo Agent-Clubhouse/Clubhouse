@@ -47,6 +47,23 @@ describe('canvas feature gating', () => {
     expect(defaults.has('files')).toBe(true);
   });
 
+  it('PluginListSettings cascade-enables sub-plugins when canvas is enabled (structural)', () => {
+    // Verify that when enabling canvas, sub-plugins are also enabled
+    // (symmetric with cascade-disable on canvas off).
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../../settings/PluginListSettings.tsx'), 'utf-8');
+
+    // The handleToggle function should cascade-enable canvas sub-plugins
+    const enableBlock = source.slice(
+      source.indexOf("pluginId === 'canvas'", source.indexOf('enableApp(pluginId)')),
+      source.indexOf("pluginId === 'canvas'", source.indexOf('enableApp(pluginId)')) + 300,
+    );
+    expect(enableBlock).toContain('CANVAS_SUB_PLUGIN_IDS');
+    expect(enableBlock).toContain('enableApp(subId)');
+    expect(enableBlock).toContain('activatePlugin(subId)');
+  });
+
   it('browser and git are loaded but NOT in default enabled IDs', () => {
     const plugins = getBuiltinPlugins({});
     const ids = plugins.map((p) => p.manifest.id);
