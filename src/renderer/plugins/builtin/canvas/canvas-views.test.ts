@@ -203,8 +203,6 @@ describe('AgentCanvasView — handleCreateDurable auto-assigns new agent', () =>
       { id: 'a1', name: 'existing', kind: 'durable', status: 'running', projectId: 'p1' },
       { id: 'new-1', name: 'fresh-agent', kind: 'durable', status: 'sleeping', projectId: 'p1' },
     ];
-    const project = { id: 'p1', name: 'P1', path: '/projects/p1' };
-
     const newAgent = agents.find((a) => a.id === 'new-1')!;
     const name = newAgent.name || newAgent.id;
     const update = {

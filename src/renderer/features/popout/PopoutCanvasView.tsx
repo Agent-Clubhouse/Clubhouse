@@ -77,6 +77,7 @@ function createPopoutApi(projectId?: string): PluginAPI {
       return { dispose: unsub };
     },
     // Stubs for methods not needed in pop-out
+    createDurable: () => Promise.reject(new Error('Not available in pop-out')),
     runQuick: () => Promise.reject(new Error('Not available in pop-out')),
     kill: () => Promise.reject(new Error('Not available in pop-out')),
     resume: () => Promise.reject(new Error('Not available in pop-out')),

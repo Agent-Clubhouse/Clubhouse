@@ -84,6 +84,7 @@ export function createMockAPI(overrides?: Partial<PluginAPI>): PluginAPI {
     },
     agents: {
       list: () => [],
+      createDurable: async () => '',
       runQuick: async () => '',
       kill: asyncNoop,
       resume: asyncNoop,
