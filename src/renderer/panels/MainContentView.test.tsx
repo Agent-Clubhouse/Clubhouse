@@ -251,6 +251,23 @@ describe('MainContentView annex plugin gating', () => {
     expect(screen.getByTestId('plugin-content-view')).toBeInTheDocument();
     expect(screen.queryByTestId('annex-disabled-view')).not.toBeInTheDocument();
   });
+
+  it('shows AnnexDisabledView when plugin is not found in match state on remote project', () => {
+    const satelliteId = 'sat-fp';
+    const remoteProjectId = `remote||${satelliteId}||proj-1`;
+
+    useUIStore.setState({ explorerTab: 'plugin:unknown-plugin' });
+    useProjectStore.setState({ activeProjectId: remoteProjectId });
+    useRemoteProjectStore.setState({
+      pluginMatchState: {
+        [satelliteId]: [],
+      },
+    });
+
+    render(<MainContentView />);
+    expect(screen.getByTestId('annex-disabled-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('plugin-content-view')).not.toBeInTheDocument();
+  });
 });
 
 describe('MainContentView terminal focus', () => {

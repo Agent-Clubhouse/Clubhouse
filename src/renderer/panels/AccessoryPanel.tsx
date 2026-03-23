@@ -3,6 +3,7 @@ import { useUIStore } from '../stores/uiStore';
 import { usePluginStore } from '../plugins/plugin-store';
 import { useProjectStore } from '../stores/projectStore';
 import { useUpdateStore } from '../stores/updateStore';
+import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from '../stores/remoteProjectStore';
 import { PluginAPIProvider } from '../plugins/plugin-context';
 import { createPluginAPI } from '../plugins/plugin-api-factory';
 import { getActiveContext } from '../plugins/plugin-loader';
@@ -118,6 +119,9 @@ export function AccessoryPanel() {
   const explorerTab = useUIStore((s) => s.explorerTab);
   const activePluginId = explorerTab.startsWith('plugin:') ? explorerTab.slice('plugin:'.length) : null;
   const activePluginEntry = usePluginStore((s) => activePluginId ? s.plugins[activePluginId] : undefined);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
+  const isRemoteProject = activeProjectId ? isRemoteProjectId(activeProjectId) : false;
 
   if (explorerTab === 'agents') {
     return (
@@ -133,6 +137,18 @@ export function AccessoryPanel() {
 
   // Plugin tabs with sidebar layout
   if (activePluginId) {
+    // Security gate: block sidebar rendering for non-annex-enabled plugins on remote projects
+    if (isRemoteProject && activeProjectId) {
+      const parsed = parseNamespacedId(activeProjectId);
+      if (parsed) {
+        const matches = pluginMatchState[parsed.satelliteId] || [];
+        const match = matches.find((p) => p.id === activePluginId);
+        if (!match?.annexEnabled) {
+          return null;
+        }
+      }
+    }
+
     const layout = activePluginEntry?.manifest.contributes?.tab?.layout ?? 'sidebar-content';
 
     if (layout === 'sidebar-content') {

@@ -241,14 +241,14 @@ export function MainContentView() {
   if (explorerTab.startsWith('plugin:')) {
     const pluginId = explorerTab.slice('plugin:'.length);
 
-    // For remote projects, check if the plugin has annex permission
+    // Security gate: block plugin rendering unless explicitly annex-enabled on remote projects
     if (isRemoteProject && activeProjectId) {
       const parsed = parseNamespacedId(activeProjectId);
       if (parsed) {
         const matches = pluginMatchState[parsed.satelliteId] || [];
         const match = matches.find((p) => p.id === pluginId);
-        if (match && !match.annexEnabled) {
-          return <AnnexDisabledView pluginName={match.name} />;
+        if (!match?.annexEnabled) {
+          return <AnnexDisabledView pluginName={match?.name || pluginId} />;
         }
       }
     }
