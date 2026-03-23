@@ -8,7 +8,8 @@ import {
   centerViewportOn,
   MINIMAP_WIDTH,
   MINIMAP_HEIGHT,
-  MINIMAP_AUTO_HIDE_DELAY,
+  MINIMAP_INITIAL_HIDE_DELAY,
+  MINIMAP_INTERACTION_HIDE_DELAY,
 } from './canvas-minimap';
 import type { PluginCanvasView } from './canvas-types';
 
@@ -119,30 +120,54 @@ export function CanvasMinimap({
   attentionMap,
   onViewportChange,
 }: CanvasMinimapProps) {
-  const [pinned, setPinned] = useState(false);
+  const [autoHide, setAutoHide] = useState(true);
   const [visible, setVisible] = useState(true);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const minimapRef = useRef<HTMLDivElement>(null);
+  const mountTimeRef = useRef(Date.now());
 
-  // Reset auto-hide timer on viewport or view changes
+  const scheduleHide = useCallback((delay: number) => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setVisible(false), delay);
+  }, []);
+
+  const cancelHide = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
+
+  // Compute hide delay: during the initial window use remaining time, then 1s
+  const getHideDelay = useCallback(() => {
+    const elapsed = Date.now() - mountTimeRef.current;
+    if (elapsed < MINIMAP_INITIAL_HIDE_DELAY) {
+      return MINIMAP_INITIAL_HIDE_DELAY - elapsed;
+    }
+    return MINIMAP_INTERACTION_HIDE_DELAY;
+  }, []);
+
+  // Auto-hide on viewport or view changes
   const changeFingerprint = `${viewport.panX},${viewport.panY},${viewport.zoom},${views.length}`;
   useEffect(() => {
     setVisible(true);
-    if (pinned) return;
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setVisible(false), MINIMAP_AUTO_HIDE_DELAY);
-    return () => {
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    };
-  }, [changeFingerprint, pinned]);
+    if (!autoHide) {
+      cancelHide();
+      return;
+    }
+    scheduleHide(getHideDelay());
+    return cancelHide;
+  }, [changeFingerprint, autoHide, scheduleHide, cancelHide, getHideDelay]);
 
   // Show on hover even if auto-hidden
-  const handleMouseEnter = useCallback(() => setVisible(true), []);
+  const handleMouseEnter = useCallback(() => {
+    cancelHide();
+    setVisible(true);
+  }, [cancelHide]);
   const handleMouseLeave = useCallback(() => {
-    if (pinned) return;
-    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    hideTimerRef.current = setTimeout(() => setVisible(false), MINIMAP_AUTO_HIDE_DELAY);
-  }, [pinned]);
+    if (!autoHide) return;
+    scheduleHide(MINIMAP_INTERACTION_HIDE_DELAY);
+  }, [autoHide, scheduleHide]);
 
   const minimapSize: Size = { width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT };
   const worldBounds = useMemo(
@@ -324,24 +349,24 @@ export function CanvasMinimap({
         data-testid="minimap-viewport"
       />
 
-      {/* Pin checkbox */}
+      {/* Auto-hide checkbox */}
       <label
         className="absolute bottom-1 left-1.5 flex items-center gap-1 cursor-pointer"
         style={{ pointerEvents: 'auto' }}
         onClick={(e) => e.stopPropagation()}
-        data-testid="minimap-pin-label"
+        data-testid="minimap-autohide-label"
       >
         <input
           type="checkbox"
-          checked={pinned}
+          checked={autoHide}
           onChange={(e) => {
-            setPinned(e.target.checked);
-            if (e.target.checked) setVisible(true);
+            setAutoHide(e.target.checked);
+            if (!e.target.checked) setVisible(true);
           }}
           className="w-2.5 h-2.5 accent-ctp-blue cursor-pointer"
-          data-testid="minimap-pin-checkbox"
+          data-testid="minimap-autohide-checkbox"
         />
-        <span className="text-[8px] text-ctp-overlay0 leading-none select-none">Pin</span>
+        <span className="text-[8px] text-ctp-overlay0 leading-none select-none">Auto hide</span>
       </label>
     </div>
   );

@@ -9,7 +9,8 @@ import {
   MINIMAP_WORLD_PADDING_FACTOR,
   MINIMAP_WIDTH,
   MINIMAP_HEIGHT,
-  MINIMAP_AUTO_HIDE_DELAY,
+  MINIMAP_INITIAL_HIDE_DELAY,
+  MINIMAP_INTERACTION_HIDE_DELAY,
 } from './canvas-minimap';
 
 // ── Factories ────────────────────────────────────────────────────────
@@ -248,8 +249,13 @@ describe('constants', () => {
     expect(MINIMAP_HEIGHT).toBe(140);
   });
 
-  it('has a positive auto-hide delay', () => {
-    expect(MINIMAP_AUTO_HIDE_DELAY).toBeGreaterThan(0);
+  it('has a positive initial hide delay', () => {
+    expect(MINIMAP_INITIAL_HIDE_DELAY).toBe(3000);
+  });
+
+  it('has a shorter interaction hide delay', () => {
+    expect(MINIMAP_INTERACTION_HIDE_DELAY).toBe(1000);
+    expect(MINIMAP_INTERACTION_HIDE_DELAY).toBeLessThan(MINIMAP_INITIAL_HIDE_DELAY);
   });
 
   it('has padding factor > 1', () => {

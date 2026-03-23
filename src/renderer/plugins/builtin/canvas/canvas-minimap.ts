@@ -30,8 +30,11 @@ export const MINIMAP_WORLD_PADDING_FACTOR = 1.5;
 export const MINIMAP_WIDTH = 200;
 export const MINIMAP_HEIGHT = 140;
 
-/** Milliseconds of viewport inactivity before the minimap auto-hides. */
-export const MINIMAP_AUTO_HIDE_DELAY = 3000;
+/** Milliseconds before the minimap auto-hides on initial canvas load. */
+export const MINIMAP_INITIAL_HIDE_DELAY = 3000;
+
+/** Milliseconds before the minimap auto-hides after a pan/zoom interaction. */
+export const MINIMAP_INTERACTION_HIDE_DELAY = 1000;
 
 // ── Viewport in canvas-space ─────────────────────────────────────────
 
