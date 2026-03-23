@@ -4,6 +4,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
+import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
@@ -776,7 +777,11 @@ export function PluginListSettings() {
   });
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  const builtinPlugins = filteredPlugins.filter((e) => e.source === 'builtin');
+  // Hide canvas sub-plugins (group-project, agent-queue) unless canvas is enabled
+  const canvasEnabled = appEnabled.includes('canvas');
+  const builtinPlugins = filteredPlugins.filter(
+    (e) => e.source === 'builtin' && (!CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) || canvasEnabled),
+  );
   const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const isEnabled = (pluginId: string): boolean => {
@@ -789,19 +794,25 @@ export function PluginListSettings() {
   const handleToggle = async (pluginId: string) => {
     const enabled = isEnabled(pluginId);
     if (enabled) {
-      if (isAppContext) {
-        await deactivatePlugin(pluginId);
-        disableApp(pluginId);
-      } else if (projectId) {
-        await deactivatePlugin(pluginId, projectId);
-        disableForProject(projectId, pluginId);
+      // When disabling canvas, also disable its sub-plugins
+      const idsToDisable = pluginId === 'canvas'
+        ? [pluginId, ...Array.from(CANVAS_SUB_PLUGIN_IDS).filter((id) => isEnabled(id))]
+        : [pluginId];
+      for (const id of idsToDisable) {
+        if (isAppContext) {
+          await deactivatePlugin(id);
+          disableApp(id);
+        } else if (projectId) {
+          await deactivatePlugin(id, projectId);
+          disableForProject(projectId, id);
+        }
       }
       // Persist
       try {
         const key = isAppContext ? 'app-enabled' : `project-enabled-${projectId}`;
         const currentList = isAppContext
-          ? appEnabled.filter((id) => id !== pluginId)
-          : (projectEnabled[projectId!] || []).filter((id) => id !== pluginId);
+          ? appEnabled.filter((id) => !idsToDisable.includes(id))
+          : (projectEnabled[projectId!] || []).filter((id) => !idsToDisable.includes(id));
         await window.clubhouse.plugin.storageWrite({
           pluginId: '_system',
           scope: 'global',

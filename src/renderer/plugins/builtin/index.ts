@@ -27,14 +27,16 @@ export interface BuiltinPlugin {
 
 /** Experimental feature flags that gate conditional built-in plugins. */
 export interface ExperimentalFlags {
-  canvas?: boolean;
   sessions?: boolean;
   review?: boolean;
   [key: string]: boolean | undefined;
 }
 
 /** Plugin IDs that are always enabled by default in a fresh install. */
-const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'browser', 'git'];
+const BASE_DEFAULT_IDS = ['hub', 'terminal', 'files', 'git'];
+
+/** Canvas sub-plugin IDs — hidden from the plugin list unless canvas is enabled. */
+export const CANVAS_SUB_PLUGIN_IDS: ReadonlySet<string> = new Set(['group-project', 'agent-queue']);
 
 export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): BuiltinPlugin[] {
   const plugins: BuiltinPlugin[] = [
@@ -43,16 +45,14 @@ export function getBuiltinPlugins(experimentalFlags: ExperimentalFlags = {}): Bu
     { manifest: filesManifest, module: filesModule },
     { manifest: browserManifest, module: browserModule },
     { manifest: gitManifest, module: gitModule },
+    // Canvas is always loaded but not enabled by default
+    { manifest: canvasManifest, module: canvasModule },
+    { manifest: groupProjectManifest, module: groupProjectModule },
+    { manifest: agentQueueManifest, module: agentQueueModule },
   ];
 
   if (experimentalFlags.review) {
     plugins.push({ manifest: reviewManifest, module: reviewModule });
-  }
-
-  if (experimentalFlags.canvas) {
-    plugins.push({ manifest: canvasManifest, module: canvasModule });
-    plugins.push({ manifest: groupProjectManifest, module: groupProjectModule });
-    plugins.push({ manifest: agentQueueManifest, module: agentQueueModule });
   }
 
   if (experimentalFlags.sessions) {
@@ -67,11 +67,6 @@ export function getDefaultEnabledIds(experimentalFlags: ExperimentalFlags = {}):
   const ids = [...BASE_DEFAULT_IDS];
   if (experimentalFlags.review) {
     ids.push('review');
-  }
-  if (experimentalFlags.canvas) {
-    ids.push('canvas');
-    ids.push('group-project');
-    ids.push('agent-queue');
   }
   if (experimentalFlags.sessions) {
     ids.push('sessions');

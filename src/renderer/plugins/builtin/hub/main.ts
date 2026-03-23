@@ -12,6 +12,7 @@ import { broadcastHubState } from './hub-sync';
 import { PoppedOutPlaceholder } from '../../../features/popout/PoppedOutPlaceholder';
 import { usePopouts } from '../../../hooks/usePopouts';
 import { isRemoteAgentId } from '../../../stores/remoteProjectStore';
+import { usePluginStore } from '../../plugin-store';
 import { UpgradeToCanvasDialog } from './UpgradeToCanvasDialog';
 import { convertHubToCanvas } from './hub-to-canvas';
 import { useAppCanvasStore, getProjectCanvasStore } from '../canvas/main';
@@ -65,13 +66,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const focusedPaneId = store((s) => s.focusedPaneId);
   const loaded = store((s) => s.loaded);
 
-  // Check if canvas experimental feature is enabled
-  const [canvasEnabled, setCanvasEnabled] = useState(false);
-  useEffect(() => {
-    window.clubhouse.app.getExperimentalSettings().then((s) => {
-      setCanvasEnabled(!!s.canvas);
-    }).catch(() => {});
-  }, []);
+  // Check if canvas plugin is enabled (gate "Upgrade to Canvas" action)
+  const canvasEnabled = usePluginStore((s) => s.appEnabled.includes('canvas'));
 
   // Dynamic title: show active hub name
   const activeHub = hubs.find((h) => h.id === activeHubId);
