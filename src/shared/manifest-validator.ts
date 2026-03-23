@@ -67,13 +67,17 @@ export function validateManifest(raw: unknown): ValidationResult {
   const engineObj = m.engine as Record<string, unknown> | undefined;
   const apiVersion = engineObj && typeof engineObj.api === 'number' ? engineObj.api : 0;
   const isPack = m.kind === 'pack';
+  const isWorkspace = m.kind === 'workspace';
 
   if (m.kind !== undefined) {
-    if (m.kind !== 'plugin' && m.kind !== 'pack') {
-      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin" or "pack"`);
+    if (m.kind !== 'plugin' && m.kind !== 'pack' && m.kind !== 'workspace') {
+      errors.push(`Invalid kind: "${String(m.kind)}". Must be "plugin", "pack", or "workspace"`);
     }
     if (isPack && apiVersion < 0.7) {
       errors.push('Pack plugins require API >= 0.7');
+    }
+    if (isWorkspace && apiVersion < 0.9) {
+      errors.push('Workspace plugins require API >= 0.9');
     }
   }
 
@@ -244,6 +248,16 @@ export function validateManifest(raw: unknown): ValidationResult {
     // Annex permission requires API >= 0.8
     if (permissions.includes('annex') && apiVersion < 0.8) {
       errors.push('Annex permission requires API >= 0.8');
+    }
+
+    // Companion permission requires API >= 0.9
+    if (permissions.includes('companion') && apiVersion < 0.9) {
+      errors.push('Companion permission requires API >= 0.9');
+    }
+
+    // MCP tools permission requires API >= 0.9
+    if (permissions.includes('mcp.tools') && apiVersion < 0.9) {
+      errors.push('mcp.tools permission requires API >= 0.9');
     }
   }
 
@@ -456,6 +470,40 @@ export function validateManifest(raw: unknown): ValidationResult {
       if (Array.isArray(m.permissions) && !(m.permissions as string[]).includes('canvas')) {
         errors.push('contributes.canvasWidgets requires the "canvas" permission');
       }
+    }
+  }
+
+  // Workspace plugins must be app-scoped and have companion permission
+  if (isWorkspace) {
+    if (m.scope !== 'app') {
+      errors.push('Workspace plugins must be app-scoped');
+    }
+    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
+      errors.push('Workspace plugins require the "companion" permission');
+    }
+  }
+
+  // Companion config validation (v0.9+)
+  if (m.companion !== undefined) {
+    if (apiVersion < 0.9) {
+      errors.push('companion config requires API >= 0.9');
+    }
+    if (!m.companion || typeof m.companion !== 'object') {
+      errors.push('companion must be an object');
+    } else {
+      const comp = m.companion as Record<string, unknown>;
+      if (typeof comp.enabled !== 'boolean') {
+        errors.push('companion.enabled must be a boolean');
+      }
+      if (comp.defaultModel !== undefined && typeof comp.defaultModel !== 'string') {
+        errors.push('companion.defaultModel must be a string');
+      }
+      if (comp.systemPrompt !== undefined && typeof comp.systemPrompt !== 'string') {
+        errors.push('companion.systemPrompt must be a string');
+      }
+    }
+    if (!Array.isArray(m.permissions) || !(m.permissions as string[]).includes('companion')) {
+      errors.push('companion config requires the "companion" permission');
     }
   }
 
