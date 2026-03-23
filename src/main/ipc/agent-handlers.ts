@@ -429,6 +429,9 @@ export function registerAgentHandlers(): void {
 
   // ── Companion agent handlers (v0.9+) ───────────────────────────────
 
+  // Track companion agents by plugin ID (singleton enforcement)
+  const companionAgents = new Map<string, string>();
+
   ipcMain.handle(IPC.AGENT.SPAWN_COMPANION, withValidatedArgs(
     [stringArg(), objectArg({ optional: true })],
     async (_event, pluginId, options?: { model?: string; systemPrompt?: string }) => {
@@ -436,18 +439,10 @@ export function registerAgentHandlers(): void {
       const wsPath = await companionWs.ensureCompanionWorkspace(pluginId);
 
       // Check if a companion agent already exists for this plugin
-      const registry = agentRegistry;
-      const existing = registry.list().find(
-        (entry: { id: string; projectPath: string; orchestrator: string }) => {
-          const agent = registry.get(entry.id);
-          return agent && (agent as Record<string, unknown>).pluginOwner === pluginId;
-        },
-      );
-
-      if (existing) {
-        // Wake existing companion if sleeping
-        appLog('core:companion', 'info', `Companion agent already exists for ${pluginId}: ${existing.id}`);
-        return existing.id;
+      const existingId = companionAgents.get(pluginId);
+      if (existingId && agentRegistry.get(existingId)) {
+        appLog('core:companion', 'info', `Companion agent already exists for ${pluginId}: ${existingId}`);
+        return existingId;
       }
 
       // Create new companion agent
@@ -463,6 +458,7 @@ export function registerAgentHandlers(): void {
         companionWorkspace: wsPath,
       });
 
+      companionAgents.set(pluginId, agentId);
       return agentId;
     },
   ));
@@ -470,19 +466,10 @@ export function registerAgentHandlers(): void {
   ipcMain.handle(IPC.AGENT.GET_COMPANION_STATUS, withValidatedArgs(
     [stringArg()],
     async (_event, pluginId) => {
-      const registry = agentRegistry;
-      const existing = registry.list().find(
-        (entry: { id: string }) => {
-          const agent = registry.get(entry.id);
-          return agent && (agent as Record<string, unknown>).pluginOwner === pluginId;
-        },
-      );
-
-      if (!existing) return 'none';
-
-      const agent = registry.get(existing.id);
-      if (!agent) return 'sleeping';
-      return 'active';
+      const existingId = companionAgents.get(pluginId);
+      if (!existingId) return 'none';
+      const reg = agentRegistry.get(existingId);
+      return reg ? 'active' : 'sleeping';
     },
   ));
 
