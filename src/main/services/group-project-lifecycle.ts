@@ -17,14 +17,6 @@ import { pollingStartMsg } from '../../shared/polling-messages';
 /** Debounce window (ms) — suppress rejoins within this period after a leave unless agent is verified running. */
 const REJOIN_DEBOUNCE_MS = 30_000;
 
-function welcomeMsg(projectName: string): string {
-  return (
-    `Group Project notification: You have been connected to group project "${projectName}". ` +
-    'Use your group project MCP tools to collaborate: read_bulletin to check messages, ' +
-    'post_bulletin to share updates, and list_members to see who is connected.'
-  );
-}
-
 /** Default delay (ms) before sending Enter after bracketed paste. */
 const DEFAULT_PASTE_DELAY_MS = 200;
 
@@ -160,9 +152,6 @@ async function syncMemberships(agentId: string): Promise<void> {
           meta: { agentId, projectId, error: err instanceof Error ? err.message : String(err) },
         });
       }
-
-      // Inject welcome message into the new agent's PTY
-      injectPtyMessage(agentId, welcomeMsg(projectName));
 
       // Auto-send polling instruction if polling is enabled
       if (project?.metadata?.pollingEnabled) {
