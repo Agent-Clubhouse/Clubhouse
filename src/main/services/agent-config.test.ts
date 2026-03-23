@@ -1650,7 +1650,6 @@ describe('backup and recovery', () => {
 
   describe('atomic writes', () => {
     it('writeAgentsToDisk uses temp file + rename', async () => {
-      const agents = [{ id: 'durable_1', name: 'test', color: 'blue', createdAt: '2024-01-01' }];
       // Mock: no existing file
       vi.mocked(pathExists).mockImplementation(async (p: any) => {
         if (String(p).endsWith('agents.json')) return false;
@@ -1721,7 +1720,7 @@ describe('backup and recovery', () => {
 
     it('returns null when backup has same count as current', async () => {
       vi.mocked(pathExists).mockResolvedValue(true);
-      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      vi.mocked(fsp.readFile).mockImplementation(async () => {
         return JSON.stringify(BACKUP_AGENTS);
       });
 
@@ -1778,7 +1777,7 @@ describe('backup and recovery', () => {
 
     it('does not duplicate agents already present', async () => {
       vi.mocked(pathExists).mockResolvedValue(true);
-      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+      vi.mocked(fsp.readFile).mockImplementation(async () => {
         // Both have all 3 agents
         return JSON.stringify(BACKUP_AGENTS);
       });
