@@ -91,16 +91,17 @@ export function createCrudSlice(set: SetAgentState, get: GetAgentState): AgentCr
 
       // Check if the backup has more agents — offer recovery if so
       try {
-        const backupInfo = await window.clubhouse.agent.getBackupInfo(projectPath);
+        const backupInfo = await window.clubhouse.agent.getBackupInfo(projectPath) as
+          { backupAgents: DurableAgentConfig[]; currentCount: number } | null;
         if (backupInfo && backupInfo.backupAgents.length > configs.length) {
-          const currentIds = new Set(configs.map((c) => c.id));
-          const missing = backupInfo.backupAgents.filter((a) => !currentIds.has(a.id));
+          const currentIds = new Set(configs.map((c: DurableAgentConfig) => c.id));
+          const missing = backupInfo.backupAgents.filter((a: DurableAgentConfig) => !currentIds.has(a.id));
           if (missing.length > 0) {
             set({
               pendingRecovery: {
                 backupAgentCount: backupInfo.backupAgents.length,
                 currentCount: configs.length,
-                missingNames: missing.map((a) => a.name),
+                missingNames: missing.map((a: DurableAgentConfig) => a.name),
                 projectPath,
               },
             });
