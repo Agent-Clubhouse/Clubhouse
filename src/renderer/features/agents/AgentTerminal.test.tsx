@@ -13,7 +13,16 @@ g.__testAttachClipboard = vi.fn().mockReturnValue(vi.fn());
 vi.mock('@xterm/xterm', () => {
   class Terminal {
     loadAddon = vi.fn();
-    open = vi.fn();
+    open = vi.fn().mockImplementation((container: HTMLElement) => {
+      // Create a mock .xterm-viewport element like real xterm does
+      const viewport = document.createElement('div');
+      viewport.classList.add('xterm-viewport');
+      // Default: large scrollback, at the bottom
+      Object.defineProperty(viewport, 'scrollHeight', { value: 200, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: 200, configurable: true, writable: true });
+      viewport.scrollTop = 0;
+      container.appendChild(viewport);
+    });
     write = vi.fn();
     focus = vi.fn();
     dispose = vi.fn();
@@ -441,18 +450,13 @@ describe('AgentTerminal', () => {
   });
 
   describe('scroll guardian and scroll-to-bottom button', () => {
-    function addViewportToContainer(scrollTop: number, scrollHeight: number, clientHeight: number) {
+    function configureViewport(scrollTop: number, scrollHeight: number, clientHeight: number) {
       const container = screen.getByTestId('agent-terminal');
-      // Remove any existing viewport
-      const existing = container.querySelector('.xterm-viewport');
-      if (existing) existing.remove();
-
-      const viewport = document.createElement('div');
-      viewport.classList.add('xterm-viewport');
-      Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight, configurable: true });
-      Object.defineProperty(viewport, 'clientHeight', { value: clientHeight, configurable: true });
+      const viewport = container.querySelector('.xterm-viewport') as HTMLDivElement;
+      expect(viewport).toBeTruthy();
+      Object.defineProperty(viewport, 'scrollHeight', { value: scrollHeight, configurable: true, writable: true });
+      Object.defineProperty(viewport, 'clientHeight', { value: clientHeight, configurable: true, writable: true });
       viewport.scrollTop = scrollTop;
-      container.appendChild(viewport);
       return viewport;
     }
 
@@ -464,7 +468,7 @@ describe('AgentTerminal', () => {
 
     it('shows scroll-to-bottom button when scrolled up', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = addViewportToContainer(100, 2000, 200);
+      const viewport = configureViewport(100, 2000, 200);
 
       // Fire scroll event to trigger state update
       act(() => {
@@ -476,7 +480,7 @@ describe('AgentTerminal', () => {
 
     it('hides scroll-to-bottom button when user scrolls to bottom', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = addViewportToContainer(100, 2000, 200);
+      const viewport = configureViewport(100, 2000, 200);
 
       // First, trigger scrolled-up state
       act(() => {
@@ -494,7 +498,7 @@ describe('AgentTerminal', () => {
 
     it('clicking scroll-to-bottom scrolls viewport to bottom', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = addViewportToContainer(100, 2000, 200);
+      const viewport = configureViewport(100, 2000, 200);
 
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
@@ -509,7 +513,7 @@ describe('AgentTerminal', () => {
 
     it('scroll guardian detects unexpected reset to 0 and restores position', () => {
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = addViewportToContainer(500, 2000, 200);
+      const viewport = configureViewport(500, 2000, 200);
 
       // Establish a known scroll position
       act(() => {
@@ -540,7 +544,7 @@ describe('AgentTerminal', () => {
       });
 
       render(<AgentTerminal agentId="agent-1" />);
-      const viewport = addViewportToContainer(100, 2000, 200);
+      const viewport = configureViewport(100, 2000, 200);
 
       act(() => {
         viewport.dispatchEvent(new Event('scroll'));
