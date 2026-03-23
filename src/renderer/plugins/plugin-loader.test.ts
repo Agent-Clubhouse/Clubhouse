@@ -21,8 +21,8 @@ const mockPty = { kill: vi.fn() };
 
 const mockLog = { write: vi.fn() };
 const mockApp = {
-  getExperimentalSettings: vi.fn(),
-  saveExperimentalSettings: vi.fn(),
+  getExperimentalSettings: vi.fn().mockResolvedValue({}),
+  saveExperimentalSettings: vi.fn().mockResolvedValue(undefined),
 };
 
 Object.defineProperty(globalThis, 'window', {

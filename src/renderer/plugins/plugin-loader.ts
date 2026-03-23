@@ -193,7 +193,7 @@ export async function initializePluginSystem(): Promise<void> {
     // persisted to the app-enabled storage.  v0.38 removed the flag path,
     // so existing users who had canvas enabled lost their enablement.
     // Detect the stale flag and migrate once.
-    if (experimentalFlags.canvas) {
+    if (experimentalFlags && experimentalFlags.canvas) {
       const canvasPluginIds = ['canvas', 'group-project', 'agent-queue'];
       const migrationState = usePluginStore.getState();
       const missing = canvasPluginIds.filter((id) => !migrationState.appEnabled.includes(id));

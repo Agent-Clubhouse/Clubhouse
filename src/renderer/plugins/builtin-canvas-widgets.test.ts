@@ -21,7 +21,7 @@ import {
   isWidgetPending,
   _resetRegistryForTesting,
 } from './canvas-widget-registry';
-import { getBuiltinPlugins, getDefaultEnabledIds } from './builtin';
+import { getBuiltinPlugins } from './builtin';
 import { getBuiltinProjectPluginIds } from './plugin-loader';
 import { createMockContext, createMockAPI } from './testing';
 import type { PluginCanvasWidgetDeclaration, CanvasWidgetDescriptor } from '../../shared/plugin-types';
@@ -113,34 +113,34 @@ describe('getBuiltinProjectPluginIds', () => {
     expect(ids).toContain('git');
   });
 
-  it('does not include browser (loaded but not in defaults)', () => {
+  it('includes all project/dual-scoped builtins (app-first gate controls activation)', () => {
     const ids = getBuiltinProjectPluginIds();
-    expect(ids).not.toContain('browser');
-  });
-
-  it('does not include canvas or sub-plugins (loaded but not in defaults)', () => {
-    const ids = getBuiltinProjectPluginIds();
-    expect(ids).not.toContain('canvas');
-    expect(ids).not.toContain('group-project');
-    expect(ids).not.toContain('agent-queue');
-  });
-
-  it('includes hub (dual-scoped, part of defaults)', () => {
-    const ids = getBuiltinProjectPluginIds();
+    // All project/dual-scoped builtins should be present
+    expect(ids).toContain('browser');
+    expect(ids).toContain('canvas');
+    expect(ids).toContain('group-project');
+    expect(ids).toContain('agent-queue');
     expect(ids).toContain('hub');
   });
 
-  it('all project-scoped default-enabled plugins with canvas widgets are in the returned list', () => {
+  it('excludes app-scoped builtins', () => {
+    const allPlugins = getBuiltinPlugins();
+    const ids = getBuiltinProjectPluginIds();
+    const appOnly = allPlugins.filter((p) => p.manifest.scope === 'app');
+    for (const p of appOnly) {
+      expect(ids).not.toContain(p.manifest.id);
+    }
+  });
+
+  it('all builtins with canvas widgets and project/dual scope are in the returned list', () => {
     const allPlugins = getBuiltinPlugins();
     const projectIds = getBuiltinProjectPluginIds();
-    const defaults = getDefaultEnabledIds();
 
     const pluginsWithWidgets = allPlugins.filter(
       (p) =>
         p.manifest.contributes?.canvasWidgets &&
         p.manifest.contributes.canvasWidgets.length > 0 &&
-        (p.manifest.scope === 'project' || p.manifest.scope === 'dual') &&
-        defaults.has(p.manifest.id),
+        (p.manifest.scope === 'project' || p.manifest.scope === 'dual'),
     );
 
     for (const p of pluginsWithWidgets) {
