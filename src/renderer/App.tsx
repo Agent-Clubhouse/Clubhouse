@@ -294,6 +294,21 @@ export function App() {
 
   if (isAppPlugin) {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
+
+    // When a satellite is active, gate app plugins by annex permission
+    let appPluginContent;
+    if (activeHostId) {
+      const matches = pluginMatchState[activeHostId] || [];
+      const match = matches.find((p) => p.id === appPluginId);
+      if (match?.status === 'matched' && match.annexEnabled) {
+        appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+      } else {
+        appPluginContent = <AnnexDisabledView pluginName={match?.name || appPluginId} />;
+      }
+    } else {
+      appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+    }
+
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -311,7 +326,7 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          <PluginContentView pluginId={appPluginId} mode="app" />
+          {appPluginContent}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />

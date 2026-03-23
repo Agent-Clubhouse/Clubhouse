@@ -188,18 +188,18 @@ function PluginRailButton({ entry, isActive, onClick, expanded, dimmed }: {
 
   return (
     <button
-      onClick={dimmed ? undefined : onClick}
-      title={dimmed ? `${label} — not annex enabled` : label}
-      className={`w-full h-10 flex items-center gap-3 rounded-lg flex-shrink-0 ${
-        dimmed ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'
-      } ${expanded && !dimmed ? 'hover:bg-surface-0' : ''}`}
+      onClick={onClick}
+      title={label}
+      className={`w-full h-10 flex items-center gap-3 rounded-lg flex-shrink-0 cursor-pointer ${
+        dimmed ? 'opacity-60' : ''
+      } ${expanded ? 'hover:bg-surface-0' : ''}`}
     >
       <div className="relative w-10 h-10 flex-shrink-0">
         <div
           className={`
             w-10 h-10 rounded-lg flex items-center justify-center
             transition-colors duration-100
-            ${isActive && !dimmed
+            ${isActive
               ? 'bg-ctp-accent text-white shadow-lg shadow-ctp-accent/30'
               : expanded
                 ? 'bg-surface-1 text-ctp-subtext0'
