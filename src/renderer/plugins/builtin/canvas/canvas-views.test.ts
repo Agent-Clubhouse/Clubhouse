@@ -158,6 +158,74 @@ describe('AgentCanvasView — agent filtering', () => {
   });
 });
 
+// ── AgentCanvasView — create agent flow ──────────────────────────────
+
+describe('AgentCanvasView — create agent resolves active project', () => {
+  const projects = [
+    { id: 'p1', name: 'Project One', path: '/projects/p1' },
+    { id: 'p2', name: 'Project Two', path: '/projects/p2' },
+  ];
+
+  function resolveProject(
+    isAppMode: boolean,
+    selectedProjectId: string | null,
+    contextProjectId: string | undefined,
+  ) {
+    const pid = isAppMode ? selectedProjectId : contextProjectId;
+    if (!pid) return null;
+    return projects.find((p) => p.id === pid) ?? null;
+  }
+
+  it('resolves project from selection in app mode', () => {
+    const project = resolveProject(true, 'p2', undefined);
+    expect(project).toEqual(projects[1]);
+  });
+
+  it('resolves project from context in project mode', () => {
+    const project = resolveProject(false, null, 'p1');
+    expect(project).toEqual(projects[0]);
+  });
+
+  it('returns null when no project selected in app mode', () => {
+    const project = resolveProject(true, null, undefined);
+    expect(project).toBeNull();
+  });
+
+  it('returns null for unknown project id', () => {
+    const project = resolveProject(false, null, 'unknown');
+    expect(project).toBeNull();
+  });
+});
+
+describe('AgentCanvasView — handleCreateDurable auto-assigns new agent', () => {
+  it('finds the newly created agent by id and builds pick update', () => {
+    const agents = [
+      { id: 'a1', name: 'existing', kind: 'durable', status: 'running', projectId: 'p1' },
+      { id: 'new-1', name: 'fresh-agent', kind: 'durable', status: 'sleeping', projectId: 'p1' },
+    ];
+    const project = { id: 'p1', name: 'P1', path: '/projects/p1' };
+
+    const newAgent = agents.find((a) => a.id === 'new-1')!;
+    const name = newAgent.name || newAgent.id;
+    const update = {
+      agentId: newAgent.id,
+      projectId: newAgent.projectId,
+      title: name,
+      displayName: name,
+    };
+
+    expect(update.agentId).toBe('new-1');
+    expect(update.displayName).toBe('fresh-agent');
+    expect(update.title).toBe('fresh-agent');
+  });
+
+  it('handles case when agent not found after creation', () => {
+    const agents: any[] = [];
+    const newAgent = agents.find((a: any) => a.id === 'new-1');
+    expect(newAgent).toBeUndefined();
+  });
+});
+
 // ── Scroll event propagation ──────────────────────────────────────────
 
 describe('CanvasView — scroll isolation', () => {

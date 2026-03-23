@@ -2760,6 +2760,79 @@ describe('plugin-api-factory', () => {
       });
     });
 
+    // ── createDurable() ──────────────────────────────────────────────────
+
+    describe('createDurable()', () => {
+      it('creates and spawns a durable agent using context project', async () => {
+        const durableConfig = { id: 'new-agent', name: 'test-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        const result = await api.agents.createDurable({ name: 'test-agent', color: 'blue' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'test-agent', 'blue', undefined, false, undefined, undefined, undefined,
+        );
+        expect(spawnSpy).toHaveBeenCalledWith('proj-1', '/projects/my-project', durableConfig, false);
+        expect(result).toBe('new-agent');
+      });
+
+      it('resolves a different project when projectId is specified', async () => {
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({
+          projects: [
+            { id: 'proj-1', name: 'P1', path: '/projects/p1' },
+            { id: 'proj-2', name: 'P2', path: '/projects/p2' },
+          ] as any,
+        });
+        const durableConfig = { id: 'new-agent', name: 'other-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        const spawnSpy = vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx({ projectId: 'proj-1', projectPath: '/projects/p1' }), undefined, allPermsManifest);
+        await api.agents.createDurable({ projectId: 'proj-2', name: 'other-agent', color: 'red' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/p2', 'other-agent', 'red', undefined, false, undefined, undefined, undefined,
+        );
+        expect(spawnSpy).toHaveBeenCalledWith('proj-2', '/projects/p2', durableConfig, false);
+      });
+
+      it('throws on unknown projectId', async () => {
+        const { useProjectStore } = await import('../stores/projectStore');
+        useProjectStore.setState({ projects: [] });
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await expect(api.agents.createDurable({ projectId: 'nope', name: 'x', color: 'red' })).rejects.toThrow('Project not found');
+      });
+
+      it('throws without project context', async () => {
+        const api = createPluginAPI(makeCtx({ scope: 'app', projectId: undefined, projectPath: undefined }), undefined, allPermsManifest);
+        await expect(api.agents.createDurable({ name: 'x', color: 'red' })).rejects.toThrow('createDurable requires a project context');
+      });
+
+      it('passes model, worktree, orchestrator, and mcpIds through', async () => {
+        const durableConfig = { id: 'new-agent', name: 'full-agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({
+          name: 'full-agent', color: 'green', model: 'opus',
+          useWorktree: true, orchestrator: 'claude-code', mcpIds: ['mcp-1'],
+        });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'full-agent', 'green', 'opus', true, 'claude-code', undefined, ['mcp-1'],
+        );
+      });
+
+      it('strips default model', async () => {
+        const durableConfig = { id: 'new-agent', name: 'agent' };
+        mockAgent.createDurable.mockResolvedValue(durableConfig);
+        vi.spyOn(useAgentStore.getState(), 'spawnDurableAgent').mockResolvedValue('new-agent');
+        const api = createPluginAPI(makeCtx(), undefined, allPermsManifest);
+        await api.agents.createDurable({ name: 'agent', color: 'red', model: 'default' });
+        expect(mockAgent.createDurable).toHaveBeenCalledWith(
+          '/projects/my-project', 'agent', 'red', undefined, false, undefined, undefined, undefined,
+        );
+      });
+    });
+
     // ── runQuick() — projectId override ─────────────────────────────────
 
     describe('runQuick()', () => {
