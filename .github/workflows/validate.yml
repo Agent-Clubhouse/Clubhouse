@@ -161,6 +161,9 @@ jobs:
       - run: npx tsc --noEmit
       # API version contract tests only
       - run: npx vitest run --project shared -- plugin-api-versions
+      # Verify plugin-types.ts hash lockfile
+      - name: Verify plugin-types.ts integrity
+        run: bash scripts/check-plugin-types-hash.sh
       # Annotate PR if plugin-types.ts was modified
       - name: Check plugin-types changes
         if: github.event_name == 'pull_request'
