@@ -125,6 +125,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewId = store((s) => s.selectedViewId);
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
+  const wireDefinitions = store((s) => s.wireDefinitions);
   const bindings = useMcpBindingStore((s) => s.bindings);
 
   // Dynamic title: show active canvas tab name
@@ -196,22 +197,50 @@ export function MainPanel({ api }: { api: PluginAPI }) {
     });
   }, [store, isRemoteApp, activeHostId]);
 
-  // Debounced auto-save (skip for remote projects/app — state is owned by satellite)
+  // Ref for current live bindings — used by removal handlers to unbind MCP connections.
   const bindingsRef = useRef(bindings);
   bindingsRef.current = bindings;
+
+  // Debounced auto-save (skip for remote projects/app — state is owned by satellite).
+  // Wire definitions are saved from the canvas store (not from live MCP bindings),
+  // so wires survive agent sleep/wake cycles.
   const scheduleSave = useCallback(() => {
     if (isRemote || isRemoteApp) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       store.getState().saveCanvas(storage);
-      store.getState().saveWires(storage, bindingsRef.current);
+      store.getState().saveWires(storage);
     }, 500);
   }, [store, storage, isRemote, isRemoteApp]);
 
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, bindings, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, loaded, scheduleSave]);
+
+  // ── Agent wake reconciliation ────────────────────────────────────
+  // When an agent wakes up (bindings appear in MCP store that match wire
+  // definitions), we don't need to do anything — the binding already exists.
+  // But when a previously-sleeping agent's bindings were cleaned up by the
+  // main process, we recreate them from wire definitions so wires reconnect.
+  useEffect(() => {
+    if (!loaded || wireDefinitions.length === 0) return;
+    const liveKeys = new Set(bindings.map((b) => `${b.agentId}\0${b.targetId}`));
+    for (const def of wireDefinitions) {
+      if (!liveKeys.has(`${def.agentId}\0${def.targetId}`)) {
+        // Wire definition exists but no live binding — try to restore it.
+        // This fires when an agent wakes and its bindings need re-creation.
+        window.clubhouse.mcpBinding.bind(def.agentId, {
+          targetId: def.targetId,
+          targetKind: def.targetKind,
+          label: def.label,
+          agentName: def.agentName,
+          targetName: def.targetName,
+          projectName: def.projectName,
+        }).catch(() => { /* Agent may still be sleeping — that's fine */ });
+      }
+    }
+  }, [loaded, wireDefinitions, bindings]);
 
   // Broadcast canvas state changes to pop-out windows and annex clients
   // (skip for remote projects/app — the satellite broadcasts its own state)
@@ -271,11 +300,12 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleRemoveCanvas = useCallback((canvasId: string) => {
     remoteForward({ type: 'removeCanvas', canvasId });
-    // Unbind all MCP wires attached to views on this canvas before removing it
+    // Unbind all MCP wires and remove wire definitions for views on this canvas
     const canvas = store.getState().canvases.find((c) => c.id === canvasId);
     if (canvas) {
       const currentBindings = bindingsRef.current;
       const unbind = useMcpBindingStore.getState().unbind;
+      const { removeWireDefinition } = store.getState();
       const seen = new Set<string>();
       for (const view of canvas.views) {
         for (const b of findBindingsForView(view, currentBindings)) {
@@ -283,6 +313,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           if (!seen.has(key)) {
             seen.add(key);
             unbind(b.agentId, b.targetId);
+            removeWireDefinition(b.agentId, b.targetId);
           }
         }
       }
@@ -317,12 +348,16 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleRemoveView = useCallback((viewId: string) => {
     remoteForward({ type: 'removeView', viewId });
-    // Unbind any MCP wires attached to this view before removing it
+    // Unbind any MCP wires and remove wire definitions for this view
     const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
     if (view) {
       const stale = findBindingsForView(view, bindingsRef.current);
       const unbind = useMcpBindingStore.getState().unbind;
-      for (const b of stale) unbind(b.agentId, b.targetId);
+      const { removeWireDefinition } = store.getState();
+      for (const b of stale) {
+        unbind(b.agentId, b.targetId);
+        removeWireDefinition(b.agentId, b.targetId);
+      }
     }
     store.getState().removeView(viewId);
   }, [store, remoteForward]);
@@ -377,10 +412,11 @@ export function MainPanel({ api }: { api: PluginAPI }) {
 
   const handleRemoveZone = useCallback((zoneId: string, removeContents: boolean) => {
     remoteForward({ type: 'removeZone', zoneId, removeContents });
-    // Unbind any MCP wires attached to the zone or its contained widgets
+    // Unbind any MCP wires and remove wire definitions for zone contents
     const zone = store.getState().activeCanvas().views.find((v) => v.id === zoneId && v.type === 'zone');
     if (zone) {
       const unbind = useMcpBindingStore.getState().unbind;
+      const { removeWireDefinition } = store.getState();
       // Unbind wires for contained views if they're being removed
       if (removeContents && 'containedViewIds' in zone) {
         const contained = (zone as any).containedViewIds as string[];
@@ -388,7 +424,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
           const view = store.getState().activeCanvas().views.find((v) => v.id === viewId);
           if (view) {
             const stale = findBindingsForView(view, bindingsRef.current);
-            for (const b of stale) unbind(b.agentId, b.targetId);
+            for (const b of stale) {
+              unbind(b.agentId, b.targetId);
+              removeWireDefinition(b.agentId, b.targetId);
+            }
           }
         }
       }
@@ -435,6 +474,10 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             zoomedViewId,
             selectedViewId,
             selectedViewIds,
+            wireDefinitions,
+            onAddWireDefinition: (entry: McpBindingEntry) => store.getState().addWireDefinition(entry),
+            onRemoveWireDefinition: (agentId: string, targetId: string) => store.getState().removeWireDefinition(agentId, targetId),
+            onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => store.getState().updateWireDefinition(agentId, targetId, updates),
             api,
             onViewportChange: handleViewportChange,
             onAddView: handleAddView,

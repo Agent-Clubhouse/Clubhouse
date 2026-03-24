@@ -50,6 +50,11 @@ interface CanvasWorkspaceProps {
   zoomedViewId: string | null;
   selectedViewId: string | null;
   selectedViewIds: string[];
+  /** Canvas-owned wire definitions — persists across agent sleep/wake cycles. */
+  wireDefinitions: McpBindingEntry[];
+  onAddWireDefinition: (entry: McpBindingEntry) => void;
+  onRemoveWireDefinition: (agentId: string, targetId: string) => void;
+  onUpdateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
   api: PluginAPI;
   onViewportChange: (viewport: Viewport) => void;
   onAddView: (type: CanvasViewType, position: Position) => void;
@@ -75,6 +80,10 @@ export function CanvasWorkspace({
   zoomedViewId,
   selectedViewId,
   selectedViewIds,
+  wireDefinitions,
+  onAddWireDefinition,
+  onRemoveWireDefinition,
+  onUpdateWireDefinition,
   api,
   onViewportChange,
   onAddView,
@@ -115,9 +124,20 @@ export function CanvasWorkspace({
 
   // ── MCP wiring state ──────────────────────────────────────────
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  // Live bindings used for the config popover's live state (instructions, etc.)
   const mcpBindings = useMcpBindingStore((s) => s.bindings);
   const addZoneWire = useZoneWireStore((s) => s.addWire);
   const mcpBind = useMcpBindingStore((s) => s.bind);
+
+  // Merge wireDefinitions with live MCP bindings so the overlay shows both
+  // canvas-persisted wires (survive sleep) and zone-expanded wires (dynamic).
+  const mergedWireBindings = useMemo(() => {
+    const definitionKeys = new Set(wireDefinitions.map((w) => `${w.agentId}\0${w.targetId}`));
+    // Start with all wire definitions, then add any live MCP bindings not
+    // already covered (e.g. zone-expanded bindings).
+    const extras = mcpBindings.filter((b) => !definitionKeys.has(`${b.agentId}\0${b.targetId}`));
+    return extras.length > 0 ? [...wireDefinitions, ...extras] : wireDefinitions;
+  }, [wireDefinitions, mcpBindings]);
 
   const handleZoneWire: ZoneWireCallback = useCallback((sourceZoneId, targetId, targetType) => {
     addZoneWire({ sourceZoneId, targetId, targetType });
@@ -137,7 +157,11 @@ export function CanvasWorkspace({
     }
   }, [views, addZoneWire, mcpBind]);
 
-  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire);
+  const handleAddWireDef = useCallback((entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => {
+    onAddWireDefinition(entry as McpBindingEntry);
+  }, [onAddWireDefinition]);
+
+  const { wireDrag, startWireDrag, isWireDragging } = useWiring(views, viewport, containerRef, handleZoneWire, handleAddWireDef);
   const [wirePopover, setWirePopover] = useState<{ binding: McpBindingEntry; x: number; y: number } | null>(null);
 
   // ── Zone state ──────────────────────────────────────────────────
@@ -671,11 +695,14 @@ export function CanvasWorkspace({
           />
         ))}
 
-        {/* Layer 2: MCP wire overlay */}
+        {/* Layer 2: MCP wire overlay — rendered from wireDefinitions merged
+            with live MCP bindings.  wireDefinitions ensure individually-created
+            wires survive agent sleep; live bindings cover zone-expanded wires
+            and any other dynamically-created bindings. */}
         {mcpEnabled && (
           <WireOverlay
             views={views}
-            bindings={mcpBindings}
+            bindings={mergedWireBindings}
             viewPositions={wireViewPositions}
             sleepingAgentIds={sleepingAgentIds}
             onWireClick={handleWireClick}
@@ -876,6 +903,9 @@ export function CanvasWorkspace({
           x={wirePopover.x}
           y={wirePopover.y}
           onClose={handleWirePopoverClose}
+          onAddWireDefinition={onAddWireDefinition}
+          onRemoveWireDefinition={onRemoveWireDefinition}
+          onUpdateWireDefinition={onUpdateWireDefinition}
         />
       )}
 

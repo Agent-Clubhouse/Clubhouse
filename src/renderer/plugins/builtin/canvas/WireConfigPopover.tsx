@@ -19,9 +19,15 @@ interface WireConfigPopoverProps {
   x: number;
   y: number;
   onClose: () => void;
+  /** Add a wire definition to the canvas store. */
+  onAddWireDefinition?: (entry: McpBindingEntry) => void;
+  /** Remove a wire definition from the canvas store. */
+  onRemoveWireDefinition?: (agentId: string, targetId: string) => void;
+  /** Update a wire definition in the canvas store (e.g. instructions). */
+  onUpdateWireDefinition?: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
 }
 
-export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverProps) {
+export function WireConfigPopover({ binding, x, y, onClose, onAddWireDefinition, onRemoveWireDefinition, onUpdateWireDefinition }: WireConfigPopoverProps) {
   const unbind = useMcpBindingStore((s) => s.unbind);
   const bind = useMcpBindingStore((s) => s.bind);
   const setInstructions = useMcpBindingStore((s) => s.setInstructions);
@@ -56,9 +62,11 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
 
   const handleDisconnect = async () => {
     await unbind(binding.agentId, binding.targetId);
+    onRemoveWireDefinition?.(binding.agentId, binding.targetId);
     // Also remove reverse binding if bidirectional
     if (bidirectional && isAgentToAgent) {
       await unbind(binding.targetId, binding.agentId);
+      onRemoveWireDefinition?.(binding.targetId, binding.agentId);
     }
     onClose();
   };
@@ -67,33 +75,40 @@ export function WireConfigPopover({ binding, x, y, onClose }: WireConfigPopoverP
     if (!newValue) {
       // Remove reverse binding
       await unbind(binding.targetId, binding.agentId);
+      onRemoveWireDefinition?.(binding.targetId, binding.agentId);
     } else {
       // Create reverse binding
       // Find the source agent's label from bindings
       const sourceLabel = bindings.find(
         (b) => b.targetId === binding.agentId && b.targetKind === 'agent',
       )?.label || binding.agentId;
-      await bind(binding.targetId, {
+      const revTarget = {
         targetId: binding.agentId,
-        targetKind: 'agent',
+        targetKind: 'agent' as const,
         label: sourceLabel,
-      });
+      };
+      await bind(binding.targetId, revTarget);
+      onAddWireDefinition?.({ agentId: binding.targetId, ...revTarget } as McpBindingEntry);
     }
   };
 
   const handleSaveInstructions = async (instructions: Record<string, string>) => {
     await setInstructions(binding.agentId, binding.targetId, instructions);
+    onUpdateWireDefinition?.(binding.agentId, binding.targetId, { instructions });
     // Mirror instructions to the reverse binding for bidirectional agent-to-agent wires
     if (bidirectional && isAgentToAgent) {
       await setInstructions(binding.targetId, binding.agentId, instructions);
+      onUpdateWireDefinition?.(binding.targetId, binding.agentId, { instructions });
     }
   };
 
   const handleSavePermissions = async (disabledTools: string[]) => {
     await setDisabledTools(binding.agentId, binding.targetId, disabledTools);
+    onUpdateWireDefinition?.(binding.agentId, binding.targetId, { disabledTools });
     // Mirror permissions to the reverse binding for bidirectional agent-to-agent wires
     if (bidirectional && isAgentToAgent) {
       await setDisabledTools(binding.targetId, binding.agentId, disabledTools);
+      onUpdateWireDefinition?.(binding.targetId, binding.agentId, { disabledTools });
     }
   };
 

@@ -76,9 +76,13 @@ export function useWiring(
   viewport: Viewport,
   containerRef: React.RefObject<HTMLDivElement | null>,
   onZoneWire?: ZoneWireCallback,
+  /** Callback to persist a wire definition in the canvas store. */
+  onAddWireDefinition?: (entry: { agentId: string; targetId: string; targetKind: string; label: string; agentName?: string; targetName?: string; projectName?: string }) => void,
 ) {
   const [wireDrag, setWireDrag] = useState<WireDragState | null>(null);
   const bind = useMcpBindingStore((s) => s.bind);
+  const onAddWireDefRef = useRef(onAddWireDefinition);
+  onAddWireDefRef.current = onAddWireDefinition;
   const onZoneWireRef = useRef(onZoneWire);
   onZoneWireRef.current = onZoneWire;
   const viewsRef = useRef(views);
@@ -162,25 +166,29 @@ export function useWiring(
             || undefined;
           const sourceLabel = agentSource.displayName || agentSource.title;
           const targetLabel = hitView.displayName || hitView.title;
-          bind(agentSource.agentId!, {
+          const fwdTarget = {
             targetId: resolvedTargetId,
             targetKind: kind as 'agent' | 'browser' | 'group-project' | 'agent-queue',
             label: targetLabel,
             agentName: sourceLabel,
             targetName: targetLabel,
             projectName,
-          });
+          };
+          bind(agentSource.agentId!, fwdTarget);
+          onAddWireDefRef.current?.({ agentId: agentSource.agentId!, ...fwdTarget });
 
           // Agent-to-agent wires default to bidirectional
           if (kind === 'agent') {
-            bind(resolvedTargetId, {
+            const revTarget = {
               targetId: agentSource.agentId!,
-              targetKind: 'agent',
+              targetKind: 'agent' as const,
               label: sourceLabel,
               agentName: targetLabel,
               targetName: sourceLabel,
               projectName,
-            });
+            };
+            bind(resolvedTargetId, revTarget);
+            onAddWireDefRef.current?.({ agentId: resolvedTargetId, ...revTarget });
           }
         }
       }
