@@ -372,6 +372,25 @@ describe('WireOverlay', () => {
     expect(pathEl?.style.opacity).toBe('1');
   });
 
+  it('does not set explicit zIndex on SVG container so DOM order determines stacking', () => {
+    const views: CanvasView[] = [
+      makeAgentView('a1', 'agent-1', 0, 0),
+      makePluginView('b1', 400, 0),
+    ];
+    const bindings: McpBindingEntry[] = [
+      { agentId: 'agent-1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+    ];
+
+    const { container } = render(
+      <WireOverlay views={views} bindings={bindings} />,
+    );
+
+    const svg = container.querySelector('svg');
+    expect(svg).toBeTruthy();
+    // Should NOT have zIndex: 0 (or any explicit zIndex) — natural DOM stacking
+    expect(svg?.style.zIndex).toBe('');
+  });
+
   it('does not dim wire when sleepingAgentIds is not provided', () => {
     const views: CanvasView[] = [
       makeAgentView('a1', 'agent-1', 0, 0),
