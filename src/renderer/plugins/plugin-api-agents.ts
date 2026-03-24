@@ -342,15 +342,15 @@ export function createAgentsAPI(ctx: PluginContext, manifest?: PluginManifest): 
       }
     },
 
-    // v0.9 companion agent stubs — implementation will follow in a separate PR
-    async spawnCompanion() {
-      throw new Error('Companion agents require API >= 0.9 (not yet implemented)');
+    // v0.9 companion agent methods
+    async spawnCompanion(options?: { model?: string; systemPrompt?: string }) {
+      return window.clubhouse.agent.spawnCompanion(ctx.pluginId, options);
     },
     async getCompanionStatus() {
-      return 'none' as const;
+      return window.clubhouse.agent.getCompanionStatus(ctx.pluginId);
     },
     async getCompanionWorkspace() {
-      throw new Error('Companion agents require API >= 0.9 (not yet implemented)');
+      return window.clubhouse.agent.getCompanionWorkspace(ctx.pluginId);
     },
   };
 }

@@ -58,6 +58,9 @@ export const IPC = {
     SPAWN_AGENT: 'agent:spawn-agent',
     KILL_AGENT: 'agent:kill-agent',
     AGENT_WAKING: 'agent:agent-waking',
+    SPAWN_COMPANION: 'agent:spawn-companion',
+    GET_COMPANION_STATUS: 'agent:get-companion-status',
+    GET_COMPANION_WORKSPACE: 'agent:get-companion-workspace',
     GET_MODEL_OPTIONS: 'agent:get-model-options',
     CHECK_ORCHESTRATOR: 'agent:check-orchestrator',
     GET_ORCHESTRATORS: 'agent:get-orchestrators',
@@ -363,6 +366,14 @@ export const IPC = {
     SET_DISABLED_TOOLS: 'mcp-binding:set-disabled-tools',
     /** Broadcast when an MCP tool is called — carries source/target/direction for wire animation. */
     TOOL_ACTIVITY: 'mcp-binding:tool-activity',
+  },
+  PLUGIN_MCP: {
+    CONTRIBUTE_TOOLS: 'plugin-mcp:contribute-tools',
+    REMOVE_TOOLS: 'plugin-mcp:remove-tools',
+    LIST_TOOLS: 'plugin-mcp:list-tools',
+    /** Main→renderer push: delivers tool call to plugin handler. Not an ipcMain.handle channel. */
+    TOOL_CALL: 'plugin-mcp:tool-call',
+    TOOL_RESULT: 'plugin-mcp:tool-result',
   },
   AGENT_QUEUE: {
     CREATE: 'agent-queue:create',

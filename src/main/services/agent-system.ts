@@ -28,7 +28,7 @@ export interface SpawnAgentParams {
   agentId: string;
   projectPath: string;
   cwd: string;
-  kind: 'durable' | 'quick';
+  kind: 'durable' | 'quick' | 'companion';
   model?: string;
   mission?: string;
   systemPrompt?: string;
@@ -41,6 +41,10 @@ export interface SpawnAgentParams {
   resume?: boolean;
   /** Specific session ID to resume (provider-specific format) */
   sessionId?: string;
+  /** Plugin ID that owns this companion agent (required when kind === 'companion'). @since 0.9 */
+  pluginOwner?: string;
+  /** Path to companion workspace (auto-set for companion agents). @since 0.9 */
+  companionWorkspace?: string;
 }
 
 export function isHeadlessAgent(agentId: string): boolean {

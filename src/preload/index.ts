@@ -126,7 +126,7 @@ const api = {
       agentId: string;
       projectPath: string;
       cwd: string;
-      kind: 'durable' | 'quick';
+      kind: 'durable' | 'quick' | 'companion';
       model?: string;
       mission?: string;
       systemPrompt?: string;
@@ -135,10 +135,21 @@ const api = {
       freeAgentMode?: boolean;
       resume?: boolean;
       sessionId?: string;
+      pluginOwner?: string;
+      companionWorkspace?: string;
     }) => ipcRenderer.invoke(IPC.AGENT.SPAWN_AGENT, params),
 
     killAgent: (agentId: string, projectPath: string) =>
       ipcRenderer.invoke(IPC.AGENT.KILL_AGENT, agentId, projectPath),
+
+    spawnCompanion: (pluginId: string, options?: { model?: string; systemPrompt?: string }) =>
+      ipcRenderer.invoke(IPC.AGENT.SPAWN_COMPANION, pluginId, options),
+
+    getCompanionStatus: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_STATUS, pluginId),
+
+    getCompanionWorkspace: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.AGENT.GET_COMPANION_WORKSPACE, pluginId),
 
     getModelOptions: (projectPath: string, orchestrator?: string) =>
       ipcRenderer.invoke(IPC.AGENT.GET_MODEL_OPTIONS, projectPath, orchestrator),
@@ -573,6 +584,21 @@ const api = {
       ipcRenderer.invoke(IPC.MARKETPLACE.REMOVE_CUSTOM, req),
     toggleCustomMarketplace: (req: { id: string; enabled: boolean }) =>
       ipcRenderer.invoke(IPC.MARKETPLACE.TOGGLE_CUSTOM, req),
+  },
+  pluginMcp: {
+    contributeTools: (pluginId: string, tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.CONTRIBUTE_TOOLS, pluginId, tools),
+    removeTools: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.REMOVE_TOOLS, pluginId),
+    listTools: (pluginId: string) =>
+      ipcRenderer.invoke(IPC.PLUGIN_MCP.LIST_TOOLS, pluginId) as Promise<string[]>,
+    onToolCall: (callback: (data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { callId: string; pluginId: string; toolName: string; args: Record<string, unknown> }) => callback(data);
+      ipcRenderer.on(IPC.PLUGIN_MCP.TOOL_CALL, listener);
+      return () => { ipcRenderer.removeListener(IPC.PLUGIN_MCP.TOOL_CALL, listener); };
+    },
+    sendToolResult: (callId: string, result: { content: Array<{ type: 'text'; text: string }>; isError?: boolean }) =>
+      ipcRenderer.send(IPC.PLUGIN_MCP.TOOL_RESULT, { callId, result }),
   },
   log: {
     write: (entry: { ts: string; ns: string; level: string; msg: string; projectId?: string; meta?: Record<string, unknown> }) =>

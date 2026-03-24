@@ -7,6 +7,7 @@ import { StructuredSessionOpts } from '../orchestrators/types';
 import { isSessionCapable, isStructuredCapable } from '../orchestrators';
 import * as agentConfig from '../services/agent-config';
 import * as agentSystem from '../services/agent-system';
+import { agentRegistry } from '../services/agent-registry';
 import * as headlessManager from '../services/headless-manager';
 import * as structuredManager from '../services/structured-manager';
 import { buildSummaryInstruction, readQuickSummary } from '../orchestrators/shared';
@@ -441,6 +442,60 @@ export function registerAgentHandlers(): void {
       const result = await agentConfig.restoreFromBackup(projectPath);
       if (result.restoredCount > 0) broadcastSnapshotRefresh();
       return result;
+    },
+  ));
+
+  // ── Companion agent handlers (v0.9+) ───────────────────────────────
+
+  // Track companion agents by plugin ID (singleton enforcement)
+  const companionAgents = new Map<string, string>();
+
+  ipcMain.handle(IPC.AGENT.SPAWN_COMPANION, withValidatedArgs(
+    [stringArg(), objectArg({ optional: true })],
+    async (_event, pluginId, options?: { model?: string; systemPrompt?: string }) => {
+      const companionWs = await import('../services/companion-workspace');
+      const wsPath = await companionWs.ensureCompanionWorkspace(pluginId);
+
+      // Check if a companion agent already exists for this plugin
+      const existingId = companionAgents.get(pluginId);
+      if (existingId && agentRegistry.get(existingId)) {
+        appLog('core:companion', 'info', `Companion agent already exists for ${pluginId}: ${existingId}`);
+        return existingId;
+      }
+
+      // Create new companion agent
+      const agentId = `companion-${pluginId}-${Date.now()}`;
+      await agentSystem.spawnAgent({
+        agentId,
+        projectPath: wsPath,
+        cwd: wsPath,
+        kind: 'companion',
+        model: options?.model,
+        systemPrompt: options?.systemPrompt,
+        pluginOwner: pluginId,
+        companionWorkspace: wsPath,
+      });
+
+      companionAgents.set(pluginId, agentId);
+      return agentId;
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_STATUS, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const existingId = companionAgents.get(pluginId);
+      if (!existingId) return 'none';
+      const reg = agentRegistry.get(existingId);
+      return reg ? 'active' : 'sleeping';
+    },
+  ));
+
+  ipcMain.handle(IPC.AGENT.GET_COMPANION_WORKSPACE, withValidatedArgs(
+    [stringArg()],
+    async (_event, pluginId) => {
+      const companionWs = await import('../services/companion-workspace');
+      return companionWs.getCompanionWorkspacePath(pluginId);
     },
   ));
 }
