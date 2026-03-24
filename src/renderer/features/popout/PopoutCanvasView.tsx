@@ -18,6 +18,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { createWidgetsAPI } from '../../plugins/plugin-api-ui';
 import type { PluginAPI, AgentsAPI, ProjectsAPI, Disposable, AgentInfo, PluginAgentDetailedStatus } from '../../../shared/plugin-types';
 import type { CanvasMutation } from '../../../shared/types';
+import { useMcpBindingStore } from '../../stores/mcpBindingStore';
 
 interface PopoutCanvasViewProps {
   canvasId?: string;
@@ -146,6 +147,9 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [zoomedViewId, setZoomedViewId] = useState<string | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [selectedViewIds, setSelectedViewIds] = useState<string[]>([]);
+  // Popout uses live MCP bindings as wire definitions — persistence is handled
+  // by the main window's canvas store via the wireDefinitions system.
+  const popoutWireDefinitions = useMcpBindingStore((s) => s.bindings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -327,6 +331,10 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         zoomedViewId={zoomedViewId}
         selectedViewId={selectedViewId}
         selectedViewIds={selectedViewIds}
+        wireDefinitions={popoutWireDefinitions}
+        onAddWireDefinition={() => {}}
+        onRemoveWireDefinition={() => {}}
+        onUpdateWireDefinition={() => {}}
         api={api}
         onViewportChange={handleViewportChange}
         onAddView={handleAddView}
