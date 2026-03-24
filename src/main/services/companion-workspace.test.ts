@@ -1,9 +1,12 @@
+import * as path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const MOCK_HOME = '/mock-home';
 
 // Mock electron
 vi.mock('electron', () => ({
   app: {
-    getPath: vi.fn(() => '/mock-home'),
+    getPath: vi.fn(() => MOCK_HOME),
   },
 }));
 
@@ -35,6 +38,11 @@ import {
   removeCompanionWorkspace,
 } from './companion-workspace';
 
+/** Build expected path using path.join so it matches on all platforms. */
+function expectedPath(pluginId: string): string {
+  return path.join(MOCK_HOME, '.clubhouse', 'plugin-workspaces', pluginId);
+}
+
 describe('companion-workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -43,7 +51,7 @@ describe('companion-workspace', () => {
   describe('getCompanionWorkspacePath', () => {
     it('returns path under ~/.clubhouse/plugin-workspaces/', () => {
       const result = getCompanionWorkspacePath('daily-admin');
-      expect(result).toBe('/mock-home/.clubhouse/plugin-workspaces/daily-admin');
+      expect(result).toBe(expectedPath('daily-admin'));
     });
   });
 
@@ -65,9 +73,9 @@ describe('companion-workspace', () => {
       vi.mocked(fs.mkdir).mockResolvedValue(undefined);
 
       const result = await ensureCompanionWorkspace('daily-admin');
-      expect(result).toBe('/mock-home/.clubhouse/plugin-workspaces/daily-admin');
+      expect(result).toBe(expectedPath('daily-admin'));
       expect(fs.mkdir).toHaveBeenCalledWith(
-        '/mock-home/.clubhouse/plugin-workspaces/daily-admin',
+        expectedPath('daily-admin'),
         { recursive: true },
       );
     });
@@ -76,7 +84,7 @@ describe('companion-workspace', () => {
       vi.mocked(fs.access).mockResolvedValue(undefined);
 
       const result = await ensureCompanionWorkspace('daily-admin');
-      expect(result).toBe('/mock-home/.clubhouse/plugin-workspaces/daily-admin');
+      expect(result).toBe(expectedPath('daily-admin'));
       expect(fs.mkdir).not.toHaveBeenCalled();
     });
   });
@@ -89,7 +97,7 @@ describe('companion-workspace', () => {
       const result = await removeCompanionWorkspace('daily-admin');
       expect(result).toBe(true);
       expect(fs.rm).toHaveBeenCalledWith(
-        '/mock-home/.clubhouse/plugin-workspaces/daily-admin',
+        expectedPath('daily-admin'),
         { recursive: true, force: true },
       );
     });
