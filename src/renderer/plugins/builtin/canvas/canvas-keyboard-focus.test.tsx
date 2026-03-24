@@ -61,6 +61,10 @@ function renderWorkspace(overrides: {
     zoomedViewId: null,
     selectedViewId: overrides.selectedViewId ?? null,
     selectedViewIds: [] as string[],
+    wireDefinitions: [],
+    onAddWireDefinition: vi.fn(),
+    onRemoveWireDefinition: vi.fn(),
+    onUpdateWireDefinition: vi.fn(),
     api: stubApi(),
     onViewportChange: overrides.onViewportChange ?? vi.fn(),
     onAddView: vi.fn(),
@@ -162,6 +166,13 @@ describe('canvas keyboard focus', () => {
       onClearSelection: vi.fn(),
     };
 
+    const wireDefProps = {
+      wireDefinitions: [],
+      onAddWireDefinition: vi.fn(),
+      onRemoveWireDefinition: vi.fn(),
+      onUpdateWireDefinition: vi.fn(),
+    };
+
     const { rerender } = render(
       <CanvasWorkspace
         views={[baseView]}
@@ -180,6 +191,7 @@ describe('canvas keyboard focus', () => {
         onZoomView={vi.fn()}
         onSelectView={vi.fn()}
         {...multiSelectProps}
+        {...wireDefProps}
       />,
     );
 
@@ -207,6 +219,7 @@ describe('canvas keyboard focus', () => {
         onZoomView={vi.fn()}
         onSelectView={vi.fn()}
         {...multiSelectProps}
+        {...wireDefProps}
       />,
     );
 

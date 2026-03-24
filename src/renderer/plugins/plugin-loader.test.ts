@@ -20,6 +20,10 @@ const mockAgent = { listDurable: vi.fn(), killAgent: vi.fn() };
 const mockPty = { kill: vi.fn() };
 
 const mockLog = { write: vi.fn() };
+const mockApp = {
+  getExperimentalSettings: vi.fn().mockResolvedValue({}),
+  saveExperimentalSettings: vi.fn().mockResolvedValue(undefined),
+};
 
 Object.defineProperty(globalThis, 'window', {
   value: {
@@ -30,6 +34,7 @@ Object.defineProperty(globalThis, 'window', {
       agent: mockAgent,
       pty: mockPty,
       log: mockLog,
+      app: mockApp,
     },
     confirm: vi.fn(),
     prompt: vi.fn(),
@@ -562,6 +567,114 @@ describe('plugin-loader', () => {
         expect(writeArgs).toContain('terminal');
         expect(writeArgs).toContain('files');
       });
+    });
+  });
+
+  // ── canvas experimental flag migration ─────────────────────────────
+
+  describe('canvas experimental flag migration', () => {
+    const canvasManifest = makeManifest({ id: 'canvas', name: 'Canvas', scope: 'dual' });
+    const gpManifest = makeManifest({ id: 'group-project', name: 'Group Project', scope: 'dual' });
+    const aqManifest = makeManifest({ id: 'agent-queue', name: 'Agent Queue', scope: 'dual' });
+    const canvasModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+    const gpModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+    const aqModule: PluginModule = { activate: vi.fn(), deactivate: vi.fn() };
+
+    function setupCanvasBuiltins(): void {
+      (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
+        { manifest: makeManifest({ id: 'hub', scope: 'dual' }), module: { activate: vi.fn(), deactivate: vi.fn() } },
+        { manifest: canvasManifest, module: canvasModule },
+        { manifest: gpManifest, module: gpModule },
+        { manifest: aqManifest, module: aqModule },
+      ]);
+      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Set(['hub']),
+      );
+    }
+
+    beforeEach(() => {
+      vi.mocked(canvasModule.activate!).mockReset();
+      vi.mocked(gpModule.activate!).mockReset();
+      vi.mocked(aqModule.activate!).mockReset();
+      mockApp.getExperimentalSettings.mockResolvedValue({});
+      mockApp.saveExperimentalSettings.mockResolvedValue(undefined);
+    });
+
+    it('migrates only canvas to appEnabled when experimentalFlags.canvas is true', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
+
+      await initializePluginSystem();
+
+      const { appEnabled } = usePluginStore.getState();
+      expect(appEnabled).toContain('canvas');
+      // Sub-plugins (group-project, agent-queue) depend on MCP (still
+      // experimental) — they must be enabled manually by the user.
+      expect(appEnabled).not.toContain('group-project');
+      expect(appEnabled).not.toContain('agent-queue');
+    });
+
+    it('persists migrated appEnabled list to storage', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
+
+      await initializePluginSystem();
+
+      expect(mockPlugin.storageWrite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pluginId: '_system',
+          scope: 'global',
+          key: 'app-enabled',
+          value: expect.arrayContaining(['canvas']),
+        }),
+      );
+    });
+
+    it('clears the stale canvas experimental flag', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true, mcp: true });
+
+      await initializePluginSystem();
+
+      expect(mockApp.saveExperimentalSettings).toHaveBeenCalledWith({ mcp: true });
+    });
+
+    it('does not migrate when experimentalFlags.canvas is falsy', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ mcp: true });
+
+      await initializePluginSystem();
+
+      const { appEnabled } = usePluginStore.getState();
+      expect(appEnabled).not.toContain('canvas');
+      expect(mockApp.saveExperimentalSettings).not.toHaveBeenCalled();
+    });
+
+    it('does not double-add canvas if already in appEnabled', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
+      mockPlugin.storageRead.mockImplementation(async (req: { key: string }) => {
+        if (req.key === 'app-enabled') return ['hub', 'canvas'];
+        return undefined;
+      });
+
+      await initializePluginSystem();
+
+      const { appEnabled } = usePluginStore.getState();
+      const canvasCount = appEnabled.filter((id: string) => id === 'canvas').length;
+      expect(canvasCount).toBe(1);
+    });
+
+    it('activates migrated canvas at app level', async () => {
+      setupCanvasBuiltins();
+      mockApp.getExperimentalSettings.mockResolvedValue({ canvas: true });
+
+      await initializePluginSystem();
+
+      expect(canvasModule.activate).toHaveBeenCalledTimes(1);
+      // Sub-plugins should NOT be activated by migration
+      expect(gpModule.activate).not.toHaveBeenCalled();
+      expect(aqModule.activate).not.toHaveBeenCalled();
     });
   });
 
@@ -1603,15 +1716,12 @@ describe('plugin-loader', () => {
   // ── getBuiltinProjectPluginIds ─────────────────────────────────────
 
   describe('getBuiltinProjectPluginIds()', () => {
-    it('returns project-scoped and dual-scoped default-enabled built-in plugin IDs', () => {
+    it('returns all project-scoped and dual-scoped built-in plugin IDs', () => {
       (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
         { manifest: makeManifest({ id: 'hub', scope: 'dual' }), module: {} },
         { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
         { manifest: makeManifest({ id: 'files', scope: 'project' }), module: {} },
       ]);
-      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
-        new Set(['hub', 'terminal', 'files']),
-      );
 
       const result = getBuiltinProjectPluginIds();
 
@@ -1626,9 +1736,6 @@ describe('plugin-loader', () => {
         { manifest: makeManifest({ id: 'app-only', scope: 'app' }), module: {} },
         { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
       ]);
-      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
-        new Set(['app-only', 'terminal']),
-      );
 
       const result = getBuiltinProjectPluginIds();
 
@@ -1637,29 +1744,25 @@ describe('plugin-loader', () => {
       expect(result).toHaveLength(1);
     });
 
-    it('excludes non-default built-in plugins', () => {
+    it('includes non-default dual-scoped builtins (app-first gate controls activation)', () => {
       (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
         { manifest: makeManifest({ id: 'terminal', scope: 'project' }), module: {} },
-        { manifest: makeManifest({ id: 'optional', scope: 'project' }), module: {} },
+        { manifest: makeManifest({ id: 'canvas', scope: 'dual' }), module: {} },
+        { manifest: makeManifest({ id: 'group-project', scope: 'dual' }), module: {} },
       ]);
-      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
-        new Set(['terminal']),
-      );
 
       const result = getBuiltinProjectPluginIds();
 
       expect(result).toContain('terminal');
-      expect(result).not.toContain('optional');
-      expect(result).toHaveLength(1);
+      expect(result).toContain('canvas');
+      expect(result).toContain('group-project');
+      expect(result).toHaveLength(3);
     });
 
-    it('returns empty array when no builtins match', () => {
+    it('returns empty array when only app-scoped builtins exist', () => {
       (getBuiltinPlugins as ReturnType<typeof vi.fn>).mockReturnValue([
         { manifest: makeManifest({ id: 'app-only', scope: 'app' }), module: {} },
       ]);
-      (getDefaultEnabledIds as ReturnType<typeof vi.fn>).mockReturnValue(
-        new Set(['app-only']),
-      );
 
       const result = getBuiltinProjectPluginIds();
 

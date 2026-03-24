@@ -8,6 +8,8 @@ import {
   parsePluginWidgetType,
   onRegistryChange,
   generatePluginWidgetDisplayName,
+  preRegisterFromManifest,
+  isWidgetPending,
   _resetRegistryForTesting,
 } from './canvas-widget-registry';
 import type { PluginCanvasWidgetDeclaration, CanvasWidgetDescriptor } from '../../shared/plugin-types';
@@ -169,6 +171,64 @@ describe('canvas-widget-registry', () => {
       sub.dispose();
       registerCanvasWidgetType('my-plugin', makeDeclaration('chart'), makeDescriptor('chart'));
       expect(listener).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── Pre-registration ──────────────────────────────────────────────
+
+  describe('preRegisterFromManifest', () => {
+    it('creates a placeholder entry with _pending flag and null component', () => {
+      const decl = makeDeclaration('group-project', 'Group Project');
+      preRegisterFromManifest('group-project', decl);
+
+      const entry = getRegisteredWidgetType('plugin:group-project:group-project');
+      expect(entry).toBeDefined();
+      expect(entry!.pluginId).toBe('group-project');
+      expect(entry!.declaration).toBe(decl);
+      expect(entry!.descriptor.component).toBeNull();
+      expect(isWidgetPending('plugin:group-project:group-project')).toBe(true);
+    });
+
+    it('does not overwrite an already-registered widget', () => {
+      const decl = makeDeclaration('chart');
+      const desc = makeDescriptor('chart');
+      registerCanvasWidgetType('my-plugin', decl, desc);
+
+      preRegisterFromManifest('my-plugin', decl);
+
+      const entry = getRegisteredWidgetType('plugin:my-plugin:chart');
+      expect(entry!.descriptor.component).not.toBeNull();
+      expect(isWidgetPending('plugin:my-plugin:chart')).toBe(false);
+    });
+
+    it('placeholder is replaced when real plugin activates', () => {
+      const decl = makeDeclaration('group-project', 'Group Project');
+      preRegisterFromManifest('group-project', decl);
+
+      expect(isWidgetPending('plugin:group-project:group-project')).toBe(true);
+
+      const desc = makeDescriptor('group-project');
+      registerCanvasWidgetType('group-project', decl, desc);
+
+      expect(isWidgetPending('plugin:group-project:group-project')).toBe(false);
+      const entry = getRegisteredWidgetType('plugin:group-project:group-project');
+      expect(entry!.descriptor.component).not.toBeNull();
+    });
+  });
+
+  describe('isWidgetPending', () => {
+    it('returns false for unregistered types', () => {
+      expect(isWidgetPending('plugin:unknown:thing')).toBe(false);
+    });
+
+    it('returns false for normally registered types', () => {
+      registerCanvasWidgetType('my-plugin', makeDeclaration('chart'), makeDescriptor('chart'));
+      expect(isWidgetPending('plugin:my-plugin:chart')).toBe(false);
+    });
+
+    it('returns true for pre-registered placeholders', () => {
+      preRegisterFromManifest('my-plugin', makeDeclaration('chart'));
+      expect(isWidgetPending('plugin:my-plugin:chart')).toBe(true);
     });
   });
 

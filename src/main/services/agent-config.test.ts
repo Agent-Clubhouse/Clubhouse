@@ -45,6 +45,8 @@ vi.mock('fs/promises', () => ({
   readdir: vi.fn(() => []),
   unlink: vi.fn(),
   stat: vi.fn(),
+  copyFile: vi.fn(),
+  rename: vi.fn(),
 }));
 
 // Mock fs-utils
@@ -82,13 +84,22 @@ import {
   saveAgentIcon,
   clearAgentConfigCache,
   flushAgentConfig,
+  getBackupInfo,
+  restoreFromBackup,
 } from './agent-config';
 
 const PROJECT_PATH = '/test/project';
 
-// Clear the write-back cache before every test to prevent cross-test contamination
+// Clear the write-back cache before every test to prevent cross-test contamination.
+// Also set up default mocks for atomic-write helpers (rename, copyFile) so that
+// existing tests work without modification after the atomic write refactor.
 beforeEach(() => {
   clearAgentConfigCache();
+  // Default rename mock: simulate atomic rename by making the dest path
+  // "appear" to have the data.  Tests that track writtenData override this
+  // in their own beforeEach with a data-moving implementation.
+  vi.mocked(fsp.rename).mockResolvedValue(undefined);
+  vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
 });
 
 function mockAgentsFile(agents: any[]) {
@@ -118,8 +129,12 @@ describe('readAgents (via listDurable)', () => {
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
   });
 
-  it('returns [] on corrupt JSON', async () => {
-    vi.mocked(pathExists).mockResolvedValue(true);
+  it('returns [] on corrupt JSON with no backup', async () => {
+    vi.mocked(pathExists).mockImplementation(async (p: any) => {
+      if (String(p).endsWith('agents.json')) return true;
+      if (String(p).endsWith('agents.json.bak')) return false;
+      return false;
+    });
     vi.mocked(fsp.readFile).mockResolvedValue('{{invalid json');
     expect(await listDurable(PROJECT_PATH)).toEqual([]);
   });
@@ -157,6 +172,15 @@ describe('createDurable', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     vi.mocked(fsp.appendFile).mockResolvedValue(undefined);
     // Default: async exec succeeds for all commands
@@ -237,6 +261,10 @@ describe('createDurable', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(exec).mockImplementation((cmd: any, _opts: any, cb: any) => {
       const c = String(cmd);
       // Simulate empty repo: rev-parse HEAD fails
@@ -305,6 +333,10 @@ describe('createDurable', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
 
     await createDurable(PROJECT_PATH, 'new-agent', 'emerald');
     await flushAgentConfig(PROJECT_PATH);
@@ -363,7 +395,7 @@ describe('createDurable', () => {
     });
     vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
       if (String(p).endsWith('.gitignore'))
-        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/settings.local.json\n';
+        return '# Clubhouse agent manager\n.clubhouse/agents/\n.clubhouse/.local/\n.clubhouse/agents.json\n.clubhouse/agents.json.bak\n.clubhouse/settings.local.json\n';
       return '[]';
     });
 
@@ -883,6 +915,10 @@ describe('updateDurableConfig', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     const defaults = { systemPrompt: 'Be concise', allowedTools: ['Bash(npm test:*)'], defaultModel: 'sonnet' };
@@ -921,6 +957,10 @@ describe('updateDurableConfig', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     await updateDurableConfig(PROJECT_PATH, 'durable_model', { model: 'sonnet' });
@@ -947,6 +987,10 @@ describe('updateDurableConfig', () => {
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
@@ -975,6 +1019,10 @@ describe('updateDurableConfig', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     await updateDurableConfig(PROJECT_PATH, 'durable_fam', { freeAgentMode: true });
@@ -1001,6 +1049,10 @@ describe('updateDurableConfig', () => {
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
@@ -1029,6 +1081,10 @@ describe('updateDurableConfig', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     await updateDurableConfig(PROJECT_PATH, 'durable_sess', { lastSessionId: 'sess-abc-123' });
@@ -1055,6 +1111,10 @@ describe('updateDurableConfig', () => {
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
@@ -1085,6 +1145,10 @@ describe('updateSessionId', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     await updateSessionId(PROJECT_PATH, 'durable_sid', 'session-uuid-789');
@@ -1112,6 +1176,10 @@ describe('updateSessionId', () => {
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
     });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
+    });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
 
     await updateSessionId(PROJECT_PATH, 'durable_clr', null);
@@ -1137,6 +1205,10 @@ describe('addSessionEntry', () => {
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     return writtenData;
@@ -1408,8 +1480,9 @@ describe('saveAgentIcon', () => {
     await saveAgentIcon(PROJECT_PATH, AGENT_ID, dataUrl);
     await flushAgentConfig(PROJECT_PATH);
 
+    // Atomic write goes to a temp file — find the agents.json temp write
     const writeCalls = vi.mocked(fsp.writeFile).mock.calls;
-    const agentsWrite = writeCalls.find((c) => String(c[0]).endsWith('agents.json'));
+    const agentsWrite = writeCalls.find((c) => String(c[0]).includes('agents.json.tmp.'));
     expect(agentsWrite).toBeDefined();
     const agents = JSON.parse(String(agentsWrite![1]));
     expect(agents[0].icon).toBe(`${AGENT_ID}.png`);
@@ -1432,6 +1505,10 @@ describe('write-back cache', () => {
     });
     vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
       writtenData[String(p)] = String(data);
+    });
+    vi.mocked(fsp.rename).mockImplementation(async (src: any, dest: any) => {
+      writtenData[String(dest)] = writtenData[String(src)] || '';
+      delete writtenData[String(src)];
     });
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
     return writtenData;
@@ -1469,17 +1546,17 @@ describe('write-back cache', () => {
     await renameDurable(PROJECT_PATH, 'durable_1', 'renamed');
     await updateDurable(PROJECT_PATH, 'durable_1', { color: 'emerald' });
 
-    // No disk writes yet (debounced)
+    // No disk writes yet (debounced) — atomic writes go to temp files
     const writesBefore = vi.mocked(fsp.writeFile).mock.calls
-      .filter((c) => String(c[0]).endsWith('agents.json'));
+      .filter((c) => String(c[0]).includes('agents.json.tmp.'));
     expect(writesBefore).toHaveLength(0);
 
     // Flush writes to disk
     await flushAgentConfig(PROJECT_PATH);
 
-    // Only one disk write should have occurred
+    // Only one atomic write should have occurred (temp file)
     const writesAfter = vi.mocked(fsp.writeFile).mock.calls
-      .filter((c) => String(c[0]).endsWith('agents.json'));
+      .filter((c) => String(c[0]).includes('agents.json.tmp.'));
     expect(writesAfter).toHaveLength(1);
 
     // The single write should contain both modifications
@@ -1558,16 +1635,16 @@ describe('write-back cache', () => {
       .filter((c) => String(c[0]).endsWith('agents.json'));
     expect(readCalls).toHaveLength(1);
 
-    // No disk writes yet
+    // No disk writes yet — atomic writes go to temp files
     const writesBefore = vi.mocked(fsp.writeFile).mock.calls
-      .filter((c) => String(c[0]).endsWith('agents.json'));
+      .filter((c) => String(c[0]).includes('agents.json.tmp.'));
     expect(writesBefore).toHaveLength(0);
 
     // Flush and verify all changes persisted
     await flushAgentConfig(PROJECT_PATH);
 
     const writesAfter = vi.mocked(fsp.writeFile).mock.calls
-      .filter((c) => String(c[0]).endsWith('agents.json'));
+      .filter((c) => String(c[0]).includes('agents.json.tmp.'));
     expect(writesAfter).toHaveLength(1);
 
     const written = JSON.parse(String(writesAfter[0][1]));
@@ -1575,5 +1652,205 @@ describe('write-back cache', () => {
     expect(written[0].color).toBe('emerald');
     expect(written[1].name).toBe('renamed-2');
     expect(written[1].color).toBe('rose');
+  });
+});
+
+// ── Backup and Recovery ──────────────────────────────────────────────
+
+describe('backup and recovery', () => {
+  const BACKUP_AGENTS = [
+    { id: 'durable_1', name: 'agent-one', color: 'indigo', createdAt: '2024-01-01' },
+    { id: 'durable_2', name: 'agent-two', color: 'rose', createdAt: '2024-01-02' },
+    { id: 'durable_3', name: 'agent-three', color: 'emerald', createdAt: '2024-01-03' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined);
+    vi.mocked(fsp.copyFile).mockResolvedValue(undefined);
+  });
+
+  describe('auto-recovery on corrupt agents.json', () => {
+    it('recovers from backup when main file is corrupt', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return true;
+        if (s.endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        if (s.endsWith('agents.json')) return '{{corrupt';
+        return '';
+      });
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toHaveLength(3);
+      expect(result[0].name).toBe('agent-one');
+    });
+
+    it('recovers from backup when main file is missing', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return true;
+        if (s.endsWith('agents.json')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        return '';
+      });
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toHaveLength(3);
+    });
+
+    it('returns [] when both main and backup are corrupt', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockResolvedValue('{{corrupt');
+
+      const result = await listDurable(PROJECT_PATH);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('atomic writes', () => {
+    it('writeAgentsToDisk uses temp file + rename', async () => {
+      // Mock: no existing file
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json')) return false;
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('.git')) return true;
+        if (String(p).endsWith('.gitignore')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
+      vi.mocked(isInsideGitRepo).mockResolvedValue(true);
+      vi.mocked(exec).mockImplementation((_cmd: any, _opts: any, cb: any) => {
+        cb(null, '', '');
+        return {} as any;
+      });
+
+      await createDurable(PROJECT_PATH, 'test-agent', 'blue');
+      await flushAgentConfig(PROJECT_PATH);
+
+      // Verify temp file was written and then renamed
+      const writeCall = vi.mocked(fsp.writeFile).mock.calls.find(
+        (call) => String(call[0]).includes('.tmp.'),
+      );
+      expect(writeCall).toBeDefined();
+      expect(vi.mocked(fsp.rename)).toHaveBeenCalled();
+    });
+
+    it('creates backup before writing', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json')) return true;
+        if (s.endsWith('agents.json.bak')) return false;
+        if (s.endsWith('.git')) return true;
+        if (s.endsWith('.gitignore')) return false;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json')) return JSON.stringify(BACKUP_AGENTS);
+        return '';
+      });
+
+      await listDurable(PROJECT_PATH); // populate cache
+
+      // Trigger a write by renaming an agent (this calls writeAgents internally)
+      await renameDurable(PROJECT_PATH, 'durable_1', 'renamed-agent');
+      await flushAgentConfig(PROJECT_PATH);
+
+      // Verify copyFile was called (backup creation)
+      const copyCall = vi.mocked(fsp.copyFile).mock.calls.find(
+        (call) => String(call[1]).endsWith('agents.json.bak'),
+      );
+      expect(copyCall).toBeDefined();
+    });
+  });
+
+  describe('getBackupInfo', () => {
+    it('returns null when no backup exists', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue('[]');
+
+      expect(await getBackupInfo(PROJECT_PATH)).toBeNull();
+    });
+
+    it('returns null when backup has same count as current', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async () => {
+        return JSON.stringify(BACKUP_AGENTS);
+      });
+
+      expect(await getBackupInfo(PROJECT_PATH)).toBeNull();
+    });
+
+    it('returns info when backup has more agents than current', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        // Current only has 1 agent
+        return JSON.stringify([BACKUP_AGENTS[0]]);
+      });
+
+      const info = await getBackupInfo(PROJECT_PATH);
+      expect(info).not.toBeNull();
+      expect(info!.backupAgents).toHaveLength(3);
+      expect(info!.currentCount).toBe(1);
+    });
+  });
+
+  describe('restoreFromBackup', () => {
+    it('restores missing agents from backup', async () => {
+      const writtenData: Record<string, string> = {};
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async (p: any) => {
+        const s = String(p);
+        if (writtenData[s]) return writtenData[s];
+        if (s.endsWith('agents.json.bak')) return JSON.stringify(BACKUP_AGENTS);
+        // Current only has first agent
+        return JSON.stringify([BACKUP_AGENTS[0]]);
+      });
+      vi.mocked(fsp.writeFile).mockImplementation(async (p: any, data: any) => {
+        writtenData[String(p)] = String(data);
+      });
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(2);
+      expect(result.agents).toHaveLength(3);
+    });
+
+    it('returns 0 restored when no backup exists', async () => {
+      vi.mocked(pathExists).mockImplementation(async (p: any) => {
+        if (String(p).endsWith('agents.json.bak')) return false;
+        if (String(p).endsWith('agents.json')) return true;
+        return false;
+      });
+      vi.mocked(fsp.readFile).mockResolvedValue(JSON.stringify([BACKUP_AGENTS[0]]));
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(0);
+    });
+
+    it('does not duplicate agents already present', async () => {
+      vi.mocked(pathExists).mockResolvedValue(true);
+      vi.mocked(fsp.readFile).mockImplementation(async () => {
+        // Both have all 3 agents
+        return JSON.stringify(BACKUP_AGENTS);
+      });
+
+      const result = await restoreFromBackup(PROJECT_PATH);
+      expect(result.restoredCount).toBe(0);
+    });
   });
 });

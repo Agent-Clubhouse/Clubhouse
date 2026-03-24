@@ -11,9 +11,32 @@ import { attachClipboardHandlers, type ClipboardImageData } from '../terminal/cl
 import { useFileDrop } from '../terminal/useFileDrop';
 import { useTerminalFit } from '../terminal/useTerminalFit';
 import { ptyResize } from '../../services/project-proxy';
+import { rendererLog } from '../../plugins/renderer-logger';
 
 /** How long PTY output must be silent before we consider a resume "done". */
 const RESUME_SETTLE_MS = 1500;
+
+const SCROLL_LOG_NS = 'ui:terminal:scroll';
+
+/** Pixels from bottom to be considered "at bottom". */
+const BOTTOM_THRESHOLD = 5;
+
+/**
+ * Near-top threshold: if scrollTop is below this value while the user was
+ * previously scrolled significantly further down, treat it as a suspicious
+ * snap-to-top event.  This is wider than `=== 0` to catch sub-pixel / rounding
+ * resets that xterm can produce.
+ */
+const NEAR_TOP_PX = 10;
+
+/**
+ * Minimum previous scroll offset required before a jump-to-top is considered
+ * unexpected.  Prevents false positives when the terminal has little content.
+ */
+const JUMP_MIN_PX = 30;
+
+/** Throttle interval (ms) for periodic scroll-state debug logging. */
+const SCROLL_LOG_THROTTLE_MS = 2000;
 
 interface Props {
   agentId: string;
@@ -124,11 +147,20 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       ptyResize(agentId, term.cols, term.rows);
       term.focus();
 
+      rendererLog(SCROLL_LOG_NS, 'debug', 'Terminal initialized', {
+        meta: { agentId, isRemote, cols: term.cols, rows: term.rows },
+      });
+
       if (!isRemote) {
         // Replay buffered output so switching agents restores the terminal
         window.clubhouse.pty.getBuffer(agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
-          if (buf) term.write(buf);
+          if (buf) {
+            rendererLog(SCROLL_LOG_NS, 'debug', 'Buffer replay (local)', {
+              meta: { agentId, bufLen: buf.length },
+            });
+            term.write(buf);
+          }
           for (const data of pendingData) term.write(data);
           pendingData.length = 0;
           bufferReplayed = true;
@@ -137,7 +169,12 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         // Remote agents: fetch buffer from satellite via HTTPS REST
         requestPtyBufferRef.current(remoteParts.satelliteId, remoteParts.agentId).then((buf: string) => {
           if (terminalRef.current !== term) return;
-          if (buf) term.write(buf);
+          if (buf) {
+            rendererLog(SCROLL_LOG_NS, 'debug', 'Buffer replay (remote/annex)', {
+              meta: { agentId, satelliteId: remoteParts.satelliteId, bufLen: buf.length },
+            });
+            term.write(buf);
+          }
           for (const data of pendingData) term.write(data);
           pendingData.length = 0;
           bufferReplayed = true;
@@ -161,6 +198,35 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
     // queue data arriving during fetch to avoid silent data loss.
     let bufferReplayed = false;
     const pendingData: string[] = [];
+    let dataWriteCount = 0;
+    let lastDataLogTime = 0;
+
+    /** Log scroll state around data writes at a throttled rate. */
+    const logDataWrite = (source: 'local' | 'annex', dataLen: number) => {
+      dataWriteCount++;
+      const now = Date.now();
+      if (now - lastDataLogTime < SCROLL_LOG_THROTTLE_MS) return;
+      lastDataLogTime = now;
+
+      const el = containerRef.current;
+      const viewport = el?.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (!viewport) return;
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const maxScroll = scrollHeight - clientHeight;
+      rendererLog(SCROLL_LOG_NS, 'debug', `PTY data write (${source})`, {
+        meta: {
+          agentId,
+          dataLen,
+          writeCount: dataWriteCount,
+          scrollTop,
+          scrollHeight,
+          clientHeight,
+          maxScroll,
+          scrollPct: maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100,
+          atBottom: scrollTop >= maxScroll - BOTTOM_THRESHOLD,
+        },
+      });
+    };
 
     let removeDataListener: () => void;
     let removeExitListener: () => void;
@@ -171,6 +237,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (id: string, data: string) => {
           if (id !== agentId) return;
           if (bufferReplayed) {
+            logDataWrite('local', data.length);
             term.write(data);
           } else {
             pendingData.push(data);
@@ -181,6 +248,9 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       removeExitListener = window.clubhouse.pty.onExit(
         (id: string, _exitCode: number) => {
           if (id === agentId && terminalRef.current) {
+            rendererLog(SCROLL_LOG_NS, 'info', 'PTY exited, resetting terminal state', {
+              meta: { agentId, isRemote: false },
+            });
             terminalRef.current.write(
               '\x1b[?1049l' + // exit alternate screen buffer
               '\x1b[?25h' +   // show cursor
@@ -197,6 +267,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
         (incomingSatId: string, incomingAgentId: string, data: string) => {
           if (incomingSatId !== satId || incomingAgentId !== origAgentId) return;
           if (bufferReplayed) {
+            logDataWrite('annex', data.length);
             term.write(data);
           } else {
             pendingData.push(data);
@@ -222,45 +293,134 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
 
   // ── Scroll guardian + scroll-to-bottom tracking ─────────────────
   // Monitors the xterm viewport scroll position to:
-  // 1. Detect unexpected resets to 0 (e.g. from xterm's async reflow after
-  //    fit()) and restore the previous position.
+  // 1. Detect unexpected resets to near-top (e.g. from xterm's async reflow
+  //    after fit()) and restore the previous position.
   // 2. Track whether the user is scrolled up so we can show a "scroll to
   //    bottom" button.
+  // 3. Emit comprehensive scroll-state logs for diagnosing snap-to-top bugs.
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const lastKnownScrollRef = useRef<number>(0);
   const scrollGuardRafRef = useRef<number>(0);
+  const lastScrollLogRef = useRef<number>(0);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Wait for xterm to mount its viewport element.
     const viewport = el.querySelector('.xterm-viewport') as HTMLElement | null;
     if (!viewport) return;
 
-    const BOTTOM_THRESHOLD = 5;
+    const logMeta = { agentId, isRemote };
 
     const onScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = viewport;
       const atBottom = scrollTop >= scrollHeight - clientHeight - BOTTOM_THRESHOLD;
+      const lastKnown = lastKnownScrollRef.current;
+      const maxScroll = scrollHeight - clientHeight;
+      const scrollPct = maxScroll > 0 ? Math.round((scrollTop / maxScroll) * 100) : 100;
 
-      // Detect unexpected reset: scrollTop jumped to 0 while we were
-      // previously scrolled down.  Restore the previous position.
+      // ── Periodic scroll-state logging ──────────────────────────
+      const now = Date.now();
+      if (now - lastScrollLogRef.current > SCROLL_LOG_THROTTLE_MS) {
+        lastScrollLogRef.current = now;
+        rendererLog(SCROLL_LOG_NS, 'debug', 'Scroll state', {
+          meta: {
+            ...logMeta,
+            scrollTop,
+            scrollHeight,
+            clientHeight,
+            maxScroll,
+            scrollPct,
+            atBottom,
+            lastKnown,
+          },
+        });
+      }
+
+      // ── Near-top logging ───────────────────────────────────────
+      // Always log when we're near the top and have scrollable content,
+      // regardless of whether it looks like a snap.
+      if (scrollTop < NEAR_TOP_PX && maxScroll > NEAR_TOP_PX) {
+        rendererLog(SCROLL_LOG_NS, 'info', 'Viewport near top', {
+          meta: {
+            ...logMeta,
+            scrollTop,
+            scrollHeight,
+            clientHeight,
+            maxScroll,
+            scrollPct,
+            lastKnown,
+            delta: lastKnown - scrollTop,
+          },
+        });
+      }
+
+      // ── Snap-to-top detection ──────────────────────────────────
+      // Detect unexpected reset: scrollTop jumped near 0 while we were
+      // previously scrolled significantly further down.
       if (
-        scrollTop === 0 &&
-        lastKnownScrollRef.current > BOTTOM_THRESHOLD &&
-        scrollHeight > clientHeight
+        scrollTop < NEAR_TOP_PX &&
+        lastKnown > JUMP_MIN_PX &&
+        maxScroll > NEAR_TOP_PX
       ) {
-        // Schedule the restoration in the next frame so it doesn't fight
-        // with the current scroll event.
+        // Capture target at detection time — do NOT re-check scrollTop in
+        // the rAF callback.  xterm may have partially corrected by then,
+        // which previously caused the guard to skip the restore entirely.
+        const targetScroll = lastKnown;
+
+        rendererLog(SCROLL_LOG_NS, 'warn', 'Scroll snap-to-top detected — scheduling restore', {
+          meta: {
+            ...logMeta,
+            scrollTop,
+            lastKnown,
+            targetScroll,
+            scrollHeight,
+            clientHeight,
+            maxScroll,
+          },
+        });
+
         cancelAnimationFrame(scrollGuardRafRef.current);
         scrollGuardRafRef.current = requestAnimationFrame(() => {
-          // Re-check: another handler may have already fixed this.
-          if (viewport.scrollTop === 0 && viewport.scrollHeight > viewport.clientHeight) {
-            viewport.scrollTop = Math.min(lastKnownScrollRef.current, viewport.scrollHeight - viewport.clientHeight);
-          }
+          const currentMax = viewport.scrollHeight - viewport.clientHeight;
+          const restoreTo = Math.min(targetScroll, currentMax);
+          viewport.scrollTop = restoreTo;
+          lastKnownScrollRef.current = restoreTo;
+
+          rendererLog(SCROLL_LOG_NS, 'info', 'Scroll restored after snap-to-top', {
+            meta: {
+              ...logMeta,
+              restoredTo: restoreTo,
+              currentScrollTop: viewport.scrollTop,
+              preRestoreScrollTop: viewport.scrollTop,
+              scrollHeight: viewport.scrollHeight,
+              clientHeight: viewport.clientHeight,
+              targetScroll,
+            },
+          });
+
+          // Second-pass restore: xterm may schedule its own rAF render
+          // that clobbers our first restore.  A deferred re-check catches
+          // that case.
+          requestAnimationFrame(() => {
+            if (viewport.scrollTop < NEAR_TOP_PX && currentMax > NEAR_TOP_PX) {
+              const secondRestore = Math.min(targetScroll, viewport.scrollHeight - viewport.clientHeight);
+              viewport.scrollTop = secondRestore;
+              lastKnownScrollRef.current = secondRestore;
+
+              rendererLog(SCROLL_LOG_NS, 'warn', 'Scroll re-clobbered after first restore — applied second restore', {
+                meta: {
+                  ...logMeta,
+                  secondRestore,
+                  scrollTop: viewport.scrollTop,
+                  scrollHeight: viewport.scrollHeight,
+                  clientHeight: viewport.clientHeight,
+                },
+              });
+            }
+          });
         });
-        return; // don't update lastKnownScroll with the bogus 0
+        return; // don't update lastKnownScroll with the bogus near-0 value
       }
 
       lastKnownScrollRef.current = scrollTop;
@@ -272,7 +432,7 @@ export function AgentTerminal({ agentId, focused, zoneThemeId }: Props) {
       viewport.removeEventListener('scroll', onScroll);
       cancelAnimationFrame(scrollGuardRafRef.current);
     };
-  }, [agentId]);
+  }, [agentId, isRemote]);
 
   const handleScrollToBottom = useCallback(() => {
     const el = containerRef.current;

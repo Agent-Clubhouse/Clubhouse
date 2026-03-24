@@ -29,12 +29,15 @@ import { useToastStore } from './stores/toastStore';
 import { SatelliteLockOverlay } from './features/annex/SatelliteLockOverlay';
 import { useLockStore } from './stores/lockStore';
 import { useRemoteProjectStore, isRemoteProjectId, parseNamespacedId } from './stores/remoteProjectStore';
+import { AnnexDisabledView } from './panels/AnnexDisabledView';
 
 export function App() {
   // ── Routing state (minimal selectors for view switching) ────────────────
   const projects = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const explorerTab = useUIStore((s) => s.explorerTab);
+  const activeHostId = useUIStore((s) => s.activeHostId);
+  const pluginMatchState = useRemoteProjectStore((s) => s.pluginMatchState);
 
   // ── Resume banner state ──────────────────────────────────────────────────
   const resumingAgents = useAgentStore((s) => s.resumingAgents);
@@ -243,6 +246,23 @@ export function App() {
   );
 
   if (isHome) {
+    // When a satellite is active, show its app-level canvas instead of the local Dashboard.
+    // The canvas plugin checks activeHostId to hydrate from remoteAppCanvasState.
+    const isSatelliteHome = !!activeHostId;
+    const satelliteCanvasMatch = isSatelliteHome
+      ? (pluginMatchState[activeHostId] || []).find((p) => p.id === 'canvas')
+      : null;
+    const canShowRemoteCanvas = satelliteCanvasMatch?.status === 'matched' && satelliteCanvasMatch.annexEnabled;
+
+    let homeContent;
+    if (isSatelliteHome && canShowRemoteCanvas) {
+      homeContent = <PluginContentView pluginId="canvas" mode="app" />;
+    } else if (isSatelliteHome) {
+      homeContent = <AnnexDisabledView pluginName="Home" />;
+    } else {
+      homeContent = <Dashboard />;
+    }
+
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -260,7 +280,7 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          <Dashboard />
+          {homeContent}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />
@@ -274,6 +294,21 @@ export function App() {
 
   if (isAppPlugin) {
     const appPluginId = explorerTab.slice('plugin:app:'.length);
+
+    // When a satellite is active, gate app plugins by annex permission
+    let appPluginContent;
+    if (activeHostId) {
+      const matches = pluginMatchState[activeHostId] || [];
+      const match = matches.find((p) => p.id === appPluginId);
+      if (match?.status === 'matched' && match.annexEnabled) {
+        appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+      } else {
+        appPluginContent = <AnnexDisabledView pluginName={match?.name || appPluginId} />;
+      }
+    } else {
+      appPluginContent = <PluginContentView pluginId={appPluginId} mode="app" />;
+    }
+
     return (
       <div className="h-screen w-screen overflow-hidden bg-ctp-base text-ctp-text flex flex-col">
         {lockOverlay}
@@ -291,7 +326,7 @@ export function App() {
           <PluginUpdateBanner />
         </div>
         <RailSection>
-          <PluginContentView pluginId={appPluginId} mode="app" />
+          {appPluginContent}
         </RailSection>
         <CommandPalette />
         <QuickAgentDialog />

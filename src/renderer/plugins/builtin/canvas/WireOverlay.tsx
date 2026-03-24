@@ -229,7 +229,7 @@ export const WireOverlay = React.memo(function WireOverlay({
   return (
     <svg
       className="absolute top-0 left-0 pointer-events-none overflow-visible"
-      style={{ width: 1, height: 1, zIndex: 0 }}
+      style={{ width: 1, height: 1 }}
     >
       <style>{WIRE_GLOW_KEYFRAMES}</style>
       <defs>

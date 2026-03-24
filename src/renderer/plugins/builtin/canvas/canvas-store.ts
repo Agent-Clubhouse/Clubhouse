@@ -31,9 +31,15 @@ export interface CanvasState {
   saveCanvas: (storage: ScopedStorage) => Promise<void>;
   hydrateFromRemote: (canvasData: unknown[], activeCanvasId: string) => void;
 
-  // Wire persistence
+  // Wire persistence — wireDefinitions is the canvas-owned source of truth for
+  // wires, independent of the MCP binding runtime.  Wires survive agent sleep
+  // because definitions are not removed when the main process cleans up bindings.
+  wireDefinitions: McpBindingEntry[];
   loadWires: (storage: ScopedStorage) => Promise<void>;
-  saveWires: (storage: ScopedStorage, bindings: McpBindingEntry[]) => Promise<void>;
+  saveWires: (storage: ScopedStorage) => Promise<void>;
+  addWireDefinition: (entry: McpBindingEntry) => void;
+  removeWireDefinition: (agentId: string, targetId: string) => void;
+  updateWireDefinition: (agentId: string, targetId: string, updates: Partial<McpBindingEntry>) => void;
 
   // Canvas tab management
   addCanvas: () => string;
@@ -149,6 +155,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     zoomedViewId: null,
     selectedViewId: null,
     selectedViewIds: [],
+    wireDefinitions: [],
     loaded: false,
 
     activeCanvas: () => {
@@ -239,10 +246,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         // is empty, agents may not have been added yet (fresh session).
         const shouldReconcile = validIds.size > 0;
 
-        // Restore each binding, skipping stale ones whose source/target no longer exist
+        // Restore each binding, skipping stale ones whose source/target no longer exist.
+        // Wire definitions are stored in the canvas store so they survive agent
+        // sleep/wake cycles independently of the MCP binding runtime.
+        const restoredDefinitions: McpBindingEntry[] = [];
         for (const entry of saved) {
           if (!entry.agentId || !entry.targetId || !entry.label || !entry.targetKind) continue;
           if (shouldReconcile && !validIds.has(entry.agentId) && !validIds.has(entry.targetId)) continue;
+          restoredDefinitions.push(entry);
           try {
             await window.clubhouse.mcpBinding.bind(entry.agentId, {
               targetId: entry.targetId,
@@ -261,17 +272,20 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               await window.clubhouse.mcpBinding.setDisabledTools(entry.agentId, entry.targetId, entry.disabledTools);
             }
           } catch {
-            // Binding restore failed (e.g. MCP not enabled) — skip
+            // Binding restore failed (e.g. MCP not enabled or agent sleeping) —
+            // keep the wire definition so the wire remains visible and persisted
           }
         }
+        set({ wireDefinitions: restoredDefinitions });
       } catch {
         // Storage read failed — skip wire restore
       }
     },
 
-    saveWires: async (storage, bindings) => {
-      // Persist all binding entries including instructions
-      const data = bindings.map((b) => ({
+    saveWires: async (storage) => {
+      // Persist wire definitions — the canvas-owned source of truth.
+      // Unlike MCP bindings, wire definitions are not cleared when agents sleep.
+      const data = get().wireDefinitions.map((b) => ({
         agentId: b.agentId,
         targetId: b.targetId,
         targetKind: b.targetKind,
@@ -283,6 +297,34 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         ...(b.disabledTools && b.disabledTools.length > 0 ? { disabledTools: b.disabledTools } : {}),
       }));
       await storage.write(STORAGE_KEY_WIRES, data);
+    },
+
+    addWireDefinition: (entry) => {
+      set((state) => {
+        const exists = state.wireDefinitions.some(
+          (w) => w.agentId === entry.agentId && w.targetId === entry.targetId,
+        );
+        if (exists) return state;
+        return { wireDefinitions: [...state.wireDefinitions, entry] };
+      });
+    },
+
+    removeWireDefinition: (agentId, targetId) => {
+      set((state) => ({
+        wireDefinitions: state.wireDefinitions.filter(
+          (w) => !(w.agentId === agentId && w.targetId === targetId),
+        ),
+      }));
+    },
+
+    updateWireDefinition: (agentId, targetId, updates) => {
+      set((state) => ({
+        wireDefinitions: state.wireDefinitions.map((w) =>
+          w.agentId === agentId && w.targetId === targetId
+            ? { ...w, ...updates }
+            : w,
+        ),
+      }));
     },
 
     hydrateFromRemote: (canvasData, activeId) => {

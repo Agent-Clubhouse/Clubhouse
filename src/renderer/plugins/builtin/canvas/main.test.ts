@@ -84,6 +84,28 @@ describe('canvas main', () => {
     expect(storeA).not.toBe(storeB);
   });
 
+  it('loadCanvas is awaited before loadWires in MainPanel (structural)', () => {
+    // The loadCanvas/loadWires race condition caused auto-save to overwrite
+    // persisted wire data with incomplete bindings. Verify the fix:
+    // loadCanvas must be awaited before loadWires is called.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // Find the async IIFE that wraps the load calls
+    const asyncBlock = source.slice(
+      source.indexOf('(async () =>'),
+      source.indexOf('(async () =>') + 300,
+    );
+    // Both loadCanvas and loadWires must be awaited inside the IIFE
+    expect(asyncBlock).toContain('await store.getState().loadCanvas(storage)');
+    expect(asyncBlock).toContain('await store.getState().loadWires(storage)');
+    // loadCanvas must come before loadWires
+    const canvasIdx = asyncBlock.indexOf('loadCanvas');
+    const wiresIdx = asyncBlock.indexOf('loadWires');
+    expect(canvasIdx).toBeLessThan(wiresIdx);
+  });
+
   it('selectView is forwarded via remoteForward (structural)', () => {
     // Verify that handleSelectView calls remoteForward with selectView mutation.
     // Previously selectView was local-only, causing the satellite to stay in
@@ -102,6 +124,83 @@ describe('canvas main', () => {
 
     // It should NOT have the old "Selection is purely local" comment
     expect(source).not.toContain('Selection is purely local');
+  });
+
+  it('CanvasView guards against null plugin component (structural)', () => {
+    // React error #130 occurs when a pre-registered widget placeholder has
+    // component: null but gets past the isWidgetPending check. The CanvasView
+    // must guard against null components before rendering.
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'CanvasView.tsx'), 'utf-8');
+
+    // After getting the Component, there should be a null check before rendering
+    const componentBlock = source.slice(
+      source.indexOf('const Component = registered.descriptor.component'),
+      source.indexOf('const Component = registered.descriptor.component') + 400,
+    );
+    expect(componentBlock).toContain('if (!Component)');
+    expect(componentBlock).toContain('not available');
+  });
+
+  it('auto-save uses wireDefinitions instead of live MCP bindings (structural)', () => {
+    // Wire definitions must survive agent sleep cycles. The auto-save should
+    // persist wireDefinitions (canvas-owned) rather than live MCP bindings
+    // (which get cleared when agents exit).
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // scheduleSave should call saveWires without passing bindings
+    const saveBlock = source.slice(
+      source.indexOf('scheduleSave'),
+      source.indexOf('scheduleSave') + 500,
+    );
+    expect(saveBlock).toContain('saveWires(storage)');
+    // Should NOT pass bindingsRef.current to saveWires
+    expect(saveBlock).not.toContain('saveWires(storage, bindingsRef');
+
+    // Auto-save effect should react to wireDefinitions, not bindings
+    const autoSaveEffect = source.slice(
+      source.indexOf('wireDefinitions, loaded, scheduleSave'),
+      source.indexOf('wireDefinitions, loaded, scheduleSave') + 100,
+    );
+    expect(autoSaveEffect).toBeTruthy();
+  });
+
+  it('CanvasWorkspace receives wireDefinitions prop (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // wireDefinitions should be passed to CanvasWorkspace
+    expect(source).toContain('wireDefinitions,');
+    expect(source).toContain('onAddWireDefinition');
+    expect(source).toContain('onRemoveWireDefinition');
+    expect(source).toContain('onUpdateWireDefinition');
+  });
+
+  it('agent wake reconciliation re-creates MCP bindings from wire definitions (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // Should have wake reconciliation logic
+    expect(source).toContain('Agent wake reconciliation');
+    expect(source).toContain('wireDefinitions');
+    expect(source).toContain('mcpBinding.bind');
+  });
+
+  it('handleRemoveView cleans up wire definitions (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    const removeViewBlock = source.slice(
+      source.indexOf('handleRemoveView'),
+      source.indexOf('handleRemoveView') + 500,
+    );
+    expect(removeViewBlock).toContain('removeWireDefinition');
   });
 
   it('per-project stores have isolated state', () => {

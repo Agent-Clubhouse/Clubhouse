@@ -54,13 +54,15 @@ function unregisterPackThemes(pluginId: string, themes: PluginThemeDeclaration[]
   }
 }
 
-/** Returns IDs of built-in plugins that should be auto-enabled per project. */
+/**
+ * Returns IDs of built-in plugins eligible for project-level activation.
+ * Includes ALL project/dual-scoped builtins — the app-first gate in
+ * handleProjectSwitch() controls actual activation via appEnabled.
+ */
 export function getBuiltinProjectPluginIds(experimentalFlags: ExperimentalFlags = {}): string[] {
-  const defaults = getDefaultEnabledIds(experimentalFlags);
   return getBuiltinPlugins(experimentalFlags)
     .filter(({ manifest }) =>
-      defaults.has(manifest.id) &&
-      (manifest.scope === 'project' || manifest.scope === 'dual'),
+      manifest.scope === 'project' || manifest.scope === 'dual',
     )
     .map(({ manifest }) => manifest.id);
 }
@@ -184,6 +186,34 @@ export async function initializePluginSystem(): Promise<void> {
       }
     } catch {
       // No saved config — auto-enabled builtins remain
+    }
+
+    // Migration: canvas was previously auto-enabled in-memory via the
+    // experimental 'canvas' flag but never persisted to the app-enabled
+    // storage.  v0.38 removed the flag path, so existing users who had
+    // canvas enabled lost their enablement.  Only migrate canvas itself —
+    // sub-plugins (group-project, agent-queue) depend on MCP which is
+    // still experimental; users can enable them manually.
+    if (experimentalFlags && experimentalFlags.canvas) {
+      const migrationState = usePluginStore.getState();
+      if (!migrationState.appEnabled.includes('canvas')) {
+        migrationState.enableApp('canvas');
+        rendererLog('core:plugins', 'info', 'Migrated canvas from experimental flag to app-enabled');
+      }
+      // Persist the migrated state and clear the stale flag
+      try {
+        await window.clubhouse.plugin.storageWrite({
+          pluginId: '_system',
+          scope: 'global',
+          key: 'app-enabled',
+          value: usePluginStore.getState().appEnabled,
+        });
+      } catch { /* best effort */ }
+      try {
+        const cleaned = { ...experimentalFlags };
+        delete cleaned.canvas;
+        await window.clubhouse.app.saveExperimentalSettings(cleaned);
+      } catch { /* best effort */ }
     }
 
     // Activate app-scoped and dual-scoped plugins that are in appEnabled.

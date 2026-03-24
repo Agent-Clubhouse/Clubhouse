@@ -64,8 +64,14 @@ vi.mock('../../stores/panelStore', () => ({
   }),
 }));
 
+const pluginStoreState = {
+  plugins: {} as Record<string, any>,
+  projectEnabled: {} as Record<string, string[]>,
+  appEnabled: ['canvas'] as string[],
+};
+
 vi.mock('../../plugins/plugin-store', () => ({
-  usePluginStore: (selector: any) => selector({ plugins: {}, projectEnabled: {} }),
+  usePluginStore: (selector: any) => selector(pluginStoreState),
 }));
 
 vi.mock('../../stores/keyboardShortcutsStore', () => ({
@@ -186,6 +192,7 @@ describe('useCommandSource', () => {
     uiStoreState.explorerTab = 'agents';
     annexState.settings = { enableServer: false, enableClient: false, deviceName: '' };
     annexState.status = { advertising: false, port: 0, pin: '', connectedCount: 0 };
+    pluginStoreState.appEnabled = ['canvas'];
     projectStoreState.activeProjectId = 'p1';
     projectHubState.hubs = [{ id: 'ph1', name: 'ProjectHub1' }];
     projectHubState.activeHubId = 'ph1';
@@ -561,6 +568,32 @@ describe('useCommandSource', () => {
     }
     for (const canvas of canvasItems) {
       expect(canvas.detail).toMatch(/^Canvas/);
+    }
+  });
+
+  // ── Canvas gating: items hidden when canvas plugin disabled ─────────
+
+  it('hides all canvas items when canvas plugin is not in appEnabled', () => {
+    const saved = pluginStoreState.appEnabled;
+    pluginStoreState.appEnabled = [];
+    try {
+      const { result } = renderHook(() => useCommandSource());
+      const canvasItems = result.current.filter((i: any) => i.id.startsWith('canvas:'));
+      expect(canvasItems).toHaveLength(0);
+    } finally {
+      pluginStoreState.appEnabled = saved;
+    }
+  });
+
+  it('still shows hub items when canvas plugin is disabled', () => {
+    const saved = pluginStoreState.appEnabled;
+    pluginStoreState.appEnabled = [];
+    try {
+      const { result } = renderHook(() => useCommandSource());
+      const hubItems = result.current.filter((i: any) => i.id.startsWith('hub:'));
+      expect(hubItems.length).toBeGreaterThan(0);
+    } finally {
+      pluginStoreState.appEnabled = saved;
     }
   });
 });
