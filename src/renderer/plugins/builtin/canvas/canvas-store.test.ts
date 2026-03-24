@@ -450,26 +450,24 @@ describe('hydrateFromRemote', () => {
       mockMcpBinding.setInstructions.mockClear();
     });
 
-    it('saves wire bindings to storage', async () => {
+    it('saves wire definitions to storage', async () => {
       const storage = createMockStorage();
-      const bindings = [
-        { agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'Agent 2', agentName: 'robin', targetName: 'falcon', projectName: 'myapp' },
-      ];
-      await store.getState().saveWires(storage, bindings);
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2', agentName: 'robin', targetName: 'falcon', projectName: 'myapp' },
+      );
+      await store.getState().saveWires(storage);
       expect(storage.write).toHaveBeenCalledWith('canvas-wires', expect.arrayContaining([
         expect.objectContaining({ agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' }),
       ]));
     });
 
-    it('saves wire bindings with instructions', async () => {
+    it('saves wire definitions with instructions', async () => {
       const storage = createMockStorage();
-      const bindings = [
-        {
-          agentId: 'a1', targetId: 'a2', targetKind: 'agent' as const, label: 'Agent 2',
-          instructions: { '*': 'No secrets' },
-        },
-      ];
-      await store.getState().saveWires(storage, bindings);
+      store.getState().addWireDefinition({
+        agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2',
+        instructions: { '*': 'No secrets' },
+      });
+      await store.getState().saveWires(storage);
       expect(storage.write).toHaveBeenCalledWith('canvas-wires', expect.arrayContaining([
         expect.objectContaining({ instructions: { '*': 'No secrets' } }),
       ]));
@@ -540,9 +538,11 @@ describe('hydrateFromRemote', () => {
       await store.getState().loadCanvas(canvasStorage);
       await store.getState().loadWires(canvasStorage);
 
-      // Only the valid binding should be restored
+      // Only the valid binding should be restored (both MCP bind and wireDefinitions)
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
       expect(mockMcpBinding.bind).toHaveBeenCalledWith('agent-alive', expect.objectContaining({ targetId: 'some-target' }));
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+      expect(store.getState().wireDefinitions[0].agentId).toBe('agent-alive');
     });
 
     it('keeps bindings where only target exists on canvas', async () => {
@@ -563,6 +563,151 @@ describe('hydrateFromRemote', () => {
       await store.getState().loadWires(canvasStorage);
 
       expect(mockMcpBinding.bind).toHaveBeenCalledTimes(1);
+    });
+
+    it('loadWires populates wireDefinitions', async () => {
+      const storage = createMockStorage({
+        'canvas-wires': [
+          { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+          { agentId: 'a1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      expect(store.getState().wireDefinitions).toHaveLength(2);
+      expect(store.getState().wireDefinitions[0].agentId).toBe('a1');
+      expect(store.getState().wireDefinitions[1].targetId).toBe('b1');
+    });
+
+    it('loadWires keeps wire definitions even when MCP bind fails', async () => {
+      mockMcpBinding.bind.mockRejectedValueOnce(new Error('MCP not enabled'));
+      const storage = createMockStorage({
+        'canvas-wires': [
+          { agentId: 'sleeping-agent', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      // Wire definition should be stored even though MCP bind failed
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+      expect(store.getState().wireDefinitions[0].agentId).toBe('sleeping-agent');
+    });
+
+    it('saveWires persists from wireDefinitions, not from external bindings', async () => {
+      const storage = createMockStorage();
+      // Add wire definitions directly
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+      );
+      await store.getState().saveWires(storage);
+      expect(storage.write).toHaveBeenCalledWith('canvas-wires', expect.arrayContaining([
+        expect.objectContaining({ agentId: 'a1', targetId: 'a2' }),
+        expect.objectContaining({ agentId: 'a1', targetId: 'b1' }),
+      ]));
+    });
+
+    it('wire definitions survive even if MCP bindings are removed (agent sleep scenario)', async () => {
+      // Simulate: load wires, then imagine MCP cleans up bindings.
+      // Wire definitions should remain in the store.
+      const storage = createMockStorage({
+        'canvas-wires': [
+          { agentId: 'sleepy-agent', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+        ],
+      });
+      await store.getState().loadWires(storage);
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+
+      // Save again — wire definitions persist regardless of MCP binding state
+      const storage2 = createMockStorage();
+      await store.getState().saveWires(storage2);
+      expect(storage2.write).toHaveBeenCalledWith('canvas-wires', [
+        expect.objectContaining({ agentId: 'sleepy-agent', targetId: 'a2' }),
+      ]);
+    });
+
+    it('addWireDefinition adds a new entry', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+    });
+
+    it('addWireDefinition deduplicates by agentId+targetId', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2 again' },
+      );
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+    });
+
+    it('removeWireDefinition removes the matching entry', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+      );
+      expect(store.getState().wireDefinitions).toHaveLength(2);
+
+      store.getState().removeWireDefinition('a1', 'a2');
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+      expect(store.getState().wireDefinitions[0].targetId).toBe('b1');
+    });
+
+    it('removeWireDefinition is a no-op for non-existent entry', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().removeWireDefinition('a1', 'nonexistent');
+      expect(store.getState().wireDefinitions).toHaveLength(1);
+    });
+
+    it('updateWireDefinition updates fields on matching entry', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().updateWireDefinition('a1', 'a2', {
+        instructions: { '*': 'Be careful' },
+        disabledTools: ['dangerous_tool'],
+      });
+      const def = store.getState().wireDefinitions[0];
+      expect(def.instructions).toEqual({ '*': 'Be careful' });
+      expect(def.disabledTools).toEqual(['dangerous_tool']);
+    });
+
+    it('updateWireDefinition does not affect non-matching entries', () => {
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2' },
+      );
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'b1', targetKind: 'browser', label: 'Browser' },
+      );
+      store.getState().updateWireDefinition('a1', 'a2', { instructions: { '*': 'test' } });
+      expect(store.getState().wireDefinitions[1].instructions).toBeUndefined();
+    });
+
+    it('wire definitions round-trip: save then load into fresh store', async () => {
+      const storage = createMockStorage();
+
+      // Add wire definitions and save
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'a2', targetKind: 'agent', label: 'Agent 2', instructions: { '*': 'Be nice' } },
+      );
+      store.getState().addWireDefinition(
+        { agentId: 'a1', targetId: 'b1', targetKind: 'browser', label: 'Browser', disabledTools: ['tool1'] },
+      );
+      await store.getState().saveWires(storage);
+
+      // Load into fresh store
+      const store2 = createCanvasStore();
+      await store2.getState().loadWires(storage);
+
+      expect(store2.getState().wireDefinitions).toHaveLength(2);
+      expect(store2.getState().wireDefinitions[0].instructions).toEqual({ '*': 'Be nice' });
+      expect(store2.getState().wireDefinitions[1].disabledTools).toEqual(['tool1']);
     });
 
     it('reconciles group-project bindings by metadata.groupProjectId', async () => {

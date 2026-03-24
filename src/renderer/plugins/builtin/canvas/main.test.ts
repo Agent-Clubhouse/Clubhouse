@@ -143,6 +143,66 @@ describe('canvas main', () => {
     expect(componentBlock).toContain('not available');
   });
 
+  it('auto-save uses wireDefinitions instead of live MCP bindings (structural)', () => {
+    // Wire definitions must survive agent sleep cycles. The auto-save should
+    // persist wireDefinitions (canvas-owned) rather than live MCP bindings
+    // (which get cleared when agents exit).
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // scheduleSave should call saveWires without passing bindings
+    const saveBlock = source.slice(
+      source.indexOf('scheduleSave'),
+      source.indexOf('scheduleSave') + 500,
+    );
+    expect(saveBlock).toContain('saveWires(storage)');
+    // Should NOT pass bindingsRef.current to saveWires
+    expect(saveBlock).not.toContain('saveWires(storage, bindingsRef');
+
+    // Auto-save effect should react to wireDefinitions, not bindings
+    const autoSaveEffect = source.slice(
+      source.indexOf('wireDefinitions, loaded, scheduleSave'),
+      source.indexOf('wireDefinitions, loaded, scheduleSave') + 100,
+    );
+    expect(autoSaveEffect).toBeTruthy();
+  });
+
+  it('CanvasWorkspace receives wireDefinitions prop (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // wireDefinitions should be passed to CanvasWorkspace
+    expect(source).toContain('wireDefinitions,');
+    expect(source).toContain('onAddWireDefinition');
+    expect(source).toContain('onRemoveWireDefinition');
+    expect(source).toContain('onUpdateWireDefinition');
+  });
+
+  it('agent wake reconciliation re-creates MCP bindings from wire definitions (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    // Should have wake reconciliation logic
+    expect(source).toContain('Agent wake reconciliation');
+    expect(source).toContain('wireDefinitions');
+    expect(source).toContain('mcpBinding.bind');
+  });
+
+  it('handleRemoveView cleans up wire definitions (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, 'main.ts'), 'utf-8');
+
+    const removeViewBlock = source.slice(
+      source.indexOf('handleRemoveView'),
+      source.indexOf('handleRemoveView') + 500,
+    );
+    expect(removeViewBlock).toContain('removeWireDefinition');
+  });
+
   it('per-project stores have isolated state', () => {
     const storeA = canvasModule.getProjectCanvasStore('canvas-proj-iso-a');
     const storeB = canvasModule.getProjectCanvasStore('canvas-proj-iso-b');
