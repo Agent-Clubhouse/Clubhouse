@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import type { CanvasView, CanvasViewType, ZoneCanvasView, Viewport, Position, Size } from './canvas-types';
-import { GRID_SIZE } from './canvas-types';
+import { GRID_SIZE, MIN_VIEW_WIDTH, MIN_VIEW_HEIGHT } from './canvas-types';
+import type { ResizeDirection } from './CanvasView';
 import { zoomTowardPoint, clampZoom, snapPosition, snapSize, viewportToCenterView, viewportToFitViews, screenToCanvas, isViewFullyInRect } from './canvas-operations';
 import { ZoneBackground } from './ZoneBackground';
 import { ZoneCard } from './ZoneCard';
@@ -109,6 +110,9 @@ export function CanvasWorkspace({
   // ── Zone drag state ─────────────────────────────────────────
   const [zoneDrag, setZoneDrag] = useState<{ zoneId: string; containedViewIds: string[] } | null>(null);
   const [zoneDragDelta, setZoneDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
+  // ── Zone resize state ──────────────────────────────────────
+  const [zoneResize, setZoneResize] = useState<{ zoneId: string; size: Size; position: Position } | null>(null);
 
   // ── Single-view drag position tracking (for wire overlay) ─────
   const [singleDragPos, setSingleDragPos] = useState<Map<string, Position>>(new Map());
@@ -551,6 +555,63 @@ export function CanvasWorkspace({
     window.addEventListener('mouseup', handleUp);
   }, [zones, views, viewport.zoom, onMoveViews]);
 
+  const handleZoneResizeStart = useCallback((zoneId: string, direction: ResizeDirection, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const zone = zones.find((z) => z.id === zoneId);
+    if (!zone) return;
+
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startW = zone.size.width;
+    const startH = zone.size.height;
+    const startX = zone.position.x;
+    const startY = zone.position.y;
+
+    const handleMove = (ev: MouseEvent) => {
+      const dx = (ev.clientX - startMouseX) / viewport.zoom;
+      const dy = (ev.clientY - startMouseY) / viewport.zoom;
+
+      let newW = startW;
+      let newH = startH;
+      let newX = startX;
+      let newY = startY;
+
+      if (direction === 'e' || direction === 'se' || direction === 'ne') newW = startW + dx;
+      if (direction === 'w' || direction === 'sw' || direction === 'nw') { newW = startW - dx; newX = startX + dx; }
+      if (direction === 's' || direction === 'se' || direction === 'sw') newH = startH + dy;
+      if (direction === 'n' || direction === 'ne' || direction === 'nw') { newH = startH - dy; newY = startY + dy; }
+
+      if (newW < MIN_VIEW_WIDTH) {
+        if (direction === 'w' || direction === 'sw' || direction === 'nw') newX = startX + startW - MIN_VIEW_WIDTH;
+        newW = MIN_VIEW_WIDTH;
+      }
+      if (newH < MIN_VIEW_HEIGHT) {
+        if (direction === 'n' || direction === 'ne' || direction === 'nw') newY = startY + startH - MIN_VIEW_HEIGHT;
+        newH = MIN_VIEW_HEIGHT;
+      }
+
+      setZoneResize({ zoneId, size: { width: newW, height: newH }, position: { x: newX, y: newY } });
+    };
+
+    const handleUp = () => {
+      setZoneResize((current) => {
+        if (current) {
+          const snappedSize = snapSize(current.size);
+          const snappedPos = snapPosition(current.position);
+          onResizeView(zoneId, snappedSize);
+          onMoveView(zoneId, snappedPos);
+        }
+        return null;
+      });
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+  }, [zones, viewport.zoom, onResizeView, onMoveView]);
+
   const handleZoneDelete = useCallback((zoneId: string) => {
     const zone = zones.find((z) => z.id === zoneId);
     if (!zone) return;
@@ -668,6 +729,8 @@ export function CanvasWorkspace({
             key={`zone-bg-${zone.id}`}
             zone={zone}
             dragOffset={zoneDrag?.zoneId === zone.id ? zoneDragDelta : undefined}
+            resizeOverride={zoneResize?.zoneId === zone.id ? { size: zoneResize.size, position: zoneResize.position } : undefined}
+            onResizeStart={(dir, e) => handleZoneResizeStart(zone.id, dir, e)}
           />
         ))}
 
