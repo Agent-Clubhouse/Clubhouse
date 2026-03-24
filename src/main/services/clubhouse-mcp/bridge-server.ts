@@ -154,7 +154,10 @@ async function handleToolsCall(
     if (parsed) {
       const bindings = bindingManager.getBindingsForAgent(agentId);
       const binding = bindings.find(b => {
-        const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse' : b.targetKind;
+        const expectedPrefix = b.targetKind === 'agent' ? 'clubhouse'
+          : b.targetKind === 'group-project' ? 'group'
+          : b.targetKind === 'agent-queue' ? 'queue'
+          : b.targetKind;
         return expectedPrefix === parsed.prefix && buildToolKey(b) === parsed.toolKey;
       });
       if (binding) {

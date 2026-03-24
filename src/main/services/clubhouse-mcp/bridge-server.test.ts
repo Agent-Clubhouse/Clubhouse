@@ -25,9 +25,15 @@ vi.mock('../log-service', () => ({
   appLog: vi.fn(),
 }));
 
+const mockBroadcast = vi.fn();
+vi.mock('../../util/ipc-broadcast', () => ({
+  broadcastToAllWindows: (...args: unknown[]) => mockBroadcast(...args),
+}));
+
 import * as bridgeServer from './bridge-server';
 import { bindingManager } from './binding-manager';
 import { registerToolTemplate, buildToolName, _resetForTesting as resetTools } from './tool-registry';
+import { IPC } from '../../../shared/ipc-channels';
 
 function makeRequest(port: number, method: string, path: string, body?: unknown, nonce?: string, rawBody?: string): Promise<{ statusCode: number; body: any }> {
   return new Promise((resolve, reject) => {
@@ -64,6 +70,7 @@ describe('BridgeServer', () => {
     bindingManager._resetForTesting();
     resetTools();
     mockGetAgentNonce.mockReturnValue('test-nonce');
+    mockBroadcast.mockReset();
     port = await bridgeServer.start();
   });
 
@@ -298,6 +305,150 @@ describe('BridgeServer', () => {
   it('waitReady rejects when server not started', async () => {
     bridgeServer.stop();
     await expect(bridgeServer.waitReady()).rejects.toThrow('not started');
+  });
+
+  describe('TOOL_ACTIVITY broadcast', () => {
+    it('broadcasts activity for agent tool calls', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('agent', 'send_message', {
+        description: 'Send',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'A2',
+        targetName: 'robin', projectName: 'app',
+      });
+
+      const toolName = buildToolName(
+        { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+        'send_message',
+      );
+
+      await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 30, method: 'tools/call',
+        params: { name: toolName, arguments: {} },
+      }, 'test-nonce');
+
+      const activityCall = mockBroadcast.mock.calls.find(
+        (c: unknown[]) => c[0] === IPC.MCP_BINDING.TOOL_ACTIVITY,
+      );
+      expect(activityCall).toBeDefined();
+      expect(activityCall![1]).toMatchObject({
+        sourceAgentId: 'agent-1',
+        targetId: 'agent-2',
+        direction: 'forward',
+        toolSuffix: 'send_message',
+      });
+    });
+
+    it('broadcasts activity for group-project tool calls', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('group-project', 'post_bulletin', {
+        description: 'Post',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'gp-1', targetKind: 'group-project', label: 'My Group',
+        targetName: 'mygroup',
+      });
+
+      const toolName = buildToolName(
+        { agentId: 'agent-1', targetId: 'gp-1', targetKind: 'group-project', label: 'My Group', targetName: 'mygroup' },
+        'post_bulletin',
+      );
+
+      await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 31, method: 'tools/call',
+        params: { name: toolName, arguments: {} },
+      }, 'test-nonce');
+
+      const activityCall = mockBroadcast.mock.calls.find(
+        (c: unknown[]) => c[0] === IPC.MCP_BINDING.TOOL_ACTIVITY,
+      );
+      expect(activityCall).toBeDefined();
+      expect(activityCall![1]).toMatchObject({
+        sourceAgentId: 'agent-1',
+        targetId: 'gp-1',
+        direction: 'forward',
+        toolSuffix: 'post_bulletin',
+      });
+    });
+
+    it('broadcasts activity for agent-queue tool calls', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'ok' }],
+      });
+      registerToolTemplate('agent-queue', 'enqueue', {
+        description: 'Enqueue',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'queue-1', targetKind: 'agent-queue', label: 'Q1',
+        targetName: 'myqueue',
+      });
+
+      const toolName = buildToolName(
+        { agentId: 'agent-1', targetId: 'queue-1', targetKind: 'agent-queue', label: 'Q1', targetName: 'myqueue' },
+        'enqueue',
+      );
+
+      await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 32, method: 'tools/call',
+        params: { name: toolName, arguments: {} },
+      }, 'test-nonce');
+
+      const activityCall = mockBroadcast.mock.calls.find(
+        (c: unknown[]) => c[0] === IPC.MCP_BINDING.TOOL_ACTIVITY,
+      );
+      expect(activityCall).toBeDefined();
+      expect(activityCall![1]).toMatchObject({
+        sourceAgentId: 'agent-1',
+        targetId: 'queue-1',
+        direction: 'forward',
+        toolSuffix: 'enqueue',
+      });
+    });
+
+    it('broadcasts reverse direction for read_output tool calls', async () => {
+      const handler = vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'data' }],
+      });
+      registerToolTemplate('agent', 'read_output', {
+        description: 'Read output',
+        inputSchema: { type: 'object' },
+      }, handler);
+
+      bindingManager.bind('agent-1', {
+        targetId: 'agent-2', targetKind: 'agent', label: 'A2',
+        targetName: 'robin', projectName: 'app',
+      });
+
+      const toolName = buildToolName(
+        { agentId: 'agent-1', targetId: 'agent-2', targetKind: 'agent', label: 'A2', targetName: 'robin', projectName: 'app' },
+        'read_output',
+      );
+
+      await makeRequest(port, 'POST', '/mcp/agent-1', {
+        jsonrpc: '2.0', id: 33, method: 'tools/call',
+        params: { name: toolName, arguments: {} },
+      }, 'test-nonce');
+
+      const activityCall = mockBroadcast.mock.calls.find(
+        (c: unknown[]) => c[0] === IPC.MCP_BINDING.TOOL_ACTIVITY,
+      );
+      expect(activityCall).toBeDefined();
+      expect(activityCall![1]).toMatchObject({
+        direction: 'reverse',
+        toolSuffix: 'read_output',
+      });
+    });
   });
 
   describe('SSE events', () => {
