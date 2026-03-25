@@ -278,6 +278,28 @@ describe('all built-in plugins with canvas widgets can be pre-registered', () =>
     }
   });
 
+  it('only pre-registers widgets for plugins in the enabled set', () => {
+    const allPlugins = getBuiltinPlugins();
+    // Simulate only enabling terminal and files — not group-project or browser
+    const enabledSet = new Set(['terminal', 'files']);
+
+    for (const { manifest } of allPlugins) {
+      if (enabledSet.has(manifest.id) && manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
+
+    const registered = getRegisteredWidgetTypes();
+    expect(registered).toHaveLength(2);
+    expect(getRegisteredWidgetType('plugin:terminal:shell')).toBeDefined();
+    expect(getRegisteredWidgetType('plugin:files:file-viewer')).toBeDefined();
+    // Disabled plugins should NOT be pre-registered
+    expect(getRegisteredWidgetType('plugin:group-project:group-project')).toBeUndefined();
+    expect(getRegisteredWidgetType('plugin:browser:webview')).toBeUndefined();
+  });
+
   it('pre-registered widgets have correct labels from manifests', () => {
     const allPlugins = getBuiltinPlugins();
     for (const { manifest } of allPlugins) {
@@ -342,6 +364,13 @@ describe('pre-registered widgets without activation do not crash renderer', () =
     expect(block).toContain('if (!Component)');
   });
 
+  it('group-project manifest declares requiresMcp: true', () => {
+    const allPlugins = getBuiltinPlugins();
+    const groupProject = allPlugins.find((p) => p.manifest.id === 'group-project');
+    expect(groupProject).toBeDefined();
+    expect(groupProject!.manifest.requiresMcp).toBe(true);
+  });
+
   it('enabling canvas cascades to enable sub-plugins (structural)', () => {
     // Verifies that the PluginListSettings cascade-enable logic exists,
     // preventing the scenario where canvas is enabled but sub-plugins
@@ -360,6 +389,32 @@ describe('pre-registered widgets without activation do not crash renderer', () =
     const afterEnable = source.slice(enableIdx, enableIdx + 800);
     expect(afterEnable).toContain('CANVAS_SUB_PLUGIN_IDS');
     expect(afterEnable).toContain('enableApp(subId)');
+  });
+});
+
+// ── Canvas context menu filters disabled and MCP-dependent widgets ──────
+
+describe('CanvasContextMenu filters widgets by enabled state and MCP', () => {
+  it('filters against appEnabled and requiresMcp (structural)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, 'builtin/canvas/CanvasContextMenu.tsx'),
+      'utf-8',
+    );
+
+    // Must import the plugin store for enabled-state filtering
+    expect(source).toContain("from '../../plugin-store'");
+    expect(source).toContain('usePluginStore');
+
+    // Must read appEnabled from the store
+    expect(source).toContain('appEnabled');
+
+    // Must check requiresMcp on the manifest
+    expect(source).toContain('requiresMcp');
+
+    // Must check mcpEnabled
+    expect(source).toContain('mcpEnabled');
   });
 });
 

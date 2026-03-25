@@ -5,6 +5,7 @@ import { usePluginStore } from '../../plugins/plugin-store';
 import { useUIStore } from '../../stores/uiStore';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
+import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 
 // Mock plugin-loader to avoid side effects
 const mockRefreshCommunityPlugins = vi.fn(async () => ({ discovered: [] as string[], refreshed: [] as string[], activated: [] as string[], incompatible: [] as string[] }));
@@ -67,6 +68,11 @@ beforeEach(() => {
     updateErrors: {},
     dismissed: false,
   });
+
+  useMcpSettingsStore.setState({
+    enabled: true,
+    loaded: true,
+  } as any);
 });
 
 describe('PluginListSettings', () => {
@@ -364,6 +370,56 @@ describe('PluginListSettings', () => {
       expect(screen.getByTestId('approve-btn-pending-plug')).toBeInTheDocument();
       expect(screen.getByTestId('reject-btn-pending-plug')).toBeInTheDocument();
       expect(screen.getByText('process')).toBeInTheDocument();
+    });
+  });
+
+  describe('MCP-dependent plugin visibility', () => {
+    const setupMcpPlugin = () => {
+      usePluginStore.setState({
+        plugins: {
+          canvas: {
+            manifest: { id: 'canvas', name: 'Canvas', version: '1.0.0', engine: { api: 0.8 }, scope: 'app' },
+            status: 'activated',
+            source: 'builtin',
+            pluginPath: '/builtin/canvas',
+          },
+          'group-project': {
+            manifest: { id: 'group-project', name: 'Group Project', version: '0.1.0', engine: { api: 0.8 }, scope: 'dual', requiresMcp: true },
+            status: 'activated',
+            source: 'builtin',
+            pluginPath: '/builtin/group-project',
+          },
+          'test-builtin': {
+            manifest: { id: 'test-builtin', name: 'Test Builtin', version: '1.0.0', engine: { api: 0.5 }, scope: 'project' },
+            status: 'activated',
+            source: 'builtin',
+            pluginPath: '/builtin/test',
+          },
+        },
+        appEnabled: ['canvas', 'group-project', 'test-builtin'],
+        externalPluginsEnabled: false,
+      } as any);
+    };
+
+    it('shows MCP-dependent plugins when MCP is enabled', () => {
+      setupMcpPlugin();
+      useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
+      render(<PluginListSettings />);
+      expect(screen.getByText('Group Project')).toBeInTheDocument();
+    });
+
+    it('hides MCP-dependent plugins when MCP is disabled', () => {
+      setupMcpPlugin();
+      useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
+      render(<PluginListSettings />);
+      expect(screen.queryByText('Group Project')).not.toBeInTheDocument();
+    });
+
+    it('still shows non-MCP plugins when MCP is disabled', () => {
+      setupMcpPlugin();
+      useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
+      render(<PluginListSettings />);
+      expect(screen.getByText('Test Builtin')).toBeInTheDocument();
     });
   });
 });
