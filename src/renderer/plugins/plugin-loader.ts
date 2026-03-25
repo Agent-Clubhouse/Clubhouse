@@ -140,6 +140,12 @@ export async function initializePluginSystem(): Promise<void> {
           const result = validateManifest(rawManifest);
           if (result.valid && result.manifest) {
             store.registerPlugin(result.manifest, source, pluginPath, 'registered');
+            // Pre-register canvas widgets so they appear in the context menu before activation
+            if (result.manifest.contributes?.canvasWidgets) {
+              for (const widgetDecl of result.manifest.contributes.canvasWidgets) {
+                preRegisterFromManifest(result.manifest.id, widgetDecl);
+              }
+            }
             // Notify main process to load trusted manifest from disk
             window.clubhouse.plugin.refreshManifestFromDisk(result.manifest.id);
             // Log deprecation warnings for plugins on old API versions

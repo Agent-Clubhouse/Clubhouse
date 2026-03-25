@@ -790,8 +790,10 @@ export function CanvasViewComponent({
                 title={isPinned ? 'Unpin from toolbar' : 'Pin to toolbar'}
                 data-testid="canvas-view-pin"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M12 2L15 10H24L17 15L20 23L12 18L4 23L7 15L0 10H9L12 2Z" />
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <circle cx="12" cy="5" r="3" />
+                  <rect x="11" y="8" width="2" height="8" />
+                  <polygon points="12 16 8 20 16 20" />
                 </svg>
               </button>
             );

@@ -313,8 +313,8 @@ describe('§1 SUPPORTED_API_VERSIONS integrity', () => {
     }
   });
 
-  it('contains exactly [0.5, 0.6, 0.7, 0.8]', () => {
-    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8]);
+  it('contains exactly [0.5, 0.6, 0.7, 0.8, 0.9]', () => {
+    expect(SUPPORTED_API_VERSIONS).toEqual([0.5, 0.6, 0.7, 0.8, 0.9]);
   });
 
   it('does NOT contain v0.4 (dropped this cycle)', () => {

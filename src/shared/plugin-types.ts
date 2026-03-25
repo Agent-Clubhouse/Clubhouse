@@ -315,6 +315,8 @@ export interface PluginCanvasWidgetDeclaration {
   defaultSize?: { width: number; height: number };
   /** Keys this widget type exposes as queryable metadata (e.g. ['url', 'sessionId']). */
   metadataKeys?: string[];
+  /** When true, the widget can be pinned to the canvas controls bar (v0.9+). */
+  pinnableToControls?: boolean;
 }
 
 export interface PluginContributes {
@@ -738,6 +740,18 @@ export interface CanvasWidgetFilter {
   displayName?: string;
 }
 
+/** Props passed to a pinned widget component in the canvas controls bar (v0.9+). */
+export interface PinnedWidgetComponentProps {
+  /** The widget instance's internal ID. */
+  widgetId: string;
+  /** The PluginAPI for this plugin. */
+  api: PluginAPI;
+  /** Current metadata for this widget instance. */
+  metadata: CanvasWidgetMetadata;
+  /** Callback to update metadata (merges with existing). */
+  onUpdateMetadata: (updates: CanvasWidgetMetadata) => void;
+}
+
 /** Descriptor provided at runtime when a plugin registers a canvas widget type. */
 export interface CanvasWidgetDescriptor {
   /** Widget type ID — must match a declared canvasWidgets[].id in the plugin manifest. */
@@ -746,6 +760,8 @@ export interface CanvasWidgetDescriptor {
   component: React.ComponentType<CanvasWidgetComponentProps>;
   /** Optional callback to generate a display name from widget metadata. Defaults to the manifest label. */
   generateDisplayName?: (metadata: CanvasWidgetMetadata) => string;
+  /** Compact component rendered in the canvas controls bar when pinned (v0.9+). Required if pinnableToControls is true in the manifest. */
+  pinnedComponent?: React.ComponentType<PinnedWidgetComponentProps>;
 }
 
 /** Props passed to a plugin-provided canvas widget component. */

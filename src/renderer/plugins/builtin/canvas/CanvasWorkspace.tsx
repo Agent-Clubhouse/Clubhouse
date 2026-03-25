@@ -935,7 +935,7 @@ export function CanvasWorkspace({
         onNavigate={handleSearchSelect}
       />
 
-      {/* Compute pinned widgets for controls bar */}
+      {/* Compute pinned widgets */}
       {useMemo(() => {
         const pinnedWidgets = views
           .filter((v): v is PluginCanvasViewType =>
@@ -947,16 +947,73 @@ export function CanvasWorkspace({
               view,
               registered,
               onUpdateMetadata: (updates: CanvasWidgetMetadata) => {
-                // When unpinning, restore the widget to its last canvas position
+                // When unpinning, place widget in current viewport instead of old position
                 const newMetadata = { ...view.metadata, ...updates };
                 const isUnpinning = updates.__pinnedToControls === false && (view.metadata as CanvasWidgetMetadata).__pinnedToControls === true;
 
-                if (isUnpinning && (newMetadata as any).__lastCanvasPosition) {
-                  const lastPos = (newMetadata as any).__lastCanvasPosition;
+                if (isUnpinning) {
+                  // Use existing screenToCanvas to convert viewport center to canvas coords
+                  const rect = containerRef.current?.getBoundingClientRect();
+                  if (!rect) {
+                    onUpdateView(view.id, { metadata: newMetadata });
+                    return;
+                  }
+
+                  const viewportCenter = screenToCanvas(
+                    rect.left + containerSize.width / 2,
+                    rect.top + containerSize.height / 2,
+                    rect,
+                    viewport
+                  );
+
+                  // Use widget's current size or a sensible default
+                  const widgetSize = view.size || { width: 300, height: 300 };
+
+                  // Helper to check if position overlaps with any view
+                  const doesOverlap = (px: number, py: number) => {
+                    for (const otherView of views) {
+                      if (otherView.id === view.id || otherView.type === 'zone') continue;
+                      const ox = otherView.position.x;
+                      const oy = otherView.position.y;
+                      const ow = otherView.size.width;
+                      const oh = otherView.size.height;
+                      if (px < ox + ow && px + widgetSize.width > ox &&
+                          py < oy + oh && py + widgetSize.height > oy) {
+                        return true;
+                      }
+                    }
+                    return false;
+                  };
+
+                  // Try viewport center first, then corners
+                  const viewportWidth = containerSize.width / viewport.zoom;
+                  const viewportHeight = containerSize.height / viewport.zoom;
+
+                  const candidates = [
+                    // Center
+                    { x: viewportCenter.x - widgetSize.width / 2, y: viewportCenter.y - widgetSize.height / 2 },
+                    // Top-left
+                    { x: viewportCenter.x - viewportWidth / 3, y: viewportCenter.y - viewportHeight / 3 },
+                    // Top-right
+                    { x: viewportCenter.x + viewportWidth / 3 - widgetSize.width, y: viewportCenter.y - viewportHeight / 3 },
+                    // Bottom-left
+                    { x: viewportCenter.x - viewportWidth / 3, y: viewportCenter.y + viewportHeight / 3 - widgetSize.height },
+                    // Bottom-right
+                    { x: viewportCenter.x + viewportWidth / 3 - widgetSize.width, y: viewportCenter.y + viewportHeight / 3 - widgetSize.height },
+                  ];
+
+                  let finalPos = candidates[0]; // Default to center
+                  for (const candidate of candidates) {
+                    if (!doesOverlap(candidate.x, candidate.y)) {
+                      finalPos = candidate;
+                      break;
+                    }
+                  }
+
                   onUpdateView(view.id, {
                     metadata: newMetadata,
-                    position: { x: lastPos.x, y: lastPos.y },
-                    size: { width: lastPos.width, height: lastPos.height },
+                    position: finalPos,
+                    size: widgetSize,
                   });
                 } else {
                   onUpdateView(view.id, { metadata: newMetadata });
@@ -967,20 +1024,63 @@ export function CanvasWorkspace({
           .filter((item): item is NonNullable<typeof item> => item !== null);
 
         return (
-          <CanvasControls
-            zoom={viewport.zoom}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onZoomReset={handleZoomReset}
-            onCenter={handleCenter}
-            onSizeToFit={handleSizeToFit}
-            hasViews={views.length > 0}
-            views={views}
-            onSelectView={handleSearchSelect}
-            attentionMap={attentionMap}
-            api={api}
-            pinnedWidgets={pinnedWidgets}
-          />
+          <>
+            <CanvasControls
+              zoom={viewport.zoom}
+              onZoomIn={handleZoomIn}
+              onZoomOut={handleZoomOut}
+              onZoomReset={handleZoomReset}
+              onCenter={handleCenter}
+              onSizeToFit={handleSizeToFit}
+              hasViews={views.length > 0}
+              views={views}
+              onSelectView={handleSearchSelect}
+              attentionMap={attentionMap}
+              api={api}
+              pinnedWidgets={pinnedWidgets}
+            />
+
+            {/* Pinned widgets bar */}
+            {pinnedWidgets.length > 0 && (
+              <div
+                className="absolute top-12 right-3 flex items-center gap-1 bg-ctp-mantle/90 backdrop-blur-sm rounded-lg border border-surface-0 px-1.5 py-1 shadow-sm flex-wrap max-w-[calc(100%-24px)]"
+                data-testid="canvas-pinned-widgets"
+              >
+                {pinnedWidgets.map((item) => {
+                  const PinnedComponent = item.registered.descriptor.pinnedComponent;
+                  if (!PinnedComponent) return null;
+
+                  return (
+                    <div
+                      key={item.view.id}
+                      className="flex items-center gap-1 px-2 py-1 bg-surface-0/50 rounded"
+                    >
+                      <div className="flex-1">
+                        <PinnedComponent
+                          widgetId={item.view.id}
+                          api={item.registered.pluginApi ?? api}
+                          metadata={item.view.metadata}
+                          onUpdateMetadata={item.onUpdateMetadata}
+                        />
+                      </div>
+                      <button
+                        onClick={() => item.onUpdateMetadata({ __pinnedToControls: false })}
+                        className="w-4 h-4 flex items-center justify-center rounded text-ctp-blue hover:bg-surface-1 transition-colors flex-shrink-0"
+                        title="Unpin from toolbar"
+                        data-testid={`canvas-unpin-${item.view.id}`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                          <polygon points="12 2 8 8 16 8" />
+                          <rect x="11" y="8" width="2" height="8" />
+                          <circle cx="12" cy="19" r="3" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         );
       }, [views, viewport.zoom, handleZoomIn, handleZoomOut, handleZoomReset, handleCenter, handleSizeToFit, handleSearchSelect, attentionMap, api, onUpdateView])}
 

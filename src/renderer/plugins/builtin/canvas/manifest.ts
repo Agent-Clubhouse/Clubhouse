@@ -12,7 +12,7 @@ export const manifest: PluginManifest = {
   version: '0.1.0',
   description: 'Free-form spatial workspace for arranging agent views, file views, and browser views.',
   author: 'Clubhouse',
-  engine: { api: 0.8 },
+  engine: { api: 0.9 },
   scope: 'dual',
   permissions: ['commands', 'storage', 'agents', 'projects', 'widgets', 'navigation', 'files', 'git', 'terminal', 'annex'],
   contributes: {

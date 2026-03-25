@@ -462,6 +462,13 @@ export function validateManifest(raw: unknown): ValidationResult {
                 }
               }
             }
+            if (widget.pinnableToControls !== undefined) {
+              if (typeof widget.pinnableToControls !== 'boolean') {
+                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls must be a boolean`);
+              } else if (widget.pinnableToControls && apiVersion < 0.9) {
+                errors.push(`contributes.canvasWidgets[${i}].pinnableToControls requires API >= 0.9`);
+              }
+            }
           }
         }
       }

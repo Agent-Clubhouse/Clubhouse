@@ -17,8 +17,8 @@ describe('canvas manifest', () => {
     expect(manifest.scope).toBe('dual');
   });
 
-  it('targets engine.api 0.8', () => {
-    expect(manifest.engine.api).toBe(0.8);
+  it('targets engine.api 0.9', () => {
+    expect(manifest.engine.api).toBe(0.9);
   });
 
   it('contributes tab.title and railItem.title', () => {

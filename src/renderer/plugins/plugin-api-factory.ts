@@ -29,6 +29,10 @@ export { computeDataDir, computeWorkspaceRoot } from './plugin-api-files';
 export { _resetBadgeStoreCache } from './plugin-api-badges';
 
 export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, manifest?: PluginManifest): PluginAPI {
+  // Ref used to pass the fully-constructed API to createCanvasAPI without a circular reference.
+  // By the time a plugin calls api.canvas.registerWidgetType(), api is already assigned.
+  const apiRef: { current: PluginAPI | null } = { current: null };
+
   const effectiveMode = mode || (ctx.scope === 'app' ? 'app' : 'project');
   const isDual = ctx.scope === 'dual';
 
@@ -130,7 +134,7 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     ),
     canvas: gated(
       true, scopeLabel, 'canvas', 'canvas',
-      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest),
+      ctx.pluginId, manifest, () => createCanvasAPI(ctx, manifest, () => apiRef.current!),
     ),
     window: createWindowAPI(ctx, manifest), // always available (v0.8+)
     mcp: {
@@ -164,5 +168,6 @@ export function createPluginAPI(ctx: PluginContext, mode?: PluginRenderMode, man
     context: contextInfo, // always available
   };
 
+  apiRef.current = api;
   return api;
 }
