@@ -89,12 +89,18 @@ export interface CanvasState {
   clearSelection: () => void;
   moveViews: (positions: Map<string, Position>) => void;
 
+  // Minimap auto-hide (per canvas, persisted)
+  minimapAutoHide: boolean;
+  setMinimapAutoHide: (value: boolean) => void;
+
   // Convenience selectors
   activeCanvas: () => CanvasInstance;
   views: CanvasView[];
   viewport: Viewport;
   zoomedViewId: string | null;
   selectedViewId: string | null;
+
+  // Note: minimapAutoHide is declared above with its setter
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────
@@ -114,6 +120,7 @@ function createCanvasInstance(): CanvasInstance {
     nextZIndex: 0,
     zoomedViewId: null,
     selectedViewId: null,
+    minimapAutoHide: true,
   };
 }
 
@@ -129,16 +136,18 @@ function updateActiveCanvas(state: CanvasState, updater: (canvas: CanvasInstance
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
+    minimapAutoHide: active.minimapAutoHide,
   };
 }
 
-function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId'> {
+function syncDerivedState(canvases: CanvasInstance[], activeCanvasId: string): Pick<CanvasState, 'views' | 'viewport' | 'zoomedViewId' | 'selectedViewId' | 'minimapAutoHide'> {
   const active = canvases.find((c) => c.id === activeCanvasId) ?? canvases[0];
   return {
     views: active.views,
     viewport: active.viewport,
     zoomedViewId: active.zoomedViewId,
     selectedViewId: active.selectedViewId,
+    minimapAutoHide: active.minimapAutoHide,
   };
 }
 
@@ -156,6 +165,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     selectedViewId: null,
     selectedViewIds: [],
     wireDefinitions: [],
+    minimapAutoHide: true,
     loaded: false,
 
     activeCanvas: () => {
@@ -191,6 +201,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
               nextZIndex: s.nextZIndex,
               zoomedViewId: s.zoomedViewId ?? null,
               selectedViewId: null,
+              minimapAutoHide: s.minimapAutoHide ?? true,
             };
           });
           const savedActive = await storage.read(STORAGE_KEY_ACTIVE) as string | null;
@@ -219,6 +230,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
         views: c.views,
         viewport: c.viewport,
         nextZIndex: c.nextZIndex,
+        minimapAutoHide: c.minimapAutoHide,
       }));
       await storage.write(STORAGE_KEY_INSTANCES, data);
       await storage.write(STORAGE_KEY_ACTIVE, activeCanvasId);
@@ -351,6 +363,7 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
           nextZIndex: s.nextZIndex,
           zoomedViewId: s.zoomedViewId ?? null,
           selectedViewId: (s as any).selectedViewId ?? existing?.selectedViewId ?? null,
+          minimapAutoHide: existing?.minimapAutoHide ?? s.minimapAutoHide ?? true,
         };
       });
 
@@ -543,6 +556,14 @@ export function createCanvasStore(): UseBoundStore<StoreApi<CanvasState>> {
     setViewport: (viewport) => {
       set(updateActiveCanvas(get(), () => ({
         viewport: clampViewport(viewport),
+      })));
+    },
+
+    // ── Minimap auto-hide ─────────────────────────────────────────
+
+    setMinimapAutoHide: (value) => {
+      set(updateActiveCanvas(get(), () => ({
+        minimapAutoHide: value,
       })));
     },
 

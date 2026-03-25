@@ -126,6 +126,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   const selectedViewIds = store((s) => s.selectedViewIds);
   const loaded = store((s) => s.loaded);
   const wireDefinitions = store((s) => s.wireDefinitions);
+  const minimapAutoHide = store((s) => s.minimapAutoHide);
   const bindings = useMcpBindingStore((s) => s.bindings);
 
   // Dynamic title: show active canvas tab name
@@ -216,7 +217,7 @@ export function MainPanel({ api }: { api: PluginAPI }) {
   useEffect(() => {
     if (!loaded) return;
     scheduleSave();
-  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, loaded, scheduleSave]);
+  }, [canvases, views, viewport, zoomedViewId, wireDefinitions, minimapAutoHide, loaded, scheduleSave]);
 
   // ── Agent wake reconciliation ────────────────────────────────────
   // When an agent wakes up (bindings appear in MCP store that match wire
@@ -495,6 +496,8 @@ export function MainPanel({ api }: { api: PluginAPI }) {
             onClearSelection: handleClearSelection,
             onRemoveZone: handleRemoveZone,
             onUpdateZoneTheme: handleUpdateZoneTheme,
+            minimapAutoHide,
+            onMinimapAutoHideChange: (value: boolean) => store.getState().setMinimapAutoHide(value),
           }),
         ),
   );

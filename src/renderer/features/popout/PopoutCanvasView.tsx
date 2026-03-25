@@ -147,6 +147,7 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
   const [zoomedViewId, setZoomedViewId] = useState<string | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
   const [selectedViewIds, setSelectedViewIds] = useState<string[]>([]);
+  const [minimapAutoHide, setMinimapAutoHide] = useState(true);
   // Popout uses live MCP bindings as wire definitions — persistence is handled
   // by the main window's canvas store via the wireDefinitions system.
   const popoutWireDefinitions = useMcpBindingStore((s) => s.bindings);
@@ -352,6 +353,8 @@ export function PopoutCanvasView({ canvasId, projectId }: PopoutCanvasViewProps)
         onClearSelection={handleClearSelection}
         onRemoveZone={handleRemoveZone}
         onUpdateZoneTheme={handleUpdateZoneTheme}
+        minimapAutoHide={minimapAutoHide}
+        onMinimapAutoHideChange={setMinimapAutoHide}
       />
     </div>
   );
