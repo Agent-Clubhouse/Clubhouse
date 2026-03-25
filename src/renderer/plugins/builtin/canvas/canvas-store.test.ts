@@ -83,6 +83,7 @@ describe('canvas-store', () => {
       nextZIndex: 1,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
 
     store.getState().insertCanvas(canvas);
@@ -101,6 +102,7 @@ describe('canvas-store', () => {
       nextZIndex: 0,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
     store.getState().insertCanvas(canvas);
     expect(store.getState().activeCanvasId).toBe('inserted-1');
@@ -131,6 +133,7 @@ describe('canvas-store', () => {
       nextZIndex: 0,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
 
     await store.getState().loadAndInsertCanvas(newCanvas, storage);
@@ -156,6 +159,7 @@ describe('canvas-store', () => {
       nextZIndex: 0,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
 
     await store.getState().loadAndInsertCanvas(newCanvas, storage);
@@ -180,6 +184,7 @@ describe('canvas-store', () => {
       nextZIndex: 0,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
 
     await store.getState().loadAndInsertCanvas(newCanvas, storage);
@@ -200,6 +205,7 @@ describe('canvas-store', () => {
       nextZIndex: 0,
       zoomedViewId: null,
       selectedViewId: null,
+      minimapAutoHide: true,
     };
 
     // Insert (which also saves)
@@ -786,6 +792,92 @@ describe('hydrateFromRemote', () => {
       const agent = views.find((v) => v.type === 'agent')!;
       // Agent added inside zone → containment computed
       expect(zone.containedViewIds).toContain(agent.id);
+    });
+  });
+
+  // ── Minimap auto-hide persistence ──────────────────────────────
+
+  describe('minimapAutoHide', () => {
+    it('defaults to true', () => {
+      expect(store.getState().minimapAutoHide).toBe(true);
+    });
+
+    it('setMinimapAutoHide updates the active canvas', () => {
+      store.getState().setMinimapAutoHide(false);
+      expect(store.getState().minimapAutoHide).toBe(false);
+
+      // Verify it was set on the canvas instance
+      const canvas = store.getState().activeCanvas();
+      expect(canvas.minimapAutoHide).toBe(false);
+    });
+
+    it('persists minimapAutoHide through save/load round-trip', async () => {
+      const storage = createMockStorage();
+      await store.getState().loadCanvas(storage);
+
+      store.getState().setMinimapAutoHide(false);
+      await store.getState().saveCanvas(storage);
+
+      // Create a fresh store and load
+      const store2 = createCanvasStore();
+      await store2.getState().loadCanvas(storage);
+
+      expect(store2.getState().minimapAutoHide).toBe(false);
+    });
+
+    it('defaults to true when loading old data without minimapAutoHide', async () => {
+      const storage = createMockStorage({
+        'canvas-instances': [{
+          id: 'old-canvas',
+          name: 'Old',
+          views: [],
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          nextZIndex: 0,
+          // no minimapAutoHide field — simulates data saved before this feature
+        }],
+        'canvas-active-id': 'old-canvas',
+      });
+
+      await store.getState().loadCanvas(storage);
+      expect(store.getState().minimapAutoHide).toBe(true);
+    });
+
+    it('switches minimapAutoHide when changing active canvas', () => {
+      // Set first canvas to auto-hide off
+      store.getState().setMinimapAutoHide(false);
+      const firstCanvasId = store.getState().activeCanvasId;
+
+      // Add second canvas (defaults to true)
+      const secondCanvasId = store.getState().addCanvas();
+      expect(store.getState().minimapAutoHide).toBe(true);
+
+      // Switch back to first canvas
+      store.getState().setActiveCanvas(firstCanvasId);
+      expect(store.getState().minimapAutoHide).toBe(false);
+
+      // Switch back to second canvas
+      store.getState().setActiveCanvas(secondCanvasId);
+      expect(store.getState().minimapAutoHide).toBe(true);
+    });
+
+    it('preserves local minimapAutoHide during hydrateFromRemote', () => {
+      store.getState().setMinimapAutoHide(false);
+      const canvasId = store.getState().activeCanvasId;
+
+      // Hydrate from remote — should preserve local minimapAutoHide
+      store.getState().hydrateFromRemote(
+        [{
+          id: canvasId,
+          name: 'Remote',
+          views: [],
+          viewport: { panX: 0, panY: 0, zoom: 1 },
+          nextZIndex: 0,
+          // Remote doesn't send minimapAutoHide
+        }],
+        canvasId,
+      );
+
+      expect(store.getState().minimapAutoHide).toBe(false);
     });
   });
 });
