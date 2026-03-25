@@ -172,6 +172,7 @@ export function convertHubToCanvas(options: ConvertHubOptions): CanvasInstance {
     nextZIndex: views.length,
     zoomedViewId: null,
     selectedViewId: null,
+    minimapAutoHide: true,
   };
 }
 
