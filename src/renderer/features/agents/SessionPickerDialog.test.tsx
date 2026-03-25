@@ -116,6 +116,17 @@ describe('SessionPickerDialog', () => {
     expect(onResume).toHaveBeenCalledWith('manual-sess-id');
   });
 
+  it('renders into document.body via portal, not inside parent container', async () => {
+    const { container } = renderDialog();
+    await waitFor(() => {
+      expect(screen.getByTestId('session-picker-dialog')).toBeInTheDocument();
+    });
+    // Dialog should NOT be inside the render container (it's portaled to document.body)
+    expect(container.querySelector('[data-testid="session-picker-dialog"]')).toBeNull();
+    // But it should be in document.body
+    expect(document.body.querySelector('[data-testid="session-picker-dialog"]')).not.toBeNull();
+  });
+
   describe('Recent / Older sections', () => {
     it('shows "Recent" label when sessions exist', async () => {
       renderDialog();
