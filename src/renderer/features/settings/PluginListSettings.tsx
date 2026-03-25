@@ -5,6 +5,7 @@ import { useProjectStore } from '../../stores/projectStore';
 import { usePluginUpdateStore } from '../../stores/pluginUpdateStore';
 import { activatePlugin, deactivatePlugin, refreshCommunityPlugins, approvePluginPermissions, rejectPluginPermissions } from '../../plugins/plugin-loader';
 import { CANVAS_SUB_PLUGIN_IDS } from '../../plugins/builtin';
+import { useMcpSettingsStore } from '../../stores/mcpSettingsStore';
 import type { PluginPermission, PermissionRiskLevel, PluginRegistryEntry } from '../../../shared/plugin-types';
 import { PERMISSION_DESCRIPTIONS, PERMISSION_RISK_LEVELS } from '../../../shared/plugin-types';
 import type { CustomMarketplace } from '../../../shared/marketplace-types';
@@ -747,6 +748,7 @@ export function PluginListSettings() {
   const settingsContext = useUIStore((s) => s.settingsContext);
   const _activeProjectId = useProjectStore((s) => s.activeProjectId);
   const projects = useProjectStore((s) => s.projects);
+  const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
 
   // Plugin update state
   const updates = usePluginUpdateStore((s) => s.updates);
@@ -777,11 +779,15 @@ export function PluginListSettings() {
   });
 
   // Split into builtin and external sections (local computation, safe from Zustand gotcha)
-  // Hide canvas sub-plugins (group-project, agent-queue) unless canvas is enabled
+  // Hide canvas sub-plugins (group-project, agent-queue) unless canvas is enabled;
+  // also hide plugins that require MCP when MCP is off
   const canvasEnabled = appEnabled.includes('canvas');
-  const builtinPlugins = filteredPlugins.filter(
-    (e) => e.source === 'builtin' && (!CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) || canvasEnabled),
-  );
+  const builtinPlugins = filteredPlugins.filter((e) => {
+    if (e.source !== 'builtin') return false;
+    if (CANVAS_SUB_PLUGIN_IDS.has(e.manifest.id) && !canvasEnabled) return false;
+    if (e.manifest.requiresMcp && !mcpEnabled) return false;
+    return true;
+  });
   const externalPlugins = filteredPlugins.filter((e) => e.source === 'community' || e.source === 'marketplace');
 
   const isEnabled = (pluginId: string): boolean => {
