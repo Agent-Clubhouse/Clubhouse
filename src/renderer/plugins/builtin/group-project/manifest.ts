@@ -11,6 +11,7 @@ export const manifest: PluginManifest = {
   engine: { api: 0.8 },
   scope: 'dual',
   permissions: ['canvas', 'widgets', 'storage'],
+  requiresMcp: true,
   contributes: {
     help: {},
     canvasWidgets: [

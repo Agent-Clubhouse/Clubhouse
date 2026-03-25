@@ -5,6 +5,7 @@ import {
   onRegistryChange,
   type RegisteredCanvasWidget,
 } from '../../canvas-widget-registry';
+import { usePluginStore } from '../../plugin-store';
 import { MenuPortal } from './MenuPortal';
 import { useDismissibleLayer } from './useDismissibleLayer';
 import { sanitizeSvg } from '../../../utils/sanitize-svg';
@@ -34,12 +35,11 @@ const BUILTIN_ITEMS: Array<{ type: CanvasViewType; label: string; icon: string }
   { type: 'zone', label: 'Add Zone', icon: ZONE_ICON },
 ];
 
-/** Widget plugin IDs that require MCP to be enabled in order to function. */
-const MCP_REQUIRED_PLUGIN_IDS = new Set(['group-project']);
-
 export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const mcpEnabled = !!useMcpSettingsStore((s) => s.enabled);
+  const plugins = usePluginStore((s) => s.plugins);
+  const appEnabled = usePluginStore((s) => s.appEnabled);
   const [pluginWidgets, setPluginWidgets] = useState<RegisteredCanvasWidget[]>(() => getRegisteredWidgetTypes());
 
   useEffect(() => {
@@ -49,9 +49,13 @@ export function CanvasContextMenu({ x, y, onSelect, onDismiss }: CanvasContextMe
     return () => disposable.dispose();
   }, []);
 
-  const visibleWidgets = mcpEnabled
-    ? pluginWidgets
-    : pluginWidgets.filter((w) => !MCP_REQUIRED_PLUGIN_IDS.has(w.pluginId));
+  const appEnabledSet = new Set(appEnabled);
+  const visibleWidgets = pluginWidgets.filter((w) => {
+    if (!appEnabledSet.has(w.pluginId)) return false;
+    const manifest = plugins[w.pluginId]?.manifest;
+    if (manifest?.requiresMcp && !mcpEnabled) return false;
+    return true;
+  });
   useDismissibleLayer({ layerRef: menuRef, onDismiss });
 
   const handleBuiltinSelect = useCallback((type: CanvasViewType) => {

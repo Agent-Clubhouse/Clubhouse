@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CanvasContextMenu } from './CanvasContextMenu';
 import * as widgetRegistry from '../../canvas-widget-registry';
 import type { RegisteredCanvasWidget } from '../../canvas-widget-registry';
+import { usePluginStore } from '../../plugin-store';
 import { useMcpSettingsStore } from '../../../stores/mcpSettingsStore';
 
 // ── Mock the canvas-widget-registry ──────────────────────────────────
@@ -31,6 +32,20 @@ function makeWidget(overrides: Partial<RegisteredCanvasWidget> & { qualifiedType
   };
 }
 
+/** Set up plugin store with given plugin IDs as enabled builtins. */
+function setupPluginStore(pluginIds: string[], opts?: { requiresMcp?: Record<string, boolean> }) {
+  const plugins: Record<string, any> = {};
+  for (const id of pluginIds) {
+    plugins[id] = {
+      manifest: { id, name: id, version: '1.0.0', engine: { api: 0.8 }, scope: 'dual', requiresMcp: opts?.requiresMcp?.[id] },
+      status: 'activated',
+      source: 'builtin',
+      pluginPath: `/builtin/${id}`,
+    };
+  }
+  usePluginStore.setState({ plugins, appEnabled: pluginIds } as any);
+}
+
 describe('CanvasContextMenu plugin widget icons', () => {
   const onSelect = vi.fn();
   const onDismiss = vi.fn();
@@ -39,6 +54,8 @@ describe('CanvasContextMenu plugin widget icons', () => {
     onSelect.mockReset();
     onDismiss.mockReset();
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([]);
+    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
+    setupPluginStore([]);
   });
 
   it('renders built-in item SVG icons as HTML elements, not plain text', () => {
@@ -56,6 +73,7 @@ describe('CanvasContextMenu plugin widget icons', () => {
 
   it('renders promoted plugin widget SVG icon as HTML, not raw text', () => {
     // plugin:files:file-viewer and plugin:terminal:shell are "promoted" widgets
+    setupPluginStore(['terminal']);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([
       makeWidget({
         qualifiedType: 'plugin:terminal:shell',
@@ -77,6 +95,7 @@ describe('CanvasContextMenu plugin widget icons', () => {
   });
 
   it('renders other (3rd-party) plugin widget SVG icon as HTML, not raw text', () => {
+    setupPluginStore(['my-plugin']);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([
       makeWidget({
         qualifiedType: 'plugin:my-plugin:chart',
@@ -94,6 +113,7 @@ describe('CanvasContextMenu plugin widget icons', () => {
   });
 
   it('falls back to "+" when no icon is provided', () => {
+    setupPluginStore(['my-plugin']);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([
       makeWidget({
         qualifiedType: 'plugin:my-plugin:no-icon',
@@ -145,10 +165,11 @@ describe('CanvasContextMenu MCP gating', () => {
   beforeEach(() => {
     onSelect.mockReset();
     onDismiss.mockReset();
+    setupPluginStore(['group-project', 'terminal'], { requiresMcp: { 'group-project': true } });
   });
 
   it('hides group-project widget when MCP is disabled', () => {
-    useMcpSettingsStore.setState({ enabled: false, loaded: true });
+    useMcpSettingsStore.setState({ enabled: false, loaded: true } as any);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
 
     render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
@@ -158,12 +179,24 @@ describe('CanvasContextMenu MCP gating', () => {
   });
 
   it('shows group-project widget when MCP is enabled', () => {
-    useMcpSettingsStore.setState({ enabled: true, loaded: true });
+    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
     vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
 
     render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
 
     expect(screen.getByTestId('canvas-context-menu-plugin:group-project:group-project')).toBeTruthy();
+    expect(screen.getByTestId('canvas-context-menu-plugin:terminal:shell')).toBeTruthy();
+  });
+
+  it('hides widgets from plugins not in appEnabled', () => {
+    // Only terminal is enabled, group-project is not
+    setupPluginStore(['terminal']);
+    useMcpSettingsStore.setState({ enabled: true, loaded: true } as any);
+    vi.mocked(widgetRegistry.getRegisteredWidgetTypes).mockReturnValue([groupProjectWidget, terminalWidget]);
+
+    render(<CanvasContextMenu x={100} y={100} onSelect={onSelect} onDismiss={onDismiss} />);
+
+    expect(screen.queryByTestId('canvas-context-menu-plugin:group-project:group-project')).toBeNull();
     expect(screen.getByTestId('canvas-context-menu-plugin:terminal:shell')).toBeTruthy();
   });
 });

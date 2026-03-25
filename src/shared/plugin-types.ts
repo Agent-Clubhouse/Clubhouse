@@ -389,6 +389,8 @@ export interface PluginManifest {
   allowedCommands?: string[];              // requires 'process' permission
   /** Companion agent configuration (v0.9+, requires 'companion' permission). */
   companion?: PluginCompanionConfig;
+  /** When true, this plugin requires MCP to be enabled and will be hidden from settings and canvas when MCP is off. */
+  requiresMcp?: boolean;
 }
 
 // ── Render mode for dual-scope plugins ───────────────────────────────

@@ -106,17 +106,6 @@ export async function initializePluginSystem(): Promise<void> {
       }
     }
 
-    // Pre-register canvas widgets from all built-in plugin manifests so they
-    // appear in the context menu immediately — before project-scoped plugins
-    // have been activated via handleProjectSwitch().
-    for (const { manifest } of builtins) {
-      if (manifest.contributes?.canvasWidgets) {
-        for (const widgetDecl of manifest.contributes.canvasWidgets) {
-          preRegisterFromManifest(manifest.id, widgetDecl);
-        }
-      }
-    }
-
     // Read persisted external-plugins-enabled flag
     let externalEnabled = false;
     try {
@@ -222,6 +211,19 @@ export async function initializePluginSystem(): Promise<void> {
     // registerPlugin / loadAppPluginConfig calls above.
     const currentState = usePluginStore.getState();
     const appEnabled = currentState.appEnabled;
+
+    // Pre-register canvas widgets from enabled built-in plugin manifests so
+    // they appear in the context menu immediately — before project-scoped
+    // plugins have been activated via handleProjectSwitch().
+    // Only pre-register for plugins that are actually in appEnabled.
+    const appEnabledSet = new Set(appEnabled);
+    for (const { manifest } of builtins) {
+      if (appEnabledSet.has(manifest.id) && manifest.contributes?.canvasWidgets) {
+        for (const widgetDecl of manifest.contributes.canvasWidgets) {
+          preRegisterFromManifest(manifest.id, widgetDecl);
+        }
+      }
+    }
 
     // Write startup marker *before* activation so a crash during init
     // will trigger safe mode on the next launch.
