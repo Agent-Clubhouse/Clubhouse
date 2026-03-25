@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('electron', () => ({
+  app: { getVersion: vi.fn(() => '0.38.1-beta.1') },
   ipcMain: { handle: vi.fn() },
   BrowserWindow: { getAllWindows: vi.fn(() => []) },
+}));
+
+vi.mock('../services/auto-update-service', () => ({
+  getSettings: vi.fn(() => ({ previewChannel: false })),
 }));
 
 vi.mock('../services/annex-settings', () => ({
@@ -51,7 +56,7 @@ vi.mock('../util/ipc-broadcast', () => ({
   broadcastToAllWindows: vi.fn(),
 }));
 
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 import { IPC } from '../../shared/ipc-channels';
 import { registerAnnexHandlers, maybeStartAnnex, maybeStartAnnexClient } from './annex-handlers';
 import * as annexSettings from '../services/annex-settings';
@@ -61,6 +66,7 @@ import * as annexPeers from '../services/annex-peers';
 import * as annexIdentity from '../services/annex-identity';
 import * as annexTls from '../services/annex-tls';
 import * as experimentalSettings from '../services/experimental-settings';
+import * as autoUpdateService from '../services/auto-update-service';
 import { appLog } from '../services/log-service';
 import { broadcastToAllWindows } from '../util/ipc-broadcast';
 
@@ -257,6 +263,24 @@ describe('maybeStartAnnex', () => {
     expect(annexServer.start).not.toHaveBeenCalled();
   });
 
+  it('does not start server on stable non-preview build even with annex flag on', () => {
+    vi.mocked(app.getVersion).mockReturnValue('0.38.0');
+    vi.mocked(autoUpdateService.getSettings).mockReturnValue({ previewChannel: false, autoUpdate: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexServer.start).not.toHaveBeenCalled();
+  });
+
+  it('starts server on stable build with preview channel enabled', () => {
+    vi.mocked(app.getVersion).mockReturnValue('0.38.0');
+    vi.mocked(autoUpdateService.getSettings).mockReturnValue({ previewChannel: true, autoUpdate: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
+    maybeStartAnnex();
+    expect(annexServer.start).toHaveBeenCalled();
+  });
+
   it('logs error when auto-start fails', () => {
     vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: true, enableClient: false, deviceName: 'Mac' });
     vi.mocked(annexServer.start).mockImplementationOnce(() => { throw new Error('bind failed'); });
@@ -282,6 +306,15 @@ describe('maybeStartAnnexClient', () => {
 
   it('does not start client when experimental annex flag is off', () => {
     vi.mocked(experimentalSettings.getSettings).mockReturnValue({});
+    maybeStartAnnexClient();
+    expect(annexClient.startClient).not.toHaveBeenCalled();
+  });
+
+  it('does not start client on stable non-preview build even with annex flag on', () => {
+    vi.mocked(app.getVersion).mockReturnValue('0.38.0');
+    vi.mocked(autoUpdateService.getSettings).mockReturnValue({ previewChannel: false, autoUpdate: true, lastCheck: null, dismissedVersion: null, lastSeenVersion: null });
+    vi.mocked(experimentalSettings.getSettings).mockReturnValue({ annex: true });
+    vi.mocked(annexSettings.getSettings).mockReturnValue({ enableServer: false, enableClient: true, deviceName: 'Mac' });
     maybeStartAnnexClient();
     expect(annexClient.startClient).not.toHaveBeenCalled();
   });

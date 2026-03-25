@@ -137,14 +137,17 @@ export function AccessoryPanel() {
 
   // Plugin tabs with sidebar layout
   if (activePluginId) {
-    // Security gate: block sidebar rendering for non-annex-enabled plugins on remote projects
+    // Security gate: block sidebar rendering for non-annex-enabled plugins on remote projects.
+    // Only enforce once satellite snapshot has loaded (matches !== undefined).
     if (isRemoteProject && activeProjectId) {
       const parsed = parseNamespacedId(activeProjectId);
       if (parsed) {
-        const matches = pluginMatchState[parsed.satelliteId] || [];
-        const match = matches.find((p) => p.id === activePluginId);
-        if (!match?.annexEnabled) {
-          return null;
+        const matches = pluginMatchState[parsed.satelliteId];
+        if (matches !== undefined) {
+          const match = matches.find((p) => p.id === activePluginId);
+          if (!match?.annexEnabled) {
+            return null;
+          }
         }
       }
     }

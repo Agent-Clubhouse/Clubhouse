@@ -536,9 +536,9 @@ export function ProjectRail() {
         </button>
 
         {/* ================================================================
-            MODE: Local host active (default)
+            MODE: Local host active (default), or satellite not yet loaded
             ================================================================ */}
-        {isLocalHost && (
+        {(isLocalHost || !activeSatellite) && (
           <>
             {/* Home button */}
             {showHome && (

@@ -398,21 +398,24 @@ export function CanvasViewComponent({
       case 'plugin': {
         const pluginView = view as PluginCanvasViewType;
 
-        // Security gate: block non-annex-enabled plugin widgets on remote projects
+        // Security gate: block non-annex-enabled plugin widgets on remote projects.
+        // Only enforce once satellite snapshot has loaded (matches !== undefined).
         if (isCanvasRemote && canvasProjectId) {
           const parsed = parseNamespacedId(canvasProjectId);
           if (parsed) {
             const widgetParts = parsePluginWidgetType(pluginView.pluginWidgetType);
             if (widgetParts) {
-              const matches = pluginMatchState[parsed.satelliteId] || [];
-              const match = matches.find((p) => p.id === widgetParts.pluginId);
-              if (!match?.annexEnabled) {
-                return (
-                  <AnnexUnsupportedPlaceholder
-                    widgetType={match?.name || widgetParts.pluginId}
-                    reason={`${match?.name || widgetParts.pluginId} has not declared Annex compatibility.`}
-                  />
-                );
+              const matches = pluginMatchState[parsed.satelliteId];
+              if (matches !== undefined) {
+                const match = matches.find((p) => p.id === widgetParts.pluginId);
+                if (!match?.annexEnabled) {
+                  return (
+                    <AnnexUnsupportedPlaceholder
+                      widgetType={match?.name || widgetParts.pluginId}
+                      reason={`${match?.name || widgetParts.pluginId} has not declared Annex compatibility.`}
+                    />
+                  );
+                }
               }
             }
           }
