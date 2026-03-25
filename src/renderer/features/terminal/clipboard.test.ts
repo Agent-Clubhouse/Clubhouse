@@ -218,6 +218,58 @@ describe('clipboard — keyboard shortcuts', () => {
     });
   });
 
+  // ---------- KEY REPEAT (Windows hold-key) ----------
+
+  describe('key repeat suppression', () => {
+    it('does not paste on repeated Ctrl+V keydown (Windows key-hold)', async () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      // First keydown (repeat=false) — should paste
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: false });
+      await flush();
+      expect(writeToPty).toHaveBeenCalledTimes(1);
+
+      writeToPty.mockClear();
+      clipboardReadText.mockClear();
+
+      // Repeated keydowns (repeat=true) — should NOT paste
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+      expect(clipboardReadText).not.toHaveBeenCalled();
+    });
+
+    it('still consumes repeated Ctrl+V events (returns false)', () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      const consumed = term._fireKey({ ctrlKey: true, key: 'v', repeat: true });
+      expect(consumed).toBe(false); // consumed but no paste triggered
+    });
+
+    it('suppresses repeat for Ctrl+Shift+V as well', async () => {
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      term._fireKey({ ctrlKey: true, shiftKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+    });
+
+    it('suppresses repeat for Cmd+V on macOS', async () => {
+      mockPlatform = 'darwin';
+      const term = createMockTerminal();
+      attachClipboardHandlers(term as any, createContainer(), writeToPty);
+
+      term._fireKey({ metaKey: true, key: 'v', repeat: true });
+      await flush();
+      expect(writeToPty).not.toHaveBeenCalled();
+    });
+  });
+
   // ---------- UNRELATED KEYS ----------
 
   describe('unrelated keys pass through', () => {
@@ -310,6 +362,89 @@ describe('clipboard — right-click context menu', () => {
     await flush();
 
     expect(writeToPty).not.toHaveBeenCalled();
+  });
+});
+
+describe('clipboard — native paste event suppression', () => {
+  let writeToPty: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockPlatform = 'win32';
+    writeToPty = vi.fn();
+    clipboardReadText.mockReset().mockResolvedValue('pasted text');
+    clipboardWriteText.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('suppresses native paste events on the container to prevent double-paste', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('prevents native paste from reaching child elements (xterm textarea)', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    // Simulate xterm's internal textarea that would normally receive the paste
+    const textarea = document.createElement('textarea');
+    container.appendChild(textarea);
+    const childPasteHandler = vi.fn();
+    textarea.addEventListener('paste', childPasteHandler);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    textarea.dispatchEvent(event);
+
+    // Our capture-phase handler should have stopped propagation
+    expect(childPasteHandler).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('ensures only one PTY write occurs for a Ctrl+V that fires both keydown and paste', async () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    // Simulate the Windows/Electron sequence: keydown fires first, then paste
+    term._fireKey({ ctrlKey: true, key: 'v' });
+    container.dispatchEvent(new Event('paste', { bubbles: true, cancelable: true }));
+
+    await flush();
+
+    // Should only have one PTY write (from our keyboard handler), not two
+    expect(writeToPty).toHaveBeenCalledTimes(1);
+    expect(writeToPty).toHaveBeenCalledWith('pasted text');
+  });
+
+  it('cleanup function removes the paste listener', () => {
+    const term = createMockTerminal();
+    const container = createContainer();
+    const cleanup = attachClipboardHandlers(term as any, container, writeToPty);
+
+    cleanup();
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    // After cleanup, the paste event should NOT be suppressed
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('suppresses paste events on macOS as well when compat is active', () => {
+    mockPlatform = 'darwin';
+    const term = createMockTerminal();
+    const container = createContainer();
+    attachClipboardHandlers(term as any, container, writeToPty);
+
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    container.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 
