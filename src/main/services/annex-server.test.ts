@@ -94,6 +94,38 @@ vi.mock('./annex-event-bus', () => ({
   onPtyExit: vi.fn().mockReturnValue(() => {}),
   onAgentSpawned: vi.fn().mockReturnValue(() => {}),
   onStructuredEvent: vi.fn().mockReturnValue(() => {}),
+  onGroupProjectChanged: vi.fn().mockReturnValue(() => {}),
+  onBulletinMessage: vi.fn().mockReturnValue(() => {}),
+  emitGroupProjectChanged: vi.fn(),
+  emitBulletinMessage: vi.fn(),
+}));
+
+// Mock group-project modules
+vi.mock('./group-project-registry', () => ({
+  groupProjectRegistry: {
+    list: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue(null),
+    onChange: vi.fn().mockReturnValue(() => {}),
+  },
+}));
+
+vi.mock('./group-project-bulletin', () => ({
+  getBulletinBoard: vi.fn().mockReturnValue({
+    getDigest: vi.fn().mockResolvedValue([]),
+    getTopicMessages: vi.fn().mockResolvedValue([]),
+    getAllMessages: vi.fn().mockResolvedValue([]),
+    postMessage: vi.fn().mockResolvedValue({ id: 'msg_1', sender: 'test', topic: 'test', body: 'test', timestamp: new Date().toISOString() }),
+  }),
+}));
+
+vi.mock('./group-project-shoulder-tap', () => ({
+  executeShoulderTap: vi.fn().mockResolvedValue({ taskId: 'tap_1', messageId: 'msg_1', delivered: [], failed: [] }),
+}));
+
+vi.mock('./clubhouse-mcp/binding-manager', () => ({
+  bindingManager: {
+    getAllBindings: vi.fn().mockReturnValue([]),
+  },
 }));
 
 // Mock theme-service
