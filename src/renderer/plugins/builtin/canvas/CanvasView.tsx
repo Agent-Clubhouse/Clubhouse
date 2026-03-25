@@ -377,6 +377,15 @@ export function CanvasViewComponent({
 
   const handleUpdateMetadata = useCallback((updates: CanvasWidgetMetadata) => {
     const mergedMetadata = { ...view.metadata, ...updates };
+
+    // Store last canvas position for restore on unpin
+    (mergedMetadata as any).__lastCanvasPosition = {
+      x: view.position.x,
+      y: view.position.y,
+      width: view.size.width,
+      height: view.size.height
+    };
+
     const viewUpdates: Partial<CanvasView> = { metadata: mergedMetadata };
 
     // Regenerate displayName from the plugin's callback so the title bar
@@ -389,7 +398,7 @@ export function CanvasViewComponent({
     }
 
     onUpdate(viewUpdates);
-  }, [view.metadata, view.type, onUpdate]);
+  }, [view.metadata, view.type, view.position, view.size, onUpdate]);
 
   const renderContent = () => {
     switch (view.type) {
@@ -606,6 +615,12 @@ export function CanvasViewComponent({
         )}
       </div>
     );
+  }
+
+  // Hide canvas widget if it's pinned to the nav bar
+  const isPinned = !!(view.metadata as CanvasWidgetMetadata).__pinnedToControls;
+  if (isPinned) {
+    return null;
   }
 
   return (

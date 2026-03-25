@@ -943,7 +943,26 @@ export function CanvasWorkspace({
           )
           .map((view) => {
             const registered = getRegisteredWidgetType(view.pluginWidgetType);
-            return registered ? { view, registered, onUpdateMetadata: (updates: CanvasWidgetMetadata) => onUpdateView(view.id, { metadata: { ...view.metadata, ...updates } }) } : null;
+            return registered ? {
+              view,
+              registered,
+              onUpdateMetadata: (updates: CanvasWidgetMetadata) => {
+                // When unpinning, restore the widget to its last canvas position
+                const newMetadata = { ...view.metadata, ...updates };
+                const isUnpinning = updates.__pinnedToControls === false && (view.metadata as CanvasWidgetMetadata).__pinnedToControls === true;
+
+                if (isUnpinning && (newMetadata as any).__lastCanvasPosition) {
+                  const lastPos = (newMetadata as any).__lastCanvasPosition;
+                  onUpdateView(view.id, {
+                    metadata: newMetadata,
+                    position: { x: lastPos.x, y: lastPos.y },
+                    size: { width: lastPos.width, height: lastPos.height },
+                  });
+                } else {
+                  onUpdateView(view.id, { metadata: newMetadata });
+                }
+              }
+            } : null;
           })
           .filter((item): item is NonNullable<typeof item> => item !== null);
 

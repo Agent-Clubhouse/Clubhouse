@@ -184,13 +184,24 @@ export function CanvasControls({ zoom, hasViews, views, onZoomIn, onZoomOut, onZ
               if (!PinnedComponent) return null;
               const widgetApi = registered.pluginApi ?? api;
               return (
-                <PinnedComponent
-                  key={view.id}
-                  widgetId={view.id}
-                  api={widgetApi}
-                  metadata={view.metadata as CanvasWidgetMetadata}
-                  onUpdateMetadata={onUpdateMetadata}
-                />
+                <div key={view.id} className="flex items-center gap-0.5">
+                  <PinnedComponent
+                    widgetId={view.id}
+                    api={widgetApi}
+                    metadata={view.metadata as CanvasWidgetMetadata}
+                    onUpdateMetadata={onUpdateMetadata}
+                  />
+                  <button
+                    className="w-4 h-4 flex items-center justify-center rounded text-ctp-overlay0 hover:bg-surface-1 hover:text-ctp-text transition-colors"
+                    onClick={() => onUpdateMetadata({ __pinnedToControls: false })}
+                    title="Unpin from toolbar"
+                    data-testid="canvas-unpin-button"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6M10 11v6M14 11v6" />
+                    </svg>
+                  </button>
+                </div>
               );
             })}
           </div>
